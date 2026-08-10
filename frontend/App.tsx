@@ -92,14 +92,13 @@ const lazyWithRetry = (name: string, componentImport: () => Promise<any>) =>
 const CustomerDashboard = lazyWithRetry('./views/portal/CustomerDashboard', () => import('./views/portal/CustomerDashboard'));
 const CustomerOrders = lazyWithRetry('./views/portal/CustomerOrders', () => import('./views/portal/CustomerOrders'));
 const CustomerOrderDetail = lazyWithRetry('./views/portal/CustomerOrderDetail', () => import('./views/portal/CustomerOrderDetail'));
-const CustomerShipments = lazyWithRetry('./views/portal/CustomerShipments', () => import('./views/portal/CustomerShipments'));
-const CustomerShipmentDetail = lazyWithRetry('./views/portal/CustomerShipmentDetail', () => import('./views/portal/CustomerShipmentDetail'));
 const CustomerQuotations = lazyWithRetry('./views/portal/CustomerQuotations', () => import('./views/portal/CustomerQuotations'));
 const CustomerInvoices = lazyWithRetry('./views/portal/CustomerInvoices', () => import('./views/portal/CustomerInvoices'));
 const CustomerInvoiceDetail = lazyWithRetry('./views/portal/CustomerInvoiceDetail', () => import('./views/portal/CustomerInvoiceDetail'));
 const CustomerPayments = lazyWithRetry('./views/portal/CustomerPayments', () => import('./views/portal/CustomerPayments'));
 const CustomerPaymentDetail = lazyWithRetry('./views/portal/CustomerPaymentDetail', () => import('./views/portal/CustomerPaymentDetail'));
-const CustomerStatements = lazyWithRetry('./views/portal/CustomerStatements', () => import('./views/portal/CustomerStatements'));
+const CustomerDeliveries = lazyWithRetry('./views/portal/CustomerDeliveries', () => import('./views/portal/CustomerDeliveries'));
+const CustomerAccountStatements = lazyWithRetry('./views/portal/CustomerAccountStatements', () => import('./views/portal/CustomerAccountStatements'));
 const CustomerWallet = lazyWithRetry('./views/portal/CustomerWallet', () => import('./views/portal/CustomerWallet'));
 const CustomerLoyalty = lazyWithRetry('./views/portal/CustomerLoyalty', () => import('./views/portal/CustomerLoyalty'));
 const CustomerDocuments = lazyWithRetry('./views/portal/CustomerDocuments', () => import('./views/portal/CustomerDocuments'));
@@ -112,7 +111,6 @@ const CustomerRequests = lazyWithRetry('./views/portal/CustomerRequests', () => 
 const CustomerRequestDetail = lazyWithRetry('./views/portal/CustomerRequestDetail', () => import('./views/portal/CustomerRequestDetail'));
 const CustomerQuotationDetail = lazyWithRetry('./views/portal/CustomerQuotationDetail', () => import('./views/portal/CustomerQuotationDetail'));
 const CustomerPaymentOptions = lazyWithRetry('./views/portal/CustomerPaymentOptions', () => import('./views/portal/CustomerPaymentOptions'));
-const CustomerCatalog = lazyWithRetry('./views/portal/CustomerCatalog', () => import('./views/portal/CustomerCatalog'));
 const PortalUserManagement = lazyWithRetry('./views/portal/PortalUserManagement', () => import('./views/portal/PortalUserManagement'));
 
 import { isResponsiveDebugEnabled } from './utils/debugFlags';
@@ -1080,18 +1078,20 @@ const PortalRoutes = (
       <Route path="requests/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerRequestDetail /></Suspense>} />
       <Route path="orders" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerOrders /></Suspense>} />
       <Route path="orders/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerOrderDetail /></Suspense>} />
-      <Route path="shipments" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerShipments /></Suspense>} />
-      <Route path="shipments/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerShipmentDetail /></Suspense>} />
+      <Route path="shipments" element={<Navigate to="/portal/deliveries" replace />} />
+      <Route path="deliveries" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerDeliveries /></Suspense>} />
+      <Route path="shipments/:id" element={<Navigate to="/portal/deliveries" replace />} />
       <Route path="quotations" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerQuotations /></Suspense>} />
       <Route path="quotations/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerQuotationDetail /></Suspense>} />
       <Route path="new-request" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerCreateRequest /></Suspense>} />
-      <Route path="catalog" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerCatalog /></Suspense>} />
+
       <Route path="invoices" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerInvoices /></Suspense>} />
       <Route path="invoices/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerInvoiceDetail /></Suspense>} />
       <Route path="payments" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerPayments /></Suspense>} />
       <Route path="payments/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerPaymentDetail /></Suspense>} />
       <Route path="payment-options" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerPaymentOptions /></Suspense>} />
-      <Route path="statements" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerStatements /></Suspense>} />
+      <Route path="statements" element={<Navigate to="/portal/account-statements" replace />} />
+      <Route path="account-statements" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerAccountStatements /></Suspense>} />
       <Route path="wallet" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerWallet /></Suspense>} />
       <Route path="loyalty" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerLoyalty /></Suspense>} />
       <Route path="documents" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerDocuments /></Suspense>} />

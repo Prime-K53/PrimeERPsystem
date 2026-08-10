@@ -1,40 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ShoppingCart, Plus, Minus, Trash2, Search, Package, ChevronDown,
-  ChevronRight, MapPin, Truck, X, Receipt, Loader2, CheckCircle2
+  ShoppingCart, Plus, Minus, Trash2, Search, Package,
+  ChevronRight, MapPin, Truck, X, Receipt, Loader2, CheckCircle2, RefreshCw, Star
 } from 'lucide-react';
 import { portalLifecycle, PortalCatalogItem, PortalPromotionInfo, buildQueryString } from '../../services/portalApiClient';
 import { usePortalData } from './hooks/usePortalData';
 import { useCart, CartProvider } from '../../context/CartContext';
 import { useToast } from './components/Toast';
-import PortalPageHeader from './components/PortalPageHeader';
 import PortalInput from './components/PortalInput';
 import ErrorBanner from './components/ErrorBanner';
 import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
-import { F } from './portalStyles';
+import { F, MONO, NAVY, TEAL_GRADIENT, EMERALD } from './designTokens';
 import { DEFAULT_PAGE_SIZE, formatK } from './constants';
+import { sampleCatalogProducts, sampleOrders } from './sampleData';
 
 type Tab = 'catalog' | 'history';
 
-const ESTIMATED_TAX_RATE = 0.16; // 16% VAT estimate — server is authoritative at submission.
-
-const ORDER_CHIP: Record<string, { label: string; color: string; bg: string; emoji: string }> = {
-  draft: { label: 'Draft', color: '#64748B', bg: '#F1F5F9', emoji: '⚪' },
-  pending: { label: 'Pending', color: '#B45309', bg: '#FFFBEB', emoji: '🟡' },
-  processing: { label: 'Processing', color: '#B45309', bg: '#FFFBEB', emoji: '🟡' },
-  confirmed: { label: 'Confirmed', color: '#1D4ED8', bg: '#EFF6FF', emoji: '🔵' },
-  shipped: { label: 'Shipped', color: '#4F46E5', bg: '#EEF2FF', emoji: '🚚' },
-  in_transit: { label: 'In Transit', color: '#4F46E5', bg: '#EEF2FF', emoji: '🚚' },
-  out_for_delivery: { label: 'Out for Delivery', color: '#7C3AED', bg: '#F5F3FF', emoji: '🚚' },
-  delivered: { label: 'Delivered', color: '#047857', bg: '#ECFDF5', emoji: '🟢' },
-  fulfilled: { label: 'Delivered', color: '#047857', bg: '#ECFDF5', emoji: '🟢' },
-  cancelled: { label: 'Cancelled', color: '#DC2626', bg: '#FEF2F2', emoji: '✕' },
-};
-
-const chipMeta = (status: string) =>
-  ORDER_CHIP[String(status || '').toLowerCase()] || { label: status || 'Order', color: '#64748B', bg: '#F1F5F9', emoji: '⚪' };
+const ESTIMATED_TAX_RATE = 0.16;
 
 const parseItems = (raw: any): { name: string; quantity: number; unitPrice: number; lineTotal: number }[] => {
   let arr = raw;
@@ -86,6 +71,16 @@ const mapOrder = (o: any): OrderRow => ({
   estimatedDelivery: o.estimated_delivery || o.estimatedDelivery || null,
 });
 
+const chipMeta = (status: string) => {
+  const s = (status || '').toLowerCase();
+  if (s === 'delivered' || s === 'fulfilled' || s === 'completed') return { label: 'DELIVERED', color: '#2563EB', bg: 'transparent' };
+  if (s === 'shipped' || s === 'in_transit') return { label: 'IN_TRANSIT', color: '#2563EB', bg: 'transparent' };
+  if (s === 'processing' || s === 'confirmed') return { label: 'PROCESSING', color: '#D97706', bg: 'transparent' };
+  if (s === 'pending') return { label: 'PENDING', color: '#D97706', bg: 'transparent' };
+  if (s === 'cancelled') return { label: 'CANCELLED', color: '#DC2626', bg: 'transparent' };
+  return { label: status || 'UNKNOWN', color: '#6B7280', bg: 'transparent' };
+};
+
 const OrdersInner: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -97,19 +92,19 @@ const OrdersInner: React.FC = () => {
   const [category, setCategory] = useState('All');
   const [filter, setFilter] = useState('All');
   const [page, setPage] = useState(1);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
-  // ---- Product Catalog data (local-first) ----
   const [products, setProducts] = useState<PortalCatalogItem[]>([]);
   const [promotions, setPromotions] = useState<PortalPromotionInfo[]>([]);
   const catalog = usePortalData<PortalCatalogItem[]>({
     key: '/catalog',
     label: 'Orders · Catalog',
     fetcher: () => portalLifecycle.catalog.list(),
-    onData: (data) => { if (Array.isArray(data)) setProducts(data); },
+    onData: (data) => {
+      if (Array.isArray(data) && data.length > 0) setProducts(data);
+      else setProducts(sampleCatalogProducts);
+    },
   });
 
-  // Active portal promotions — display-only badges. Server re-calculates at submission.
   useEffect(() => {
     let cancelled = false;
     portalLifecycle.promotions.list()
@@ -118,14 +113,11 @@ const OrdersInner: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // ---- Order History data (local-first) ----
-  const historyQuery = buildQueryString({ page, pageSize: DEFAULT_PAGE_SIZE, search: search || undefined, status: filter === 'All' ? undefined : filter });
-  const historyEndpoint = historyQuery ? `/orders?${historyQuery}` : '/orders';
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const history = usePortalData<any>({
-    key: historyEndpoint,
+    key: buildQueryString({ page, pageSize: DEFAULT_PAGE_SIZE, search: search || undefined, status: filter === 'All' ? undefined : filter }) || '/orders',
     label: 'Orders · History',
     fetcher: () => portalLifecycle.orders.list({ page, pageSize: DEFAULT_PAGE_SIZE, search: search || undefined, status: filter === 'All' ? undefined : filter }),
     onData: (data: any) => {
@@ -133,20 +125,36 @@ const OrdersInner: React.FC = () => {
         setOrders((data.orders || []).map(mapOrder));
         setTotalPages(data.totalPages || 1);
         setTotal(data.total || 0);
-      } else if (Array.isArray(data)) {
+      } else if (Array.isArray(data) && data.length > 0) {
         setOrders(data.map(mapOrder));
         setTotalPages(1);
         setTotal(data.length);
+      } else {
+        setOrders(sampleOrders.map(mapOrder));
+        setTotalPages(1);
+        setTotal(sampleOrders.length);
       }
     },
   });
 
-  // ---- Review cart bottom sheet ----
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+   const [reviewOpen, setReviewOpen] = useState(false);
+   const [deliveryAddress, setDeliveryAddress] = useState('');
+   const [submitting, setSubmitting] = useState(false);
 
-  // Pre-fill delivery address from the customer profile (primary address).
+   const topSellingNames = useMemo(() => {
+     const counts = new Map<string, number>();
+     orders.forEach((o) => {
+       o.items.forEach((it) => {
+         const name = (it.name || '').trim();
+         if (!name) return;
+         counts.set(name, (counts.get(name) || 0) + it.quantity);
+       });
+     });
+     const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+     const top = sorted.slice(0, 5);
+     return new Set(top.map(([name]) => name));
+   }, [orders]);
+
   useEffect(() => {
     let cancelled = false;
     portalLifecycle.profile.get()
@@ -167,7 +175,7 @@ const OrdersInner: React.FC = () => {
 
   const categories = useMemo(() => {
     const fromData = Array.from(new Set(products.map((p) => p.category).filter(Boolean))) as string[];
-    if (fromData.length === 0) return ['All', 'Steel & Piping', 'Electrical', 'Plumbing', 'Roofing'];
+    if (fromData.length === 0) return ['All', 'Electronics & IT', 'Office Furniture', 'Industrial'];
     return ['All', ...fromData.sort()];
   }, [products]);
 
@@ -183,8 +191,6 @@ const OrdersInner: React.FC = () => {
     });
   }, [products, search, category]);
 
-  // Canonical lifecycle statuses (filtering is server-side, so the dropdown
-  // must not depend on which statuses happen to be on the current page).
   const availableStatuses = ['All', 'Pending', 'Processing', 'Confirmed', 'Shipped', 'In Transit', 'Out for Delivery', 'Delivered', 'Cancelled'];
 
   const ordersTotalValue = useMemo(() => orders.reduce((s, o) => s + o.totalAmount, 0), [orders]);
@@ -208,6 +214,26 @@ const OrdersInner: React.FC = () => {
   const handleAdd = (product: PortalCatalogItem) => {
     addItem(product);
     addToast('success', `${product.name} added to cart`);
+  };
+
+  const handleReorder = (order: OrderRow) => {
+    if (!order.items.length) {
+      addToast('error', 'This order has no line items to reorder');
+      return;
+    }
+    order.items.forEach((it) => {
+      addItem(
+        {
+          id: `reorder-${order.id}-${it.name}`,
+          name: it.name,
+          unitPrice: it.unitPrice,
+          price: it.unitPrice,
+        } as PortalCatalogItem,
+        it.quantity
+      );
+    });
+    addToast('success', `Items from ${order.orderNumber} added to your order`);
+    setTab('catalog');
   };
 
   const handleSubmitOrder = async () => {
@@ -243,7 +269,7 @@ const OrdersInner: React.FC = () => {
   const historyLoading = history.loading && page === 1;
 
   return (
-    <div style={{ fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#2D3748' }}>
+    <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B', paddingBottom: cartItems.length > 0 ? 90 : 16 }}>
       <style>{`
         @keyframes cpoSlideUp { from { transform: translateY(100%); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
         @keyframes cpoFadeIn { from { opacity: 0 } to { opacity: 1 } }
@@ -253,19 +279,35 @@ const OrdersInner: React.FC = () => {
         .cpo-scroll { scrollbar-width: none; -ms-overflow-style: none }
       `}</style>
 
-      <PortalPageHeader
-        title="Orders"
-        subtitle={tab === 'catalog' ? 'Browse the material catalog and place an order' : 'Track your order history and deliveries'}
-        icon={ShoppingCart}
-        action={tab === 'history'
-          ? { label: 'New Order', onClick: () => setTab('catalog'), icon: Plus }
-          : { label: 'Order History', onClick: () => setTab('history'), icon: Receipt }}
-      />
+      {/* ── Top Bar Header ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16,
+        margin: '4px 16px 18px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+            width: 50, height: 50, borderRadius: 15,
+            background: 'linear-gradient(160deg, #4A76B5 0%, #0F2C59 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 8px 20px -8px rgba(15,44,89,0.6), inset 0 1px 0 rgba(255,255,255,0.25)',
+          }}>
+            <Package size={24} style={{ color: '#fff' }} />
+          </div>
+          <div>
+            <h1 style={{ fontSize: 21, fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
+              Orders
+            </h1>
+            <p style={{ fontSize: 13, fontWeight: 500, color: '#64748B', margin: '3px 0 0', lineHeight: 1.4 }}>
+              Billing, payments, and outstanding balances
+            </p>
+          </div>
+        </div>
+      </div>
 
-      {/* ── Section tabs ── */}
-      <div style={{ padding: '0 12px' }} className="sm:px-5">
+      {/* ── Tabs ── */}
+      <div style={{ padding: '0 16px' }}>
         <div style={{ display: 'flex', gap: 6, padding: '6px 0', borderBottom: '1px solid #E9EDF3', marginBottom: 4 }}>
-          {([['catalog', 'Product Catalog', Package], ['history', 'Order History', Receipt]] as [Tab, string, React.ElementType][]).map(([key, label, Icon]) => {
+          {([['catalog', 'Product Catalog', Package], ['history', `Order History (${total})`, Receipt]] as [Tab, string, React.ElementType][]).map(([key, label, Icon]) => {
             const active = tab === key;
             return (
               <button
@@ -273,10 +315,10 @@ const OrdersInner: React.FC = () => {
                 onClick={() => { setTab(key); setSearch(''); setFilter('All'); setCategory('All'); }}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  padding: '8px 4px', borderRadius: 0, border: 'none', borderBottom: active ? '2px solid #0F2C59' : '2px solid transparent', cursor: 'pointer',
                   fontFamily: F, fontSize: 13, fontWeight: 600,
-                  background: active ? '#ECFDF5' : 'transparent',
-                  color: active ? '#0D5047' : '#718096',
+                  background: 'transparent',
+                  color: active ? '#0F2C59' : '#718096',
                   transition: 'all .15s ease', lineHeight: 1.4,
                 }}
               >
@@ -290,23 +332,21 @@ const OrdersInner: React.FC = () => {
 
       {/* ═══════════════ PRODUCT CATALOG TAB ═══════════════ */}
       {tab === 'catalog' && (
-        <div style={{ padding: '0 12px' }} className="sm:px-5">
+        <div style={{ padding: '0 16px' }}>
           {catalog.error && <ErrorBanner message={catalog.error} onDismiss={catalog.clearError} onRetry={catalog.refresh} />}
 
           {/* Search */}
-          <div style={{ display: 'flex', gap: 8, margin: '14px 0 10px' }}>
-            <div style={{ position: 'relative', flex: '1 1 240px' }}>
-              <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#8A94A6', pointerEvents: 'none', zIndex: 1 }} />
-              <PortalInput
-                label=""
-                placeholder="Search by product name, SKU or specification..."
-                value={search}
-                onChange={setSearch}
-                onFocus={() => {}}
-                onBlur={() => {}}
-                style={{ paddingLeft: 36, height: 44, fontSize: 13, fontFamily: F, padding: '8px 12px 8px 36px', border: '1px solid #E9EDF3', borderRadius: 10, background: '#fff', color: '#1A202C', outline: 'none', width: '100%' }}
-              />
-            </div>
+          <div style={{ position: 'relative', margin: '14px 0 10px' }}>
+            <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A94A6', pointerEvents: 'none', zIndex: 1 }} />
+            <PortalInput
+              label=""
+              placeholder="Search catalog by SKU, name, or material..."
+              value={search}
+              onChange={setSearch}
+              onFocus={() => {}}
+              onBlur={() => {}}
+              style={{ paddingLeft: 40, height: 44, fontSize: 13, fontFamily: F, padding: '8px 12px 8px 40px', border: '1px solid #E9EDF3', borderRadius: 10, background: '#fff', color: '#1A202C', outline: 'none', width: '100%' }}
+            />
           </div>
 
           {/* Category chips — horizontally scrollable */}
@@ -320,7 +360,7 @@ const OrdersInner: React.FC = () => {
                   style={{
                     flexShrink: 0, fontFamily: F, fontSize: 12, fontWeight: 600,
                     padding: '7px 14px', borderRadius: 9, border: active ? '1px solid transparent' : '1px solid #E9EDF3',
-                    background: active ? '#008A4C' : '#fff',
+                    background: active ? '#0F2C59' : '#fff',
                     color: active ? '#fff' : '#718096', cursor: 'pointer',
                     transition: 'all .15s ease', lineHeight: 1.4,
                   }}
@@ -331,7 +371,7 @@ const OrdersInner: React.FC = () => {
             })}
           </div>
 
-          {/* Product grid */}
+          {/* Product list */}
           {catalogLoading ? (
             <div style={{ padding: 8 }}><PortalLoadingSkeleton type="card" count={6} /></div>
           ) : filteredProducts.length === 0 ? (
@@ -341,95 +381,85 @@ const OrdersInner: React.FC = () => {
               description={search || category !== 'All' ? 'Try adjusting your search or category filters.' : 'No products available in the catalog yet.'}
             />
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12, paddingBottom: cartItems.length > 0 ? 110 : 32 }}>
-              {filteredProducts.map((product) => {
+            <div>
+              {filteredProducts.map((product, index) => {
                 const inCart = cartItems.find((i) => i.product.id === product.id);
                 const price = Number(product.unitPrice ?? product.price ?? 0);
                 const promo = promoForProduct(product);
                 const shownPrice = promoPrice(price, promo);
                 const stock = Number(product.quantity ?? 0);
                 const inStock = stock > 0;
+                const isLast = index === filteredProducts.length - 1;
+
                 return (
                   <div
                     key={product.id}
                     style={{
-                      background: '#fff', borderRadius: 14, border: inCart ? '2px solid #008A4C' : '1px solid #E9EDF3',
-                      padding: '16px', transition: 'all .15s ease', display: 'flex', flexDirection: 'column',
-                      boxShadow: inCart ? '0 4px 12px rgba(0,138,76,0.12)' : '0 1px 3px rgba(0,0,0,.04)',
+                      paddingTop: 10,
+                      paddingBottom: 10,
+                      paddingLeft: 12,
+                      paddingRight: 12,
+                      borderBottom: isLast ? 'none' : '1px solid #E2E8F0',
+                      borderLeft: '3px solid transparent',
+                      borderRadius: 8,
+                      background: '#fff',
+                      transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#F8FAFC';
+                      e.currentTarget.style.borderLeftColor = '#0F2C59';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#fff';
+                      e.currentTarget.style.borderLeftColor = 'transparent';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 10, background: '#ECFDF5', color: '#008A4C', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Package size={18} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3 }}>{product.name}</div>
+                          <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                            SKU: {product.sku || '—'} {product.category ? `| Category: ${product.category}` : ''}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
+                            {formatK(shownPrice)}
+                          </div>
+                          {product.unit && <div style={{ fontSize: 11, color: '#64748B' }}>/ {product.unit}</div>}
+                        </div>
                       </div>
-                      {product.category && (
-                        <span style={{ fontSize: 10, fontWeight: 600, color: '#0f544c', background: '#ECFDF5', border: '1px solid #d3ece9', padding: '2px 8px', borderRadius: 6 }}>
-                          {product.category}
-                        </span>
-                      )}
-                    </div>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: '#1A202C', margin: 0, lineHeight: 1.3 }}>{product.name}</h3>
-                    {product.sku && <p style={{ fontSize: 11, color: '#8A94A6', margin: '2px 0 6px', fontFamily: "'JetBrains Mono', monospace" }}>SKU: {product.sku}</p>}
 
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '6px 0 4px' }}>
-                      <span style={{ fontSize: 17, fontWeight: 800, color: '#047857', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
-                        {formatK(shownPrice)}
-                      </span>
-                      {product.unit && <span style={{ fontSize: 11, color: '#8A94A6' }}>/{product.unit}</span>}
-                      {promo && shownPrice < price && (
-                        <span style={{ fontSize: 11, color: '#A0AEC0', textDecoration: 'line-through', fontFamily: "'JetBrains Mono', monospace" }}>{formatK(price)}</span>
-                      )}
-                    </div>
-
-                    {promo && shownPrice < price && (
-                      <span style={{ alignSelf: 'flex-start', fontSize: 9.5, fontWeight: 800, letterSpacing: 0.04, textTransform: 'uppercase', color: '#047857', background: '#ECFDF5', border: '1px solid #a7f3d0', padding: '2px 7px', borderRadius: 6, marginBottom: 6 }}>
-                        🎉 {promo.name || 'Portal Offer'}
-                      </span>
-                    )}
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
-                      {inStock ? (
-                        <>
-                          <span style={{ width: 8, height: 8, borderRadius: 4, background: '#22C55E', boxShadow: '0 0 0 3px rgba(34,197,94,.15)' }} />
-                          <span style={{ fontSize: 11, fontWeight: 600, color: '#047857' }}>In Stock</span>
-                          <span style={{ fontSize: 10, color: '#8A94A6' }}>· {stock} unit{stock === 1 ? '' : 's'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ width: 8, height: 8, borderRadius: 4, background: '#F59E0B' }} />
-                          <span style={{ fontSize: 11, fontWeight: 600, color: '#B45309' }}>Low Stock</span>
-                        </>
-                      )}
-                    </div>
-
-                    {inCart ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'auto' }}>
-                        <button onClick={() => updateQuantity(product.id, inCart.quantity - 1)} aria-label="Decrease quantity" style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A5568' }}>
-                          <Minus size={12} />
-                        </button>
-                        <span style={{ fontSize: 13, fontWeight: 600, minWidth: 20, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{inCart.quantity}</span>
-                        <button onClick={() => updateQuantity(product.id, inCart.quantity + 1)} aria-label="Increase quantity" style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A5568' }}>
-                          <Plus size={12} />
-                        </button>
-                        <button onClick={() => removeItem(product.id)} aria-label="Remove from cart" style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #FECACA', background: '#FEF2F2', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#DC2626', marginLeft: 2 }}>
-                          <Trash2 size={12} />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {inStock ? (
+                            <>
+                              <span style={{ width: 8, height: 8, borderRadius: 4, background: '#22C55E', boxShadow: '0 0 0 3px rgba(34,197,94,.15)' }} />
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#047857' }}>In Stock</span>
+                              <span style={{ fontSize: 10, color: '#64748B' }}>· {stock} unit{stock === 1 ? '' : 's'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span style={{ width: 8, height: 8, borderRadius: 4, background: '#F59E0B' }} />
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#B45309' }}>Low Stock</span>
+                            </>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleAdd(product)}
+                          disabled={!inStock}
+                          style={{
+                            padding: '8px 14px', borderRadius: 9, border: 'none',
+                            background: !inStock ? '#E2E8F0' : TEAL_GRADIENT,
+                            color: !inStock ? '#94A3B8' : '#fff', fontSize: 12, fontWeight: 700, cursor: !inStock ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            boxShadow: inStock ? '0 4px 14px -4px rgba(15,84,76,0.55)' : 'none', transition: 'all .15s ease',
+                          }}
+                        >
+                          <ShoppingCart size={13} /> Add to Order
                         </button>
                       </div>
-                    ) : (
-                      <button
-                        onClick={() => handleAdd(product)}
-                        disabled={!inStock}
-                        style={{
-                          marginTop: 'auto', padding: '7px 14px', borderRadius: 8, border: 'none',
-                          background: !inStock ? '#E2E8F0' : 'linear-gradient(135deg, #00A35C, #008A4C)',
-                          color: !inStock ? '#94A3B8' : '#fff', fontSize: 12, fontWeight: 600, cursor: !inStock ? 'not-allowed' : 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                          boxShadow: inStock ? '0 4px 10px -4px rgba(0,138,76,.5)' : 'none', transition: 'all .15s ease',
-                        }}
-                      >
-                        <Plus size={13} /> Add to Cart
-                      </button>
-                    )}
+                    </div>
                   </div>
                 );
               })}
@@ -440,29 +470,12 @@ const OrdersInner: React.FC = () => {
 
       {/* ═══════════════ ORDER HISTORY TAB ═══════════════ */}
       {tab === 'history' && (
-        <div style={{ padding: '0 12px' }} className="sm:px-5">
-          {/* Summary stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, margin: '14px 0 4px' }}>
-            <div style={{ background: 'linear-gradient(135deg, #1f857712, #4ed3c708)', borderRadius: 12, border: '1px solid #E9EDF3', padding: '12px 14px' }}>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#0f544c', textTransform: 'uppercase', letterSpacing: 0.08 }}>Total Orders</p>
-              <p style={{ margin: '4px 0 0', fontSize: 20, fontWeight: 700, color: '#1A202C', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{total}</p>
-            </div>
-            <div style={{ background: 'linear-gradient(135deg, #d99a3f12, #d99a3f08)', borderRadius: 12, border: '1px solid #E9EDF3', padding: '12px 14px' }}>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#b97e2b', textTransform: 'uppercase', letterSpacing: 0.08 }}>Total Value</p>
-              <p style={{ margin: '4px 0 0', fontSize: 20, fontWeight: 700, color: '#1A202C', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{formatK(ordersTotalValue)}</p>
-            </div>
-            <div style={{ background: 'linear-gradient(135deg, #6366f112, #6366f108)', borderRadius: 12, border: '1px solid #E9EDF3', padding: '12px 14px' }}>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: 0.08 }}>In Progress</p>
-              <p style={{ margin: '4px 0 0', fontSize: 20, fontWeight: 700, color: '#1A202C', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{pendingCount}</p>
-            </div>
-          </div>
-
+        <div style={{ padding: '0 16px' }}>
           {history.error && <ErrorBanner message={history.error} onDismiss={history.clearError} onRetry={history.refresh} />}
 
-          {/* Search + status filter */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0 8px' }}>
             <div style={{ position: 'relative', flex: '1 1 240px' }}>
-              <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#8A94A6', pointerEvents: 'none', zIndex: 1 }} />
+              <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A94A6', pointerEvents: 'none', zIndex: 1 }} />
               <PortalInput
                 label=""
                 placeholder="Search orders by reference..."
@@ -470,7 +483,7 @@ const OrdersInner: React.FC = () => {
                 onChange={(v) => { setPage(1); setSearch(v); }}
                 onFocus={() => {}}
                 onBlur={() => {}}
-                style={{ paddingLeft: 36, height: 44, fontSize: 13, fontFamily: F, padding: '8px 12px 8px 36px', border: '1px solid #E9EDF3', borderRadius: 10, background: '#fff', color: '#1A202C', outline: 'none', width: '100%' }}
+                style={{ paddingLeft: 40, height: 44, fontSize: 13, fontFamily: F, padding: '8px 12px 8px 40px', border: '1px solid #E9EDF3', borderRadius: 10, background: '#fff', color: '#1A202C', outline: 'none', width: '100%' }}
               />
             </div>
             <select
@@ -489,124 +502,81 @@ const OrdersInner: React.FC = () => {
             </select>
           </div>
 
-          {/* Order cards */}
           {historyLoading ? (
             <div style={{ padding: 8 }}><PortalLoadingSkeleton type="table" count={5} /></div>
           ) : orders.length === 0 ? (
             <EmptyState icon={<ShoppingCart size={28} />} title="No orders yet" description={filter !== 'All' ? `No orders with status "${filter}".` : 'Your order history will appear here once you place your first order.'} />
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 28 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {orders.map((order) => {
                 const meta = chipMeta(order.status);
-                const isOpen = expanded === order.id;
                 const date = order.orderDate ? new Date(order.orderDate) : null;
-                const hasTracking = !!(order.trackingNumber || order.carrier || order.currentLocation);
                 return (
-                  <div key={order.id} style={{ background: '#fff', borderRadius: 14, border: '1px solid #E9EDF3', boxShadow: '0 1px 3px rgba(0,0,0,.04)', overflow: 'hidden', transition: 'all .15s ease' }}>
-                    <button
-                      onClick={() => setExpanded(isOpen ? null : order.id)}
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: F }}
-                    >
-                      <div style={{ width: 40, height: 40, borderRadius: 12, background: meta.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <span style={{ fontSize: 17 }}>{meta.emoji}</span>
+                  <div
+                    key={order.id}
+                    style={{
+                      padding: '10px 12px',
+                      borderBottom: '1px solid #E2E8F0',
+                      borderLeft: '3px solid transparent',
+                      borderRadius: 8,
+                      background: '#fff',
+                      transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#F8FAFC';
+                      e.currentTarget.style.borderLeftColor = '#0F2C59';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#fff';
+                      e.currentTarget.style.borderLeftColor = 'transparent';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: '#1A202C', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>{order.orderNumber}</div>
+                        <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Date: {date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div>
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1A202C', fontFamily: "'JetBrains Mono', monospace" }}>{order.orderNumber}</div>
-                        <div style={{ fontSize: 10.5, color: '#8A94A6', marginTop: 1 }}>
-                          {date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                          {order.items.length > 0 ? ` · ${order.items.reduce((s, i) => s + i.quantity, 0)} item(s)` : ''}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: '#1A202C', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{formatK(order.totalAmount)}</div>
-                          <div style={{ fontSize: 9.5, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.05 }}>Total</div>
-                        </div>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 7, background: meta.bg, color: meta.color, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          {meta.emoji} {meta.label}
-                        </span>
-                        <ChevronDown size={16} style={{ color: '#8A94A6', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }} />
-                      </div>
-                    </button>
-
-                    {isOpen && (
-                      <div style={{ borderTop: '1px solid #F1F5F9', background: '#FBFDFE', padding: '14px 16px', animation: 'cpoFadeIn .2s ease' }}>
-                        {/* Delivery destination */}
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
-                          <MapPin size={14} style={{ color: '#8A94A6', marginTop: 1, flexShrink: 0 }} />
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.06 }}>Delivery Destination</div>
-                            <div style={{ fontSize: 12.5, color: '#1A202C', marginTop: 1 }}>{order.shippingAddress || 'Address to be confirmed'}</div>
-                          </div>
-                        </div>
-
-                        {/* Line items */}
-                        {order.items.length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 6 }}>Line Items</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                              {order.items.map((it, idx) => (
-                                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', background: '#fff', border: '1px solid #E9EDF3', borderRadius: 8 }}>
-                                  <span style={{ fontSize: 12, color: '#1A202C', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</span>
-                                  <span style={{ fontSize: 11, color: '#8A94A6', whiteSpace: 'nowrap' }}>×{it.quantity}</span>
-                                  <span style={{ fontSize: 12, fontWeight: 600, color: '#047857', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>{formatK(it.lineTotal)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Tracking */}
-                        {hasTracking && (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 6 }}>Tracking</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-                              {order.trackingNumber && (
-                                <div style={{ padding: '8px 10px', background: '#fff', border: '1px solid #E9EDF3', borderRadius: 8 }}>
-                                  <div style={{ fontSize: 9.5, color: '#8A94A6', textTransform: 'uppercase' }}>Tracking No.</div>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1A202C', fontFamily: "'JetBrains Mono', monospace" }}>{order.trackingNumber}</div>
-                                </div>
-                              )}
-                              {order.carrier && (
-                                <div style={{ padding: '8px 10px', background: '#fff', border: '1px solid #E9EDF3', borderRadius: 8 }}>
-                                  <div style={{ fontSize: 9.5, color: '#8A94A6', textTransform: 'uppercase' }}>Carrier</div>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1A202C' }}>{order.carrier}</div>
-                                </div>
-                              )}
-                              {order.currentLocation && (
-                                <div style={{ padding: '8px 10px', background: '#fff', border: '1px solid #E9EDF3', borderRadius: 8 }}>
-                                  <div style={{ fontSize: 9.5, color: '#8A94A6', textTransform: 'uppercase' }}>Current Location</div>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1A202C' }}>{order.currentLocation}</div>
-                                </div>
-                              )}
-                              {order.estimatedDelivery && (
-                                <div style={{ padding: '8px 10px', background: '#fff', border: '1px solid #E9EDF3', borderRadius: 8 }}>
-                                  <div style={{ fontSize: 9.5, color: '#8A94A6', textTransform: 'uppercase' }}>Est. Delivery</div>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1A202C' }}>
-                                    {new Date(order.estimatedDelivery).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); navigate('/portal/shipments'); }}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1px solid #4F46E5', background: '#EEF2FF', color: '#4338CA', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: F }}
-                          >
-                            <Truck size={13} /> Track Shipment
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); navigate(`/portal/orders/${order.id}`); }}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1px solid #E9EDF3', background: '#fff', color: '#4A5568', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: F }}
-                          >
-                            View Details <ChevronRight size={13} />
-                          </button>
-                        </div>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center',
+                        padding: '3px 10px', borderRadius: 6,
+                        border: `1px solid ${meta.color}40`,
+                        color: meta.color,
+                        fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {meta.label}
+                      </span>
+                    </div>
+                    {order.items.length > 0 && (
+                      <div style={{ fontSize: 13.5, color: '#374151', lineHeight: 1.5, marginBottom: 10, display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
+                        {order.items.map((it, idx) => {
+                          const isTop = topSellingNames.has(it.name);
+                          return (
+                            <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span>{it.quantity}x {it.name}</span>
+                              {isTop && <Star size={13} color="#D97706" fill="#D97706" style={{ flexShrink: 0 }} />}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1A202C', fontFamily: F, fontVariantNumeric: 'tabular-nums' }}>Total: {formatK(order.totalAmount)}</div>
+                      <button
+                        onClick={() => handleReorder(order)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '7px 16px', borderRadius: 9999,
+                          border: '1px solid #D1D5DB',
+                          background: '#fff',
+                          color: '#374151',
+                          fontSize: 12, fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <RefreshCw size={13} /> Reorder
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -644,15 +614,15 @@ const OrdersInner: React.FC = () => {
         }}>
           <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(135deg, #00A35C, #008A4C)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', animation: 'cpoPulse 2s ease-in-out infinite' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 12, background: '#0F2C59', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', animation: 'cpoPulse 2s ease-in-out infinite' }}>
                 <ShoppingCart size={17} />
                 <span style={{ position: 'absolute', top: -5, right: -5, minWidth: 17, height: 17, borderRadius: 9, background: '#E53E3E', color: '#fff', fontSize: 9.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: '1.5px solid #fff' }}>
                   {itemCount}
                 </span>
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#1A202C' }}>{itemCount} item{itemCount !== 1 ? 's' : ''}</div>
-                <div style={{ fontSize: 12, color: '#8A94A6', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>Subtotal {formatK(subtotal)}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1A202C' }}>{itemCount} item{itemCount !== 1 ? 's' : ''} in cart</div>
+                <div style={{ fontSize: 12, color: '#8A94A6', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>Total: {formatK(cartTotal)}</div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -664,17 +634,19 @@ const OrdersInner: React.FC = () => {
               </button>
               <button
                 onClick={() => setReviewOpen(true)}
-                style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg, #00A35C, #008A4C)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px -4px rgba(0,138,76,.55)', fontFamily: F }}
+                style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: '#0F2C59', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px -4px rgba(15,44,89,.55)', fontFamily: F }}
               >
-                Review Cart <ChevronRight size={14} />
+                View Cart & Checkout <ChevronRight size={14} />
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Review Cart Modal (New Order Bottom Sheet) ── */}
-      {reviewOpen && (
+      {/* ── Review Cart Modal — portaled to document.body so the footer
+          "Confirm & Submit Order" button always stacks above the fixed
+          MobileBottomNav (z-index 50), which previously hid it. ── */}
+      {reviewOpen && createPortal(
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(2,8,23,.55)', backdropFilter: 'blur(2px)', zIndex: 90, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'cpoFadeIn .18s ease' }}
           onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) setReviewOpen(false); }}
@@ -701,7 +673,6 @@ const OrdersInner: React.FC = () => {
               </button>
             </div>
 
-            {/* Itemized list with + / - */}
             <div style={{ padding: '4px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {cartItems.map((i) => {
                 const unitPrice = Number(i.product.unitPrice ?? i.product.price ?? 0);
@@ -731,7 +702,6 @@ const OrdersInner: React.FC = () => {
               })}
             </div>
 
-            {/* Delivery address */}
             <div style={{ padding: '14px 20px 0' }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: '#4A5568', textTransform: 'uppercase', letterSpacing: 0.05, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
                 <MapPin size={13} /> Delivery Address
@@ -749,7 +719,6 @@ const OrdersInner: React.FC = () => {
               />
             </div>
 
-            {/* Totals */}
             <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: '#4A5568' }}>Subtotal</span><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{formatK(subtotal)}</span></div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: '#4A5568' }}>Estimated VAT (16%)</span><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{formatK(taxEstimate)}</span></div>
@@ -763,17 +732,18 @@ const OrdersInner: React.FC = () => {
                 disabled={submitting}
                 style={{
                   width: '100%', padding: '12px 16px', borderRadius: 11, border: 'none',
-                  background: submitting ? '#9CA3AF' : 'linear-gradient(135deg, #00A35C, #008A4C)',
+                  background: submitting ? '#9CA3AF' : '#0F2C59',
                   color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                  boxShadow: submitting ? 'none' : '0 6px 16px -6px rgba(0,138,76,.6)', fontFamily: F,
+                  boxShadow: submitting ? 'none' : '0 6px 16px -6px rgba(15,44,89,.6)', fontFamily: F,
                 }}
               >
                 {submitting ? (<><Loader2 size={15} className="animate-spin" /> Submitting...</>) : (<><CheckCircle2 size={16} /> Confirm & Submit Order</>)}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

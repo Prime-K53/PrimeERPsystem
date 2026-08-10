@@ -42,10 +42,11 @@ const PortalButton: React.FC<Props> = ({
     position: 'relative',
   };
 
+  // Compact paddings per portal spec: 6–8px vertical, 10–14px horizontal.
   const sizeStyles: Record<string, React.CSSProperties> = {
-    sm: { padding: '6px 14px', fontSize: 12, height: 36, minHeight: 36 },
-    md: { padding: '9px 18px', fontSize: 13, height: 42, minHeight: 42 },
-    lg: { padding: '12px 24px', fontSize: 14, height: 48, minHeight: 48 },
+    sm: { padding: '6px 12px', fontSize: 12, height: 32, minHeight: 32 },
+    md: { padding: '8px 14px', fontSize: 13, height: 38, minHeight: 38 },
+    lg: { padding: '10px 16px', fontSize: 14, height: 44, minHeight: 44 },
   };
 
   const variantStyles: Record<ButtonVariant, React.CSSProperties> = {

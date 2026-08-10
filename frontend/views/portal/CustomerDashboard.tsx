@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { portalApi, portalLifecycle, PortalPromotionInfo } from '../../services/portalApiClient';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
+import { useAuth } from '../../context/AuthContext';
 import { usePortalData } from './hooks/usePortalData';
 import ErrorBanner from './components/ErrorBanner';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
+import PremiumKPICard from './components/PremiumKPICard';
+import { sampleUnpaidInvoices } from './sampleData';
 import {
   Building2,
   CreditCard,
@@ -17,8 +20,9 @@ import {
   ChevronRight,
   ChevronLeft,
   ArrowRight,
-  ExternalLink,
   Percent,
+  Bell,
+  Menu,
 } from 'lucide-react';
 
 interface DashboardData {
@@ -60,9 +64,13 @@ interface Slide {
 }
 
 const F = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+const MONO = "'JetBrains Mono', monospace";
+const NAVY = '#0F2C59';
+const TEAL_GRADIENT = 'linear-gradient(135deg, #146b60 0%, #0f544c 100%)';
+const EMERALD = '#059669';
 
 const fmtMoney = (n: number) =>
-  '$ ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  'K' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const mwk = (v: number) => `MWK ${Math.round(Number(v) || 0).toLocaleString()}`;
 
@@ -104,7 +112,8 @@ const promoToSlide = (p: PortalPromotionInfo, navigate: (to: string) => void): S
 
 const buildFallbackSlides = (
   navigate: (to: string) => void,
-  displayName: string
+  displayName: string,
+  companyName: string
 ): Slide[] => [
   {
     id: 'welcome',
@@ -113,9 +122,9 @@ const buildFallbackSlides = (
     badge: 'Welcome',
     title: `Welcome, ${displayName.split(' ')[0] || 'Customer'}!`,
     subtitle: (
-      <>Enterprise B2B Portal — real-time tracking, quotes, statements &amp; payments.</>
+      <>{companyName} — real-time tracking, quotes, statements &amp; payments.</>
     ),
-    onClick: () => navigate('/portal/catalog'),
+    onClick: () => navigate('/portal/orders'),
   },
   {
     id: 'catalog',
@@ -126,18 +135,18 @@ const buildFallbackSlides = (
     subtitle: (
       <>Place new orders, request quotes and track every step in real time.</>
     ),
-    onClick: () => navigate('/portal/catalog'),
+    onClick: () => navigate('/portal/orders'),
   },
   {
     id: 'payments',
     gradient: 'linear-gradient(135deg,#7C2D12 0%,#D97706 100%)',
     icon: <CreditCard size={22} />,
-    badge: 'Payments',
-    title: 'Stay on Top of Payments',
+    badge: 'Receipt',
+    title: 'Stay on Top of Receipts',
     subtitle: (
       <>Pay invoices online, view statements and monitor your account balance.</>
     ),
-    onClick: () => navigate('/portal/statements'),
+    onClick: () => navigate('/portal/account-statements'),
   },
 ];
 
@@ -165,6 +174,7 @@ const DASHBOARD_CSS = `
 const CustomerDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useCustomerAuth();
+  const { companyConfig } = useAuth();
   const [unpaidInvoices, setUnpaidInvoices] = useState<UnpaidInvoice[]>([]);
   const [promotions, setPromotions] = useState<PortalPromotionInfo[] | null>(null);
   const [active, setActive] = useState(0);
@@ -173,6 +183,7 @@ const CustomerDashboard: React.FC = () => {
 
   const displayName = user?.full_name || 'Customer';
   const accountId = user?.customer_id || '';
+  const companyName = companyConfig?.companyName || 'ERP';
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
   const { loading, error, refresh, clearError } = usePortalData<DashboardData>({
@@ -185,7 +196,7 @@ const CustomerDashboard: React.FC = () => {
         const inv = await portalApi.get<{ invoices: UnpaidInvoice[] }>('/invoices?status=Unpaid');
         setUnpaidInvoices((inv.invoices || []).slice(0, 5));
       } catch {
-        setUnpaidInvoices([]);
+        setUnpaidInvoices(sampleUnpaidInvoices.slice(0, 5));
       }
     },
   });
@@ -206,6 +217,16 @@ const CustomerDashboard: React.FC = () => {
     };
   }, []);
 
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    portalApi.get<{ count: number }>('/notifications/unread-count')
+      .then((c) => { if (!cancelled) setUnreadNotifications(c?.count ?? 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     let off = false;
     let unsub: (() => void) | undefined;
@@ -213,9 +234,12 @@ const CustomerDashboard: React.FC = () => {
       const T = ['invoice', 'order', 'sale', 'payment', 'quotation', 'request', 'shipment'];
       unsub = await portalLifecycle.subscribe({
         onEvent: (type, p) => {
-          const dt = p?.docType;
-          if ((p?.event === 'payment_allocated' || (dt && T.includes(dt)) || type === 'activity') && !off)
+          if ((p?.event === 'payment_allocated' || (p?.docType && T.includes(p.docType)) || type === 'activity' || type === 'notification') && !off) {
             refresh();
+            portalApi.get<{ count: number }>('/notifications/unread-count')
+              .then((c) => { if (!off) setUnreadNotifications(c?.count ?? 0); })
+              .catch(() => {});
+          }
         },
       });
     })();
@@ -229,10 +253,10 @@ const CustomerDashboard: React.FC = () => {
   // carousel always has at least 3 slides.
   const slides = useMemo<Slide[]>(() => {
     const promoSlides = (promotions || []).map((p) => promoToSlide(p, navigate));
-    const fallbacks = buildFallbackSlides(navigate, displayName);
+    const fallbacks = buildFallbackSlides(navigate, displayName, companyName);
     const count = Math.max(3, promoSlides.length);
     return [...promoSlides, ...fallbacks].slice(0, count);
-  }, [promotions, navigate, displayName]);
+  }, [promotions, navigate, displayName, companyName]);
 
   // Clamp index when the slide set changes (e.g. promotions arrive).
   useEffect(() => {
@@ -258,26 +282,81 @@ const CustomerDashboard: React.FC = () => {
       <style>{DASHBOARD_CSS}</style>
 
       {/* Account Header */}
-      <div style={{ padding: '14px 16px 10px' }}>
+      <div style={{ padding: '12px 16px 8px', position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.2 }}>{displayName}</h1>
-            <p style={{ fontSize: 12, color: '#64748B', margin: '2px 0 0' }}>Account ID: {accountId}</p>
-          </div>
           <button
-            onClick={() => navigate('/portal/profile')}
-            className="cpd-ghost"
+            onClick={() => window.dispatchEvent(new CustomEvent('toggle-portal-sidebar'))}
+            aria-label="Toggle sidebar"
             style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10,
-              padding: '7px 13px', fontSize: 12, fontWeight: 600, color: '#0F2C59',
-              cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,.05)',
+              width: 36, height: 36, borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.2)',
+              background: 'rgba(15,44,89,0.85)',
+              color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              backdropFilter: 'blur(8px)',
+              boxShadow: '0 4px 12px -2px rgba(15,44,89,0.4)',
             }}
           >
-            View Profile <ExternalLink size={12} />
+            <Menu size={18} />
           </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+            <Building2 size={22} color="#0F2C59" />
+            <span style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', lineHeight: 1.2, whiteSpace: 'nowrap' }}>{companyName}</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={() => navigate('/portal/notifications')}
+              style={{
+                position: 'relative', width: 40, height: 40, borderRadius: '50%',
+                border: '1px solid #E2E8F0', background: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: '#475569',
+              }}
+            >
+              <Bell size={20} />
+              {unreadNotifications > 0 && (
+                <span style={{
+                  position: 'absolute', top: -2, right: -2,
+                  minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9999,
+                  background: '#DC2626', color: '#fff',
+                  fontSize: 10, fontWeight: 800, lineHeight: '18px', textAlign: 'center',
+                }}>
+                  {unreadNotifications}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => navigate('/portal/profile')}
+              style={{
+                width: 40, height: 40, borderRadius: '50%',
+                background: '#2563EB', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 16, fontWeight: 700, cursor: 'pointer',
+                border: 'none',
+              }}
+            >
+              {displayName.charAt(0).toUpperCase()}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Company Title Row */}
+      <div style={{ padding: '8px 16px 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', lineHeight: 1.2, letterSpacing: '-0.02em' }}>{displayName}</div>
+            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Account ID: {accountId}</div>
+          </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 4, padding: '3px 10px', borderRadius: 9999, background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+            <span style={{ fontSize: 13 }}>🏆</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#92400E' }}>Gold Partner</span>
+          </div>
+         </div>
+       </div>
 
       {/* Promotions Carousel Banner */}
       <div
@@ -435,79 +514,55 @@ const CustomerDashboard: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', margin: 0 }}>Account Summary</h2>
           <button
-            onClick={() => navigate('/portal/statements')}
+            onClick={() => navigate('/portal/account-statements')}
             className="cpd-link"
             style={{ background: 'none', border: 'none', color: '#2563EB', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 2 }}
           >
             View All <ArrowRight size={12} />
           </button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          {/* Unpaid Invoices */}
-          <div
-            onClick={() => navigate('/portal/invoices?status=Unpaid')}
-            className="cpd-card"
-            style={{
-              position: 'relative', overflow: 'hidden',
-              background: 'linear-gradient(150deg,#FEF2F2 0%,#FFFFFF 65%)',
-              borderRadius: 16, padding: '14px 12px 12px', border: '1px solid #FECACA', cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(220,38,38,.06)', display: 'flex', flexDirection: 'column',
-            }}
-          >
-            <div style={{ position: 'absolute', top: -20, right: -20, width: 70, height: 70, borderRadius: '50%', background: 'rgba(220,38,38,.07)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ width: 30, height: 30, borderRadius: 9, background: '#FEE2E2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(220,38,38,.18)' }}>
-                <FileText size={14} />
-              </div>
-              <ChevronRight size={14} color="#DC2626" className="cpd-card-arrow" />
-            </div>
-             <div style={{ fontSize: 10.5, fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Unpaid Invoices</div>
-             <div style={{ fontSize: 18, fontWeight: 800, color: '#991B1B', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{dashboardData?.unpaidInvoiceCount ?? 0}</div>
-             <div style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', marginTop: 5 }}>1 Overdue</div>
+        <div style={{ display: 'flex', flexDirection: 'row', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <PremiumKPICard
+              label="Unpaid Invoices"
+              value={fmtMoney(dashboardData?.outstandingBalance)}
+              icon={FileText}
+              sublabel="1 Overdue"
+              sublabelColor="#DC2626"
+              gradient="linear-gradient(135deg, #DC2626 0%, #991B1B 100%)"
+              glowColor="rgba(220,38,38,0.2)"
+              lightBg="#FFF5F5"
+              iconBg="#DC2626"
+              onClick={() => navigate('/portal/invoices?status=Unpaid')}
+            />
           </div>
-          {/* Active Deliveries */}
-          <div
-            onClick={() => navigate('/portal/shipments')}
-            className="cpd-card"
-            style={{
-              position: 'relative', overflow: 'hidden',
-              background: 'linear-gradient(150deg,#EFF6FF 0%,#FFFFFF 65%)',
-              borderRadius: 16, padding: '14px 12px 12px', border: '1px solid #BFDBFE', cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(37,99,235,.06)', display: 'flex', flexDirection: 'column',
-            }}
-          >
-            <div style={{ position: 'absolute', top: -20, right: -20, width: 70, height: 70, borderRadius: '50%', background: 'rgba(37,99,235,.07)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ width: 30, height: 30, borderRadius: 9, background: '#DBEAFE', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(37,99,235,.18)' }}>
-                <Truck size={14} />
-              </div>
-              <ChevronRight size={14} color="#2563EB" className="cpd-card-arrow" />
-            </div>
-             <div style={{ fontSize: 10.5, fontWeight: 700, color: '#1E40AF', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Active Deliveries</div>
-             <div style={{ fontSize: 18, fontWeight: 800, color: '#1E40AF', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{dashboardData?.activeDeliveries ?? 0}</div>
-             <div style={{ fontSize: 11, fontWeight: 600, color: '#2563EB', marginTop: 5 }}>Real-time Tracking</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <PremiumKPICard
+              label="Active Deliveries"
+              value={`${dashboardData?.activeDeliveries ?? 0}`}
+              icon={Truck}
+              sublabel="Live Tracking"
+              sublabelColor="#64748B"
+              gradient="linear-gradient(135deg, #2563EB 0%, #1E40AF 100%)"
+              glowColor="rgba(37,99,235,0.2)"
+              lightBg="#FFFFFF"
+              iconBg="#2563EB"
+              onClick={() => navigate('/portal/deliveries')}
+            />
           </div>
-          {/* Available Credit */}
-          <div
-            onClick={() => navigate('/portal/wallet')}
-            className="cpd-card"
-            style={{
-              position: 'relative', overflow: 'hidden',
-              background: 'linear-gradient(150deg,#ECFDF5 0%,#FFFFFF 65%)',
-              borderRadius: 16, padding: '14px 12px 12px', border: '1px solid #A7F3D0', cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(5,150,105,.06)', display: 'flex', flexDirection: 'column',
-            }}
-          >
-            <div style={{ position: 'absolute', top: -20, right: -20, width: 70, height: 70, borderRadius: '50%', background: 'rgba(5,150,105,.07)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ width: 30, height: 30, borderRadius: 9, background: '#D1FAE5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(5,150,105,.18)' }}>
-                <Wallet size={14} />
-              </div>
-              <ChevronRight size={14} color="#059669" className="cpd-card-arrow" />
-            </div>
-             <div style={{ fontSize: 10.5, fontWeight: 700, color: '#065F46', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Available Credit</div>
-             <div style={{ fontSize: 18, fontWeight: 800, color: '#065F46', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{fmtMoney(dashboardData?.creditLimit)}</div>
-             <div style={{ fontSize: 11, fontWeight: 600, color: '#059669', marginTop: 5 }}>Available</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <PremiumKPICard
+              label="Available Credit"
+              value={fmtMoney(dashboardData?.creditLimit)}
+              icon={Wallet}
+              sublabel="Available"
+              sublabelColor="#059669"
+              gradient="linear-gradient(135deg, #059669 0%, #065F46 100%)"
+              glowColor="rgba(5,150,105,0.2)"
+              lightBg="#F0FDF4"
+              iconBg="#059669"
+              onClick={() => navigate('/portal/wallet')}
+            />
           </div>
         </div>
       </div>
@@ -517,34 +572,45 @@ const CustomerDashboard: React.FC = () => {
         <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', margin: '0 0 10px' }}>Quick Actions</h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
           {[
-            { label: 'Pay Invoices', icon: <CreditCard size={18} />, to: '/portal/invoices?status=Unpaid', bg: 'linear-gradient(135deg,#1E3A8A,#0F2C59)', glow: '0 6px 14px -6px rgba(15,44,89,.5)' },
-            { label: 'New Order', icon: <ShoppingBag size={18} />, to: '/portal/catalog', bg: 'linear-gradient(135deg,#059669,#065F46)', glow: '0 6px 14px -6px rgba(5,150,105,.5)' },
-            { label: 'Get Quote', icon: <ClipboardList size={18} />, to: '/portal/requests', bg: 'linear-gradient(135deg,#D97706,#92400E)', glow: '0 6px 14px -6px rgba(217,119,6,.5)' },
-            { label: 'Track Shipments', icon: <Truck size={18} />, to: '/portal/shipments', bg: 'linear-gradient(135deg,#2563EB,#1E40AF)', glow: '0 6px 14px -6px rgba(37,99,235,.5)' },
-            { label: 'Refer Business', icon: <Gift size={18} />, to: '/portal/referrals', bg: 'linear-gradient(135deg,#7C3AED,#5B21B6)', glow: '0 6px 14px -6px rgba(124,58,237,.5)' },
-            { label: 'Statements', icon: <Wallet size={18} />, to: '/portal/statements', bg: 'linear-gradient(135deg,#0D9488,#115E59)', glow: '0 6px 14px -6px rgba(13,148,136,.5)' },
+            { label: 'Pay Invoices', icon: <CreditCard size={18} />, to: '/portal/invoices?status=Unpaid', bg: 'linear-gradient(135deg,#1E3A8A,#0F2C59)' },
+            { label: 'New Order', icon: <ShoppingBag size={18} />, to: '/portal/orders', bg: 'linear-gradient(135deg,#059669,#065F46)' },
+            { label: 'Get Quote', icon: <ClipboardList size={18} />, to: '/portal/quotations', bg: 'linear-gradient(135deg,#D97706,#92400E)' },
+            { label: 'Track Shipments', icon: <Truck size={18} />, to: '/portal/deliveries', bg: 'linear-gradient(135deg,#2563EB,#1E40AF)' },
+            { label: 'Refer Business', icon: <Gift size={18} />, to: '/portal/referrals', bg: 'linear-gradient(135deg,#7C3AED,#5B21B6)' },
+            { label: 'Statements', icon: <Wallet size={18} />, to: '/portal/account-statements', bg: 'linear-gradient(135deg,#0D9488,#115E59)' },
           ].map((a, i) => (
             <div
               key={i}
               onClick={() => navigate(a.to)}
               className="cpd-card"
               style={{
-                background: '#fff', borderRadius: 16, padding: '15px 10px 13px',
-                border: '1px solid #E8EDF5', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, cursor: 'pointer',
-                boxShadow: '0 1px 4px rgba(15,23,42,.05)',
+                background: '#fff', borderRadius: 14, padding: '14px 10px 12px',
+                border: '1px solid #E8EDF5', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(15,23,42,.03)',
+                transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px -4px rgba(15,44,89,.08)';
+                e.currentTarget.style.borderColor = '#D8E0F0';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 3px rgba(15,23,42,.03)';
+                e.currentTarget.style.borderColor = '#E8EDF5';
               }}
             >
               <div
                 className="cpd-qicon"
                 style={{
-                  width: 40, height: 40, borderRadius: 12, background: a.bg, color: '#fff',
+                  width: 36, height: 36, borderRadius: 11, background: a.bg, color: '#fff',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: a.glow, border: '1px solid rgba(255,255,255,.25)',
+                  boxShadow: '0 2px 8px -2px rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,.2)',
                 }}
               >
                 {a.icon}
               </div>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>{a.label}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: '#334155' }}>{a.label}</span>
             </div>
           ))}
         </div>

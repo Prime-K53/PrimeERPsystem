@@ -27,33 +27,30 @@ const navSections: NavSection[] = [
   },
   {
     title: 'Commerce',
-    items: [
-      { label: 'Catalog', path: '/portal/catalog', icon: Package },
-      { label: 'Orders', path: '/portal/orders', icon: ShoppingCart },
-      { label: 'Requests', path: '/portal/requests', icon: ClipboardList },
-      { label: 'Quotations', path: '/portal/quotations', icon: FileText },
-      { label: 'Referrals', path: '/portal/referrals', icon: Users },
-    ],
+      items: [
+        { label: 'Product Orders', path: '/portal/orders', icon: ShoppingCart },
+        { label: 'Quotations', path: '/portal/quotations', icon: FileText },
+        { label: 'Referrals', path: '/portal/referrals', icon: Users },
+      ],
   },
   {
     title: 'Documents & Billing',
     items: [
       { label: 'Invoices', path: '/portal/invoices', icon: Receipt },
-      { label: 'Statements', path: '/portal/statements', icon: FileBarChart },
-      { label: 'Payment Options', path: '/portal/payment-options', icon: CreditCard },
     ],
   },
   {
     title: 'Finance',
     items: [
-      { label: 'Payments', path: '/portal/payments', icon: CreditCard },
+      { label: 'Receipt', path: '/portal/payments', icon: Receipt },
       { label: 'Wallet', path: '/portal/wallet', icon: Wallet },
+      { label: 'Account Statements', path: '/portal/account-statements', icon: FileBarChart },
     ],
   },
   {
     title: 'Logistics',
     items: [
-      { label: 'Shipments', path: '/portal/shipments', icon: Truck },
+      { label: 'Deliveries & Tracking', path: '/portal/deliveries', icon: Truck },
     ],
   },
   {
@@ -72,11 +69,25 @@ interface Props {
   onClose: () => void;
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
+  moduleName?: string;
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'prime-portal-sidebar-collapsed';
 
-const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedExternal, onCollapsedChange }) => {
+/**
+ * Premium rail — layered radial glows over a deep-navy gradient so the
+ * navigation reads as a refined, dimensional surface instead of flat color.
+ */
+const RAIL_BG = `
+  radial-gradient(120% 70% at 50% -10%, rgba(74,118,181,0.32) 0%, rgba(74,118,181,0) 55%),
+  radial-gradient(160% 60% at 110% 110%, rgba(5,150,105,0.14) 0%, rgba(5,150,105,0) 55%),
+  linear-gradient(180deg, #0F2C59 0%, #0A1F42 46%, #071836 100%)
+`;
+
+const ACTIVE_ITEM_BG = 'linear-gradient(135deg, rgba(5,150,105,0.24) 0%, rgba(5,150,105,0.05) 100%)';
+const ACTIVE_ITEM_SHADOW = 'inset 0 0 0 1px rgba(52,211,153,0.18), 0 6px 18px -6px rgba(5,150,105,0.4)';
+
+const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedExternal, onCollapsedChange, moduleName }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useCustomerAuth();
@@ -128,6 +139,7 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
 
   const renderNavItem = (item: NavItem, isActive: boolean) => {
     const Icon = item.icon;
+    const showTooltip = collapsed && hoveredItem === item.path;
     return (
       <button
         key={item.path}
@@ -136,30 +148,57 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
         onMouseEnter={() => setHoveredItem(item.path)}
         onMouseLeave={() => setHoveredItem(null)}
         className={`
-          relative w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 text-sm group
-          ${isActive
-            ? 'text-white bg-white/[0.08]'
-            : 'text-white/55 hover:text-white/85 hover:bg-white/[0.05]'
-          }
-          ${collapsed ? 'justify-center px-2' : ''}
+          group relative w-full flex items-center gap-2.5 rounded-xl text-sm
+          transition-all duration-200 ease-out
+          ${isActive ? '' : 'hover:bg-white/[0.05]'}
+            ${collapsed ? 'justify-center px-2 py-1.5' : 'px-2 py-1.5'}
         `}
-        style={isActive ? { boxShadow: 'inset 0 0 0 1px rgba(5,150,105,0.15)' } : undefined}
+        style={{
+          cursor: 'pointer',
+          background: isActive ? ACTIVE_ITEM_BG : undefined,
+          boxShadow: isActive ? ACTIVE_ITEM_SHADOW : undefined,
+        }}
       >
         {isActive && !collapsed && (
           <span
-            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full"
-            style={{ background: 'linear-gradient(180deg, #059669, #047857)', boxShadow: '0 0 8px rgba(5,150,105,0.4)' }}
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full pointer-events-none"
+            style={{
+              background: 'linear-gradient(180deg, #34D399, #059669)',
+              boxShadow: '0 0 12px rgba(52,211,153,0.8)',
+            }}
           />
         )}
-        <Icon size={18} className="shrink-0" style={{ color: isActive ? '#34D399' : undefined }} />
-        {!collapsed && <span className="font-medium whitespace-nowrap">{item.label}</span>}
-        {collapsed && hoveredItem === item.path && (
+        {/* Icon chip — fills with emerald on active, softly lifts on hover */}
+        <span
+          className={`
+            flex items-center justify-center w-7 h-7 rounded-lg shrink-0 transition-all duration-200
+            ${isActive ? '' : 'text-white/55 group-hover:bg-white/10 group-hover:text-white/90'}
+          `}
+          style={isActive ? {
+            background: 'linear-gradient(135deg, #059669, #047857)',
+            color: '#fff',
+            boxShadow: '0 4px 10px -3px rgba(5,150,105,0.6)',
+          } : undefined}
+        >
+          <Icon size={16} strokeWidth={2} />
+        </span>
+        {!collapsed && (
+          <span
+            className={`font-medium whitespace-nowrap text-[13px] transition-colors duration-200 ${isActive ? '' : 'text-white/60 group-hover:text-white/90'}`}
+            style={isActive ? { color: '#FFFFFF' } : undefined}
+          >
+            {item.label}
+          </span>
+        )}
+        {showTooltip && (
           <div
-            className="absolute left-full ml-2 px-3 py-1.5 rounded-lg text-xs font-medium text-white whitespace-nowrap z-50 pointer-events-none"
+            className="absolute left-full ml-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white whitespace-nowrap z-50 pointer-events-none"
             style={{
-              background: 'rgba(15,44,89,0.95)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-              backdropFilter: 'blur(8px)',
+              background: 'rgba(7,24,54,0.92)',
+              boxShadow: '0 8px 24px -6px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.08)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              animation: 'modalIn .12s ease',
             }}
           >
             {item.label}
@@ -171,56 +210,92 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
-      <div className="h-16 flex items-center gap-3 px-4 shrink-0 border-b" style={{ borderColor: 'rgba(255,255,255,0.05)', background: 'linear-gradient(180deg, #0D254D, #071836)' }}>
-        <div className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-white" style={{ background: 'linear-gradient(160deg, #4A76B5, #0F2C59)' }}>
-          <Globe size={18} />
+      {/* ── Brand bar ─────────────────────────────────────────────── */}
+      <div
+        className="h-12 flex items-center gap-2.5 px-3 shrink-0 border-b relative overflow-hidden"
+        style={{
+          borderColor: 'rgba(255,255,255,0.06)',
+          background: 'linear-gradient(180deg, rgba(13,37,77,0.85), rgba(7,24,54,0.4))',
+          boxShadow: 'inset 0 -1px 0 rgba(255,255,255,0.04)',
+        }}
+      >
+        <span
+          className="absolute inset-x-0 top-0 h-px pointer-events-none"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(52,211,153,0.45), transparent)' }}
+        />
+        <div
+          className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-white"
+          style={{
+            background: 'linear-gradient(160deg, #4A76B5 0%, #0F2C59 100%)',
+            boxShadow: '0 4px 14px -4px rgba(15,44,89,0.6), inset 0 1px 0 rgba(255,255,255,0.25)',
+          }}
+        >
+          <Globe size={17} strokeWidth={2} />
         </div>
         {!collapsed && (
           <div className="flex flex-col min-w-0">
-            <span className="font-bold text-[16px] tracking-tight text-white truncate">
-              Prime<span style={{ color: '#34D399' }}>PORTAL</span>
-            </span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider -mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>
-              Customer Portal
-            </span>
+            {moduleName ? (
+              <span className="font-extrabold text-[15px] tracking-tight text-white truncate leading-tight">
+                {moduleName}
+              </span>
+            ) : (
+              <>
+                <span className="font-extrabold text-[16px] tracking-tight text-white truncate leading-tight">
+                  Prime<span style={{ color: '#34D399' }}>Portal</span>
+                </span>
+                <span className="text-[9.5px] font-bold uppercase tracking-[0.16em] -mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.38)' }}>
+                  Customer Portal
+                </span>
+              </>
+            )}
           </div>
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="hidden md:flex ml-auto w-6 h-6 items-center justify-center rounded-md text-white/30 hover:text-white hover:bg-white/5 transition-all"
+          className="hidden md:flex ml-auto w-6 h-6 items-center justify-center rounded-md text-white/35 hover:text-white hover:bg-white/10 transition-all duration-200"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
         <button
           onClick={onClose}
-          className="md:hidden ml-auto w-6 h-6 flex items-center justify-center rounded-md text-white/30 hover:text-white hover:bg-white/5 transition-all"
+          className="md:hidden ml-auto w-6 h-6 flex items-center justify-center rounded-md text-white/35 hover:text-white hover:bg-white/10 transition-all duration-200"
           aria-label="Close sidebar"
         >
           <X size={14} />
         </button>
       </div>
 
-      <nav ref={navRef} className="flex-1 overflow-y-auto custom-scrollbar py-3 px-3 space-y-4 relative">
+      {/* ── Navigation ─────────────────────────────────────────────── */}
+      <nav
+        ref={navRef}
+        className="flex-1 overflow-y-auto custom-scrollbar py-2 px-2 space-y-3 relative"
+        style={{ scrollbarColor: 'rgba(255,255,255,0.18) rgba(255,255,255,0.02)' }}
+      >
         {collapsed && indicator.height > 0 && (
           <div
-            className="absolute left-0 right-0 mx-auto w-8 rounded-r-lg pointer-events-none"
+            className="absolute left-0 right-0 mx-auto w-8 rounded-lg pointer-events-none"
             style={{
               top: indicator.top,
               height: indicator.height,
-              background: 'rgba(5,150,105,0.08)',
-              border: '1px solid rgba(5,150,105,0.15)',
-              boxShadow: '0 0 12px rgba(5,150,105,0.25)',
-              transition: 'all var(--motion-normal) ease',
+              background: 'linear-gradient(135deg, rgba(5,150,105,0.18), rgba(5,150,105,0.04))',
+              border: '1px solid rgba(52,211,153,0.22)',
+              boxShadow: '0 0 16px rgba(5,150,105,0.25)',
+              transition: 'all var(--motion-normal) cubic-bezier(.4,0,.2,1)',
             }}
           />
         )}
         {navSections.map((section) => (
           <div key={section.title}>
             {!collapsed && (
-              <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.35)' }}>{section.title}</p>
+              <div className="flex items-center gap-2 px-2 mb-1">
+                <p className="text-[9.5px] font-bold uppercase tracking-[0.14em] m-0" style={{ color: 'rgba(255,255,255,0.30)' }}>
+                  {section.title}
+                </p>
+                <span className="flex-1 h-px" style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.08), transparent)' }} />
+              </div>
             )}
-            <div className="space-y-0.5">
+            <div className="space-y-0">
               {section.items.map((item) => {
                 const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
                 return renderNavItem(item, isActive);
@@ -230,20 +305,44 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
         ))}
       </nav>
 
-      <div className="border-t p-3" style={{ borderColor: 'rgba(255,255,255,0.05)', background: 'linear-gradient(180deg, #0F2C59, #071836)' }}>
+      {/* ── Footer ─────────────────────────────────────────────────── */}
+      <div
+        className="border-t p-2 relative"
+        style={{
+          borderColor: 'rgba(255,255,255,0.06)',
+          background: 'linear-gradient(180deg, rgba(13,37,77,0.5), rgba(7,24,54,0.6))',
+        }}
+      >
+        <span
+          className="absolute inset-x-0 top-0 h-px pointer-events-none"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent)' }}
+        />
         <button
           onClick={handleLogout}
           className={`
-            w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/60 hover:text-rose-300 hover:bg-rose-500/10 transition-all duration-200
-            ${collapsed ? 'justify-center' : ''}
+            group w-full flex items-center gap-2.5 rounded-xl text-sm transition-all duration-200
+          ${collapsed ? 'justify-center px-2 py-1.5' : 'px-2 py-1.5'}
           `}
+          style={{ cursor: 'pointer' }}
         >
-          <LogOut size={18} className="shrink-0" />
-          {!collapsed && <span className="font-medium">Sign Out</span>}
+          <span className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0 text-white/50 transition-all duration-200 group-hover:bg-rose-500/15 group-hover:text-rose-300">
+            <LogOut size={16} strokeWidth={2} />
+          </span>
+          {!collapsed && (
+            <span className="font-medium text-white/60 group-hover:text-rose-200 transition-colors duration-200">
+              Sign Out
+            </span>
+          )}
         </button>
       </div>
     </div>
   );
+
+  const railStyle: React.CSSProperties = {
+    background: RAIL_BG,
+    borderColor: 'rgba(255,255,255,0.06)',
+    boxShadow: 'inset -1px 0 0 rgba(255,255,255,0.03), 8px 0 24px -12px rgba(4,16,43,0.45)',
+  };
 
   return (
     <>
@@ -254,9 +353,7 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
           hidden md:flex
           ${collapsed ? 'w-16' : 'w-[220px]'}
         `}
-        style={{
-          background: 'linear-gradient(180deg, #0F2C59, #071836)',
-        }}
+        style={railStyle}
       >
         {sidebarContent}
       </aside>
@@ -267,9 +364,7 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
           <aside
             className="absolute top-0 left-0 h-full w-[220px] flex flex-col text-white/70 border-r transition-all duration-200 ease-out"
-            style={{
-              background: 'linear-gradient(180deg, #0F2C59, #071836)',
-            }}
+            style={railStyle}
           >
             {sidebarContent}
           </aside>

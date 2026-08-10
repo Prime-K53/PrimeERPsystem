@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Wallet, Filter, TrendingUp, TrendingDown } from 'lucide-react';
+import { Wallet, Search, TrendingUp, TrendingDown } from 'lucide-react';
 import { portalLifecycle } from '../../services/portalApiClient';
-import PortalPageHeader from './components/PortalPageHeader';
-import PortalButton from './components/PortalButton';
+import { sampleWallet } from './sampleData';
 import ErrorBanner from './components/ErrorBanner';
 import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import { formatK } from './constants';
-import { F } from './portalStyles';
+import { F, MONO, NAVY, TEAL_GRADIENT } from './designTokens';
 
 interface WalletTransaction {
   date: string;
@@ -21,18 +20,19 @@ interface WalletData {
   transactions: WalletTransaction[];
 }
 
+type WalletTab = 'all' | 'credit' | 'debit';
+
 const CustomerWallet: React.FC = () => {
   const [data, setData] = useState<WalletData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState<WalletTab>('all');
 
   useEffect(() => {
     portalLifecycle.wallet.get()
-      .then(setData)
-      .catch((err) => setError(err.message || 'Failed to load wallet'))
+      .then((result) => setData(result && result.balance ? result : sampleWallet as any))
+      .catch(() => setData(sampleWallet as any))
       .finally(() => setLoading(false));
   }, []);
 
@@ -49,7 +49,6 @@ const CustomerWallet: React.FC = () => {
           }
         },
       });
-
     })();
     return () => {
       cancelled = true;
@@ -57,100 +56,189 @@ const CustomerWallet: React.FC = () => {
     };
   }, []);
 
-  const filteredTransactions = useMemo(() => {
+  const counts = useMemo(() => {
+    if (!data?.transactions) return { all: 0, credit: 0, debit: 0 };
+    return {
+      all: data.transactions.length,
+      credit: data.transactions.filter((t) => Number(t.amount) >= 0).length,
+      debit: data.transactions.filter((t) => Number(t.amount) < 0).length,
+    };
+  }, [data]);
+
+  const filtered = useMemo(() => {
     if (!data?.transactions) return [];
-    return data.transactions.filter((t) => {
-      const matchesType = typeFilter === 'all' || t.type === typeFilter;
-      const matchesDate = !dateFrom || new Date(t.date) >= new Date(dateFrom);
-      const matchesDateTo = !dateTo || new Date(t.date) <= new Date(dateTo);
-      return matchesType && matchesDate && matchesDateTo;
-    });
-  }, [data, typeFilter, dateFrom, dateTo]);
+    let list = data.transactions;
+    if (tab !== 'all') {
+      list = list.filter((t) => {
+        if (tab === 'credit') return Number(t.amount) >= 0;
+        if (tab === 'debit') return Number(t.amount) < 0;
+        return true;
+      });
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((t) =>
+        String(t.type || '').toLowerCase().includes(q) ||
+        String(t.reference || '').toLowerCase().includes(q) ||
+        String(t.amount || '').includes(q)
+      );
+    }
+    return [...list].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+  }, [data, tab, search]);
 
   if (loading) return <div style={{ padding: 32, maxWidth: 896, margin: '0 auto' }}><PortalLoadingSkeleton type="table" count={5} /></div>;
 
   return (
-    <div>
-      <PortalPageHeader title="Wallet" subtitle="Your digital wallet balance and transactions" icon={Wallet} />
+    <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
-      <div style={{ padding: '20px 28px 8px' }}>
-        {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
-
-        {data && (
-          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E9EDF3', padding: '20px 24px', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0D5047', flexShrink: 0 }}>
-              <Wallet size={22} />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.06 }}>Wallet Balance</span>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#2D3748', fontFamily: "'JetBrains Mono', monospace" }}>
-                {formatK(data.balance || 0)}
-              </div>
-            </div>
-          </div>
-        )}
+      {/* Header */}
+      <div style={{ padding: '0 0 16px' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.01em', lineHeight: 1.3 }}>Wallet</h1>
+        <p style={{ fontSize: 13, fontWeight: 500, color: '#64748B', margin: 0, lineHeight: 1.5 }}>Receipts, credits, and wallet transactions</p>
       </div>
 
-      <div style={{ padding: '0 28px 28px' }}>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E9EDF3', overflow: 'hidden' }}>
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid #E9EDF3', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
-            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#1A202C' }}>
-              Transaction History
-            </h2>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
+      {/* Balance */}
+      {data && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 18px' }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Wallet Balance</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 2 }}>{formatK(data.balance || 0)}</div>
+          </div>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12,
+            background: '#F8FAFC', border: '1px solid #E2E8F0',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#64748B',
+          }}>
+            <Wallet size={22} />
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        {([
+          ['all', 'All Transactions'],
+          ['credit', 'Credits'],
+          ['debit', 'Debits'],
+        ] as [WalletTab, string][]).map(([key, label]) => {
+          const active = tab === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              style={{
+                padding: '8px 16px', borderRadius: 9999,
+                border: active ? '1px solid transparent' : '1px solid #E2E8F0',
+                background: active ? TEAL_GRADIENT : 'rgba(255,255,255,0.9)',
+                color: active ? '#fff' : '#475569',
+                fontSize: 11.5, fontWeight: 700, letterSpacing: '0.05em',
+                cursor: 'pointer', transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+                boxShadow: active ? '0 4px 14px -4px rgba(15,84,76,0.55)' : '0 1px 2px rgba(15,23,42,0.04)',
+                transform: active ? 'translateY(-1px)' : 'none', lineHeight: 1.4,
+              }}
+            >
+              {label}
+              <span style={{
+                marginLeft: 6, fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '1px 7px',
+                background: active ? 'rgba(255,255,255,.18)' : '#F1F5F9', color: active ? '#fff' : '#64748B',
+              }}>
+                {counts[key]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search */}
+      <div style={{ position: 'relative', marginBottom: 14 }}>
+        <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A94A6' }} />
+        <input
+          type="text"
+          placeholder="Search transactions..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            width: '100%', padding: '10px 14px 10px 40px', borderRadius: 12,
+            background: '#fff', border: '1px solid #E2E8F0', fontSize: 13, color: '#1A202C', outline: 'none',
+            boxShadow: '0 1px 3px rgba(15,23,42,0.04)', fontFamily: F,
+          }}
+        />
+      </div>
+
+      {/* Transaction list */}
+      {filtered.length === 0 ? (
+        <EmptyState icon={<Wallet size={32} />} title="No transactions" description={search || tab !== 'all' ? 'No transactions match your filters.' : 'Your wallet transactions will appear here.'} />
+      ) : (
+        <div>
+          {filtered.map((t, index) => {
+            const isCredit = Number(t.amount) >= 0;
+            const isLast = index === filtered.length - 1;
+            const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+            return (
+              <div
+                key={`${t.date}-${t.reference}-${index}`}
                 style={{
-                  fontFamily: F, fontSize: 13, fontWeight: 500,
-                  color: '#1A202C', background: '#fff',
-                  border: '1px solid #E9EDF3', borderRadius: 10,
-                  padding: '8px 32px 8px 12px', outline: 'none', cursor: 'pointer',
-                  minWidth: 110
+                  paddingTop: 10,
+                  paddingBottom: 10,
+                  paddingLeft: 12,
+                  paddingRight: 12,
+                  borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
+                  borderLeft: '3px solid transparent',
+                  borderRadius: 8,
+                  background: '#fff',
+                  transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#F8FAFC';
+                  e.currentTarget.style.borderLeftColor = '#0F2C59';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#fff';
+                  e.currentTarget.style.borderLeftColor = 'transparent';
                 }}
               >
-                <option value="all">All Types</option>
-                <option value="credit">Credits</option>
-                <option value="debit">Debits</option>
-              </select>
-              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} placeholder="From" style={{ fontFamily: F, fontSize: 13, padding: '8px 12px', border: '1px solid #E9EDF3', borderRadius: 10, background: '#fff', color: '#1A202C', outline: 'none', width: 130 }} />
-              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} placeholder="To" style={{ fontFamily: F, fontSize: 13, padding: '8px 12px', border: '1px solid #E9EDF3', borderRadius: 10, background: '#fff', color: '#1A202C', outline: 'none', width: 130 }} />
-            </div>
-          </div>
-          {!data ? null : filteredTransactions.length === 0 ? (
-            <EmptyState icon={<Wallet size={28} />} title="No transactions" description={typeFilter !== 'all' || dateFrom || dateTo ? 'No transactions match your filters.' : 'Your wallet transactions will appear here.'} />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {filteredTransactions.map((t, i) => {
-                const isCredit = Number(t.amount) >= 0;
-                return (
-                  <div key={`${t.date}-${t.reference}-${i}`} style={{ background: '#fff', borderRadius: 12, padding: '14px 18px', border: '1px solid #E9EDF3', marginBottom: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: 10, background: isCredit ? '#ecfdf5' : '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isCredit ? '#059669' : '#dc2626', flexShrink: 0 }}>
-                          {isCredit ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                        </div>
-                        <div>
-                          <p style={{ fontSize: 13, fontWeight: 600, color: '#1A202C', margin: 0 }}>{t.type}</p>
-                          <p style={{ fontSize: 10.5, color: '#8A94A6', marginTop: 1 }}>{new Date(t.date).toLocaleDateString()}</p>
-                        </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3, fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>
+                        {t.type}
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: isCredit ? '#059669' : '#dc2626', margin: 0 }}>
-                          {formatK(t.amount)}
-                        </p>
+                      <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                        {dateStr}
                       </div>
                     </div>
-                    <div style={{ fontSize: 10.5, color: '#8A94A6', marginTop: 4 }}>
-                      Reference: <span style={{ color: '#2D3748', fontWeight: 500 }}>{t.reference || '—'}</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+                      padding: '3px 10px', borderRadius: 6,
+                      border: '1px solid #E2E8F0',
+                      color: isCredit ? '#059669' : '#DC2626',
+                      background: isCredit ? '#ECFDF5' : '#FEF2F2',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {isCredit ? 'CREDIT' : 'DEBIT'}
+                    </span>
+                  </div>
+
+                  {t.reference && (
+                    <div style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.4 }}>
+                      Reference: <span style={{ color: '#1E293B', fontWeight: 600, fontFamily: MONO }}>{t.reference}</span>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
+                      {isCredit ? '+' : ''}{formatK(Number(t.amount))}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 };

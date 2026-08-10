@@ -150,9 +150,8 @@ const CustomerStatements: React.FC = () => {
   }
 
   return (
-    <div style={{ fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#2D3748' }}>
+    <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-      <PortalPageHeader title="Account Statement" subtitle="View and download account statements for any period" icon={FileText} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
@@ -174,7 +173,7 @@ const CustomerStatements: React.FC = () => {
         >
           <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 0 }}>
             <div style={{ flex: 1, minWidth: 160 }}>
-              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Start Date</label>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Start Date</label>
               <input
                 type="date"
                 value={startDate}
@@ -195,7 +194,7 @@ const CustomerStatements: React.FC = () => {
               />
             </div>
             <div style={{ flex: 1, minWidth: 160 }}>
-              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>End Date</label>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>End Date</label>
               <input
                 type="date"
                 value={endDate}
@@ -268,7 +267,7 @@ const CustomerStatements: React.FC = () => {
         {data && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
             <div style={{ background: '#fff', borderRadius: 12, padding: '20px', border: '1px solid #E9EDF3', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8A94A6', display: 'block', marginBottom: 8 }}>Opening Balance</span>
+              <span style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748B', display: 'block', marginBottom: 8 }}>Opening Balance</span>
               <span style={{ fontSize: 20, fontWeight: 700, color: '#1A202C', fontVariantNumeric: 'tabular-nums' }}>{formatK(data.opening_balance || 0)}</span>
             </div>
             <div style={{
@@ -278,7 +277,7 @@ const CustomerStatements: React.FC = () => {
               border: Number(data.closing_balance) < 0 ? '1px solid #FED7D7' : '1px solid #C6F6D5',
               boxShadow: '0 1px 3px rgba(0,0,0,.04)',
             }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8A94A6', display: 'block', marginBottom: 8 }}>Closing Balance</span>
+              <span style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748B', display: 'block', marginBottom: 8 }}>Closing Balance</span>
               <span style={{ fontSize: 20, fontWeight: 700, color: Number(data.closing_balance) < 0 ? '#E53E3E' : '#059669', fontVariantNumeric: 'tabular-nums' }}>{formatK(data.closing_balance || 0)}</span>
             </div>
           </div>

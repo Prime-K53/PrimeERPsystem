@@ -8,12 +8,13 @@ interface BadgeCounts {
   unpaidInvoices: number;
   activeDeliveries: number;
   unreadNotifications: number;
+  activeOrders: number;
 }
 
 const MobileBottomNav: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [badges, setBadges] = useState<BadgeCounts>({ unpaidInvoices: 0, activeDeliveries: 0, unreadNotifications: 0 });
+  const [badges, setBadges] = useState<BadgeCounts>({ unpaidInvoices: 0, activeDeliveries: 0, unreadNotifications: 0, activeOrders: 0 });
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +29,7 @@ const MobileBottomNav: React.FC = () => {
             unpaidInvoices: dash?.unpaidInvoiceCount ?? 0,
             activeDeliveries: dash?.activeDeliveries ?? 0,
             unreadNotifications: notifCount?.count ?? 0,
+            activeOrders: dash?.totalOrders ?? 0,
           });
         }
       } catch { /* ignore */ }
@@ -44,7 +46,7 @@ const MobileBottomNav: React.FC = () => {
           onEvent: (type) => {
             if (!cancelled && (type === 'notification' || type === 'entity_changed')) {
               portalApi.get<any>('/dashboard').then((dash) => {
-                if (!cancelled) setBadges((prev) => ({ ...prev, unpaidInvoices: dash?.unpaidInvoiceCount ?? 0, activeDeliveries: dash?.activeDeliveries ?? 0 }));
+                if (!cancelled) setBadges((prev) => ({ ...prev, unpaidInvoices: dash?.unpaidInvoiceCount ?? 0, activeDeliveries: dash?.activeDeliveries ?? 0, activeOrders: dash?.totalOrders ?? 0 }));
               }).catch(() => {});
               portalApi.get<{ count: number }>('/notifications/unread-count').then((c) => {
                 if (!cancelled) setBadges((prev) => ({ ...prev, unreadNotifications: c?.count ?? 0 }));
@@ -57,14 +59,17 @@ const MobileBottomNav: React.FC = () => {
     return () => { cancelled = true; unsub?.(); };
   }, []);
 
-  const Badge: React.FC<{ count: number }> = ({ count }) => {
+  const Badge: React.FC<{ count: number; color: 'red' | 'green' }> = ({ count, color }) => {
     if (count <= 0) return null;
+    const bg = color === 'red' ? '#DC2626' : '#059669';
     return (
       <span style={{
-        position: 'absolute', top: 0, right: 6, minWidth: 15, height: 15,
-        borderRadius: 8, background: '#DC2626', color: '#fff',
-        fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '0 4px', border: '1.5px solid #fff',
+        position: 'absolute', top: -6, right: -8, minWidth: 18, height: 18,
+        borderRadius: 9, background: bg, color: '#fff',
+        fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '0 5px', border: '2px solid #fff',
+        boxShadow: '0 2px 6px -1px rgba(0,0,0,0.25)',
+        lineHeight: 1,
       }}>
         {count > 99 ? '99+' : count}
       </span>
@@ -72,24 +77,116 @@ const MobileBottomNav: React.FC = () => {
   };
 
   const items = [
-    { label: 'Overview', path: '/portal/dashboard', badge: 0, icon: (a: boolean) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={a ? '#0F2C59' : '#94A3B8'} strokeWidth={a ? 2 : 1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
-    { label: 'Invoices', path: '/portal/invoices', badge: badges.unpaidInvoices, icon: (a: boolean) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={a ? '#0F2C59' : '#94A3B8'} strokeWidth={a ? 2 : 1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> },
-    { label: 'Orders', path: '/portal/orders', badge: 0, icon: (a: boolean) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={a ? '#0F2C59' : '#94A3B8'} strokeWidth={a ? 2 : 1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg> },
-    { label: 'Deliveries', path: '/portal/shipments', badge: badges.activeDeliveries, icon: (a: boolean) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={a ? '#0F2C59' : '#94A3B8'} strokeWidth={a ? 2 : 1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg> },
-    { label: 'Referrals', path: '/portal/referrals', badge: 0, icon: (a: boolean) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={a ? '#0F2C59' : '#94A3B8'} strokeWidth={a ? 2 : 1.8} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg> },
+    { label: 'Overview', path: '/portal/dashboard', badge: 0, badgeColor: 'red' as const, icon: (active: boolean) => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#2563EB' : '#64748B'} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <polyline points="9 22 9 12 15 12 15 22" />
+      </svg>
+    )},
+    { label: 'Invoices', path: '/portal/invoices', badge: badges.unpaidInvoices, badgeColor: 'red' as const, icon: (active: boolean) => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#2563EB' : '#64748B'} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+      </svg>
+    )},
+    { label: 'Orders', path: '/portal/orders', badge: badges.activeOrders, badgeColor: 'red' as const, icon: (active: boolean) => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#2563EB' : '#64748B'} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <path d="M16 10a4 4 0 0 1-8 0" />
+      </svg>
+    )},
+    { label: 'Deliveries', path: '/portal/deliveries', badge: badges.activeDeliveries, badgeColor: 'green' as const, icon: (active: boolean) => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#2563EB' : '#64748B'} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <rect x="1" y="3" width="15" height="13" />
+        <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+        <circle cx="5.5" cy="18.5" r="2.5" />
+        <circle cx="18.5" cy="18.5" r="2.5" />
+      </svg>
+    )},
+    { label: 'Referrals', path: '/portal/referrals', badge: 0, badgeColor: 'red' as const, icon: (active: boolean) => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#2563EB' : '#64748B'} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 12 20 22 4 22 4 12" />
+        <rect x="2" y="7" width="20" height="5" />
+        <line x1="12" y1="22" x2="12" y2="7" />
+        <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+        <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+      </svg>
+    )},
   ];
 
   return (
-    <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 56, background: '#fff', borderTop: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-around', paddingBottom: 'env(safe-area-inset-bottom,0)', zIndex: 50, fontFamily: SF }}>
+    <nav
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 56,
+        display: 'flex',
+        alignItems: 'stretch',
+        justifyContent: 'space-around',
+        paddingBottom: 'env(safe-area-inset-bottom, 0)',
+        background: 'rgba(255,255,255,0.92)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        borderTop: '1px solid rgba(226,232,240,0.7)',
+        boxShadow: '0 -8px 24px -12px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.6)',
+        zIndex: 50,
+        fontFamily: SF,
+      }}
+    >
       {items.map((item) => {
         const active = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
         return (
-          <button key={item.path} onClick={() => navigate(item.path)} aria-label={item.label} aria-current={active ? 'page' : undefined} style={{ position: 'relative', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 2, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', minWidth: 52, color: active ? '#0F2C59' : '#94A3B8' }}>
-            <span style={{ position: 'relative' }}>
+          <button
+            key={item.path}
+            onClick={() => navigate(item.path)}
+            aria-label={item.label}
+            aria-current={active ? 'page' : undefined}
+            className="btn-press"
+            style={{
+              position: 'relative',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column' as const,
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '6px 0 4px',
+              minWidth: 52,
+              color: active ? '#2563EB' : '#64748B',
+              transition: 'color 220ms ease',
+            }}
+          >
+            <span style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28 }}>
               {item.icon(active)}
-              <Badge count={item.badge} />
+              <Badge count={item.badge} color={item.badgeColor} />
             </span>
-            <span style={{ fontSize: 9.5, fontWeight: active ? 700 : 500, lineHeight: 1.2, fontFamily: SF, color: active ? '#0F2C59' : '#94A3B8' }}>{item.label}</span>
+            <span style={{
+              fontSize: 11, fontWeight: active ? 700 : 500, lineHeight: 1.2,
+              fontFamily: SF, color: 'inherit', transition: 'color 220ms ease',
+            }}>
+              {item.label}
+            </span>
+            {active && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: 4,
+                  width: 24,
+                  height: 3,
+                  borderRadius: 2,
+                  background: '#2563EB',
+                  boxShadow: '0 2px 8px rgba(37,99,235,0.45)',
+                }}
+              />
+            )}
           </button>
         );
       })}

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { ClipboardList, Plus, Loader2, ArrowUpRight, Search, RefreshCw, SlidersHorizontal, Trash2, ChevronRight } from 'lucide-react';
 import { portalLifecycle, QuotationRequestRecord } from '../../services/portalApiClient';
+import { sampleRequests } from './sampleData';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { useToast } from './components/Toast';
 import PortalPageHeader from './components/PortalPageHeader';
@@ -42,14 +43,18 @@ const CustomerRequests: React.FC = () => {
     setError(null);
     try {
       const data = await portalLifecycle.requests.list({ page, pageSize: DEFAULT_PAGE_SIZE, search: search || undefined, status: statusFilter || undefined });
-      if ('requests' in data) {
+      if ('requests' in data && data.requests.length > 0) {
         setRequests(data.requests);
         setTotalPages(data.totalPages);
         setTotal(data.total);
-      } else {
+      } else if (Array.isArray(data) && data.length > 0) {
         setRequests(data);
         setTotalPages(1);
         setTotal(data.length);
+      } else {
+        setRequests(sampleRequests as any);
+        setTotalPages(1);
+        setTotal(sampleRequests.length);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load requests');
@@ -148,14 +153,7 @@ const CustomerRequests: React.FC = () => {
   if (loading && page === 1) return <div style={{ padding: 16 }}><PortalLoadingSkeleton type="table" count={6} /></div>;
 
   return (
-    <div style={{ background: '#fff', borderRadius: 20, overflow: 'hidden', fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#2D3748' }}>
-      <PortalPageHeader
-        title="Requests"
-        subtitle="Track your quotation and order requests"
-        icon={ClipboardList}
-        action={{ label: 'New', onClick: () => navigate('/portal/new-request'), icon: Plus }}
-      />
-
+    <div style={{ background: '#fff', borderRadius: 20, overflow: 'hidden', fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
       <div style={{ padding: '16px 20px 0' }}>
         {error && (
           <div style={{
@@ -383,7 +381,7 @@ const CustomerRequests: React.FC = () => {
               </button>
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 8, display: 'block' }}>Status</label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 8, display: 'block' }}>Status</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 <button
                   onClick={() => { setStatusFilter(''); setShowFilterSheet(false); }}

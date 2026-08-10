@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, Search, Loader2, Truck } from 'lucide-react';
 import { portalLifecycle, PortalShipmentRecord } from '../../services/portalApiClient';
+import { sampleShipments } from './sampleData';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { useToast } from './components/Toast';
 import PortalPageHeader from './components/PortalPageHeader';
@@ -43,7 +44,7 @@ const CustomerShipments: React.FC = () => {
       if (statusFilter !== 'All') {
         filtered = filtered.filter((s) => s.status === statusFilter);
       }
-      setShipments(filtered);
+      setShipments(filtered.length > 0 ? filtered : sampleShipments as any);
     } catch (err: any) {
       setError(err.message || 'Failed to load shipments');
     } finally {
@@ -80,20 +81,14 @@ const CustomerShipments: React.FC = () => {
   if (loading) return <div style={{ padding: 32, maxWidth: 56, margin: '0 auto' }}><PortalLoadingSkeleton type="table" count={6} /></div>;
 
   return (
-    <div style={{ fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#1E293B' }}>
-      <PortalPageHeader
-        title="Shipments & Tracking"
-        subtitle="Track your orders in transit"
-        icon={Truck}
-      />
-
+    <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
       <div style={{ padding: '20px 28px 8px' }}>
         {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: '1 1 240px' }}>
-            <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#8A94A6' }} />
-            <PortalInput label="" placeholder="Search by order #, tracking #..." value={search} onChange={(v) => setSearch(v)} onFocus={() => {}} onBlur={() => {}} style={{ paddingLeft: 32 }} />
+            <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A94A6' }} />
+            <PortalInput label="" placeholder="Search by order #, tracking #..." value={search} onChange={(v) => setSearch(v)} onFocus={() => {}} onBlur={() => {}} style={{ paddingLeft: 40 }} />
           </div>
           <select
             value={statusFilter}

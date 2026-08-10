@@ -103,17 +103,25 @@ export const spacing = {
 } as const;
 
 // ── Typography ────────────────────────────────────────
+// Portal module spec: 13.5px base, 13px table body, 13.5–14.4px table
+// headers, 20–24px titles, 12–13px labels, line-height 1.4–1.5,
+// weights 400–600 for hierarchy.
 export const typography = {
   fontFamily: FONT_FAMILY,
   sizes: {
     xs:   11,
-    sm:   12,
-    base: 13,
+    label: 12,
+    sm:   12.5,
+    base: 13.5,
+    tableBody: 13,
+    tableHeader: 13.5,
     md:   14,
     lg:   16,
     xl:   18,
     '2xl': 20,
     '3xl': 24,
+    title: 20,
+    titleLg: 24,
   },
   weights: {
     normal: 400,
@@ -123,7 +131,8 @@ export const typography = {
   },
   lineHeights: {
     tight: 1.2,
-    normal: 1.4,
+    normal: 1.45,
+    table: 1.4,
     relaxed: 1.6,
   },
 } as const;

@@ -18,9 +18,7 @@ const CustomerSupport: React.FC = () => {
   ];
 
   return (
-    <div style={{ fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#2D3748' }}>
-      <PortalPageHeader title="Support" subtitle="Get help with your account" icon={MessageCircle} />
-
+    <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
       <div style={{ padding: '28px 20px' }}>
         <PortalCard>
           <div style={{
@@ -74,7 +72,7 @@ const CustomerSupport: React.FC = () => {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
                       fontFamily: F,
-                      fontSize: 10.5,
+                      fontSize: 12,
                       fontWeight: 600,
                       color: '#8A94A6',
                       textTransform: 'uppercase',
@@ -108,7 +106,7 @@ const CustomerSupport: React.FC = () => {
             }}>
               <div style={{
                 fontFamily: F,
-                fontSize: 10.5,
+                fontSize: 12,
                 fontWeight: 600,
                 color: '#8A94A6',
                 textTransform: 'uppercase',

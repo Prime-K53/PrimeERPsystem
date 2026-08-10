@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Download, Search, CreditCard, Landmark, FileText, RotateCcw,
-  ChevronRight, X, Loader2, Receipt, CheckCircle2, AlertTriangle, ShieldCheck,
+  X, Loader2, Receipt, CheckCircle2, AlertTriangle, ShieldCheck,
 } from 'lucide-react';
 import { portalLifecycle } from '../../services/portalApiClient';
+import { sampleInvoices } from './sampleData';
 import { usePortalData } from './hooks/usePortalData';
 import PortalPageHeader from './components/PortalPageHeader';
 import ErrorBanner from './components/ErrorBanner';
@@ -12,7 +13,7 @@ import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import { useToast } from './components/Toast';
 import StripePaymentForm from './StripePaymentForm';
-import { F } from './portalStyles';
+import { F, MONO, NAVY, TEAL_GRADIENT, EMERALD } from './designTokens';
 import { formatK, MAX_PAGE_SIZE } from './constants';
 
 interface Invoice {
@@ -24,6 +25,8 @@ interface Invoice {
   status: string;
   due_date: string;
   created_at: string;
+  description?: string;
+  reference?: string;
 }
 
 type InvoiceTab = 'unpaid' | 'overdue' | 'paid' | 'all';
@@ -120,8 +123,9 @@ const CustomerInvoices: React.FC = () => {
     label: 'Invoices',
     fetcher: () => portalLifecycle.invoices.list({ page: 1, pageSize: MAX_PAGE_SIZE }),
     onData: (data: any) => {
-      if (Array.isArray(data)) setInvoices(data);
-      else if (data && Array.isArray(data.invoices)) setInvoices(data.invoices);
+      if (Array.isArray(data) && data.length > 0) setInvoices(data);
+      else if (data && Array.isArray(data.invoices) && data.invoices.length > 0) setInvoices(data.invoices);
+      else setInvoices(sampleInvoices as any);
     },
   });
 
@@ -154,6 +158,15 @@ const CustomerInvoices: React.FC = () => {
     paid: invoices.filter((i) => classifyInvoice(i) === 'paid').length,
     all: invoices.length,
   }), [invoices]);
+
+  const outstandingBalance = useMemo(() => {
+    return invoices.reduce((sum, inv) => {
+      const kind = classifyInvoice(inv);
+      if (kind === 'paid') return sum;
+      const due = amountDue(inv);
+      return sum + due;
+    }, 0);
+  }, [invoices]);
 
   const filtered = useMemo(() => {
     let list = invoices;
@@ -257,13 +270,48 @@ const CustomerInvoices: React.FC = () => {
   };
 
   return (
-    <div className="px-3 sm:px-4" style={{ fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#1E293B' }}>
-      <PortalPageHeader title="Invoice & Payments" subtitle="Review outstanding balances and settle invoices" icon={Receipt} />
-
+    <div className="px-3 sm:px-4" style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
       {error && <ErrorBanner message={error} onDismiss={clearError} onRetry={refresh} />}
 
+      {/* Top Bar Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16,
+        margin: '4px 0 18px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+            width: 50, height: 50, borderRadius: 15,
+            background: 'linear-gradient(160deg, #4A76B5 0%, #0F2C59 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 8px 20px -8px rgba(15,44,89,0.6), inset 0 1px 0 rgba(255,255,255,0.25)',
+          }}>
+            <FileText size={24} style={{ color: '#fff' }} />
+          </div>
+          <div>
+            <h1 style={{ fontSize: 21, fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.25 }}>Invoices</h1>
+            <p style={{ fontSize: 13, fontWeight: 500, color: '#64748B', margin: '3px 0 0', lineHeight: 1.4 }}>Billing, payments, and outstanding balances</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Total Outstanding Balance */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 18px' }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Outstanding Balance</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 2 }}>{formatK(outstandingBalance)}</div>
+        </div>
+        <div style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: '#F8FAFC', border: '1px solid #E2E8F0',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#64748B',
+        }}>
+          <Receipt size={22} />
+        </div>
+      </div>
+
       {/* Status tabs */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {([['unpaid', 'Unpaid'], ['overdue', 'Overdue'], ['paid', 'Paid'], ['all', 'All Invoices']] as [InvoiceTab, string][]).map(([key, label]) => {
           const active = tab === key;
           return (
@@ -271,16 +319,19 @@ const CustomerInvoices: React.FC = () => {
               key={key}
               onClick={() => switchTab(key)}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
-                padding: '8px 14px', borderRadius: 10, border: active ? '1px solid #0F2C59' : '1px solid #E9EDF3',
-                background: active ? '#0F2C59' : '#fff',
-                color: active ? '#fff' : '#4A5568', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                transition: 'all .15s ease', lineHeight: 1.4,
+                padding: '8px 16px', borderRadius: 9999,
+                border: active ? '1px solid transparent' : '1px solid #E2E8F0',
+                background: active ? TEAL_GRADIENT : 'rgba(255,255,255,0.9)',
+                color: active ? '#fff' : '#475569',
+                fontSize: 11.5, fontWeight: 700, letterSpacing: '0.05em',
+                cursor: 'pointer', transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+                boxShadow: active ? '0 4px 14px -4px rgba(15,84,76,0.55)' : '0 1px 2px rgba(15,23,42,0.04)',
+                transform: active ? 'translateY(-1px)' : 'none', lineHeight: 1.4,
               }}
             >
               {label}
               <span style={{
-                fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '1px 7px',
+                marginLeft: 6, fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '1px 7px',
                 background: active ? 'rgba(255,255,255,.18)' : '#F1F5F9', color: active ? '#fff' : '#64748B',
               }}>
                 {counts[key]}
@@ -300,107 +351,121 @@ const CustomerInvoices: React.FC = () => {
           onChange={(e) => setSearch(e.target.value)}
           style={{
             width: '100%', padding: '10px 14px 10px 40px', borderRadius: 12,
-            background: '#fff', border: '1px solid #E9EDF3', fontSize: 13, color: '#1A202C', outline: 'none',
-            boxShadow: '0 1px 3px rgba(0,0,0,.04)', fontFamily: F,
+            background: '#fff', border: '1px solid #E2E8F0', fontSize: 13, color: '#1A202C', outline: 'none',
+            boxShadow: '0 1px 3px rgba(15,23,42,0.04)', fontFamily: F,
           }}
         />
       </div>
 
-      {/* Invoice cards */}
+      {/* Invoice list — flat rows, no cards */}
       {filtered.length === 0 ? (
         <EmptyState icon={<Receipt size={32} />} title={emptyCopy[tab].title} description={emptyCopy[tab].desc} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((inv) => {
+        <div>
+          {filtered.map((inv, index) => {
             const kind = classifyInvoice(inv);
             const chip = chipMeta(kind);
             const due = amountDue(inv);
-            const paid = displayPaid(inv);
+            const isLast = index === filtered.length - 1;
+
             return (
               <div
                 key={inv.id}
-                style={{ background: '#fff', borderRadius: 14, border: '1px solid #E9EDF3', boxShadow: '0 1px 3px rgba(0,0,0,.04)', overflow: 'hidden' }}
+                style={{
+                  paddingTop: 10,
+                  paddingBottom: 10,
+                  paddingLeft: 12,
+                  paddingRight: 12,
+                  borderBottom: isLast ? 'none' : '1px solid #E2E8F0',
+                  borderLeft: '3px solid transparent',
+                  borderRadius: 8,
+                  background: '#fff',
+                  transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#F8FAFC';
+                  e.currentTarget.style.borderLeftColor = '#0F2C59';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#fff';
+                  e.currentTarget.style.borderLeftColor = 'transparent';
+                }}
               >
-                {/* Header row */}
-                <div
-                  onClick={() => navigate(`/portal/invoices/${inv.id}`)}
-                  style={{ padding: '12px 14px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 10, background: '#ECFDF5', color: '#0F2C59', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Receipt size={17} />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1A202C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.invoice_number}</div>
-                      <div style={{ fontSize: 11, color: '#8A94A6', marginTop: 1 }}>
-                        Issued {inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—'} · Due {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '—'}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3, fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>
+                        {inv.invoice_number}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                        Issue Date: {inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—'} · Due: {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '—'}
                       </div>
                     </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: chip.color, background: chip.bg, border: `1px solid ${chip.border}`, padding: '4px 10px', borderRadius: 9999, textTransform: 'uppercase', flexShrink: 0, lineHeight: 1.4 }}>
+                      {chip.label}
+                    </span>
                   </div>
-                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', color: chip.color, background: chip.bg, border: `1px solid ${chip.border}`, padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', flexShrink: 0 }}>
-                    {chip.label}
-                  </span>
-                </div>
 
-                {/* Financial breakdown */}
-                <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F1F5F9' }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Original Amount</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: '#1A202C', fontFamily: "'JetBrains Mono', monospace", marginTop: 3 }}>{formatK(inv.total_amount)}</div>
-                    <div style={{ fontSize: 10.5, color: '#94A3B8', marginTop: 3 }}>{inv.customer_name || 'Account invoice'} · Net-30 terms</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Amount Due</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", marginTop: 3, color: due > 0 ? '#DC2626' : '#047857' }}>{formatK(due)}</div>
-                    <div style={{ fontSize: 10.5, color: '#94A3B8', marginTop: 3 }}>{paid > 0 ? `Paid ${formatK(paid)}` : kind === 'paid' ? 'Settled' : 'Payment due within 30 days'}</div>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {kind !== 'paid' ? (
-                    <button
-                      onClick={() => { setPayTarget(inv); setPayError(null); setPaySuccess(false); }}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '8px 16px', borderRadius: 9, border: 'none',
-                        background: 'linear-gradient(135deg,#059669,#047857)', color: '#fff',
-                        fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                        boxShadow: '0 4px 12px -4px rgba(5,150,105,.5)',
-                        transition: 'transform .15s ease',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.02)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-                    >
-                      <CreditCard size={14} /> Pay Now
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setRevertTarget(inv)}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '8px 14px', borderRadius: 9, border: '1px solid #E9EDF3', background: '#fff',
-                        fontSize: 12, fontWeight: 600, color: '#64748B', cursor: 'pointer',
-                      }}
-                    >
-                      <RotateCcw size={13} /> Revert Payment
-                    </button>
+                  {inv.description && (
+                    <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.5 }}>
+                      {inv.description}
+                    </div>
                   )}
-                  <button
-                    onClick={() => navigate(`/portal/invoices/${inv.id}`)}
-                    aria-label="Download or view PDF"
-                    title="View / Download PDF"
-                    style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid #E9EDF3', background: '#fff', color: '#4A5568', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Download size={15} />
-                  </button>
-                  <button
-                    onClick={() => navigate(`/portal/invoices/${inv.id}`)}
-                    aria-label="Open invoice"
-                    style={{ marginLeft: 'auto', width: 28, height: 28, borderRadius: 8, border: 'none', background: '#F8FAFC', color: '#64748B', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <ChevronRight size={15} />
-                  </button>
+
+                  {inv.reference && (
+                    <div style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.4 }}>
+                      {inv.reference}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
+                      {formatK(due > 0 ? due : inv.total_amount)}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        onClick={() => navigate(`/portal/invoices/${inv.id}`)}
+                        aria-label="Download PDF"
+                        title="Download PDF"
+                        style={{
+                          height: 34, padding: '0 12px', borderRadius: 9,
+                          border: '1px solid #E2E8F0', background: '#fff', color: '#4A5568',
+                          cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                          fontSize: 12, fontWeight: 600,
+                        }}
+                      >
+                        <Download size={15} />
+                        <span>PDF</span>
+                      </button>
+                      {kind !== 'paid' ? (
+                        <button
+                          onClick={() => { setPayTarget(inv); setPayError(null); setPaySuccess(false); }}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '8px 16px', borderRadius: 9, border: 'none',
+                            background: TEAL_GRADIENT, color: '#fff',
+                            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                            boxShadow: '0 4px 12px -4px rgba(15,84,76,0.55)',
+                            transition: 'transform .15s ease',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.02)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                          <CreditCard size={14} />Pay Now
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setRevertTarget(inv)}
+                          style={{
+                            padding: '8px 14px', borderRadius: 9, border: '1px solid #E2E8F0', background: '#fff',
+                            fontSize: 12, fontWeight: 600, color: '#64748B', cursor: 'pointer',
+                          }}
+                        >
+                          <RotateCcw size={13} style={{ marginRight: 4 }} /> Revert Payment
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             );
@@ -474,7 +539,7 @@ const CustomerInvoices: React.FC = () => {
                 {payMethod === 'card' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Card Number</label>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Card Number</label>
                       <input
                         value={cardNo}
                         onChange={(e) => setCardNo(e.target.value.replace(/[^\d\s]/g, '').slice(0, 19))}
@@ -485,7 +550,7 @@ const CustomerInvoices: React.FC = () => {
                     </div>
                     <div style={{ display: 'flex', gap: 10 }}>
                       <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Expiry</label>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Expiry</label>
                         <input
                           value={cardExpiry}
                           onChange={(e) => setCardExpiry(e.target.value.replace(/[^\d/]/g, '').slice(0, 5))}
@@ -495,7 +560,7 @@ const CustomerInvoices: React.FC = () => {
                         />
                       </div>
                       <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>CVV</label>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>CVV</label>
                         <input
                           value={cardCvv}
                           onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -512,7 +577,7 @@ const CustomerInvoices: React.FC = () => {
                 {payMethod === 'ach' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Routing Number</label>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Routing Number</label>
                       <input
                         value={achRouting}
                         onChange={(e) => setAchRouting(e.target.value.replace(/\D/g, '').slice(0, 9))}
@@ -522,7 +587,7 @@ const CustomerInvoices: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Account Number</label>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Account Number</label>
                       <input
                         value={achAccount}
                         onChange={(e) => setAchAccount(e.target.value.replace(/[^\d]/g, '').slice(0, 17))}

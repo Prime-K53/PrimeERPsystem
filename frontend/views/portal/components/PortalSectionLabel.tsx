@@ -15,7 +15,7 @@ const PortalSectionLabel: React.FC<Props> = ({ label, subtitle, className = '', 
       style={{ ...style }}
     >
       <span
-        className="text-[11px] font-bold uppercase tracking-wider"
+        className="text-[12px] font-semibold uppercase tracking-wider"
         style={{ color: portalTheme.inkMuted }}
       >
         {label}

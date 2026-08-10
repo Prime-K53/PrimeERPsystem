@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu, Bell, LogOut, User, Building2 } from 'lucide-react';
+import { LogOut, User, Building2, Search, Bell } from 'lucide-react';
 import { useCustomerAuth } from '../../../context/CustomerAuthContext';
 import { useAuth } from '../../../context/AuthContext';
 import { portalLifecycle } from '../../../services/portalApiClient';
@@ -11,7 +11,7 @@ interface Props { title: string; onMenuToggle: () => void; sidebarCollapsed?: bo
 
 interface NotificationItem { id: string; type: string; title: string; body: string; link: string; is_read: boolean; created_at: string; }
 
-const PortalHeader: React.FC<Props> = ({ title, onMenuToggle }) => {
+const PortalHeader: React.FC<Props> = ({ title, onMenuToggle, onCommandToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useCustomerAuth();
@@ -22,7 +22,6 @@ const PortalHeader: React.FC<Props> = ({ title, onMenuToggle }) => {
   const [unread, setUnread] = useState(0);
   const ddRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
-  const isDash = location.pathname === '/portal/dashboard';
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -42,12 +41,10 @@ const PortalHeader: React.FC<Props> = ({ title, onMenuToggle }) => {
   };
 
   useEffect(() => { loadNotifs(); }, []);
-
   useEffect(() => {
-    let off = false;
     let unsub: (() => void) | undefined;
     (async () => { unsub = await portalLifecycle.subscribe({ onEvent: (t) => { if (t === 'notification') loadNotifs(); } }); })();
-    return () => { off = true; unsub?.(); };
+    return () => { unsub?.(); };
   }, []);
 
   const logout_ = () => { setShowDD(false); logout(); navigate('/portal/login'); };
@@ -68,76 +65,117 @@ const PortalHeader: React.FC<Props> = ({ title, onMenuToggle }) => {
     setUnread(0);
   };
 
-  const bell = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>;
+  const isDash = location.pathname === '/portal/dashboard';
+  const moduleIcon = isDash ? <Building2 size={22} color="#0F2C59" /> : null;
+  const moduleTitle = isDash ? (companyConfig?.companyName || 'Customer') : title;
 
   return (
-    <header style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, height: 52, background: '#fff', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', fontFamily: F }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={onMenuToggle} aria-label="Menu" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 6, color: '#1E293B', display: 'flex' }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
-        </button>
-        {isDash ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Building2 size={18} color="#0F2C59" />
-            <span style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', lineHeight: 1.15 }}>{companyConfig?.companyName || 'Customer'}</span>
-            <span style={{ fontSize: 10, fontWeight: 600, color: '#D97706', background: '#FEF3C7', padding: '2px 8px', borderRadius: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Gold Partner</span>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', lineHeight: 1.15 }}>Prime<span style={{ color: '#0F2C59' }}>PORTAL</span></span>
-            <span style={{ fontSize: 8, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' as const, letterSpacing: '0.07em', lineHeight: 1.3 }}>CUSTOMER PORTAL</span>
-          </div>
-        )}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <div ref={notifRef} style={{ position: 'relative' }}>
-          <button onClick={() => { setShowNotif((v) => !v); setShowDD(false); }} aria-label="Notifications" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 6, position: 'relative', color: '#1E293B', display: 'flex' }}>
-            {bell}
-            {unread > 0 && <span style={{ position: 'absolute', top: 0, right: 0, minWidth: 14, height: 14, borderRadius: '50%', background: '#DC2626', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '1.5px solid #fff' }}>{unread > 99 ? '99+' : unread}</span>}
-          </button>
-          {showNotif && (
-            <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 6, width: 280, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, boxShadow: '0 6px 20px rgba(0,0,0,0.1)', overflow: 'hidden', zIndex: 200 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #E2E8F0' }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>Notifications</span>
-                {unread > 0 && <button onClick={markAll} style={{ background: 'none', border: 'none', fontSize: 11, fontWeight: 600, color: '#059669', cursor: 'pointer', padding: '4px 0' }}>Mark all read</button>}
-              </div>
-              <div style={{ maxHeight: 260, overflowY: 'auto' }}>
-                {notifs.length === 0 ? <p style={{ padding: '16px 12px', textAlign: 'center', fontSize: 11, color: '#8A94A6' }}>No notifications yet.</p> : notifs.map((n) => (
-                  <button key={n.id} onClick={() => clickNotif(n)} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid #F3F4F6', background: n.is_read ? '#fff' : '#EFF6FF', cursor: 'pointer', border: 'none', borderLeft: 'none', borderRight: 'none', borderTop: 'none' }}>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: n.is_read ? '#4A5568' : '#1E293B', margin: 0, lineHeight: 1.3 }}>{n.title}</p>
-                    {n.body && <p style={{ fontSize: 11, color: '#8A94A6', margin: '1px 0 0', lineHeight: 1.3 }}>{n.body}</p>}
-                    <p style={{ fontSize: 9.5, color: '#A0AAB8', margin: '2px 0 0' }}>{new Date(n.created_at).toLocaleString()}</p>
-                  </button>
-                ))}
-              </div>
-              <div style={{ padding: '6px 12px', borderTop: '1px solid #E2E8F0' }}>
-                <button onClick={() => { setShowNotif(false); navigate('/portal/notifications'); }} style={{ width: '100%', textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#059669', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}>View all</button>
-              </div>
-            </div>
-          )}
+    <header
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 100,
+        height: 56,
+        background: '#ffffff',
+        borderBottom: '1px solid #E2E8F0',
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 16px',
+        fontFamily: F,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: 1200 }}>
+        <div style={{ width: 40, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+          {moduleIcon}
         </div>
-        <div ref={ddRef} style={{ position: 'relative' }}>
-          <button onClick={() => { setShowDD(!showDD); setShowNotif(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, borderRadius: '50%' }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#0F2C59', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 600 }}>{(user?.full_name || user?.email || 'C').charAt(0).toUpperCase()}</div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+          <span style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', lineHeight: 1.2, whiteSpace: 'nowrap', textAlign: 'center' }}>{moduleTitle}</span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => onCommandToggle?.()}
+            aria-label="Search"
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '6px', borderRadius: 6, color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Search size={18} />
           </button>
-          {showDD && (
-            <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 6, width: 180, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, boxShadow: '0 6px 20px rgba(0,0,0,0.1)', overflow: 'hidden', zIndex: 200 }}>
-              <div style={{ padding: '8px 12px', borderBottom: '1px solid #E2E8F0' }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: '#1E293B', margin: 0 }}>{user?.full_name || 'Customer'}</p>
-                <p style={{ fontSize: 11, color: '#94A3B8', margin: '1px 0 0' }}>{user?.email || ''}</p>
+
+          <div ref={notifRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => { setShowNotif((v) => !v); setShowDD(false); }}
+              aria-label="Notifications"
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '6px', borderRadius: 6, color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+            >
+              <Bell size={18} />
+              {unread > 0 && (
+                <span style={{ position: 'absolute', top: 2, right: 2, minWidth: 14, height: 14, borderRadius: '50%', background: '#DC2626', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '1.5px solid #fff' }}>
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
+            </button>
+            {showNotif && (
+              <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 8, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', zIndex: 200, width: 300, overflow: 'hidden', animation: 'modalIn .15s ease' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #F1F5F9' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Notifications</span>
+                  {unread > 0 && (
+                    <button onClick={markAll} style={{ border: 'none', fontSize: 11, fontWeight: 700, color: '#059669', cursor: 'pointer', padding: '4px 0', background: 'transparent' }}>Mark all read</button>
+                  )}
+                </div>
+                <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                  {notifs.length === 0 ? <p style={{ padding: '18px 14px', textAlign: 'center', fontSize: 11.5, color: '#94A3B8' }}>No notifications yet.</p> : notifs.map((n) => (
+                    <button key={n.id} onClick={() => clickNotif(n)} style={{ width: '100%', textAlign: 'left', padding: '10px 14px', borderBottom: '1px solid #F1F5F9', background: n.is_read ? 'transparent' : '#F0FDF4', cursor: 'pointer', border: 'none', display: 'block' }}>
+                      <p style={{ fontSize: 12, fontWeight: 600, color: n.is_read ? '#475569' : '#0F172A', margin: 0, lineHeight: 1.3 }}>{n.title}</p>
+                      {n.body && <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0', lineHeight: 1.3 }}>{n.body}</p>}
+                      <p style={{ fontSize: 9.5, color: '#A0AAB8', margin: '3px 0 0' }}>{new Date(n.created_at).toLocaleString()}</p>
+                    </button>
+                  ))}
+                </div>
+                <div style={{ padding: '8px 14px', borderTop: '1px solid #F1F5F9' }}>
+                  <button onClick={() => { setShowNotif(false); navigate('/portal/notifications'); }} style={{ width: '100%', textAlign: 'center', fontSize: 12, fontWeight: 700, borderRadius: 8, padding: '6px 0', color: '#059669', border: 'none', cursor: 'pointer', background: 'transparent' }}>
+                    View all
+                  </button>
+                </div>
               </div>
-              <div style={{ padding: 3 }}>
-                <button onClick={() => { setShowDD(false); navigate('/portal/profile'); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500, color: '#334155', background: 'none', border: 'none', cursor: 'pointer' }}>
+            )}
+          </div>
+
+          <div ref={ddRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => { setShowDD(!showDD); setShowNotif(false); }}
+              aria-label="Account menu"
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #34D399, #0F2C59)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, boxShadow: '0 2px 8px -2px rgba(15,44,89,0.4)' }}>
+                {(user?.full_name || user?.email || 'C').charAt(0).toUpperCase()}
+              </div>
+            </button>
+            {showDD && (
+              <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 8, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', zIndex: 200, width: 190, overflow: 'hidden', padding: 6, animation: 'modalIn .15s ease' }}>
+                <div style={{ padding: '6px 10px 8px', borderBottom: '1px solid #F1F5F9', marginBottom: 4 }}>
+                  <p style={{ fontSize: 12.5, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3 }}>{user?.full_name || 'Customer'}</p>
+                  <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email || ''}</p>
+                </div>
+                <button onClick={() => { setShowDD(false); navigate('/portal/profile'); }} style={{ width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 500, color: '#475569' }}>
                   <User size={13} style={{ color: '#94A3B8' }} /> Profile
                 </button>
-                <button onClick={logout_} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500, color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer' }}>
+                <button onClick={logout_} style={{ width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 500, color: '#DC2626' }}>
                   <LogOut size={13} /> Sign Out
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes modalIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
     </header>
   );
 };

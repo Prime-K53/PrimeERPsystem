@@ -333,7 +333,7 @@ const CustomerCreateRequest: React.FC = () => {
   }
 
   return (
-    <div style={{ fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#2D3748', maxWidth: 720, margin: '0 auto', paddingBottom: 120 }}>
+    <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B', maxWidth: 720, margin: '0 auto', paddingBottom: 120 }}>
       <style>{spinKeyframes}</style>
       <div style={{
         position: 'sticky', top: 0, zIndex: 20, background: 'rgba(255,253,250,.92)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
@@ -535,7 +535,7 @@ const CustomerCreateRequest: React.FC = () => {
             <h2 style={{ fontSize: 14, fontWeight: 600, color: '#1A202C', margin: 0 }}>
               Selected Items ({lines.length})
             </h2>
-            <span style={{ fontSize: 10.5, color: '#8A94A6', fontWeight: 600 }}>{customerName}</span>
+            <span style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>{customerName}</span>
           </div>
           {lines.length === 0 ? (
             <div style={{ padding: '36px 14px', textAlign: 'center' }}>
@@ -554,10 +554,10 @@ const CustomerCreateRequest: React.FC = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #E9EDF3' }}>
-                    <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 10.5, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.08 }}>Item</th>
-                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 10.5, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.08, width: 90 }}>Qty</th>
-                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 10.5, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.08, width: 110 }}>Price</th>
-                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 10.5, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase', letterSpacing: 0.08, width: 110 }}>Total</th>
+                    <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 13.5, fontWeight: 600, color: '#475569' }}>Item</th>
+                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 13.5, fontWeight: 600, color: '#475569', width: 90 }}>Qty</th>
+                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 13.5, fontWeight: 600, color: '#475569', width: 110 }}>Price</th>
+                    <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: 13.5, fontWeight: 600, color: '#475569', width: 110 }}>Total</th>
                     <th style={{ width: 44 }}></th>
                   </tr>
                 </thead>

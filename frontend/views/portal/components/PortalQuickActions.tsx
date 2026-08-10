@@ -10,9 +10,9 @@ interface QuickAction {
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { label: 'New Order', icon: ShoppingCart, path: '/portal/new-request?type=order', color: '#1f8577' },
-  { label: 'New Quotation', icon: FileText, path: '/portal/new-request?type=quotation', color: '#7c3aed' },
-  { label: 'New Request', icon: Receipt, path: '/portal/new-request?type=request', color: '#2563eb' },
+  { label: 'New Order', icon: ShoppingCart, path: '/portal/orders', color: '#1f8577' },
+  { label: 'New Quotation', icon: FileText, path: '/portal/quotations', color: '#7c3aed' },
+  { label: 'New Request', icon: Receipt, path: '/portal/requests', color: '#2563eb' },
   { label: 'Refer to Someone', icon: Users, path: '/portal/referrals', color: '#d99a3f' },
   { label: 'Prime Copilot', icon: MessageSquare, path: '/portal/support', color: '#059669' },
 ];

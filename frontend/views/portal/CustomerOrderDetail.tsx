@@ -79,18 +79,18 @@ function stageIndex(status: string): number {
 }
 
 const s = {
-  root: { fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#2D3748', padding: 24, maxWidth: 800, margin: '0 auto' } as React.CSSProperties,
+  root: { fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B', padding: 24, maxWidth: 800, margin: '0 auto' } as React.CSSProperties,
   card: { background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 10, border: '1px solid #E9EDF3' } as React.CSSProperties,
   cardNoPad: { background: '#fff', borderRadius: 12, marginBottom: 10, border: '1px solid #E9EDF3', overflow: 'hidden' as const } as React.CSSProperties,
   cardHeader: { padding: '10px 14px', borderBottom: '1px solid #E9EDF3' } as React.CSSProperties,
   sectionTitle: { fontSize: 14, fontWeight: 600, color: '#1A202C', margin: 0 } as React.CSSProperties,
-  label: { fontSize: 10.5, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase' as const, letterSpacing: '0.03em' } as React.CSSProperties,
+  label: { fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.03em' } as React.CSSProperties,
   body: { fontSize: 13, fontWeight: 500, color: '#4A5568' } as React.CSSProperties,
-  muted: { fontSize: 10.5, color: '#8A94A6' } as React.CSSProperties,
+  muted: { fontSize: 12, color: '#64748B' } as React.CSSProperties,
   value: { fontSize: 13, fontWeight: 600, color: '#1A202C' } as React.CSSProperties,
   row: { padding: '8px 14px', borderTop: '1px solid #F3F4F6', display: 'flex', alignItems: 'center' } as React.CSSProperties,
-  th: { padding: '8px 14px', fontSize: 10.5, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase' as const, letterSpacing: '0.03em', borderTop: '1px solid #F3F4F6' } as React.CSSProperties,
-  thRight: { padding: '8px 14px', fontSize: 10.5, fontWeight: 600, color: '#8A94A6', textTransform: 'uppercase' as const, letterSpacing: '0.03em', textAlign: 'right' as const, borderTop: '1px solid #F3F4F6' } as React.CSSProperties,
+  th: { padding: '8px 14px', fontSize: 13.5, fontWeight: 600, color: '#475569', borderTop: '1px solid #F3F4F6' } as React.CSSProperties,
+  thRight: { padding: '8px 14px', fontSize: 13.5, fontWeight: 600, color: '#475569', textAlign: 'right' as const, borderTop: '1px solid #F3F4F6' } as React.CSSProperties,
   td: { padding: '8px 14px', fontSize: 13, fontWeight: 500, color: '#4A5568', borderTop: '1px solid #F3F4F6' } as React.CSSProperties,
   tdRight: { padding: '8px 14px', fontSize: 13, fontWeight: 500, color: '#4A5568', textAlign: 'right' as const, borderTop: '1px solid #F3F4F6' } as React.CSSProperties,
   tdBold: { padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#1A202C', textAlign: 'right' as const, borderTop: '1px solid #F3F4F6', fontFamily: "'JetBrains Mono', monospace" } as React.CSSProperties,
@@ -311,7 +311,7 @@ const CustomerOrderDetail: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const }}>
             <StatusBadge status={order.status} />
             {(order as any).tracking_number && (
-              <PortalButton variant="primary" onClick={() => navigate(`/portal/shipments/${order.id}`)} icon={Truck}>Track Shipment</PortalButton>
+              <PortalButton variant="primary" onClick={() => navigate(`/portal/deliveries`)} icon={Truck}>Track Shipment</PortalButton>
             )}
             {order.status !== 'Draft' && order.status !== 'Cancelled' && (
               <PortalButton variant="secondary" onClick={() => navigate('/portal/invoices')} icon={FileText}>View Invoice</PortalButton>

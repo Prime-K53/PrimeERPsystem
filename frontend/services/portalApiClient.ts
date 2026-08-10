@@ -313,6 +313,7 @@ export interface PortalCatalogItem {
   name: string;
   sku?: string;
   unit?: string;
+  description?: string;
   price?: number;
   unitPrice?: number;
   quantity?: number;
@@ -413,6 +414,7 @@ export interface PortalShipmentRecord {
   tracking_number: string | null;
   carrier: string | null;
   driver_name: string | null;
+  driver_phone: string | null;
   vehicle_no: string | null;
   estimated_delivery: string | null;
   actual_arrival: string | null;

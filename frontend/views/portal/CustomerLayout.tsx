@@ -3,12 +3,11 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { portalLifecycle } from '../../services/portalApiClient';
 import PortalSidebar from './components/PortalSidebar';
-import PortalHeader from './components/PortalHeader';
 import { ToastProvider } from './components/Toast';
 import CommandPalette from './components/CommandPalette';
 import MobileBottomNav from './components/MobileBottomNav';
 import { ThemeProvider } from './context/ThemeContext';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Menu } from 'lucide-react';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -66,17 +65,16 @@ class PortalErrorBoundary extends Component<{ children: ReactNode }, ErrorBounda
 
 const pageTitles: Record<string, string> = {
   '/portal/dashboard': 'Dashboard',
-  '/portal/catalog': 'Product Catalog',
   '/portal/requests': 'Requests',
-  '/portal/orders': 'Orders',
+  '/portal/orders': 'Product Orders',
   '/portal/quotations': 'Quotations',
   '/portal/invoices': 'Invoices',
-  '/portal/payments': 'Payments',
+  '/portal/payments': 'Receipt',
   '/portal/payment-options': 'Payment Options',
-  '/portal/statements': 'Statements',
   '/portal/referrals': 'Referrals',
   '/portal/wallet': 'Wallet',
-  '/portal/shipments': 'Shipments',
+  '/portal/shipments': 'Deliveries & Tracking',
+  '/portal/deliveries': 'Deliveries & Tracking',
   '/portal/support': 'Support',
   '/portal/profile': 'Profile',
 };
@@ -99,7 +97,6 @@ const CustomerLayout: React.FC = () => {
 
   const currentTitle = pageTitles[location.pathname] || 'Customer Portal';
 
-  const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   useEffect(() => {
@@ -116,6 +113,12 @@ const CustomerLayout: React.FC = () => {
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const handleToggle = () => setSidebarOpen((v) => !v);
+    window.addEventListener('toggle-portal-sidebar', handleToggle);
+    return () => window.removeEventListener('toggle-portal-sidebar', handleToggle);
   }, []);
 
   if (loading) {
@@ -147,17 +150,19 @@ const CustomerLayout: React.FC = () => {
               }}
             />
           )}
-          <PortalSidebar isOpen={sidebarOpen} onClose={closeSidebar} collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
-          <PortalHeader title={currentTitle} onMenuToggle={toggleSidebar} sidebarCollapsed={sidebarCollapsed} onCommandToggle={() => setCommandOpen((v) => !v)} />
+          <PortalSidebar isOpen={sidebarOpen} onClose={closeSidebar} collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} moduleName={location.pathname === '/portal/dashboard' ? undefined : currentTitle} />
           <main
             id="main-content"
             style={{
-              position: 'fixed', top: 52, left: 0, right: 0, bottom: 56,
+              // NOTE: no z-index here on purpose. Giving <main> a z-index would
+              // create a stacking context that traps module modals (z-index 90+)
+              // BELOW the fixed MobileBottomNav (z-index 50) — hiding modal
+              // footer buttons behind the nav bar.
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
               overflowX: 'auto', overflowY: 'auto',
-              zIndex: 10,
             }}
           >
-            <div style={{ padding: '10px 12px 16px' }}>
+            <div className="portal-module" style={{ padding: '10px 12px 16px' }}>
               <PortalErrorBoundary>
                 <Outlet />
               </PortalErrorBoundary>

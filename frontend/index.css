@@ -1701,6 +1701,26 @@ td {
   }
 }
 
+/* ── Portal Module Typography Base ──────────────────────────────────────── */
+/* Applied to the portal main content wrapper; modules inherit these unless
+   they set their own root font-size inline. Spec: 13.5px base, 1.45 line
+   height, slate ink (never pure black/white), Inter/Roboto sans. */
+.portal-module {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #1E293B;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular numerals for financial figures (amounts, quantities, dates). */
+.portal-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+
 /* ── Premium Portal Glassmorphism & Visual Tokens ───────────────────────── */
 .glass-panel-premium {
   background: rgba(255, 255, 255, 0.82);
