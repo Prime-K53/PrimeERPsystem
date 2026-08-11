@@ -99,6 +99,13 @@ const CustomerLayout: React.FC = () => {
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
+  // Tab identity: the portal is PrimePORTAL, never "Prime ERP System".
+  useEffect(() => {
+    document.title = currentTitle && currentTitle !== 'Customer Portal'
+      ? `PrimePORTAL · ${currentTitle}`
+      : 'PrimePORTAL';
+  }, [currentTitle]);
+
   useEffect(() => {
     document.body.style.overflow = sidebarOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };

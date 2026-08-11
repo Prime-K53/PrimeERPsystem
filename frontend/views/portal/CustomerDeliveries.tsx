@@ -1,9 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Truck, Clock, User, Navigation,
-  Search, AlertCircle, Loader2, MapPin
+  Search, AlertCircle, MapPin, PackageCheck
 } from 'lucide-react';
-import { portalLifecycle, PortalShipmentRecord } from '../../services/portalApiClient';
+import { pdf } from '@react-pdf/renderer';
+import { useAuth } from '../../context/AuthContext';
+import { useToast } from './components/Toast';
+import { portalLifecycle, PortalShipmentRecord, PortalDeliveryBanner } from '../../services/portalApiClient';
+import { PrimeDocument } from '../shared/components/PDF/PrimeDocument';
+import { initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
+import { mapToInvoiceData } from '../../utils/pdfMapper';
+import { enrichDocumentCustomerData } from '../../utils/documentCustomerData';
+import { attachDocumentSecurity } from '../../utils/documentSecurity';
+import type { PrimeDocData } from '../shared/components/PDF/schemas';
 
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import EmptyState from './components/EmptyState';
@@ -18,6 +27,7 @@ const statusBadgeStyles: Record<string, { bg: string; color: string; border: str
   dispatched: { bg: '#F8FAFC', color: '#475569', border: '#E2E8F0' },
   in_transit: { bg: '#F8FAFC', color: '#475569', border: '#E2E8F0' },
   processing: { bg: '#FFFBEB', color: '#92400E', border: '#FDE68A' },
+  pending: { bg: '#FFF7ED', color: '#9A3412', border: '#FED7AA' },
 };
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
@@ -46,14 +56,72 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
+// ── Delivery Banner Strip (sliding update cards like the dashboard ads) ───
+const bannerConfig: Record<string, { bg: string; border: string; color: string; label: string; icon: React.ReactNode }> = {
+  inbound: {
+    bg: '#EEF2FF', border: '#C7D2FE', color: '#3730A3',
+    label: 'Out of Warehouse',
+    icon: <PackageCheck size={16} />,
+  },
+  active: {
+    bg: '#F5F3FF', border: '#DDD6FE', color: '#5B21B6',
+    label: 'Out for Delivery',
+    icon: <Truck size={16} />,
+  },
+  delivered: {
+    bg: '#ECFDF5', border: '#A7F3D0', color: '#065F46',
+    label: 'Delivered',
+    icon: <PackageCheck size={16} />,
+  },
+};
+
+const bannerMessage = (b: PortalDeliveryBanner) => {
+  const ref = b.invoiceNumber ? `invoice ${b.invoiceNumber}` : (b.orderNumber ? `order ${b.orderNumber}` : 'your order');
+  if (b.stage === 'delivered') return `Your delivery for ${ref} has been delivered.`;
+  if (b.stage === 'active') return `Your delivery for ${ref} is out for delivery.`;
+  return `Your delivery for ${ref} is out of the warehouse.`;
+};
+
+const DeliveryBannerStrip: React.FC<{ banners: PortalDeliveryBanner[] }> = ({ banners }) => {
+  if (!banners || banners.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+      {banners.slice(0, 4).map((b) => {
+        const cfg = bannerConfig[b.stage] || bannerConfig.active;
+        return (
+          <div
+            key={b.id}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 14px', borderRadius: 12,
+              background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color,
+              fontSize: 12.5, fontWeight: 600, lineHeight: 1.4,
+            }}
+          >
+            <span style={{ flexShrink: 0 }}>{cfg.icon}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>{bannerMessage(b)}</span>
+            <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {cfg.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 // ── Main Component ──────────────────────────────────────────────────────
 const CustomerDeliveries: React.FC = () => {
   const { user } = useCustomerAuth();
+  const { companyConfig } = useAuth();
+  const { addToast } = useToast();
   const [shipments, setShipments] = useState<PortalShipmentRecord[]>([]);
+  const [banners, setBanners] = useState<PortalDeliveryBanner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedShipment, setSelectedShipment] = useState<PortalShipmentRecord | null>(null);
+  const [downloadingNote, setDownloadingNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,9 +145,17 @@ const CustomerDeliveries: React.FC = () => {
     }
   }, [search]);
 
+  const loadBanners = useCallback(() => {
+    portalLifecycle.deliveries
+      .banners()
+      .then((list) => setBanners(Array.isArray(list) ? list : []))
+      .catch(() => setBanners((prev) => prev));
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadBanners();
+  }, [load, loadBanners]);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +163,15 @@ const CustomerDeliveries: React.FC = () => {
     (async () => {
       unsubscribe = await portalLifecycle.subscribe({
         onEvent: (type, payload) => {
-          if (type === 'entity_changed' && payload?.docType === 'order' && !cancelled) load();
+          if (
+            type === 'entity_changed' &&
+            payload?.docType &&
+            ['order', 'shipment', 'delivery', 'delivery_note'].includes(payload.docType) &&
+            !cancelled
+          ) {
+            load();
+            loadBanners();
+          }
         },
       });
     })();
@@ -95,7 +179,37 @@ const CustomerDeliveries: React.FC = () => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [load]);
+  }, [load, loadBanners]);
+
+  const handleDownloadDeliveryNote = async (shipment: PortalShipmentRecord) => {
+    if (downloadingNote) return;
+    setDownloadingNote(shipment.id);
+    try {
+      const note = await portalLifecycle.deliveries.note(shipment.id);
+      if (!note) {
+        addToast('error', 'Delivery note not found for this delivery.');
+        return;
+      }
+      addToast('info', 'Preparing Delivery Note PDF…');
+      const enriched = enrichDocumentCustomerData(note, []);
+      const pdfData = mapToInvoiceData(enriched, companyConfig, 'DELIVERY_NOTE');
+      await initializePrimePdfFonts();
+      const secured = await attachDocumentSecurity(pdfData, companyConfig?.companyName);
+      const blob = await pdf(<PrimeDocument type="DELIVERY_NOTE" data={secured as PrimeDocData} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dnNumber = note.dnNumber || note.deliveryNoteNumber || note.id || '';
+      link.download = dnNumber ? `Delivery Note - ${dnNumber}.pdf` : 'Delivery Note.pdf';
+      link.click();
+      URL.revokeObjectURL(url);
+      addToast('success', 'Delivery Note downloaded');
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to download delivery note');
+    } finally {
+      setDownloadingNote(null);
+    }
+  };
 
   const formatETA = (estimated_delivery?: string) => {
     if (!estimated_delivery) return '—';
@@ -188,6 +302,9 @@ const CustomerDeliveries: React.FC = () => {
             {error}
           </div>
         )}
+
+        {/* Live delivery status banners */}
+        <DeliveryBannerStrip banners={banners} />
 
         {/* Search */}
         <div style={{ position: 'relative', marginBottom: 16 }}>
@@ -352,6 +469,8 @@ const CustomerDeliveries: React.FC = () => {
           }}
           isOpen
           onClose={() => setSelectedShipment(null)}
+          onDownloadDeliveryNote={() => handleDownloadDeliveryNote(selectedShipment)}
+          downloadingNote={downloadingNote === selectedShipment.id}
         />
       )}
     </div>

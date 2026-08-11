@@ -20,22 +20,16 @@
 - **Start**: `npm start`
 
 ### Database
-- SQL migration files are in `database/`
-- Run in this order:
-  1. `supabase-create-all-tables.sql`
-  2. `supabase-rls-hardening-migration.sql`
-  3. `supabase-migration-cloud-first.sql`
-  4. `supabase-migrate-to-single-company.sql`
-  5. `supabase-add-updated-at-triggers.sql` (NEW — adds BEFORE UPDATE triggers)
-  6. `supabase-fix-realtime-publication.sql` (NEW — completes realtime publication)
-  7. `supabase-portal-tables.sql` (NEW — creates portal_users/portal_sessions/portal_password_resets/portal_login_history; required for customer portal auth & password regeneration)
-  8. `supabase-add-version-columns.sql` (NEW — adds `version` column to every business table with a `data` JSONB; REQUIRED for cloud sync. Without it POST /api/sync/ops fails with PGRST204 "Could not find the 'version' column")
-  9. `supabase-payment-allocation-tables.sql` (NEW — creates payment_allocations/payment_allocation_lines; required for portal receipt payment allocation display)
-  10. `supabase-portal-ads.sql` (NEW — creates portal_ads; required for Smart Operations Hub → Ads banner management and the portal banner carousel)
-
-## Notes
-- `npx vitest` / `npx tsc` require .NET Framework v4.0.30319 on Windows PowerShell 5.1
-- If .NET is unavailable, use PowerShell 7+ or `cmd /c` to run Node.js commands
+- The authoritative migration chain is `supabase/migrations/`, run in numeric order:
+  1. `0001_baseline_live_schema.sql` — consolidated LIVE schema (159 tables,
+     functions, updated_at triggers, post-`_FIX_SYNC_ISSUES` RLS policy set,
+     realtime publication). Idempotent; safe on existing DBs.
+  2. `0002_fix_rls_profiles_account_creation.sql` — applied already (idempotent)
+  3. `0003_referral_tables.sql` — PENDING, not yet applied to live
+  4. `0004_referral_rls_policies.sql` — PENDING, not yet applied to live
+- `database/archive/` holds the previously-applied standalone SQL files for
+  provenance (do NOT re-run them — e.g. `supabase-rls-hardening-migration.sql`
+  would re-add `company_id` columns). Manifest: `database/archive/README.md`.
 
 ## Notes
 - `npx vitest` / `npx tsc` require .NET Framework v4.0.30319 on Windows PowerShell 5.1

@@ -1117,34 +1117,84 @@ function getLandingPath(): string {
   return '/login';
 }
 
+// Portal-aware identity: the customer portal lives under /portal (hash or
+// clean path) or the portal.primeerp.com host. It gets its own branding
+// (PrimePORTAL) everywhere the ERP would otherwise show "Prime ERP System".
+function isPortalContext(): boolean {
+  const hash = String(window.location.hash || '').toLowerCase();
+  if (hash.startsWith('#/portal')) return true;
+  const path = String(window.location.pathname || '').toLowerCase();
+  if (path.startsWith('/portal')) return true;
+  const host = String(window.location.hostname || '').toLowerCase();
+  return host === 'portal.primeerp.com' || host.endsWith('.portal.primeerp.com');
+}
+
 const RootNavigator: React.FC = () => {
   const { user, isInitialized, requiresSetup } = useAuth();
+  const isPortal = isPortalContext();
+
+  // Keep the browser tab labelled correctly for each surface (the static
+  // <title> in index.html is also corrected pre-mount).
+  useEffect(() => {
+    document.title = isPortal ? 'PrimePORTAL' : 'Prime ERP System';
+  }, [isPortal]);
 
   if (!isInitialized) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#F5F7F9] overflow-hidden">
+      <div className="h-screen w-screen flex items-center justify-center overflow-hidden" style={{ background: isPortal ? '#F3F7F6' : '#F5F7F9' }}>
         {/* Decorative Background Accents */}
-        <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[120px] animate-pulse" />
-        <div className="fixed bottom-0 left-0 w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-[120px] animate-pulse delay-700" />
-        
+        <div className={`fixed top-0 right-0 w-[500px] h-[500px] rounded-full blur-[120px] animate-pulse ${isPortal ? 'bg-teal-500/5' : 'bg-blue-500/5'}`} />
+        <div className={`fixed bottom-0 left-0 w-[500px] h-[500px] rounded-full blur-[120px] animate-pulse delay-700 ${isPortal ? 'bg-indigo-500/5' : 'bg-indigo-500/5'}`} />
+
         <div className="flex flex-col items-center gap-8 relative z-10">
           {/* Premium Logo */}
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-[0_8px_32px_rgba(59,130,246,0.3)] ring-1 ring-white/20 transition-all duration-500 hover:scale-105 hover:shadow-[0_12px_40px_rgba(59,130,246,0.45)]">
+          <div
+            className="w-24 h-24 rounded-full flex items-center justify-center ring-1 ring-white/20 transition-all duration-500 hover:scale-105"
+            style={{
+              background: isPortal
+                ? 'linear-gradient(135deg, #146b60 0%, #0f544c 100%)'
+                : 'linear-gradient(to bottom right, #3b82f6, #4f46e5)',
+              boxShadow: isPortal
+                ? '0 8px 32px rgba(15, 84, 76, 0.30)'
+                : '0 8px 32px rgba(59, 130, 246, 0.3)',
+            }}
+          >
             <span className="text-white text-5xl font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.2)]">P</span>
           </div>
 
           <div className="text-center space-y-2">
-            <h1 className="text-4xl font-black tracking-tight animate-fade-in">
-              <span className="text-blue-600">Prime</span> <span className="text-green-600">ERP</span> <span className="text-blue-600">System</span>
-            </h1>
-            <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] animate-pulse">
-              Powered by AI
-            </p>
+            {isPortal ? (
+              <>
+                <h1 className="text-4xl font-black tracking-tight animate-fade-in text-[#0F2C59]">
+                  Prime<span style={{ color: '#d99a3f' }}>PORTAL</span>
+                </h1>
+                <p className="text-[#146b60] font-bold uppercase tracking-[0.2em] text-[10px] animate-pulse">
+                  Customer Portal
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-4xl font-black tracking-tight animate-fade-in">
+                  <span className="text-blue-600">Prime</span> <span className="text-green-600">ERP</span> <span className="text-blue-600">System</span>
+                </h1>
+                <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] animate-pulse">
+                  Powered by AI
+                </p>
+              </>
+            )}
           </div>
 
           {/* Premium Loading Bar */}
           <div className="w-80 h-[3px] bg-slate-100/80 rounded-full overflow-hidden shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]">
-            <div className="h-full rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 animate-progress-indeterminate shadow-[0_0_16px_rgba(99,102,241,0.25)]"></div>
+            <div
+              className="h-full rounded-full animate-progress-indeterminate"
+              style={{
+                background: isPortal
+                  ? 'linear-gradient(to right, #146b60, #3fa294, #d99a3f)'
+                  : 'linear-gradient(to right, #3b82f6, #4f46e5, #9333ea)',
+                boxShadow: isPortal ? '0 0 16px rgba(63, 162, 148, 0.30)' : '0 0 16px rgba(99, 102, 241, 0.25)',
+              }}
+            ></div>
           </div>
         </div>
       </div>

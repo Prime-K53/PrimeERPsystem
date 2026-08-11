@@ -41,7 +41,7 @@ const ALLOWED_TABLES = new Set([
 
   // production / inventory
   'production_batches', 'production_resources', 'work_centers', 'work_orders',
-  'batches', 'boms', 'bom_templates', 'goods_receipts', 'job_tickets',
+  'boms', 'bom_templates', 'goods_receipts', 'job_tickets',
   'job_ticket_settings', 'resource_allocations', 'warehouse_inventory',
   'material_batches', 'material_categories', 'inventory_transactions',
   'material_reservations', 'profit_margin_settings', 'market_adjustments',
@@ -74,10 +74,8 @@ const ALLOWED_TABLES = new Set([
   // procurement / maintenance
   'subcontract_orders', 'maintenance_logs',
 
-  // referral program
-  'customer_referrals', 'referral_rewards', 'referral_timeline',
-  'referral_audit_logs', 'referral_campaigns', 'referral_analytics',
-  'referral_reversals', 'referral_event_history',
+  // referral program — pending migration (0003/0004), not yet applied to live.
+  // Not in allow-list until the migration is applied to avoid dead-letter debt.
 
   // engagement / loyalty
   'engagement_timeline', 'engagement_audit', 'engagement_points',
@@ -88,7 +86,7 @@ const ALLOWED_TABLES = new Set([
   'engagement_customer_rewards', 'engagement_analytics',
 
   // audit / sync infrastructure
-  'audit_logs', 'profiles', 'users', 'idempotency_keys',
+  'audit_logs', 'profiles', 'idempotency_keys',
 ]);
 
 // Tables that simply do not exist in the cloud shape yet. Their writes are
@@ -101,6 +99,19 @@ const VALID_TABLE_PATTERN = /^[a-z_][a-z0-9_]*$/;
 
 router.post('/ops', async (req, res) => {
   try {
+    // B5: Authorization — reject portal customers and any unauthenticated caller.
+    // The global verifyToken middleware already authenticated the JWT; we now
+    // enforce that the caller is an ERP user (not a portal customer). Portal
+    // tokens carry role='portal_customer'; ERP tokens carry roles like
+    // 'Admin', 'User', 'Company Admin', etc.
+    const callerRole = String(req.user?.role || '').toLowerCase();
+    if (!req.user || callerRole === 'portal_customer' || callerRole === '') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Sync gateway requires an ERP user token. Portal customers cannot write business data.',
+      });
+    }
+
     const { ops } = req.body || {};
     console.log(`[SYNC-FORENSIC] STAGE-9 backend POST /api/sync/ops received`, {
       opCount: Array.isArray(ops) ? ops.length : 0,

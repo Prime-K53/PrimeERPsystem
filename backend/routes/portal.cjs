@@ -799,7 +799,9 @@ router.get('/referrals/stats', async (req, res) => {
 
 router.get('/referrals/:id/timeline', async (req, res) => {
   try {
-    const data = await portalService.getReferralTimeline(req.params.id );
+    const { customer_id } = req.portalUser;
+    const data = await portalService.getReferralTimeline(req.params.id, customer_id);
+    if (data === null) return res.status(404).json({ error: 'Referral not found' });
     res.json(data);
   } catch (err) {
     console.error('[Portal] Referral timeline error:', err);
@@ -881,12 +883,12 @@ router.post('/support/tickets', SENSITIVE_PORTAL_LIMIT, async (req, res) => {
 
 router.post('/support/tickets/:id/messages', async (req, res) => {
   try {
-    const { id } = req.portalUser;
+    const { id, customer_id } = req.portalUser;
     const { message } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
-    const msg = await portalService.addTicketMessage(req.params.id, id, message);
+    const msg = await portalService.addTicketMessage(req.params.id, id, customer_id, message);
     res.status(201).json(msg);
   } catch (err) {
     console.error('[Portal] Add message error:', err);
@@ -896,12 +898,12 @@ router.post('/support/tickets/:id/messages', async (req, res) => {
 
 router.put('/support/tickets/:id/status', async (req, res) => {
   try {
-    const { id } = req.portalUser;
+    const { id, customer_id } = req.portalUser;
     const { status } = req.body;
     if (!status) {
       return res.status(400).json({ error: 'Status is required' });
     }
-    const result = await portalService.updateTicketStatus(req.params.id, id, status);
+    const result = await portalService.updateTicketStatus(req.params.id, id, customer_id, status);
     res.json(result);
   } catch (err) {
     console.error('[Portal] Update ticket status error:', err);
@@ -912,7 +914,7 @@ router.put('/support/tickets/:id/status', async (req, res) => {
 // ─── Support Ticket Attachments ──────────────────────────────────
 router.post('/support/tickets/:id/attachments', uploadTicketAttachment.single('file'), async (req, res) => {
   try {
-    const { id } = req.portalUser;
+    const { id, customer_id } = req.portalUser;
     const { message_id } = req.body;
     if (!req.file) {
       return res.status(400).json({ error: 'File is required' });
@@ -920,6 +922,7 @@ router.post('/support/tickets/:id/attachments', uploadTicketAttachment.single('f
     const attachment = await portalService.uploadTicketAttachment(
       req.params.id,
       id,
+      customer_id,
       req.file,
       message_id || null
     );
@@ -970,6 +973,33 @@ router.get('/deliveries/today', async (req, res) => {
   } catch (err) {
     console.error('[Portal] Today deliveries error:', err);
     res.status(500).json({ error: 'Failed to load today deliveries' });
+  }
+});
+
+// Customer-facing delivery status banners (sliding carousel like the ads).
+// Every delivery status change updates the banner message for that customer.
+router.get('/deliveries/banner', async (req, res) => {
+  try {
+    const { customer_id } = req.portalUser;
+    const rows = await portalService.getDeliveryBanners(customer_id);
+    res.json(rows);
+  } catch (err) {
+    console.error('[Portal] Delivery banner error:', err);
+    res.status(500).json({ error: 'Failed to load delivery banners' });
+  }
+});
+
+// Downloadable delivery note for a (usually delivered) delivery, strictly
+// scoped to the requesting customer.
+router.get('/deliveries/:id/note', async (req, res) => {
+  try {
+    const { customer_id } = req.portalUser;
+    const note = await portalService.getDeliveryNoteForDelivery(req.params.id, customer_id);
+    if (!note) return res.status(404).json({ error: 'Delivery note not found' });
+    res.json(note);
+  } catch (err) {
+    console.error('[Portal] Delivery note error:', err);
+    res.status(500).json({ error: 'Failed to load delivery note' });
   }
 });
 

@@ -251,6 +251,18 @@ interface RequestLineItem {
   lineTotal: number;
 }
 
+export interface PortalCatalogVariant {
+  id: string;
+  productId: string;
+  name: string;
+  sku?: string;
+  attributes?: Record<string, any>;
+  sellingPrice: number;
+  costPrice: number;
+  stock: number;
+  active: boolean;
+}
+
 export interface PortalCatalogItem {
   id: string;
   name: string;
@@ -264,6 +276,7 @@ export interface PortalCatalogItem {
   quantity?: number;
   category?: string;
   status?: string;
+  variants?: PortalCatalogVariant[];
 }
 
 interface PortalAttachment {
@@ -353,6 +366,11 @@ interface SalesOrderRecord {
 export interface PortalShipmentRecord {
   id: string;
   order_number: string | null;
+  /** Linked delivery note reference when the row is delivery-note sourced. */
+  order_id?: string | null;
+  orderId?: string | null;
+  /** Which ERP document surfaced this delivery ('sales_orders' | 'delivery_notes'). */
+  _source?: string;
   orderDate: string;
   customerName: string;
   status: string;
@@ -367,6 +385,21 @@ export interface PortalShipmentRecord {
   proof_of_delivery: string | null;
   shipping_address: string | null;
   items: RequestLineItem[];
+}
+
+/**
+ * Customer delivery status banner (feeds the sliding dashboard carousel,
+ * mirroring ads). `stage` follows the delivery lifecycle:
+ * inbound (out of warehouse) → active (out for delivery) → delivered (POD).
+ */
+export interface PortalDeliveryBanner {
+  id: string;
+  stage: 'inbound' | 'active' | 'delivered' | string;
+  status: string;
+  orderNumber: string | null;
+  invoiceNumber: string | null;
+  trackingNumber: string | null;
+  updatedAt: string | null;
 }
 
 export interface DocumentChainEntry {
@@ -743,6 +776,17 @@ export const portalLifecycle = {
     },
   },
 
+  deliveries: {
+    /** Sliding delivery status banners (out of warehouse / out for delivery / delivered). */
+    banners(): Promise<PortalDeliveryBanner[]> {
+      return portalApi.get<PortalDeliveryBanner[]>('/deliveries/banner');
+    },
+    /** The customer-scoped delivery note record behind a delivery id (for Download Delivery Note). */
+    note(id: string): Promise<any> {
+      return portalApi.get<any>(`/deliveries/${encodeURIComponent(id)}/note`);
+    },
+  },
+
   documentChain: {
     get(docType: 'request' | 'quotation' | 'order', docId: string): Promise<DocumentChainResult> {
       return portalApi.get<DocumentChainResult>(
@@ -848,10 +892,6 @@ export const portalLifecycle = {
     },
     get(id: string): Promise<any> {
       return portalApi.get(`/invoices/${id}`);
-    },
-    /** Revert the latest payment on an invoice back to unpaid (testing). */
-    revert(id: string): Promise<{ success: boolean; invoiceId: string; reversedAmount: number; status: string }> {
-      return portalApi.post(`/invoices/${id}/revert`);
     },
   },
 

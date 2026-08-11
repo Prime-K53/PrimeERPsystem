@@ -14,10 +14,13 @@ import { F, MONO } from './designTokens';
 import { formatK } from './constants';
 
 interface Allocation {
-  id: string;
+  id?: string;
+  allocation_id?: string;
   invoice_id: string;
-  invoice_number: string;
-  invoice_total: number;
+  invoice_number: string | null;
+  invoice_total?: number;
+  total_amount?: number | null;
+  missing_invoice?: boolean;
   paid_amount: number;
   amount: number;
   order_id?: string;
@@ -90,7 +93,12 @@ const CustomerPaymentDetail: React.FC = () => {
       const allocations = payment.allocations || [];
       const appliedInvoices = allocations.map((a) => a.invoice_number || a.invoice_id);
       const appliedOrders = allocations.map((a) => a.order_number || a.order_id).filter(Boolean);
-      const invoiceTotal = allocations.reduce((sum, a) => sum + Number(a.invoice_total || 0), 0);
+      // Only invoices that are actually known contribute to the totals — a
+      // missing/unauthorized invoice has `total_amount: null`, so it must not
+      // be counted as a zero invoice (that would fabricate a false balance).
+      const invoiceTotal = allocations.reduce((sum, a) => (
+        a.missing_invoice ? sum : sum + Number(a.total_amount ?? a.invoice_total ?? 0)
+      ), 0);
       const orderTotal = allocations.reduce((sum, a) => sum + Number(a.order_total || 0), 0);
       const totalAllocated = allocations.reduce((sum, a) => sum + Number(a.amount || 0), 0);
       const amountReceived = Number(payment.amount || 0);
@@ -228,7 +236,7 @@ const CustomerPaymentDetail: React.FC = () => {
 
                 return (
                   <div
-                    key={a.id}
+                    key={a.allocation_id || a.id || a.invoice_id}
                     style={isLast ? rowLast : row}
                     onMouseEnter={(e) => { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.borderLeftColor = '#0F2C59'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderLeftColor = 'transparent'; }}

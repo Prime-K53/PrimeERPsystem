@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ShoppingCart, Plus, Minus, Trash2, Search, Package,
-  ChevronRight, MapPin, Truck, X, Receipt, Loader2, CheckCircle2, RefreshCw, Star
+  ShoppingCart, Plus, Minus, Search, Package,
+  ChevronRight, MapPin, Truck, X, Receipt, Loader2, CheckCircle2, RefreshCw, Star,
+  Filter, Layers, Check,
 } from 'lucide-react';
-import { portalLifecycle, PortalCatalogItem, PortalPromotionInfo, buildQueryString } from '../../services/portalApiClient';
+import { portalLifecycle, PortalCatalogItem, PortalCatalogVariant, PortalPromotionInfo, buildQueryString } from '../../services/portalApiClient';
 import { usePortalData } from './hooks/usePortalData';
 import { useCart, CartProvider } from '../../context/CartContext';
 import { useToast } from './components/Toast';
@@ -13,13 +14,12 @@ import PortalInput from './components/PortalInput';
 import ErrorBanner from './components/ErrorBanner';
 import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
-import { F, MONO, NAVY, TEAL_GRADIENT, EMERALD } from './designTokens';
+import { F, MONO, TEAL_GRADIENT } from './designTokens';
 import { DEFAULT_PAGE_SIZE, formatK } from './constants';
 
 
 type Tab = 'catalog' | 'history';
-
-const ESTIMATED_TAX_RATE = 0.16;
+type TypeFilter = 'all' | 'Product' | 'Stationery' | 'Service';
 
 const parseItems = (raw: any): { name: string; quantity: number; unitPrice: number; lineTotal: number }[] => {
   let arr = raw;
@@ -81,20 +81,36 @@ const chipMeta = (status: string) => {
   return { label: status || 'UNKNOWN', color: '#6B7280', bg: 'transparent' };
 };
 
+const TYPE_FILTERS: { key: TypeFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'Product', label: 'Printed Products' },
+  { key: 'Stationery', label: 'Stationery' },
+  { key: 'Service', label: 'Service' },
+];
+
+const variantAttributes = (v: PortalCatalogVariant): string => {
+  if (!v.attributes || typeof v.attributes !== 'object') return '';
+  return Object.entries(v.attributes)
+    .filter(([, val]) => val != null && val !== '')
+    .map(([key, val]) => `${key}: ${val}`)
+    .join(' · ');
+};
+
 const OrdersInner: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { addToast } = useToast();
-  const { items: cartItems, itemCount, total: cartTotal, addItem, removeItem, updateQuantity, clearCart } = useCart();
+  const { items: cartItems, itemCount, total: cartTotal, addItem, updateQuantity, clearCart } = useCart();
 
   const [tab, setTab] = useState<Tab>(searchParams.get('tab') === 'history' ? 'history' : 'catalog');
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [filter, setFilter] = useState('All');
   const [page, setPage] = useState(1);
 
   const [products, setProducts] = useState<PortalCatalogItem[]>([]);
   const [promotions, setPromotions] = useState<PortalPromotionInfo[]>([]);
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const catalog = usePortalData<PortalCatalogItem[]>({
     key: '/catalog',
     label: 'Orders · Catalog',
@@ -140,6 +156,8 @@ const OrdersInner: React.FC = () => {
    const [reviewOpen, setReviewOpen] = useState(false);
    const [deliveryAddress, setDeliveryAddress] = useState('');
    const [submitting, setSubmitting] = useState(false);
+   const [variantModalProduct, setVariantModalProduct] = useState<PortalCatalogItem | null>(null);
+   const [detailProduct, setDetailProduct] = useState<PortalCatalogItem | null>(null);
 
    const topSellingNames = useMemo(() => {
      const counts = new Map<string, number>();
@@ -173,12 +191,6 @@ const OrdersInner: React.FC = () => {
 
   useEffect(() => { setPage(1); }, [tab, search, filter]);
 
-  const categories = useMemo(() => {
-    const fromData = Array.from(new Set(products.map((p) => p.category).filter(Boolean))) as string[];
-    if (fromData.length === 0) return ['All', 'Electronics & IT', 'Office Furniture', 'Industrial'];
-    return ['All', ...fromData.sort()];
-  }, [products]);
-
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
@@ -186,10 +198,11 @@ const OrdersInner: React.FC = () => {
         || p.name?.toLowerCase().includes(q)
         || p.sku?.toLowerCase().includes(q)
         || `${p.category || ''}`.toLowerCase().includes(q);
-      const matchCategory = category === 'All' || p.category === category;
-      return matchSearch && matchCategory;
+      const matchType = typeFilter === 'all'
+        || String(p.type || '').toLowerCase() === typeFilter.toLowerCase();
+      return matchSearch && matchType;
     });
-  }, [products, search, category]);
+  }, [products, search, typeFilter]);
 
   const availableStatuses = ['All', 'Pending', 'Processing', 'Confirmed', 'Shipped', 'In Transit', 'Out for Delivery', 'Delivered', 'Cancelled'];
 
@@ -211,9 +224,19 @@ const OrdersInner: React.FC = () => {
     return price;
   };
 
-  const handleAdd = (product: PortalCatalogItem) => {
-    addItem(product);
-    addToast('success', `${product.name} added to cart`);
+  const handleAdd = (product: PortalCatalogItem, variant?: PortalCatalogVariant | null) => {
+    addItem(product, 1, variant);
+    const key = variant ? `${product.id}::${variant.id}` : product.id;
+    setAddedIds((prev) => new Set(prev).add(key));
+    setTimeout(() => {
+      setAddedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }, 1200);
+    const label = variant ? `${product.name} (${variantAttributes(variant) || variant.name})` : product.name;
+    addToast('success', `${label} added to cart`);
   };
 
   const handleReorder = (order: OrderRow) => {
@@ -243,10 +266,14 @@ const OrdersInner: React.FC = () => {
       const created = await portalLifecycle.requests.create({
         requestType: 'order',
         items: cartItems.map((i) => ({
-          productId: i.product.id,
-          name: i.product.name,
+          productId: i.selectedVariant ? i.selectedVariant.id : i.product.id,
+          name: i.selectedVariant
+            ? `${i.product.name} - ${i.selectedVariant.name}`
+            : i.product.name,
           quantity: i.quantity,
-          unitPrice: Number(i.product.unitPrice ?? i.product.price ?? 0),
+            unitPrice: i.selectedVariant
+              ? Number(i.selectedVariant.sellingPrice || (i.product.unitPrice ?? i.product.price ?? 0))
+              : Number(i.product.unitPrice ?? i.product.price ?? 0),
         })),
         notes: deliveryAddress.trim() ? `Delivery address: ${deliveryAddress.trim()}` : undefined,
       });
@@ -261,9 +288,11 @@ const OrdersInner: React.FC = () => {
     }
   };
 
+  // The review Total must equal what is actually submitted. Tax is applied
+  // only on official quotations/orders created by the ERP team (which carry
+  // tax_rate/tax_amount) — quotation_requests are stored tax-free, so a hardcoded
+  // estimate here would silently mislead the customer.
   const subtotal = cartTotal;
-  const taxEstimate = subtotal * ESTIMATED_TAX_RATE;
-  const grandTotal = subtotal + taxEstimate;
 
   const catalogLoading = catalog.loading && products.length === 0;
   const historyLoading = history.loading && page === 1;
@@ -298,7 +327,7 @@ const OrdersInner: React.FC = () => {
               Orders
             </h1>
             <p style={{ fontSize: 13, fontWeight: 500, color: '#64748B', margin: '3px 0 0', lineHeight: 1.4 }}>
-              Billing, payments, and outstanding balances
+              Browse products and track your orders
             </p>
           </div>
         </div>
@@ -312,7 +341,7 @@ const OrdersInner: React.FC = () => {
             return (
               <button
                 key={key}
-                onClick={() => { setTab(key); setSearch(''); setFilter('All'); setCategory('All'); }}
+                onClick={() => { setTab(key); setSearch(''); setFilter('All'); setTypeFilter('all'); }}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   padding: '8px 4px', borderRadius: 0, border: 'none', borderBottom: active ? '2px solid #0F2C59' : '2px solid transparent', cursor: 'pointer',
@@ -340,7 +369,7 @@ const OrdersInner: React.FC = () => {
             <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8A94A6', pointerEvents: 'none', zIndex: 1 }} />
             <PortalInput
               label=""
-              placeholder="Search catalog by SKU, name, or material..."
+              placeholder="Search products by name, SKU, or category..."
               value={search}
               onChange={setSearch}
               onFocus={() => {}}
@@ -349,49 +378,50 @@ const OrdersInner: React.FC = () => {
             />
           </div>
 
-          {/* Category chips — horizontally scrollable */}
+          {/* Type Filter Chips */}
           <div className="cpo-scroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '2px 1px 10px' }}>
-            {categories.map((cat) => {
-              const active = category === cat;
+            {TYPE_FILTERS.map(({ key, label }) => {
+              const active = typeFilter === key;
               return (
                 <button
-                  key={cat}
-                  onClick={() => setCategory(cat)}
+                  key={key}
+                  onClick={() => setTypeFilter(key)}
                   style={{
                     flexShrink: 0, fontFamily: F, fontSize: 12, fontWeight: 600,
                     padding: '7px 14px', borderRadius: 9, border: active ? '1px solid transparent' : '1px solid #E9EDF3',
                     background: active ? '#0F2C59' : '#fff',
                     color: active ? '#fff' : '#718096', cursor: 'pointer',
                     transition: 'all .15s ease', lineHeight: 1.4,
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
                   }}
                 >
-                  {cat}
+                  {key === 'all' ? <Filter size={12} /> : key === 'Product' ? <Package size={12} /> : key === 'Stationery' ? <Layers size={12} /> : <Truck size={12} />}
+                  {label}
                 </button>
               );
             })}
           </div>
 
-          {/* Product list */}
+          {/* Product Cards Grid */}
           {catalogLoading ? (
             <div style={{ padding: 8 }}><PortalLoadingSkeleton type="card" count={6} /></div>
           ) : filteredProducts.length === 0 ? (
             <EmptyState
               icon={<Package size={28} />}
               title="No products found"
-              description={search || category !== 'All' ? 'Try adjusting your search or category filters.' : 'No products available in the catalog yet.'}
+              description={search || typeFilter !== 'all' ? 'Try adjusting your search or filter.' : 'No products available in the catalog yet.'}
             />
           ) : (
-            <div>
-              {filteredProducts.map((product, index) => {
-                const inCart = cartItems.find((i) => i.product.id === product.id);
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, padding: '4px 0 16px' }}>
+              {filteredProducts.map((product) => {
                 const price = Number(product.unitPrice ?? product.price ?? 0);
                 const promo = promoForProduct(product);
                 const shownPrice = promoPrice(price, promo);
                 const stock = Number(product.quantity ?? 0);
                 const isService = String(product.type || '').toLowerCase() === 'service';
                 const inStock = isService || stock > 0;
-                const isLast = index === filteredProducts.length - 1;
-                const typeLabel = product.type || product.category || '';
+                const hasVariants = product.variants && product.variants.length > 0;
+                const typeLabel = product.type || '';
                 const typeColor =
                   String(product.type || '').toLowerCase() === 'service' ? '#2563EB'
                   : String(product.type || '').toLowerCase() === 'stationery' ? '#D97706'
@@ -402,34 +432,52 @@ const OrdersInner: React.FC = () => {
                   <div
                     key={product.id}
                     style={{
-                      paddingTop: 10,
-                      paddingBottom: 10,
-                      paddingLeft: 12,
-                      paddingRight: 12,
-                      borderBottom: isLast ? 'none' : '1px solid #E2E8F0',
-                      borderLeft: '3px solid transparent',
-                      borderRadius: 8,
+                      border: '1px solid #E9EDF3',
+                      borderRadius: 14,
                       background: '#fff',
+                      overflow: 'hidden',
                       transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+                      display: 'flex', flexDirection: 'column',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#F8FAFC';
-                      e.currentTarget.style.borderLeftColor = '#0F2C59';
+                      e.currentTarget.style.boxShadow = '0 8px 24px -8px rgba(15,44,89,0.12)';
+                      e.currentTarget.style.borderColor = '#0F2C59';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fff';
-                      e.currentTarget.style.borderLeftColor = 'transparent';
+                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.borderColor = '#E9EDF3';
                     }}
                   >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {/* Clickable details region — a single focusable element containing
+                        only non-interactive content, so keyboard + screen-reader users
+                        can open the detail modal and no key events bubble from the
+                        footer buttons (those are siblings below). */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`View details for ${product.name}`}
+                      onClick={() => setDetailProduct(product)}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setDetailProduct(product);
+                        }
+                      }}
+                      style={{ display: 'flex', flexDirection: 'column', flex: 1, cursor: 'pointer' }}
+                    >
+                    {/* Card Header */}
+                    <div style={{ padding: '16px 16px 10px', borderBottom: '1px solid #F1F5F9' }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3 }}>{product.name}</div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {product.name}
+                          </h3>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                             {typeLabel && (
                               <span style={{
                                 display: 'inline-flex', alignItems: 'center',
-                                padding: '1px 7px', borderRadius: 5,
+                                padding: '2px 8px', borderRadius: 5,
                                 background: `${typeColor}14`,
                                 color: typeColor,
                                 fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
@@ -437,53 +485,115 @@ const OrdersInner: React.FC = () => {
                                 {typeLabel}
                               </span>
                             )}
-                            <span style={{ fontSize: 12, color: '#64748B' }}>
-                              SKU: {product.sku || '—'} {product.category && product.type !== product.category ? `| Category: ${product.category}` : ''}
-                            </span>
+                            {product.sku && (
+                              <span style={{ fontSize: 11, color: '#64748B', fontFamily: MONO }}>
+                                {product.sku}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
+                          <div style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
                             {formatK(shownPrice)}
                           </div>
-                          {product.unit && <div style={{ fontSize: 11, color: '#64748B' }}>/ {product.unit}</div>}
+                          {product.unit && <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>per {product.unit}</div>}
                         </div>
                       </div>
+                    </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {isService ? (
-                            <>
-                              <span style={{ width: 8, height: 8, borderRadius: 4, background: '#2563EB', boxShadow: '0 0 0 3px rgba(37,99,235,.15)' }} />
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#1D4ED8' }}>Service</span>
-                            </>
-                          ) : inStock ? (
-                            <>
-                              <span style={{ width: 8, height: 8, borderRadius: 4, background: '#22C55E', boxShadow: '0 0 0 3px rgba(34,197,94,.15)' }} />
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#047857' }}>In Stock</span>
-                              <span style={{ fontSize: 10, color: '#64748B' }}>· {stock} unit{stock === 1 ? '' : 's'}</span>
-                            </>
-                          ) : (
-                            <>
-                              <span style={{ width: 8, height: 8, borderRadius: 4, background: '#F59E0B' }} />
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#B45309' }}>Low Stock</span>
-                            </>
-                          )}
+                    {/* Card Body */}
+                    <div style={{ padding: '10px 16px', flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {product.description && (
+                        <p style={{ fontSize: 12, color: '#64748B', margin: 0, lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                          {product.description}
+                        </p>
+                      )}
+
+                      {promo && (
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 8px', borderRadius: 7, background: '#FEF3C7', border: '1px solid #FDE68A' }}>
+                          <Star size={12} color="#D97706" fill="#D97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                          <div style={{ fontSize: 11, color: '#92400E', lineHeight: 1.4 }}>
+                            <span style={{ fontWeight: 700 }}>{promo.name}</span>
+                            {promo.description && (
+                              <span style={{ marginLeft: 4 }}>{promo.description}</span>
+                            )}
+                            {!promo.description && (
+                              <span style={{ marginLeft: 4 }}>
+                                {promo.discountType === 'percentage' && `${promo.discountValue}% off`}
+                                {promo.discountType === 'fixed_amount' && `K${promo.discountValue} off`}
+                                {promo.discountType === 'fixed_price' && `Fixed price K${promo.discountValue}`}
+                              </span>
+                            )}
+                          </div>
                         </div>
+                      )}
+
+                      {/* Stock Status */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto' }}>
+                        {isService ? (
+                          <>
+                            <span style={{ width: 8, height: 8, borderRadius: 4, background: '#2563EB', boxShadow: '0 0 0 3px rgba(37,99,235,.15)' }} />
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#1D4ED8' }}>Service</span>
+                          </>
+                        ) : inStock ? (
+                          <>
+                            <span style={{ width: 8, height: 8, borderRadius: 4, background: '#22C55E', boxShadow: '0 0 0 3px rgba(34,197,94,.15)' }} />
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#047857' }}>In Stock</span>
+                            <span style={{ fontSize: 10, color: '#64748B' }}>· {stock} unit{stock === 1 ? '' : 's'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ width: 8, height: 8, borderRadius: 4, background: '#F59E0B' }} />
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#B45309' }}>Out of Stock</span>
+                          </>
+                        )}
+                        {hasVariants && (
+                          <span style={{ fontSize: 10, color: '#6366F1', fontWeight: 600, marginLeft: 'auto' }}>
+                            {product.variants!.length} variant{product.variants!.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    </div>
+
+                    {/* Card Footer */}
+                    <div style={{ padding: '10px 16px 14px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: 8 }}>
+                      {hasVariants ? (
                         <button
-                          onClick={() => handleAdd(product)}
+                          onClick={() => setVariantModalProduct(product)}
                           disabled={!inStock}
                           style={{
-                            padding: '8px 14px', borderRadius: 9, border: 'none',
-                            background: !inStock ? '#E2E8F0' : TEAL_GRADIENT,
-                            color: !inStock ? '#94A3B8' : '#fff', fontSize: 12, fontWeight: 700, cursor: !inStock ? 'not-allowed' : 'pointer',
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
-                            boxShadow: inStock ? '0 4px 14px -4px rgba(15,84,76,0.55)' : 'none', transition: 'all .15s ease',
+                            flex: 1, padding: '9px 14px', borderRadius: 9, border: '1px solid #E9EDF3',
+                            background: '#fff',
+                            color: !inStock ? '#94A3B8' : '#0F2C59',
+                            fontSize: 12, fontWeight: 700,
+                            cursor: !inStock ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                            transition: 'all .15s ease',
                           }}
                         >
-                          <ShoppingCart size={13} /> Add to Order
+                          <Layers size={13} /> Choose Variant
                         </button>
-                      </div>
+                      ) : (() => {
+                        const isAdded = addedIds.has(product.id);
+                        return (
+                          <button
+                            onClick={() => handleAdd(product)}
+                            disabled={!inStock || isAdded}
+                            style={{
+                              flex: 1, padding: '9px 14px', borderRadius: 9, border: 'none',
+                              background: isAdded ? '#059669' : !inStock ? '#E2E8F0' : TEAL_GRADIENT,
+                              color: !inStock ? '#94A3B8' : '#fff', fontSize: 12, fontWeight: 700,
+                              cursor: !inStock || isAdded ? 'not-allowed' : 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                              boxShadow: inStock && !isAdded ? '0 4px 14px -4px rgba(15,84,76,0.55)' : 'none',
+                              transition: 'all .15s ease',
+                            }}
+                          >
+                            {isAdded ? <><Check size={13} /> Added</> : <><ShoppingCart size={13} /> Add to Order</>}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -668,9 +778,286 @@ const OrdersInner: React.FC = () => {
         </div>
       )}
 
-      {/* ── Review Cart Modal — portaled to document.body so the footer
-          "Confirm & Submit Order" button always stacks above the fixed
-          MobileBottomNav (z-index 50), which previously hid it. ── */}
+      {/* ── Product Detail Modal ── */}
+      {detailProduct && (() => {
+        const mPrice = Number(detailProduct.unitPrice ?? detailProduct.price ?? 0);
+        const mPromo = promoForProduct(detailProduct);
+        const mShownPrice = promoPrice(mPrice, mPromo);
+        const mStock = Number(detailProduct.quantity ?? 0);
+        const mIsService = String(detailProduct.type || '').toLowerCase() === 'service';
+        const mInStock = mIsService || mStock > 0;
+        const mHasVariants = !!(detailProduct.variants && detailProduct.variants.length > 0);
+        const mTypeLabel = detailProduct.type || '';
+        const mTypeColor =
+          String(detailProduct.type || '').toLowerCase() === 'service' ? '#2563EB'
+          : String(detailProduct.type || '').toLowerCase() === 'stationery' ? '#D97706'
+          : String(detailProduct.type || '').toLowerCase() === 'product' ? '#047857'
+          : '#6B7280';
+        return createPortal(
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(2,8,23,.55)', backdropFilter: 'blur(2px)', zIndex: 91, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'cpoFadeIn .18s ease' }}
+            onMouseDown={(e) => { if (e.target === e.currentTarget) setDetailProduct(null); }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-detail-title"
+          >
+            <div style={{
+              background: '#fff', width: '100%', maxWidth: 560, maxHeight: '88vh', overflowY: 'auto',
+              borderRadius: '20px 20px 0 0', boxShadow: '0 -16px 48px rgba(2,8,23,.3)',
+              animation: 'cpoSlideUp .28s cubic-bezier(.16,1,.3,1)',
+            }}>
+              {/* Header: type + promo badges, name, SKU / category */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '18px 20px 10px', gap: 12 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                    {mTypeLabel && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 5, background: `${mTypeColor}14`, color: mTypeColor, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em' }}>
+                        {mTypeLabel}
+                      </span>
+                    )}
+                    {mPromo && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 5, background: '#FEF3C7', color: '#B45309', fontSize: 10, fontWeight: 700, letterSpacing: '0.04em' }}>
+                        <Star size={11} style={{ marginRight: 4 }} /> {mPromo.discountType === 'percentage' ? `${mPromo.discountValue}% off` : `${formatK(mPromo.discountValue)} off`}
+                      </span>
+                    )}
+                  </div>
+                  <h2 id="product-detail-title" style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1A202C', fontFamily: F, lineHeight: 1.3 }}>{detailProduct.name}</h2>
+                  {(detailProduct.sku || detailProduct.category) && (
+                    <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#8A94A6', fontFamily: MONO }}>
+                      {[detailProduct.sku && `SKU: ${detailProduct.sku}`, detailProduct.category && `Category: ${detailProduct.category}`].filter(Boolean).join('  ·  ')}
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => setDetailProduct(null)} aria-label="Close" style={{ width: 32, height: 32, borderRadius: 9, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8A94A6', flexShrink: 0 }}>
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Price + stock strip */}
+              <div style={{ padding: '6px 20px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid #F1F5F9' }}>
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
+                    {formatK(mShownPrice)}
+                    {detailProduct.unit && <span style={{ fontSize: 12, fontWeight: 500, color: '#8A94A6', marginLeft: 5 }}>per {detailProduct.unit}</span>}
+                  </div>
+                  {mPromo && mPrice > mShownPrice && (
+                    <div style={{ fontSize: 12, color: '#94A3B8', textDecoration: 'line-through', fontFamily: MONO, marginTop: 2 }}>{formatK(mPrice)}</div>
+                  )}
+                </div>
+                {mIsService ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#1D4ED8' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 4, background: '#2563EB', boxShadow: '0 0 0 3px rgba(37,99,235,.15)' }} /> Service
+                  </span>
+                ) : mInStock ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#047857' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 4, background: '#22C55E', boxShadow: '0 0 0 3px rgba(34,197,94,.15)' }} /> In stock · {mStock}
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#B45309' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 4, background: '#F59E0B' }} /> Out of stock
+                  </span>
+                )}
+              </div>
+
+              {/* Full description */}
+              {detailProduct.description && (
+                <div style={{ padding: '16px 20px 4px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#4A5568', textTransform: 'uppercase', letterSpacing: 0.05, marginBottom: 6 }}>About this product</div>
+                  <p style={{ margin: 0, fontSize: 13.5, color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{detailProduct.description}</p>
+                </div>
+              )}
+
+              {/* Variant options (choose + add from the detail view) */}
+              {mHasVariants && (
+                <div style={{ padding: '16px 20px 4px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#4A5568', textTransform: 'uppercase', letterSpacing: 0.05, marginBottom: 8 }}>
+                    Options ({detailProduct.variants!.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {detailProduct.variants!.map((variant) => {
+                      const attrs = variantAttributes(variant);
+                      const vOut = variant.stock <= 0;
+                      const vPrice = Number(variant.sellingPrice || detailProduct.unitPrice || detailProduct.price || 0);
+                      const vShown = promoPrice(vPrice, mPromo);
+                      return (
+                        <button
+                          key={variant.id}
+                          onClick={() => { if (!vOut) handleAdd(detailProduct, variant); }}
+                          disabled={vOut}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '12px 14px', borderRadius: 12,
+                            border: vOut ? '1px solid #F1F5F9' : '1px solid #E9EDF3',
+                            background: vOut ? '#F9FAFB' : '#fff',
+                            cursor: vOut ? 'not-allowed' : 'pointer',
+                            textAlign: 'left', transition: 'all .15s ease',
+                            opacity: vOut ? 0.5 : 1,
+                          }}
+                          onMouseEnter={(e) => { if (!vOut) e.currentTarget.style.borderColor = '#0F2C59'; }}
+                          onMouseLeave={(e) => { if (!vOut) e.currentTarget.style.borderColor = '#E9EDF3'; }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{variant.name}</div>
+                            {attrs && (
+                              <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{attrs}</div>
+                            )}
+                            {variant.sku && (
+                              <div style={{ fontSize: 10, color: '#94A3B8', fontFamily: MONO, marginTop: 2 }}>SKU: {variant.sku}</div>
+                            )}
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', fontVariantNumeric: 'tabular-nums' }}>
+                              {formatK(vShown)}
+                            </div>
+                            <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>
+                              {vOut ? 'Out of stock' : `${variant.stock} in stock`}
+                            </div>
+                          </div>
+                          {!vOut && (
+                            <div style={{ width: 28, height: 28, borderRadius: 8, background: TEAL_GRADIENT, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <Plus size={14} />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Footer actions */}
+              <div style={{ padding: '16px 20px 20px', display: 'flex', gap: 10 }}>
+                {!mHasVariants && (
+                  <button
+                    onClick={() => { handleAdd(detailProduct); setDetailProduct(null); }}
+                    disabled={!mInStock}
+                    style={{
+                      flex: 1, padding: '12px 16px', borderRadius: 11, border: 'none',
+                      background: !mInStock ? '#E2E8F0' : TEAL_GRADIENT,
+                      color: !mInStock ? '#94A3B8' : '#fff', fontSize: 13, fontWeight: 700,
+                      cursor: !mInStock ? 'not-allowed' : 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                      boxShadow: mInStock ? '0 6px 16px -6px rgba(15,84,76,.55)' : 'none',
+                      fontFamily: F,
+                    }}
+                  >
+                    <ShoppingCart size={15} /> Add to Order
+                  </button>
+                )}
+                <button
+                  onClick={() => setDetailProduct(null)}
+                  style={{
+                    padding: '12px 18px', borderRadius: 11, border: '1px solid #D1D5DB',
+                    background: '#fff', color: '#4A5568', fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: F,
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+
+      {/* ── Variant Selection Modal ── */}
+      {variantModalProduct && createPortal(
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,8,23,.55)', backdropFilter: 'blur(2px)', zIndex: 90, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'cpoFadeIn .18s ease' }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setVariantModalProduct(null); }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="variant-modal-title"
+        >
+          <div style={{
+            background: '#fff', width: '100%', maxWidth: 480, maxHeight: '80vh', overflowY: 'auto',
+            borderRadius: '20px 20px 0 0', boxShadow: '0 -16px 48px rgba(2,8,23,.3)',
+            animation: 'cpoSlideUp .28s cubic-bezier(.16,1,.3,1)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 12px' }}>
+              <div>
+                <h2 id="variant-modal-title" style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1A202C', fontFamily: F }}>
+                  Select Variant
+                </h2>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#8A94A6', fontFamily: F }}>
+                  {variantModalProduct.name} — choose a specific option
+                </p>
+              </div>
+              <button
+                onClick={() => setVariantModalProduct(null)}
+                aria-label="Close"
+                style={{ width: 30, height: 30, borderRadius: 9, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8A94A6' }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ padding: '4px 20px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {variantModalProduct.variants!.map((variant) => {
+                const attrs = variantAttributes(variant);
+                const isOutOfStock = variant.stock <= 0;
+                const vPrice = Number(variant.sellingPrice || variantModalProduct.unitPrice || variantModalProduct.price || 0);
+                // Align with the card + detail modal: show the promo-adjusted price.
+                const vShown = promoPrice(vPrice, promoForProduct(variantModalProduct));
+                return (
+                  <button
+                    key={variant.id}
+                    onClick={() => {
+                      if (!isOutOfStock) {
+                        handleAdd(variantModalProduct, variant);
+                        setVariantModalProduct(null);
+                      }
+                    }}
+                    disabled={isOutOfStock}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '12px 14px', borderRadius: 12,
+                      border: isOutOfStock ? '1px solid #F1F5F9' : '1px solid #E9EDF3',
+                      background: isOutOfStock ? '#F9FAFB' : '#fff',
+                      cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                      textAlign: 'left', transition: 'all .15s ease',
+                      opacity: isOutOfStock ? 0.5 : 1,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isOutOfStock) e.currentTarget.style.borderColor = '#0F2C59';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isOutOfStock) e.currentTarget.style.borderColor = '#E9EDF3';
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{variant.name}</div>
+                      {attrs && (
+                        <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{attrs}</div>
+                      )}
+                      {variant.sku && (
+                        <div style={{ fontSize: 10, color: '#94A3B8', fontFamily: MONO, marginTop: 2 }}>SKU: {variant.sku}</div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', fontVariantNumeric: 'tabular-nums' }}>
+                        {formatK(vShown)}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>
+                        {isOutOfStock ? 'Out of stock' : `${variant.stock} in stock`}
+                      </div>
+                    </div>
+                    {!isOutOfStock && (
+                      <div style={{ width: 28, height: 28, borderRadius: 8, background: TEAL_GRADIENT, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Plus size={14} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Review Cart Modal ── */}
       {reviewOpen && createPortal(
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(2,8,23,.55)', backdropFilter: 'blur(2px)', zIndex: 90, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'cpoFadeIn .18s ease' }}
@@ -700,22 +1087,28 @@ const OrdersInner: React.FC = () => {
 
             <div style={{ padding: '4px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {cartItems.map((i) => {
-                const unitPrice = Number(i.product.unitPrice ?? i.product.price ?? 0);
+                const cartItemKey = i.selectedVariant ? `${i.product.id}::${i.selectedVariant.id}` : i.product.id;
+                const unitPrice = i.selectedVariant
+                  ? Number(i.selectedVariant.sellingPrice || i.product.unitPrice || i.product.price || 0)
+                  : Number(i.product.unitPrice ?? i.product.price ?? 0);
+                const itemLabel = i.selectedVariant
+                  ? `${i.product.name} — ${i.selectedVariant.name}`
+                  : i.product.name;
                 return (
-                  <div key={i.product.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#F8FAFC', border: '1px solid #E9EDF3', borderRadius: 12 }}>
+                  <div key={cartItemKey} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#F8FAFC', border: '1px solid #E9EDF3', borderRadius: 12 }}>
                     <div style={{ width: 34, height: 34, borderRadius: 9, background: '#ECFDF5', color: '#008A4C', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <Package size={16} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1A202C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.product.name}</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1A202C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{itemLabel}</div>
                       <div style={{ fontSize: 11, color: '#8A94A6', fontFamily: "'JetBrains Mono', monospace" }}>{formatK(unitPrice)}{i.product.unit ? ` /${i.product.unit}` : ''}</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <button onClick={() => updateQuantity(i.product.id, i.quantity - 1)} aria-label="Decrease" style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A5568' }}>
+                      <button onClick={() => updateQuantity(cartItemKey, i.quantity - 1)} aria-label="Decrease" style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A5568' }}>
                         <Minus size={12} />
                       </button>
                       <span style={{ fontSize: 13, fontWeight: 700, minWidth: 22, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{i.quantity}</span>
-                      <button onClick={() => updateQuantity(i.product.id, i.quantity + 1)} aria-label="Increase" style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A5568' }}>
+                      <button onClick={() => updateQuantity(cartItemKey, i.quantity + 1)} aria-label="Increase" style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A5568' }}>
                         <Plus size={12} />
                       </button>
                     </div>
@@ -746,8 +1139,7 @@ const OrdersInner: React.FC = () => {
 
             <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: '#4A5568' }}>Subtotal</span><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{formatK(subtotal)}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: '#4A5568' }}>Estimated VAT (16%)</span><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{formatK(taxEstimate)}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, borderTop: '1px solid #E9EDF3', paddingTop: 8 }}><span style={{ color: '#1A202C', fontWeight: 700 }}>Total</span><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: '#047857' }}>{formatK(grandTotal)}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, borderTop: '1px solid #E9EDF3', paddingTop: 8 }}><span style={{ color: '#1A202C', fontWeight: 700 }}>Total</span><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: '#047857' }}>{formatK(subtotal)}</span></div>
               <p style={{ margin: '2px 0 0', fontSize: 10.5, color: '#8A94A6' }}>Final pricing is confirmed by our team at submission. An order request will be created for review.</p>
             </div>
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Percent, Tag, Clock, ArrowRight } from 'lucide-react';
-import type { PortalPromotionInfo } from '../../services/portalApiClient';
+import type { PortalPromotionInfo } from '../../../services/portalApiClient';
 
 interface PromotionBannerProps {
   promotions: PortalPromotionInfo[];

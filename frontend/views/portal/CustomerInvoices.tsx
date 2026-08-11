@@ -112,10 +112,6 @@ const CustomerInvoices: React.FC = () => {
   const [paySuccess, setPaySuccess] = useState(false);
   const [stripeStep, setStripeStep] = useState<{ clientSecret: string; invoiceDetail: any } | null>(null);
 
-  // Revert state
-  const [revertTarget, setRevertTarget] = useState<Invoice | null>(null);
-  const [reverting, setReverting] = useState(false);
-
   const { loading, error, refresh, clearError } = usePortalData<any>({
     // Fetch the full billing record (All Invoices tab shows every invoice).
     // The key must exactly match the request URL so the local cache lines up.
@@ -242,21 +238,6 @@ const CustomerInvoices: React.FC = () => {
       setPayError(err.message || 'Payment failed. Please try again.');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const confirmRevert = async () => {
-    if (!revertTarget) return;
-    setReverting(true);
-    try {
-      await portalLifecycle.invoices.revert(revertTarget.id);
-      addToast('success', 'Payment reverted — invoice is unpaid');
-      refresh();
-      setRevertTarget(null);
-    } catch (err: any) {
-      addToast('error', err.message || 'Failed to revert payment');
-    } finally {
-      setReverting(false);
     }
   };
 

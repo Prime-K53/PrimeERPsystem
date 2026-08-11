@@ -106,6 +106,31 @@ const NOTIFICATION_TYPES = Object.freeze({
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Portal tables with REAL flat columns (not {id, data} JSONB envelopes).
+// WHERE-clause shims must filter these by column name, never `data->>`.
+const FLAT_SHIM_TABLES = new Set([
+  'portal_users',
+  'portal_sessions',
+  'portal_password_resets',
+  'portal_login_history',
+]);
+
+function snakeToCamel(field) {
+  return String(field || '').replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+// Extract positional WHERE conditions: `WHERE [alias.]col = ? [AND col = ? ...]`.
+// Each condition binds to params in order, exactly like the SQL it mirrors.
+function whereConditions(trimmed) {
+  return [...trimmed.matchAll(/(?:WHERE|\bAND\b)\s+(?:\w+\.)?(\w+)\s*=\s*\?/gi)]
+    .map((m) => m[1]);
+}
+
+function shimFilter(table, field, value) {
+  return { [FLAT_SHIM_TABLES.has(table) ? field : `data->>${field}`]: `eq.${value}` };
+}
+
 async function getOne(query, params = []) {
   const trimmed = String(query || '').trim();
   const countMatch = trimmed.match(/SELECT\s+COUNT\s*\(\*\)\s+as\s+(\w+)\s+FROM\s+(\w+)/i);
@@ -113,34 +138,54 @@ async function getOne(query, params = []) {
     const rows = await repo.getAll(countMatch[2]);
     return { [countMatch[1]]: rows.length };
   }
-  const byIdMatch = trimmed.match(/FROM\s+(\w+)\s+WHERE\s+.*\bid\s*=\s*\?/i);
-  if (byIdMatch && params.length > 0) {
-    return repo.getById(byIdMatch[1], String(params[0]));
-  }
-  const byFieldMatch = trimmed.match(/FROM\s+(\w+)\s+WHERE\s+(\w+)\s*=\s*\?/i);
-  if (byFieldMatch && params.length > 0) {
-    const rows = await repo.getAll(byFieldMatch[1], { [`data->>${byFieldMatch[2]}`]: `eq.${params[0]}` });
-    return rows[0] || null;
-  }
   const fromMatch = trimmed.match(/FROM\s+(\w+)/i);
-  if (fromMatch) {
-    const rows = await repo.getAll(fromMatch[1]);
+  if (!fromMatch) return null;
+  const table = fromMatch[1];
+  const conds = whereConditions(trimmed);
+
+  if (conds.length > 0 && params.length > 0) {
+    // id-first lookup: fetch the row, then verify every remaining condition
+    // in JS (dual-spelling aware: `customer_id` matches `data.customerId`).
+    if (conds[0].toLowerCase() === 'id') {
+      const row = await repo.getById(table, String(params[0]));
+      if (!row) return null;
+      for (let i = 1; i < conds.length; i++) {
+        const value = params[i];
+        if (value === undefined) break;
+        const field = conds[i];
+        const actual = row[field] ?? row[snakeToCamel(field)];
+        if (String(actual ?? '') !== String(value)) return null;
+      }
+      return row;
+    }
+    const filters = {};
+    for (let i = 0; i < conds.length; i++) {
+      const value = params[i];
+      if (value === undefined) break;
+      Object.assign(filters, shimFilter(table, conds[i], value));
+    }
+    const rows = await repo.getAll(table, filters);
     return rows[0] || null;
   }
-  return null;
+
+  const rows = await repo.getAll(table);
+  return rows[0] || null;
 }
 
 async function getAll(query, params = []) {
   const trimmed = String(query || '').trim();
-  const byFieldMatch = trimmed.match(/FROM\s+(\w+)\s+WHERE\s+(\w+)\s*=\s*\?/i);
-  if (byFieldMatch && params.length > 0) {
-    return repo.getAll(byFieldMatch[1], { [`data->>${byFieldMatch[2]}`]: `eq.${params[0]}` });
-  }
   const fromMatch = trimmed.match(/FROM\s+(\w+)/i);
-  if (fromMatch) {
-    return repo.getAll(fromMatch[1]);
+  if (!fromMatch) return [];
+  const table = fromMatch[1];
+  const conds = whereConditions(trimmed);
+  if (conds.length === 0) return repo.getAll(table);
+  const filters = {};
+  for (let i = 0; i < conds.length; i++) {
+    const value = params[i];
+    if (value === undefined) break;
+    Object.assign(filters, shimFilter(table, conds[i], value));
   }
-  return [];
+  return repo.getAll(table, filters);
 }
 
 async function runQuery(query, params = []) {
@@ -605,7 +650,8 @@ async function assertDocAccess(docType, docId, { customerId}) {
   if (!table) throw new Error('Unknown document type');
   const row = await getOne(`SELECT id, customer_id FROM ${table} WHERE id = ?`, [docId]);
   if (!row) throw new Error('Document not found');
-  if (customerId && row.customer_id !== customerId) throw new Error('Document not found');
+  const rowCustomerId = row.customer_id ?? row.customerId;
+  if (customerId && String(rowCustomerId ?? '') !== String(customerId)) throw new Error('Document not found');
   return row;
 }
 
@@ -950,7 +996,7 @@ const portalLifecycleService = {
       [id]
     );
     if (!request) return null;
-    if (customerId && request.customer_id !== customerId) return null;
+    if (customerId && String(request.customer_id ?? request.customerId ?? '') !== String(customerId)) return null;
     request.status = request.quotation_id ? (request.status === 'quotation_ready' ? REQUEST_STATUS.CONVERTED : request.status) : normalizeRequestStatus(request.status);
     request.customer_name = request.resolved_customer_name || request.customer_name;
     request.items = parseJson(request.items, []);
@@ -1524,7 +1570,13 @@ const portalLifecycleService = {
     const { subtotal, taxAmount, total } = computeTotals(normalizedItems, discount, taxRate, otherCharges);
     const deliveryDate = orderSnapshot.deliveryDate || orderSnapshot.delivery_date || request.requested_delivery_date || null;
 
-    const orderId = genId('so');
+    // When the ERP editor already wrote a row for this order (offline-first:
+    // it lands in IndexedDB and syncs to the cloud under its own id), the
+    // backend ADOPTS that row instead of creating a duplicate. The official
+    // number + request linkage are merged into the existing record so the ERP
+    // list, the portal and the document chain all reference ONE order. Without
+    // an erpOrderId a fresh canonical record is created as before.
+    const orderId = erpOrderId || genId('so');
     const orderNumber = await workflowEngine.nextYearScopedNumber('sales_orders', 'order_number', 'SO');
     const itemsJson = JSON.stringify(
       normalizedItems.map((item) => ({
@@ -1546,16 +1598,50 @@ const portalLifecycleService = {
 
     await runQuery('BEGIN TRANSACTION');
     try {
-      await runQuery(
-        `INSERT INTO sales_orders
-           (id, order_number, source_request_id, source_request_number, reorder_of, reorder_of_number,
-            customer_id, orderDate, deliveryDate, status, items,
-            subtotal, discounts, tax, other_charges, total, notes,
-            approved_by, approved_at, erp_order_id, created_by, created_at, updated_at,
-            promotion, discount_total, promotion_applied, subtotal_before_discount)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )`,
-        [orderId, orderNumber, requestId, request.request_number, request.reorder_of || null, request.reorder_of_number || null, request.customer_id, now, deliveryDate, workflowEngine.SALES_ORDER_STATUS.CONFIRMED, itemsJson, subtotal, discount, taxAmount, otherCharges, total, orderSnapshot.notes || request.notes || `Generated from ${request.request_number}`, admin.id, now, erpOrderId || null, admin.id, now, now, promotion ? JSON.stringify(promotion) : null, discount, promotion ? 1 : 0, subtotal]
-      );
+      // Merge with the cloud row when the ERP record already exists so the
+      // version-aware cloud write gate is satisfied (repo.upsert bumps the
+      // version read from the existing row).
+      const erpExisting = erpOrderId ? await repo.getById('sales_orders', erpOrderId) : null;
+      const orderRecord = {
+        ...(erpExisting || {}),
+        id: orderId,
+        order_number: orderNumber,
+        source_request_id: requestId,
+        source_request_number: request.request_number,
+        reorder_of: request.reorder_of || null,
+        reorder_of_number: request.reorder_of_number || null,
+        // Dual key spelling: the ERP frontend store writes `customerId`, the
+        // backend shim writes `customer_id`. Writing BOTH guarantees the order
+        // is found by the admin list AND by the portal's customer scope.
+        customer_id: request.customer_id,
+        customerId: request.customer_id,
+        customer_name: request.customer_name || orderSnapshot.customerName || null,
+        orderDate: (erpExisting && erpExisting.orderDate) || now,
+        deliveryDate,
+        status: workflowEngine.SALES_ORDER_STATUS.CONFIRMED,
+        items: itemsJson,
+        subtotal,
+        discounts: discount,
+        tax: taxAmount,
+        other_charges: otherCharges,
+        total,
+        notes: orderSnapshot.notes || request.notes || `Generated from ${request.request_number}`,
+        approved_by: admin.id,
+        approved_at: now,
+        erp_order_id: erpOrderId || null,
+        created_by: admin.id,
+        created_at: now,
+        updated_at: now,
+        promotion: promotion ? JSON.stringify(promotion) : null,
+        discount_total: discount,
+        promotion_applied: promotion ? 1 : 0,
+        subtotal_before_discount: subtotal,
+        version: erpExisting ? erpExisting.version : undefined,
+      };
+      const savedOrder = await repo.upsert('sales_orders', orderRecord);
+      if (!savedOrder || !savedOrder.id) {
+        throw new Error('Failed to persist the official sales order');
+      }
 
       await runQuery(
         `UPDATE quotation_requests SET status = ?, sales_order_id = ?, sales_order_number = ?,
@@ -1710,7 +1796,7 @@ const portalLifecycleService = {
       [id]
     );
     if (!quotation) return null;
-    if (customerId && quotation.customer_id !== customerId) return null;
+    if (customerId && String(quotation.customer_id ?? quotation.customerId ?? '') !== String(customerId)) return null;
     quotation.customer_name = quotation.resolved_customer_name || quotation.customer_name;
     quotation.items = parseJson(quotation.items, []);
     await applyQuotationExpiry(quotation);

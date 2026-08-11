@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { portalApi, portalLifecycle, PortalPromotionInfo, PortalAdInfo } from '../../services/portalApiClient';
+import { portalApi, portalLifecycle, PortalPromotionInfo, PortalAdInfo, PortalDeliveryBanner } from '../../services/portalApiClient';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalData } from './hooks/usePortalData';
@@ -26,6 +26,7 @@ import {
   Percent,
   Bell,
   Menu,
+  PackageCheck,
 } from 'lucide-react';
 
 interface DashboardData {
@@ -137,6 +138,49 @@ const promoToSlide = (p: PortalPromotionInfo, navigate: (to: string) => void): S
   };
 };
 
+const deliveryToSlide = (b: PortalDeliveryBanner, navigate: (to: string) => void): Slide => {
+  const ref = b.invoiceNumber
+    ? `invoice ${b.invoiceNumber}`
+    : (b.orderNumber ? `order ${b.orderNumber}` : 'your order');
+  const config = (
+    {
+      inbound: {
+        gradient: 'linear-gradient(135deg,#1E40AF 0%,#0F2C59 100%)',
+        badge: 'Out of Warehouse',
+        title: 'Your delivery is on the move',
+        msg: `Delivery for ${ref} is out of the warehouse.`,
+      },
+      active: {
+        gradient: 'linear-gradient(135deg,#7C3AED 0%,#5B21B6 100%)',
+        badge: 'Out for Delivery',
+        title: 'Your delivery is on its way',
+        msg: `Delivery for ${ref} is out for delivery.`,
+      },
+      delivered: {
+        gradient: 'linear-gradient(135deg,#059669 0%,#065F46 100%)',
+        badge: 'Delivered',
+        title: 'Delivery complete',
+        msg: `Delivery for ${ref} has been delivered.`,
+      },
+    } as Record<string, { gradient: string; badge: string; title: string; msg: string }>
+  )[b.stage] || {
+    gradient: 'linear-gradient(135deg,#1E40AF 0%,#0F2C59 100%)',
+    badge: 'Delivery Update',
+    title: 'Delivery update',
+    msg: `Delivery for ${ref} has an update.`,
+  };
+  return {
+    id: `delivery-${b.id}`,
+    gradient: config.gradient,
+    icon: <PackageCheck size={22} />,
+    badge: config.badge,
+    title: config.title,
+    subtitle: config.msg,
+    cta: { label: b.stage === 'delivered' ? 'View' : 'Track', to: '/portal/deliveries' },
+    onClick: () => navigate('/portal/deliveries'),
+  };
+};
+
 const buildFallbackSlides = (
   navigate: (to: string) => void,
   displayName: string,
@@ -207,6 +251,7 @@ const CustomerDashboard: React.FC = () => {
   const [unpaidInvoices, setUnpaidInvoices] = useState<UnpaidInvoice[]>([]);
   const [promotions, setPromotions] = useState<PortalPromotionInfo[] | null>(null);
   const [ads, setAds] = useState<PortalAdInfo[]>([]);
+  const [deliveryBanners, setDeliveryBanners] = useState<PortalDeliveryBanner[]>([]);
   const [active, setActive] = useState(0);
   const [hovered, setHovered] = useState(false);
   const touchX = useRef<number | null>(null);
@@ -255,6 +300,22 @@ const CustomerDashboard: React.FC = () => {
   });
 
   // Live portal promotions + banner ads for the carousel (display only).
+  // Live delivery status banners (sliding carousel like the ads). Refreshed
+  // on mount, on realtime events and on a light poll so every delivery status
+  // change updates the banner message.
+  const loadDeliveryBanners = useCallback(() => {
+    portalLifecycle.deliveries
+      .banners()
+      .then((list) => setDeliveryBanners(Array.isArray(list) ? list : []))
+      .catch(() => setDeliveryBanners((prev) => prev));
+  }, []);
+
+  useEffect(() => {
+    loadDeliveryBanners();
+    const id = setInterval(loadDeliveryBanners, 60000);
+    return () => clearInterval(id);
+  }, [loadDeliveryBanners]);
+
   useEffect(() => {
     let cancelled = false;
     portalLifecycle.promotions
@@ -301,11 +362,12 @@ const CustomerDashboard: React.FC = () => {
     let off = false;
     let unsub: (() => void) | undefined;
     (async () => {
-      const T = ['invoice', 'order', 'sale', 'payment', 'quotation', 'request', 'shipment'];
+      const T = ['invoice', 'order', 'sale', 'payment', 'quotation', 'request', 'shipment', 'delivery', 'delivery_note'];
       unsub = await portalLifecycle.subscribe({
         onEvent: (type, p) => {
           if ((p?.event === 'payment_allocated' || (p?.docType && T.includes(p.docType)) || type === 'activity' || type === 'notification') && !off) {
             refresh();
+            loadDeliveryBanners();
             portalApi.get<{ count: number }>('/notifications/unread-count')
               .then((c) => { if (!off) { setUnreadNotifications(c?.count ?? 0); setNotifRefreshFailed(false); } })
               .catch(() => { if (!off) setNotifRefreshFailed(true); });
@@ -317,17 +379,18 @@ const CustomerDashboard: React.FC = () => {
       off = true;
       unsub?.();
     };
-  }, [refresh]);
+  }, [refresh, loadDeliveryBanners]);
 
   // Banner slides: ads first, then live promotions, padded with curated
   // slides so the carousel always has at least 3 slides.
   const slides = useMemo<Slide[]>(() => {
+    const deliverySlides = (deliveryBanners || []).map((b) => deliveryToSlide(b, navigate));
     const adSlides = ads.map((a) => adToSlide(a, navigate));
     const promoSlides = (promotions || []).map((p) => promoToSlide(p, navigate));
     const fallbacks = buildFallbackSlides(navigate, displayName, companyName);
-    const count = Math.max(3, adSlides.length + promoSlides.length);
-    return [...adSlides, ...promoSlides, ...fallbacks].slice(0, count);
-  }, [ads, promotions, navigate, displayName, companyName]);
+    const count = Math.max(3, deliverySlides.length + adSlides.length + promoSlides.length);
+    return [...deliverySlides, ...adSlides, ...promoSlides, ...fallbacks].slice(0, count);
+  }, [deliveryBanners, ads, promotions, navigate, displayName, companyName]);
 
   // Clamp index when the slide set changes (e.g. promotions arrive).
   useEffect(() => {
@@ -626,7 +689,7 @@ const CustomerDashboard: React.FC = () => {
               sublabel={
                 dashboardData?.unpaidInvoiceCount
                   ? `${dashboardData.unpaidInvoiceCount} Unpaid${overdueInvoices > 0 ? ` · ${overdueInvoices} Overdue` : ''}`
-                  : 'No outstanding invoices'
+                  : undefined
               }
               sublabelColor={dashboardData?.unpaidInvoiceCount ? '#DC2626' : '#059669'}
               trend={{ value: paymentHistory, positive: paymentHistory >= 80, suffix: 'paid on time' }}
@@ -647,7 +710,7 @@ const CustomerDashboard: React.FC = () => {
               sublabel={
                 creditLimitNum > 0
                   ? `${creditUtilizationPct}% used of ${fmtMoney(creditLimitNum)}`
-                  : 'Wallet credits available'
+                  : undefined
               }
               sublabelColor={creditUtilizationPct >= 90 ? '#DC2626' : '#059669'}
               trend={{ value: onTimeScore, positive: onTimeScore >= 80, suffix: 'on-time history' }}

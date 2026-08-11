@@ -64,6 +64,20 @@ async function getAll(table, filters = {}) {
   return rows.map(fromSupabaseRow);
 }
 
+/**
+ * Strict read: distinguishes "genuinely zero rows" from "query failed".
+ * The Portal must never present a database failure as an empty result, so
+ * financial/customer-critical reads go through this method and let the
+ * failure propagate to a visible error state.
+ */
+async function getAllStrict(table, filters = {}) {
+  const rows = await request(table, filters);
+  if (rows === null) {
+    throw new Error(`Failed to read ${table} from Supabase (query returned no data)`);
+  }
+  return rows.map(fromSupabaseRow);
+}
+
 async function getById(table, id) {
   const rows = await request(table, { id: `eq.${id}`, limit: 1 });
   if (!rows || rows.length === 0) return null;
@@ -1006,6 +1020,7 @@ module.exports = {
   toSupabaseRow,
   request,
   getAll,
+  getAllStrict,
   getById,
   upsert,
   softDelete,

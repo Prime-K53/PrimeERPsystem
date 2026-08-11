@@ -7,6 +7,7 @@ const portalAuthService = require('./portalAuthService.cjs');
 const portalLifecycleService = require('./portalLifecycleService.cjs');
 const ReferralService = require('./referralService.cjs');
 const referralService = new ReferralService();
+const { customerFilter, withCustomerScope } = require('./portalScope.cjs');
 
 const TICKET_ATTACHMENTS_DIR = path.join(__dirname, '..', 'storage', 'ticket-attachments');
 
@@ -35,27 +36,56 @@ function parseJson(value, fallback = null) {
 }
 
 async function getAllFrom(table, filters = {}) {
-  return repo.getAll(table, filters);
+  // Strict read: a database failure must surface as an error (route 500 →
+  // frontend error/retry), never as a fabricated empty result. A genuinely
+  // empty table still returns [].
+  return repo.getAllStrict(table, filters);
 }
 
 async function getOneById(table, id) {
-  return repo.getById(table, id);
+  const rows = await repo.getAllStrict(table, { id: `eq.${id}`, limit: 1 });
+  return rows[0] || null;
+}
+
+/**
+ * Customer-scoped table read with defense-in-depth.
+ *
+ * `customerFilter` applies the canonical PostgREST scope (including an `or`
+ * clause for tables written by both the ERP frontend `customerId` and the
+ * backend shim `customer_id`). Reads are STRICT: a database failure propagates
+ * to a visible error state and is never masked as an empty result. In
+ * addition, every returned row is verified to match the customer in JS — a
+ * customer can NEVER see another customer's records, even if a row carries an
+ * unexpected key spelling or a filter was misapplied.
+ */
+async function scopedRows(table, customerId) {
+  const rows = await repo.getAllStrict(table, customerFilter(table, customerId));
+  const target = String(customerId || '');
+  return target
+    ? rows.filter((r) => String(r.customerId || r.customer_id || '') === target)
+    : rows;
 }
 
 const portalService = {
 
   async getDashboard(portalUserId, customerId) {
-    const [customer, invoices, orders, requests, quotations, notifications, pointBalance, walletRows, shipments] = await Promise.all([
+    const [customerRows, invoices, orders, requests, quotations, notifications, pointRows, walletRows, shipments] = await Promise.all([
       getOneById('customers', customerId),
-      getAllFrom('invoices', { 'data->>customerId': `eq.${customerId}` }),
-      getAllFrom('sales_orders', { 'data->>customerId': `eq.${customerId}` }),
-      getAllFrom('quotation_requests', { 'data->>customerId': `eq.${customerId}` }),
-      getAllFrom('quotations', { 'data->>customerId': `eq.${customerId}` }),
-      getAllFrom('portal_notifications', { 'data->>portalUserId': `eq.${portalUserId}` }),
-      repo.getById('engagement_point_balances', customerId).catch(() => null),
-      getAllFrom('wallet_transactions', { 'data->>customerId': `eq.${customerId}` }).catch(() => []),
-      this.getShipments(customerId).catch(() => []),
+      getAllFrom('invoices', customerFilter('invoices', customerId)),
+      getAllFrom('sales_orders', customerFilter('sales_orders', customerId)),
+      getAllFrom('quotation_requests', customerFilter('quotation_requests', customerId)),
+      getAllFrom('quotations', customerFilter('quotations', customerId)),
+      getAllFrom('portal_notifications', { 'data->>portal_user_id': `eq.${portalUserId}` }),
+      getOneById('engagement_point_balances', customerId),
+      getAllFrom('wallet_transactions', customerFilter('wallet_transactions', customerId)),
+      this.getShipments(customerId),
     ]);
+
+    const customer = customerRows || null;
+    if (!customer) {
+      throw new Error('Customer record not found for authenticated portal user');
+    }
+    const pointBalance = pointRows || null;
 
     const unpaidCount = invoices.filter((i) => /unpaid|partial/i.test(String(i.status || ''))).length;
     const totalOrders = orders.length;
@@ -86,7 +116,7 @@ const portalService = {
       requests,
       quotations,
       pointBalance,
-      walletRows: walletRows || [],
+      walletRows,
     });
 
     return {
@@ -206,47 +236,62 @@ const portalService = {
     // never written by the sync gateway, so reading it yields an empty
     // catalog — the portal must read `products` to show the real ERP items
     // (products, stationery, raw materials, services).
+    // Strict read: a catalog query failure surfaces as an error (route 500 →
+    // error/retry), never as a fake empty catalog. A genuinely empty `products`
+    // table is a valid empty state and returns [].
     let catalogItems = await getAllFrom('products');
 
-    // Defensive fallback: the cached store reader is a battle-tested second
-    // source (used by cloudAvailable()/health probes) that applies the same
-    // deleted/internal filtering and price mapping.
-    if (!Array.isArray(catalogItems) || catalogItems.length === 0) {
-      try {
-        const storeItems = await supabaseStore.listCatalogItems();
-        if (Array.isArray(storeItems) && storeItems.length > 0) {
-          catalogItems = storeItems;
-        }
-      } catch (err) {
-        console.warn('[PortalService] Catalog fallback (products store) failed:', err?.message || err);
-      }
-    }
-
-    if (!Array.isArray(catalogItems)) catalogItems = [];
     if (!includeDeleted) {
       catalogItems = catalogItems.filter((i) => String(i.status || '').toLowerCase() !== 'deleted');
     }
     catalogItems.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-    return catalogItems.map((item) => ({
-      id: item.id,
-      name: item.name,
-      sku: item.sku,
-      unit: item.unit || '',
-      type: item.type || item.inventoryRole || null,
-      description: item.description || null,
-      price: Number(item.sellingPrice ?? item.selling_price ?? item.price ?? 0),
-      quantity: Number(item.stock ?? item.quantity ?? 0),
-      category: item.category || item.type || 'General',
-      status: item.status || 'Active',
-    }));
+
+    const productIds = catalogItems.map((i) => i.id).filter(Boolean);
+    let allVariants = [];
+    if (productIds.length > 0) {
+      allVariants = await getAllFrom('product_variants');
+      allVariants = allVariants.filter(
+        (v) => v.active !== false && productIds.includes(v.productId || v.product_id),
+      );
+    }
+
+    return catalogItems.map((item) => {
+      const variants = allVariants
+        .filter((v) => (v.productId || v.product_id) === item.id)
+        .map((v) => ({
+          id: v.id,
+          productId: v.productId || v.product_id,
+          name: v.name || item.name,
+          sku: v.sku || null,
+          attributes: v.attributes || null,
+          sellingPrice: Number(v.sellingPrice ?? v.selling_price ?? v.price ?? 0),
+          costPrice: Number(v.costPrice ?? v.cost_price ?? v.cost ?? 0),
+          stock: Number(v.stock ?? 0),
+          active: v.active !== false,
+        }));
+
+      return {
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        unit: item.unit || '',
+        type: item.type || item.inventoryRole || null,
+        description: item.description || null,
+        price: Number(item.sellingPrice ?? item.selling_price ?? item.price ?? 0),
+        quantity: Number(item.stock ?? item.quantity ?? 0),
+        category: item.category || item.type || 'General',
+        status: item.status || 'Active',
+        variants: variants.length > 0 ? variants : undefined,
+      };
+    });
   },
 
   async getRecentTransactions(customerId, limit = 5) {
     const entries = [];
 
     const [cloudInvoices, cloudSales] = await Promise.all([
-      getAllFrom('invoices', { 'data->>customerId': `eq.${customerId}` }),
-      getAllFrom('sales', { 'data->>customerId': `eq.${customerId}` }),
+      getAllFrom('invoices', customerFilter('invoices', customerId)),
+      getAllFrom('sales', customerFilter('sales', customerId)),
     ]);
 
     for (const inv of cloudInvoices) {
@@ -273,7 +318,7 @@ const portalService = {
       });
     }
 
-    const recentPayments = await getAllFrom('customer_payments', { 'data->>customerId': `eq.${customerId}` });
+    const recentPayments = await getAllFrom('customer_payments', customerFilter('customer_payments', customerId));
     for (const pay of recentPayments) {
       entries.push({
         date: pay.date,
@@ -286,7 +331,7 @@ const portalService = {
       });
     }
 
-    const recentOrders = await getAllFrom('sales_orders', { 'data->>customerId': `eq.${customerId}` });
+    const recentOrders = await getAllFrom('sales_orders', customerFilter('sales_orders', customerId));
     for (const ord of recentOrders) {
       entries.push({
         date: ord.orderDate,
@@ -299,7 +344,7 @@ const portalService = {
       });
     }
 
-    const recentRequests = await getAllFrom('quotation_requests', { 'data->>customerId': `eq.${customerId}` });
+    const recentRequests = await getAllFrom('quotation_requests', customerFilter('quotation_requests', customerId));
     for (const req of recentRequests) {
       entries.push({
         date: req.created_at,
@@ -320,9 +365,9 @@ const portalService = {
 
   async getRecentDocuments(customerId, limit = 5) {
     const [requests, quotations, orders] = await Promise.all([
-      getAllFrom('quotation_requests', { 'data->>customerId': `eq.${customerId}` }),
-      getAllFrom('quotations', { 'data->>customerId': `eq.${customerId}` }),
-      getAllFrom('sales_orders', { 'data->>customerId': `eq.${customerId}` }),
+      getAllFrom('quotation_requests', customerFilter('quotation_requests', customerId)),
+      getAllFrom('quotations', customerFilter('quotations', customerId)),
+      getAllFrom('sales_orders', customerFilter('sales_orders', customerId)),
     ]);
 
     const mappedRequests = requests.map((r) => ({
@@ -357,7 +402,7 @@ const portalService = {
 
   async getRequestsPaginated(customerId, { page = 1, pageSize = 20, status, search } = {}) {
     const offset = (page - 1) * pageSize;
-    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    const filters = withCustomerScope('quotation_requests', customerId);
     if (status) filters['data->>status'] = `eq.${status}`;
 
     const allRows = await getAllFrom('quotation_requests', filters);
@@ -386,14 +431,13 @@ const portalService = {
   },
 
   async getOrders(customerId) {
-    const [orders, customers] = await Promise.all([
-      getAllFrom('sales_orders', { 'data->>customerId': `eq.${customerId}` }),
-      getAllFrom('customers'),
+    const [orders, customer] = await Promise.all([
+      getAllFrom('sales_orders', customerFilter('sales_orders', customerId)),
+      getOneById('customers', customerId),
     ]);
-    const customerMap = new Map(customers.map((c) => [c.id, c.name]));
     return orders.map((o) => ({
       ...o,
-      customerName: customerMap.get(o.customerId) || '',
+      customerName: (customer && customer.name) || '',
       totalAmount: o.total,
       items_json: o.items,
     }));
@@ -401,11 +445,45 @@ const portalService = {
 
   async getOrdersPaginated(customerId, { page = 1, pageSize = 20, status, search, dateFrom, dateTo } = {}) {
     const offset = (page - 1) * pageSize;
-    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    const filters = withCustomerScope('sales_orders', customerId);
     if (status) filters['data->>status'] = `eq.${status}`;
 
     const allRows = await getAllFrom('sales_orders', filters);
     let filtered = Array.isArray(allRows) ? allRows : [];
+
+    // Request-chain fallback: an order converted from one of this customer's
+    // requests is authoritative for portal visibility even when the sales_order
+    // record's own customer key is mismatched (legacy records whose link was
+    // recorded only on the request side). The request ↔ order link is the
+    // permanent bidirectional reference, so it is resolved first and the order
+    // is fetched by id. Orders carrying NO customer key at all stay hidden
+    // (isolation: ownership must be provable).
+    try {
+      const requestRows = await getAllFrom('quotation_requests', customerFilter('quotation_requests', customerId));
+      const linkedIds = new Set();
+      for (const r of Array.isArray(requestRows) ? requestRows : []) {
+        const linkedId = r.sales_order_id || r.salesOrderId;
+        if (linkedId) linkedIds.add(String(linkedId));
+      }
+      if (linkedIds.size > 0) {
+        const known = new Set(filtered.map((o) => String(o.id)));
+        for (const linkedId of linkedIds) {
+          if (known.has(linkedId)) continue;
+          const order = await getOneById('sales_orders', linkedId);
+          if (!order) continue;
+          // Defense in depth: never surface an order owned by another customer
+          // even if the request linkage claims otherwise.
+          const orderCustomer = order.customerId || order.customer_id || null;
+          if (customerId && String(orderCustomer ?? '') !== String(customerId)) continue;
+          if (status && String(order.status || '').toLowerCase() !== String(status).toLowerCase()) continue;
+          filtered.push(order);
+          known.add(String(order.id));
+        }
+      }
+    } catch {
+      // Non-fatal: the direct customer-scope query above remains authoritative.
+    }
+
     if (search) {
       const q = String(search).toLowerCase();
       filtered = filtered.filter((o) =>
@@ -423,7 +501,7 @@ const portalService = {
   },
 
   async getOrderById(orderId, customerId) {
-    const order = await repo.getById('sales_orders', orderId);
+    const order = await getOneById('sales_orders', orderId);
     if (!order) return null;
     const orderCustomerId = order.customerId || order.customer_id || null;
     if (customerId && String(orderCustomerId) !== String(customerId)) return null;
@@ -443,12 +521,24 @@ const portalService = {
   },
 
   async getQuotations(customerId) {
-    return portalLifecycleService.getQuotations({ customerId});
+    // quotations is written by BOTH the ERP frontend store (camelCase
+    // `customerId`) and the backend shim (snake_case `customer_id`). The
+    // lifecycle query scopes by `customer_id`; merge any canonical-scope rows
+    // the shim query misses so historical records from either source appear.
+    const [lifecycleRows, cloudRows] = await Promise.all([
+      portalLifecycleService.getQuotations({ customerId }),
+      getAllFrom('quotations', customerFilter('quotations', customerId)),
+    ]);
+    const seen = new Set((lifecycleRows || []).map((r) => r.id));
+    const extras = (cloudRows || [])
+      .filter((r) => !seen.has(r.id))
+      .map((r) => ({ ...r, items: parseJson(r.items, []) }));
+    return [...(lifecycleRows || []), ...extras];
   },
 
   async getQuotationsPaginated(customerId, { page = 1, pageSize = 20, status, search } = {}) {
     const offset = (page - 1) * pageSize;
-    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    const filters = withCustomerScope('quotations', customerId);
     if (status) filters['data->>status'] = `eq.${status}`;
 
     const allRows = await getAllFrom('quotations', filters);
@@ -473,8 +563,8 @@ const portalService = {
     };
   },
 
-async getInvoices(customerId) {
-    const invoices = await getAllFrom('invoices', { 'data->>customerId': `eq.${customerId}` });
+  async getInvoices(customerId) {
+    const invoices = await getAllFrom('invoices', customerFilter('invoices', customerId));
     return invoices.map((i) => ({
       id: i.id,
       invoice_number: i.invoice_number,
@@ -526,7 +616,7 @@ async getInvoices(customerId) {
       console.warn('[PortalService] Cloud invoices unavailable, using local:', err.message);
     }
 
-    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    const filters = customerFilter('invoices', customerId);
 
     const allRows = await getAllFrom('invoices', filters);
     let filtered = Array.isArray(allRows) ? allRows : [];
@@ -649,7 +739,7 @@ async getInvoices(customerId) {
     } catch (err) {
       console.warn('[PortalService] Cloud invoice unavailable, using local:', err.message);
     }
-    const invoice = await repo.getById('invoices', invoiceId);
+    const invoice = await getOneById('invoices', invoiceId);
     if (!invoice) return null;
     const invoiceCustomerId = invoice.customerId || invoice.customer_id || null;
     if (customerId && String(invoiceCustomerId) !== String(customerId)) return null;
@@ -660,7 +750,7 @@ async getInvoices(customerId) {
   },
 
   async getPayments(customerId) {
-    const payments = await getAllFrom('customer_payments', { 'data->>customerId': `eq.${customerId}` });
+    const payments = await getAllFrom('customer_payments', customerFilter('customer_payments', customerId));
     return payments.map((p) => ({
       id: p.id,
       amount: p.amount,
@@ -672,7 +762,7 @@ async getInvoices(customerId) {
 
   async getPaymentsPaginated(customerId, { page = 1, pageSize = 20, search, dateFrom, dateTo } = {}) {
     const offset = (page - 1) * pageSize;
-    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    const filters = withCustomerScope('customer_payments', customerId);
 
     const allRows = await getAllFrom('customer_payments', filters);
     let filtered = Array.isArray(allRows) ? allRows : [];
@@ -699,7 +789,7 @@ async getInvoices(customerId) {
   },
 
   async getPaymentById(paymentId, customerId) {
-    const payment = await repo.getById('customer_payments', paymentId);
+    const payment = await getOneById('customer_payments', paymentId);
     if (!payment) return null;
     const paymentCustomerId = payment.customerId || payment.customer_id || null;
     if (customerId && String(paymentCustomerId) !== String(customerId)) return null;
@@ -714,8 +804,15 @@ async getInvoices(customerId) {
     const invoiceIds = [...new Set(validAllocations.map((a) => a.invoice_id || a.invoiceId))];
     const invoiceMap = new Map();
     if (invoiceIds.length > 0) {
-      const invoices = await repo.getAll('invoices', { id: `in.(${invoiceIds.join(',')})` });
-      for (const inv of (Array.isArray(invoices) ? invoices : [])) {
+      // Customer-scoped enrichment: fetch ONLY invoices that belong to the
+      // authenticated customer. A malicious or malformed allocation that
+      // references another customer's invoice resolves to a missing invoice —
+      // its number/amount/metadata are never exposed.
+      const invoices = await getAllFrom('invoices', {
+        id: `in.(${invoiceIds.join(',')})`,
+        ...customerFilter('invoices', customerId),
+      });
+      for (const inv of invoices) {
         invoiceMap.set(inv.id, inv);
       }
     }
@@ -727,8 +824,11 @@ async getInvoices(customerId) {
       return {
         allocation_id: alloc.allocation_id || alloc.allocationId || null,
         invoice_id: invoiceId,
-        invoice_number: invoice?.invoice_number || invoiceId,
-        total_amount: Number(invoice?.total_amount ?? 0),
+        invoice_number: invoice ? (invoice.invoice_number || invoice.invoiceNumber || invoiceId) : null,
+        // Unknown financial data must not be fabricated as zero: a missing or
+        // unauthorized invoice has NO known total, so it is null, and the
+        // frontend can distinguish "total = 0" from "invoice could not be found".
+        total_amount: invoice ? Number(invoice.total_amount ?? invoice.totalAmount ?? 0) : null,
         amount,
         missing_invoice: !invoice,
       };
@@ -737,10 +837,9 @@ async getInvoices(customerId) {
   },
 
   async getStatements(customerId, startDate, endDate) {
-    const filters = { 'data->>customerId': `eq.${customerId}` };
     const [invoices, payments] = await Promise.all([
-      getAllFrom('invoices', filters),
-      getAllFrom('customer_payments', filters),
+      getAllFrom('invoices', customerFilter('invoices', customerId)),
+      getAllFrom('customer_payments', customerFilter('customer_payments', customerId)),
     ]);
 
     const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -809,10 +908,10 @@ async getInvoices(customerId) {
 
   async getLoyalty(customerId) {
     const [points, cashback, pointsHistory, tier] = await Promise.all([
-      repo.getById('engagement_point_balances', customerId),
-      getAllFrom('engagement_cashback', { 'data->>customerId': `eq.${customerId}`, 'data->>status': `eq.approved` }),
-      getAllFrom('engagement_points', { 'data->>customerId': `eq.${customerId}` }),
-      repo.getById('engagement_customer_tiers', customerId),
+      getOneById('engagement_point_balances', customerId),
+      getAllFrom('engagement_cashback', customerFilter('engagement_cashback', customerId)),
+      getAllFrom('engagement_points', customerFilter('engagement_points', customerId)),
+      getOneById('engagement_customer_tiers', customerId),
     ]);
 
     const totalCashback = (cashback || []).reduce((sum, c) => sum + Number(c.amount || 0), 0);
@@ -826,10 +925,16 @@ async getInvoices(customerId) {
   },
 
   async getWallet(customerId) {
-    const customer = await repo.getById('customers', customerId);
-    const rewards = await getAllFrom('referral_rewards', { 'data->>customerId': `eq.${customerId}`, 'data->>status': `eq.approved` });
-    const cashback = await getAllFrom('engagement_cashback', { 'data->>customerId': `eq.${customerId}`, 'data->>status': `eq.approved` });
-    const walletPayments = await getAllFrom('customer_payments', { 'data->>customerId': `eq.${customerId}` });
+    // Strict reads: a query failure propagates to a visible error state.
+    // A genuine zero balance / empty transaction list remains valid — it is
+    // only returned when the queries themselves succeed.
+    const customer = await getOneById('customers', customerId);
+    if (!customer) {
+      throw new Error('Customer record not found for authenticated portal user');
+    }
+    const rewards = await getAllFrom('referral_rewards', withCustomerScope('referral_rewards', customerId, { 'data->>status': 'eq.approved' }));
+    const cashback = await getAllFrom('engagement_cashback', withCustomerScope('engagement_cashback', customerId, { 'data->>status': 'eq.approved' }));
+    const walletPayments = await getAllFrom('customer_payments', customerFilter('customer_payments', customerId));
 
     const transactions = [
       ...(rewards || []).map((r) => ({ date: r.approved_at, amount: Number(r.amount) || 0, type: 'credit', reference: 'Referral reward' })),
@@ -845,7 +950,7 @@ async getInvoices(customerId) {
   },
 
   async getProfile(customerId) {
-    const cloud = await repo.getById('customers', customerId);
+    const cloud = await getOneById('customers', customerId);
     if (!cloud) return null;
     return {
       id: cloud.id,
@@ -867,7 +972,7 @@ async getInvoices(customerId) {
   },
 
   async getDocuments(customerId) {
-    const invoices = await getAllFrom('invoices', { 'data->>customerId': `eq.${customerId}` });
+    const invoices = await getAllFrom('invoices', customerFilter('invoices', customerId));
     return invoices.map((inv) => ({
       id: inv.id,
       type: inv.status && /paid|fulfilled/i.test(String(inv.status || '')) ? 'receipt' : 'invoice',
@@ -879,24 +984,26 @@ async getInvoices(customerId) {
   },
 
   async getNotifications(portalUserId) {
-    return getAllFrom('portal_notifications', { 'data->>portalUserId': `eq.${portalUserId}` });
+    // portal_notifications is written by the backend shim (portalLifecycleService
+    // notifyCustomer) with `portal_user_id` — never `portalUserId`.
+    return getAllFrom('portal_notifications', { 'data->>portal_user_id': `eq.${portalUserId}` });
   },
 
   async getUnreadNotificationCount(portalUserId) {
-    const rows = await getAllFrom('portal_notifications', { 'data->>portalUserId': `eq.${portalUserId}`, 'data->>isRead': `eq.false` });
-    return rows.length;
+    const rows = await getAllFrom('portal_notifications', { 'data->>portal_user_id': `eq.${portalUserId}` });
+    return rows.filter((n) => n.isRead !== true).length;
   },
 
   async markNotificationRead(notificationId, portalUserId) {
-    const row = await repo.getById('portal_notifications', notificationId);
-    if (row && row.portalUserId === portalUserId) {
+    const row = await getOneById('portal_notifications', notificationId);
+    if (row && String(row.portal_user_id || '') === String(portalUserId)) {
       await repo.upsert('portal_notifications', { ...row, isRead: true });
     }
   },
 
   async markAllNotificationsRead(portalUserId) {
-    const rows = await getAllFrom('portal_notifications', { 'data->>portalUserId': `eq.${portalUserId}`, 'data->>isRead': `eq.false` });
-    await Promise.all((Array.isArray(rows) ? rows : []).map((row) =>
+    const rows = await getAllFrom('portal_notifications', { 'data->>portal_user_id': `eq.${portalUserId}` });
+    await Promise.all((Array.isArray(rows) ? rows : []).filter((row) => row.isRead !== true).map((row) =>
       repo.upsert('portal_notifications', { ...row, isRead: true })
     ));
   },
@@ -942,7 +1049,7 @@ async getInvoices(customerId) {
   },
 
   async getReferralById(id, portalUserId, customerId) {
-    const referral = await repo.getById('customer_referrals', id);
+    const referral = await getOneById('customer_referrals', id);
     if (!referral) return null;
     if (String(referral.referred_by_id || '') !== String(customerId)) return null;
     return {
@@ -961,7 +1068,12 @@ async getInvoices(customerId) {
     };
   },
 
-  async getReferralTimeline(referralId) {
+  async getReferralTimeline(referralId, customerId) {
+    // Ownership gate: the referral must belong to the authenticated customer.
+    // `:req.params.id` alone is never proof of ownership.
+    const referral = await getOneById('customer_referrals', referralId);
+    if (!referral) return null;
+    if (String(referral.referred_by_id || '') !== String(customerId)) return null;
     return getAllFrom('referral_timeline', { 'data->>referral_id': `eq.${referralId}` });
   },
 
@@ -1020,7 +1132,7 @@ async getInvoices(customerId) {
       throw new Error('You cannot refer yourself');
     }
 
-    const customer = await repo.getById('customers', referredCustomerId);
+    const customer = await getOneById('customers', referredCustomerId);
     if (!customer) {
       throw new Error('Customer not found');
     }
@@ -1048,9 +1160,23 @@ async getInvoices(customerId) {
   async searchCustomersForReferral(query, excludeCustomerId) {
     if (!query || query.trim().length < 2) return [];
     const q = String(query).trim().toLowerCase();
-    const results = await repo.getAll('customers', {
-      'data->>id': `neq.${excludeCustomerId}`,
-    });
+    // Pre-filter at the database: only customers whose name OR email contains
+    // the query are loaded (never the whole customer directory). The JS filter
+    // below remains the authoritative matcher; this is a performance bound.
+    const esc = (s) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const ilike = `*${esc(q)}*`;
+    let results = [];
+    try {
+      results = await getAllFrom('customers', {
+        or: `(data->>name.ilike."${ilike}",data->>email.ilike."${ilike}")`,
+        'data->>id': `neq.${excludeCustomerId}`,
+      });
+    } catch (err) {
+      console.warn('[PortalService] Referral customer ilike pre-filter failed, falling back:', err.message);
+      results = await getAllFrom('customers', {
+        'data->>id': `neq.${excludeCustomerId}`,
+      });
+    }
     return (Array.isArray(results) ? results : [])
       .filter((c) =>
         String(c.name || '').toLowerCase().includes(q) ||
@@ -1122,7 +1248,16 @@ async getInvoices(customerId) {
     return { id, subject, message, priority: priority || 'normal' };
   },
 
-  async addTicketMessage(ticketId, portalUserId, message) {
+  async addTicketMessage(ticketId, portalUserId, customerId, message) {
+    // Ownership gate BEFORE any write: the ticket must belong to the
+    // authenticated portal user AND customer, or the request is rejected.
+    const ticket = await getOneById('portal_tickets', ticketId);
+    if (!ticket ||
+        String(ticket.portal_user_id || '') !== String(portalUserId) ||
+        String(ticket.customer_id || '') !== String(customerId)) {
+      throw new Error('Ticket not found or access denied');
+    }
+
     const id = genId('pmsg');
     await repo.upsert('portal_ticket_messages', {
       id,
@@ -1131,26 +1266,27 @@ async getInvoices(customerId) {
       message,
     });
 
-    const ticket = await repo.getById('portal_tickets', ticketId);
-    if (ticket) {
-      await repo.upsert('portal_tickets', { ...ticket, updated_at: new Date().toISOString() });
-    }
+    await repo.upsert('portal_tickets', { ...ticket, updated_at: new Date().toISOString() });
 
     return { id, ticket_id: ticketId, message };
   },
 
-  async updateTicketStatus(ticketId, portalUserId, status) {
-    const ticket = await repo.getById('portal_tickets', ticketId);
-    if (!ticket || String(ticket.portal_user_id || '') !== String(portalUserId)) {
+  async updateTicketStatus(ticketId, portalUserId, customerId, status) {
+    const ticket = await getOneById('portal_tickets', ticketId);
+    if (!ticket ||
+        String(ticket.portal_user_id || '') !== String(portalUserId) ||
+        String(ticket.customer_id || '') !== String(customerId)) {
       throw new Error('Ticket not found or access denied');
     }
     await repo.upsert('portal_tickets', { ...ticket, status, updated_at: new Date().toISOString() });
     return { success: true, ticketId, status };
   },
 
-  async uploadTicketAttachment(ticketId, portalUserId, file, messageId) {
-    const ticket = await repo.getById('portal_tickets', ticketId);
-    if (!ticket || String(ticket.portal_user_id || '') !== String(portalUserId)) {
+  async uploadTicketAttachment(ticketId, portalUserId, customerId, file, messageId) {
+    const ticket = await getOneById('portal_tickets', ticketId);
+    if (!ticket ||
+        String(ticket.portal_user_id || '') !== String(portalUserId) ||
+        String(ticket.customer_id || '') !== String(customerId)) {
       throw new Error('Ticket not found or access denied');
     }
 
@@ -1182,19 +1318,19 @@ async getInvoices(customerId) {
   },
 
   async getTicketAttachment(attachmentId, customerId) {
-    const attachment = await repo.getById('ticket_attachments', attachmentId);
+    const attachment = await getOneById('ticket_attachments', attachmentId);
     if (!attachment) return null;
-    const ticket = await repo.getById('portal_tickets', attachment.ticket_id);
+    const ticket = await getOneById('portal_tickets', attachment.ticket_id);
     if (!ticket || String(ticket.customer_id || '') !== String(customerId)) return null;
     return attachment;
   },
 
   async deleteTicketAttachment(attachmentId, portalUserId, customerId) {
-    const attachment = await repo.getById('ticket_attachments', attachmentId);
+    const attachment = await getOneById('ticket_attachments', attachmentId);
     if (!attachment) {
       throw new Error('Attachment not found or access denied');
     }
-    const ticket = await repo.getById('portal_tickets', attachment.ticket_id);
+    const ticket = await getOneById('portal_tickets', attachment.ticket_id);
     if (!ticket || String(ticket.customer_id || '') !== String(customerId)) {
       throw new Error('Attachment not found or access denied');
     }
@@ -1217,19 +1353,26 @@ async getInvoices(customerId) {
 
   async getShipments(customerId, { status, search } = {}) {
     const [salesOrders, deliveryNotes] = await Promise.all([
-      getAllFrom('sales_orders', { 'data->>customer_id': `eq.${customerId}` }),
-      getAllFrom('delivery_notes', { 'data->>customer_id': `eq.${customerId}` }),
+      scopedRows('sales_orders', customerId),
+      scopedRows('delivery_notes', customerId),
     ]);
 
     const results = [];
-    for (const so of (Array.isArray(salesOrders) ? salesOrders : [])) {
-      if (!so.tracking_number || !String(so.tracking_number).trim()) continue;
-      results.push({ ...so, _source: 'sales_orders' });
-    }
+    // Delivery notes are the authoritative delivery document: they carry the
+    // LIVE status from Inbound ("Warehouse Dispatched") through POD-sealed
+    // delivery, plus driver/vehicle/tracking. Push them first and suppress the
+    // linked sales order (whose status is NOT updated at dispatch), so the
+    // portal list and timeline reflect the real delivery stage.
     for (const dn of (Array.isArray(deliveryNotes) ? deliveryNotes : [])) {
-      if (!dn.tracking_number || !String(dn.tracking_number).trim()) continue;
-      if (results.some((r) => r.id === dn.order_id)) continue;
+      if (results.some((r) => r.id === dn.id || r.id === dn.order_id || r.id === dn.orderId)) continue;
       results.push({ ...dn, _source: 'delivery_notes' });
+    }
+    for (const so of (Array.isArray(salesOrders) ? salesOrders : [])) {
+      // Sales orders only surface once they have entered the dispatch pipeline
+      // AND no linked delivery note already represents this delivery.
+      if (!so.tracking_number || !String(so.tracking_number).trim()) continue;
+      if (results.some((r) => r.id === so.id || String(r.order_id || r.orderId || '') === String(so.id))) continue;
+      results.push({ ...so, _source: 'sales_orders' });
     }
 
     let filtered = results;
@@ -1250,14 +1393,14 @@ async getInvoices(customerId) {
   },
 
   async getShipmentById(shipmentId, customerId) {
-    const row = await repo.getById('sales_orders', shipmentId);
+    const row = await getOneById('sales_orders', shipmentId);
     if (row) {
       const rowCustomerId = row.customerId || row.customer_id || null;
       if (String(rowCustomerId) !== String(customerId)) return null;
       if (!row.tracking_number || !String(row.tracking_number).trim()) return null;
       return row;
     }
-    const dn = await repo.getById('delivery_notes', shipmentId);
+    const dn = await getOneById('delivery_notes', shipmentId);
     if (dn) {
       const dnCustomerId = dn.customerId || dn.customer_id || null;
       if (String(dnCustomerId) !== String(customerId)) return null;
@@ -1267,6 +1410,98 @@ async getInvoices(customerId) {
     return null;
   },
 
+  // Resolve the delivery note behind a delivery/shipment id, strictly scoped
+  // to the requesting customer. The portal renders the note from this record
+  // (Download Delivery Note) so a customer can only ever retrieve their own.
+  async getDeliveryNoteForDelivery(deliveryId, customerId) {
+    const belongs = (dn) => {
+      const dnCustomerId = dn.customerId || dn.customer_id || null;
+      return dn && String(dnCustomerId) === String(customerId);
+    };
+
+    // Direct hit — the id IS a delivery note.
+    try {
+      const direct = await repo.getById('delivery_notes', deliveryId);
+      if (direct && belongs(direct)) return direct;
+    } catch (err) {
+      console.warn('[PortalService] Delivery note direct lookup failed:', err?.message || err);
+    }
+
+    // Otherwise the id is a sales order; locate its linked delivery note.
+    const notes = await scopedRows('delivery_notes', customerId);
+    const note = notes.find(
+      (dn) => String(dn.order_id || dn.orderId || '') === String(deliveryId)
+    );
+    return note && belongs(note) ? note : null;
+  },
+
+  // Customer-facing delivery status banners for the portal carousel (sliding
+  // like the ads). A banner appears from the moment a delivery is pushed to
+  // Inbound ("out of the warehouse") and its message follows every status
+  // change: Inbound → out of warehouse, Active → out for delivery,
+  // Delivered → delivered (POD sealed). Strictly scoped to the customer.
+  async getDeliveryBanners(customerId) {
+    const [notes, shipments, invoices] = await Promise.all([
+      scopedRows('delivery_notes', customerId),
+      scopedRows('shipments', customerId),
+      scopedRows('invoices', customerId),
+    ]);
+
+      const invoiceById = new Map();
+      for (const inv of invoices) invoiceById.set(String(inv.id), inv);
+      const notesById = new Map();
+      for (const n of notes) notesById.set(String(n.id), n);
+
+      const banners = [];
+      const invoiceNumberFor = (inv) =>
+        inv ? (inv.invoice_number || inv.invoiceNumber || null) : null;
+
+      // Inbound: delivery note created, goods leaving the warehouse. Only
+      // genuinely-pending notes without a linked shipment qualify — once a
+      // shipment exists it is the authoritative source for the active/delivered
+      // stage, so emitting both would show two contradictory banners.
+      for (const dn of notes) {
+        const status = String(dn.status || 'pending');
+        if (/delivered|cancelled|void/i.test(status)) continue;
+        if (shipments.some((s) => String(s.orderId || '') === String(dn.id))) continue;
+        const invoiceId = dn.invoiceId || dn.invoice_id || null;
+        banners.push({
+          id: `dn-${dn.id}`,
+          stage: 'inbound',
+          status,
+          orderNumber: dn.orderNumber || dn.order_number || dn.orderId || dn.order_id || null,
+          invoiceNumber: invoiceNumberFor(invoiceId ? invoiceById.get(String(invoiceId)) : null)
+            || dn.invoiceNumber || dn.invoice_number || null,
+          trackingNumber: dn.trackingNumber || dn.tracking_number || null,
+          updatedAt: dn.updated_at || dn.updatedAt || dn.date || null,
+        });
+      }
+
+      // Active / Delivered: dispatched shipments (out for delivery → delivered).
+      for (const shp of shipments) {
+        const status = String(shp.status || '');
+        if (/cancelled|void/i.test(status)) continue;
+        const delivered = /delivered|fulfilled/i.test(status);
+        const note = shp.orderId ? notesById.get(String(shp.orderId)) : null;
+        const invoiceId = (note && (note.invoiceId || note.invoice_id)) || shp.invoiceId || shp.invoice_id || null;
+        banners.push({
+          id: `shp-${shp.id}`,
+          stage: delivered ? 'delivered' : 'active',
+          status,
+          orderNumber: shp.orderNumber || shp.order_number || shp.orderId || null,
+          invoiceNumber: invoiceNumberFor(invoiceId ? invoiceById.get(String(invoiceId)) : null)
+            || (note && (note.invoiceNumber || note.invoice_number)) || shp.invoiceNumber || shp.invoice_number || null,
+          trackingNumber: shp.trackingNumber || shp.tracking_number
+            || (note && (note.trackingNumber || note.tracking_number)) || null,
+          updatedAt: shp.updated_at || shp.updatedAt || shp.date || null,
+        });
+      }
+
+      // Newest activity first so the carousel leads with the freshest update.
+      banners.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+      return banners;
+  },
+
   // Today's in-flight deliveries for the customer. Fronts the Logistics Command
   // "Active" tab: shipments that are dispatched (not Delivered/Cancelled) and
   // scheduled to arrive today. Each entry includes its line items and the
@@ -1274,12 +1509,14 @@ async getInvoices(customerId) {
   // aware detail. As soon as POD is sealed (status -> Delivered) the shipment
   // drops out of the list and the banner disappears.
   async getTodayPendingDeliveries(customerId) {
-    try {
-      const [shipments, notes, invoices] = await Promise.all([
-        getAllFrom('shipments', { 'data->>customerId': `eq.${customerId}` }),
-        getAllFrom('delivery_notes'),
-        getAllFrom('invoices', { 'data->>customerId': `eq.${customerId}` }),
-      ]);
+    // Strict reads: a query failure propagates to the route error state and is
+    // NEVER returned as "no pending deliveries". A legitimate empty result
+    // (successful queries, zero rows) still returns [].
+    const [shipments, notes, invoices] = await Promise.all([
+      getAllFrom('shipments', customerFilter('shipments', customerId)),
+      getAllFrom('delivery_notes', customerFilter('delivery_notes', customerId)),
+      getAllFrom('invoices', customerFilter('invoices', customerId)),
+    ]);
 
       const now = new Date();
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1334,15 +1571,13 @@ async getInvoices(customerId) {
           invoiceId,
           invoiceNumber: (invoice && (invoice.invoice_number || invoice.invoiceNumber)) || null,
           invoiceStatus: (invoice && invoice.status) || null,
-          invoiceAmount: Number((invoice && (invoice.total_amount ?? invoice.totalAmount)) || 0),
+          // Unknown financial data must not be fabricated as zero: when no
+          // invoice row is linked, the amount is null, not 0.
+          invoiceAmount: invoice ? Number(invoice.total_amount ?? invoice.totalAmount ?? 0) : null,
         });
       }
 
       return result;
-    } catch (err) {
-      console.warn('[PortalService] getTodayPendingDeliveries failed:', err?.message || err);
-      return [];
-    }
   },
 
 };

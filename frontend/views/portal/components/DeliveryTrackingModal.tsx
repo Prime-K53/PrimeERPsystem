@@ -1,33 +1,61 @@
 import React from 'react';
 import {
   CheckCircle2,
-  Clock,
-  ExternalLink,
-  MapPin,
-  MessageSquare,
-  Navigation,
+  Download,
+  Loader2,
   Package,
   PhoneCall,
-  ShieldCheck,
   Truck,
   User,
   X,
 } from 'lucide-react';
-import { DeliveryNotification, DeliveryStatus } from '../../types';
-import { formatDateTime, getDeliveryStatusBadge } from '../../utils/formatters';
+import { DeliveryNotification, DeliveryStatus } from '../../../types';
+import { getDeliveryStatusBadge } from '../../../utils/formatters';
 
 interface DeliveryTrackingModalProps {
   delivery: DeliveryNotification | null;
   isOpen: boolean;
   onClose: () => void;
+  /** Active only once POD is sealed — swaps "Close Tracker" for "Download Delivery Note". */
+  onDownloadDeliveryNote?: () => void;
+  downloadingNote?: boolean;
 }
+
+const TIMELINE_STEPS = [
+  { key: 'placed', label: 'Order Placed' },
+  { key: 'dispatched', label: 'Warehouse Dispatched' },
+  { key: 'out', label: 'Out for Delivery' },
+  { key: 'delivered', label: 'Delivered' },
+];
+
+/**
+ * Resolve how many timeline steps are complete from the delivery status.
+ *
+ * Admin tab  → portal stage
+ * Inbound    → Warehouse Dispatched (1)
+ * Active     → Out for Delivery    (2)
+ * Delivered  → Delivered (POD)     (3)
+ */
+const resolveCompletedSteps = (status: DeliveryStatus | string): number => {
+  const s = String(status || '').toLowerCase().replace(/[\s_-]+/g, '');
+  if (/(delivered|fulfilled|completed)/.test(s)) return 3;
+  if (/(intransit|dispatched|active|shipped|outfordelivery)/.test(s)) return 2;
+  if (/(pending|ready|processing|preparing|confirmed|ordered|created)/.test(s)) return 1;
+  return 0;
+};
 
 export const DeliveryTrackingModal: React.FC<DeliveryTrackingModalProps> = ({
   delivery,
   isOpen,
   onClose,
+  onDownloadDeliveryNote,
+  downloadingNote = false,
 }) => {
   if (!isOpen || !delivery) return null;
+
+  const completedSteps = resolveCompletedSteps(delivery.status);
+  const isDelivered = completedSteps >= 3;
+  const badge = getDeliveryStatusBadge(delivery.status);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
@@ -52,13 +80,17 @@ export const DeliveryTrackingModal: React.FC<DeliveryTrackingModalProps> = ({
         </div>
 
         {/* Status Box */}
-        <div className="flex items-center gap-3.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
-          <div className="p-2.5 rounded-xl bg-slate-900 text-white shrink-0">
+        <div className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-slate-100"
+          style={{ background: badge.bg }}>
+          <div
+            className="p-2.5 rounded-xl text-white shrink-0"
+            style={{ background: badge.color }}
+          >
             <Package className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-black text-slate-900 uppercase">
-              Status: <span className="text-slate-900">{delivery.status.replace('_', ' ').toUpperCase()}</span>
+            <p className="text-xs font-black uppercase" style={{ color: badge.color }}>
+              {badge.label}
             </p>
             <p className="text-xs font-bold text-slate-600 mt-0.5">
               ETA: {delivery.estimatedArrival || 'Aug 12, 10:00 AM'}
@@ -87,42 +119,72 @@ export const DeliveryTrackingModal: React.FC<DeliveryTrackingModalProps> = ({
           <h3 className="text-xs font-black text-slate-900 tracking-tight">Delivery Timeline</h3>
 
           <div className="space-y-3 pl-1">
-            {/* Step 1 */}
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 rounded-full bg-slate-950 text-white flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <span className="text-xs font-black text-slate-900">Order Placed</span>
-            </div>
+            {TIMELINE_STEPS.map((step, index) => {
+              const done = index <= completedSteps;
+              const isCurrent = index === completedSteps && !isDelivered;
 
-            {/* Step 2 */}
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 rounded-full border-2 border-slate-200 bg-slate-50 flex items-center justify-center shrink-0" />
-              <span className="text-xs font-bold text-slate-500">Warehouse Dispatched</span>
-            </div>
-
-            {/* Step 3 */}
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 rounded-full border-2 border-slate-200 bg-slate-50 flex items-center justify-center shrink-0" />
-              <span className="text-xs font-bold text-slate-500">Out for Delivery</span>
-            </div>
-
-            {/* Step 4 */}
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 rounded-full border-2 border-slate-200 bg-slate-50 flex items-center justify-center shrink-0" />
-              <span className="text-xs font-bold text-slate-500">Delivered</span>
-            </div>
+              return (
+                <div key={step.key} className="flex items-center gap-3">
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                    style={{
+                      background: done ? '#0F172A' : '#F8FAFC',
+                      border: `2px solid ${done ? '#0F172A' : '#E2E8F0'}`,
+                      boxShadow: isCurrent ? '0 0 0 4px rgba(15,23,42,0.12)' : 'none',
+                    }}
+                  >
+                    {done ? (
+                      <CheckCircle2 className="w-4 h-4 text-white" />
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                    )}
+                  </div>
+                  <span
+                    className="text-xs"
+                    style={{
+                      fontWeight: done ? 900 : 700,
+                      color: done ? '#0F172A' : '#94A3B8',
+                    }}
+                  >
+                    {step.label}
+                    {isCurrent && (
+                      <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                        Current
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Close Button */}
+        {/* Close / Download Action */}
         <div className="pt-2">
-          <button
-            onClick={onClose}
-            className="w-full py-3.5 bg-slate-950 hover:bg-slate-800 text-white font-extrabold text-xs rounded-full shadow-md transition text-center"
-          >
-            Close Tracker
-          </button>
+          {isDelivered ? (
+            <button
+              onClick={onDownloadDeliveryNote}
+              disabled={downloadingNote}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-full shadow-md transition text-center flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {downloadingNote ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Preparing Delivery Note…
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" /> Download Delivery Note
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={onClose}
+              className="w-full py-3.5 bg-slate-950 hover:bg-slate-800 text-white font-extrabold text-xs rounded-full shadow-md transition text-center"
+            >
+              Close Tracker
+            </button>
+          )}
         </div>
       </div>
     </div>

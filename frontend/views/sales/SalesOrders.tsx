@@ -4,6 +4,7 @@ import { useSalesStore } from '../../stores/salesStore';
 import { useFinanceStore } from '../../stores/financeStore';
 import { adminLifecycle, OrderPrefillPayload } from '../../services/adminPortalClient';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { generateNextId } from '../../utils/helpers';
 import SalesOrderForm from './SalesOrderForm';
 
 const teal = {
@@ -120,9 +121,10 @@ const SalesOrders: React.FC = () => {
   const [pendingOrderRequest, setPendingOrderRequest] = useState<{ requestId: string; requestNumber: string } | null>(null);
 
   const completeOrderRequest = async (order: any) => {
-    if (!pendingOrderRequest) return;
+    if (!pendingOrderRequest) return null;
     try {
-      await adminLifecycle.requests.completeOrder(pendingOrderRequest.requestId, {
+      const res = await adminLifecycle.requests.completeOrder(pendingOrderRequest.requestId, {
+        erpOrderId: order.id || undefined,
         orderSnapshot: {
           items: order.items || [],
           subtotal: order.subtotal || 0,
@@ -132,23 +134,48 @@ const SalesOrders: React.FC = () => {
           total: order.total || 0,
           notes: order.notes || null,
           deliveryDate: order.deliveryDate || null,
-          customerId: order.customerId || null
+          customerId: order.customerId || null,
+          customerName: order.customerName || null
         }
       });
-      alert(`Official sales order created. Request ${pendingOrderRequest.requestNumber} marked converted and the customer notified.`);
+      return res || null;
     } catch (err: any) {
       alert('Request conversion failed: ' + (err?.message || err));
-    } finally {
-      setPendingOrderRequest(null);
-      setEditing(null);
-      void fetchSalesData();
+      return null;
     }
   };
 
   const handleCreate = async (o: any) => {
+    // Converting a portal request → the ERP record is saved first (offline-safe),
+    // then the backend ADOPTS it as the official sales order (SO-YYYY-######),
+    // links the request (marked converted) and notifies the customer. The local
+    // record is then updated with the official number + request linkage so the
+    // admin list never shows an "Unnumbered order" and ODR-… stays traceable.
+    if (pendingOrderRequest) {
+      const orderId = o.id || generateNextId('SO', salesOrders);
+      const orderToSave = { ...o, id: orderId };
+      await addSalesOrder(orderToSave);
+      const res = await completeOrderRequest(orderToSave);
+      if (res?.id) {
+        await updateSalesOrder({
+          ...orderToSave,
+          id: res.id,
+          orderNumber: res.orderNumber || '',
+          sourceRequestId: pendingOrderRequest.requestId,
+          sourceRequestNumber: pendingOrderRequest.requestNumber,
+          status: 'Confirmed',
+        });
+        alert(`Official sales order ${res.orderNumber || res.id} created. Request ${pendingOrderRequest.requestNumber} marked converted and the customer notified.`);
+      } else {
+        alert('Sales order saved locally, but the request could not be marked converted right now. Retry from Customer Requests when online.');
+      }
+      await fetchSalesData();
+      setPendingOrderRequest(null);
+      setEditing(null);
+      return;
+    }
     await addSalesOrder(o);
     await fetchSalesData();
-    await completeOrderRequest(o);
   };
 
   React.useEffect(() => {
@@ -268,7 +295,11 @@ const SalesOrders: React.FC = () => {
               <SalesOrderForm onCreate={handleCreate} />
             ) : (
               <div style={{ marginBottom: 16 }}>
-                <SalesOrderForm initial={editing} onDone={() => { setEditing(null); void fetchSalesData(); }} />
+                <SalesOrderForm
+                  initial={editing}
+                  onCreate={pendingOrderRequest ? handleCreate : undefined}
+                  onDone={() => { setEditing(null); void fetchSalesData(); }}
+                />
               </div>
             )}
           </div>
