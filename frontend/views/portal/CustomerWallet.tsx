@@ -16,7 +16,7 @@ interface WalletTransaction {
 }
 
 interface WalletData {
-  balance: number;
+  walletBalance: number;
   transactions: WalletTransaction[];
 }
 
@@ -32,7 +32,7 @@ const CustomerWallet: React.FC = () => {
 
   useEffect(() => {
     portalLifecycle.wallet.get()
-      .then((result) => { setData(result && result.balance != null ? result : null); setRefreshError(null); })
+      .then((result) => { setData(result && result.walletBalance != null ? result : null); setRefreshError(null); })
       .catch(() => { if (!data) setError('Failed to load wallet data'); else setRefreshError('Unable to refresh — data may be stale'); })
       .finally(() => setLoading(false));
   }, []);
@@ -45,7 +45,7 @@ const CustomerWallet: React.FC = () => {
         onEvent: (type, payload) => {
           if (type === 'entity_changed' && (payload?.docType === 'invoice' || payload?.docType === 'wallet' || payload?.docType === 'payment' || payload?.event === 'payment_allocated') && !cancelled) {
             portalLifecycle.wallet.get()
-              .then((result) => { setData(result && result.balance != null ? result : data); setRefreshError(null); })
+              .then((result) => { setData(result && result.walletBalance != null ? result : data); setRefreshError(null); })
               .catch(() => { if (!cancelled) setRefreshError('Unable to refresh — data may be stale'); });
           }
         },
@@ -105,7 +105,7 @@ const CustomerWallet: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 18px' }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Wallet Balance</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 2 }}>{formatK(data.balance || 0)}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#0F172A', fontFamily: F, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 2 }}>{formatK(data.walletBalance || 0)}</div>
           </div>
           <div style={{
             width: 44, height: 44, borderRadius: 12,

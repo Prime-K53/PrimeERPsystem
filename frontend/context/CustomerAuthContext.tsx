@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { portalApi, getPortalSession, savePortalSession, clearPortalSession } from '../services/portalApiClient';
+import { portalApi, getPortalSession, savePortalSession, clearPortalSession, refreshPortalSession } from '../services/portalApiClient';
 import { loginWithApi } from '../services/authApiClient';
 
 interface PortalUser {
@@ -59,15 +59,11 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         logout();
         return false;
       }
-      const result = await portalApi.post<{ access_token: string; refresh_token: string; expires_in: string }>('/auth/refresh', {
-        refresh_token: session.refresh_token,
-      });
-      savePortalSession({
-        ...session,
-        access_token: result.access_token,
-        refresh_token: result.refresh_token,
-        expires_in: result.expires_in,
-      });
+      const ok = await refreshPortalSession();
+      if (!ok) {
+        logout();
+        return false;
+      }
       setUser(getPortalSession()?.user ?? null);
       scheduleTokenRefresh(25 * 60 * 1000);
       return true;
@@ -75,6 +71,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       logout();
       return false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logout]);
 
   const scheduleTokenRefresh = useCallback((delayMs: number) => {
@@ -87,15 +84,49 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   }, [clearRefreshTimer, refreshSession]);
 
   useEffect(() => {
-    const session = getPortalSession();
-    if (session?.user && session?.access_token) {
-      setUser(session.user);
+    let cancelled = false;
+
+    const init = async () => {
+      const session = getPortalSession();
+      if (!session?.user || !session?.access_token) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      // Only validate the session if the access token is old (more than 5 minutes).
+      // A fresh token doesn't need a server-side refresh and can be trusted.
+      const now = Date.now();
+      const tokenAge = now - (Number(session.expires_in) || 0) * 60000; // assumes expires_in is stored in minutes
+      if (tokenAge > 5 * 60 * 1000) {
+        // Token is older than 5 minutes - validate against the server
+        const ok = await refreshPortalSession();
+        if (cancelled) return;
+        if (!ok) {
+          clearPortalSession();
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Fresh token - trust it and keep the user logged in
+        setUser(session.user);
+      }
       scheduleTokenRefresh(25 * 60 * 1000);
-    }
-    setLoading(false);
+      setLoading(false);
+    };
+
+    init();
+
+    const onSessionExpired = () => {
+      clearRefreshTimer();
+      setUser(null);
+    };
+    window.addEventListener('portal-session-expired', onSessionExpired);
 
     return () => {
+      cancelled = true;
       clearRefreshTimer();
+      window.removeEventListener('portal-session-expired', onSessionExpired);
     };
   }, [clearRefreshTimer, scheduleTokenRefresh]);
 

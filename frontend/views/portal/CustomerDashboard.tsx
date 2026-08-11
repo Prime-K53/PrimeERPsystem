@@ -687,8 +687,8 @@ const CustomerDashboard: React.FC = () => {
               badge={dashboardData?.unpaidInvoiceCount ? (overdueInvoices > 0 ? 'Overdue' : 'Due') : 'All Clear'}
               badgeColor={dashboardData?.unpaidInvoiceCount ? (overdueInvoices > 0 ? '#DC2626' : '#D97706') : '#059669'}
               sublabel={
-                dashboardData?.unpaidInvoiceCount
-                  ? `${dashboardData.unpaidInvoiceCount} Unpaid${overdueInvoices > 0 ? ` · ${overdueInvoices} Overdue` : ''}`
+                overdueInvoices > 0
+                  ? `${overdueInvoices} Overdue`
                   : undefined
               }
               sublabelColor={dashboardData?.unpaidInvoiceCount ? '#DC2626' : '#059669'}
@@ -702,17 +702,11 @@ const CustomerDashboard: React.FC = () => {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <PremiumKPICard
-              label="Available Credit"
-              value={fmtMoney(Math.max(0, creditLimitNum - outstandingNum))}
+              label="Wallet Balance"
+              value={fmtMoney(dashboardData?.walletBalance || 0)}
               icon={Wallet}
-              badge={creditLimitNum > 0 ? (creditUtilizationPct >= 90 ? 'Near Limit' : 'Available') : 'No Credit Line'}
-              badgeColor={creditLimitNum > 0 ? (creditUtilizationPct >= 90 ? '#DC2626' : '#059669') : '#94A3B8'}
-              sublabel={
-                creditLimitNum > 0
-                  ? `${creditUtilizationPct}% used of ${fmtMoney(creditLimitNum)}`
-                  : undefined
-              }
-              sublabelColor={creditUtilizationPct >= 90 ? '#DC2626' : '#059669'}
+              badge={dashboardData?.walletBalance > 0 ? 'Active' : 'No Balance'}
+              badgeColor={dashboardData?.walletBalance > 0 ? '#059669' : '#94A3B8'}
               trend={{ value: onTimeScore, positive: onTimeScore >= 80, suffix: 'on-time history' }}
               gradient="linear-gradient(135deg, #059669 0%, #065F46 100%)"
               glowColor="rgba(5,150,105,0.2)"

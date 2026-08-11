@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { portalApi, portalLifecycle } from '../../../services/portalApiClient';
 
@@ -15,6 +15,32 @@ const MobileBottomNav: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [badges, setBadges] = useState<BadgeCounts>({ unpaidInvoices: 0, activeDeliveries: 0, unreadNotifications: 0, activeOrders: 0 });
+  const [showFooter, setShowFooter] = useState(false);
+  const [lastScrollY, setLastScrollY] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const handleScroll = () => {
+      if (!cancelled) {
+        const currentScrollY = window.scrollY;
+        const threshold = 100; // Only show footer after scrolling 100px
+
+        // Show footer when scrolling down past threshold
+        if (currentScrollY > threshold && currentScrollY > lastScrollY) {
+          setShowFooter(true);
+        } else if (currentScrollY < lastScrollY && currentScrollY > threshold) {
+          // Hide footer when scrolling up (but keep it below threshold)
+          setShowFooter(false);
+        }
+
+        setLastScrollY(currentScrollY);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', handleScroll); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,10 +73,14 @@ const MobileBottomNav: React.FC = () => {
             if (!cancelled && (type === 'notification' || type === 'entity_changed')) {
               portalApi.get<any>('/dashboard').then((dash) => {
                 if (!cancelled) setBadges((prev) => ({ ...prev, unpaidInvoices: dash?.unpaidInvoiceCount ?? prev.unpaidInvoices, activeDeliveries: dash?.activeDeliveries ?? prev.activeDeliveries, activeOrders: dash?.totalOrders ?? prev.activeOrders }));
-              }).catch(() => {});
+              }).catch(() => {
+                if (!cancelled) setShowFooter(false);
+              });
               portalApi.get<{ count: number }>('/notifications/unread-count').then((c) => {
                 if (!cancelled) setBadges((prev) => ({ ...prev, unreadNotifications: c?.count ?? prev.unreadNotifications }));
-              }).catch(() => {});
+              }).catch(() => {
+                if (!cancelled) setShowFooter(false);
+              });
             }
           },
         });
@@ -124,18 +154,22 @@ const MobileBottomNav: React.FC = () => {
         bottom: 0,
         left: 0,
         right: 0,
-        height: 56,
+        height: 52,
         display: 'flex',
         alignItems: 'stretch',
         justifyContent: 'space-around',
         paddingBottom: 'env(safe-area-inset-bottom, 0)',
-        background: 'rgba(255,255,255,0.92)',
+        background: 'rgba(255,255,255,0.95)',
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
         borderTop: '1px solid rgba(226,232,240,0.7)',
         boxShadow: '0 -8px 24px -12px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.6)',
         zIndex: 50,
         fontFamily: SF,
+        transition: 'transform 250ms cubic-bezier(0.25,0.46,0.45,0.94), opacity 250ms ease',
+        transform: showFooter ? 'translateY(0)' : 'translateY(100%)',
+        opacity: showFooter ? 1 : 0,
+        pointerEvents: showFooter ? 'auto' : 'none',
       }}
     >
       {items.map((item) => {
@@ -158,35 +192,16 @@ const MobileBottomNav: React.FC = () => {
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              padding: '6px 0 4px',
-              minWidth: 52,
+              padding: '10px 0',
+              minWidth: 48,
               color: active ? '#2563EB' : '#64748B',
               transition: 'color 220ms ease',
             }}
           >
-            <span style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28 }}>
+            <span style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
               {item.icon(active)}
               <Badge count={item.badge} color={item.badgeColor} />
             </span>
-            <span style={{
-              fontSize: 11, fontWeight: active ? 700 : 500, lineHeight: 1.2,
-              fontFamily: SF, color: 'inherit', transition: 'color 220ms ease',
-            }}>
-              {item.label}
-            </span>
-            {active && (
-              <span
-                style={{
-                  position: 'absolute',
-                  top: 4,
-                  width: 24,
-                  height: 3,
-                  borderRadius: 2,
-                  background: '#2563EB',
-                  boxShadow: '0 2px 8px rgba(37,99,235,0.45)',
-                }}
-              />
-            )}
           </button>
         );
       })}

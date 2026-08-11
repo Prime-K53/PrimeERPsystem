@@ -20,7 +20,6 @@ import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import { DeliveryTrackingModal } from './components/DeliveryTrackingModal';
 import { F } from './portalStyles';
 
-// ── Status Badge Styles ─────────────────────────────────────────────────
 const statusBadgeStyles: Record<string, { bg: string; color: string; border: string }> = {
   delivered: { bg: '#ECFDF5', color: '#065F46', border: '#A7F3D0' },
   out_for_delivery: { bg: '#EFF6FF', color: '#1E40AF', border: '#BFDBFE' },
@@ -56,7 +55,6 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
-// ── Delivery Banner Strip (sliding update cards like the dashboard ads) ───
 const bannerConfig: Record<string, { bg: string; border: string; color: string; label: string; icon: React.ReactNode }> = {
   inbound: {
     bg: '#EEF2FF', border: '#C7D2FE', color: '#3730A3',
@@ -82,24 +80,34 @@ const bannerMessage = (b: PortalDeliveryBanner) => {
   return `Your delivery for ${ref} is out of the warehouse.`;
 };
 
-const DeliveryBannerStrip: React.FC<{ banners: PortalDeliveryBanner[] }> = ({ banners }) => {
+const DeliveryBannerStrip: React.FC<{ banners: PortalDeliveryBanner[]; onSelect?: (b: PortalDeliveryBanner) => void }> = ({ banners, onSelect }) => {
   if (!banners || banners.length === 0) return null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
       {banners.slice(0, 4).map((b) => {
         const cfg = bannerConfig[b.stage] || bannerConfig.active;
+        const ref = b.invoiceNumber ? `Invoice ${b.invoiceNumber}` : (b.orderNumber ? `Order ${b.orderNumber}` : 'Order');
         return (
           <div
             key={b.id}
+            onClick={() => onSelect?.(b)}
             style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '10px 14px', borderRadius: 12,
               background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color,
               fontSize: 12.5, fontWeight: 600, lineHeight: 1.4,
+              cursor: onSelect ? 'pointer' : 'default',
+              transition: 'all .15s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (onSelect) e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
             <span style={{ flexShrink: 0 }}>{cfg.icon}</span>
-            <span style={{ flex: 1, minWidth: 0 }}>{bannerMessage(b)}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>{ref}</span>
             <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {cfg.label}
             </span>
@@ -110,7 +118,6 @@ const DeliveryBannerStrip: React.FC<{ banners: PortalDeliveryBanner[] }> = ({ ba
   );
 };
 
-// ── Main Component ──────────────────────────────────────────────────────
 const CustomerDeliveries: React.FC = () => {
   const { user } = useCustomerAuth();
   const { companyConfig } = useAuth();
@@ -151,6 +158,17 @@ const CustomerDeliveries: React.FC = () => {
       .then((list) => setBanners(Array.isArray(list) ? list : []))
       .catch(() => setBanners((prev) => prev));
   }, []);
+
+  const handleBannerSelect = useCallback((banner: PortalDeliveryBanner) => {
+    const ref = banner.orderNumber || banner.invoiceNumber;
+    if (!ref) return;
+    const match = shipments.find((s) => {
+      const orderNum = (s.order_number || '').replace(/^ORD-/i, '');
+      const trackNum = (s.tracking_number || '').replace(/^TRK-/i, '');
+      return orderNum === ref || trackNum === ref;
+    });
+    if (match) setSelectedShipment(match);
+  }, [shipments]);
 
   useEffect(() => {
     load();
@@ -258,28 +276,26 @@ const CustomerDeliveries: React.FC = () => {
 
   return (
     <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
-      {/* Top Bar Header */}
+      {/* Header */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16,
+        display: 'flex', alignItems: 'center', gap: 14,
         margin: '4px 16px 18px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{
-            width: 50, height: 50, borderRadius: 15,
-            background: 'linear-gradient(160deg, #4A76B5 0%, #0F2C59 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 8px 20px -8px rgba(15,44,89,0.6), inset 0 1px 0 rgba(255,255,255,0.25)',
-          }}>
-            <Truck size={24} style={{ color: '#fff' }} />
-          </div>
-          <div>
-            <h1 style={{ fontSize: 21, fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
-              Deliveries &amp; Tracking
-            </h1>
-            <p style={{ fontSize: 13, fontWeight: 500, color: '#64748B', margin: '3px 0 0', lineHeight: 1.4 }}>
-              Receive live dispatch notifications and track active logistics shipments in real time.
-            </p>
-          </div>
+        <div style={{
+          width: 50, height: 50, borderRadius: 15,
+          background: 'linear-gradient(160deg, #4A76B5 0%, #0F2C59 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 8px 20px -8px rgba(15,44,89,0.6), inset 0 1px 0 rgba(255,255,255,0.25)',
+        }}>
+          <Truck size={24} style={{ color: '#fff' }} />
+        </div>
+        <div>
+          <h1 style={{ fontSize: 21, fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
+            Delivery Notifications &amp; Tracking
+          </h1>
+          <p style={{ fontSize: 13, fontWeight: 500, color: '#64748B', margin: '3px 0 0', lineHeight: 1.4 }}>
+            Receive live dispatch notifications and track active logistics shipments in real time.
+          </p>
         </div>
       </div>
 
@@ -304,10 +320,132 @@ const CustomerDeliveries: React.FC = () => {
         )}
 
         {/* Live delivery status banners */}
-        <DeliveryBannerStrip banners={banners} />
+        <DeliveryBannerStrip banners={banners} onSelect={handleBannerSelect} />
+
+        {/* Deliveries List */}
+        {shipments.length === 0 ? (
+          <EmptyState
+            icon={<Truck size={32} />}
+            title="No deliveries yet"
+            description={search ? 'No deliveries match your search.' : 'When your orders are dispatched, tracking information will appear here.'}
+          />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {shipments.map((shipment, index) => {
+              const orderNumber = shipment.order_number || shipment.id.slice(0, 8);
+              const trackingNumber = shipment.tracking_number || '—';
+              const driverName = shipment.driver_name || '—';
+              const vehicleNo = shipment.vehicle_no || '—';
+              const destination = shipment.shipping_address || '—';
+
+              const displayOrderNumber = orderNumber.replace(/^ORD-/i, '');
+              const displayTrackingNumber = trackingNumber.replace(/^TRK-/i, '');
+
+              const status = (shipment.status || '').toLowerCase();
+              const isDelivered = status === 'delivered' || status === 'fulfilled';
+              const etaText = isDelivered
+                ? formatDelivered(shipment.estimated_delivery)
+                : formatETA(shipment.estimated_delivery);
+
+              return (
+                <div
+                  key={shipment.id}
+                  onClick={() => setSelectedShipment(shipment)}
+                  style={{
+                    padding: '16px',
+                    borderRadius: 12,
+                    background: '#fff',
+                    border: '1px solid #E2E8F0',
+                    cursor: 'pointer',
+                    transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
+                    boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(15,23,42,0.08)';
+                    e.currentTarget.style.borderColor = '#CBD5E1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(15,23,42,0.04)';
+                    e.currentTarget.style.borderColor = '#E2E8F0';
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {/* Order + Status */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
+                          Order ORD-{displayOrderNumber}
+                        </h3>
+                        <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                          Tracking No: TRK-{displayTrackingNumber}
+                        </div>
+                      </div>
+                      <StatusBadge status={shipment.status} />
+                    </div>
+
+                    {/* Driver */}
+                    <div style={{ fontSize: 12.5, color: '#475569', lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <User size={13} style={{ color: '#64748B', flexShrink: 0 }} />
+                      <span>
+                        Driver: {driverName}{driverName !== '—' ? ` (${vehicleNo})` : ''}
+                      </span>
+                    </div>
+
+                    {/* Address */}
+                    <div style={{ fontSize: 12.5, color: '#475569', lineHeight: 1.5, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                      <MapPin size={13} style={{ color: '#64748B', flexShrink: 0, marginTop: 2 }} />
+                      <span>{destination}</span>
+                    </div>
+
+                    {/* Estimated Arrival + Live Tracking */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' }}>
+                        <Clock size={14} style={{ color: '#2563EB', flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#1E40AF', whiteSpace: 'nowrap' }}>Estimated Arrival</span>
+                        <span style={{ fontSize: 10.5, color: '#64748B', whiteSpace: 'nowrap' }}>
+                          {isDelivered ? `Delivered ${etaText}` : etaText}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedShipment(shipment);
+                        }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 12px',
+                          borderRadius: 8,
+                          background: '#0F2C59',
+                          color: '#fff',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          border: 'none',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#1E3A8A';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#0F2C59';
+                        }}
+                      >
+                        <Navigation size={13} />
+                        Live Tracking
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Search */}
-        <div style={{ position: 'relative', marginBottom: 16 }}>
+        <div style={{ position: 'relative', marginTop: 20 }}>
           <Search size={16} style={{
             position: 'absolute',
             left: 14,
@@ -336,120 +474,6 @@ const CustomerDeliveries: React.FC = () => {
             }}
           />
         </div>
-
-        {/* Deliveries List — no cards, no KPIs */}
-        {shipments.length === 0 ? (
-          <EmptyState
-            icon={<Truck size={32} />}
-            title="No deliveries yet"
-            description={search ? 'No deliveries match your search.' : 'When your orders are dispatched, tracking information will appear here.'}
-          />
-        ) : (
-          <div>
-            {shipments.map((shipment, index) => {
-              const orderNumber = shipment.order_number || shipment.id.slice(0, 8);
-              const trackingNumber = shipment.tracking_number || '—';
-              const driverName = shipment.driver_name || '—';
-              const vehicleNo = shipment.vehicle_no || '—';
-              const destination = shipment.shipping_address || '—';
-
-              const displayOrderNumber = orderNumber.replace(/^ORD-/i, '');
-              const displayTrackingNumber = trackingNumber.replace(/^TRK-/i, '');
-
-              const status = (shipment.status || '').toLowerCase();
-              const isDelivered = status === 'delivered' || status === 'fulfilled';
-              const etaText = isDelivered
-                ? formatDelivered(shipment.estimated_delivery)
-                : formatETA(shipment.estimated_delivery);
-
-              const isLast = index === shipments.length - 1;
-
-              return (
-                  <div
-                    key={shipment.id}
-                    style={{
-                      paddingTop: 10,
-                      paddingBottom: 10,
-                      paddingLeft: 12,
-                      paddingRight: 12,
-                      borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
-                      borderLeft: '3px solid transparent',
-                      borderRadius: 8,
-                      background: '#fff',
-                      transition: 'all 200ms cubic-bezier(.4,0,.2,1)',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#F8FAFC';
-                      e.currentTarget.style.borderLeftColor = '#0F2C59';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fff';
-                      e.currentTarget.style.borderLeftColor = 'transparent';
-                    }}
-                  >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
-                          Order ORD-{displayOrderNumber}
-                        </h3>
-                        <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
-                          Tracking No: TRK-{displayTrackingNumber}
-                        </div>
-                      </div>
-                      <StatusBadge status={shipment.status} />
-                    </div>
-
-                    <div style={{ fontSize: 12.5, color: '#475569', lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <User size={13} style={{ color: '#64748B', flexShrink: 0 }} />
-                      <span>
-                        Driver: {driverName}{driverName !== '—' ? ` (${vehicleNo})` : ''}
-                      </span>
-                    </div>
-
-                    <div style={{ fontSize: 12.5, color: '#475569', lineHeight: 1.5, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                      <MapPin size={13} style={{ color: '#64748B', flexShrink: 0, marginTop: 2 }} />
-                      <span>{destination}</span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' }}>
-                        <Clock size={14} style={{ color: '#2563EB', flexShrink: 0 }} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#1E40AF', whiteSpace: 'nowrap' }}>Estimated Arrival</span>
-                        <span style={{ fontSize: 10.5, color: '#64748B', whiteSpace: 'nowrap' }}>
-                          {isDelivered ? `Delivered ${etaText}` : etaText}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => setSelectedShipment(shipment)}
-                        style={{
-                          padding: '8px 14px',
-                          borderRadius: 9,
-                          border: 'none',
-                          background: 'linear-gradient(135deg, #0F2C59 0%, #0A1F42 100%)',
-                          color: '#fff',
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6,
-                          boxShadow: '0 4px 14px -4px rgba(15,44,89,0.55)',
-                          transition: 'all .15s ease',
-                          fontFamily: F,
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        <Navigation size={13} /> Live Tracking
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       {/* Live Tracking Modal */}

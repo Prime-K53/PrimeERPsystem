@@ -7,7 +7,7 @@ import { ToastProvider } from './components/Toast';
 import CommandPalette from './components/CommandPalette';
 import MobileBottomNav from './components/MobileBottomNav';
 import { ThemeProvider } from './context/ThemeContext';
-import { AlertTriangle, RefreshCw, Menu } from 'lucide-react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -85,14 +85,7 @@ const CustomerLayout: React.FC = () => {
   const { isAuthenticated, loading } = useCustomerAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      const stored = localStorage.getItem('prime-portal-sidebar-collapsed');
-      return stored ? JSON.parse(stored) : false;
-    } catch {
-      return false;
-    }
-  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
 
   const currentTitle = pageTitles[location.pathname] || 'Customer Portal';

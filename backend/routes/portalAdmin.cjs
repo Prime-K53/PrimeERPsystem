@@ -818,13 +818,13 @@ router.post('/users/auto-create', async (req, res) => {
         for (const word of words) {
           const sanitized = word.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (sanitized) {
-            const candidate = `${sanitized}@primeportal.com`;
+            const candidate = `${sanitized}@pps.co`;
             const existing = await portalAuthService.getPortalUserByEmail(candidate);
             if (!existing) return candidate;
           }
         }
       }
-      return `${customer_id.toLowerCase()}@primeportal.com`;
+      return `${customer_id.toLowerCase()}@pps.co`;
     })();
     const user = await portalAuthService.registerPortalUser({
       customer_id,
@@ -886,7 +886,7 @@ router.post('/users/:id/regenerate-password', async (req, res) => {
         user = await portalAuthService.registerPortalUser({
           id: portalUserId,
           customer_id: customerId,
-          email: email || info.email || `${customerId}@primeportal.com`,
+          email: email || info.email || `${customerId}@pps.co`,
           password: crypto.randomBytes(9).toString('base64url'),
           full_name: name || info.name || '',
           phone: phone || info.phone || '',

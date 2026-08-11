@@ -27,6 +27,9 @@
   2. `0002_fix_rls_profiles_account_creation.sql` — applied already (idempotent)
   3. `0003_referral_tables.sql` — PENDING, not yet applied to live
   4. `0004_referral_rls_policies.sql` — PENDING, not yet applied to live
+  5. `0005_portal_quotation_requests.sql` — PENDING, not yet applied to live
+     (creates the missing `quotation_requests` table the customer portal
+     strictly reads; required for `/portal/dashboard`)
 - `database/archive/` holds the previously-applied standalone SQL files for
   provenance (do NOT re-run them — e.g. `supabase-rls-hardening-migration.sql`
   would re-add `company_id` columns). Manifest: `database/archive/README.md`.

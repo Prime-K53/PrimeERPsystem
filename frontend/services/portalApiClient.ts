@@ -43,7 +43,15 @@ export function getPortalAccessToken(): string | null {
   return getPortalSession()?.access_token || null;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+/**
+ * Mutex for token refresh. When multiple concurrent requests hit 401,
+ * only one refresh call is made. All others await the same result.
+ * Without this, each concurrent call reads the same (now-revoked)
+ * refresh token from sessionStorage, causing a cascade of failures.
+ */
+let pendingRefresh: Promise<string | null> | null = null;
+
+async function doRefresh(): Promise<string | null> {
   const session = getPortalSession();
   if (!session?.refresh_token) return null;
   try {
@@ -72,6 +80,26 @@ async function refreshAccessToken(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (pendingRefresh) return pendingRefresh;
+  pendingRefresh = doRefresh().finally(() => { pendingRefresh = null; });
+  return pendingRefresh;
+}
+
+/**
+ * Public entry point for proactive token refresh (e.g. scheduled timer in
+ * CustomerAuthContext). Uses the same mutex as the 401-triggered refresh so
+ * concurrent calls don't race and revoke each other's session.
+ */
+export async function refreshPortalSession(): Promise<boolean> {
+  const session = getPortalSession();
+  if (!session?.refresh_token) return false;
+  const newToken = await refreshAccessToken();
+  if (!newToken) return false;
+  const updated = getPortalSession();
+  return updated?.access_token === newToken;
 }
 
 const isGetRequest = (method: string | undefined) => !method || method.toUpperCase() === 'GET';
@@ -168,6 +196,9 @@ async function request<T>(
       }
     } else {
       clearPortalSession();
+      // Notify the auth layer so the UI drops back to the login page instead
+      // of keeping a dead session rendered (and skipping login).
+      window.dispatchEvent(new Event('portal-session-expired'));
     }
   }
 

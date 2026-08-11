@@ -11,58 +11,13 @@ interface NavItem {
   label: string;
   path: string;
   icon: React.ElementType;
+  action?: () => void;
 }
 
 interface NavSection {
   title: string;
   items: NavItem[];
 }
-
-const navSections: NavSection[] = [
-  {
-    title: 'Overview',
-    items: [
-      { label: 'Dashboard', path: '/portal/dashboard', icon: LayoutDashboard },
-    ],
-  },
-  {
-    title: 'Commerce',
-      items: [
-        { label: 'Product Orders', path: '/portal/orders', icon: ShoppingCart },
-        { label: 'Quotations', path: '/portal/quotations', icon: FileText },
-        { label: 'Referrals', path: '/portal/referrals', icon: Users },
-      ],
-  },
-  {
-    title: 'Documents & Billing',
-    items: [
-      { label: 'Invoices', path: '/portal/invoices', icon: Receipt },
-    ],
-  },
-  {
-    title: 'Finance',
-    items: [
-      { label: 'Receipt', path: '/portal/payments', icon: Receipt },
-      { label: 'Wallet', path: '/portal/wallet', icon: Wallet },
-      { label: 'Account Statements', path: '/portal/account-statements', icon: FileBarChart },
-    ],
-  },
-  {
-    title: 'Logistics',
-    items: [
-      { label: 'Deliveries & Tracking', path: '/portal/deliveries', icon: Truck },
-    ],
-  },
-  {
-    title: 'Account',
-    items: [
-      { label: 'Support', path: '/portal/support', icon: MessageSquare },
-      { label: 'Notifications', path: '/portal/notifications', icon: Bell },
-      { label: 'Documents', path: '/portal/documents', icon: FileText },
-      { label: 'Profile', path: '/portal/profile', icon: User },
-    ],
-  },
-];
 
 interface Props {
   isOpen: boolean;
@@ -74,10 +29,6 @@ interface Props {
 
 const SIDEBAR_COLLAPSED_KEY = 'prime-portal-sidebar-collapsed';
 
-/**
- * Premium rail — layered radial glows over a deep-navy gradient so the
- * navigation reads as a refined, dimensional surface instead of flat color.
- */
 const RAIL_BG = `
   radial-gradient(120% 70% at 50% -10%, rgba(74,118,181,0.32) 0%, rgba(74,118,181,0) 55%),
   radial-gradient(160% 60% at 110% 110%, rgba(5,150,105,0.14) 0%, rgba(5,150,105,0) 55%),
@@ -137,14 +88,67 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
     navigate('/portal/login');
   };
 
+  const navSections: NavSection[] = [
+    {
+      title: 'Overview',
+      items: [
+        { label: 'Dashboard', path: '/portal/dashboard', icon: LayoutDashboard },
+      ],
+    },
+    {
+      title: 'Commerce',
+      items: [
+        { label: 'Product Orders', path: '/portal/orders', icon: ShoppingCart },
+        { label: 'Quotations', path: '/portal/quotations', icon: FileText },
+        { label: 'Referrals', path: '/portal/referrals', icon: Users },
+      ],
+    },
+    {
+      title: 'Documents & Billing',
+      items: [
+        { label: 'Invoices', path: '/portal/invoices', icon: Receipt },
+      ],
+    },
+    {
+      title: 'Finance',
+      items: [
+        { label: 'Receipt', path: '/portal/payments', icon: Receipt },
+        { label: 'Wallet', path: '/portal/wallet', icon: Wallet },
+        { label: 'Account Statements', path: '/portal/account-statements', icon: FileBarChart },
+      ],
+    },
+    {
+      title: 'Logistics',
+      items: [
+        { label: 'Deliveries & Tracking', path: '/portal/deliveries', icon: Truck },
+      ],
+    },
+    {
+      title: 'Account',
+      items: [
+        { label: 'Support', path: '/portal/support', icon: MessageSquare },
+        { label: 'Notifications', path: '/portal/notifications', icon: Bell },
+        { label: 'Documents', path: '/portal/documents', icon: FileText },
+        { label: 'Log Out', path: '', icon: LogOut, action: handleLogout },
+      ],
+    },
+  ];
+
   const renderNavItem = (item: NavItem, isActive: boolean) => {
     const Icon = item.icon;
     const showTooltip = collapsed && hoveredItem === item.path;
+    const handleClick = () => {
+      if (item.action) {
+        item.action();
+      } else {
+        handleNavigate(item.path);
+      }
+    };
     return (
       <button
         key={item.path}
         ref={isActive ? activeRef : undefined}
-        onClick={() => handleNavigate(item.path)}
+        onClick={handleClick}
         onMouseEnter={() => setHoveredItem(item.path)}
         onMouseLeave={() => setHoveredItem(null)}
         className={`
@@ -168,7 +172,6 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
             }}
           />
         )}
-        {/* Icon chip — fills with emerald on active, softly lifts on hover */}
         <span
           className={`
             flex items-center justify-center w-7 h-7 rounded-lg shrink-0 transition-all duration-200
@@ -210,7 +213,6 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
-      {/* ── Brand bar ─────────────────────────────────────────────── */}
       <div
         className="h-12 flex items-center gap-2.5 px-3 shrink-0 border-b relative overflow-hidden"
         style={{
@@ -266,7 +268,6 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
         </button>
       </div>
 
-      {/* ── Navigation ─────────────────────────────────────────────── */}
       <nav
         ref={navRef}
         className="flex-1 overflow-y-auto custom-scrollbar py-2 px-2 space-y-3 relative"
@@ -297,44 +298,13 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
             )}
             <div className="space-y-0">
               {section.items.map((item) => {
-                const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+                const isActive = item.path ? location.pathname === item.path || location.pathname.startsWith(item.path + '/') : false;
                 return renderNavItem(item, isActive);
               })}
             </div>
           </div>
         ))}
       </nav>
-
-      {/* ── Footer ─────────────────────────────────────────────────── */}
-      <div
-        className="border-t p-2 relative"
-        style={{
-          borderColor: 'rgba(255,255,255,0.06)',
-          background: 'linear-gradient(180deg, rgba(13,37,77,0.5), rgba(7,24,54,0.6))',
-        }}
-      >
-        <span
-          className="absolute inset-x-0 top-0 h-px pointer-events-none"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent)' }}
-        />
-        <button
-          onClick={handleLogout}
-          className={`
-            group w-full flex items-center gap-2.5 rounded-xl text-sm transition-all duration-200
-          ${collapsed ? 'justify-center px-2 py-1.5' : 'px-2 py-1.5'}
-          `}
-          style={{ cursor: 'pointer' }}
-        >
-          <span className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0 text-white/50 transition-all duration-200 group-hover:bg-rose-500/15 group-hover:text-rose-300">
-            <LogOut size={16} strokeWidth={2} />
-          </span>
-          {!collapsed && (
-            <span className="font-medium text-white/60 group-hover:text-rose-200 transition-colors duration-200">
-              Sign Out
-            </span>
-          )}
-        </button>
-      </div>
     </div>
   );
 
@@ -346,7 +316,6 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
 
   return (
     <>
-      {/* Desktop Sidebar */}
       <aside
         className={`
           fixed top-0 left-0 z-40 h-full flex flex-col text-white/70 border-r transition-all duration-200 ease-out
@@ -358,7 +327,6 @@ const PortalSidebar: React.FC<Props> = ({ isOpen, onClose, collapsed: collapsedE
         {sidebarContent}
       </aside>
 
-      {/* Mobile Sidebar */}
       {isOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />

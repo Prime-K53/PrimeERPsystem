@@ -18,7 +18,6 @@ interface Allocation {
   allocation_id?: string;
   invoice_id: string;
   invoice_number: string | null;
-  invoice_total?: number;
   total_amount?: number | null;
   missing_invoice?: boolean;
   paid_amount: number;
@@ -97,7 +96,7 @@ const CustomerPaymentDetail: React.FC = () => {
       // missing/unauthorized invoice has `total_amount: null`, so it must not
       // be counted as a zero invoice (that would fabricate a false balance).
       const invoiceTotal = allocations.reduce((sum, a) => (
-        a.missing_invoice ? sum : sum + Number(a.total_amount ?? a.invoice_total ?? 0)
+        a.missing_invoice ? sum : sum + Number(a.total_amount || 0)
       ), 0);
       const orderTotal = allocations.reduce((sum, a) => sum + Number(a.order_total || 0), 0);
       const totalAllocated = allocations.reduce((sum, a) => sum + Number(a.amount || 0), 0);

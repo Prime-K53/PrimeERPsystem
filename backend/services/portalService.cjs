@@ -75,7 +75,7 @@ const portalService = {
       getAllFrom('sales_orders', customerFilter('sales_orders', customerId)),
       getAllFrom('quotation_requests', customerFilter('quotation_requests', customerId)),
       getAllFrom('quotations', customerFilter('quotations', customerId)),
-      getAllFrom('portal_notifications', { 'data->>portal_user_id': `eq.${portalUserId}` }),
+      getAllFrom('portal_notifications', { 'portal_user_id': `eq.${portalUserId}` }),
       getOneById('engagement_point_balances', customerId),
       getAllFrom('wallet_transactions', customerFilter('wallet_transactions', customerId)),
       this.getShipments(customerId),
@@ -87,7 +87,7 @@ const portalService = {
     }
     const pointBalance = pointRows || null;
 
-    const unpaidCount = invoices.filter((i) => /unpaid|partial/i.test(String(i.status || ''))).length;
+    const unpaidCount = invoices.filter((i) => /unpaid|partial|overdue/i.test(String(i.status || ''))).length;
     const totalOrders = orders.length;
     const activeRequestCount = requests.filter((r) =>
       ['submitted', 'assigned', 'under_review', 'waiting_for_customer', 'ready_for_conversion'].includes(String(r.status || ''))
@@ -98,7 +98,7 @@ const portalService = {
     const productionOrderCount = orders.filter((o) =>
       ['confirmed', 'processing', 'pending', 'shipped'].includes(String(o.status || '').toLowerCase())
     ).length;
-    const unreadMessageCount = notifications.filter((n) => !n.isRead).length;
+    const unreadMessageCount = notifications.filter((n) => !n.is_read).length;
     const activeDeliveries = (shipments || []).filter((s) =>
       !/delivered|cancelled/i.test(String(s.order_status || ''))
     ).length;
@@ -119,10 +119,16 @@ const portalService = {
       walletRows,
     });
 
+    const unpaidInvoices = invoices.filter((i) => /unpaid|partial|overdue/i.test(String(i.status || '')));
+    const outstandingBalance = unpaidInvoices.reduce(
+      (sum, i) => sum + (Number(i.total_amount || i.total || 0) - Number(i.paid_amount || i.paidAmount || 0)),
+      0,
+    );
+
     return {
       balance: (customer && customer.balance != null) ? customer.balance : 0,
       walletBalance: (customer && customer.walletBalance != null) ? customer.walletBalance : 0,
-      outstandingBalance: (customer && customer.outstandingBalance != null) ? customer.outstandingBalance : (customer && customer.balance) || 0,
+      outstandingBalance: Math.max(0, outstandingBalance),
       creditLimit: (customer && customer.creditLimit != null) ? customer.creditLimit : 0,
       unpaidInvoiceCount: unpaidCount,
       totalOrders,
@@ -244,6 +250,12 @@ const portalService = {
     if (!includeDeleted) {
       catalogItems = catalogItems.filter((i) => String(i.status || '').toLowerCase() !== 'deleted');
     }
+
+    // Hide raw materials: only show printed products, stationery, and printing services
+    catalogItems = catalogItems.filter((i) => {
+      const type = String(i.type || i.inventoryRole || '').toLowerCase();
+      return !/raw|material|stock/i.test(type);
+    });
     catalogItems.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
     const productIds = catalogItems.map((i) => i.id).filter(Boolean);
@@ -517,6 +529,7 @@ const portalService = {
       };
     });
     order.promotion = parseJson(order.promotion, null);
+    order.totalAmount = order.total ?? order.totalAmount ?? 0;
     return order;
   },
 
@@ -837,16 +850,23 @@ const portalService = {
   },
 
   async getStatements(customerId, startDate, endDate) {
-    const [invoices, payments] = await Promise.all([
+    const [customer, invoices, payments] = await Promise.all([
+      getOneById('customers', customerId),
       getAllFrom('invoices', customerFilter('invoices', customerId)),
       getAllFrom('customer_payments', customerFilter('customer_payments', customerId)),
     ]);
 
     const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
+    const unpaidInvoices = (Array.isArray(invoices) ? invoices : []).filter((i) => /unpaid|partial|overdue/i.test(String(i.status || '')));
+    const outstandingBalance = unpaidInvoices.reduce(
+      (sum, i) => sum + (toNum(i.total_amount ?? i.total ?? i.totalAmount ?? 0) - toNum(i.paid_amount ?? i.paidAmount ?? 0)),
+      0,
+    );
+
     const allDebits = (Array.isArray(invoices) ? invoices : []).map((inv) => {
       const isCreditNote = String(inv.status || '').toLowerCase() === 'credit_note';
-      const amount = toNum(inv.total_amount);
+      const amount = toNum(inv.total_amount ?? inv.total ?? inv.totalAmount ?? 0);
       return {
         date: inv.created_at || inv.date || null,
         description: isCreditNote ? `Credit Note ${inv.invoice_number || inv.id}` : `Invoice ${inv.invoice_number || inv.id}`,
@@ -893,6 +913,7 @@ const portalService = {
       return {
         date: t.date,
         description: t.description || '',
+        type: t._type || t.type || '',
         debit,
         credit,
         balance: running,
@@ -902,6 +923,8 @@ const portalService = {
     return {
       opening_balance: openingBalance,
       closing_balance: mapped.length > 0 ? mapped[mapped.length - 1].balance : openingBalance,
+      outstanding_balance: Math.max(0, outstandingBalance),
+      credit_limit: (customer && customer.creditLimit != null) ? customer.creditLimit : 0,
       transactions: mapped,
     };
   },
@@ -944,7 +967,7 @@ const portalService = {
     ].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
     return {
-      balance: (customer && customer.walletBalance != null) ? customer.walletBalance : 0,
+      walletBalance: (customer && customer.walletBalance != null) ? customer.walletBalance : 0,
       transactions
     };
   },
@@ -986,25 +1009,25 @@ const portalService = {
   async getNotifications(portalUserId) {
     // portal_notifications is written by the backend shim (portalLifecycleService
     // notifyCustomer) with `portal_user_id` — never `portalUserId`.
-    return getAllFrom('portal_notifications', { 'data->>portal_user_id': `eq.${portalUserId}` });
+    return getAllFrom('portal_notifications', { 'portal_user_id': `eq.${portalUserId}` });
   },
 
   async getUnreadNotificationCount(portalUserId) {
-    const rows = await getAllFrom('portal_notifications', { 'data->>portal_user_id': `eq.${portalUserId}` });
-    return rows.filter((n) => n.isRead !== true).length;
+    const rows = await getAllFrom('portal_notifications', { 'portal_user_id': `eq.${portalUserId}` });
+    return rows.filter((n) => n.is_read !== true).length;
   },
 
   async markNotificationRead(notificationId, portalUserId) {
     const row = await getOneById('portal_notifications', notificationId);
     if (row && String(row.portal_user_id || '') === String(portalUserId)) {
-      await repo.upsert('portal_notifications', { ...row, isRead: true });
+      await repo.upsert('portal_notifications', { ...row, is_read: true });
     }
   },
 
   async markAllNotificationsRead(portalUserId) {
-    const rows = await getAllFrom('portal_notifications', { 'data->>portal_user_id': `eq.${portalUserId}` });
-    await Promise.all((Array.isArray(rows) ? rows : []).filter((row) => row.isRead !== true).map((row) =>
-      repo.upsert('portal_notifications', { ...row, isRead: true })
+    const rows = await getAllFrom('portal_notifications', { 'portal_user_id': `eq.${portalUserId}` });
+    await Promise.all((Array.isArray(rows) ? rows : []).filter((row) => row.is_read !== true).map((row) =>
+      repo.upsert('portal_notifications', { ...row, is_read: true })
     ));
   },
 
@@ -1219,8 +1242,8 @@ const portalService = {
 
   async getSupportTickets(portalUserId, customerId) {
     const filters = {
-      'data->>portal_user_id': `eq.${portalUserId}`,
-      'data->>customer_id': `eq.${customerId}`,
+      'portal_user_id': `eq.${portalUserId}`,
+      'customer_id': `eq.${customerId}`,
     };
     const rows = await getAllFrom('portal_tickets', filters);
     return Array.isArray(rows) ? rows.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))) : [];
