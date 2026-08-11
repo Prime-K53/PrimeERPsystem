@@ -15,7 +15,7 @@ import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import { F, MONO, NAVY, TEAL_GRADIENT, EMERALD } from './designTokens';
 import { DEFAULT_PAGE_SIZE, formatK } from './constants';
-import { sampleCatalogProducts, sampleOrders } from './sampleData';
+
 
 type Tab = 'catalog' | 'history';
 
@@ -101,7 +101,7 @@ const OrdersInner: React.FC = () => {
     fetcher: () => portalLifecycle.catalog.list(),
     onData: (data) => {
       if (Array.isArray(data) && data.length > 0) setProducts(data);
-      else setProducts(sampleCatalogProducts);
+      else setProducts([]);
     },
   });
 
@@ -130,9 +130,9 @@ const OrdersInner: React.FC = () => {
         setTotalPages(1);
         setTotal(data.length);
       } else {
-        setOrders(sampleOrders.map(mapOrder));
+        setOrders([]);
         setTotalPages(1);
-        setTotal(sampleOrders.length);
+        setTotal(0);
       }
     },
   });
@@ -388,8 +388,15 @@ const OrdersInner: React.FC = () => {
                 const promo = promoForProduct(product);
                 const shownPrice = promoPrice(price, promo);
                 const stock = Number(product.quantity ?? 0);
-                const inStock = stock > 0;
+                const isService = String(product.type || '').toLowerCase() === 'service';
+                const inStock = isService || stock > 0;
                 const isLast = index === filteredProducts.length - 1;
+                const typeLabel = product.type || product.category || '';
+                const typeColor =
+                  String(product.type || '').toLowerCase() === 'service' ? '#2563EB'
+                  : String(product.type || '').toLowerCase() === 'stationery' ? '#D97706'
+                  : String(product.type || '').toLowerCase() === 'product' ? '#047857'
+                  : '#6B7280';
 
                 return (
                   <div
@@ -418,8 +425,21 @@ const OrdersInner: React.FC = () => {
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3 }}>{product.name}</div>
-                          <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
-                            SKU: {product.sku || '—'} {product.category ? `| Category: ${product.category}` : ''}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                            {typeLabel && (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center',
+                                padding: '1px 7px', borderRadius: 5,
+                                background: `${typeColor}14`,
+                                color: typeColor,
+                                fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+                              }}>
+                                {typeLabel}
+                              </span>
+                            )}
+                            <span style={{ fontSize: 12, color: '#64748B' }}>
+                              SKU: {product.sku || '—'} {product.category && product.type !== product.category ? `| Category: ${product.category}` : ''}
+                            </span>
                           </div>
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -432,7 +452,12 @@ const OrdersInner: React.FC = () => {
 
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {inStock ? (
+                          {isService ? (
+                            <>
+                              <span style={{ width: 8, height: 8, borderRadius: 4, background: '#2563EB', boxShadow: '0 0 0 3px rgba(37,99,235,.15)' }} />
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#1D4ED8' }}>Service</span>
+                            </>
+                          ) : inStock ? (
                             <>
                               <span style={{ width: 8, height: 8, borderRadius: 4, background: '#22C55E', boxShadow: '0 0 0 3px rgba(34,197,94,.15)' }} />
                               <span style={{ fontSize: 11, fontWeight: 600, color: '#047857' }}>In Stock</span>

@@ -366,7 +366,7 @@ const BasicInfoCard: React.FC<BasicInfoCardProps> = ({ profile, companyName, onE
     { icon: Mail, label: 'Email Address', value: profile.email || 'john.doe@acme.com' },
     { icon: Phone, label: 'Phone Number', value: profile.phone || '+1 (555) 234-5678', mono: true },
     { icon: MapPin, label: 'Business Address', value: fullAddress },
-    { icon: CalendarDays, label: 'Member Since', value: 'January 2023' },
+    { icon: CalendarDays, label: 'Member Since', value: profile.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'N/A' },
   ];
 
   return (
@@ -815,7 +815,7 @@ const CustomerProfile: React.FC = () => {
   const [form, setForm] = useState<ProfileData>({});
 
   // Company hub state
-  const [financial, setFinancial] = useState<FinancialState>({ creditLimit: 100000, balance: 0, referralEarned: 0, tier: 'Gold' });
+  const [financial, setFinancial] = useState<FinancialState>({ creditLimit: 0, balance: 0, referralEarned: 0, tier: '' });
   const [editOpen, setEditOpen] = useState(false);
   const [repOpen, setRepOpen] = useState(false);
 
@@ -858,9 +858,9 @@ const CustomerProfile: React.FC = () => {
     return `ACC-${base}-${code}`;
   }, [companyConfig?.companyName]);
 
-  // Tier progression: Gold → Platinum at 75%.
-  const tierProgress = 75;
-  const nextTier = 'Platinum';
+  // Tier progression: computed from loyalty data when available.
+  const tierProgress = financial.tier && financial.tier !== 'Standard' ? 75 : 0;
+  const nextTier = financial.tier === 'Gold' ? 'Platinum' : financial.tier === 'Silver' ? 'Gold' : 'Silver';
 
   useEffect(() => {
     const style = document.createElement('style');
@@ -977,7 +977,7 @@ const CustomerProfile: React.FC = () => {
     try {
       const stmt = await portalLifecycle.statements.list({});
       if (stmt) {
-        const limit = Number(stmt.credit_limit || 100000);
+        const limit = Number(stmt.credit_limit || 0);
         const balance = Number(stmt.outstanding_balance ?? stmt.closing_balance ?? 0);
         setFinancial((f) => ({ ...f, creditLimit: limit, balance }));
       }

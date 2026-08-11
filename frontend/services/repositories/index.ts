@@ -137,6 +137,7 @@ const STORE_TO_TABLE: Record<string, string> = {
   engagementPromotions: 'engagement_promotions',
   engagementCustomerRewards: 'engagement_customer_rewards',
   engagementAnalytics: 'engagement_analytics',
+  portalAds: 'portal_ads',
   taxRates: 'tax_rates',
   discountRules: 'discount_rules',
   customerPricingTiers: 'customer_pricing_tiers',

@@ -48,6 +48,7 @@ const CustomerInvoiceDetail: React.FC = () => {
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -69,8 +70,8 @@ const CustomerInvoiceDetail: React.FC = () => {
         onEvent: (type, payload) => {
           if (type === 'entity_changed' && payload?.docType === 'invoice' && payload?.docId === id && !cancelled) {
             portalLifecycle.invoices.get(id)
-              .then(setInvoice)
-              .catch(() => {})
+              .then((data) => { setInvoice(data); setRefreshError(null); })
+              .catch(() => { setRefreshError('Update failed — data may be stale'); })
               .finally(() => setLoading(false));
           }
         },
@@ -140,6 +141,7 @@ const CustomerInvoiceDetail: React.FC = () => {
   return (
     <div style={rootStyle}>
       {downloadError && <div style={{ padding: '0 28px 0' }}><ErrorBanner message={downloadError} onDismiss={() => setDownloadError(null)} /></div>}
+      {refreshError && <div style={{ padding: '0 28px 0' }}><ErrorBanner message={refreshError} onDismiss={() => { setRefreshError(null); portalLifecycle.invoices.get(id!).then(setInvoice).catch(() => setRefreshError('Retry failed — data may be stale')); }} /></div>}
 
       <div style={{ padding: '0 28px 28px' }}>
         <PortalCard style={{ ...cardStyle, padding: '16px 18px', marginBottom: 16 }}>

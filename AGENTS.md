@@ -30,6 +30,8 @@
   6. `supabase-fix-realtime-publication.sql` (NEW — completes realtime publication)
   7. `supabase-portal-tables.sql` (NEW — creates portal_users/portal_sessions/portal_password_resets/portal_login_history; required for customer portal auth & password regeneration)
   8. `supabase-add-version-columns.sql` (NEW — adds `version` column to every business table with a `data` JSONB; REQUIRED for cloud sync. Without it POST /api/sync/ops fails with PGRST204 "Could not find the 'version' column")
+  9. `supabase-payment-allocation-tables.sql` (NEW — creates payment_allocations/payment_allocation_lines; required for portal receipt payment allocation display)
+  10. `supabase-portal-ads.sql` (NEW — creates portal_ads; required for Smart Operations Hub → Ads banner management and the portal banner carousel)
 
 ## Notes
 - `npx vitest` / `npx tsc` require .NET Framework v4.0.30319 on Windows PowerShell 5.1

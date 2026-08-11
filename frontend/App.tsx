@@ -207,6 +207,7 @@ const MarketAdjustments = lazyWithRetry('./views/tools/MarketAdjustments', () =>
 const SmartPricing = lazyWithRetry('./views/tools/SmartPricing', () => import('./views/tools/SmartPricing'));
 const SmartOperationsHub = lazyWithRetry('./views/SmartOperationsHub', () => import('./views/SmartOperationsHub'));
 const MarketingMessages = lazyWithRetry('./views/tools/MarketingMessages', () => import('./views/tools/MarketingMessages'));
+const AdsManager = lazyWithRetry('./views/tools/AdsManager', () => import('./views/tools/AdsManager'));
 const AnalyticsHub = lazyWithRetry('./views/ai/AnalyticsHub', () => import('./views/ai/AnalyticsHub'));
 const GangRunOptimizer = lazyWithRetry('./views/ai/GangRunOptimizer', () => import('./views/ai/GangRunOptimizer'));
 const CashFlowForecaster = lazyWithRetry('./views/ai/CashFlowForecaster', () => import('./views/ai/CashFlowForecaster'));
@@ -880,7 +881,9 @@ const AppLayout: React.FC = () => {
                   <Route path="/smart-operations/adjustments" element={<MarketAdjustments />} />
                   <Route path="/smart-operations/pricing" element={<SmartPricing />} />
                   <Route path="/smart-operations/messages" element={<MarketingMessages />} />
+                  <Route path="/smart-operations/ads" element={<ProtectedRoute permission="admin.settings"><AdsManager /></ProtectedRoute>} />
                   <Route path="/smart-operations/referrals" element={<ProtectedRoute permission="referrals.view"><Referrals /></ProtectedRoute>} />
+                  <Route path="/smart-operations/promotions" element={<ProtectedRoute permission="admin.settings"><PromotionsAdmin /></ProtectedRoute>} />
                 </Route>
 
                 {/* AI Analytics (redirects to AI Workspace) */}
@@ -924,7 +927,7 @@ const AppLayout: React.FC = () => {
                 <Route path="/admin/sync-health" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><SyncHealth /></ProtectedRoute></ErrorBoundary>} />
                 <Route path="/admin/acceptance" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><AcceptanceDashboard /></ProtectedRoute></ErrorBoundary>} />
                 <Route path="/admin/membership-tiers" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><MembershipTiersAdmin /></ProtectedRoute></ErrorBoundary>} />
-                <Route path="/admin/promotions" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><PromotionsAdmin /></ProtectedRoute></ErrorBoundary>} />
+                <Route path="/admin/promotions" element={<Navigate to="/smart-operations/promotions" replace />} />
                 <Route path="/admin/gift-cards" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><GiftCardsAdmin /></ProtectedRoute></ErrorBoundary>} />
                 <Route path="/profile" element={<ErrorBoundary name="Profile"><Profile /></ErrorBoundary>} />
                 <Route path="/settings" element={<ErrorBoundary name="Settings"><ProtectedRoute permission="admin.settings"><Settings /></ProtectedRoute></ErrorBoundary>} />

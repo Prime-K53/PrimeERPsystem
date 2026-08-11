@@ -6,15 +6,19 @@ import {
 } from '../../types/engagement'
 import {
   Plus, Search, Pencil, Trash2, Save, X, Play, Pause, Tag, Percent,
-  Calendar, Users, Package, Award, TrendingUp, BadgePercent, Layers,
-  CheckCircle2, AlertTriangle, Filter, Sparkles, Gift, Clock,
+  Calendar, Users, Award, TrendingUp, BadgePercent, Layers,
+  CheckCircle2, CheckCircle, AlertTriangle, Filter, Sparkles, Clock, ChevronRight,
 } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { API_BASE_URL } from '../../config/api.js'
 import { ensureSessionAuthState } from '../../services/authSession'
 
-const t = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39' }
-const amber = { 100: '#fbead0', 500: '#d99a3f' }
+const teal = {
+  50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7',
+  400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c',
+  800: '#0b3e39', 900: '#082e2a'
+}
+const amber = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f', 600: '#b97e2b' }
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1', danger = '#b5493f'
 const violet = { 50: '#f3f0ff', 100: '#e4dcff', 500: '#7c5cf0', 700: '#5b3fd4' }
 
@@ -47,7 +51,7 @@ const deriveStatus = (p: any, now = new Date()): PromotionStatus => {
 const STATUS_META: Record<PromotionStatus, { bg: string; fg: string; dot: string }> = {
   draft: { bg: hairline, fg: inkSoft, dot: '#94a3b8' },
   scheduled: { bg: violet[100], fg: violet[700], dot: '#7c5cf0' },
-  active: { bg: t[100], fg: t[700], dot: '#1f8577' },
+  active: { bg: teal[100], fg: teal[700], dot: '#1f8577' },
   paused: { bg: amber[100], fg: '#92400e', dot: '#d99a3f' },
   expired: { bg: '#fef0ee', fg: danger, dot: '#b5493f' },
   cancelled: { bg: '#f1f2f4', fg: '#64748b', dot: '#94a3b8' },
@@ -134,11 +138,50 @@ const toCanonical = (f: Partial<Promotion>): Promotion => {
   }
 }
 
+// Tab definition for the ClientModal-style form.
+const modalTabs = [
+  { id: 'Details' as const, label: 'Promotion Details', icon: Tag },
+  { id: 'Schedule' as const, label: 'Schedule & Status', icon: Calendar },
+  { id: 'Limits' as const, label: 'Limits & Priority', icon: Layers },
+  { id: 'Audience' as const, label: 'Audience', icon: Users },
+  { id: 'Preview' as const, label: 'Live Preview', icon: Sparkles },
+]
+
+const labelStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 6,
+  fontSize: 12, fontWeight: 600, color: teal[800],
+  marginBottom: 6, letterSpacing: 0.01
+}
+
+const modalInputStyle: React.CSSProperties = {
+  width: '100%', fontFamily: "'Inter', sans-serif", fontSize: 13.5,
+  color: ink, background: paper,
+  border: `1.4px solid ${hairline}`, borderRadius: 9,
+  padding: '9px 12px', outline: 'none',
+  transition: 'border-color .15s ease, box-shadow .15s ease, background .15s ease'
+}
+
+const modalSelectStyle: React.CSSProperties = {
+  ...modalInputStyle,
+  appearance: 'none',
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235c6567'/%3E%3C/svg%3E")`,
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 12px center',
+  paddingRight: 30,
+  cursor: 'pointer'
+}
+
+const sectionLabelStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 10,
+  margin: '26px 0 14px'
+}
+
 export const PromotionsAdmin: React.FC = () => {
   const [promotions, setPromotions] = useState<Promotion[]>([])
   const [loading, setLoading] = useState(true)
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState<Partial<Promotion>>(emptyForm())
+  const [activeTab, setActiveTab] = useState<typeof modalTabs[number]['id']>('Details')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -150,6 +193,8 @@ export const PromotionsAdmin: React.FC = () => {
   const [sampleAmount, setSampleAmount] = useState(100000)
   const [saving, setSaving] = useState(false)
   const [notify, setNotify] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+
+  const openNew = () => { setEditingId(null); setForm(emptyForm()); setActiveTab('Details'); setShowNew(true) }
 
   const load = useCallback(async () => {
     try {
@@ -274,6 +319,7 @@ export const PromotionsAdmin: React.FC = () => {
       endsAt: p.endsAt || p.expiresAt ? (p.endsAt || p.expiresAt || '').slice(0, 16) : '',
       startsAt: (p.startsAt || new Date().toISOString()).slice(0, 16),
     })
+    setActiveTab('Details')
     setShowNew(true)
   }
 
@@ -352,7 +398,7 @@ export const PromotionsAdmin: React.FC = () => {
     }}>
       <span style={{
         width: 38, height: 21, borderRadius: 20, position: 'relative', transition: 'all .18s ease', flexShrink: 0,
-        background: value ? t[500] : '#d6dadd',
+        background: value ? teal[500] : '#d6dadd',
       }}>
         <span style={{
           position: 'absolute', top: 2, left: value ? 19 : 2, width: 17, height: 17, borderRadius: '50%',
@@ -363,19 +409,34 @@ export const PromotionsAdmin: React.FC = () => {
     </button>
   )
 
-  const StatCard = ({ icon, label, value, sub, accent }: any) => (
-    <div className="prime-card" style={{
-      background: paper, borderRadius: 14, border: `1.4px solid ${hairline}`, padding: '14px 16px',
-      display: 'flex', flexDirection: 'column', gap: 6, boxShadow: '0 1px 3px rgba(0,0,0,.04)',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: accent || t[50], color: t[700], display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>{label}</span>
+  // Client-module "money bar" KPI card — clickable, filters the promotion list.
+  const KpiCard = ({ kpiId, label, value, icon, iconBg, iconColor, borderColor }: any) => {
+    const active = kpiId === 'all' ? statusFilter === 'all' : statusFilter === kpiId
+    const onClick = () => {
+      if (kpiId === 'all') { setStatusFilter('all'); return }
+      setStatusFilter(prev => prev === kpiId ? 'all' : kpiId)
+    }
+    return (
+      <div onClick={onClick}
+        style={{
+          cursor: 'pointer', padding: '14px 16px', borderRadius: 14,
+          background: paper, border: `1.4px solid ${hairline}`,
+          borderLeft: `4px solid ${borderColor}`,
+          display: 'flex', alignItems: 'flex-start', gap: 14,
+          transition: 'transform .15s ease, box-shadow .15s ease',
+          transform: active ? 'scale(1.01)' : 'scale(1)',
+          boxShadow: active ? '0 8px 20px -8px rgba(0,0,0,.12)' : '0 1px 3px rgba(0,0,0,.04)'
+        }}>
+        <div style={{ padding: 10, borderRadius: 10, background: iconBg, color: iconColor, display: 'inline-flex' }}>{icon}</div>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>{label}</p>
+          <p style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0, fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', letterSpacing: 0 }}>
+            {value}
+          </p>
+        </div>
       </div>
-      <span style={{ fontSize: 20, fontWeight: 800, color: ink, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.2, lineHeight: 1.1 }}>{value}</span>
-      {sub && <span style={{ fontSize: 10.5, color: '#8a9496' }}>{sub}</span>}
-    </div>
-  )
+    )
+  }
 
   const StatusBadge = ({ status }: { status: PromotionStatus }) => {
     const m = STATUS_META[status] || STATUS_META.draft
@@ -404,32 +465,35 @@ export const PromotionsAdmin: React.FC = () => {
     )
   }
 
+  const stepNumber = modalTabs.findIndex(t => t.id === activeTab) + 1
+  const totalSteps = modalTabs.length
+
   return (
-    <div style={{ padding: 24, maxWidth: 1280, margin: '0 auto', background: t[50], minHeight: '100%' }}>
+    <div style={{ padding: 24, maxWidth: 1280, margin: '0 auto', background: teal[50], minHeight: '100%' }}>
       {/* ── Header ── */}
       <div style={{
-        background: 'linear-gradient(135deg,#0b3e39 0%,#146b60 55%,#1f8577 100%)', borderRadius: 16, padding: '22px 24px',
+        borderRadius: 16, padding: '22px 24px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 20,
-        boxShadow: '0 12px 28px -12px rgba(11,62,57,.55)', position: 'relative', overflow: 'hidden',
+        position: 'relative', overflow: 'hidden',
       }}>
         <div style={{ position: 'absolute', right: -40, top: -60, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,.05)' }} />
         <div style={{ position: 'absolute', right: 60, bottom: -80, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,.04)' }} />
         <div style={{ position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: 'rgba(255,255,255,.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,.2)' }}>
-              <BadgePercent size={22} color="#fff" />
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: teal[100], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,.2)' }}>
+              <BadgePercent size={22} color={teal[700]} />
             </div>
             <div>
-              <h2 style={{ fontSize: 20, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: 0.2 }}>Promotions</h2>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,.75)', margin: '2px 0 0', lineHeight: 1.4 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: teal[900], margin: 0, letterSpacing: 0.2 }}>Promotions</h2>
+              <p style={{ fontSize: 12, color: inkSoft, margin: '2px 0 0', lineHeight: 1.4 }}>
                 Portal-driven promotions — applied at transaction level, never to master prices.
               </p>
             </div>
           </div>
         </div>
-        <button onClick={() => { setShowNew(true); setEditingId(null); setForm(emptyForm()) }}
+        <button onClick={openNew}
           style={{
-            position: 'relative', zIndex: 1, padding: '10px 16px', background: '#fff', color: t[700], borderRadius: 10,
+            position: 'relative', zIndex: 1, padding: '10px 16px', background: '#fff', color: teal[700], borderRadius: 10,
             border: 'none', fontSize: 12.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer',
             boxShadow: '0 6px 16px -6px rgba(0,0,0,.35)', transition: 'transform .15s ease, box-shadow .15s ease',
           }}
@@ -440,12 +504,12 @@ export const PromotionsAdmin: React.FC = () => {
         </button>
       </div>
 
-      {notify && (
+      {notify && !showNew && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, marginBottom: 14,
-          background: notify.kind === 'success' ? t[100] : '#fef0ee',
-          border: `1.4px solid ${notify.kind === 'success' ? t[200] : '#f3c1bd'}`,
-          color: notify.kind === 'success' ? t[700] : danger, fontSize: 12.5, fontWeight: 600,
+          background: notify.kind === 'success' ? teal[100] : '#fef0ee',
+          border: `1.4px solid ${notify.kind === 'success' ? teal[200] : '#f3c1bd'}`,
+          color: notify.kind === 'success' ? teal[700] : danger, fontSize: 12.5, fontWeight: 600,
         }}>
           {notify.kind === 'success' ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
           <span style={{ flex: 1 }}>{notify.text}</span>
@@ -453,16 +517,16 @@ export const PromotionsAdmin: React.FC = () => {
         </div>
       )}
 
-      {/* ── Dashboard stats ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 20 }}>
-        <StatCard icon={<Award size={15} />} label="Active" value={stats.counts.active} accent={t[100]} />
-        <StatCard icon={<Clock size={15} />} label="Scheduled" value={stats.counts.scheduled} accent={violet[50]} />
-        <StatCard icon={<AlertTriangle size={15} />} label="Expired" value={stats.counts.expired} accent="#fef0ee" />
-        <StatCard icon={<Pause size={15} />} label="Paused" value={stats.counts.paused} accent={amber[100]} />
-        <StatCard icon={<Gift size={15} />} label="Total Usage" value={fmtInt(stats.totalUsage)} accent="#fdf2f8" />
-        <StatCard icon={<TrendingUp size={15} />} label="Discount Given" value={stats.totalDiscount != null ? fmt(stats.totalDiscount) : '—'} accent={t[50]} />
-        <StatCard icon={<BadgePercent size={15} />} label="Revenue Generated" value={stats.netSales != null ? fmt(stats.netSales) : '—'} accent={violet[50]} />
-        <StatCard icon={<Users size={15} />} label="Orders w/ Promo" value={stats.orders != null ? fmtInt(stats.orders) : '—'} accent={amber[100]} />
+      {/* ── Money bar (client-module style KPIs) ── */}
+      <div className="customers-money-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 18 }}>
+        <KpiCard kpiId="active" label="Active" value={fmtInt(stats.counts.active)}
+          icon={<CheckCircle size={20} />} iconBg={teal[100]} iconColor={teal[600]} borderColor={teal[500]} />
+        <KpiCard kpiId="scheduled" label="Scheduled" value={fmtInt(stats.counts.scheduled)}
+          icon={<Clock size={20} />} iconBg={amber[100]} iconColor={amber[500]} borderColor={amber[500]} />
+        <KpiCard kpiId="expired" label="Expired" value={fmtInt(stats.counts.expired)}
+          icon={<AlertTriangle size={20} />} iconBg="#fef2f2" iconColor={danger} borderColor={danger} />
+        <KpiCard kpiId="all" label="Discount Given" value={stats.totalDiscount != null ? fmt(stats.totalDiscount) : '—'}
+          icon={<BadgePercent size={20} />} iconBg={teal[50]} iconColor={teal[500]} borderColor={teal[500]} />
       </div>
 
       {/* ── Analytics charts ── */}
@@ -485,21 +549,21 @@ export const PromotionsAdmin: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 12, marginBottom: 20 }}>
             <div className="prime-card" style={{ background: paper, borderRadius: 14, border: `1.4px solid ${hairline}`, padding: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: ink, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <TrendingUp size={14} style={{ color: t[600] }} /> Discount Given — Last 30 Days
+                <TrendingUp size={14} style={{ color: teal[600] }} /> Discount Given — Last 30 Days
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={trend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="promoDiscountGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={t[500]} stopOpacity={0.28} />
-                      <stop offset="100%" stopColor={t[500]} stopOpacity={0} />
+                      <stop offset="0%" stopColor={teal[500]} stopOpacity={0.28} />
+                      <stop offset="100%" stopColor={teal[500]} stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={hairline} strokeOpacity={0.6} />
                   <XAxis dataKey="date" axisLine={false} tickLine={false} tick={axisTick} minTickGap={24} />
                   <YAxis axisLine={false} tickLine={false} tick={axisTick} tickFormatter={moneyTick} width={46} />
                   <Tooltip formatter={(v: any) => fmt(Number(v))} labelStyle={{ fontSize: 11, fontWeight: 700 }} contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="discountAmount" stroke={t[500]} strokeWidth={2.4} fill="url(#promoDiscountGrad)" name="Discount" dot={false} activeDot={{ r: 4 }} />
+                  <Area type="monotone" dataKey="discountAmount" stroke={teal[500]} strokeWidth={2.4} fill="url(#promoDiscountGrad)" name="Discount" dot={false} activeDot={{ r: 4 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -514,7 +578,7 @@ export const PromotionsAdmin: React.FC = () => {
                   <YAxis axisLine={false} tickLine={false} tick={axisTick} tickFormatter={moneyTick} width={46} />
                   <Tooltip formatter={(v: any) => fmt(Number(v))} labelStyle={{ fontSize: 11, fontWeight: 700 }} contentStyle={tooltipStyle} />
                   <Bar dataKey="discount" fill={violet[500]} radius={[5, 5, 0, 0]} name="Discount Given" />
-                  <Bar dataKey="net" fill={t[500]} radius={[5, 5, 0, 0]} name="Net Sales" />
+                  <Bar dataKey="net" fill={teal[500]} radius={[5, 5, 0, 0]} name="Net Sales" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -541,132 +605,21 @@ export const PromotionsAdmin: React.FC = () => {
         </span>
       </div>
 
-      {/* ── Create / Edit form ── */}
-      {showNew && (
-        <div className="prime-card" style={{ marginBottom: 20, borderRadius: 14, border: `1.4px solid ${t[200]}`, background: '#fff', overflow: 'hidden' }}>
-          <div style={{ padding: '12px 18px', borderBottom: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 8, background: t[50] }}>
-            {editingId ? <Pencil size={14} style={{ color: t[600] }} /> : <Plus size={14} style={{ color: t[600] }} />}
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: ink }}>{editingId ? 'Edit Promotion' : 'Create Promotion'}</span>
-          </div>
-          <div style={{ padding: 18 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 12 }}>
-              <Field label="Name *"><Input value={form.name} onChange={(v: string) => setForm((p) => ({ ...p, name: v }))} placeholder="e.g. August Portal Promotion" /></Field>
-              <Field label="Promo Code" hint="Leave blank for automatic-only promotions."><Input value={form.code || ''} onChange={(v: string) => setForm((p) => ({ ...p, code: v }))} placeholder="AUGUST10" /></Field>
-              <Field label="Channel">
-                <Select value={form.channel || 'PORTAL'} onChange={(v: string) => setForm((p) => ({ ...p, channel: v as PromotionChannel }))}
-                  options={CHANNELS.map((c) => ({ value: c, label: c === 'BOTH' ? 'ERP + Portal (Both)' : c === 'PORTAL' ? 'Portal Only' : 'ERP Only' }))} />
-              </Field>
-              <Field label="Discount Type">
-                <Select value={form.discountType || 'percentage'} onChange={(v: string) => setForm((p) => ({ ...p, discountType: v as PromotionDiscountType }))}
-                  options={DISCOUNT_TYPES.map((d) => ({ value: d, label: d.replace('_', ' ').toUpperCase() }))} />
-              </Field>
-              <Field label={String(form.discountType || 'percentage').includes('percent') ? 'Discount Value (%)' : 'Discount Value (MWK)'}>
-                <Input type="number" placeholder="e.g. 10" value={form.discountValue} onChange={(v: string) => setForm((p) => ({ ...p, discountValue: parseFloat(v) || 0 }))} />
-              </Field>
-              <Field label="Status">
-                <Select value={form.status || 'draft'} onChange={(v: string) => setForm((p) => ({ ...p, status: v as PromotionStatus }))}
-                  options={STATUSES.map((s) => ({ value: s, label: s }))} />
-              </Field>
-              <Field label="Start Date/Time"><Input type="datetime-local" value={form.startsAt || ''} onChange={(v: string) => setForm((p) => ({ ...p, startsAt: v }))} /></Field>
-              <Field label="End Date/Time" hint="Empty = no expiry."><Input type="datetime-local" value={form.endsAt || ''} onChange={(v: string) => setForm((p) => ({ ...p, endsAt: v }))} /></Field>
-              <Field label="Minimum Order (MWK)"><Input type="number" value={form.minimumOrderAmount} onChange={(v: string) => setForm((p) => ({ ...p, minimumOrderAmount: parseFloat(v) || 0 }))} /></Field>
-              <Field label="Maximum Discount (MWK)"><Input type="number" value={form.maximumDiscountAmount} onChange={(v: string) => setForm((p) => ({ ...p, maximumDiscountAmount: parseFloat(v) || 0 }))} /></Field>
-              <Field label="Usage Limit (total)" hint="0 = unlimited."><Input type="number" value={form.usageLimit} onChange={(v: string) => setForm((p) => ({ ...p, usageLimit: parseInt(v) || 0 }))} /></Field>
-              <Field label="Per-Customer Limit" hint="0 = unlimited."><Input type="number" value={form.usageLimitPerCustomer} onChange={(v: string) => setForm((p) => ({ ...p, usageLimitPerCustomer: parseInt(v) || 0 }))} /></Field>
-              <Field label="Priority" hint="Higher applies first."><Input type="number" value={form.priority} onChange={(v: string) => setForm((p) => ({ ...p, priority: parseInt(v) || 0 }))} /></Field>
-              <Field label="Applies To">
-                <Select value={form.applicableTo || 'all'} onChange={(v: string) => setForm((p) => ({ ...p, applicableTo: v as any }))}
-                  options={[{ value: 'all', label: 'All Products' }, { value: 'categories', label: 'Specific Categories' }, { value: 'products', label: 'Specific Products' }]} />
-              </Field>
-              <Field label="Customer Scope">
-                <Select value={form.customerScope || 'all'} onChange={(v: string) => setForm((p) => ({ ...p, customerScope: v as any }))}
-                  options={[
-                    { value: 'all', label: 'All Customers' },
-                    { value: 'new_customers', label: 'New Customers (< 90 days)' },
-                    { value: 'existing_customers', label: 'Existing Customers' },
-                    { value: 'customers', label: 'Specific Customers' },
-                  ]} />
-              </Field>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <Field label="Description">
-                <textarea value={form.description || ''} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} rows={2}
-                  style={{ ...inputStyle, resize: 'none', minHeight: 50 }} />
-              </Field>
-            </div>
-            <div style={{ display: 'flex', gap: 22, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-              <Toggle value={form.isAutoApply !== false} onChange={(v: boolean) => setForm((p) => ({ ...p, isAutoApply: v }))} label="Auto-apply for eligible customers" />
-              <Toggle value={!!form.stackable} onChange={(v: boolean) => setForm((p) => ({ ...p, stackable: v }))} label="Stackable with other promotions" />
-              <Toggle value={form.isActive !== false} onChange={(v: boolean) => setForm((p) => ({ ...p, isActive: v }))} label="Active" />
-            </div>
-
-            {/* Live discount preview */}
-            <div style={{ marginTop: 16, borderRadius: 12, border: `1.4px solid ${t[200]}`, background: t[50], padding: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                <Sparkles size={14} style={{ color: t[600] }} />
-                <span style={{ fontSize: 12, fontWeight: 800, color: t[700], textTransform: 'uppercase', letterSpacing: 0.06 }}>Live Preview</span>
-              </div>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Field label="Sample Order Amount (MWK)">
-                  <Input type="number" value={sampleAmount} onChange={(v: string) => setSampleAmount(parseFloat(v) || 0)} />
-                </Field>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, flex: 1, minWidth: 420 }}>
-                  <div style={{ background: paper, borderRadius: 10, border: `1px solid ${hairline}`, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.05 }}>Original Price</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(preview?.subtotal || 0)}</div>
-                  </div>
-                  <div style={{ background: paper, borderRadius: 10, border: `1px solid ${hairline}`, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#047857', textTransform: 'uppercase', letterSpacing: 0.05 }}>Discount</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#047857', fontFamily: "'JetBrains Mono', monospace" }}>− {fmt(preview?.discountTotal || 0)}</div>
-                  </div>
-                  <div style={{ background: paper, borderRadius: 10, border: `1px solid ${hairline}`, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 0.05 }}>Customer Saves</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#92400e', fontFamily: "'JetBrains Mono', monospace" }}>{fmt(preview?.discountTotal || 0)}</div>
-                  </div>
-                  <div style={{ background: 'linear-gradient(135deg,#0b3e39,#1f8577)', borderRadius: 10, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.7)', textTransform: 'uppercase', letterSpacing: 0.05 }}>Customer Pays</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', fontFamily: "'JetBrains Mono', monospace" }}>{fmt(preview?.grandTotal || 0)}</div>
-                  </div>
-                </div>
-              </div>
-              <p style={{ margin: '10px 0 0', fontSize: 11, color: '#8a9496', lineHeight: 1.5 }}>
-                The preview is an estimate. At checkout the server re-calculates using authoritative ERP master prices — browsers never set prices or discounts.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button onClick={editingId ? saveEdit : saveNew} disabled={saving}
-                style={{ padding: '9px 16px', background: t[500], color: '#fff', borderRadius: 9, border: 'none', fontSize: 12.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, transition: 'background .15s ease' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = t[700] }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = t[500] }}
-              >
-                {saving ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(255,255,255,.4)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} /> : <Save size={13} />}
-                {editingId ? 'Save Changes' : 'Create Promotion'}
-              </button>
-              <button onClick={() => { setShowNew(false); setEditingId(null); setForm(emptyForm()) }}
-                style={{ padding: '9px 16px', background: paper, border: `1.4px solid ${hairline}`, borderRadius: 9, color: inkSoft, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><X size={13} /> Cancel</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Promotion list ── */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60, color: inkSoft, fontSize: 13 }}>Loading promotions…</div>
       ) : filtered.length === 0 ? (
         <div className="prime-card" style={{ textAlign: 'center', padding: 48, borderRadius: 14, border: `1.4px dashed ${hairline}`, background: paper }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, background: t[50], margin: '0 auto 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Tag size={26} style={{ color: t[500] }} />
+          <div style={{ width: 56, height: 56, borderRadius: 16, background: teal[50], margin: '0 auto 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Tag size={26} style={{ color: teal[500] }} />
           </div>
           <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: ink }}>{promotions.length === 0 ? 'No promotions yet' : 'No promotions match your filters'}</p>
           <p style={{ margin: '4px 0 0', fontSize: 12.5, color: inkSoft }}>
             {promotions.length === 0 ? 'Create your first promotion — a 10% Portal discount takes minutes.' : 'Try clearing the search or filters.'}
           </p>
           {promotions.length === 0 && (
-            <button onClick={() => { setShowNew(true); setEditingId(null); setForm(emptyForm()) }}
-              style={{ marginTop: 18, padding: '9px 16px', background: t[500], color: '#fff', borderRadius: 9, border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={openNew}
+              style={{ marginTop: 18, padding: '9px 16px', background: teal[500], color: '#fff', borderRadius: 9, border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Plus size={14} /> Create Promotion
             </button>
           )}
@@ -718,13 +671,13 @@ export const PromotionsAdmin: React.FC = () => {
                       <div style={{ fontSize: 13, fontWeight: 800, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{used}{limit > 0 ? ` / ${limit}` : ''}</div>
                       {limit > 0 && (
                         <div style={{ width: 110, height: 5, borderRadius: 3, background: hairline, marginTop: 4, overflow: 'hidden' }}>
-                          <div style={{ width: `${pct}%`, height: '100%', background: pct >= 100 ? danger : t[500], borderRadius: 3, transition: 'width .3s ease' }} />
+                          <div style={{ width: `${pct}%`, height: '100%', background: pct >= 100 ? danger : teal[500], borderRadius: 3, transition: 'width .3s ease' }} />
                         </div>
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button title={status === 'active' ? 'Pause' : 'Activate'} onClick={() => toggleStatus(p)}
-                        style={{ width: 32, height: 32, borderRadius: 8, border: 'none', cursor: 'pointer', background: status === 'active' ? amber[100] : t[100], color: status === 'active' ? '#92400e' : t[700], display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'transform .12s ease' }}
+                        style={{ width: 32, height: 32, borderRadius: 8, border: 'none', cursor: 'pointer', background: status === 'active' ? amber[100] : teal[100], color: status === 'active' ? '#92400e' : teal[700], display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'transform .12s ease' }}
                         onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)' }}
                         onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
                       >
@@ -753,10 +706,495 @@ export const PromotionsAdmin: React.FC = () => {
         </div>
       )}
 
+      {/* ── Create / Edit modal (ClientModal-style) ── */}
+      {showNew && (
+        <div className="client-modal-overlay" style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(15, 23, 42, 0.6)',
+          padding: '40px 20px', fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink,
+        }}>
+          <div className="client-modal-content" style={{
+            width: 920, maxWidth: '100%', maxHeight: '92vh',
+            background: paper, borderRadius: 14,
+            boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative'
+          }}>
+            {/* Accent stripe */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+              background: `linear-gradient(90deg, ${teal[600]}, ${teal[400]} 40%, ${amber[500]} 100%)`
+            }} />
+
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '22px 28px 18px',
+              borderBottom: `1px solid ${hairline}`,
+              background: paper
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: `0 4px 10px -3px rgba(15,84,76,.6)`, flexShrink: 0
+                }}>
+                  <BadgePercent size={19} color="#fff" />
+                </div>
+                <div>
+                  <h1 style={{
+                    fontFamily: "'DM Serif Display', 'Georgia', serif", fontWeight: 400,
+                    fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
+                  }}>
+                    {editingId ? `Edit Promotion: ${form.name || '—'}` : 'Add New Promotion'}
+                  </h1>
+                  <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>
+                    Smart Operations &mdash; portal-driven discount campaigns
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => { setShowNew(false); setEditingId(null); setForm(emptyForm()) }} aria-label="Close" style={{
+                width: 32, height: 32, borderRadius: 8,
+                border: `1px solid ${hairline}`, background: paper, color: inkSoft,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', transition: 'all .15s ease', fontSize: 16
+              }}
+                onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
+                onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+
+              {/* Sidebar Nav */}
+              <div style={{
+                width: 212, flexShrink: 0,
+                background: `linear-gradient(180deg, ${teal[800]}, ${teal[900]})`,
+                padding: '18px 12px', position: 'relative'
+              }}>
+                <div style={{
+                  position: 'absolute', top: 0, right: 0, bottom: 0, width: 10,
+                  backgroundImage: 'radial-gradient(circle, rgba(254,253,251,.9) 2.2px, transparent 2.3px)',
+                  backgroundSize: '10px 16px', backgroundPosition: '4px 8px', opacity: 0.12
+                }} />
+                <div style={{
+                  color: 'rgba(255,255,255,.4)', fontSize: 10, letterSpacing: 0.16,
+                  textTransform: 'uppercase', fontWeight: 600, padding: '4px 12px 10px'
+                }}>
+                  Promotion Setup
+                </div>
+                {modalTabs.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  const Icon = tab.icon;
+                  return (
+                    <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 12px', borderRadius: 8,
+                      color: isActive ? '#fff' : 'rgba(255,255,255,.62)',
+                      fontSize: 13, fontWeight: 500, cursor: 'pointer', marginBottom: 2,
+                      transition: 'all .15s ease', position: 'relative',
+                      width: '100%', border: 'none', background: 'transparent', textAlign: 'left',
+                      ...(isActive ? {
+                        background: `linear-gradient(90deg, rgba(217,154,63,.18), rgba(217,154,63,.05))`,
+                        boxShadow: `inset 3px 0 0 ${amber[500]}`
+                      } : {})
+                    }}
+                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,.06)'; e.currentTarget.style.color = '#fff'; }}
+                      onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,.62)'; } }}
+                    >
+                      <Icon size={16} style={{ flexShrink: 0, opacity: 0.85 }} />
+                      {tab.label}
+                      <span style={{
+                        marginLeft: 'auto', width: 16, height: 16, borderRadius: '50%',
+                        background: isActive ? amber[500] : 'rgba(255,255,255,.12)',
+                        fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: isActive ? teal[900] : 'rgba(255,255,255,.55)',
+                        fontWeight: isActive ? 600 : 400
+                      }}>
+                        {modalTabs.indexOf(tab) + 1}
+                      </span>
+                    </button>
+                  );
+                })}
+                <div style={{
+                  position: 'absolute', bottom: 18, left: 12, right: 22,
+                  padding: 12, borderRadius: 8,
+                  background: 'rgba(255,255,255,.045)',
+                  border: '1px dashed rgba(255,255,255,.14)'
+                }}>
+                  <p style={{ margin: 0, fontSize: 10.5, color: 'rgba(255,255,255,.42)', lineHeight: 1.5 }}>
+                    Fields marked <b style={{ color: amber[300], fontWeight: 600 }}>*</b> are required before this record can be saved to the ledger.
+                  </p>
+                </div>
+              </div>
+
+              {/* Form Area */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '24px 30px 8px' }}>
+                <form id="promotion-form" onSubmit={(e) => { e.preventDefault(); editingId ? saveEdit() : saveNew() }}>
+
+                  {notify && notify.kind === 'error' && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, marginBottom: 16,
+                      background: '#fef0ee', border: `1.4px solid #f3c1bd`, color: danger, fontSize: 12.5, fontWeight: 600,
+                    }}>
+                      <AlertTriangle size={15} />
+                      <span style={{ flex: 1 }}>{notify.text}</span>
+                    </div>
+                  )}
+
+                  {/* Details Tab */}
+                  {activeTab === 'Details' && (
+                    <>
+                      <div style={sectionLabelStyle}><span>Basics</span></div>
+
+                      <div style={{ marginBottom: 18 }}>
+                        <label style={labelStyle}>
+                          Promotion Name <span style={{ color: danger, fontWeight: 700 }}>*</span>
+                        </label>
+                        <input
+                          required type="text" value={form.name || ''}
+                          onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))}
+                          placeholder="e.g. August Portal Promotion"
+                          style={modalInputStyle}
+                        />
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                        <div>
+                          <label style={labelStyle}>Promo Code</label>
+                          <input
+                            type="text" value={form.code || ''}
+                            onChange={(e) => setForm(p => ({ ...p, code: e.target.value }))}
+                            placeholder="AUGUST10"
+                            style={{ ...modalInputStyle, fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Channel</label>
+                          <select
+                            value={form.channel || 'PORTAL'}
+                            onChange={(e) => setForm(p => ({ ...p, channel: e.target.value as PromotionChannel }))}
+                            style={modalSelectStyle}
+                          >
+                            {CHANNELS.map((c) => (
+                              <option key={c} value={c}>
+                                {c === 'BOTH' ? 'ERP + Portal (Both)' : c === 'PORTAL' ? 'Portal Only' : 'ERP Only'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                        <div>
+                          <label style={labelStyle}>Discount Type</label>
+                          <select
+                            value={form.discountType || 'percentage'}
+                            onChange={(e) => setForm(p => ({ ...p, discountType: e.target.value as PromotionDiscountType }))}
+                            style={modalSelectStyle}
+                          >
+                            {DISCOUNT_TYPES.map((d) => (
+                              <option key={d} value={d}>{d.replace('_', ' ').toUpperCase()}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>
+                            {String(form.discountType || 'percentage').includes('percent') ? 'Discount Value (%)' : 'Discount Value (MWK)'}
+                          </label>
+                          <input
+                            type="number" value={form.discountValue}
+                            onChange={(e) => setForm(p => ({ ...p, discountValue: parseFloat(e.target.value) || 0 }))}
+                            placeholder="e.g. 10"
+                            style={modalInputStyle}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ marginBottom: 18 }}>
+                        <label style={labelStyle}>Description</label>
+                        <textarea
+                          value={form.description || ''}
+                          onChange={(e) => setForm(p => ({ ...p, description: e.target.value }))}
+                          rows={3}
+                          placeholder="What customers see and why this promotion exists..."
+                          style={{ ...modalInputStyle, resize: 'none', minHeight: 66, lineHeight: 1.5 }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Schedule Tab */}
+                  {activeTab === 'Schedule' && (
+                    <>
+                      <div style={sectionLabelStyle}><span>Schedule &amp; Status</span></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                        <div>
+                          <label style={labelStyle}>Status</label>
+                          <select
+                            value={form.status || 'draft'}
+                            onChange={(e) => setForm(p => ({ ...p, status: e.target.value as PromotionStatus }))}
+                            style={modalSelectStyle}
+                          >
+                            {STATUSES.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 6 }}>
+                          <Toggle value={form.isActive !== false} onChange={(v: boolean) => setForm(p => ({ ...p, isActive: v }))} label="Active" />
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                        <div>
+                          <label style={labelStyle}>Start Date / Time</label>
+                          <input
+                            type="datetime-local" value={form.startsAt || ''}
+                            onChange={(e) => setForm(p => ({ ...p, startsAt: e.target.value }))}
+                            style={modalInputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>End Date / Time</label>
+                          <input
+                            type="datetime-local" value={form.endsAt || ''}
+                            onChange={(e) => setForm(p => ({ ...p, endsAt: e.target.value }))}
+                            style={modalInputStyle}
+                          />
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: 14, background: teal[50], borderRadius: 9, border: `1px solid ${teal[100]}`,
+                        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                      }}>
+                        <div style={{ padding: 8, borderRadius: 8, background: teal[100], color: teal[600], display: 'inline-flex' }}>
+                          <Clock size={18} />
+                        </div>
+                        <div style={{ fontSize: 12, color: inkSoft, fontWeight: 500, lineHeight: 1.5 }}>
+                          Leave <b style={{ color: teal[800] }}>End Date/Time</b> empty for no expiry. Scheduled promotions go live automatically once the start time passes.
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Limits Tab */}
+                  {activeTab === 'Limits' && (
+                    <>
+                      <div style={sectionLabelStyle}><span>Limits &amp; Priority</span></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                        <div>
+                          <label style={labelStyle}>Minimum Order (MWK)</label>
+                          <input
+                            type="number" value={form.minimumOrderAmount}
+                            onChange={(e) => setForm(p => ({ ...p, minimumOrderAmount: parseFloat(e.target.value) || 0 }))}
+                            placeholder="0.00"
+                            style={modalInputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Maximum Discount (MWK)</label>
+                          <input
+                            type="number" value={form.maximumDiscountAmount}
+                            onChange={(e) => setForm(p => ({ ...p, maximumDiscountAmount: parseFloat(e.target.value) || 0 }))}
+                            placeholder="0.00"
+                            style={modalInputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Usage Limit (total)</label>
+                          <input
+                            type="number" value={form.usageLimit}
+                            onChange={(e) => setForm(p => ({ ...p, usageLimit: parseInt(e.target.value) || 0 }))}
+                            placeholder="0 = unlimited"
+                            style={modalInputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Per-Customer Limit</label>
+                          <input
+                            type="number" value={form.usageLimitPerCustomer}
+                            onChange={(e) => setForm(p => ({ ...p, usageLimitPerCustomer: parseInt(e.target.value) || 0 }))}
+                            placeholder="0 = unlimited"
+                            style={modalInputStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Priority</label>
+                          <input
+                            type="number" value={form.priority}
+                            onChange={(e) => setForm(p => ({ ...p, priority: parseInt(e.target.value) || 0 }))}
+                            placeholder="Higher applies first"
+                            style={modalInputStyle}
+                          />
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: 14, background: amber[100], borderRadius: 9, border: `1px solid ${amber[300]}`,
+                        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                      }}>
+                        <div style={{ padding: 8, borderRadius: 8, background: 'rgba(181,73,63,.08)', color: danger, display: 'inline-flex' }}>
+                          <Layers size={18} />
+                        </div>
+                        <div style={{ fontSize: 12, color: '#8a5a1a', fontWeight: 500, lineHeight: 1.5 }}>
+                          Higher <b>priority</b> promotions apply first when multiple promotions are eligible on the same order.
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Audience Tab */}
+                  {activeTab === 'Audience' && (
+                    <>
+                      <div style={sectionLabelStyle}><span>Audience</span></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                        <div>
+                          <label style={labelStyle}>Applies To</label>
+                          <select
+                            value={form.applicableTo || 'all'}
+                            onChange={(e) => setForm(p => ({ ...p, applicableTo: e.target.value as any }))}
+                            style={modalSelectStyle}
+                          >
+                            <option value="all">All Products</option>
+                            <option value="categories">Specific Categories</option>
+                            <option value="products">Specific Products</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Customer Scope</label>
+                          <select
+                            value={form.customerScope || 'all'}
+                            onChange={(e) => setForm(p => ({ ...p, customerScope: e.target.value as any }))}
+                            style={modalSelectStyle}
+                          >
+                            <option value="all">All Customers</option>
+                            <option value="new_customers">New Customers (&lt; 90 days)</option>
+                            <option value="existing_customers">Existing Customers</option>
+                            <option value="customers">Specific Customers</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 22, marginTop: 14, flexWrap: 'wrap', alignItems: 'center', marginBottom: 18 }}>
+                        <Toggle value={form.isAutoApply !== false} onChange={(v: boolean) => setForm(p => ({ ...p, isAutoApply: v }))} label="Auto-apply for eligible customers" />
+                        <Toggle value={!!form.stackable} onChange={(v: boolean) => setForm(p => ({ ...p, stackable: v }))} label="Stackable with other promotions" />
+                      </div>
+                      <div style={{
+                        padding: 14, background: teal[50], borderRadius: 9, border: `1px solid ${teal[100]}`,
+                        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                      }}>
+                        <div style={{ padding: 8, borderRadius: 8, background: teal[100], color: teal[600], display: 'inline-flex' }}>
+                          <Users size={18} />
+                        </div>
+                        <div style={{ fontSize: 12, color: inkSoft, fontWeight: 500, lineHeight: 1.5 }}>
+                          Auto-applied promotions require <b style={{ color: teal[800] }}>no code</b> — eligible customers get the discount at checkout automatically.
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Preview Tab */}
+                  {activeTab === 'Preview' && (
+                    <>
+                      <div style={sectionLabelStyle}><span>Live Preview</span></div>
+                      <div style={{ borderRadius: 12, border: `1.4px solid ${teal[200]}`, background: teal[50], padding: 14, marginBottom: 18 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                          <Sparkles size={14} style={{ color: teal[600] }} />
+                          <span style={{ fontSize: 12, fontWeight: 800, color: teal[700], textTransform: 'uppercase', letterSpacing: 0.06 }}>Live Preview</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 200px' }}>
+                            <label style={labelStyle}>Sample Order Amount (MWK)</label>
+                            <input
+                              type="number" value={sampleAmount}
+                              onChange={(e) => setSampleAmount(parseFloat(e.target.value) || 0)}
+                              style={modalInputStyle}
+                            />
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, flex: 1, minWidth: 420 }}>
+                            <div style={{ background: paper, borderRadius: 10, border: `1px solid ${hairline}`, padding: '10px 12px' }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.05 }}>Original Price</div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(preview?.subtotal || 0)}</div>
+                            </div>
+                            <div style={{ background: paper, borderRadius: 10, border: `1px solid ${hairline}`, padding: '10px 12px' }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: '#047857', textTransform: 'uppercase', letterSpacing: 0.05 }}>Discount</div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: '#047857', fontFamily: "'JetBrains Mono', monospace" }}>− {fmt(preview?.discountTotal || 0)}</div>
+                            </div>
+                            <div style={{ background: paper, borderRadius: 10, border: `1px solid ${hairline}`, padding: '10px 12px' }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: 0.05 }}>Customer Saves</div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: '#92400e', fontFamily: "'JetBrains Mono', monospace" }}>{fmt(preview?.discountTotal || 0)}</div>
+                            </div>
+                            <div style={{ background: 'linear-gradient(135deg,#0b3e39,#1f8577)', borderRadius: 10, padding: '10px 12px' }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.7)', textTransform: 'uppercase', letterSpacing: 0.05 }}>Customer Pays</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', fontFamily: "'JetBrains Mono', monospace" }}>{fmt(preview?.grandTotal || 0)}</div>
+                            </div>
+                          </div>
+                        </div>
+                        <p style={{ margin: '10px 0 0', fontSize: 11, color: '#8a9496', lineHeight: 1.5 }}>
+                          The preview is an estimate. At checkout the server re-calculates using authoritative ERP master prices — browsers never set prices or discounts.
+                        </p>
+                      </div>
+                    </>
+                  )}
+
+                </form>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 14, padding: '16px 28px',
+              borderTop: `1px solid ${hairline}`, background: paper
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: inkSoft }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: amber[500] }} />
+                Step {stepNumber} of {totalSteps} &mdash; {modalTabs.find(t => t.id === activeTab)?.label}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="button" onClick={() => { setShowNew(false); setEditingId(null); setForm(emptyForm()) }}
+                  style={{
+                    fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
+                    padding: '9px 18px', borderRadius: 9, cursor: 'pointer',
+                    background: paper, border: `1.4px solid ${hairline}`, color: inkSoft,
+                    display: 'flex', alignItems: 'center', gap: 7, transition: 'all .15s ease'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
+                  Cancel
+                </button>
+                <button type="submit" form="promotion-form" disabled={saving}
+                  style={{
+                    fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
+                    padding: '9px 18px', borderRadius: 9, cursor: saving ? 'not-allowed' : 'pointer', border: '1.4px solid transparent',
+                    background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`,
+                    color: '#fff', display: 'flex', alignItems: 'center', gap: 7,
+                    boxShadow: `0 6px 16px -6px rgba(15,84,76,.55)`,
+                    opacity: saving ? 0.6 : 1,
+                    transition: 'all .15s ease'
+                  }}
+                  onMouseEnter={e => { if (!saving) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; } }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 16px -6px rgba(15,84,76,.55)'; }}>
+                  {saving ? (
+                    <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(255,255,255,.4)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
+                  ) : (
+                    <><Save size={13} /> {editingId ? 'Save Changes' : 'Create Promotion'} <ChevronRight size={14} /></>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Delete confirmation ── */}
       {deleteTarget && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(11,20,19,.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div style={{ background: paper, borderRadius: 16, padding: '24px 24px 20px', maxWidth: 420, width: '100%', boxShadow: '0 24px 60px -16px rgba(0,0,0,.4)', animation: 'scaleIn .18s cubic-bezier(.4,0,.2,1)' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: paper, borderRadius: 16, padding: '24px 24px 20px', maxWidth: 420, width: '100%', boxShadow: '0 30px 70px -20px rgba(0,0,0,.45)', animation: 'scaleIn .18s cubic-bezier(.4,0,.2,1)', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: `linear-gradient(90deg, ${danger}, #e27065)` }} />
             <div style={{ width: 46, height: 46, borderRadius: 12, background: '#fef0ee', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
               <AlertTriangle size={22} style={{ color: danger }} />
             </div>

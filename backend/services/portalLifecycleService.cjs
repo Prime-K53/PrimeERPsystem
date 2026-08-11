@@ -850,6 +850,75 @@ const portalLifecycleService = {
     }));
   },
 
+  // Active PORTAL banner ads for display (display only). Managed in
+  // Smart Operations Hub → Ads. Ordered by priority (highest first).
+  async getActivePortalAds(customerId) {
+    let rows = [];
+    try {
+      rows = await repo.getAll('portal_ads');
+    } catch (err) {
+      console.warn('[Portal] portal_ads read failed:', err?.message || err);
+      rows = [];
+    }
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+
+    // Multi-company safety: only serve ads belonging to the customer's company.
+    let companyId = null;
+    if (customerId) {
+      try {
+        const customer = await repo.getById('customers', customerId);
+        companyId = (customer && (customer.companyId || customer.company_id)) || null;
+      } catch {
+        companyId = null;
+      }
+    }
+    if (companyId) {
+      rows = rows.filter((ad) => {
+        const adCompany = ad.companyId || ad.company_id;
+        return !adCompany || String(adCompany) === String(companyId);
+      });
+    }
+
+    const now = Date.now();
+    return rows
+      .map((ad) => ({
+        id: ad.id,
+        title: ad.title || '',
+        subtitle: ad.subtitle || null,
+        badge: ad.badge || null,
+        ctaLabel: ad.ctaLabel || null,
+        ctaTarget: ad.ctaTarget || null,
+        imageUrl: ad.imageUrl || null,
+        gradient: ad.gradient || null,
+        emoji: ad.emoji || null,
+        isActive: ad.isActive !== false && ad.status !== 'paused' && ad.status !== 'draft' && ad.status !== 'expired',
+        startsAt: ad.startsAt || ad.starts_at || null,
+        endsAt: ad.endsAt || ad.ends_at || ad.expiresAt || null,
+        priority: Number(ad.priority ?? 0) || 0,
+      }))
+      .filter((ad) => {
+        if (!ad.isActive) return false;
+        const start = ad.startsAt ? new Date(ad.startsAt).getTime() : null;
+        const end = ad.endsAt ? new Date(ad.endsAt).getTime() : null;
+        if (start !== null && !Number.isNaN(start) && now < start) return false;
+        if (end !== null && !Number.isNaN(end) && now > end) return false;
+        return true;
+      })
+      .sort((a, b) => b.priority - a.priority)
+      .map((ad) => ({
+        id: ad.id,
+        title: ad.title,
+        subtitle: ad.subtitle,
+        badge: ad.badge,
+        ctaLabel: ad.ctaLabel,
+        ctaTarget: ad.ctaTarget,
+        imageUrl: ad.imageUrl,
+        gradient: ad.gradient,
+        emoji: ad.emoji,
+        endsAt: ad.endsAt,
+      }));
+  },
+
   async getRequests({ customerId, status } = {}) {
     let query = `
       SELECT q.*, c.name AS resolved_customer_name
@@ -2026,47 +2095,49 @@ const portalLifecycleService = {
 
   // ─── Analytics (derived from audit-grade tables) ───────────────────────────
   async getAnalytics() {
-    const requests = await getAll(
-      'SELECT status, COUNT(*) as count FROM quotation_requests GROUP BY status',
-      []
-    );
+    // NOTE: repo.getAll returns raw table rows (this repository layer never
+    // executes SELECT/aggregate clauses), so all counts are computed in JS.
+    const allRequests = await getAll('SELECT * FROM quotation_requests', []);
+
     const requestTotals = {};
-    for (const row of requests) requestTotals[row.status] = row.count;
+    const requestTypes = {};
+    for (const row of allRequests) {
+      const status = row.status;
+      requestTotals[status] = (requestTotals[status] || 0) + 1;
+      // Open (actionable) requests by type — quotation vs order — so
+      // dashboards can surface "new requests / orders from the portal".
+      if (!row.deleted_at && !['cancelled', 'rejected', 'converted'].includes(status)) {
+        requestTypes[row.request_type] = (requestTypes[row.request_type] || 0) + 1;
+      }
+    }
     const totalRequests = Object.values(requestTotals).reduce((a, b) => a + b, 0);
 
-    const reviewTimes = await getAll(
-      `SELECT (julianday(reviewed_at) - julianday(created_at)) * 24 * 60 as minutes
-       FROM quotation_requests WHERE reviewed_at IS NOT NULL`,
-      []
-    );
-    const avgReviewMinutes = reviewTimes.length
-      ? Math.round(reviewTimes.reduce((sum, r) => sum + (r.minutes || 0), 0) / reviewTimes.length)
+    const reviewRows = allRequests.filter(r => r.reviewed_at && r.created_at);
+    const reviewMinutes = [];
+    for (const row of reviewRows) {
+      const minutes = (new Date(row.reviewed_at).getTime() - new Date(row.created_at).getTime()) / 60000;
+      if (Number.isFinite(minutes)) reviewMinutes.push(minutes);
+    }
+    const avgReviewMinutes = reviewMinutes.length
+      ? Math.round(reviewMinutes.reduce((sum, m) => sum + m, 0) / reviewMinutes.length)
       : 0;
 
-    const quotations = await getAll(
-      'SELECT status, COUNT(*) as count FROM quotations GROUP BY status',
-      []
-    );
+    const quotationRows = await getAll('SELECT * FROM quotations', []);
     const quotationTotals = {};
-    for (const row of quotations) quotationTotals[row.status] = row.count;
+    for (const row of quotationRows) quotationTotals[row.status] = (quotationTotals[row.status] || 0) + 1;
     const totalQuotations = Object.values(quotationTotals).reduce((a, b) => a + b, 0);
 
-    const downloads = await getAll(
-      'SELECT doc_type, COUNT(*) as count FROM portal_downloads GROUP BY doc_type',
-      []
-    );
+    const downloadRows = await getAll('SELECT * FROM portal_downloads', []);
     const downloadTotals = {};
-    for (const row of downloads) downloadTotals[row.doc_type] = row.count;
+    for (const row of downloadRows) downloadTotals[row.doc_type] = (downloadTotals[row.doc_type] || 0) + 1;
     const totalDownloads = Object.values(downloadTotals).reduce((a, b) => a + b, 0);
 
-    const uniqueDownloadDocs = await getOne(
-      'SELECT COUNT(DISTINCT doc_id) as count FROM portal_downloads',
-      []
-    );
+    const uniqueDownloads = new Set(downloadRows.map(r => r.doc_id).filter(Boolean)).size;
 
     const acceptedCount = (quotationTotals.accepted || 0) + (quotationTotals.converted || 0);
     return {
       requests: requestTotals,
+      requestTypes,
       totalRequests,
       avgReviewMinutes,
       quotations: quotationTotals,
@@ -2077,7 +2148,7 @@ const portalLifecycleService = {
       conversionRate: totalQuotations ? Math.round(((quotationTotals.converted || 0) / totalQuotations) * 100) : 0,
       downloads: downloadTotals,
       totalDownloads,
-      uniqueDownloads: (uniqueDownloadDocs && uniqueDownloadDocs.count) || 0,
+      uniqueDownloads,
     };
   },
 

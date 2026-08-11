@@ -22,6 +22,14 @@ interface InvoiceDetailsProps {
     onClose: () => void;
     onEdit: (inv: Invoice) => void;
     onAction: (inv: Invoice, action: string) => void;
+    /**
+     * True when this panel is showing a genuine recurring invoice (opened from
+     * the Subscriptions tab). This is decided by the caller rather than by
+     * peeking at `invoice.frequency`: the order form stores a default
+     * `frequency: 'Monthly'` on REGULAR invoices too, which made the preview
+     * wrongly render a Recurring Invoice document.
+     */
+    isSubscription?: boolean;
 }
 
 const teal: Record<string, string> = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -32,7 +40,7 @@ const inkSoft = '#5c6567';
 const hairline = '#e4ddd1';
 const danger = '#b5493f';
 
-export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initialInvoice, onClose, onEdit, onAction }) => {
+export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initialInvoice, onClose, onEdit, onAction, isSubscription = false }) => {
     const { companyConfig, auditLogs, notify } = useAuth();
     const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment } = useFinance();
     const { customers = [] } = useSales();
@@ -46,9 +54,6 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
         invoices.find(i => i.id === initialInvoice.id) || initialInvoice
         , [invoices, initialInvoice]);
 
-    const isSubscription = invoice.frequency != null &&
-                          invoice.frequency !== '' &&
-                          typeof invoice.frequency !== 'undefined';
     const isExaminationInvoice = String((invoice as Record<string, unknown>).originModule ?? (invoice as Record<string, unknown>).origin_module ?? '').toLowerCase() === 'examination'
         || String((invoice as Record<string, unknown>).documentTitle ?? (invoice as Record<string, unknown>).document_title ?? '').toLowerCase().includes('examination invoice')
         || String((invoice as Record<string, unknown>).reference ?? '').toUpperCase().startsWith('EXM-BATCH-');

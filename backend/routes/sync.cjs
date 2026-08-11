@@ -33,7 +33,8 @@ const ALLOWED_TABLES = new Set([
 
   // customers / sales
   'customers', 'suppliers', 'sales', 'purchases', 'invoices', 'quotations', 'orders',
-  'customer_payments', 'supplier_payments', 'sales_orders', 'delivery_notes',
+  'customer_payments', 'supplier_payments', 'payment_allocations', 'payment_allocation_lines',
+  'sales_orders', 'delivery_notes',
   'shipments', 'recurring_invoices', 'scheduled_payments', 'wallet_transactions',
   'sales_exchanges', 'sales_exchange_items', 'reprint_jobs', 'sales_exchange_approvals',
   'subscribers', 'reminders', 'tasks', 'schools', 'classes', 'subjects',
@@ -68,7 +69,7 @@ const ALLOWED_TABLES = new Set([
   // marketing / communications
   'sms_campaigns', 'sms_templates', 'customer_notification_logs',
   'whatsapp_chats', 'whatsapp_templates', 'whatsapp_campaigns',
-  'whatsapp_automations',
+  'whatsapp_automations', 'portal_ads',
 
   // procurement / maintenance
   'subcontract_orders', 'maintenance_logs',

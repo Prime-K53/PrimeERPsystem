@@ -1197,6 +1197,34 @@ a[href]:focus-visible {
   background: rgba(0,0,0,0.2);
 }
 
+/* Visible scrollbars on mobile for the sales lists (invoice/quotation/
+   orders/etc.). The default .custom-scrollbar thumb is nearly invisible on
+   touch screens, so scrollable lists look static with no scrollbar. */
+@media (max-width: 768px) {
+  .sales-list-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 84, 76, 0.45) rgba(15, 84, 76, 0.08);
+  }
+  .sales-list-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .sales-list-scroll::-webkit-scrollbar-track {
+    background: rgba(15, 84, 76, 0.08);
+    border-radius: 999px;
+  }
+  .sales-list-scroll::-webkit-scrollbar-thumb {
+    background: rgba(15, 84, 76, 0.4);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .sales-list-scroll:active::-webkit-scrollbar-thumb,
+  .sales-list-scroll:hover::-webkit-scrollbar-thumb {
+    background: rgba(15, 84, 76, 0.6);
+  }
+}
+
 /* ── Mobile Bottom Navigation ──────────────────────────────────────────── */
 @media (max-width: 767px) {
   .mobile-bottom-nav {

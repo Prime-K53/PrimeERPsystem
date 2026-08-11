@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Plus, Search, CheckCircle2, X, Send, ChevronRight, RefreshCw, ClipboardList } from 'lucide-react';
+import { FileText, Search, CheckCircle2, ChevronRight, RefreshCw, ClipboardList } from 'lucide-react';
 import { portalLifecycle, QuotationRecord } from '../../services/portalApiClient';
-import { sampleQuotations } from './sampleData';
+
 import PortalInput from './components/PortalInput';
 import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import { DEFAULT_PAGE_SIZE, FRIENDLY_STATUS_MAP } from './constants';
-import { F, MONO, NAVY, TEAL_GRADIENT } from './designTokens';
+import { F, MONO } from './designTokens';
 
 type Tab = 'all' | 'pending' | 'quoted' | 'approved';
 
@@ -39,12 +39,6 @@ const CustomerQuotations: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestCategory, setRequestCategory] = useState('');
-  const [requestQty, setRequestQty] = useState(500);
-  const [requestNotes, setRequestNotes] = useState('');
-  const [requestSubmitting, setRequestSubmitting] = useState(false);
-  const [requestError, setRequestError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,9 +54,9 @@ const CustomerQuotations: React.FC = () => {
         setTotalPages(1);
         setTotal((data as QuotationRecord[]).length);
       } else {
-        setQuotations(sampleQuotations as any);
+        setQuotations([]);
         setTotalPages(1);
-        setTotal(sampleQuotations.length);
+        setTotal(0);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load quotations');
@@ -97,26 +91,6 @@ const CustomerQuotations: React.FC = () => {
       setAcceptingId(null);
     }
   }, [load]);
-
-  const handleRequestSubmit = useCallback(async () => {
-    setRequestSubmitting(true);
-    setRequestError(null);
-    try {
-      await portalLifecycle.requests.create({
-        requestType: 'quotation',
-        items: [{ name: requestCategory || 'General Quotation', quantity: requestQty, unitPrice: 0 }],
-        notes: requestNotes || undefined,
-      });
-      setShowRequestModal(false);
-      setRequestCategory('');
-      setRequestQty(500);
-      setRequestNotes('');
-    } catch (err: any) {
-      setRequestError(err.message || 'Failed to submit quotation request');
-    } finally {
-      setRequestSubmitting(false);
-    }
-  }, [requestCategory, requestQty, requestNotes, load]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -298,62 +272,6 @@ const CustomerQuotations: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* FAB */}
-      <button
-        onClick={() => setShowRequestModal(true)}
-        style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 55,
-          fontFamily: F, fontSize: 13, fontWeight: 700,
-          padding: '14px 22px', borderRadius: 14, cursor: 'pointer', border: 'none',
-          background: 'linear-gradient(135deg, #146b60 0%, #0f544c 100%)',
-          color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 8,
-          boxShadow: '0 10px 25px -8px rgba(15,44,89,.6)',
-          transition: 'all .15s ease',
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 14px 30px -8px rgba(15,44,89,.7)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px -8px rgba(15,44,89,.6)'; }}
-      >
-        <Plus size={18} /> Ask For Quotation
-      </button>
-
-      {/* Request Modal */}
-      {showRequestModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(2,8,23,.55)', backdropFilter: 'blur(2px)' }}>
-          <div style={{ background: '#fff', width: '100%', maxWidth: 520, maxHeight: '88vh', overflowY: 'auto', borderRadius: '20px 20px 0 0', boxShadow: '0 -16px 48px rgba(2,8,23,.3)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 12px' }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1A202C', fontFamily: F }}>Request a Quotation</h2>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#8A94A6' }}>Submit your requirements for a custom quote</p>
-              </div>
-              <button onClick={() => setShowRequestModal(false)} style={{ width: 30, height: 30, borderRadius: 9, border: '1px solid #E9EDF3', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8A94A6' }}><X size={15} /></button>
-            </div>
-
-            <div style={{ padding: '4px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#4A5568', textTransform: 'uppercase', letterSpacing: 0.05, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>Project Reference Title</label>
-                <input type="text" value={requestCategory} onChange={(e) => setRequestCategory(e.target.value)} placeholder="e.g., Chicago Branch Expansion Phase 2" style={{ width: '100%', fontFamily: F, fontSize: 13, padding: '10px 12px', borderRadius: 10, border: '1px solid #E9EDF3', background: '#fff', color: '#1A202C', outline: 'none' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#4A5568', textTransform: 'uppercase', letterSpacing: 0.05, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>Target Quantity</label>
-                <input type="number" value={requestQty} onChange={(e) => setRequestQty(Number(e.target.value))} min={1} style={{ width: '100%', fontFamily: F, fontSize: 13, padding: '10px 12px', borderRadius: 10, border: '1px solid #E9EDF3', background: '#fff', color: '#1A202C', outline: 'none' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#4A5568', textTransform: 'uppercase', letterSpacing: 0.05, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>Target Unit Price / Budget</label>
-                <input type="text" placeholder="e.g., $12.50 per unit" style={{ width: '100%', fontFamily: F, fontSize: 13, padding: '10px 12px', borderRadius: 10, border: '1px solid #E9EDF3', background: '#fff', color: '#1A202C', outline: 'none' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#4A5568', textTransform: 'uppercase', letterSpacing: 0.05, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>Custom Specifications & Delivery Requirements</label>
-                <textarea value={requestNotes} onChange={(e) => setRequestNotes(e.target.value)} placeholder="Technical specifications, custom packaging, delivery deadlines..." rows={5} style={{ width: '100%', fontFamily: F, fontSize: 13, padding: '10px 12px', borderRadius: 10, border: '1px solid #E9EDF3', background: '#fff', color: '#1A202C', outline: 'none', resize: 'vertical' }} />
-              </div>
-              {requestError && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: 10, padding: '10px 14px', fontSize: 12.5 }}>{requestError}</div>}
-              <button onClick={handleRequestSubmit} disabled={requestSubmitting || !requestCategory} style={{ width: '100%', padding: '12px 16px', borderRadius: 11, border: 'none', background: requestSubmitting || !requestCategory ? '#9CA3AF' : TEAL_GRADIENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: requestSubmitting || !requestCategory ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: requestSubmitting || !requestCategory ? 'none' : '0 6px 16px -6px rgba(15,44,89,.6)' }}>
-                {requestSubmitting ? (<><span style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /> Submitting...</>) : (<><Send size={16} /> Submit Quotation Request</>)}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

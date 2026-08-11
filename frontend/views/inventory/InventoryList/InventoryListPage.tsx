@@ -24,6 +24,7 @@ import { BulkEditModal } from './modals/BulkEditModal';
 import { AssignModal } from './modals/AssignModal';
 import { PrintLabelModal } from './modals/PrintLabelModal';
 import { ConfirmDialog, ConfirmDialogType } from '../../../components/ConfirmDialog';
+import { getFloatingMenuStyle } from '../../../utils/actionMenu';
 
 function money(n: number, symbol = '$'): string {
   n = Number(n) || 0;
@@ -111,7 +112,7 @@ export const InventoryListPage: React.FC = () => {
 
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [adjustingItem, setAdjustingItem] = useState<Item | null>(null);
-  const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+  const [openActionMenu, setOpenActionMenu] = useState<{ id: string; anchor?: DOMRect } | null>(null);
 
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [isAssignOpen, setIsAssignOpen] = useState(false);
@@ -294,8 +295,14 @@ const handleProduce = useCallback((item: Item) => {
     setActiveTab('dashboard');
   }, [setActiveTab]);
 
-  const toggleActionMenu = useCallback((id: string) => {
-    setOpenActionMenu(prev => prev === id ? null : id);
+  const toggleActionMenu = useCallback((id: string, e?: React.MouseEvent<HTMLButtonElement>) => {
+    // Capture the trigger button's rect so the menu can be rendered with fixed
+    // positioning (the .pp-panel overflow:hidden would otherwise clip/overlap it).
+    setOpenActionMenu(prev =>
+      prev && prev.id === id
+        ? null
+        : { id, anchor: e?.currentTarget.getBoundingClientRect() }
+    );
   }, []);
 
   const closeActionMenu = useCallback(() => {
@@ -597,15 +604,15 @@ const handleProduce = useCallback((item: Item) => {
                           </td>
                           <td className="actions" onClick={e => e.stopPropagation()}>
                             <div className="action-dropdown-container">
-                              <button className="action-menu-btn" onClick={() => toggleActionMenu(m.id)}>
+                              <button className="action-menu-btn" onClick={(e) => toggleActionMenu(m.id, e)}>
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                                   <circle cx="8" cy="3" r="1.5" fill="currentColor"/>
                                   <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
                                   <circle cx="8" cy="13" r="1.5" fill="currentColor"/>
                                 </svg>
                               </button>
-                              {openActionMenu === m.id && (
-                                <div className="action-dropdown-menu">
+                              {openActionMenu?.id === m.id && (
+                                <div className="action-dropdown-menu" style={getFloatingMenuStyle(openActionMenu?.anchor, { minWidth: 220, estimatedHeight: 380 })}>
                                   <button className="action-dropdown-item" onClick={() => { handleEditItem(m); closeActionMenu(); }}>
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                     Edit
@@ -728,7 +735,7 @@ const handleProduce = useCallback((item: Item) => {
                         const parentSp = p.sellingPrice || p.price || 0;
                         const parentMargin = parentCp > 0 ? ((parentSp - parentCp) / parentCp * 100).toFixed(1) : '0.0';
                         const parentLow = lowStock(p);
-                        const isMenuOpen = openActionMenu === p.id;
+                        const isMenuOpen = openActionMenu?.id === p.id;
                         const parentStockTotal = hasVariants ? variants.reduce((s: number, v: any) => s + num(v.stock), 0) : num(p.stock);
                         const variantLabel = hasVariants ? `${variants.length} variant${variants.length !== 1 ? 's' : ''}` : 'standard';
                         return (
@@ -760,7 +767,7 @@ const handleProduce = useCallback((item: Item) => {
                               </td>
                               <td className="actions" onClick={e => e.stopPropagation()}>
                                 <div className="action-dropdown-container">
-                                  <button className="action-menu-btn" onClick={() => toggleActionMenu(p.id)}>
+                                  <button className="action-menu-btn" onClick={(e) => toggleActionMenu(p.id, e)}>
                                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                                       <circle cx="8" cy="3" r="1.5" fill="currentColor"/>
                                       <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
@@ -768,7 +775,7 @@ const handleProduce = useCallback((item: Item) => {
                                     </svg>
                                   </button>
                                   {isMenuOpen && (
-                                    <div className="action-dropdown-menu">
+                                    <div className="action-dropdown-menu" style={getFloatingMenuStyle(openActionMenu?.anchor, { minWidth: 220, estimatedHeight: 380 })}>
                                       <button className="action-dropdown-item" onClick={() => { handleEditItem(p); closeActionMenu(); }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                         Edit
@@ -923,7 +930,7 @@ const handleProduce = useCallback((item: Item) => {
                         const parentSp = p.sellingPrice || p.price || 0;
                         const parentMargin = parentCp > 0 ? ((parentSp - parentCp) / parentCp * 100).toFixed(1) : '0.0';
                         const parentLow = lowStock(p);
-                        const isMenuOpen = openActionMenu === p.id;
+                        const isMenuOpen = openActionMenu?.id === p.id;
                         const parentStockTotal = hasVariants ? variants.reduce((s: number, v: any) => s + num(v.stock), 0) : num(p.stock);
                         const variantLabel = hasVariants ? `${variants.length} variants` : 'standard';
                         return (
@@ -955,7 +962,7 @@ const handleProduce = useCallback((item: Item) => {
                               </td>
                               <td className="actions" onClick={e => e.stopPropagation()}>
                                 <div className="action-dropdown-container">
-                                  <button className="action-menu-btn" onClick={() => toggleActionMenu(p.id)}>
+                                  <button className="action-menu-btn" onClick={(e) => toggleActionMenu(p.id, e)}>
                                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                                       <circle cx="8" cy="3" r="1.5" fill="currentColor"/>
                                       <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
@@ -963,7 +970,7 @@ const handleProduce = useCallback((item: Item) => {
                                     </svg>
                                   </button>
                                   {isMenuOpen && (
-                                    <div className="action-dropdown-menu">
+                                    <div className="action-dropdown-menu" style={getFloatingMenuStyle(openActionMenu?.anchor, { minWidth: 220, estimatedHeight: 380 })}>
                                       <button className="action-dropdown-item" onClick={() => { handleEditItem(p); closeActionMenu(); }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                         Edit
@@ -1129,15 +1136,15 @@ const handleProduce = useCallback((item: Item) => {
                             </td>
                             <td className="actions" onClick={e => e.stopPropagation()}>
                               <div className="action-dropdown-container">
-                                <button className="action-menu-btn" onClick={() => toggleActionMenu(s.id)}>
+                                <button className="action-menu-btn" onClick={(e) => toggleActionMenu(s.id, e)}>
                                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <circle cx="8" cy="3" r="1.5" fill="currentColor"/>
                                     <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
                                     <circle cx="8" cy="13" r="1.5" fill="currentColor"/>
                                   </svg>
                                 </button>
-                                {openActionMenu === s.id && (
-                                  <div className="action-dropdown-menu">
+                                {openActionMenu?.id === s.id && (
+                                  <div className="action-dropdown-menu" style={getFloatingMenuStyle(openActionMenu?.anchor, { minWidth: 220, estimatedHeight: 380 })}>
                                     <button className="action-dropdown-item" onClick={() => { handleEditItem(s); closeActionMenu(); }}>
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                       Edit

@@ -35,6 +35,14 @@ import { OfflineImage } from '../../../components/OfflineImage';
 import { currencyService } from '../../../services/currencyService';
 import { AIGeneratorCard } from '../../../components/AIGeneratorCard';
 
+export interface OrderFormSaveSuccessDoc {
+    type: string;
+    docNumber: string;
+    totalAmount: number;
+    customerName: string;
+    data?: any;
+}
+
 interface OrderFormProps {
     type: string;
     initialData?: any;
@@ -42,6 +50,11 @@ interface OrderFormProps {
     onCancel: () => void;
     onPreview?: () => void;
     saving?: boolean;
+    /** Fired right after a non-draft document has been created, so the parent
+     * can surface a "saved successfully" modal (POS-style). Required for the
+     * Order path because OrderForm finalises orders itself and then calls
+     * onCancel() directly. */
+    onSaveSuccess?: (doc: OrderFormSaveSuccessDoc) => void;
 }
 
 const RECURRING_STATUSES = ['Draft', 'Active', 'Paused', 'Cancelled', 'Expired'] as const;
@@ -113,7 +126,7 @@ const normalizeOtherCharges = (items: any[] = []): { items: any[]; otherChargesC
     return { items: normalized, otherChargesCalculated: roundToCurrency(totalAdj) };
 };
 
-export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave, onCancel, onPreview, saving }) => {
+export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave, onCancel, onPreview, saving, onSaveSuccess }) => {
     const { companyConfig, notify, user } = useAuth();
     const { invoices, recurringInvoices, accounts, ledger } = useFinance();
     const { quotations, customerPayments, customers, addCustomer } = useSales();
@@ -1096,7 +1109,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 reference: `Initial payment for Order #${formData.id}`
             }] : [] as OrderPayment[];
 
-            await createOrder({
+            const orderPayload = {
                 id: formData.id,
                 orderNumber: formData.id,
                 customerId: resolvedCustomerId,
@@ -1125,7 +1138,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 tax: totalTax,
                 taxRate: effectiveTaxRate,
                 otherCharges: otherCharges
-            });
+            };
+            await createOrder(orderPayload);
             const allAppliedDiscounts = processedItems.flatMap((i: any) => i.discountDetails || []);
             for (const d of allAppliedDiscounts) {
                 await incrementDiscountUsage(d.ruleId || d.id).catch(() => {});
@@ -1144,6 +1158,18 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                         console.error('[REFERRAL] register from order form (order path) failed:', err)
                     )
                 );
+            }
+
+            // Save & Finalise → close the form and let the parent celebrate with
+            // a POS-style success modal.
+            if (!asDraft) {
+                onSaveSuccess?.({
+                    type: 'Order',
+                    docNumber: orderPayload.orderNumber,
+                    totalAmount: finalTotalAmount,
+                    customerName: resolvedCustomerName,
+                    data: orderPayload,
+                });
             }
 
             onCancel();

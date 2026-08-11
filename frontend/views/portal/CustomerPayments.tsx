@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Receipt, Search, Download, ExternalLink } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { portalLifecycle, buildQueryString } from '../../services/portalApiClient';
-import { samplePayments } from './sampleData';
+
 import { usePortalData } from './hooks/usePortalData';
 import ErrorBanner from './components/ErrorBanner';
 import EmptyState from './components/EmptyState';
@@ -53,9 +53,9 @@ const CustomerPayments: React.FC = () => {
         setTotalPages(1);
         setTotal(data.length);
       } else {
-        setPayments(samplePayments as any);
+        setPayments([]);
         setTotalPages(1);
-        setTotal(samplePayments.length);
+        setTotal(0);
       }
     },
   });
@@ -303,37 +303,21 @@ const CustomerPayments: React.FC = () => {
                     <ExternalLink size={12} /> View
                   </button>
                   <button
-                    onClick={async (e) => {
+                    onClick={(e) => {
                       e.stopPropagation();
-                      setDownloadingId(p.id);
-                      try {
-                        const blob = await fetch(`/api/payments/${p.id}/receipt`).then(r => r.blob());
-                        const url = URL.createObjectURL(blob);
-                        const a = window.document.createElement('a');
-                        a.href = url;
-                        a.download = `Receipt-${p.reference || p.id}.pdf`;
-                        window.document.body.appendChild(a);
-                        a.click();
-                        window.document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                      } catch (err) {
-                        console.error('Failed to download receipt:', err);
-                      } finally {
-                        setDownloadingId(null);
-                      }
+                      navigate(`/portal/payments/${p.id}`);
                     }}
-                    disabled={downloadingId === p.id}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 6,
                       padding: '6px 10px', borderRadius: 8,
                       fontSize: 11, fontWeight: 600,
-                      border: 'none', cursor: downloadingId === p.id ? 'not-allowed' : 'pointer',
+                      border: 'none',
+                      cursor: 'pointer',
                       background: '#0F2C59', color: '#fff',
-                      opacity: downloadingId === p.id ? 0.6 : 1,
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {downloadingId === p.id ? <span style={{ width: 10, height: 10, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /> : <Download size={12} />}
+                    <Download size={12} />
                     PDF
                   </button>
                 </div>

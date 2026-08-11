@@ -8,7 +8,7 @@ import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import StatusBadge from './components/StatusBadge';
 import { F, MONO, NAVY, TEAL_GRADIENT, EMERALD } from './designTokens';
-import { sampleReferralSettings, sampleReferralFunnel, sampleReferrals, sampleReferralRewards } from './sampleData';
+
 
 type Tab = 'referrals' | 'rewards';
 type ReferralStatus = 'all' | 'active' | 'converted' | 'expired' | 'cancelled';
@@ -67,15 +67,15 @@ const CustomerReferrals: React.FC = () => {
   const loadSettings = async () => {
     try {
       const s = await portalLifecycle.referrals.settings();
-      setSettings(s || sampleReferralSettings);
-    } catch { setSettings(sampleReferralSettings); }
+      setSettings(s || null);
+    } catch { setSettings(null); }
   };
 
   const loadFunnel = async () => {
     try {
       const f = await portalLifecycle.referrals.stats();
-      setFunnel(f || sampleReferralFunnel);
-    } catch { setFunnel(sampleReferralFunnel); }
+      setFunnel(f || null);
+    } catch { setFunnel(null); }
   };
 
   const loadReferrals = async () => {
@@ -87,11 +87,11 @@ const CustomerReferrals: React.FC = () => {
         search: referralSearch || undefined,
         sort: 'date_desc',
       });
-      setReferrals(data.referrals.length > 0 ? data.referrals : sampleReferrals);
+      setReferrals(data.referrals.length > 0 ? data.referrals : []);
       setReferralTotalPages(data.totalPages || 1);
     } catch (err: any) {
       setError(err.message || 'Failed to load referrals');
-      setReferrals(sampleReferrals);
+      setReferrals([]);
     }
   };
 
@@ -102,11 +102,11 @@ const CustomerReferrals: React.FC = () => {
         pageSize,
         status: rewardStatus || undefined,
       });
-      setRewards(data.rewards.length > 0 ? data.rewards : sampleReferralRewards);
+      setRewards(data.rewards.length > 0 ? data.rewards : []);
       setRewardTotalPages(data.totalPages || 1);
     } catch (err: any) {
       setError(err.message || 'Failed to load rewards');
-      setRewards(sampleReferralRewards);
+      setRewards([]);
     }
   };
 

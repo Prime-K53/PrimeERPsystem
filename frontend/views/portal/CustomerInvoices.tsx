@@ -5,7 +5,7 @@ import {
   X, Loader2, Receipt, CheckCircle2, AlertTriangle, ShieldCheck,
 } from 'lucide-react';
 import { portalLifecycle } from '../../services/portalApiClient';
-import { sampleInvoices } from './sampleData';
+
 import { usePortalData } from './hooks/usePortalData';
 import PortalPageHeader from './components/PortalPageHeader';
 import ErrorBanner from './components/ErrorBanner';
@@ -125,7 +125,7 @@ const CustomerInvoices: React.FC = () => {
     onData: (data: any) => {
       if (Array.isArray(data) && data.length > 0) setInvoices(data);
       else if (data && Array.isArray(data.invoices) && data.invoices.length > 0) setInvoices(data.invoices);
-      else setInvoices(sampleInvoices as any);
+      else setInvoices([]);
     },
   });
 
@@ -437,7 +437,7 @@ const CustomerInvoices: React.FC = () => {
                         <Download size={15} />
                         <span>PDF</span>
                       </button>
-                      {kind !== 'paid' ? (
+                      {kind !== 'paid' && (
                         <button
                           onClick={() => { setPayTarget(inv); setPayError(null); setPaySuccess(false); }}
                           style={{
@@ -452,16 +452,6 @@ const CustomerInvoices: React.FC = () => {
                           onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
                         >
                           <CreditCard size={14} />Pay Now
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setRevertTarget(inv)}
-                          style={{
-                            padding: '8px 14px', borderRadius: 9, border: '1px solid #E2E8F0', background: '#fff',
-                            fontSize: 12, fontWeight: 600, color: '#64748B', cursor: 'pointer',
-                          }}
-                        >
-                          <RotateCcw size={13} style={{ marginRight: 4 }} /> Revert Payment
                         </button>
                       )}
                     </div>
@@ -656,29 +646,6 @@ const CustomerInvoices: React.FC = () => {
         </div>
       )}
 
-      {/* ── Revert confirm dialog ── */}
-      {revertTarget && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(2px)' }} onClick={() => !reverting && setRevertTarget(null)} />
-          <div style={{ position: 'relative', width: '100%', maxWidth: 380, background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.25)', fontFamily: F }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#FEF2F2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-              <AlertTriangle size={20} />
-            </div>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>Revert payment?</h3>
-            <p style={{ margin: '6px 0 16px', fontSize: 12.5, color: '#64748B', lineHeight: 1.5 }}>
-              The latest payment on <strong>{revertTarget.invoice_number}</strong> will be reversed and the invoice will return to an unpaid state.
-            </p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setRevertTarget(null)} disabled={reverting} style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid #E9EDF3', background: '#fff', fontSize: 12, fontWeight: 600, color: '#4A5568', cursor: 'pointer' }}>
-                Cancel
-              </button>
-              <button onClick={confirmRevert} disabled={reverting} style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: '#DC2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                {reverting ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <RotateCcw size={13} />} Revert Payment
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

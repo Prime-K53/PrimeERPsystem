@@ -8,10 +8,52 @@
 --
 -- Run AFTER: supabase-engagement-tables.sql / supabase-engagement-tables-run.sql
 --            supabase-add-version-columns.sql
+-- NOTE: The table may have been created by the sync gateway from the local
+-- SQLite schema (backend/db.cjs) which lacks company_id/code/usage fields, so
+-- every column this engine depends on is added defensively with IF NOT EXISTS.
 -- ============================================================================
+
+-- Company-scoping helper used by the RLS policies below. Same guarded
+-- definition as supabase-portal-ads.sql so this migration is self-contained;
+-- CREATE OR REPLACE keeps it safe to re-run alongside that file.
+CREATE OR REPLACE FUNCTION public.get_current_company_id()
+RETURNS TEXT
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_company TEXT;
+BEGIN
+  v_company := NULLIF(current_setting('app.company_id', TRUE), '')::TEXT;
+  IF v_company IS NOT NULL THEN
+    RETURN v_company;
+  END IF;
+  IF to_regprocedure('public.get_user_company_id()') IS NOT NULL THEN
+    RETURN public.get_user_company_id();
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_current_company_id() TO authenticated, anon, service_role;
 
 -- ─── 1. Extend engagement_promotions ───────────────────────────────────────
 ALTER TABLE IF EXISTS public.engagement_promotions
+  ADD COLUMN IF NOT EXISTS company_id TEXT,
+  ADD COLUMN IF NOT EXISTS code TEXT,
+  ADD COLUMN IF NOT EXISTS usage_limit INTEGER,
+  ADD COLUMN IF NOT EXISTS used_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS per_customer_limit INTEGER DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS min_order_amount NUMERIC(15,2),
+  ADD COLUMN IF NOT EXISTS max_discount_amount NUMERIC(15,2),
+  ADD COLUMN IF NOT EXISTS applicable_products TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS applicable_categories TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS applicable_tiers TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'BOTH',
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'draft',
   ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0,
@@ -50,7 +92,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_engagement_promotions_company_code
 DROP TABLE IF EXISTS public.promotion_redemptions CASCADE;
 CREATE TABLE public.promotion_redemptions (
     id TEXT PRIMARY KEY,
-    company_id TEXT REFERENCES public.company_config(id) ON DELETE CASCADE,
+    -- Plain TEXT (no FK): company_config is not created by any migration and may
+    -- be absent on databases bootstrapped by the sync gateway. RLS + the index
+    -- below enforce company scoping, matching the portal_ads pattern.
+    company_id TEXT,
     promotion_id TEXT NOT NULL REFERENCES public.engagement_promotions(id) ON DELETE CASCADE,
     customer_id TEXT REFERENCES public.customers(id) ON DELETE SET NULL,
     source_type TEXT NOT NULL,          -- 'request' | 'quotation' | 'sales_order' | 'invoice'

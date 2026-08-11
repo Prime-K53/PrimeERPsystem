@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Gift, Star, Wallet } from 'lucide-react';
 import { portalLifecycle } from '../../services/portalApiClient';
-import { sampleLoyalty } from './sampleData';
+
 import PortalPageHeader from './components/PortalPageHeader';
 import ErrorBanner from './components/ErrorBanner';
 import EmptyState from './components/EmptyState';
@@ -27,11 +27,12 @@ const CustomerLoyalty: React.FC = () => {
   const [data, setData] = useState<LoyaltyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   useEffect(() => {
     portalLifecycle.loyalty.get()
-      .then((result) => setData(result && result.points ? result : sampleLoyalty as any))
-      .catch(() => setData(sampleLoyalty as any))
+      .then((result) => { setData(result && result.points ? result : null); setRefreshError(null); })
+      .catch(() => { if (!data) setError('Failed to load loyalty data'); else setRefreshError('Unable to refresh — data may be stale'); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -43,8 +44,8 @@ const CustomerLoyalty: React.FC = () => {
         onEvent: (type, payload) => {
           if (type === 'entity_changed' && (payload?.docType === 'invoice' || payload?.event === 'payment_allocated') && !cancelled) {
             portalLifecycle.loyalty.get()
-              .then(setData)
-              .catch(() => {});
+              .then((result) => { setData(result && result.points ? result : data); setRefreshError(null); })
+              .catch(() => { if (!cancelled) setRefreshError('Unable to refresh — data may be stale'); });
           }
         },
       });
@@ -62,6 +63,7 @@ const CustomerLoyalty: React.FC = () => {
     <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
       <div style={{ padding: '20px 28px 8px' }}>
         {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+        {refreshError && <ErrorBanner message={refreshError} onDismiss={() => setRefreshError(null)} />}
 
         {data && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 18 }}>

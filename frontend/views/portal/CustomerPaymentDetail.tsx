@@ -46,6 +46,7 @@ const CustomerPaymentDetail: React.FC = () => {
   const [payment, setPayment] = useState<PaymentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const { companyConfig } = useAuth();
 
@@ -66,8 +67,8 @@ const CustomerPaymentDetail: React.FC = () => {
         onEvent: (type, payload) => {
           if (type === 'entity_changed' && payload?.event === 'payment_allocated' && !cancelled) {
             portalApi.get<PaymentDetail>(`/payments/${id}`)
-              .then(setPayment)
-              .catch(() => {})
+              .then((data) => { setPayment(data); setRefreshError(null); })
+              .catch(() => { setRefreshError('Update failed — data may be stale'); })
               .finally(() => setLoading(false));
           }
         },
@@ -156,6 +157,7 @@ const CustomerPaymentDetail: React.FC = () => {
 
    return (
       <div style={root}>
+        {refreshError && <div style={{ marginBottom: 12 }}><ErrorBanner message={refreshError} onDismiss={() => { setRefreshError(null); portalApi.get<PaymentDetail>(`/payments/${id}`).then(setPayment).catch(() => setRefreshError('Retry failed — data may be stale')); }} /></div>}
         <button onClick={() => navigate('/portal/payments')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 500, color: '#059669', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 24, padding: 0, fontFamily: F }}>
           <ArrowLeft size={14} /> Back to Receipt
         </button>

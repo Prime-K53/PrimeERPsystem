@@ -1871,32 +1871,27 @@ async function startServer() {
       await validateFyDate('invoice_date', req.body);
       const { body } = req;
       const id = body.id || randomUUID();
-      const result = await cloudSyncStore.applyOp({
-        operationId: `inv-${id}-${Date.now()}`,
-        table: 'invoices',
-        recordId: id,
-        operation: 'upsert',
-        payload: {
-          id,
-          customer_id: body.customer_id || null,
-          customer_name: body.customer_name || null,
-          subtotal: body.subtotal || 0,
-          total_amount: body.total_amount || 0,
-          currency: body.currency || 'MWK',
-          status: body.status || 'unpaid',
-          payment_method: body.payment_method || null,
-          due_date: body.due_date || null,
-          invoice_number: body.invoice_number || null,
-          other_charges: body.other_charges || 0,
-          line_items: body.line_items || [],
-          notes: body.notes || null,
-          document_title: body.document_title || null,
-          created_by: req.user?.id || null,
-        },
-      });
-      if (result && result.id) {
+      const payload = {
+        id,
+        customer_id: body.customer_id || null,
+        customer_name: body.customer_name || null,
+        subtotal: body.subtotal || 0,
+        total_amount: body.total_amount || 0,
+        currency: body.currency || 'MWK',
+        status: body.status || 'unpaid',
+        payment_method: body.payment_method || null,
+        due_date: body.due_date || null,
+        invoice_number: body.invoice_number || null,
+        other_charges: body.other_charges || 0,
+        line_items: body.line_items || [],
+        notes: body.notes || null,
+        document_title: body.document_title || null,
+        created_by: req.user?.id || null,
+      };
+      const result = await repo.upsert('invoices', payload);
+      if (result) {
         portalLifecycleService.emitEntityChange('portal', { customerId: body.customer_id, docType: 'invoice', docId: id, status: body.status || 'unpaid', invoiceNumber: body.invoice_number });
-        return res.status(201).json({ id: result.id, ...body });
+        return res.status(201).json({ id: result.id || id, ...body });
       }
       res.status(500).json({ error: 'Failed to create invoice' });
     } catch (err) {
@@ -1920,12 +1915,20 @@ async function startServer() {
       }
       if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
       params.push(id);
-      sq.run(`UPDATE invoices SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, params, function (err, result) {
+      sq.run(`UPDATE invoices SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, params, async function (err, result) {
          if (err) { console.error('[Invoices] PUT error:', err); return res.status(500).json({ error: 'Failed to update invoice' }); }
          if (!result || result.changes === 0) return res.status(404).json({ error: 'Invoice not found' });
          const updatedFields = {};
          for (let i = 0; i < allowed.length; i++) {
            if (body[allowed[i]] !== undefined) updatedFields[allowed[i]] = body[allowed[i]];
+         }
+         try {
+           const existing = await repo.getById('invoices', id);
+           if (existing) {
+             await repo.upsert('invoices', { ...existing, ...updatedFields });
+           }
+         } catch (syncErr) {
+           console.warn('[Invoices] PUT Supabase sync failed:', syncErr?.message);
          }
          portalLifecycleService.emitEntityChange('portal', { customerId: body.customer_id, docType: 'invoice', docId: id, status: body.status, invoiceNumber: body.invoice_number, updatedFields });
          portalLifecycleService.emitEntityChange('admin', { customerId: body.customer_id, docType: 'invoice', docId: id, status: body.status, invoiceNumber: body.invoice_number, updatedFields });

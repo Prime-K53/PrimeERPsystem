@@ -5,6 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { verifyPortalToken } = require('../middleware/portalAuth.cjs');
+const repo = require('../services/supabaseRepository.cjs');
 const portalService = require('../services/portalService.cjs');
 const portalAuthService = require('../services/portalAuthService.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
@@ -106,6 +107,18 @@ router.get('/promotions', async (req, res) => {
   } catch (err) {
     console.error('[Portal] Promotions error:', err);
     res.status(500).json({ error: 'Failed to load promotions' });
+  }
+});
+
+// ─── Banner Ads (display-only: active portal banner ads) ────────────────────
+router.get('/ads', async (req, res) => {
+  try {
+    const { customer_id } = req.portalUser;
+    const data = await portalLifecycleService.getActivePortalAds(customer_id);
+    res.json(data);
+  } catch (err) {
+    console.error('[Portal] Ads error:', err);
+    res.status(500).json({ error: 'Failed to load ads' });
   }
 });
 
@@ -545,16 +558,11 @@ router.get('/invoices/:id', async (req, res) => {
 });
 
 // Revert the latest payment on an invoice back to unpaid (testing / corrections).
+// DISABLED: This endpoint bypasses ERP accounting rules and was intended for testing only.
+// A normal portal customer must not be able to arbitrarily revert an ERP invoice.
+// To revert a payment, use the ERP admin interface.
 router.post('/invoices/:id/revert', async (req, res) => {
-  try {
-    const { id, customer_id } = req.portalUser;
-    const result = await portalService.revertInvoicePayment(req.params.id, customer_id, { portalUserId: id });
-    if (!result) return res.status(404).json({ error: 'Invoice not found' });
-    res.json(result);
-  } catch (err) {
-    console.error('[Portal] Revert payment error:', err);
-    res.status(400).json({ error: err.message || 'Failed to revert payment' });
-  }
+  res.status(403).json({ error: 'This feature is not available in the portal. Please contact your administrator to revert a payment.' });
 });
 
 // ─── Payments ─────────────────────────────────────────────────

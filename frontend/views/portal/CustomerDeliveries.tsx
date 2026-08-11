@@ -1,15 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Truck, Clock, User, Navigation,
-  Search, X, CheckCircle2,
-  AlertCircle, Loader2, Bell, Package, Phone, MapPin
+  Search, AlertCircle, Loader2, MapPin
 } from 'lucide-react';
 import { portalLifecycle, PortalShipmentRecord } from '../../services/portalApiClient';
-import { sampleDeliveries } from './sampleData';
+
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
+import { DeliveryTrackingModal } from './components/DeliveryTrackingModal';
 import { F } from './portalStyles';
 
 // ── Status Badge Styles ─────────────────────────────────────────────────
@@ -47,262 +46,6 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
-// ── Live Tracking Modal ─────────────────────────────────────────────────
-interface TrackingDialogProps {
-  shipment: PortalShipmentRecord;
-  onClose: () => void;
-}
-
-const TrackingDialog: React.FC<TrackingDialogProps> = ({ shipment, onClose }) => {
-  const orderNumber = shipment.order_number || shipment.id.slice(0, 8);
-  const trackingNumber = shipment.tracking_number || '—';
-  const driverName = shipment.driver_name || '—';
-  const driverPhone = shipment.driver_phone || '—';
-  const vehicleNo = shipment.vehicle_no || '—';
-  const estimatedArrival = shipment.estimated_delivery
-    ? new Date(shipment.estimated_delivery).toLocaleString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : '—';
-
-  const displayOrderNumber = orderNumber.replace(/^ORD-/i, '');
-  const displayTrackingNumber = trackingNumber.replace(/^TRK-/i, '');
-
-  const currentStage = (() => {
-    const s = shipment.status.toLowerCase();
-    if (s === 'delivered' || s === 'fulfilled') return 4;
-    if (s === 'out_for_delivery') return 3;
-    if (s === 'shipped' || s === 'in_transit' || s === 'dispatched') return 2;
-    return 1;
-  })();
-
-  const stageDefinitions = [
-    { label: 'Order Placed', icon: Package },
-    { label: 'Warehouse Dispatched', icon: Truck },
-    { label: 'Out for Delivery', icon: Navigation },
-    { label: 'Delivered', icon: CheckCircle2 },
-  ];
-
-  const StatusIcon = currentStage === 4 ? CheckCircle2 : Truck;
-
-  return createPortal(
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(15,23,42,0.6)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: 20,
-        fontFamily: F,
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{
-        background: '#fff',
-        borderRadius: 20,
-        border: '1px solid #E2E8F0',
-        boxShadow: '0 25px 50px -12px rgba(15,23,42,0.25)',
-        width: '100%',
-        maxWidth: 400,
-        maxHeight: '90vh',
-        overflowY: 'auto',
-      }} role="dialog" aria-modal="true">
-        <div style={{
-          padding: '14px 18px',
-          borderBottom: '1px solid #F1F5F9',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#0F2C59' }}>
-              Order ORD-{displayOrderNumber}
-            </div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#64748B', marginTop: 2 }}>
-              Tracking: TRK-{displayTrackingNumber}
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              border: '1px solid #E2E8F0',
-              background: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              color: '#64748B',
-              transition: 'all 0.15s ease',
-              flexShrink: 0,
-            }}
-            aria-label="Close dialog"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div style={{ padding: '14px 24px 0', display: 'flex', justifyContent: 'center' }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            background: '#059669',
-            padding: '6px 12px',
-            borderRadius: 8,
-          }}>
-            <CheckCircle2 size={16} style={{ color: '#fff' }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Status: DELIVERED</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>ETA: {estimatedArrival}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Driver & Vehicle */}
-        <div style={{ padding: '16px 24px 0' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                background: '#F1F5F9',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                <User size={16} style={{ color: '#475569' }} />
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>Driver: {driverName}</div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                background: '#F1F5F9',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                <Phone size={16} style={{ color: '#475569' }} />
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>Contact: {driverPhone}</div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                background: '#F1F5F9',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                <Truck size={16} style={{ color: '#475569' }} />
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', fontFamily: "'JetBrains Mono', monospace" }}>Vehicle: {vehicleNo}</div>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ padding: '20px 24px 24px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
-            Delivery Timeline
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {stageDefinitions.map((stage, idx) => {
-              const isCompleted = idx < currentStage;
-              return (
-                <div key={stage.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: isCompleted ? '#059669' : '#E2E8F0',
-                    flexShrink: 0,
-                  }}>
-                    {isCompleted ? (
-                      <CheckCircle2 size={16} style={{ color: '#fff' }} />
-                    ) : (
-                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#94A3B8' }} />
-                    )}
-                  </div>
-                  <div style={{
-                    fontSize: 13,
-                    fontWeight: isCompleted ? 700 : 600,
-                    color: isCompleted ? '#0F2C59' : '#94A3B8',
-                  }}>
-                    {stage.label}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div style={{ padding: '14px 20px 20px' }}>
-          <button
-            onClick={onClose}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              borderRadius: 11,
-              border: 'none',
-              background: 'linear-gradient(135deg, #0F2C59 0%, #0A1F42 100%)',
-              color: '#fff',
-              fontSize: 13.5,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 7,
-              boxShadow: '0 6px 16px -6px rgba(15,44,89,.6)',
-              fontFamily: F,
-            }}
-          >
-            Close Tracker
-          </button>
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes delSlideUp {
-          from { transform: translateY(100%); opacity: 0 }
-          to { transform: translateY(0); opacity: 1 }
-        }
-        @keyframes delFadeIn {
-          from { opacity: 0 }
-          to { opacity: 1 }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-      `}</style>
-    </div>,
-    document.body
-  );
-};
-
 // ── Main Component ──────────────────────────────────────────────────────
 const CustomerDeliveries: React.FC = () => {
   const { user } = useCustomerAuth();
@@ -326,7 +69,7 @@ const CustomerDeliveries: React.FC = () => {
           (s.customerName || '').toLowerCase().includes(q)
         );
       }
-      setShipments(filtered.length > 0 ? filtered : sampleDeliveries as any);
+      setShipments(filtered.length > 0 ? filtered : []);
     } catch (err: any) {
       setError(err.message || 'Failed to load deliveries');
     } finally {
@@ -491,7 +234,7 @@ const CustomerDeliveries: React.FC = () => {
               const trackingNumber = shipment.tracking_number || '—';
               const driverName = shipment.driver_name || '—';
               const vehicleNo = shipment.vehicle_no || '—';
-              const destination = shipment.shipping_address || shipment.customerName || '—';
+              const destination = shipment.shipping_address || '—';
 
               const displayOrderNumber = orderNumber.replace(/^ORD-/i, '');
               const displayTrackingNumber = trackingNumber.replace(/^TRK-/i, '');
@@ -594,8 +337,20 @@ const CustomerDeliveries: React.FC = () => {
 
       {/* Live Tracking Modal */}
       {selectedShipment && (
-        <TrackingDialog
-          shipment={selectedShipment}
+        <DeliveryTrackingModal
+          delivery={{
+            id: selectedShipment.id,
+            orderId: (selectedShipment.order_number || selectedShipment.id.slice(0, 8)).replace(/^ORD-/i, ''),
+            trackingNumber: (selectedShipment.tracking_number || '—').replace(/^TRK-/i, ''),
+            status: selectedShipment.status || 'processing',
+            estimatedArrival: selectedShipment.estimated_delivery,
+            driverName: selectedShipment.driver_name,
+            driverPhone: selectedShipment.driver_phone,
+            vehicleNumber: selectedShipment.vehicle_no,
+            carrier: selectedShipment.carrier,
+            shippingAddress: selectedShipment.shipping_address,
+          }}
+          isOpen
           onClose={() => setSelectedShipment(null)}
         />
       )}

@@ -274,7 +274,7 @@ export const SalesOrderList: React.FC<ListProps<JobOrder>> = (props) => {
                 </div>
             ) : (
                 <div className="bg-[#FEFDFB] border border-[#e4ddd1] rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col">
-                    <div className="flex-1 overflow-auto custom-scrollbar">
+                    <div className="flex-1 overflow-auto custom-scrollbar sales-list-scroll">
                         <table className="w-full text-left text-[11px] md:text-[13px] table-auto md:table-fixed">
                             <thead className="bg-[#eef7f6] text-[#5c6567] sticky top-0 z-10 shadow-sm">
                                 <tr>
@@ -467,7 +467,7 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                             </div>
                         </div>
                     )}
-                    <div className="flex-1 overflow-auto custom-scrollbar">
+                    <div className="flex-1 overflow-auto custom-scrollbar sales-list-scroll">
                         <table className="w-full text-left text-[11px] md:text-[13px] table-auto md:table-fixed">
                             <thead className="bg-slate-50/80 backdrop-blur text-slate-500 sticky top-0 z-10 shadow-sm">
                                 <tr>
@@ -772,7 +772,7 @@ export const SalesExchangeList: React.FC<ListProps<SalesExchange>> = (props) => 
             {hoveredId && hoverPos && hoveredExchange && <HoverActionMenu id={hoveredId.toString()} type="SalesExchange" pos={hoverPos} data={hoveredExchange} onAction={props.onAction} />}
 
             <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-sm border border-white/60 overflow-hidden flex-1 flex flex-col">
-                <div className="flex-1 overflow-auto custom-scrollbar">
+                <div className="flex-1 overflow-auto custom-scrollbar sales-list-scroll">
                     <table className="w-full text-left text-[11px] md:text-[13px] table-auto md:table-fixed">
                         <thead className="bg-slate-50/80 backdrop-blur text-slate-500 sticky top-0 z-10 shadow-sm">
                             <tr>
@@ -1111,7 +1111,7 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
                             </div>
                         </div>
                     )}
-                    <div className="flex-1 overflow-auto custom-scrollbar">
+                    <div className="flex-1 overflow-auto custom-scrollbar sales-list-scroll">
                         <table className="w-full text-left text-[11px] md:text-[13px] table-auto md:table-fixed">
                             <thead className="bg-slate-50/80 backdrop-blur text-slate-500 sticky top-0 z-10 shadow-sm">
                                 <tr>
@@ -1372,7 +1372,7 @@ export const QuotationList: React.FC<ListProps<Quotation>> = (props) => {
                             </div>
                         </div>
                     )}
-                    <div className="flex-1 overflow-auto custom-scrollbar">
+                    <div className="flex-1 overflow-auto custom-scrollbar sales-list-scroll">
                         <table className="w-full text-left text-[11px] md:text-[13px] table-auto md:table-fixed">
                             <thead className="bg-slate-50/80 backdrop-blur text-slate-500 sticky top-0 z-10 shadow-sm">
                                 <tr>

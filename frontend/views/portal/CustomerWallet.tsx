@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Wallet, Search, TrendingUp, TrendingDown } from 'lucide-react';
 import { portalLifecycle } from '../../services/portalApiClient';
-import { sampleWallet } from './sampleData';
+
 import ErrorBanner from './components/ErrorBanner';
 import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
@@ -26,13 +26,14 @@ const CustomerWallet: React.FC = () => {
   const [data, setData] = useState<WalletData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<WalletTab>('all');
 
   useEffect(() => {
     portalLifecycle.wallet.get()
-      .then((result) => setData(result && result.balance ? result : sampleWallet as any))
-      .catch(() => setData(sampleWallet as any))
+      .then((result) => { setData(result && result.balance != null ? result : null); setRefreshError(null); })
+      .catch(() => { if (!data) setError('Failed to load wallet data'); else setRefreshError('Unable to refresh — data may be stale'); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -44,8 +45,8 @@ const CustomerWallet: React.FC = () => {
         onEvent: (type, payload) => {
           if (type === 'entity_changed' && (payload?.docType === 'invoice' || payload?.docType === 'wallet' || payload?.docType === 'payment' || payload?.event === 'payment_allocated') && !cancelled) {
             portalLifecycle.wallet.get()
-              .then(setData)
-              .catch(() => {});
+              .then((result) => { setData(result && result.balance != null ? result : data); setRefreshError(null); })
+              .catch(() => { if (!cancelled) setRefreshError('Unable to refresh — data may be stale'); });
           }
         },
       });
@@ -91,6 +92,7 @@ const CustomerWallet: React.FC = () => {
   return (
     <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+      {refreshError && <div style={{ padding: '0 28px' }}><ErrorBanner message={refreshError} onDismiss={() => setRefreshError(null)} /></div>}
 
       {/* Header */}
       <div style={{ padding: '0 0 16px' }}>

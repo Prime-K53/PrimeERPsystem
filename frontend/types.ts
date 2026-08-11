@@ -2367,3 +2367,38 @@ export interface TaxRate {
   active: boolean;
   accountId?: string;
 }
+
+export type DeliveryStatus =
+  | 'order_placed'
+  | 'warehouse_dispatched'
+  | 'out_for_delivery'
+  | 'in_transit'
+  | 'dispatched'
+  | 'delivered'
+  | 'fulfilled'
+  | 'processing'
+  | string;
+
+export interface DeliveryNotification {
+  id: string;
+  orderId: string;
+  trackingNumber: string;
+  status: DeliveryStatus;
+  estimatedArrival?: string | null;
+  driverName?: string | null;
+  driverPhone?: string | null;
+  vehicleNumber?: string | null;
+  carrier?: string | null;
+  shippingAddress?: string | null;
+  currentLocation?: string | null;
+  proofOfDelivery?: string | null;
+  customerName?: string;
+}
+
+export interface QuoteRequestItem {
+  id: string;
+  name: string;
+  quantity: number;
+  targetPrice?: number;
+  notes?: string;
+}

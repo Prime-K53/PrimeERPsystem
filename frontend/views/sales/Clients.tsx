@@ -21,6 +21,7 @@ import { exportToCSV } from '../../utils/helpers';
 import { currencyService } from '../../services/currencyService';
 import { CustomerSearch } from '../../components/CustomerSearch';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
+import { getFloatingMenuStyle } from '../../utils/actionMenu';
 
 const teal = {
   50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7',
@@ -147,6 +148,7 @@ export const Clients: React.FC = () => {
   const [selectedMetric, setSelectedMetric] = useState<'All' | 'Overdue' | 'Open' | 'Paid'>('All');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
 
   const [confirmState, setConfirmState] = useState<{ open: boolean; title: string; message: string; confirmText?: string; type?: ConfirmDialogType; onConfirm?: () => void }>({ open: false, title: '', message: '' });
 
@@ -336,6 +338,9 @@ export const Clients: React.FC = () => {
 
   const handleRowMenuClick = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    // Anchor the dropdown to the trigger button via fixed positioning so it is
+    // never clipped/overlapped by the scrollable table wrapper.
+    setMenuAnchor((e.currentTarget as HTMLElement).getBoundingClientRect());
     setActiveMenuId(prev => (prev === id ? null : id));
   };
 
@@ -608,7 +613,7 @@ export const Clients: React.FC = () => {
         </div>
 
         {/* Table */}
-        <div className="clients-table-wrap" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 340px)' }}>
+        <div className="clients-table-wrap sales-list-scroll" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 340px)' }}>
           <style>{`
             .clients-table { border-collapse: separate; border-spacing: 0; }
             .clients-table tbody tr { transition: background .12s ease; }
@@ -735,7 +740,7 @@ export const Clients: React.FC = () => {
                               <MoreVertical size={15} />
                             </button>
                             {activeMenuId === customer.id && (
-                              <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 224, borderRadius: 12, boxShadow: '0 16px 36px -12px rgba(0,0,0,.28)', padding: '8px 10px', zIndex: 40, background: paper, border: `1.4px solid ${hairline}`, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <div onClick={(e) => e.stopPropagation()} style={{ ...getFloatingMenuStyle(menuAnchor, { minWidth: 224, estimatedHeight: 300 }), borderRadius: 12, boxShadow: '0 16px 36px -12px rgba(0,0,0,.28)', padding: '8px 10px', background: paper, border: `1.4px solid ${hairline}`, display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <button onClick={() => { setActiveMenuId(null); setSelectedWorkspaceCustomer(customer); }} style={menuItemStyle}><Eye size={14} style={{ color: inkSoft }} /> View Profile</button>
                                 <button onClick={() => { setActiveMenuId(null); handleEdit(customer); }} style={menuItemStyle}><Edit size={14} style={{ color: inkSoft }} /> Edit Customer</button>
                                 <button onClick={() => { setActiveMenuId(null); navigate('/sales-flow/invoices', { state: { action: 'create', customer: customer.name } }); }} style={menuItemStyle}><Send size={14} style={{ color: teal[600] }} /> Add Transaction</button>

@@ -41,7 +41,7 @@ const verifyPortalToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role && decoded.role !== 'portal_customer') {
+    if (!decoded.role || decoded.role !== 'portal_customer') {
       return res.status(403).json({
         error: 'Invalid token role',
         message: 'This token is not valid for portal access'
@@ -50,7 +50,7 @@ const verifyPortalToken = (req, res, next) => {
     req.portalUser = {
       customer_id: decoded.customer_id,
       email: decoded.email,
-      role: decoded.role || 'portal_customer',
+      role: decoded.role,
       id: decoded.id,
     };
     next();

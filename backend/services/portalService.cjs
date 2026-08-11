@@ -25,67 +25,6 @@ function withCloudTimeout(promise, ms = 5000, label = 'Cloud') {
   ]).finally(() => clearTimeout(timer));
 }
 
-async function getOne(query, params = []) {
-  const trimmed = String(query || '').trim();
-  const countMatch = trimmed.match(/SELECT\s+COUNT\s*\(\*\)\s+as\s+(\w+)\s+FROM\s+(\w+)/i);
-  if (countMatch) {
-    const table = countMatch[2];
-    const rows = await repo.getAll(table);
-    return { [countMatch[1]]: rows.length };
-  }
-  const byIdMatch = trimmed.match(/FROM\s+(\w+)\s+WHERE\s+.*\bid\s*=\s*\?/i);
-  if (byIdMatch && params.length > 0) {
-    return repo.getById(byIdMatch[1], String(params[0]));
-  }
-  const byFieldMatch = trimmed.match(/FROM\s+(\w+)\s+WHERE\s+(\w+)\s*=\s*\?/i);
-  if (byFieldMatch && params.length > 0) {
-    const rows = await repo.getAll(byFieldMatch[1], { [`data->>${byFieldMatch[2]}`]: `eq.${params[0]}` });
-    return rows[0] || null;
-  }
-  const fromMatch = trimmed.match(/FROM\s+(\w+)/i);
-  if (fromMatch) {
-    const rows = await repo.getAll(fromMatch[1]);
-    return rows[0] || null;
-  }
-  return null;
-}
-
-async function getAll(query, params = []) {
-  const trimmed = String(query || '').trim();
-  const byFieldMatch = trimmed.match(/FROM\s+(\w+)\s+WHERE\s+(\w+)\s*=\s*\?/i);
-  if (byFieldMatch && params.length > 0) {
-    return repo.getAll(byFieldMatch[1], { [`data->>${byFieldMatch[2]}`]: `eq.${params[0]}` });
-  }
-  const fromMatch = trimmed.match(/FROM\s+(\w+)/i);
-  if (fromMatch) {
-    return repo.getAll(fromMatch[1]);
-  }
-  return [];
-}
-
-async function runQuery(query, params = []) {
-  const trimmed = String(query || '').trim();
-  const deleteMatch = trimmed.match(/DELETE\s+FROM\s+(\w+)\s+WHERE\s+id\s*=\s*\?/i);
-  if (deleteMatch) {
-    await repo.softDelete(deleteMatch[1], String(params[0]));
-    return { changes: 1 };
-  }
-  const updateMatch = trimmed.match(/UPDATE\s+(\w+)\s+SET/i);
-  if (updateMatch) {
-    const id = String(params[params.length - 1]);
-    const row = await repo.getById(updateMatch[1], id);
-    if (row) await repo.upsert(updateMatch[1], { ...row, ...(params[0] || {}) });
-    return { changes: 1 };
-  }
-  const insertMatch = trimmed.match(/INSERT\s+INTO\s+(\w+)/i);
-  if (insertMatch) {
-    const id = String(params[0] || `gen_${Date.now()}`);
-    await repo.upsert(insertMatch[1], { id });
-    return { id, changes: 1 };
-  }
-  return { changes: 0 };
-}
-
 function genId(prefix = 'prt') {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
 }
@@ -134,9 +73,11 @@ const portalService = {
       !/delivered|cancelled/i.test(String(s.order_status || ''))
     ).length;
 
-    const recentDocs = await this.getRecentDocuments(customerId, 5);
-    const recentTransactions = await this.getRecentTransactions(customerId, 5);
-    const pendingDeliveries = await this.getTodayPendingDeliveries(customerId);
+    const [recentDocs, recentTransactions, pendingDeliveries] = await Promise.all([
+      this.getRecentDocuments(customerId, 5),
+      this.getRecentTransactions(customerId, 5),
+      this.getTodayPendingDeliveries(customerId),
+    ]);
 
     const health = this.computeHealthScore({
       customer,
@@ -259,8 +200,29 @@ const portalService = {
   },
 
   async getCatalog(includeDeleted = false) {
-    const cloud = await getAllFrom('inventory');
-    let catalogItems = cloud;
+    // The ERP frontend syncs its local `inventory` store to the cloud
+    // `products` table (CLOUD_TABLE_MAP.inventory = 'products' in
+    // frontend/services/db.ts + cloudDb.ts). The cloud `inventory` table is
+    // never written by the sync gateway, so reading it yields an empty
+    // catalog — the portal must read `products` to show the real ERP items
+    // (products, stationery, raw materials, services).
+    let catalogItems = await getAllFrom('products');
+
+    // Defensive fallback: the cached store reader is a battle-tested second
+    // source (used by cloudAvailable()/health probes) that applies the same
+    // deleted/internal filtering and price mapping.
+    if (!Array.isArray(catalogItems) || catalogItems.length === 0) {
+      try {
+        const storeItems = await supabaseStore.listCatalogItems();
+        if (Array.isArray(storeItems) && storeItems.length > 0) {
+          catalogItems = storeItems;
+        }
+      } catch (err) {
+        console.warn('[PortalService] Catalog fallback (products store) failed:', err?.message || err);
+      }
+    }
+
+    if (!Array.isArray(catalogItems)) catalogItems = [];
     if (!includeDeleted) {
       catalogItems = catalogItems.filter((i) => String(i.status || '').toLowerCase() !== 'deleted');
     }
@@ -270,6 +232,8 @@ const portalService = {
       name: item.name,
       sku: item.sku,
       unit: item.unit || '',
+      type: item.type || item.inventoryRole || null,
+      description: item.description || null,
       price: Number(item.sellingPrice ?? item.selling_price ?? item.price ?? 0),
       quantity: Number(item.stock ?? item.quantity ?? 0),
       category: item.category || item.type || 'General',
@@ -393,36 +357,26 @@ const portalService = {
 
   async getRequestsPaginated(customerId, { page = 1, pageSize = 20, status, search } = {}) {
     const offset = (page - 1) * pageSize;
-    const conditions = ['q.customer_id = ?'];
-    const params = [customerId];
+    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    if (status) filters['data->>status'] = `eq.${status}`;
 
-    if (status) {
-      conditions.push('LOWER(q.status) = ?');
-      params.push(String(status).toLowerCase());
-    }
+    const allRows = await getAllFrom('quotation_requests', filters);
+    let filtered = Array.isArray(allRows) ? allRows : [];
     if (search) {
-      conditions.push('(q.request_number LIKE ? OR q.customer_name LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      const q = String(search).toLowerCase();
+      filtered = filtered.filter((r) =>
+        String(r.request_number || '').toLowerCase().includes(q) ||
+        String(r.customer_name || '').toLowerCase().includes(q)
+      );
     }
-
-    const whereClause = conditions.join(' AND ');
-    const countRow = await getOne(`SELECT COUNT(*) as total FROM quotation_requests q WHERE ${whereClause}`, params);
-    const total = countRow?.total || 0;
-
-    const rows = await getAll(
-      `SELECT q.*, c.name AS resolved_customer_name
-       FROM quotation_requests q
-       LEFT JOIN customers c ON c.id = q.customer_id
-       WHERE ${whereClause}
-       ORDER BY q.created_at DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
+    filtered.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    const total = filtered.length;
+    const rows = filtered.slice(offset, offset + pageSize);
 
     return {
       requests: rows.map((r) => ({
         ...r,
         status: r.quotation_id ? (r.status === 'quotation_ready' ? 'converted' : r.status) : r.status,
-        customer_name: r.resolved_customer_name || r.customer_name,
         items: parseJson(r.items, []),
         attachments: parseJson(r.attachments, []),
         promotion: parseJson(r.promotion, null),
@@ -447,55 +401,32 @@ const portalService = {
 
   async getOrdersPaginated(customerId, { page = 1, pageSize = 20, status, search, dateFrom, dateTo } = {}) {
     const offset = (page - 1) * pageSize;
-    const conditions = ['so.customer_id = ?'];
-    const params = [customerId];
+    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    if (status) filters['data->>status'] = `eq.${status}`;
 
-    if (status) {
-      conditions.push('LOWER(so.status) = ?');
-      params.push(String(status).toLowerCase());
-    }
+    const allRows = await getAllFrom('sales_orders', filters);
+    let filtered = Array.isArray(allRows) ? allRows : [];
     if (search) {
-      conditions.push('(so.order_number LIKE ? OR c.name LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      const q = String(search).toLowerCase();
+      filtered = filtered.filter((o) =>
+        String(o.order_number || '').toLowerCase().includes(q) ||
+        String(o.customerName || o.customer_name || '').toLowerCase().includes(q)
+      );
     }
-    if (dateFrom) {
-      conditions.push('so.orderDate >= ?');
-      params.push(dateFrom);
-    }
-    if (dateTo) {
-      conditions.push('so.orderDate <= ?');
-      params.push(dateTo);
-    }
-
-    const whereClause = conditions.join(' AND ');
-    const countRow = await getOne(`SELECT COUNT(*) as total FROM sales_orders so LEFT JOIN customers c ON so.customer_id = c.id WHERE ${whereClause}`, params);
-    const total = countRow?.total || 0;
-
-    const rows = await getAll(
-      `SELECT so.id, so.order_number, so.orderDate, c.name as customerName, so.total as totalAmount, so.status,
-              so.source_request_id, so.source_request_number, so.reorder_of, so.reorder_of_number,
-              so.deliveryDate, so.approved_at, so.items as items_json,
-              so.tracking_number, so.carrier, so.driver_name, so.vehicle_no,
-              so.estimated_delivery, so.actual_arrival, so.current_location, so.proof_of_delivery, so.shipping_address
-       FROM sales_orders so
-       LEFT JOIN customers c ON so.customer_id = c.id
-       WHERE ${whereClause}
-       ORDER BY so.orderDate DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
+    if (dateFrom) filtered = filtered.filter((o) => String(o.orderDate || o.created_at || '') >= dateFrom);
+    if (dateTo) filtered = filtered.filter((o) => String(o.orderDate || o.created_at || '') <= dateTo);
+    filtered.sort((a, b) => String(b.orderDate || b.created_at || '').localeCompare(String(a.orderDate || a.created_at || '')));
+    const total = filtered.length;
+    const rows = filtered.slice(offset, offset + pageSize);
 
     return { orders: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1 };
   },
 
   async getOrderById(orderId, customerId) {
-    const order = await getOne(
-      `SELECT so.*, c.name as customerName
-       FROM sales_orders so
-       LEFT JOIN customers c ON so.customer_id = c.id
-       WHERE so.id = ? AND so.customer_id = ?`,
-      [orderId, customerId]
-    );
+    const order = await repo.getById('sales_orders', orderId);
     if (!order) return null;
+    const orderCustomerId = order.customerId || order.customer_id || null;
+    if (customerId && String(orderCustomerId) !== String(customerId)) return null;
     order.items = parseJson(order.items, []).map((item) => {
       const price = Number(item.price ?? item.unitPrice ?? item.unit_price ?? 0);
       const quantity = Number(item.quantity ?? 1);
@@ -517,35 +448,25 @@ const portalService = {
 
   async getQuotationsPaginated(customerId, { page = 1, pageSize = 20, status, search } = {}) {
     const offset = (page - 1) * pageSize;
-    const conditions = ['q.customer_id = ?'];
-    const params = [customerId];
+    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    if (status) filters['data->>status'] = `eq.${status}`;
 
-    if (status) {
-      conditions.push('LOWER(q.status) = ?');
-      params.push(String(status).toLowerCase());
-    }
+    const allRows = await getAllFrom('quotations', filters);
+    let filtered = Array.isArray(allRows) ? allRows : [];
     if (search) {
-      conditions.push('(q.quotation_number LIKE ? OR q.customer_name LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      const q = String(search).toLowerCase();
+      filtered = filtered.filter((r) =>
+        String(r.quotation_number || '').toLowerCase().includes(q) ||
+        String(r.customer_name || '').toLowerCase().includes(q)
+      );
     }
-
-    const whereClause = conditions.join(' AND ');
-    const countRow = await getOne(`SELECT COUNT(*) as total FROM quotations q WHERE ${whereClause}`, params);
-    const total = countRow?.total || 0;
-
-    const rows = await getAll(
-      `SELECT q.*, c.name AS resolved_customer_name
-       FROM quotations q
-       LEFT JOIN customers c ON c.id = q.customer_id
-       WHERE ${whereClause}
-       ORDER BY q.created_at DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
+    filtered.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    const total = filtered.length;
+    const rows = filtered.slice(offset, offset + pageSize);
 
     return {
       quotations: rows.map((r) => ({
         ...r,
-        customer_name: r.resolved_customer_name || r.customer_name,
         items: parseJson(r.items, []),
       })),
       total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1,
@@ -605,39 +526,35 @@ async getInvoices(customerId) {
       console.warn('[PortalService] Cloud invoices unavailable, using local:', err.message);
     }
 
-    const conditions = ['i.customer_id = ?'];
-    const params = [customerId];
+    const filters = { 'data->>customer_id': `eq.${customerId}` };
 
+    const allRows = await getAllFrom('invoices', filters);
+    let filtered = Array.isArray(allRows) ? allRows : [];
     if (status) {
-      conditions.push('LOWER(i.status) = ?');
-      params.push(String(status).toLowerCase());
+      const lowerStatus = String(status).toLowerCase();
+      filtered = filtered.filter((inv) => String(inv.status || '').toLowerCase() === lowerStatus);
     }
     if (search) {
-      conditions.push('(i.invoice_number LIKE ? OR i.customer_name LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      const lowerSearch = String(search).toLowerCase();
+      filtered = filtered.filter((inv) =>
+        String(inv.invoice_number || '').toLowerCase().includes(lowerSearch) ||
+        String(inv.customer_name || '').toLowerCase().includes(lowerSearch)
+      );
     }
-    if (dateFrom) {
-      conditions.push('i.created_at >= ?');
-      params.push(dateFrom);
-    }
-    if (dateTo) {
-      conditions.push('i.created_at <= ?');
-      params.push(dateTo);
-    }
-
-    const whereClause = conditions.join(' AND ');
-    const countRow = await getOne(`SELECT COUNT(*) as total FROM invoices i WHERE ${whereClause}`, params);
-    const total = countRow?.total || 0;
-
-    const rows = await getAll(
-      `SELECT id, invoice_number, customer_name, total_amount,
-        COALESCE((SELECT SUM(pal.amount) FROM payment_allocation_lines pal JOIN payment_allocations pa ON pa.id = pal.allocation_id WHERE pal.invoice_id = i.id AND pa.reversed = 0), 0) as paid_amount,
-        status, due_date, created_at
-       FROM invoices i
-       WHERE ${whereClause}
-       ORDER BY i.created_at DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
+    if (dateFrom) filtered = filtered.filter((inv) => String(inv.created_at || '') >= dateFrom);
+    if (dateTo) filtered = filtered.filter((inv) => String(inv.created_at || '') <= dateTo);
+    filtered.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    const total = filtered.length;
+    const rows = filtered.slice(offset, offset + pageSize).map((i) => ({
+      id: i.id,
+      invoice_number: i.invoice_number,
+      customer_name: i.customer_name,
+      total_amount: i.total_amount,
+      paid_amount: i.paid_amount,
+      status: i.status,
+      due_date: i.due_date,
+      created_at: i.created_at,
+    }));
 
     return { invoices: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1 };
   },
@@ -646,7 +563,7 @@ async getInvoices(customerId) {
     const invoice = await this.getInvoiceById(invoiceId, customerId);
     if (!invoice) return null;
 
-    const payments = await getAllFrom('customer_payments');
+    const payments = await getAllFrom('customer_payments', { 'data->>customerId': `eq.${customerId}` });
     const amountForInvoice = (p) =>
       (Array.isArray(p.allocations) ? p.allocations : [])
         .filter((a) => String(a.invoice_id || a.invoiceId || '') === String(invoiceId))
@@ -680,18 +597,14 @@ async getInvoices(customerId) {
 
     // Best-effort: mark normalized allocation rows as reversed.
     try {
-      const lines = await getAllFrom('payment_allocation_lines');
-      for (const line of (Array.isArray(lines) ? lines : [])) {
-        if (String(line.invoice_id || line.invoiceId || '') === String(invoiceId)) {
-          await repo.upsert('payment_allocation_lines', { ...line, reversed: true });
-        }
-      }
-      const allocs = await getAllFrom('payment_allocations');
-      for (const alloc of (Array.isArray(allocs) ? allocs : [])) {
-        if (String(alloc.payment_id || '') === String(payment.id || payment.paymentId || '')) {
-          await repo.upsert('payment_allocations', { ...alloc, reversed: true });
-        }
-      }
+      const lines = await getAllFrom('payment_allocation_lines', { 'data->>invoice_id': `eq.${invoiceId}` });
+      await Promise.all((Array.isArray(lines) ? lines : []).map((line) =>
+        repo.upsert('payment_allocation_lines', { ...line, reversed: true })
+      ));
+      const allocs = await getAllFrom('payment_allocations', { 'data->>payment_id': `eq.${payment.id || payment.paymentId || ''}` });
+      await Promise.all((Array.isArray(allocs) ? allocs : []).map((alloc) =>
+        repo.upsert('payment_allocations', { ...alloc, reversed: true })
+      ));
     } catch (err) {
       console.warn('[PortalService] Best-effort allocation reversal failed:', err.message);
     }
@@ -736,13 +649,13 @@ async getInvoices(customerId) {
     } catch (err) {
       console.warn('[PortalService] Cloud invoice unavailable, using local:', err.message);
     }
-    const invoice = await getOne(
-      'SELECT * FROM invoices WHERE id = ? AND customer_id = ?',
-      [invoiceId, customerId]
-    );
+    const invoice = await repo.getById('invoices', invoiceId);
     if (!invoice) return null;
-    invoice.line_items = parseJson(invoice.line_items_json, []);
+    const invoiceCustomerId = invoice.customerId || invoice.customer_id || null;
+    if (customerId && String(invoiceCustomerId) !== String(customerId)) return null;
+    invoice.line_items = invoice.items || parseJson(invoice.line_items_json, []);
     delete invoice.line_items_json;
+    delete invoice.items;
     return invoice;
   },
 
@@ -759,137 +672,138 @@ async getInvoices(customerId) {
 
   async getPaymentsPaginated(customerId, { page = 1, pageSize = 20, search, dateFrom, dateTo } = {}) {
     const offset = (page - 1) * pageSize;
-    const conditions = ['cp.customer_id = ?'];
-    const params = [customerId];
+    const filters = { 'data->>customer_id': `eq.${customerId}` };
 
+    const allRows = await getAllFrom('customer_payments', filters);
+    let filtered = Array.isArray(allRows) ? allRows : [];
     if (search) {
-      conditions.push('(cp.reference LIKE ? OR cp.method LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      const q = String(search).toLowerCase();
+      filtered = filtered.filter((p) =>
+        String(p.reference || '').toLowerCase().includes(q) ||
+        String(p.method || '').toLowerCase().includes(q)
+      );
     }
-    if (dateFrom) {
-      conditions.push('cp.date >= ?');
-      params.push(dateFrom);
-    }
-    if (dateTo) {
-      conditions.push('cp.date <= ?');
-      params.push(dateTo);
-    }
-
-    const whereClause = conditions.join(' AND ');
-    const countRow = await getOne(`SELECT COUNT(*) as total FROM customer_payments cp WHERE ${whereClause}`, params);
-    const total = countRow?.total || 0;
-
-    const rows = await getAll(
-      `SELECT id, amount, method as payment_method, date, reference
-       FROM customer_payments cp
-       WHERE ${whereClause}
-       ORDER BY cp.date DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
+    if (dateFrom) filtered = filtered.filter((p) => String(p.date || '') >= dateFrom);
+    if (dateTo) filtered = filtered.filter((p) => String(p.date || '') <= dateTo);
+    filtered.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const total = filtered.length;
+    const rows = filtered.slice(offset, offset + pageSize).map((p) => ({
+      id: p.id,
+      amount: p.amount,
+      payment_method: p.method,
+      date: p.date,
+      reference: p.reference,
+    }));
 
     return { payments: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1 };
   },
 
   async getPaymentById(paymentId, customerId) {
-    const payment = await getOne(
-      'SELECT * FROM customer_payments WHERE id = ? AND customer_id = ?',
-      [paymentId, customerId]
-    );
+    const payment = await repo.getById('customer_payments', paymentId);
     if (!payment) return null;
+    const paymentCustomerId = payment.customerId || payment.customer_id || null;
+    if (customerId && String(paymentCustomerId) !== String(customerId)) return null;
 
-    const allocations = await getAll(
-      `SELECT pal.*, i.invoice_number, i.total_amount
-       FROM payment_allocations pa
-       JOIN payment_allocation_lines pal ON pal.allocation_id = pa.id
-       LEFT JOIN invoices i ON pal.invoice_id = i.id
-       WHERE pa.payment_id = ?`,
-      [paymentId]
-    );
-    payment.allocations = allocations || [];
+    const inlineAllocations = Array.isArray(payment.allocations) ? payment.allocations : [];
+    const validAllocations = inlineAllocations.filter((alloc) => {
+      const invoiceId = alloc.invoice_id || alloc.invoiceId || '';
+      const amount = Number(alloc.allocated ?? alloc.amount ?? 0);
+      return invoiceId && amount > 0;
+    });
+
+    const invoiceIds = [...new Set(validAllocations.map((a) => a.invoice_id || a.invoiceId))];
+    const invoiceMap = new Map();
+    if (invoiceIds.length > 0) {
+      const invoices = await repo.getAll('invoices', { id: `in.(${invoiceIds.join(',')})` });
+      for (const inv of (Array.isArray(invoices) ? invoices : [])) {
+        invoiceMap.set(inv.id, inv);
+      }
+    }
+
+    payment.allocations = validAllocations.map((alloc) => {
+      const invoiceId = alloc.invoice_id || alloc.invoiceId || '';
+      const amount = Number(alloc.allocated ?? alloc.amount ?? 0);
+      const invoice = invoiceMap.get(invoiceId) || null;
+      return {
+        allocation_id: alloc.allocation_id || alloc.allocationId || null,
+        invoice_id: invoiceId,
+        invoice_number: invoice?.invoice_number || invoiceId,
+        total_amount: Number(invoice?.total_amount ?? 0),
+        amount,
+        missing_invoice: !invoice,
+      };
+    });
     return payment;
   },
 
   async getStatements(customerId, startDate, endDate) {
+    const filters = { 'data->>customerId': `eq.${customerId}` };
+    const [invoices, payments] = await Promise.all([
+      getAllFrom('invoices', filters),
+      getAllFrom('customer_payments', filters),
+    ]);
+
+    const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+    const allDebits = (Array.isArray(invoices) ? invoices : []).map((inv) => {
+      const isCreditNote = String(inv.status || '').toLowerCase() === 'credit_note';
+      const amount = toNum(inv.total_amount);
+      return {
+        date: inv.created_at || inv.date || null,
+        description: isCreditNote ? `Credit Note ${inv.invoice_number || inv.id}` : `Invoice ${inv.invoice_number || inv.id}`,
+        debit: isCreditNote ? 0 : amount,
+        credit: isCreditNote ? amount : 0,
+        _type: isCreditNote ? 'credit_note' : 'invoice',
+      };
+    });
+
+    const allCredits = (Array.isArray(payments) ? payments : []).map((pay) => ({
+      date: pay.date || pay.created_at || null,
+      description: pay.reference || 'Payment',
+      debit: 0,
+      credit: toNum(pay.amount),
+      _type: 'payment',
+    }));
+
+    const allTransactions = [...allDebits, ...allCredits];
+
+    const beforePeriod = startDate
+      ? allTransactions.filter((t) => t.date && String(t.date) < startDate)
+      : [];
     let openingBalance = 0;
-
-    if (startDate) {
-      const openingRow = await getOne(
-        `SELECT COALESCE(SUM(amount), 0) as balance FROM (
-          SELECT total_amount as amount FROM invoices
-          WHERE customer_id = ? AND created_at < ?
-          UNION ALL
-          SELECT -amount as amount FROM customer_payments
-          WHERE customer_id = ? AND date < ?
-        )`,
-        [customerId, startDate, customerId, startDate]
-      );
-      openingBalance = Number((openingRow && openingRow.balance) || 0);
+    for (const t of beforePeriod) {
+      openingBalance += toNum(t.debit) - toNum(t.credit);
     }
 
-    let invoiceWhere = 'customer_id = ?';
-    let paymentWhere = 'customer_id = ?';
-    const params = [customerId, customerId];
+    const inPeriod = startDate || endDate
+      ? allTransactions.filter((t) => {
+          if (!t.date) return false;
+          if (startDate && String(t.date) < startDate) return false;
+          if (endDate && String(t.date) > endDate) return false;
+          return true;
+        })
+      : allTransactions;
 
-    if (startDate) {
-      invoiceWhere += ' AND created_at >= ?';
-      paymentWhere += ' AND date >= ?';
-      params.push(startDate, startDate);
-    }
-    if (endDate) {
-      invoiceWhere += ' AND created_at <= ?';
-      paymentWhere += ' AND date <= ?';
-      params.push(endDate, endDate);
-    }
-
-    const transactions = await getAll(
-      `SELECT date, description, debit, credit FROM (
-        SELECT created_at as date, COALESCE(invoice_number, 'Invoice') as description, total_amount as debit, 0 as credit
-        FROM invoices WHERE ${invoiceWhere}
-        UNION ALL
-        SELECT date, COALESCE(reference, 'Payment') as description, 0 as debit, amount as credit
-        FROM customer_payments WHERE ${paymentWhere}
-      ) ORDER BY date ASC`,
-      params
-    );
-
-    // Merge real ERP invoices from Supabase so the statement reflects cloud data
-    try {
-      const cloudInvoices = await withCloudTimeout(supabaseStore.listInvoices(customerId), 5000, 'Cloud invoices');
-      if (Array.isArray(cloudInvoices) && cloudInvoices.length > 0) {
-        for (const inv of cloudInvoices) {
-          if (startDate && String(inv.created_at || '') < startDate) continue;
-          if (endDate && String(inv.created_at || '') > endDate) continue;
-          transactions.push({
-            date: inv.created_at,
-            description: `Invoice ${inv.invoice_number || inv.id}`,
-            debit: inv.total_amount,
-            credit: 0,
-          });
-        }
-        transactions.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-      }
-    } catch (err) {
-      console.warn('[PortalService] Cloud invoices unavailable for statement:', err.message);
-    }
+    inPeriod.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
 
     let running = openingBalance;
-    const mapped = (transactions || []).map(t => {
-      const debit = Number(t.debit) || 0;
-      const credit = Number(t.credit) || 0;
+    const mapped = inPeriod.map((t) => {
+      const debit = toNum(t.debit);
+      const credit = toNum(t.credit);
       running = running + debit - credit;
       return {
         date: t.date,
         description: t.description || '',
         debit,
         credit,
-        balance: running
+        balance: running,
       };
     });
 
     return {
       opening_balance: openingBalance,
       closing_balance: mapped.length > 0 ? mapped[mapped.length - 1].balance : openingBalance,
-      transactions: mapped
+      transactions: mapped,
     };
   },
 
@@ -947,7 +861,8 @@ async getInvoices(customerId) {
       walletBalance: Number(cloud.walletBalance) || 0,
       creditLimit: Number(cloud.creditLimit) || 0,
       outstandingBalance: Number(cloud.outstandingBalance) || 0,
-      status: cloud.status || ''
+      status: cloud.status || '',
+      created_at: cloud.created_at || null
     };
   },
 
@@ -981,58 +896,38 @@ async getInvoices(customerId) {
 
   async markAllNotificationsRead(portalUserId) {
     const rows = await getAllFrom('portal_notifications', { 'data->>portalUserId': `eq.${portalUserId}`, 'data->>isRead': `eq.false` });
-    for (const row of rows) {
-      await repo.upsert('portal_notifications', { ...row, isRead: true });
-    }
+    await Promise.all((Array.isArray(rows) ? rows : []).map((row) =>
+      repo.upsert('portal_notifications', { ...row, isRead: true })
+    ));
   },
 
   // ─── Referrals ──────────────────────────────────────────────────
   async getReferrals(portalUserId, customerId, { page = 1, pageSize = 20, status, search, sort = 'date_desc' } = {}) {
     const offset = (page - 1) * pageSize;
-    const conditions = ['r.referred_by_id = ?', 'r.deleted_at IS NULL'];
-    const params = [customerId];
+    const filters = { 'data->>referred_by_id': `eq.${customerId}` };
+    if (status) filters['data->>status'] = `eq.${status}`;
 
-    if (status) {
-      conditions.push('r.status = ?');
-      params.push(status);
-    }
-
+    const allRows = await getAllFrom('customer_referrals', filters);
+    let filtered = (Array.isArray(allRows) ? allRows : []).filter((r) => !r.deleted_at);
     if (search) {
-      conditions.push('c.name LIKE ?');
-      params.push(`%${search}%`);
+      const q = String(search).toLowerCase();
+      filtered = filtered.filter((r) => String(r.customer_name || r.customer_id || '').toLowerCase().includes(q));
     }
-
-    const whereClause = conditions.join(' AND ');
     const allowedSorts = {
-      date_desc: 'r.created_at DESC',
-      date_asc: 'r.created_at ASC',
-      status: 'r.status ASC',
+      date_desc: (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')),
+      date_asc: (a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')),
+      status: (a, b) => String(a.status || '').localeCompare(String(b.status || '')),
     };
-    const orderBy = allowedSorts[sort] || allowedSorts.date_desc;
-
-    const countRow = await getOne(
-      `SELECT COUNT(*) as total FROM customer_referrals r
-       LEFT JOIN customers c ON c.id = r.customer_id
-       WHERE ${whereClause}`,
-      params
-    );
-    const total = countRow?.total || 0;
-
-    const referrals = await getAll(
-      `SELECT r.*, c.name as referred_customer_name, c.email as referred_customer_email
-       FROM customer_referrals r
-       LEFT JOIN customers c ON c.id = r.customer_id
-       WHERE ${whereClause}
-       ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
+    filtered.sort(allowedSorts[sort] || allowedSorts.date_desc);
+    const total = filtered.length;
+    const rows = filtered.slice(offset, offset + pageSize);
 
     return {
-      referrals: referrals.map(r => ({
+      referrals: rows.map(r => ({
         id: r.id,
         referredCustomerId: r.customer_id,
-        referredCustomerName: r.referred_customer_name || r.customer_id,
-        referredCustomerEmail: r.referred_customer_email || null,
+        referredCustomerName: r.customer_id,
+        referredCustomerEmail: null,
         status: r.status,
         pendingInvoiceId: r.pending_invoice_id,
         pendingInvoiceAmount: r.pending_invoice_amount || 0,
@@ -1042,22 +937,14 @@ async getInvoices(customerId) {
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       })),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize) || 1,
+      total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1,
     };
   },
 
   async getReferralById(id, portalUserId, customerId) {
-    const referral = await getOne(
-      `SELECT r.*, c.name as referred_customer_name, c.email as referred_customer_email
-       FROM customer_referrals r
-       LEFT JOIN customers c ON c.id = r.customer_id
-       WHERE r.id = ?r.deleted_at IS NULL`,
-      [id]
-    );
-    if (!referral || referral.referred_by_id !== customerId) return null;
+    const referral = await repo.getById('customer_referrals', id);
+    if (!referral) return null;
+    if (String(referral.referred_by_id || '') !== String(customerId)) return null;
     return {
       id: referral.id,
       referredCustomerId: referral.customer_id,
@@ -1075,47 +962,27 @@ async getInvoices(customerId) {
   },
 
   async getReferralTimeline(referralId) {
-    return getAll(
-      'SELECT * FROM referral_timeline WHERE referral_id = ? ORDER BY timestamp ASC',
-      [referralId]
-    );
+    return getAllFrom('referral_timeline', { 'data->>referral_id': `eq.${referralId}` });
   },
 
   async getReferralRewards(portalUserId, customerId, { page = 1, pageSize = 20, status } = {}) {
     const offset = (page - 1) * pageSize;
-    const conditions = ['rr.customer_id = ?'];
-    const params = [customerId];
+    const filters = { 'data->>customer_id': `eq.${customerId}` };
+    if (status) filters['data->>status'] = `eq.${status}`;
 
-    if (status) {
-      conditions.push('rr.status = ?');
-      params.push(status);
-    }
-
-    const whereClause = conditions.join(' AND ');
-    const countRow = await getOne(
-      `SELECT COUNT(*) as total FROM referral_rewards rr WHERE ${whereClause}`,
-      params
-    );
-    const total = countRow?.total || 0;
-
-    const rewards = await getAll(
-      `SELECT rr.*, r.referral_code, r.customer_id as referred_customer_id,
-              c.name as referred_customer_name
-       FROM referral_rewards rr
-       JOIN customer_referrals r ON r.id = rr.referral_id
-       LEFT JOIN customers c ON c.id = r.customer_id
-       WHERE ${whereClause}
-       ORDER BY rr.created_at DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
+    const allRows = await getAllFrom('referral_rewards', filters);
+    let filtered = Array.isArray(allRows) ? allRows : [];
+    filtered.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    const total = filtered.length;
+    const rows = filtered.slice(offset, offset + pageSize);
 
     return {
-      rewards: rewards.map(r => ({
+      rewards: rows.map(r => ({
         id: r.id,
         referralId: r.referral_id,
-        referralCode: r.referral_code,
-        referredCustomerId: r.referred_customer_id,
-        referredCustomerName: r.referred_customer_name || r.referred_customer_id,
+        referralCode: null,
+        referredCustomerId: null,
+        referredCustomerName: null,
         invoiceId: r.invoice_id,
         invoiceAmount: r.invoice_amount || 0,
         amount: r.amount || 0,
@@ -1126,10 +993,7 @@ async getInvoices(customerId) {
         walletTransactionId: r.wallet_transaction_id,
         createdAt: r.created_at,
       })),
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize) || 1,
+      total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1,
     };
   },
 
@@ -1156,17 +1020,17 @@ async getInvoices(customerId) {
       throw new Error('You cannot refer yourself');
     }
 
-    const customer = await getOne(
-      'SELECT id, name, email FROM customers WHERE id = ?',
-      [referredCustomerId]
-    );
+    const customer = await repo.getById('customers', referredCustomerId);
     if (!customer) {
       throw new Error('Customer not found');
     }
 
-    const existing = await getOne(
-      'SELECT id FROM customer_referrals WHERE customer_id = ? AND referred_by_id = ? AND deleted_at IS NULL AND status IN (\'active\', \'converted\')',
-      [referredCustomerId, customerId]
+    const existingRows = await getAllFrom('customer_referrals', {
+      'data->>customer_id': `eq.${referredCustomerId}`,
+      'data->>referred_by_id': `eq.${customerId}`,
+    });
+    const existing = (Array.isArray(existingRows) ? existingRows : []).find(
+      (r) => !r.deleted_at && ['active', 'converted'].includes(String(r.status || ''))
     );
     if (existing) {
       throw new Error('This customer has already been referred by you');
@@ -1181,66 +1045,39 @@ async getInvoices(customerId) {
       });
   },
 
-  async searchCustomersForReferral( query, excludeCustomerId) {
+  async searchCustomersForReferral(query, excludeCustomerId) {
     if (!query || query.trim().length < 2) return [];
-    const like = `%${query.trim()}%`;
-    return getAll(
-      `SELECT id, name, email, phone FROM customers WHERE id != ? AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)
-       ORDER BY name ASC LIMIT 20`,
-      [excludeCustomerId, like, like, like]
-    );
+    const q = String(query).trim().toLowerCase();
+    const results = await repo.getAll('customers', {
+      'data->>id': `neq.${excludeCustomerId}`,
+    });
+    return (Array.isArray(results) ? results : [])
+      .filter((c) =>
+        String(c.name || '').toLowerCase().includes(q) ||
+        String(c.email || '').toLowerCase().includes(q)
+      )
+      .slice(0, 20)
+      .map((c) => ({ id: c.id, name: c.name, email: c.email }));
   },
 
   async getReferralFunnelStats(customerId) {
-    const totalRow = await getOne(
-      `SELECT COUNT(*) as count FROM customer_referrals WHERE referred_by_id = ? AND deleted_at IS NULL`,
-      [customerId]
-    );
-    const total = totalRow?.count || 0;
+    const allReferrals = await getAllFrom('customer_referrals', { 'data->>referred_by_id': `eq.${customerId}` });
+    const referrals = Array.isArray(allReferrals) ? allReferrals.filter((r) => !r.deleted_at) : [];
+    const referralIds = referrals.map((r) => r.id);
 
-    const activeRow = await getOne(
-      `SELECT COUNT(*) as count FROM customer_referrals WHERE referred_by_id = ? AND status = 'active' AND deleted_at IS NULL`,
-      [customerId]
-    );
-    const signedUp = activeRow?.count || 0;
+    let myRewards = [];
+    if (referralIds.length > 0) {
+      const allRewards = await getAllFrom('referral_rewards', { 'data->>customer_id': `eq.${customerId}` });
+      myRewards = Array.isArray(allRewards) ? allRewards : [];
+    }
 
-    const qualifiedRow = await getOne(
-      `SELECT COUNT(*) as count FROM customer_referrals WHERE referred_by_id = ? AND status = 'active' AND pending_invoice_id IS NOT NULL AND deleted_at IS NULL`,
-      [customerId]
-    );
-    const qualified = qualifiedRow?.count || 0;
-
-    const approvedRow = await getOne(
-      `SELECT COUNT(*) as count FROM referral_rewards rr
-       JOIN customer_referrals r ON r.id = rr.referral_id
-       WHERE r.referred_by_id = ? AND rr.status IN ('approved', 'paid')`,
-      [customerId]
-    );
-    const rewardApproved = approvedRow?.count || 0;
-
-    const paidRow = await getOne(
-      `SELECT COUNT(*) as count FROM referral_rewards rr
-       JOIN customer_referrals r ON r.id = rr.referral_id
-       WHERE r.referred_by_id = ? AND rr.status = 'paid'`,
-      [customerId]
-    );
-    const paid = paidRow?.count || 0;
-
-    const pendingAmountRow = await getOne(
-      `SELECT COALESCE(SUM(rr.amount), 0) as amount FROM referral_rewards rr
-       JOIN customer_referrals r ON r.id = rr.referral_id
-       WHERE r.referred_by_id = ? AND rr.status = 'pending'`,
-      [customerId]
-    );
-    const pendingRewardAmount = pendingAmountRow?.amount || 0;
-
-    const totalEarnedRow = await getOne(
-      `SELECT COALESCE(SUM(rr.amount), 0) as amount FROM referral_rewards rr
-       JOIN customer_referrals r ON r.id = rr.referral_id
-       WHERE r.referred_by_id = ? AND rr.status IN ('approved', 'paid')`,
-      [customerId]
-    );
-    const totalEarned = totalEarnedRow?.amount || 0;
+    const total = referrals.length;
+    const signedUp = referrals.filter((r) => String(r.status || '') === 'active').length;
+    const qualified = referrals.filter((r) => String(r.status || '') === 'active' && r.pending_invoice_id).length;
+    const rewardApproved = myRewards.filter((r) => ['approved', 'paid'].includes(String(r.status || ''))).length;
+    const paid = myRewards.filter((r) => String(r.status || '') === 'paid').length;
+    const pendingRewardAmount = myRewards.filter((r) => String(r.status || '') === 'pending').reduce((s, r) => s + Number(r.amount || 0), 0);
+    const totalEarned = myRewards.filter((r) => ['approved', 'paid'].includes(String(r.status || ''))).reduce((s, r) => s + Number(r.amount || 0), 0);
 
     return {
       total,
@@ -1255,79 +1092,81 @@ async getInvoices(customerId) {
   },
 
   async getSupportTickets(portalUserId, customerId) {
-    return getAll(
-      `SELECT pt.*,
-        (SELECT message FROM portal_ticket_messages WHERE ticket_id = pt.id ORDER BY created_at DESC LIMIT 1) as latest_message
-       FROM portal_tickets pt
-       WHERE pt.portal_user_id = ? AND pt.customer_id = ?
-       ORDER BY pt.created_at DESC`,
-      [portalUserId, customerId]
-    );
+    const filters = {
+      'data->>portal_user_id': `eq.${portalUserId}`,
+      'data->>customer_id': `eq.${customerId}`,
+    };
+    const rows = await getAllFrom('portal_tickets', filters);
+    return Array.isArray(rows) ? rows.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))) : [];
   },
 
   async createSupportTicket(portalUserId, customerId, { subject, message, priority }) {
     const id = genId('ptkt');
-    await runQuery(
-      `INSERT INTO portal_tickets (id, portal_user_id, customer_id, subject, message, priority)
-       VALUES (?, ?, ?, ?, ?, ? )`,
-      [id, portalUserId, customerId, subject, message, priority || 'normal']
-    );
+    await repo.upsert('portal_tickets', {
+      id,
+      portal_user_id: portalUserId,
+      customer_id: customerId,
+      subject,
+      message,
+      priority: priority || 'normal',
+    });
 
     const msgId = genId('pmsg');
-    await runQuery(
-      `INSERT INTO portal_ticket_messages (id, ticket_id, sender_type, message)
-       VALUES (?, ?, 'customer', ?)`,
-      [msgId, id, message]
-    );
+    await repo.upsert('portal_ticket_messages', {
+      id: msgId,
+      ticket_id: id,
+      sender_type: 'customer',
+      message,
+    });
 
     return { id, subject, message, priority: priority || 'normal' };
   },
 
   async addTicketMessage(ticketId, portalUserId, message) {
     const id = genId('pmsg');
-    await runQuery(
-      `INSERT INTO portal_ticket_messages (id, ticket_id, sender_type, message)
-       VALUES (?, ?, 'customer', ?)`,
-      [id, ticketId, message]
-    );
+    await repo.upsert('portal_ticket_messages', {
+      id,
+      ticket_id: ticketId,
+      sender_type: 'customer',
+      message,
+    });
 
-    await runQuery(
-      "UPDATE portal_tickets SET updated_at = datetime('now') WHERE id = ?",
-      [ticketId]
-    );
+    const ticket = await repo.getById('portal_tickets', ticketId);
+    if (ticket) {
+      await repo.upsert('portal_tickets', { ...ticket, updated_at: new Date().toISOString() });
+    }
 
     return { id, ticket_id: ticketId, message };
   },
 
   async updateTicketStatus(ticketId, portalUserId, status) {
-    const result = await runQuery(
-      `UPDATE portal_tickets SET status = ?, updated_at = datetime('now')
-       WHERE id = ? AND portal_user_id = ?`,
-      [status, ticketId, portalUserId]
-    );
-    if (result.changes === 0) {
+    const ticket = await repo.getById('portal_tickets', ticketId);
+    if (!ticket || String(ticket.portal_user_id || '') !== String(portalUserId)) {
       throw new Error('Ticket not found or access denied');
     }
+    await repo.upsert('portal_tickets', { ...ticket, status, updated_at: new Date().toISOString() });
     return { success: true, ticketId, status };
   },
 
   async uploadTicketAttachment(ticketId, portalUserId, file, messageId) {
-    // Verify ticket belongs to this user
-    const ticket = await getOne(
-      'SELECT id, customer_id FROM portal_tickets WHERE id = ? AND portal_user_id = ?',
-      [ticketId, portalUserId]
-    );
-    if (!ticket) {
+    const ticket = await repo.getById('portal_tickets', ticketId);
+    if (!ticket || String(ticket.portal_user_id || '') !== String(portalUserId)) {
       throw new Error('Ticket not found or access denied');
     }
 
     const id = genId('tatt');
     const storagePath = file.filename;
-    await runQuery(
-      `INSERT INTO ticket_attachments (id, ticket_id, message_id, filename, original_name, mime_type, size_bytes, storage_path, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, ticketId, messageId || null, storagePath, file.originalname, file.mimetype, file.size, storagePath, portalUserId]
-    );
+    await repo.upsert('ticket_attachments', {
+      id,
+      ticket_id: ticketId,
+      message_id: messageId || null,
+      filename: storagePath,
+      original_name: file.originalname,
+      mime_type: file.mimetype,
+      size_bytes: file.size,
+      storage_path: storagePath,
+      uploaded_by: portalUserId,
+    });
 
     return {
       id,
@@ -1343,25 +1182,20 @@ async getInvoices(customerId) {
   },
 
   async getTicketAttachment(attachmentId, customerId) {
-    const attachment = await getOne(
-      `SELECT ta.* FROM ticket_attachments ta
-       JOIN portal_tickets pt ON pt.id = ta.ticket_id
-       WHERE ta.id = ? AND pt.customer_id = ?`,
-      [attachmentId, customerId]
-    );
-    return attachment || null;
+    const attachment = await repo.getById('ticket_attachments', attachmentId);
+    if (!attachment) return null;
+    const ticket = await repo.getById('portal_tickets', attachment.ticket_id);
+    if (!ticket || String(ticket.customer_id || '') !== String(customerId)) return null;
+    return attachment;
   },
 
   async deleteTicketAttachment(attachmentId, portalUserId, customerId) {
-    // Verify the attachment belongs to a ticket this customer owns
-    const attachment = await getOne(
-      `SELECT ta.id, ta.ticket_id, ta.filename, ta.uploaded_by
-       FROM ticket_attachments ta
-       JOIN portal_tickets pt ON pt.id = ta.ticket_id
-       WHERE ta.id = ? AND pt.customer_id = ?`,
-      [attachmentId, customerId]
-    );
+    const attachment = await repo.getById('ticket_attachments', attachmentId);
     if (!attachment) {
+      throw new Error('Attachment not found or access denied');
+    }
+    const ticket = await repo.getById('portal_tickets', attachment.ticket_id);
+    if (!ticket || String(ticket.customer_id || '') !== String(customerId)) {
       throw new Error('Attachment not found or access denied');
     }
 
@@ -1376,63 +1210,61 @@ async getInvoices(customerId) {
     }
 
     // Delete the database record
-    await runQuery('DELETE FROM ticket_attachments WHERE id = ?', [attachmentId]);
+    await repo.softDelete('ticket_attachments', attachmentId);
 
     return { success: true, attachmentId };
   },
 
   async getShipments(customerId, { status, search } = {}) {
-    let sql = `SELECT * FROM (
-               SELECT so.id, so.order_number, so.orderDate, so.customer_id, so.status as order_status,
-                      so.tracking_number, so.carrier, so.driver_name, so.vehicle_no,
-                      so.estimated_delivery, so.actual_arrival, so.current_location,
-                      so.proof_of_delivery, so.shipping_address, so.items as items_json,
-                      c.name as customerName
-               FROM sales_orders so
-               LEFT JOIN customers c ON so.customer_id = c.id
-               WHERE so.customer_id = ? AND so.tracking_number IS NOT NULL AND TRIM(so.tracking_number) != ''
-               UNION ALL
-               SELECT dn.id, NULL as order_number, dn.delivery_date as orderDate, dn.customer_id,
-                      dn.status as order_status, dn.tracking_number, NULL as carrier, NULL as driver_name,
-                      NULL as vehicle_no, NULL as estimated_delivery, NULL as actual_arrival,
-                      NULL as current_location, NULL as proof_of_delivery, NULL as shipping_address,
-                      dn.items_json, c2.name as customerName
-               FROM delivery_notes dn
-               LEFT JOIN customers c2 ON dn.customer_id = c2.id
-               WHERE dn.customer_id = ? AND dn.tracking_number IS NOT NULL AND TRIM(dn.tracking_number) != ''
-                 AND NOT EXISTS (SELECT 1 FROM sales_orders so2 WHERE so2.id = dn.order_id AND so2.tracking_number IS NOT NULL AND TRIM(so2.tracking_number) != '')
-               ) t`;
-    const params = [customerId, customerId];
+    const [salesOrders, deliveryNotes] = await Promise.all([
+      getAllFrom('sales_orders', { 'data->>customer_id': `eq.${customerId}` }),
+      getAllFrom('delivery_notes', { 'data->>customer_id': `eq.${customerId}` }),
+    ]);
+
+    const results = [];
+    for (const so of (Array.isArray(salesOrders) ? salesOrders : [])) {
+      if (!so.tracking_number || !String(so.tracking_number).trim()) continue;
+      results.push({ ...so, _source: 'sales_orders' });
+    }
+    for (const dn of (Array.isArray(deliveryNotes) ? deliveryNotes : [])) {
+      if (!dn.tracking_number || !String(dn.tracking_number).trim()) continue;
+      if (results.some((r) => r.id === dn.order_id)) continue;
+      results.push({ ...dn, _source: 'delivery_notes' });
+    }
+
+    let filtered = results;
     if (status) {
-      sql += ` WHERE LOWER(t.order_status) = ?`;
-      params.push(String(status).toLowerCase());
+      const lower = String(status).toLowerCase();
+      filtered = filtered.filter((r) => String(r.status || r.order_status || '').toLowerCase() === lower);
     }
     if (search) {
-      sql += status ? ` AND` : ` WHERE`;
-      sql += ` (t.order_number LIKE ? OR t.tracking_number LIKE ? OR t.customerName LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      const q = String(search).toLowerCase();
+      filtered = filtered.filter((r) =>
+        String(r.order_number || '').toLowerCase().includes(q) ||
+        String(r.tracking_number || '').toLowerCase().includes(q) ||
+        String(r.customerName || r.customer_name || '').toLowerCase().includes(q)
+      );
     }
-    sql += ` ORDER BY t.orderDate DESC`;
-    return getAll(sql, params);
+    filtered.sort((a, b) => String(b.orderDate || b.created_at || '').localeCompare(String(a.orderDate || a.created_at || '')));
+    return filtered;
   },
 
   async getShipmentById(shipmentId, customerId) {
-    const row = await getOne(
-      `SELECT so.*, c.name as customerName
-       FROM sales_orders so
-       LEFT JOIN customers c ON so.customer_id = c.id
-       WHERE so.id = ? AND so.customer_id = ? AND so.tracking_number IS NOT NULL AND TRIM(so.tracking_number) != ''`,
-      [shipmentId, customerId]
-    );
-    if (row) return row;
-    return getOne(
-      `SELECT dn.id, dn.id as shipment_number, dn.customer_id, dn.customer_name as customerName,
-              dn.status as order_status, dn.tracking_number, dn.delivery_date as estimated_delivery,
-              dn.items_json as items_json, dn.notes
-       FROM delivery_notes dn
-       WHERE dn.id = ? AND dn.customer_id = ? AND dn.tracking_number IS NOT NULL AND TRIM(dn.tracking_number) != ''`,
-      [shipmentId, customerId]
-    );
+    const row = await repo.getById('sales_orders', shipmentId);
+    if (row) {
+      const rowCustomerId = row.customerId || row.customer_id || null;
+      if (String(rowCustomerId) !== String(customerId)) return null;
+      if (!row.tracking_number || !String(row.tracking_number).trim()) return null;
+      return row;
+    }
+    const dn = await repo.getById('delivery_notes', shipmentId);
+    if (dn) {
+      const dnCustomerId = dn.customerId || dn.customer_id || null;
+      if (String(dnCustomerId) !== String(customerId)) return null;
+      if (!dn.tracking_number || !String(dn.tracking_number).trim()) return null;
+      return dn;
+    }
+    return null;
   },
 
   // Today's in-flight deliveries for the customer. Fronts the Logistics Command

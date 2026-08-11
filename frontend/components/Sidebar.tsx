@@ -14,7 +14,7 @@ import {
   CheckCircle, MonitorPlay, Maximize, Share2, Sparkles,
   Smartphone, FileSpreadsheet, BookOpen, FileCheck, History,
   Calculator, Search, GitFork,
-  Gift, Calendar, FileSearch, Receipt, Inbox
+  Gift, Calendar, FileSearch, Receipt, Inbox, BadgePercent, Megaphone
 } from 'lucide-react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -194,6 +194,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
             { label: 'Smart Pricing Engine', path: '/smart-operations/pricing', icon: <Calculator size={14} /> },
             { label: 'Marketing Messages', path: '/smart-operations/messages', icon: <MessageSquare size={14} /> },
             { label: 'Referrals', path: '/smart-operations/referrals', icon: <Gift size={14} /> },
+            { label: 'Promotions', path: '/smart-operations/promotions', icon: <BadgePercent size={14} /> },
+            { label: 'Ads', path: '/smart-operations/ads', icon: <Megaphone size={14} /> },
           ]
         },
         {

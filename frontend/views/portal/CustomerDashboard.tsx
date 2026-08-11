@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { portalApi, portalLifecycle, PortalPromotionInfo } from '../../services/portalApiClient';
+import { portalApi, portalLifecycle, PortalPromotionInfo, PortalAdInfo } from '../../services/portalApiClient';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalData } from './hooks/usePortalData';
+import { QuoteRequestItem } from '../../types';
 import ErrorBanner from './components/ErrorBanner';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import PremiumKPICard from './components/PremiumKPICard';
-import { sampleUnpaidInvoices } from './sampleData';
+import PromotionBanner from './components/PromotionBanner';
+import { QuoteRequestModal } from './components/QuoteRequestModal';
+import { useToast } from './components/Toast';
 import {
   Building2,
   CreditCard,
@@ -81,6 +84,30 @@ const discountLabel = (p: PortalPromotionInfo): string => {
   if (type === 'fixed_price') return `${mwk(value)} each`;
   if (type === 'buy_x_get_y') return 'Buy X Get Y';
   return `${mwk(value)} OFF`;
+};
+
+const adToSlide = (ad: PortalAdInfo, navigate: (to: string) => void): Slide => {
+  const ctaTo = ad.ctaTarget || '/portal/orders';
+  const ends = ad.endsAt ? new Date(ad.endsAt) : null;
+  const endsLabel =
+    ends && !Number.isNaN(ends.getTime())
+      ? ` · ends ${ends.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+      : '';
+  return {
+    id: `ad-${ad.id}`,
+    gradient: ad.gradient || 'linear-gradient(135deg,#0b3e39 0%,#1f8577 100%)',
+    icon: <span style={{ fontSize: 22 }}>{ad.emoji || '🎯'}</span>,
+    badge: ad.badge || 'Sponsored',
+    title: ad.title,
+    subtitle: (
+      <>
+        {ad.subtitle || 'Explore our latest offers.'}
+        {endsLabel}
+      </>
+    ),
+    cta: { label: ad.ctaLabel || 'Order Now', to: ctaTo },
+    onClick: () => navigate(ctaTo),
+  };
 };
 
 const promoToSlide = (p: PortalPromotionInfo, navigate: (to: string) => void): Slide => {
@@ -175,8 +202,11 @@ const CustomerDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useCustomerAuth();
   const { companyConfig } = useAuth();
+  const { addToast } = useToast();
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [unpaidInvoices, setUnpaidInvoices] = useState<UnpaidInvoice[]>([]);
   const [promotions, setPromotions] = useState<PortalPromotionInfo[] | null>(null);
+  const [ads, setAds] = useState<PortalAdInfo[]>([]);
   const [active, setActive] = useState(0);
   const [hovered, setHovered] = useState(false);
   const touchX = useRef<number | null>(null);
@@ -185,6 +215,27 @@ const CustomerDashboard: React.FC = () => {
   const accountId = user?.customer_id || '';
   const companyName = companyConfig?.companyName || 'ERP';
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [loyaltyTier, setLoyaltyTier] = useState<string>('');
+
+  // ── KPI enrichments derived from live data ────────────────────────────────
+  const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  const overdueInvoices = useMemo(
+    () =>
+      (unpaidInvoices || []).filter((inv) => {
+        if (/overdue|past_due/i.test(String(inv.status || ''))) return true;
+        if (!inv.due_date) return false;
+        const due = new Date(inv.due_date);
+        return !Number.isNaN(due.getTime()) && due < todayStart();
+      }).length,
+    [unpaidInvoices]
+  );
+
+  const creditLimitNum = Number(dashboardData?.creditLimit || 0);
+  const outstandingNum = Math.max(0, Number(dashboardData?.outstandingBalance || 0));
+  const creditUtilizationPct =
+    creditLimitNum > 0 ? Math.round(Math.min(100, (outstandingNum / creditLimitNum) * 100)) : 0;
+  const paymentHistory = Number(dashboardData?.health?.factors?.paymentHistory ?? 100);
+  const onTimeScore = Number(dashboardData?.health?.factors?.overdueInvoices ?? 100);
 
   const { loading, error, refresh, clearError } = usePortalData<DashboardData>({
     key: '/dashboard',
@@ -193,15 +244,17 @@ const CustomerDashboard: React.FC = () => {
     onData: async (data) => {
       setDashboardData(data);
       try {
-        const inv = await portalApi.get<{ invoices: UnpaidInvoice[] }>('/invoices?status=Unpaid');
-        setUnpaidInvoices((inv.invoices || []).slice(0, 5));
+        // Fetch the full unpaid list so the Overdue count is accurate, then
+        // truncate only for display below.
+        const inv = await portalApi.get<{ invoices: UnpaidInvoice[] }>('/invoices?status=Unpaid&pageSize=100');
+        setUnpaidInvoices(inv.invoices || []);
       } catch {
-        setUnpaidInvoices(sampleUnpaidInvoices.slice(0, 5));
+        if (unpaidInvoices.length === 0) setUnpaidInvoices([]);
       }
     },
   });
 
-  // Live portal promotions for the banner carousel (display only).
+  // Live portal promotions + banner ads for the carousel (display only).
   useEffect(() => {
     let cancelled = false;
     portalLifecycle.promotions
@@ -212,18 +265,35 @@ const CustomerDashboard: React.FC = () => {
       .catch(() => {
         if (!cancelled) setPromotions([]);
       });
+    portalLifecycle.ads
+      .list()
+      .then((list) => {
+        if (!cancelled) setAds(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancelled) setAds([]);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    portalLifecycle.loyalty.get()
+      .then((data) => { if (!cancelled && data?.tier) setLoyaltyTier(data.tier); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [notifRefreshFailed, setNotifRefreshFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     portalApi.get<{ count: number }>('/notifications/unread-count')
-      .then((c) => { if (!cancelled) setUnreadNotifications(c?.count ?? 0); })
-      .catch(() => {});
+      .then((c) => { if (!cancelled) { setUnreadNotifications(c?.count ?? 0); setNotifRefreshFailed(false); } })
+      .catch(() => { if (!cancelled) setNotifRefreshFailed(true); });
     return () => { cancelled = true; };
   }, []);
 
@@ -237,8 +307,8 @@ const CustomerDashboard: React.FC = () => {
           if ((p?.event === 'payment_allocated' || (p?.docType && T.includes(p.docType)) || type === 'activity' || type === 'notification') && !off) {
             refresh();
             portalApi.get<{ count: number }>('/notifications/unread-count')
-              .then((c) => { if (!off) setUnreadNotifications(c?.count ?? 0); })
-              .catch(() => {});
+              .then((c) => { if (!off) { setUnreadNotifications(c?.count ?? 0); setNotifRefreshFailed(false); } })
+              .catch(() => { if (!off) setNotifRefreshFailed(true); });
           }
         },
       });
@@ -249,14 +319,15 @@ const CustomerDashboard: React.FC = () => {
     };
   }, [refresh]);
 
-  // Banner slides: live promotions first, padded with curated slides so the
-  // carousel always has at least 3 slides.
+  // Banner slides: ads first, then live promotions, padded with curated
+  // slides so the carousel always has at least 3 slides.
   const slides = useMemo<Slide[]>(() => {
+    const adSlides = ads.map((a) => adToSlide(a, navigate));
     const promoSlides = (promotions || []).map((p) => promoToSlide(p, navigate));
     const fallbacks = buildFallbackSlides(navigate, displayName, companyName);
-    const count = Math.max(3, promoSlides.length);
-    return [...promoSlides, ...fallbacks].slice(0, count);
-  }, [promotions, navigate, displayName, companyName]);
+    const count = Math.max(3, adSlides.length + promoSlides.length);
+    return [...adSlides, ...promoSlides, ...fallbacks].slice(0, count);
+  }, [ads, promotions, navigate, displayName, companyName]);
 
   // Clamp index when the slide set changes (e.g. promotions arrive).
   useEffect(() => {
@@ -276,6 +347,32 @@ const CustomerDashboard: React.FC = () => {
 
   if (loading) return <div style={{ padding: 12 }}><PortalLoadingSkeleton type="card" count={6} /></div>;
   if (error) return <div style={{ padding: 12 }}><ErrorBanner message={error} onDismiss={clearError} onRetry={refresh} /></div>;
+
+  // Show at most 5 rows on the dashboard; the badge/sublabel use the full list.
+  const displayedInvoices = unpaidInvoices.slice(0, 5);
+
+  const handleQuoteSubmit = async (
+    items: QuoteRequestItem[],
+    requiredByDate: string,
+    deliveryLocation: string,
+    priority: 'standard' | 'urgent' | 'express',
+    notes: string
+  ) => {
+    try {
+      const extra = [priority && `Priority: ${priority}`, deliveryLocation && `Delivery: ${deliveryLocation}`].filter(Boolean).join('\n');
+      await portalLifecycle.requests.create({
+        requestType: 'quotation',
+        items: items.map((i) => ({ name: i.name, quantity: i.quantity, unitPrice: i.targetPrice || 0 })),
+        notes: [notes, extra].filter(Boolean).join('\n\n') || undefined,
+        requestedDeliveryDate: requiredByDate || null,
+      });
+      setShowQuoteModal(false);
+      addToast('success', 'Quotation request submitted');
+      navigate('/portal/quotations');
+    } catch (err: any) {
+      addToast('error', err.message || 'Failed to submit quotation request');
+    }
+  };
 
   return (
     <div style={{ fontFamily: F, fontSize: 13, lineHeight: 1.4, color: '#1E293B', background: '#F5F6FA', minHeight: '100vh' }}>
@@ -353,7 +450,7 @@ const CustomerDashboard: React.FC = () => {
           </div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 4, padding: '3px 10px', borderRadius: 9999, background: '#FFFBEB', border: '1px solid #FDE68A' }}>
             <span style={{ fontSize: 13 }}>🏆</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#92400E' }}>Gold Partner</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#92400E' }}>{loyaltyTier || 'Member'}</span>
           </div>
          </div>
        </div>
@@ -425,16 +522,13 @@ const CustomerDashboard: React.FC = () => {
                     className="cpd-carousel-cta"
                     onClick={(e) => { e.stopPropagation(); navigate(s.cta!.to); }}
                     style={{
-                      flexShrink: 0, padding: '8px 14px', borderRadius: 10, border: 'none',
-                      background: '#fff', color: '#0b3e39', fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                      boxShadow: '0 6px 16px -6px rgba(0,0,0,.4)',
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      transition: 'transform .15s ease',
+                      flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
+                      color: 'rgba(255,255,255,.92)', fontSize: 11, fontWeight: 700,
+                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      fontFamily: F, lineHeight: 1.4,
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.04)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
                   >
-                    {s.cta.label} <ChevronRight size={12} />
+                    {s.cta.label} <ArrowRight size={12} />
                   </button>
                 ) : (
                   <div className="cpd-carousel-cta" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, color: 'rgba(255,255,255,.92)', fontSize: 11, fontWeight: 700 }}>
@@ -524,11 +618,18 @@ const CustomerDashboard: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'row', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <PremiumKPICard
-              label="Unpaid Invoices"
+              label="Outstanding Balance"
               value={fmtMoney(dashboardData?.outstandingBalance)}
               icon={FileText}
-              sublabel="1 Overdue"
-              sublabelColor="#DC2626"
+              badge={dashboardData?.unpaidInvoiceCount ? (overdueInvoices > 0 ? 'Overdue' : 'Due') : 'All Clear'}
+              badgeColor={dashboardData?.unpaidInvoiceCount ? (overdueInvoices > 0 ? '#DC2626' : '#D97706') : '#059669'}
+              sublabel={
+                dashboardData?.unpaidInvoiceCount
+                  ? `${dashboardData.unpaidInvoiceCount} Unpaid${overdueInvoices > 0 ? ` · ${overdueInvoices} Overdue` : ''}`
+                  : 'No outstanding invoices'
+              }
+              sublabelColor={dashboardData?.unpaidInvoiceCount ? '#DC2626' : '#059669'}
+              trend={{ value: paymentHistory, positive: paymentHistory >= 80, suffix: 'paid on time' }}
               gradient="linear-gradient(135deg, #DC2626 0%, #991B1B 100%)"
               glowColor="rgba(220,38,38,0.2)"
               lightBg="#FFF5F5"
@@ -538,25 +639,18 @@ const CustomerDashboard: React.FC = () => {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <PremiumKPICard
-              label="Active Deliveries"
-              value={`${dashboardData?.activeDeliveries ?? 0}`}
-              icon={Truck}
-              sublabel="Live Tracking"
-              sublabelColor="#64748B"
-              gradient="linear-gradient(135deg, #2563EB 0%, #1E40AF 100%)"
-              glowColor="rgba(37,99,235,0.2)"
-              lightBg="#FFFFFF"
-              iconBg="#2563EB"
-              onClick={() => navigate('/portal/deliveries')}
-            />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <PremiumKPICard
               label="Available Credit"
-              value={fmtMoney(dashboardData?.creditLimit)}
+              value={fmtMoney(Math.max(0, creditLimitNum - outstandingNum))}
               icon={Wallet}
-              sublabel="Available"
-              sublabelColor="#059669"
+              badge={creditLimitNum > 0 ? (creditUtilizationPct >= 90 ? 'Near Limit' : 'Available') : 'No Credit Line'}
+              badgeColor={creditLimitNum > 0 ? (creditUtilizationPct >= 90 ? '#DC2626' : '#059669') : '#94A3B8'}
+              sublabel={
+                creditLimitNum > 0
+                  ? `${creditUtilizationPct}% used of ${fmtMoney(creditLimitNum)}`
+                  : 'Wallet credits available'
+              }
+              sublabelColor={creditUtilizationPct >= 90 ? '#DC2626' : '#059669'}
+              trend={{ value: onTimeScore, positive: onTimeScore >= 80, suffix: 'on-time history' }}
               gradient="linear-gradient(135deg, #059669 0%, #065F46 100%)"
               glowColor="rgba(5,150,105,0.2)"
               lightBg="#F0FDF4"
@@ -566,6 +660,14 @@ const CustomerDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Active Promotions */}
+      {promotions && promotions.length > 0 && (
+        <div style={{ padding: '0 16px', marginBottom: 18 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', margin: '0 0 10px' }}>Active Promotions</h2>
+          <PromotionBanner promotions={promotions} onNavigate={(path) => navigate(path)} />
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div style={{ padding: '0 16px', marginBottom: 18 }}>
@@ -581,7 +683,7 @@ const CustomerDashboard: React.FC = () => {
           ].map((a, i) => (
             <div
               key={i}
-              onClick={() => navigate(a.to)}
+              onClick={() => (a.label === 'Get Quote' ? setShowQuoteModal(true) : navigate(a.to))}
               className="cpd-card"
               style={{
                 background: '#fff', borderRadius: 14, padding: '14px 10px 12px',
@@ -628,7 +730,7 @@ const CustomerDashboard: React.FC = () => {
             View All <ArrowRight size={12} />
           </button>
         </div>
-        {unpaidInvoices.length === 0 ? (
+        {displayedInvoices.length === 0 ? (
           <div
             style={{
               background: 'linear-gradient(150deg,#FFFFFF,#F8FAFF)', borderRadius: 16,
@@ -640,7 +742,7 @@ const CustomerDashboard: React.FC = () => {
           </div>
         ) : (
           <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #E8EDF5', overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,.04)' }}>
-            {unpaidInvoices.map((inv, i) => (
+            {displayedInvoices.map((inv, i) => (
               <div
                 key={inv.id}
                 onClick={() => navigate(`/portal/invoices/${inv.id}`)}
@@ -669,6 +771,12 @@ const CustomerDashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      <QuoteRequestModal
+        isOpen={showQuoteModal}
+        onClose={() => setShowQuoteModal(false)}
+        onSubmitQuoteRequest={handleQuoteSubmit}
+      />
     </div>
   );
 };

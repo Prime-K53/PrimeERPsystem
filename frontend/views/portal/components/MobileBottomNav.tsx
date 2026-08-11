@@ -46,10 +46,10 @@ const MobileBottomNav: React.FC = () => {
           onEvent: (type) => {
             if (!cancelled && (type === 'notification' || type === 'entity_changed')) {
               portalApi.get<any>('/dashboard').then((dash) => {
-                if (!cancelled) setBadges((prev) => ({ ...prev, unpaidInvoices: dash?.unpaidInvoiceCount ?? 0, activeDeliveries: dash?.activeDeliveries ?? 0, activeOrders: dash?.totalOrders ?? 0 }));
+                if (!cancelled) setBadges((prev) => ({ ...prev, unpaidInvoices: dash?.unpaidInvoiceCount ?? prev.unpaidInvoices, activeDeliveries: dash?.activeDeliveries ?? prev.activeDeliveries, activeOrders: dash?.totalOrders ?? prev.activeOrders }));
               }).catch(() => {});
               portalApi.get<{ count: number }>('/notifications/unread-count').then((c) => {
-                if (!cancelled) setBadges((prev) => ({ ...prev, unreadNotifications: c?.count ?? 0 }));
+                if (!cancelled) setBadges((prev) => ({ ...prev, unreadNotifications: c?.count ?? prev.unreadNotifications }));
               }).catch(() => {});
             }
           },

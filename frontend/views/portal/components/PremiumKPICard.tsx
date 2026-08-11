@@ -7,11 +7,13 @@ interface PremiumKPICardProps {
   icon: React.ElementType;
   sublabel?: string;
   sublabelColor?: string;
-  trend?: { value: number; positive: boolean };
+  /** Trend hint: higher-is-better percentage with a positive/negative arrow. */
+  trend?: { value: number; positive: boolean; suffix?: string };
   gradient: string;
   glowColor: string;
   onClick?: () => void;
   badge?: string;
+  badgeColor?: string;
   lightBg?: string;
   iconBg?: string;
 }
@@ -27,6 +29,7 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
   glowColor,
   onClick,
   badge,
+  badgeColor,
   lightBg,
   iconBg,
 }) => {
@@ -78,11 +81,22 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
         >
           <Icon size={18} strokeWidth={2} />
         </div>
-        {onClick && (
-          <div style={{ marginTop: 4 }}>
-            <ChevronRight size={18} color="#CBD5E0" />
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+          {badge && (
+            <span style={{
+              fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+              padding: '3px 8px', borderRadius: 6,
+              background: badgeColor ? `${badgeColor}1A` : 'rgba(100,116,139,0.12)',
+              color: badgeColor || '#64748B',
+              whiteSpace: 'nowrap',
+            }}>
+              {badge}
+            </span>
+          )}
+          {onClick && (
+            <ChevronRight size={18} color="#CBD5E0" style={{ flexShrink: 0 }} />
+          )}
+        </div>
       </div>
 
       {/* Bottom content */}
@@ -96,6 +110,19 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
         {sublabel && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: sublabelColor || '#94A3B8', marginTop: 6 }}>
             {sublabel}
+          </div>
+        )}
+        {trend && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 6, fontSize: 10.5, fontWeight: 700 }}>
+            {trend.positive ? (
+              <TrendingUp size={12} color="#059669" />
+            ) : (
+              <TrendingDown size={12} color="#DC2626" />
+            )}
+            <span style={{ color: trend.positive ? '#047857' : '#DC2626' }}>
+              {Math.round(Number(trend.value) || 0)}%
+            </span>
+            {trend.suffix && <span style={{ color: '#94A3B8', fontWeight: 600 }}>{trend.suffix}</span>}
           </div>
         )}
       </div>

@@ -7,6 +7,7 @@ import {
 import type { Referral, ReferralReward } from '../types/referral';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
 import type { EngagementTimelineEntry, EngagementAuditEntry, PointEntry, PointBalance, CashbackEntry, MembershipTier, CustomerTier, GiftCard, GiftCardTransaction, AffiliateAccount, AffiliateCommission, Promotion, CustomerReward, EngagementAnalytics } from '../types/engagement';
+import type { PortalAd } from '../types/ads';
 import type { ProductAttribute } from '../types/attributes';
 import { calculateCustomerPaymentSnapshot } from './receiptCalculationService';
 
@@ -157,11 +158,12 @@ interface NexusDB extends DBSchema {
     engagementPromotions: { key: string; value: Promotion; };
     engagementCustomerRewards: { key: string; value: CustomerReward; };
     engagementAnalytics: { key: string; value: EngagementAnalytics; };
+    portalAds: { key: string; value: PortalAd; };
 
 }
 
 const DB_NAME = 'PrimeERP_Final_v3_Clean';
-const DB_VERSION = 51;
+const DB_VERSION = 52;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -507,6 +509,7 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   engagementPromotions: 'engagement_promotions',
   engagementCustomerRewards: 'engagement_customer_rewards',
   engagementAnalytics: 'engagement_analytics',
+  portalAds: 'portal_ads',
 
 };
 
@@ -589,6 +592,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'engagementPromotions',
     'engagementCustomerRewards',
     'engagementAnalytics',
+    'portalAds',
 
 ];
 

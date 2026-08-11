@@ -5,7 +5,7 @@ import {
 import { createElement } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { portalLifecycle } from '../../services/portalApiClient';
-import { sampleAccountStatements } from './sampleData';
+
 import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
 import { PrimeDocument } from '../shared/components/PDF/PrimeDocument';
@@ -181,9 +181,9 @@ interface FinancialStatusCardProps {
 
 const FinancialStatusCard: React.FC<FinancialStatusCardProps> = ({ outstandingBalance, creditLimit }) => {
   const balance = Number(outstandingBalance) || 0;
-  const limit = Number(creditLimit) || 100000;
+  const limit = Number(creditLimit) || 0;
   const availableCredit = limit - Math.abs(balance);
-  const utilization = Math.min(100, (Math.abs(balance) / limit) * 100);
+  const utilization = limit > 0 ? Math.min(100, (Math.abs(balance) / limit) * 100) : 0;
 
   return (
     <div style={{ borderRadius: 16, border: '1px solid #E2E8F0', background: '#fff', boxShadow: '0 1px 3px rgba(15,23,42,0.04)', overflow: 'hidden' }}>
@@ -568,7 +568,7 @@ const CustomerAccountStatements: React.FC = () => {
     try {
       const { start, end } = getDateRange(filter);
       const result = await portalLifecycle.statements.list({ startDate: start, endDate: end });
-      setData((result && (result as StatementData).transactions?.length > 0) ? result as StatementData : sampleAccountStatements as StatementData);
+      setData((result && (result as StatementData).transactions?.length > 0) ? result as StatementData : null);
     } catch (err: any) {
       setError(err.message || 'Failed to load statement');
     } finally {
@@ -612,7 +612,7 @@ const CustomerAccountStatements: React.FC = () => {
 
   const { start: currentStart, end: currentEnd } = getDateRange(periodFilter);
   const outstandingBalance = data?.outstanding_balance ?? data?.closing_balance ?? 0;
-  const creditLimit = data?.credit_limit ?? 100000;
+  const creditLimit = data?.credit_limit ?? 0;
 
   return (
     <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>

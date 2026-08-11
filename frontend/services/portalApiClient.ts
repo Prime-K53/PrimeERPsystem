@@ -4,7 +4,7 @@ import { portalLog, readPortalCache, writePortalCache } from './portalCache';
 const PORTAL_SESSION_KEY = 'portal_session';
 const DEFAULT_TIMEOUT_MS = 15000;
 
-export interface PortalSessionData {
+interface PortalSessionData {
   access_token: string;
   refresh_token: string;
   expires_in: string;
@@ -239,68 +239,11 @@ export const portalApi = {
   },
 };
 
-export interface TicketAttachment {
-  id: string;
-  ticket_id: string;
-  message_id: string | null;
-  filename: string;
-  original_name: string;
-  mime_type: string;
-  size_bytes: number;
-  uploaded_by: string;
-  created_at: string;
-  download_url?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Ticket Attachments
-// ---------------------------------------------------------------------------
-
-export async function uploadTicketAttachment(
-  ticketId: string,
-  file: File,
-  messageId?: string | null
-): Promise<TicketAttachment> {
-  const formData = new FormData();
-  formData.append('file', file);
-  if (messageId) {
-    formData.append('message_id', messageId);
-  }
-
-  const token = getPortalAccessToken();
-  const url = `${API_BASE_URL}/portal/support/tickets/${ticketId}/attachments`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    const error: any = new Error(body.message || body.error || `Upload failed with status ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-
-  return response.json();
-}
-
-export async function getTicketAttachments(ticketId: string): Promise<TicketAttachment[]> {
-  return portalApi.get<TicketAttachment[]>(`/support/tickets/${ticketId}/attachments`);
-}
-
-export async function deleteTicketAttachment(ticketId: string, attachmentId: string): Promise<{ success: boolean }> {
-  return portalApi.delete<{ success: boolean }>(`/support/tickets/${ticketId}/attachments/${attachmentId}`);
-}
-
 // ---------------------------------------------------------------------------
 // Document lifecycle (requests, quotations, downloads, timeline, realtime)
 // ---------------------------------------------------------------------------
 
-export interface RequestLineItem {
+interface RequestLineItem {
   productId?: string | null;
   name: string;
   quantity: number;
@@ -314,6 +257,8 @@ export interface PortalCatalogItem {
   sku?: string;
   unit?: string;
   description?: string;
+  /** ERP item type: Product | Stationery | Raw Material | Service | Material */
+  type?: string;
   price?: number;
   unitPrice?: number;
   quantity?: number;
@@ -321,13 +266,13 @@ export interface PortalCatalogItem {
   status?: string;
 }
 
-export interface PortalAttachment {
+interface PortalAttachment {
   name: string;
   url: string;
   type: string;
 }
 
-export type PortalRequestStatus =
+type PortalRequestStatus =
   | 'draft'
   | 'submitted'
   | 'assigned'
@@ -338,7 +283,7 @@ export type PortalRequestStatus =
   | 'rejected'
   | 'cancelled';
 
-export interface RequestPromotionInfo {
+interface RequestPromotionInfo {
   id: string;
   code: string | null;
   name: string;
@@ -380,9 +325,9 @@ export interface QuotationRequestRecord {
   updated_at: string;
 }
 
-export type SalesOrderStatus = 'Draft' | 'Confirmed' | 'Processing' | 'Pending' | 'Delivered' | 'Fulfilled' | 'Shipped' | 'Cancelled';
+type SalesOrderStatus = 'Draft' | 'Confirmed' | 'Processing' | 'Pending' | 'Delivered' | 'Fulfilled' | 'Shipped' | 'Cancelled';
 
-export interface SalesOrderRecord {
+interface SalesOrderRecord {
   id: string;
   order_number: string | null;
   orderDate: string;
@@ -433,7 +378,7 @@ export interface DocumentChainEntry {
   createdAt: string;
 }
 
-export interface DocumentChainResult {
+interface DocumentChainResult {
   chain: DocumentChainEntry[];
   originOrder: DocumentChainEntry | null;
   request: any | null;
@@ -532,7 +477,7 @@ export interface TimelineEvent {
   created_at: string;
 }
 
-export interface DownloadGateResult {
+interface DownloadGateResult {
   allowed: boolean;
   docType: string;
   docId: string;
@@ -540,7 +485,7 @@ export interface DownloadGateResult {
   downloadId: string;
 }
 
-export interface CreateRequestPayload {
+interface CreateRequestPayload {
   requestType?: string;
   items: { name: string; productId?: string | null; quantity: number; unitPrice: number }[];
   notes?: string;
@@ -567,7 +512,20 @@ export interface PortalPromotionInfo {
   endsAt?: string | null;
 }
 
-export interface PortalOrderPreviewLine {
+export interface PortalAdInfo {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  badge?: string | null;
+  ctaLabel?: string | null;
+  ctaTarget?: string | null;
+  imageUrl?: string | null;
+  gradient?: string | null;
+  emoji?: string | null;
+  endsAt?: string | null;
+}
+
+interface PortalOrderPreviewLine {
   productId: string | null;
   name: string;
   quantity: number;
@@ -603,7 +561,7 @@ export interface PortalOrderPreview {
   metadata: Record<string, any>;
 }
 
-export interface ReorderResult {
+interface ReorderResult {
   id: string;
   requestNumber: string;
   status: string;
@@ -611,7 +569,7 @@ export interface ReorderResult {
   reorderOfNumber: string;
 }
 
-export interface QuotationDecisionPayload {
+interface QuotationDecisionPayload {
   acceptedBy?: string;
   reason?: string;
   comments?: string;
@@ -766,6 +724,13 @@ export const portalLifecycle = {
     /** Active PORTAL promotions for display (badges / banners). Display only. */
     list(): Promise<PortalPromotionInfo[]> {
       return portalApi.get<PortalPromotionInfo[]>('/promotions');
+    },
+  },
+
+  ads: {
+    /** Active PORTAL banner ads for display (banner carousel). Display only. */
+    list(): Promise<PortalAdInfo[]> {
+      return portalApi.get<PortalAdInfo[]>('/ads');
     },
   },
 

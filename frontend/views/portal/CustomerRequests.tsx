@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { ClipboardList, Plus, Loader2, ArrowUpRight, Search, RefreshCw, SlidersHorizontal, Trash2, ChevronRight } from 'lucide-react';
 import { portalLifecycle, QuotationRequestRecord } from '../../services/portalApiClient';
-import { sampleRequests } from './sampleData';
+
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { useToast } from './components/Toast';
 import PortalPageHeader from './components/PortalPageHeader';
@@ -52,9 +52,9 @@ const CustomerRequests: React.FC = () => {
         setTotalPages(1);
         setTotal(data.length);
       } else {
-        setRequests(sampleRequests as any);
+        setRequests([]);
         setTotalPages(1);
-        setTotal(sampleRequests.length);
+        setTotal(0);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load requests');

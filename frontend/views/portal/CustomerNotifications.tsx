@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, Info, AlertCircle, CheckCircle, CreditCard, ShoppingCart, FileText, MessageCircle } from 'lucide-react';
 import { portalApi, portalLifecycle, PortalNotification } from '../../services/portalApiClient';
-import { sampleNotifications } from './sampleData';
+
 import PortalPageHeader from './components/PortalPageHeader';
 import PortalButton from './components/PortalButton';
 import ErrorBanner from './components/ErrorBanner';
@@ -27,17 +27,24 @@ const CustomerNotifications: React.FC = () => {
   const [notifications, setNotifications] = useState<PortalNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
-  const fetchNotifications = () => {
+  const fetchNotifications = (isRealtime = false) => {
     portalApi.get<PortalNotification[]>('/notifications')
-      .then((result) => setNotifications(result && result.length > 0 ? result : sampleNotifications as any))
-      .catch(() => setNotifications(sampleNotifications as any))
+      .then((result) => { setNotifications(result && result.length > 0 ? result : []); setRefreshError(null); })
+      .catch(() => {
+        if (isRealtime) {
+          setRefreshError('Unable to refresh — data may be stale');
+        } else {
+          setError('Failed to load notifications');
+        }
+      })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    fetchNotifications();
+    fetchNotifications(false);
   }, []);
 
   useEffect(() => {
@@ -46,7 +53,7 @@ const CustomerNotifications: React.FC = () => {
     (async () => {
       unsubscribe = await portalLifecycle.subscribe({
         onEvent: (type) => {
-          if (type === 'notification' && !cancelled) fetchNotifications();
+          if (type === 'notification' && !cancelled) fetchNotifications(true);
         },
       });
 
@@ -94,6 +101,7 @@ const CustomerNotifications: React.FC = () => {
   return (
     <div style={{ fontFamily: F, fontSize: 13.5, lineHeight: 1.45, color: '#1E293B' }}>
       <div style={{ padding: '20px 28px 8px' }}>
+        {refreshError && <div style={{ marginBottom: 8 }}><ErrorBanner message={refreshError} onDismiss={() => setRefreshError(null)} /></div>}
         <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
           {[
             { key: 'all', label: 'All' },

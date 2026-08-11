@@ -139,108 +139,23 @@
    ============================================================ */
 
 .clients-table-wrap {
-  /* Desktop: scrollable table */
+  /* Desktop + mobile: keep the real table (like the invoice list). On mobile
+     all columns stay visible and the wrapper scrolls horizontally with a
+     visible scrollbar (see .sales-list-scroll in index.css). */
 }
 
 @media (max-width: 768px) {
   .clients-table-wrap {
-    overflow: visible !important;
+    overflow-x: auto !important;
     max-height: none !important;
+    -webkit-overflow-scrolling: touch;
   }
 
-  .clients-table-wrap .clients-table,
+  /* Keep the table a real table (the global .app-layout-frame rule turns
+     tables into display:block at ≤1024px, which would double-scroll here). */
   .clients-table-wrap table {
-    min-width: 0 !important;
-  }
-
-  .clients-table-wrap thead {
-    display: none !important;
-  }
-
-  .clients-table-wrap tbody {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 12px;
-  }
-
-  .clients-table-wrap tbody tr {
-    display: flex;
-    flex-direction: column;
-    background: #FEFDFB;
-    border: 1px solid #e4ddd1;
-    border-radius: 12px;
-    padding: 14px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    gap: 6px;
-    cursor: pointer;
-  }
-
-  .clients-table-wrap tbody tr:hover {
-    background: #FEFDFB;
-  }
-
-  .clients-table-wrap tbody td {
-    border-bottom: none !important;
-    padding: 3px 0 !important;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 12.5px;
-  }
-
-  .clients-table-wrap tbody td::before {
-    content: attr(data-label);
-    font-weight: 600;
-    font-size: 10px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: #5c6567;
-    white-space: nowrap;
-    margin-right: 8px;
-    min-width: 80px;
-  }
-
-  /* First td (checkbox) stays inline */
-  .clients-table-wrap tbody td:first-child {
-    display: none !important;
-  }
-
-  /* Customer name td gets special treatment */
-  .clients-table-wrap tbody td:nth-child(2) {
-    display: block !important;
-    padding: 0 !important;
-  }
-
-  .clients-table-wrap tbody td:nth-child(2)::before {
-    display: none;
-  }
-
-  /* Actions td */
-  .clients-table-wrap tbody td:last-child {
-    justify-content: flex-end;
-    padding-top: 8px !important;
-  }
-}
-
-@media (max-width: 480px) {
-  .clients-table-wrap tbody {
-    padding: 8px;
-    gap: 8px;
-  }
-
-  .clients-table-wrap tbody tr {
-    padding: 10px 12px;
-    border-radius: 10px;
-  }
-
-  .clients-table-wrap tbody td {
-    font-size: 12px;
-  }
-
-  .clients-table-wrap tbody td::before {
-    font-size: 9px;
-    min-width: 60px;
+    display: table !important;
+    overflow: visible !important;
   }
 }
 

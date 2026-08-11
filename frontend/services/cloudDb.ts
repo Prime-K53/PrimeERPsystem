@@ -104,6 +104,7 @@ export const STORE_TO_TABLE: Record<string, string> = {
   engagementPromotions: 'engagement_promotions',
   engagementCustomerRewards: 'engagement_customer_rewards',
   engagementAnalytics: 'engagement_analytics',
+  portalAds: 'portal_ads',
 
   // Financial years & user preferences for cross-device sync
   financialYears: 'financial_years',
