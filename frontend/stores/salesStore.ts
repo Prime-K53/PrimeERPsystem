@@ -70,6 +70,7 @@ interface SalesState {
   addCustomerPayment: (payment: CustomerPayment) => Promise<void>;
   updateCustomerPayment: (payment: CustomerPayment) => Promise<void>;
   deleteCustomerPayment: (id: string) => Promise<void>;
+  permanentlyDeleteCustomerPayment: (id: string) => Promise<void>;
 
   addShipment: (shipment: Shipment, deliveryNotePatch?: Partial<DeliveryNote>) => Promise<void>;
   updateShipment: (shipment: Shipment, deliveryNotePatch?: Partial<DeliveryNote>) => Promise<void>;
@@ -104,7 +105,9 @@ export const useSalesStore = create<SalesState>((set, get) => ({
   fetchSalesData: async (silent = false) => {
     if (!silent) set({ isLoading: true });
     try {
-      const [sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs, salesOrders] = await Promise.all([
+      // Sales Orders are fetched from the canonical salesOrderStore, not duplicated here.
+      await useSalesOrderStore.getState().fetchSalesOrders(true);
+      const [sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs] = await Promise.all([
         api.sales.getAllSales(),
         api.sales.getQuotations(),
         api.sales.getJobOrders(),
@@ -113,10 +116,9 @@ export const useSalesStore = create<SalesState>((set, get) => ({
         api.customers.getAll().then(list => (list as Array<Record<string, unknown>>).filter(c => !c.deletedAt)),
         api.sales.getSalesExchanges(),
         api.sales.getReprintJobs(),
-        api.sales.getSalesOrders()
       ]);
 
-      set({ sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs, salesOrders });
+      set({ sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs, salesOrders: useSalesOrderStore.getState().salesOrders });
     } catch (error) {
       logger.error("Failed to load sales data", error);
     } finally {
@@ -293,6 +295,16 @@ addCustomerPayment: async (payment) => {
         throw error;
       }
   },
+  permanentlyDeleteCustomerPayment: async (id) => {
+      const prev = get().customerPayments;
+      set(state => ({ customerPayments: state.customerPayments.filter(p => p.id !== id) }));
+      try {
+        await api.sales.permanentlyDeleteCustomerPayment(id);
+      } catch (error) {
+        set({ customerPayments: prev });
+        throw error;
+      }
+  },
 
   addShipment: async (shipment, deliveryNotePatch) => {
     const newShipment = { ...shipment, id: shipment.id || generateNextId('SHP', get().shipments) };
@@ -401,36 +413,16 @@ addCustomerPayment: async (payment) => {
     }
   },
 
+  // Pure facade — delegates entirely to the canonical salesOrderStore.
+  // No local ID generation: server-authoritative numbering (SO-YYYY-######).
   addSalesOrder: async (order) => {
-    const newOrder = { ...order, id: order.id || generateNextId('SO', get().salesOrders) };
-    const prev = get().salesOrders;
-    set(state => ({ salesOrders: [...state.salesOrders, newOrder] }));
-    try {
-      await useSalesOrderStore.getState().createSalesOrder(newOrder);
-    } catch (error) {
-      set({ salesOrders: prev });
-      throw error;
-    }
+    await useSalesOrderStore.getState().createSalesOrder(order);
   },
   updateSalesOrder: async (order) => {
-    const prev = get().salesOrders;
-    set(state => ({ salesOrders: state.salesOrders.map(o => o.id === order.id ? order : o) }));
-    try {
-      await useSalesOrderStore.getState().updateSalesOrder(order);
-    } catch (error) {
-      set({ salesOrders: prev });
-      throw error;
-    }
+    await useSalesOrderStore.getState().updateSalesOrder(order);
   },
   deleteSalesOrder: async (id) => {
-    const prev = get().salesOrders;
-    set(state => ({ salesOrders: state.salesOrders.filter(o => o.id !== id) }));
-    try {
-      await useSalesOrderStore.getState().deleteSalesOrder(id);
-    } catch (error) {
-      set({ salesOrders: prev });
-      throw error;
-    }
+    await useSalesOrderStore.getState().deleteSalesOrder(id);
   },
 
   createSalesExchange: async (exchange) => {

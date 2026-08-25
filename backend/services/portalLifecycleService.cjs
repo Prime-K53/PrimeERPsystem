@@ -208,21 +208,57 @@ async function runQuery(query, params = []) {
     if (/UPDATE/i.test(trimmed)) {
       const updateMatch = trimmed.match(/UPDATE\s+(\w+)\s+SET/i);
       if (updateMatch) {
-        const id = String(params[params.length - 1]);
-        const row = await repo.getById(updateMatch[1], id);
-        if (row) {
-          const updates = { ...row };
-          const setMatch = trimmed.match(/SET\s+(.+?)\s+WHERE/is);
-          if (setMatch) {
-            const pairs = setMatch[1].split(',');
-            for (let i = 0; i < Math.min(pairs.length, params.length - 1); i++) {
-              const colMatch = pairs[i].match(/(\w+)\s*=\s*\?/);
-              if (colMatch) updates[colMatch[1]] = params[i];
+        const table = updateMatch[1];
+        // Bind the SET clause: `col = ?` positionally AND literal assignments
+        // (`col = 1`, `col = 'x'`, `col = NULL`). Previously ONLY placeholder
+        // bindings were applied, so statements like
+        // `UPDATE admin_notifications SET is_read = 1 WHERE id = ?` silently
+        // wrote NOTHING back.
+        const upper = trimmed.toUpperCase();
+        const setClause = trimmed.slice(upper.indexOf(' SET ') + 4);
+        const pairs = setClause.split(',');
+        const applySet = (target, params, skipLastParam) => {
+          let pIdx = 0;
+          const limit = skipLastParam ? params.length - 1 : params.length;
+          for (const pair of pairs) {
+            const m = pair.match(/(\w+)\s*=\s*(\?|NULL|-?\d+(?:\.\d+)?|'[^']*')/i);
+            if (!m) continue;
+            const tok = m[2];
+            if (tok === '?') {
+              if (pIdx >= limit) break;
+              target[m[1]] = params[pIdx++];
+            } else if (/^NULL$/i.test(tok)) {
+              target[m[1]] = null;
+            } else if (tok.startsWith("'")) {
+              target[m[1]] = tok.slice(1, -1);
+            } else {
+              target[m[1]] = Number(tok);
             }
           }
-          await repo.upsert(updateMatch[1], updates);
+        };
+
+        if (/\sWHERE\s/is.test(setClause)) {
+          // Single-row update: the trailing param is the WHERE id.
+          const id = String(params[params.length - 1]);
+          const row = await repo.getById(table, id);
+          if (row) {
+            const updates = { ...row };
+            applySet(updates, params, true);
+            await repo.upsert(table, updates);
+          }
+          return { id, changes: 1 };
         }
-        return { id, changes: 1 };
+
+        // Bulk update without WHERE (e.g. mark-all-read).
+        const rows = await repo.getAll(table);
+        let changed = 0;
+        for (const row of rows || []) {
+          const updates = { ...row };
+          applySet(updates, [], false);
+          await repo.upsert(table, updates);
+          changed += 1;
+        }
+        return { changes: changed };
       }
       return { changes: 0 };
     }
@@ -286,6 +322,10 @@ function normalizeItems(items) {
     if (item.netUnitPrice !== undefined) base.netUnitPrice = round2(item.netUnitPrice);
     if (item.promotionId) base.promotionId = item.promotionId;
     if (item.promotionCode) base.promotionCode = item.promotionCode;
+    // Preserve the selected variant identity end-to-end.
+    if (item.variantId) base.variantId = item.variantId;
+    // Preserve captured pricing evidence (material cost snapshot) verbatim.
+    if (item.pricingBreakdown) base.pricingBreakdown = item.pricingBreakdown;
     return base;
   }).filter((item) => item.name && item.quantity > 0);
 }
@@ -312,6 +352,7 @@ function computeTotals(items, discount = 0, taxRate = 0, deliveryFee = 0) {
 async function getCatalogPriceMap() {
   const cloud = await repo.getAll('products');
   const map = {};
+  const { collectProductVariants } = require('./catalogVariants.cjs');
   for (const item of cloud || []) {
     // Mirror the portal catalog's deleted filter so a product that is no
     // longer orderable is never silently priced from the master table.
@@ -319,15 +360,197 @@ async function getCatalogPriceMap() {
     map[item.id] = {
       name: item.name || item.productName || null,
       sellingPrice: Number(item.sellingPrice ?? item.selling_price ?? item.price ?? 0) || 0,
+      // Authoritative unit cost resolved with the SAME alias policy the ERP
+      // uses everywhere else (frontend resolveStoredCost): smartPricing
+      // baseCost first, then the stored cost spellings.
+      costPrice: resolveCatalogUnitCost(item),
       category: item.category || item.type || null,
     };
+    // Variant entries are keyed by the SAME deterministic ids the portal
+    // catalog serves, so a customer-selected variant is re-priced from ITS
+    // OWN master price server-side (never flattened to the parent price).
+    for (const v of collectProductVariants(item, [])) {
+      if (!v.active) continue;
+      map[v.id] = {
+        name: v.name,
+        sellingPrice: v.sellingPrice === null ? (Number(item.sellingPrice ?? item.selling_price ?? item.price ?? 0) || 0) : v.sellingPrice,
+        costPrice: v.costPrice === null ? resolveCatalogUnitCost(item) : v.costPrice,
+        category: map[item.id].category,
+        parentProductId: item.id,
+      };
+    }
   }
   return map;
+}
+
+// Mirrors frontend/utils/pricing.ts resolveStoredCost — one source of truth
+// for what "the material cost of a catalog product" means.
+function resolveCatalogUnitCost(item) {
+  return round2(
+    Number(
+      item?.smartPricingSnapshot?.baseCost
+      ?? item?.cost_price
+      ?? item?.cost_per_unit
+      ?? item?.cost
+      ?? item?.costPrice
+      ?? 0
+    ) || 0
+  );
+}
+
+/**
+ * Canonical line-level pricing-evidence snapshot for a portal-originated line.
+ * Same schema the ERP Internal Pricing Breakdown renderer persists/reads
+ * (frontend buildPricingBreakdownSnapshot). Portal lines carry no market
+ * adjustments and no rounding at submission, so per the established pricing
+ * policy profit margin = selling price − material cost − adjustments −
+ * rounding. This records EVIDENCE captured from ERP master data; it never
+ * derives cost from a total.
+ */
+function buildLinePricingBreakdown(sellingPrice, costPrice) {
+  const selling = round2(sellingPrice);
+  const cost = round2(costPrice);
+  return {
+    baseMaterialCost: cost,
+    costPrice: cost,
+    sellingPrice: selling,
+    adjustmentTotal: 0,
+    adjustmentLines: [],
+    profitMarginAmount: round2(selling - cost),
+    roundingDifference: 0,
+    wasRounded: false,
+  };
+}
+
+// Order-level aggregates over line pricing evidence (same semantics as the
+// frontend summarizePricingBreakdown: quantity-scaled per line).
+function summarizePortalPricing(items) {
+  let materialTotal = 0;
+  let adjustmentTotal = 0;
+  let profitMarginTotal = 0;
+  let roundingTotal = 0;
+  for (const item of Array.isArray(items) ? items : []) {
+    const b = item && item.pricingBreakdown;
+    if (!b) continue;
+    const qty = Math.max(1, Number(item.quantity) || 1);
+    materialTotal += round2(b.baseMaterialCost ?? b.costPrice ?? 0) * qty;
+    adjustmentTotal += round2(b.adjustmentTotal ?? 0) * qty;
+    profitMarginTotal += round2(b.profitMarginAmount ?? ((Number(b.sellingPrice) || 0) - (Number(b.costPrice) || 0))) * qty;
+    roundingTotal += round2(b.roundingDifference ?? 0) * qty;
+  }
+  return {
+    materialTotal: round2(materialTotal),
+    adjustmentTotal: round2(adjustmentTotal),
+    profitMarginTotal: round2(profitMarginTotal),
+    roundingTotal: round2(roundingTotal),
+  };
 }
 
 function stripPromotionLineFields(item) {
   const { originalUnitPrice, discountPercent, discountAmount, netUnitPrice, promotionId, promotionCode, ...rest } = item || {};
   return rest;
+}
+
+// Exact normalized-name matching for conversion-time pricing: trim, lowercase,
+// collapse internal whitespace. NO fuzzy matching — "Scheme Pad" must never
+// auto-price a similarly-named item, and two distinct catalog entries sharing
+// one normalized name are treated as ambiguous (never auto-priced).
+function normalizeCatalogName(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Resolve requested lines to authoritative ERP prices at the CONVERSION
+ * boundary (request -> official quotation / sales order prefill). The request
+ * document itself is never rewritten; this only prices what flows into the
+ * standard ERP editor.
+ *
+ * Matching strategy (in order):
+ *   1. variantId  -> catalogMap by deterministic variant id   ('master_variant')
+ *   2. productId  -> catalogMap by product id                 ('master')
+ *   3. no/stale id -> EXACT normalized name against the ERP catalog,
+ *      accepted only when exactly one catalog entry carries that name
+ *      ('master_name_match')
+ *   4. unmatched -> unitPrice stays 0                         ('unknown_product'
+ *      when a stale id was supplied, 'custom_line' otherwise)
+ *
+ * Same authoritative source as submission pricing (getCatalogPriceMap ->
+ * cloud `products` master + embedded/table variants). Browser prices are never
+ * trusted: a submitted unitPrice is kept ONLY for genuine custom lines without
+ * any catalog identity... which the ERP sales team must review before issuing
+ * the quotation.
+ */
+async function resolveRequestItemsAtConversion(items) {
+  const source = Array.isArray(items) ? items : [];
+  if (source.length === 0) return [];
+
+  const catalogMap = await getCatalogPriceMap();
+
+  // Normalized-name index across parents AND active variants. Distinct keys
+  // sharing one normalized name mark each other ambiguous.
+  const nameIndex = new Map();
+  for (const [key, entry] of Object.entries(catalogMap)) {
+    const norm = normalizeCatalogName(entry && entry.name);
+    if (!norm) continue;
+    const existing = nameIndex.get(norm);
+    if (!existing) {
+      nameIndex.set(norm, { key, entry, ambiguous: false });
+    } else if (existing.key !== key) {
+      existing.ambiguous = true;
+    }
+  }
+
+  return source.map((item) => {
+    if (!item) return item;
+    const originalUnit = Number(item.unitPrice ?? item.unit_price ?? 0) || 0;
+    const quantity = Math.max(1, Number(item.quantity ?? item.qty ?? 1) || 1);
+    const base = { ...item };
+
+    const variantId = item.variantId || item.variant_id || null;
+    const productId = item.productId || item.product_id || null;
+
+    let entry = null;
+    let priceSource = null;
+    if (variantId && catalogMap[String(variantId)]) {
+      entry = catalogMap[String(variantId)];
+      priceSource = 'master_variant';
+    } else if (productId && catalogMap[String(productId)]) {
+      entry = catalogMap[String(productId)];
+      priceSource = 'master';
+    }
+
+    if (!entry) {
+      // Exact normalized-name fallback (unambiguous matches only).
+      const norm = normalizeCatalogName(item.name);
+      const hit = norm ? nameIndex.get(norm) : null;
+      if (hit && !hit.ambiguous) {
+        entry = hit.entry;
+        priceSource = 'master_name_match';
+        // Link the resolved catalog identity so downstream pricing-evidence
+        // capture and editor behavior treat it as a catalog line.
+        base.productId = hit.key;
+      }
+    }
+
+    if (entry) {
+      const price = round2(Number(entry.sellingPrice ?? entry.selling_price ?? entry.price ?? 0) || 0);
+      base.unitPrice = price;
+      base.lineTotal = round2(price * quantity);
+      base.priceSource = priceSource;
+      base.pricingBreakdown = buildLinePricingBreakdown(price, Number(entry.costPrice ?? 0) || 0);
+    } else if (productId || variantId) {
+      // Stale/unknown catalog reference: never invent a price.
+      base.unitPrice = 0;
+      base.lineTotal = 0;
+      base.priceSource = 'unknown_product';
+    } else {
+      // Genuine custom line: keep 0 (submitted browser prices are not trusted).
+      base.unitPrice = 0;
+      base.lineTotal = 0;
+      base.priceSource = item.priceSource || 'custom_line';
+    }
+    return base;
+  });
 }
 
 /**
@@ -379,23 +602,38 @@ async function runOrderPromotion({ customerId, items, promotionCode }) {
 
   // Line items keep the ERP master price PLUS explicit discount fields so the
   // ERP always sees WHY the price differs — never a silently changed master.
-  const storedItems = calculation.lines.map((l) => ({
-    productId: l.productId,
-    name: l.name,
-    quantity: l.quantity,
-    unitPrice: l.originalUnitPrice,
-    originalUnitPrice: l.originalUnitPrice,
-    discountPercent: l.discountPercent,
-    discountAmount: l.discountAmount,
-    netUnitPrice: l.netUnitPrice,
-    lineTotal: round2(l.originalUnitPrice * l.quantity),
-    promotionId: l.promotionId,
-    promotionCode: l.promotionCode,
-    // Price source audit flag: 'master' | 'unknown_product' | 'custom_line'.
-    // A line priced at 0 with source 'unknown_product' must be reviewed by
-    // sales before a quotation is issued.
-    priceSource: l.priceSource || 'master',
-  }));
+  const storedItems = calculation.lines.map((l) => {
+    const line = {
+      productId: l.productId,
+      name: l.name,
+      quantity: l.quantity,
+      unitPrice: l.originalUnitPrice,
+      originalUnitPrice: l.originalUnitPrice,
+      discountPercent: l.discountPercent,
+      discountAmount: l.discountAmount,
+      netUnitPrice: l.netUnitPrice,
+      lineTotal: round2(l.originalUnitPrice * l.quantity),
+      promotionId: l.promotionId,
+      promotionCode: l.promotionCode,
+      // Selected variant identity (deterministic catalog variant id).
+      ...(l.variantId ? { variantId: l.variantId } : {}),
+      // Price source audit flag: 'master' | 'master_variant' |
+      // 'unknown_product' | 'custom_line'. A line priced at 0 with source
+      // 'unknown_product' must be reviewed by sales before a quotation is
+      // issued.
+      priceSource: l.priceSource || 'master',
+    };
+    // Pricing-evidence capture: master-priced lines record the authoritative
+    // material cost alongside the authoritative selling price so the pricing
+    // breakdown survives request → order → invoice. Variant-priced lines use
+    // THEIR OWN variant's cost. Unknown/custom lines get NO fabricated
+    // evidence.
+    const catalogEntry = catalogMap[l.variantId || l.productId];
+    if ((line.priceSource === 'master' || line.priceSource === 'master_variant') && catalogEntry) {
+      line.pricingBreakdown = buildLinePricingBreakdown(l.originalUnitPrice, catalogEntry.costPrice);
+    }
+    return line;
+  });
 
   return {
     subtotal,
@@ -980,7 +1218,7 @@ const portalLifecycleService = {
 
   async getRequests({ customerId, status } = {}) {
     let query = `
-      SELECT q.*, c.name AS resolved_customer_name
+      SELECT q.*, c.name AS resolved_customer_name, c.email AS customer_email
       FROM quotation_requests q
       LEFT JOIN customers c ON c.id = q.customer_id
       WHERE 1=1`;
@@ -993,7 +1231,7 @@ const portalLifecycleService = {
     return rows.map((r) => ({
       ...r,
       status: r.quotation_id ? (r.status === 'quotation_ready' ? REQUEST_STATUS.CONVERTED : r.status) : normalizeRequestStatus(r.status),
-      customer_name: r.resolved_customer_name || r.customer_name,
+      customer_name: r.resolved_customer_name || r.customer_email || r.customer_name,
       items: parseJson(r.items, []),
       attachments: parseJson(r.attachments, []),
       promotion: parseJson(r.promotion, null),
@@ -1002,7 +1240,7 @@ const portalLifecycleService = {
 
   async getRequestById(id, { customerId} = {}) {
     const request = await getOne(
-      `SELECT q.*, c.name AS resolved_customer_name
+      `SELECT q.*, c.name AS resolved_customer_name, c.email AS customer_email
          FROM quotation_requests q
          LEFT JOIN customers c ON c.id = q.customer_id
         WHERE q.id = ?`,
@@ -1011,7 +1249,7 @@ const portalLifecycleService = {
     if (!request) return null;
     if (customerId && String(request.customer_id ?? request.customerId ?? '') !== String(customerId)) return null;
     request.status = request.quotation_id ? (request.status === 'quotation_ready' ? REQUEST_STATUS.CONVERTED : request.status) : normalizeRequestStatus(request.status);
-    request.customer_name = request.resolved_customer_name || request.customer_name;
+    request.customer_name = request.resolved_customer_name || request.customer_email || request.customer_name;
     request.items = parseJson(request.items, []);
     request.attachments = parseJson(request.attachments, []);
     request.promotion = parseJson(request.promotion, null);
@@ -1050,6 +1288,68 @@ const portalLifecycleService = {
   // ─── Admin: review requests ────────────────────────────────────────────────
   async adminListRequests({ status } = {}) {
     return this.getRequests({ status });
+  },
+
+  async getInboxRequests() {
+    // Customers with UNREAD request-pipeline admin notifications — computed in
+    // JS because the SQL read-shim only translates `col = ?` predicates; the
+    // previous `WHERE is_read = 0` was silently ignored, so the inbox (and its
+    // badge) never cleared even after every notification was marked read.
+    // Scoped to hub links ('#/sales-flow/requests'): unrelated streams (e.g.
+    // payment requests) must not keep this badge alive.
+    const notifications = await repo.getAll('admin_notifications');
+    const unreadCustomers = new Set();
+    for (const n of notifications || []) {
+      const raw = n && typeof n === 'object' ? n : {};
+      const isRead = Number(raw.is_read ?? raw.data?.is_read ?? 0) === 1;
+      const customerId = raw.customer_id ?? raw.data?.customer_id;
+      const link = raw.link ?? raw.data?.link;
+      if (!isRead && customerId && typeof link === 'string' && link.startsWith('#/sales-flow/requests')) {
+        unreadCustomers.add(String(customerId));
+      }
+    }
+    if (unreadCustomers.size === 0) return [];
+
+    const rows = await repo.getAll('quotation_requests');
+    return rows
+      .filter((q) => {
+        if (!q || q.deleted || q.deletedAt || q.deleted_at) return false;
+        if (!unreadCustomers.has(String(q.customer_id))) return false;
+        return !['rejected', 'cancelled', 'converted'].includes(String(q.status || ''));
+      })
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+      .map((r) => ({
+        ...r,
+        status: r.quotation_id ? (r.status === 'quotation_ready' ? REQUEST_STATUS.CONVERTED : r.status) : normalizeRequestStatus(r.status),
+        items: parseJson(r.items, []),
+        attachments: parseJson(r.attachments, []),
+        promotion: parseJson(r.promotion, null),
+      }));
+  },
+
+  /**
+   * Mark the request-pipeline admin notifications as READ. Called when the
+   * Quotation Requests command hub is opened so the notification badge
+   * disappears there and on the dashboard. Scoped to links pointing at the
+   * hub ('#/sales-flow/requests') — other notification streams are untouched.
+   */
+  async markRequestNotificationsRead() {
+    const rows = await repo.getAll('admin_notifications');
+    let marked = 0;
+    for (const n of rows || []) {
+      if (!n || !n.id) continue;
+      const link = n.link ?? n.data?.link;
+      const isRead = Number(n.is_read ?? n.data?.is_read ?? 0) === 1;
+      if (isRead) continue;
+      if (typeof link === 'string' && link.startsWith('#/sales-flow/requests')) {
+        await this.markAdminNotificationRead(String(n.id));
+        marked += 1;
+      }
+    }
+    if (marked > 0) {
+      emitEntityChange('admin', { docType: 'request', docId: '__inbox_read__', status: 'read' });
+    }
+    return { marked };
   },
 
   async adminGetRequest(id) {
@@ -1308,6 +1608,11 @@ const portalLifecycleService = {
     emitEntityChange('admin', { customerId: request.customer_id, docType: 'request', docId: requestId, status: REQUEST_STATUS.READY_FOR_CONVERSION });
 
     // Prefill payload for the ERP quotation editor. No quotation exists yet.
+    // Request lines are priced HERE from authoritative ERP master data so the
+    // official quotation opens with real prices; unmatched/custom lines stay
+    // K 0.00 for manual review. The stored request is never rewritten.
+    const resolvedItems = await resolveRequestItemsAtConversion(request.items);
+    const resolvedSubtotal = round2(resolvedItems.reduce((s, l) => s + Number(l.lineTotal || 0), 0));
     const customer = await getOne(
       `SELECT id, name, email, phone, address, city,
               segment, balance
@@ -1321,10 +1626,10 @@ const portalLifecycleService = {
       requestType: request.request_type,
       customer_id: request.customer_id,
       customer_name: request.customer_name,
-      items: request.items,
-      subtotal: request.subtotal,
+      items: resolvedItems,
+      subtotal: resolvedSubtotal,
       discountTotal: Number(request.discount_total ?? request.discountTotal ?? 0) || 0,
-      total: Number(request.total ?? 0) || round2((Number(request.subtotal) || 0) - (Number(request.discount_total ?? request.discountTotal) || 0)),
+      total: round2(resolvedSubtotal - (Number(request.discount_total ?? request.discountTotal ?? 0) || 0)),
       promotion: request.promotion || null,
       promotionApplied: !!request.promotion,
       notes: request.notes,
@@ -1507,6 +1812,11 @@ const portalLifecycleService = {
 
     emitEntityChange('admin', { customerId: request.customer_id, docType: 'request', docId: requestId, status: REQUEST_STATUS.READY_FOR_CONVERSION });
 
+    // Same conversion-time pricing as the quotation boundary: authoritative
+    // prices for catalog-matched lines, K 0.00 for unmatched/custom lines.
+    const resolvedOrderItems = await resolveRequestItemsAtConversion(request.items);
+    const resolvedOrderSubtotal = round2(resolvedOrderItems.reduce((s, l) => s + Number(l.lineTotal || 0), 0));
+
     const customer = await getOne(
       `SELECT id, name, email, phone, address, city,
               segment, balance
@@ -1520,10 +1830,10 @@ const portalLifecycleService = {
       requestType: request.request_type,
       customer_id: request.customer_id,
       customer_name: request.customer_name,
-      items: request.items,
-      subtotal: request.subtotal,
+      items: resolvedOrderItems,
+      subtotal: resolvedOrderSubtotal,
       discountTotal: Number(request.discount_total ?? request.discountTotal ?? 0) || 0,
-      total: Number(request.total ?? 0) || round2((Number(request.subtotal) || 0) - (Number(request.discount_total ?? request.discountTotal) || 0)),
+      total: round2(resolvedOrderSubtotal - (Number(request.discount_total ?? request.discountTotal ?? 0) || 0)),
       promotion: request.promotion || null,
       promotionApplied: !!request.promotion,
       notes: request.notes,
@@ -1590,9 +1900,28 @@ const portalLifecycleService = {
     // list, the portal and the document chain all reference ONE order. Without
     // an erpOrderId a fresh canonical record is created as before.
     const orderId = erpOrderId || genId('so');
-    const orderNumber = await workflowEngine.nextYearScopedNumber('sales_orders', 'order_number', 'SO');
+    const orderNumber = await workflowEngine.nextYearScopedNumber('sales_orders', 'order_number', 'ORD');
+
+    // Pricing-evidence preservation. Lines priced at submission already carry
+    // their pricingBreakdown; any master-priced line still missing one (e.g.
+    // requests created before evidence capture existed) is backfilled from the
+    // SAME authoritative catalog — never from the order total, never invented.
+    // Unknown/custom lines receive no fabricated evidence.
+    let catalogMap = null;
+    try { catalogMap = await getCatalogPriceMap(); } catch { catalogMap = null; }
+    const persistedItems = normalizedItems.map((item) => {
+      if (item.pricingBreakdown || !item.productId || !catalogMap) return item;
+      const catalogEntry = catalogMap[item.productId];
+      if (!catalogEntry) return item;
+      return {
+        ...item,
+        pricingBreakdown: buildLinePricingBreakdown(item.unitPrice, catalogEntry.costPrice),
+      };
+    });
+    const pricingTotals = summarizePortalPricing(persistedItems);
+
     const itemsJson = JSON.stringify(
-      normalizedItems.map((item) => ({
+      persistedItems.map((item) => ({
         id: item.productId || genId('itm'),
         productId: item.productId || null,
         description: item.name,
@@ -1605,6 +1934,17 @@ const portalLifecycleService = {
         netUnitPrice: item.netUnitPrice !== undefined ? item.netUnitPrice : item.unitPrice,
         promotionId: item.promotionId || null,
         promotionCode: item.promotionCode || null,
+        // Selected variant identity, preserved end-to-end.
+        ...(item.variantId ? { variantId: item.variantId } : {}),
+        // Captured pricing evidence (material cost snapshot) + flat cost
+        // mirrors so every downstream reader (order → invoice conversion)
+        // sees the same authoritative cost.
+        ...(item.pricingBreakdown ? {
+          pricingBreakdown: item.pricingBreakdown,
+          cost: item.pricingBreakdown.costPrice,
+          cost_price: item.pricingBreakdown.costPrice,
+          costPrice: item.pricingBreakdown.costPrice,
+        } : {}),
       }))
     );
     const now = nowIso();
@@ -1649,6 +1989,13 @@ const portalLifecycleService = {
         discount_total: discount,
         promotion_applied: promotion ? 1 : 0,
         subtotal_before_discount: subtotal,
+        // Order-level pricing evidence aggregates (metadata only — these are
+        // NOT accounting amounts; total/subtotal above are untouched).
+        materialTotal: pricingTotals.materialTotal,
+        adjustmentTotal: pricingTotals.adjustmentTotal,
+        profitMarginTotal: pricingTotals.profitMarginTotal,
+        roundingTotal: pricingTotals.roundingTotal,
+        roundingDifference: pricingTotals.roundingTotal,
         version: erpExisting ? erpExisting.version : undefined,
       };
       const savedOrder = await repo.upsert('sales_orders', orderRecord);
@@ -1735,7 +2082,7 @@ const portalLifecycleService = {
     const customerName = (customer && customer.name) || 'Customer';
 
     const id = genId('req');
-    const requestNumber = await workflowEngine.nextYearScopedNumber('quotation_requests', 'request_number', 'ODR');
+    const requestNumber = await workflowEngine.nextYearScopedNumber('quotation_requests', 'request_number', workflowEngine.requestNumberPrefix('order'));
     const { subtotal } = computeTotals(items);
 
     await runQuery(
@@ -1776,7 +2123,7 @@ const portalLifecycleService = {
   // ─── Quotation reads ───────────────────────────────────────────────────────
   async getQuotations({ customerId, status } = {}) {
     let query = `
-      SELECT q.*, c.name AS resolved_customer_name
+      SELECT q.*, c.name AS resolved_customer_name, c.email AS customer_email
       FROM quotations q
       LEFT JOIN customers c ON c.id = q.customer_id
       WHERE 1=1`;
@@ -1795,14 +2142,14 @@ const portalLifecycleService = {
     }
     return rows.map((r) => ({
       ...r,
-      customer_name: r.resolved_customer_name || r.customer_name,
+      customer_name: r.resolved_customer_name || r.customer_email || r.customer_name,
       items: parseJson(r.items, []),
     }));
   },
 
   async getQuotationById(id, { customerId} = {}) {
     const quotation = await getOne(
-      `SELECT q.*, c.name AS resolved_customer_name
+      `SELECT q.*, c.name AS resolved_customer_name, c.email AS customer_email
          FROM quotations q
          LEFT JOIN customers c ON c.id = q.customer_id
         WHERE q.id = ?`,
@@ -1810,7 +2157,7 @@ const portalLifecycleService = {
     );
     if (!quotation) return null;
     if (customerId && String(quotation.customer_id ?? quotation.customerId ?? '') !== String(customerId)) return null;
-    quotation.customer_name = quotation.resolved_customer_name || quotation.customer_name;
+    quotation.customer_name = quotation.resolved_customer_name || quotation.customer_email || quotation.customer_name;
     quotation.items = parseJson(quotation.items, []);
     await applyQuotationExpiry(quotation);
     return quotation;
@@ -2003,7 +2350,7 @@ const portalLifecycleService = {
     }
 
     const orderId = genId('so');
-    const orderNumber = await workflowEngine.nextYearScopedNumber('sales_orders', 'order_number', 'SO');
+    const orderNumber = await workflowEngine.nextYearScopedNumber('sales_orders', 'order_number', 'ORD');
     const itemsJson = JSON.stringify(
       quotation.items.map((item) => ({
         id: item.productId || genId('itm'),
@@ -2313,6 +2660,15 @@ const portalLifecycleService = {
     });
 
     if (isCustomer) {
+      // If the request was waiting for a customer response, move it back to
+      // submitted so the admin inbox picks it up as requiring attention.
+      if (docType === 'request' && doc.status === REQUEST_STATUS.WAITING_FOR_CUSTOMER) {
+        await runQuery(
+          `UPDATE quotation_requests SET status = ?, updated_at = ? WHERE id = ?`,
+          [REQUEST_STATUS.SUBMITTED, nowIso(), docId]
+        ).catch(() => {});
+      }
+
       await notifyAdmin({ type: NOTIFICATION_TYPES.DECISION, title: 'Customer comment added',
         body: `${actorName} commented on a ${docType}: ${text.slice(0, 140)}`,
         link: '#/sales-flow/requests', customerId: doc.customer_id, customerName: actorName,

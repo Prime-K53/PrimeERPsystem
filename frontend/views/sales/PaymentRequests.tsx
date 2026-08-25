@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE_URL } from '../../config/api.js';
 import { getJsonRequestHeaders } from '../../services/requestHeaders';
 import { useAuth } from '../../context/AuthContext';
+import { formatDate } from '../../utils/formatters';
 import {
   HandCoins, RefreshCw, Search, X, CheckCircle2, Clock, Eye,
   Ban, XCircle, AlertTriangle, Building2, FileText, Banknote, CalendarDays,
@@ -65,21 +66,24 @@ const fmtAmount = (n: number | undefined, currency: string): string => {
   return `${currency} ${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-const fmtDate = (iso?: string): string => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-};
+export interface PaymentRequestStats {
+  total: number;
+  awaitingReview: number;
+  confirmed: number;
+  requestedValue: number;
+  confirmedValue: number;
+}
 
 interface PaymentRequestsProps {
   /** Render as a tab inside another page (hide the standalone page chrome). */
   embedded?: boolean;
   /** Reports the total request count whenever it changes (e.g. for a parent tab badge). */
   onCountChange?: (count: number) => void;
+  /** Reports aggregate stats whenever the underlying rows change (e.g. for parent KPIs). */
+  onStatsChange?: (stats: PaymentRequestStats) => void;
 }
 
-const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onCountChange }) => {
+const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onCountChange, onStatsChange }) => {
   const { companyConfig, notify } = useAuth();
   const currency = companyConfig?.currencySymbol || 'K';
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
@@ -137,7 +141,19 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
     onCountChange?.(counts.all);
   }, [counts.all, onCountChange]);
 
-  const review = async (id: string, status: Status, notes?: string) => {
+  const stats = useMemo<PaymentRequestStats>(() => ({
+    total: requests.length,
+    awaitingReview: requests.filter((r) => r.status === 'requested' || r.status === 'under_review').length,
+    confirmed: requests.filter((r) => r.status === 'confirmed').length,
+    requestedValue: requests.reduce((s, r) => s + Number(r.requested_amount || 0), 0),
+    confirmedValue: requests.filter((r) => r.status === 'confirmed').reduce((s, r) => s + Number(r.requested_amount || 0), 0),
+  }), [requests]);
+
+  useEffect(() => {
+    onStatsChange?.(stats);
+  }, [stats, onStatsChange]);
+
+  const review = async (id: string, status: Status, notes?: string, selectResult = true) => {
     setActing(true);
     try {
       const res = await fetch(`${API_BASE_URL}/payment-requests/${id}/review`, {
@@ -150,13 +166,28 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
       if (!res.ok) throw new Error(body.message || body.error || `Review failed (${res.status})`);
       notify(`Payment request marked ${status}`, 'success');
       await load();
-      setSelected(body);
-      setAdminNotes('');
+      if (selectResult) {
+        setSelected(body);
+        setAdminNotes('');
+      } else if (selected?.id === id) {
+        setSelected((prev) => (prev ? { ...prev, ...body } : prev));
+      }
     } catch (err: any) {
       notify(err?.message || 'Review failed', 'error');
     } finally {
       setActing(false);
     }
+  };
+
+  /** Inline Accept / Reject straight from the queue row (no need to open the detail panel). */
+  const onRowAction = (row: PaymentRequest, action: 'accept' | 'reject') => {
+    if (acting) return;
+    const status: Status = action === 'accept' ? 'confirmed' : 'rejected';
+    if (!canTransition(row.status, status)) return;
+    if (action === 'reject' && !window.confirm(`Reject payment request ${row.request_number || row.id}?`)) {
+      return;
+    }
+    review(row.id, status, undefined, false);
   };
 
   const onReview = (status: Status) => {
@@ -296,7 +327,7 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: '#faf9f6', color: inkSoft, textAlign: 'left' }}>
-                  {['Request', 'Customer', 'Invoice', 'Requested Amount', 'Method', 'Status', 'Requested Date', ''].map((h, i) => (
+                  {['Request', 'Customer', 'Invoice', 'Requested Amount', 'Method', 'Status', 'Requested Date', 'Actions'].map((h, i) => (
                     <th key={i} style={{ padding: '10px 14px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${hairline}`, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -331,11 +362,32 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
                     <td style={{ padding: '10px 14px' }}>{statusChip(r.status)}</td>
                     <td style={{ padding: '10px 14px', color: inkSoft, whiteSpace: 'nowrap' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                        <CalendarDays size={13} /> {fmtDate(r.requested_at || r.created_at)}
+                        <CalendarDays size={13} /> {formatDate(r.requested_at || r.created_at)}
                       </span>
                     </td>
                     <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                      <span style={{ color: teal[600], fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>Review →</span>
+                      {canTransition(r.status, 'confirmed') ? (
+                        <span style={{ display: 'inline-flex', gap: 6, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => onRowAction(r, 'accept')}
+                            disabled={acting}
+                            title="Accept this payment request"
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, border: 'none', background: teal[500], color: '#fff', fontSize: 11, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer', opacity: acting ? 0.6 : 1 }}
+                          >
+                            <CheckCircle2 size={12} /> Accept
+                          </button>
+                          <button
+                            onClick={() => onRowAction(r, 'reject')}
+                            disabled={acting}
+                            title="Reject this payment request"
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, border: `1px solid ${red[100]}`, background: red[50], color: red[600], fontSize: 11, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer', opacity: acting ? 0.6 : 1 }}
+                          >
+                            <XCircle size={12} /> Reject
+                          </button>
+                        </span>
+                      ) : (
+                        <span style={{ color: '#b6bfbd', fontSize: 11.5 }}>—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -347,22 +399,45 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
         {/* Detail panel */}
         {selected && (
           <div style={{
-            width: 360, flexShrink: 0, borderRadius: 16, border: `1px solid ${hairline}`,
-            background: paper, boxShadow: '0 8px 30px -12px rgba(16,24,40,.18)', overflow: 'auto', padding: 16,
+            width: 360, flexShrink: 0, borderRadius: 14, border: `1px solid ${hairline}`,
+            background: paper, boxShadow: '0 30px 70px -20px rgba(0,0,0,.35), 0 8px 24px -8px rgba(0,0,0,.25)',
+            overflow: 'auto', position: 'relative',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: ink, letterSpacing: '-0.01em' }}>
-                  {selected.request_number || selected.id}
-                </h3>
-                <div style={{ marginTop: 6 }}>{statusChip(selected.status)}</div>
+            {/* Accent stripe */}
+            <div style={{
+              position: 'sticky', top: 0, zIndex: 1, height: 4,
+              background: `linear-gradient(90deg, ${teal[600]}, ${teal[300]} 40%, ${amber[500]} 100%)`,
+            }} />
+            <div style={{ padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                  background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 4px 10px -3px rgba(15,84,76,.6)',
+                }}>
+                  <HandCoins size={19} color="#fff" />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <h3 style={{
+                    margin: 0, fontFamily: "'DM Serif Display', 'Georgia', serif", fontWeight: 400,
+                    fontSize: 20, color: teal[800], letterSpacing: 0.2,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {selected.request_number || selected.id}
+                  </h3>
+                  <div style={{ marginTop: 3 }}>{statusChip(selected.status)}</div>
+                </div>
               </div>
               <button
                 onClick={() => setSelected(null)}
                 aria-label="Close"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: inkSoft, padding: 4, borderRadius: 8 }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+                style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s ease' }}
               >
-                <X size={16} />
+                <X size={15} />
               </button>
             </div>
 
@@ -389,7 +464,7 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CalendarDays size={14} style={{ color: teal[500], flexShrink: 0 }} />
-                <span style={{ color: inkSoft }}>Requested {fmtDate(selected.requested_at || selected.created_at)}</span>
+                <span style={{ color: inkSoft }}>Requested {formatDate(selected.requested_at || selected.created_at)}</span>
               </div>
 
               {selected.note && (
@@ -409,7 +484,7 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
                   )}
                   {selected.reviewed_by && (
                     <div style={{ marginTop: selected.admin_notes ? 6 : 0, fontSize: 11 }}>
-                      Reviewed by {selected.reviewed_by} · {fmtDate(selected.reviewed_at)}
+                      Reviewed by {selected.reviewed_by} · {formatDate(selected.reviewed_at)}
                     </div>
                   )}
                 </div>
@@ -431,24 +506,26 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
                   placeholder="Admin notes (optional)"
                   rows={2}
                   style={{
-                    width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${hairline}`,
-                    fontSize: 12, outline: 'none', resize: 'vertical', color: ink, background: '#fff',
+                    width: '100%', padding: '9px 12px', borderRadius: 9, border: `1.4px solid ${hairline}`,
+                    fontFamily: "'Inter', sans-serif", fontSize: 12.5, outline: 'none', resize: 'vertical', color: ink, background: paper,
                   }}
                 />
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     onClick={() => onReview('under_review')}
                     disabled={acting}
-                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', borderRadius: 10, border: `1px solid ${blue[100]}`, background: blue[50], color: blue[600], fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', borderRadius: 9, border: `1px solid ${blue[100]}`, background: blue[50], color: blue[600], fontSize: 11.5, fontWeight: 700, cursor: 'pointer', transition: 'all .15s ease' }}
                   >
                     <Eye size={13} /> Under Review
                   </button>
                   <button
                     onClick={() => onReview('confirmed')}
                     disabled={acting}
-                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', borderRadius: 10, border: 'none', background: teal[500], color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px -4px rgba(15,84,76,.5)' }}
+                    onMouseEnter={(e) => { if (!acting) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; } }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 16px -6px rgba(15,84,76,.55)'; }}
+                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', borderRadius: 9, border: 'none', background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer', boxShadow: '0 6px 16px -6px rgba(15,84,76,.55)', transition: 'all .15s ease' }}
                   >
-                    <CheckCircle2 size={13} /> Confirm
+                    <CheckCircle2 size={13} /> Accept
                   </button>
                 </div>
               </div>
@@ -479,6 +556,7 @@ const PaymentRequests: React.FC<PaymentRequestsProps> = ({ embedded = false, onC
                 This request is in a terminal state. Record the bank payment via Customer Payments when the receipt is verified.
               </div>
             )}
+            </div>
           </div>
         )}
       </div>

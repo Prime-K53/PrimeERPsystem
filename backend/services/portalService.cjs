@@ -8,6 +8,7 @@ const portalLifecycleService = require('./portalLifecycleService.cjs');
 const ReferralService = require('./referralService.cjs');
 const referralService = new ReferralService();
 const { customerFilter, withCustomerScope } = require('./portalScope.cjs');
+const customerLedger = require('./customerLedger.cjs');
 
 const TICKET_ATTACHMENTS_DIR = path.join(__dirname, '..', 'storage', 'ticket-attachments');
 
@@ -144,16 +145,21 @@ const portalService = {
       walletRows,
     });
 
-    const unpaidInvoices = invoices.filter((i) => /unpaid|partial|overdue/i.test(String(i.status || '')));
-    const outstandingBalance = unpaidInvoices.reduce(
-      (sum, i) => sum + (Number(i.total_amount || i.total || 0) - Number(i.paid_amount || i.paidAmount || 0)),
-      0,
-    );
+    // Authoritative outstanding balance — computed by the canonical customer
+    // ledger (single definition shared with the ERP). The stored
+    // customers.balance field is a deprecated cache and must never be the
+    // source of financial truth.
+    const [ledgerPayments] = await Promise.all([
+      customerLedger.loadCustomerPayments(customerId),
+    ]);
+    const ledger = customerLedger.buildLedgerFromRecords({ customerId, invoices, payments: ledgerPayments });
+    const outstandingBalance = ledger.outstandingBalance;
 
     return {
-      balance: (customer && customer.balance != null) ? customer.balance : 0,
+      // [LEDGER] balance derived from the authoritative ledger, not the deprecated cache.
+      balance: ledger.closingBalance,
       walletBalance: (customer && customer.walletBalance != null) ? customer.walletBalance : 0,
-      outstandingBalance: Math.max(0, outstandingBalance),
+      outstandingBalance,
       creditLimit: (customer && customer.creditLimit != null) ? customer.creditLimit : 0,
       unpaidInvoiceCount: unpaidCount,
       totalOrders,
@@ -284,27 +290,39 @@ const portalService = {
     catalogItems.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
     const productIds = catalogItems.map((i) => i.id).filter(Boolean);
-    let allVariants = [];
+    const { collectProductVariants } = require('./catalogVariants.cjs');
+    let tableVariantsByParent = new Map();
     if (productIds.length > 0) {
-      allVariants = await getAllFrom('product_variants');
-      allVariants = allVariants.filter(
-        (v) => v.active !== false && productIds.includes(v.productId || v.product_id),
-      );
+      // The authoritative variant data lives EMBEDDED in each product doc;
+      // the product_variants table is merged when populated. Without this
+      // merge a multi-variant product reaches the portal as a single price.
+      try {
+        const allVariants = await getAllFrom('product_variants');
+        for (const v of allVariants || []) {
+          if (v.active === false) continue;
+          const pid = v.productId || v.product_id;
+          if (!pid || !productIds.includes(pid)) continue;
+          if (!tableVariantsByParent.has(pid)) tableVariantsByParent.set(pid, []);
+          tableVariantsByParent.get(pid).push(v);
+        }
+      } catch (err) {
+        console.warn('[Portal] product_variants read failed (continuing with embedded variants):', err?.message || err);
+      }
     }
 
     return catalogItems.map((item) => {
-      const variants = allVariants
-        .filter((v) => (v.productId || v.product_id) === item.id)
+      const variants = collectProductVariants(item, tableVariantsByParent.get(item.id))
+        .filter((v) => v.active)
         .map((v) => ({
           id: v.id,
-          productId: v.productId || v.product_id,
-          name: v.name || item.name,
-          sku: v.sku || null,
-          attributes: v.attributes || null,
-          sellingPrice: Number(v.sellingPrice ?? v.selling_price ?? v.price ?? 0),
-          costPrice: Number(v.costPrice ?? v.cost_price ?? v.cost ?? 0),
-          stock: Number(v.stock ?? 0),
-          active: v.active !== false,
+          productId: v.productId,
+          name: v.name,
+          sku: v.sku,
+          attributes: v.attributes,
+          sellingPrice: v.sellingPrice,
+          costPrice: v.costPrice,
+          stock: v.stock,
+          active: v.active,
         }));
 
       return {
@@ -897,82 +915,119 @@ const portalService = {
   },
 
   async getStatements(customerId, startDate, endDate) {
-    const [customer, invoices, payments] = await Promise.all([
+    const [customer, ledger] = await Promise.all([
       getOneById('customers', customerId),
-      getAllFrom('invoices', customerFilter('invoices', customerId)),
-      getAllFrom('customer_payments', customerFilter('customer_payments', customerId)),
+      customerLedger.buildLedger(customerId),
     ]);
 
-    const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
-
-    const unpaidInvoices = (Array.isArray(invoices) ? invoices : []).filter((i) => /unpaid|partial|overdue/i.test(String(i.status || '')));
-    const outstandingBalance = unpaidInvoices.reduce(
-      (sum, i) => sum + (toNum(i.total_amount ?? i.total ?? i.totalAmount ?? 0) - toNum(i.paid_amount ?? i.paidAmount ?? 0)),
-      0,
-    );
-
-    const allDebits = (Array.isArray(invoices) ? invoices : []).map((inv) => {
-      const isCreditNote = String(inv.status || '').toLowerCase() === 'credit_note';
-      const amount = toNum(inv.total_amount ?? inv.total ?? inv.totalAmount ?? 0);
-      return {
-        date: inv.created_at || inv.date || null,
-        description: isCreditNote ? `Credit Note ${inv.invoice_number || inv.id}` : `Invoice ${inv.invoice_number || inv.id}`,
-        debit: isCreditNote ? 0 : amount,
-        credit: isCreditNote ? amount : 0,
-        _type: isCreditNote ? 'credit_note' : 'invoice',
-      };
-    });
-
-    const allCredits = (Array.isArray(payments) ? payments : []).map((pay) => ({
-      date: pay.date || pay.created_at || null,
-      description: pay.reference || 'Payment',
-      debit: 0,
-      credit: toNum(pay.amount),
-      _type: 'payment',
-    }));
-
-    const allTransactions = [...allDebits, ...allCredits];
-
-    const beforePeriod = startDate
-      ? allTransactions.filter((t) => t.date && String(t.date) < startDate)
-      : [];
-    let openingBalance = 0;
-    for (const t of beforePeriod) {
-      openingBalance += toNum(t.debit) - toNum(t.credit);
+    // Deterministic windowing over the authoritative ledger. Bounds are real
+    // timestamps (date-only end bounds include the whole day); transactions
+    // before the start fold into the opening balance.
+    const hasStart = Boolean(startDate);
+    const hasEnd = Boolean(endDate);
+    const startT = hasStart ? customerLedger.parseTime(startDate) : null;
+    let endT = hasEnd ? customerLedger.parseTime(endDate) : null;
+    if (endT != null && Number.isFinite(endT) && String(endDate).length <= 10) {
+      endT += 24 * 60 * 60 * 1000 - 1; // inclusive date-only end
     }
 
-    const inPeriod = startDate || endDate
-      ? allTransactions.filter((t) => {
-          if (!t.date) return false;
-          if (startDate && String(t.date) < startDate) return false;
-          if (endDate && String(t.date) > endDate) return false;
-          return true;
-        })
-      : allTransactions;
-
-    inPeriod.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-
-    let running = openingBalance;
-    const mapped = inPeriod.map((t) => {
-      const debit = toNum(t.debit);
-      const credit = toNum(t.credit);
-      running = running + debit - credit;
-      return {
+    let openingBalance = ledger.openingBalance;
+    const mapped = [];
+    for (const t of ledger.transactions) {
+      const ts = customerLedger.parseTime(t.date);
+      const effectiveTs = Number.isFinite(ts) ? ts : 0;
+      if (startT != null && Number.isFinite(startT) && effectiveTs < startT) {
+        openingBalance = customerLedger.round2(openingBalance + t.debit - t.credit);
+        continue;
+      }
+      if (endT != null && Number.isFinite(endT) && effectiveTs > endT) continue;
+      mapped.push({
         date: t.date,
         description: t.description || '',
-        type: t._type || t.type || '',
-        debit,
-        credit,
-        balance: running,
-      };
-    });
+        type: t.type,
+        debit: t.debit,
+        credit: t.credit,
+        balance: t.balance,
+      });
+    }
 
     return {
       opening_balance: openingBalance,
       closing_balance: mapped.length > 0 ? mapped[mapped.length - 1].balance : openingBalance,
-      outstanding_balance: Math.max(0, outstandingBalance),
+      outstanding_balance: ledger.outstandingBalance,
       credit_limit: (customer && customer.creditLimit != null) ? customer.creditLimit : 0,
       transactions: mapped,
+    };
+  },
+
+  /**
+   * Map a raw payment record (from getPaymentById) into the PrimeDocument
+   * RECEIPT data contract. This is a pure mapping — no DB writes.
+   */
+  mapPaymentToReceiptData(payment, customer) {
+    const allocations = payment.allocations || [];
+    const validAllocations = allocations.filter((a) => a && a.invoice_id && Number(a.amount || 0) > 0);
+    const appliedInvoices = validAllocations.map((a) => a.invoice_number || a.invoice_id);
+    const appliedOrders = validAllocations.map((a) => a.order_number || a.order_id).filter(Boolean);
+    const invoiceTotal = validAllocations.reduce((sum, a) => (
+      a.missing_invoice ? sum : sum + Number(a.total_amount || 0)
+    ), 0);
+    const totalAllocated = validAllocations.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+    const amountReceived = Number(payment.amount || 0);
+
+    let paymentStatus = 'PAID';
+    if (totalAllocated < amountReceived) paymentStatus = 'OVERPAID';
+    else if (totalAllocated < invoiceTotal) paymentStatus = 'PARTIALLY PAID';
+
+    return {
+      receiptNumber: payment.reference || payment.id?.slice(0, 8) || 'N/A',
+      date: payment.date ? new Date(payment.date).toLocaleDateString() : new Date().toLocaleDateString(),
+      customerName: customer?.name || payment.customerName || payment.customer_name || 'Customer',
+      amountReceived,
+      amountApplied: totalAllocated,
+      changeGiven: 0,
+      walletDeposit: 0,
+      paymentMethod: payment.method || payment.payment_method || 'Unknown',
+      appliedInvoices,
+      appliedOrders,
+      invoiceTotal,
+      paymentStatus,
+      balanceDue: Math.max(0, invoiceTotal - totalAllocated),
+      overpaymentAmount: Math.max(0, amountReceived - totalAllocated),
+      narrative: `Payment of ${amountReceived} received via ${payment.method || payment.payment_method || 'N/A'}. ${validAllocations.length} invoice(s) allocated.`,
+      currentBalance: Math.max(0, invoiceTotal - totalAllocated),
+      calculationVersion: 1,
+    };
+  },
+
+  /**
+   * Build the PrimeDocument ACCOUNT_STATEMENT data contract from the
+   * authoritative ledger. Pure mapping — no DB writes.
+   */
+  buildStatementData(customerId, customer, statementsData) {
+    const transactions = (statementsData.transactions || []).map((t) => ({
+      date: t.date,
+      reference: t.description || '',
+      memo: '',
+      debit: Number(t.debit || 0),
+      credit: Number(t.credit || 0),
+      runningBalance: Number(t.balance || 0),
+    }));
+
+    const totalInvoiced = transactions.reduce((sum, t) => sum + t.debit, 0);
+    const totalReceived = transactions.reduce((sum, t) => sum + t.credit, 0);
+
+    return {
+      date: new Date().toLocaleDateString(),
+      customerName: customer?.name || 'Customer',
+      startDate: statementsData.startDate || 'N/A',
+      endDate: statementsData.endDate || 'N/A',
+      currency: 'K',
+      openingBalance: Number(statementsData.opening_balance || 0),
+      transactions,
+      totalInvoiced,
+      totalReceived,
+      finalBalance: Number(statementsData.closing_balance || 0),
     };
   },
 
@@ -1022,6 +1077,9 @@ const portalService = {
   async getProfile(customerId) {
     const cloud = await getOneById('customers', customerId);
     if (!cloud) return null;
+    // [LEDGER] Derive balance from the authoritative ledger instead of the
+    // deprecated stored cache field.
+    const ledger = await customerLedger.buildLedger(customerId);
     return {
       id: cloud.id,
       full_name: cloud.name || '',
@@ -1032,10 +1090,10 @@ const portalService = {
       state: cloud.state || '',
       zip: cloud.zip || '',
       country: cloud.country || '',
-      balance: Number(cloud.balance) || 0,
+      balance: ledger.closingBalance,
       walletBalance: Number(cloud.walletBalance) || 0,
       creditLimit: Number(cloud.creditLimit) || 0,
-      outstandingBalance: Number(cloud.outstandingBalance) || 0,
+      outstandingBalance: ledger.outstandingBalance,
       status: cloud.status || '',
       created_at: cloud.created_at || null
     };

@@ -1,0 +1,5 @@
+services:
+  - type: web
+    name: prime-erp
+    buildCommand: pnpm install --no-frozen-lockfile && pnpm run build
+    startCommand: node backend/index.cjs

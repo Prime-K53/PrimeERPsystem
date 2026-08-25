@@ -133,6 +133,7 @@ export interface AdminQuotationRequest {
   request_number: string;
   customer_id: string;
   customer_name: string;
+  customer_email?: string;
   request_type: string;
   items: AdminRequestItem[];
   subtotal: number;
@@ -231,6 +232,7 @@ export interface AdminSalesOrder {
   reorder_of_number: string | null;
   customer_name: string | null;
   created_at: string;
+  items?: { name?: string; productName?: string; quantity?: number; totalQuantity?: number; unitPrice?: number; price?: number; lineTotal?: number }[];
 }
 
 export interface AdminQuotation {
@@ -394,6 +396,13 @@ export const adminLifecycle = {
   requests: {
     list(status?: string): Promise<AdminQuotationRequest[]> {
       return adminPortalApi.get<AdminQuotationRequest[]>(`/requests${status ? `?status=${status}` : ''}`);
+    },
+    inbox(): Promise<AdminQuotationRequest[]> {
+      return adminPortalApi.get<AdminQuotationRequest[]>('/requests/inbox');
+    },
+    /** Marks request-pipeline admin notifications read (clears the hub badge). */
+    markInboxRead(): Promise<{ success: boolean; marked: number }> {
+      return adminPortalApi.post<{ success: boolean; marked: number }>('/requests/inbox/read-all', {});
     },
     get(id: string): Promise<AdminQuotationRequest> {
       return adminPortalApi.get<AdminQuotationRequest>(`/requests/${id}`);

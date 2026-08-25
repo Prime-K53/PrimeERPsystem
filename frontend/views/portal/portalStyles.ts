@@ -1,6 +1,7 @@
 import React from 'react';
 
 export const F = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+export const MONO = "'JetBrains Mono','Fira Code','SF Mono',Consolas,monospace";
 
 export const portalStyles = {
   root: {
