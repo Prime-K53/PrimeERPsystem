@@ -45,7 +45,23 @@ export interface PlatformAPI {
 let cachedApi: PlatformAPI | null = null;
 const blobUrls = new Set<string>();
 
+const DEV_BACKEND_URL = 'http://127.0.0.1:3000';
+
 const getRuntimeBackendUrl = () => {
+  if (import.meta.env?.DEV) {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const override = String(urlParams.get('backend') || '').trim();
+      if (override) return override;
+    } catch {
+      // Ignore malformed query strings.
+    }
+
+    const configured = String((window as { BACKEND_ORIGIN?: string })?.BACKEND_ORIGIN || '').trim();
+    if (configured) return configured;
+    return DEV_BACKEND_URL;
+  }
+
   try {
     const envUrl = import.meta.env.VITE_API_URL;
     if (envUrl) return envUrl;
