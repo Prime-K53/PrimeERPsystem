@@ -40,7 +40,7 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
         orders.find(o => o.id === initialOrder.id) || initialOrder
         , [orders, initialOrder]);
 
-    const [activeTab, setActiveTab] = useState<'Overview' | 'Payments' | 'Activity'>('Overview');
+    const [activeTab, setActiveTab] = useState<'Overview' | 'Financials' | 'Payments' | 'Activity'>('Overview');
 
     const isCancelled = order.status === 'Cancelled';
     const isCompleted = order.status === 'Completed';
@@ -98,7 +98,7 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
                 <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                         <div className="sales-tabs">
-                            {(['Overview', 'Payments', 'Activity'] as const).map(tab => (
+                            {(['Overview', 'Financials', 'Payments', 'Activity'] as const).map(tab => (
                                 <button key={tab} onClick={() => setActiveTab(tab)}
                                     className={`sales-tab ${activeTab === tab ? 'active' : ''}`}>
                                     {tab}
@@ -187,7 +187,11 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
                                             </div>
                                         </div>
                                     </div>
+                                </div>
+                            )}
 
+                            {activeTab === 'Financials' && (
+                                <div className="space-y-6 animate-in fade-in duration-300">
                                     <TransactionPricingInsights transaction={order} currencySymbol={currency} />
                                 </div>
                             )}

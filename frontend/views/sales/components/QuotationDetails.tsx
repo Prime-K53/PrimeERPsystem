@@ -38,7 +38,7 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
     quotations.find(q => q.id === initialQuotation.id) || initialQuotation
     , [quotations, initialQuotation]);
 
-  const [activeTab, setActiveTab] = useState<'Overview' | 'Activity'>('Overview');
+  const [activeTab, setActiveTab] = useState<'Overview' | 'Financials' | 'Activity'>('Overview');
 
   const isExpired = quotation.validUntil && new Date(quotation.validUntil) < new Date();
   const isConverted = quotation.status === 'Converted';
@@ -121,7 +121,7 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
         </div>
 
         <div className="sales-tabs">
-          {(['Overview', 'Activity'] as const).map((tab) => (
+          {(['Overview', 'Financials', 'Activity'] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`sales-tab ${activeTab === tab ? 'active' : ''}`}>
               {tab}
@@ -194,8 +194,6 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
                   </div>
                 </div>
 
-                <TransactionPricingInsights transaction={quotation} currencySymbol={currency} />
-
                 {quotation.notes && (
                   <div style={{ padding: 20, background: paper, borderRadius: 12, border: `1px solid ${hairline}` }}>
                     <h3 style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Terms & Notes</h3>
@@ -260,6 +258,12 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'Financials' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <TransactionPricingInsights transaction={quotation} currencySymbol={currency} />
             </div>
           )}
 
