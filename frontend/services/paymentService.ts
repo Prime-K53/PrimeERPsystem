@@ -5,7 +5,7 @@ import {
     buildCustomerReceiptDoc,
     calculateCustomerPaymentSnapshot
 } from './receiptCalculationService';
-import { buildLedgerFromRecords } from './customerLedger';
+import { buildLedgerFromRecords, getCustomerOpeningBalance } from './customerLedger';
 
 export interface LedgerEntry {
     date: string;
@@ -162,6 +162,7 @@ export const paymentService = {
             customerId,
             invoices: allInvoices.filter(inv => inv.customerId === customerId),
             payments: allPayments.filter(payment => payment.customerId === customerId),
+            openingBalance: await getCustomerOpeningBalance(customerId),
         });
 
         const start = new Date(startDate);
@@ -193,6 +194,7 @@ async function getOutstandingViaLedger(customerId: string): Promise<number> {
         customerId,
         invoices: allInvoices.filter(inv => inv.customerId === customerId),
         payments: allPayments.filter(payment => payment.customerId === customerId),
+        openingBalance: await getCustomerOpeningBalance(customerId),
     });
     return ledger.outstandingBalance;
 }

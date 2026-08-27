@@ -75,8 +75,8 @@ const CustomerStatement: React.FC = () => {
   // Canonical ledger — single authoritative definition shared with the
   // backend. Replaces the component-private totals/running-balance math.
   const canonicalLedger = useMemo(
-    () => buildLedgerFromRecords({ customerId: selectedCustomerId, invoices: customerInvoices, payments: customerPaymentsList }),
-    [selectedCustomerId, customerInvoices, customerPaymentsList]
+    () => buildLedgerFromRecords({ customerId: selectedCustomerId, invoices: customerInvoices, payments: customerPaymentsList, openingBalance: Number(selectedCustomer?.balance || 0) }),
+    [selectedCustomerId, selectedCustomer, customerInvoices, customerPaymentsList]
   );
 
   const outstandingBalance = useMemo(
@@ -84,7 +84,7 @@ const CustomerStatement: React.FC = () => {
     [canonicalLedger]
   );
 
-  const openingBalance = 0;
+  const openingBalance = Number(selectedCustomer?.balance || 0);
 
   const statementTransactions = useMemo(() => {
     // Canonical ledger (services/customerLedger.ts): validated inclusion

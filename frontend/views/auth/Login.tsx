@@ -193,11 +193,6 @@ const Login: React.FC = () => {
               Create a New Company
             </a>
           </p>
-          <p className="text-xs text-slate-400">
-            <a href="#/portal/login" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors">
-              Customer Portal Login
-            </a>
-          </p>
         </div>
       </div>
     </AuthLayout>

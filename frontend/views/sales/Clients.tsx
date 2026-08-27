@@ -656,7 +656,7 @@ export const Clients: React.FC = () => {
                 <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Contact</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Last Transaction</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Wallet</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Open Balance</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Outstanding Balance</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'center', width: 72, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Actions</th>
               </tr>
             </thead>
@@ -836,6 +836,7 @@ export const Clients: React.FC = () => {
       {selectedCardCustomer && (
         <CustomerCard
           customer={selectedCardCustomer}
+          balance={runningBalanceByCustomer.get(selectedCardCustomer.id) ?? Number(selectedCardCustomer.balance || 0)}
           onClose={() => setSelectedCardCustomer(null)}
           onViewProfile={(c) => {
             setSelectedCardCustomer(null);

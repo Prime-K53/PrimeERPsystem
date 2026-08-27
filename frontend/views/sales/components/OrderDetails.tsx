@@ -12,6 +12,7 @@ import { useLocation } from 'react-router-dom';
 import DocLink from '../../../components/DocLink';
 import TransactionPricingInsights from './TransactionPricingInsights';
 import { currencyService } from '../../../services/currencyService';
+import { getOrderDisplayStatus, getOrderStatusClass } from './orderStatusUtils';
 
 interface OrderDetailsProps {
     order: Order;
@@ -44,6 +45,7 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
     const isCancelled = order.status === 'Cancelled';
     const isCompleted = order.status === 'Completed';
     const isPaid = order.status === 'Paid';
+    const displayStatus = getOrderDisplayStatus(order);
 
     return (
         <div className="sales-detail-backdrop" style={{ fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
@@ -68,18 +70,10 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
                                 <h1 className="sales-detail-title">
                                     Order #{order.orderNumber}
                                 </h1>
-                                <span style={{
-                                    padding: '2px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0,
-                                    background: order.status === 'Completed' || order.status === 'Paid' ? '#ecfdf5' :
-                                        order.status === 'Partially Paid' ? amber[100] :
-                                        order.status === 'Cancelled' ? '#fef2f2' :
-                                        order.status === 'Processing' ? '#eff6ff' : amber[100],
-                                    color: order.status === 'Completed' || order.status === 'Paid' ? '#059669' :
-                                        order.status === 'Partially Paid' ? '#d97706' :
-                                        order.status === 'Cancelled' ? '#dc2626' :
-                                        order.status === 'Processing' ? '#2563eb' : '#d97706'
+                                <span className={`border ${getOrderStatusClass(displayStatus)}`} style={{
+                                    padding: '2px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0
                                 }}>
-                                    {order.status}
+                                    {displayStatus}
                                 </span>
                             </div>
                             <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

@@ -13,6 +13,7 @@ import { generateCustomerId, generateNextId, getDefaultPaymentTermsForSegment, r
 import { generateLocalId } from '../../../utils/idGeneration';
 import { pricingService, DynamicServicePricingResult } from '../../../services/pricingService';
 import { dbService } from '../../../services/db';
+import { buildLedgerFromRecords } from '../../../services/customerLedger';
 
 import { useNavigate } from 'react-router-dom';
 import { VariantSelectorModal, ServiceCalculatorModal } from '../../pos/components/PosModals';
@@ -286,9 +287,21 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
 
     const getCustomerOutstanding = (name: string) => {
-        return (invoices as Invoice[])
-            .filter(i => i.customerName === name && i.status !== 'Paid' && i.status !== 'Draft' && i.status !== 'Cancelled')
-            .reduce((sum, i) => sum + (i.totalAmount - (i.paidAmount || 0)), 0);
+        const cust = (customers || []).find((c: Customer) => c.name === name);
+        const custId = cust?.id;
+        const custInvoices = (invoices as Invoice[]).filter(
+            i => i.customerId === custId || i.customerName === name
+        );
+        const custPayments = (customerPayments || []).filter(
+            (p: any) => p.customerId === custId || p.customerName === name
+        );
+        const { closingBalance } = buildLedgerFromRecords({
+            customerId: custId || name,
+            invoices: custInvoices as any[],
+            payments: custPayments as any[],
+            openingBalance: Number(cust?.balance || 0),
+        });
+        return closingBalance;
     };
 
     const filteredInventory = useMemo(() => {

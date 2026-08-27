@@ -55,34 +55,36 @@ async function main() {
   for (const customer of targets) {
     const customerId = customer.id;
     const customerName = customer.name || customer.id;
-    const storedBalance = Number(customer.balance || 0);
-    const storedOutstanding = Number(customer.outstandingBalance ?? customer.balance ?? 0);
+    // customer.balance is the OPENING balance — a source-of-truth input, never
+    // a derived running total. The derived cache is customer.outstandingBalance.
+    const openingBalance = Number(customer.balance || 0);
+    const storedOutstanding = Number(customer.outstandingBalance ?? 0);
 
     try {
       const ledger = await customerLedger.buildLedger(customerId);
-      const ledgerBalance = customerLedger.round2(ledger.closingBalance);
       const ledgerOutstanding = ledger.outstandingBalance;
-      const diff = customerLedger.round2(ledgerBalance - storedBalance);
+      const diff = customerLedger.round2(ledgerOutstanding - storedOutstanding);
 
       const result = {
         id: customerId,
         name: customerName,
-        storedBalance,
-        ledgerBalance,
-        difference: diff,
+        openingBalance,
         storedOutstanding,
         ledgerOutstanding,
+        difference: diff,
         transactions: ledger.transactions.length,
         status: Math.abs(diff) < 0.01 ? 'MATCH' : diff > 0 ? 'UNDER' : 'OVER',
       };
       results.push(result);
 
+      // Only the derived outstandingBalance cache is maintained. The opening
+      // balance (customer.balance) is preserved untouched to avoid double
+      // counting it inside the ledger.
       if (Math.abs(diff) >= 0.01) {
         updated++;
         if (!DRY_RUN) {
           await repo.upsert('customers', {
             ...customer,
-            balance: ledgerBalance,
             outstandingBalance: ledgerOutstanding,
           });
         }
@@ -125,8 +127,9 @@ async function main() {
     console.log(
       'Customer ID'.padEnd(20) +
       'Name'.padEnd(25) +
-      'Stored'.padStart(12) +
-      'Ledger'.padStart(12) +
+      'Opening'.padStart(12) +
+      'StoredOut'.padStart(12) +
+      'LedgerOut'.padStart(12) +
       'Diff'.padStart(12)
     );
     console.log('-'.repeat(70));
@@ -134,8 +137,9 @@ async function main() {
       console.log(
         String(r.id).padEnd(20) +
         String(r.name).substring(0, 24).padEnd(25) +
-        r.storedBalance.toLocaleString().padStart(12) +
-        r.ledgerBalance.toLocaleString().padStart(12) +
+        r.openingBalance.toLocaleString().padStart(12) +
+        r.storedOutstanding.toLocaleString().padStart(12) +
+        r.ledgerOutstanding.toLocaleString().padStart(12) +
         (r.difference > 0 ? '+' : '') + r.difference.toLocaleString().padStart(12)
       );
     }
@@ -158,8 +162,9 @@ async function main() {
   if (cust1) {
     console.log('='.repeat(70));
     console.log('CUST-0001 (Acme LTD) Verification:');
-    console.log(`  Stored balance before: ${cust1.storedBalance.toLocaleString()}`);
-    console.log(`  Authoritative balance: ${cust1.ledgerBalance.toLocaleString()}`);
+    console.log(`  Opening balance: ${cust1.openingBalance.toLocaleString()}`);
+    console.log(`  Stored outstanding: ${cust1.storedOutstanding.toLocaleString()}`);
+    console.log(`  Authoritative outstanding: ${cust1.ledgerOutstanding.toLocaleString()}`);
     console.log(`  Status: ${cust1.status === 'MATCH' ? '✓ MATCHING' : '✗ DIFFERENT'}`);
     console.log('='.repeat(70));
   }

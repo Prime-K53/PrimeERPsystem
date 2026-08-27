@@ -297,6 +297,21 @@ export function buildLedgerFromRecords({
  * Authoritative ledger for one customer, computed from the local stores.
  * Records may be injected (tests); default reads IndexedDB via dbService.
  */
+/**
+ * Opening balance = the starting financial position recorded when the
+ * customer was created or imported. It is stored on `customer.balance`
+ * (NEVER a running total — transaction flows only mutate `walletBalance`),
+ * so it is the single source of truth for "where this customer began".
+ */
+export async function getCustomerOpeningBalance(customerId: string): Promise<number> {
+  try {
+    const customer = await dbService.get<{ balance?: number }>('customers', customerId);
+    return Number(customer?.balance || 0);
+  } catch {
+    return 0;
+  }
+}
+
 export async function buildCustomerLedger(
   customerId: string,
   opts: { openingBalance?: number; invoices?: AnyRecord[]; payments?: AnyRecord[] } = {},
@@ -305,12 +320,29 @@ export async function buildCustomerLedger(
   const payments = opts.payments ?? (await dbService.getAll<AnyRecord>('customerPayments'));
   const scopedInvoices = invoices.filter((i) => String(i.customerId ?? '') === String(customerId));
   const scopedPayments = payments.filter((p) => String(p.customerId ?? '') === String(customerId));
+  // When a caller does not supply an opening balance we fall back to the
+  // customer's stored opening balance so it is never silently dropped.
+  const openingBalance = opts.openingBalance ?? (await getCustomerOpeningBalance(customerId));
   return buildLedgerFromRecords({
     customerId,
     invoices: scopedInvoices,
     payments: scopedPayments,
-    openingBalance: opts.openingBalance ?? 0,
+    openingBalance,
   });
+}
+
+/**
+ * Canonical customer balance = opening balance
+ *   + invoices/debits + debit adjustments
+ *   − payments − credit notes − refunds/credits.
+ * This is the number every ERP view should render as the customer's
+ * outstanding balance. `openingBalance` may override the stored value (tests).
+ */
+export async function getCustomerBalance(
+  customerId: string,
+  opts: { openingBalance?: number } = {},
+): Promise<CustomerLedgerResult> {
+  return buildCustomerLedger(customerId, opts);
 }
 
 /** The ONE number every ERP view should display as "customer owes". */

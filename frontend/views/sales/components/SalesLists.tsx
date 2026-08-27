@@ -15,6 +15,7 @@ import { resolveTransactionPricingSummary } from '../../../utils/pricingBreakdow
 import { formatDate } from '../../../utils/formatters';
 import { Edit2, Trash2, Star, List, LayoutGrid, CheckCircle, Check, Clock, User, Calendar, Box, Eye, Send, Copy, Plus, Phone, ChevronRight, FileText, FileCheck, Briefcase, Mail, MessageCircle, Repeat, XCircle, Archive, History as HistoryIcon, Users, RefreshCw, ArrowUp, ArrowDown, Link as LinkIcon, Paperclip, CalendarClock, AlertTriangle, Download, Truck, MoreVertical, Play, Pause, Package, Globe, DollarSign, TrendingUp, Zap, Target, Share2, ExternalLink, PlayCircle, Coins, Wallet, ShoppingBag, Printer, Search, X, ArrowUpRight, MessageSquare } from 'lucide-react';
 import { TableEmptyState } from '../../../components/EmptyState';
+import { getOrderDisplayStatus, getOrderStatusClass } from './orderStatusUtils';
 
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1';
 
@@ -509,13 +510,12 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                                         <td className="table-body-cell text-right font-bold finance-nums truncate hidden sm:table-cell">{companyConfig.currencySymbol}{(o.totalAmount || 0).toLocaleString()}</td>
                                         <td className="table-body-cell text-right font-bold text-emerald-600 finance-nums truncate hidden lg:table-cell">{companyConfig.currencySymbol}{(o.paidAmount || 0).toLocaleString()}</td>
                                         <td className="table-body-cell text-center">
-                                            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${o.status === 'Completed' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                                                o.status === 'Paid' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                                                    o.status === 'Partially Paid' ? 'bg-amber-100 text-amber-700 border-amber-200' :
-                                                        o.status === 'Pending' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                                                            o.status === 'Cancelled' ? 'bg-rose-100 text-rose-700 border-rose-200' :
-                                                                'bg-slate-100 text-[#5c6567] border-slate-200'
-                                                }`}>{o.status}</span>
+                                            {(() => {
+                                                const displayStatus = getOrderDisplayStatus(o);
+                                                return (
+                                                    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${getOrderStatusClass(displayStatus)}`}>{displayStatus}</span>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="table-body-cell text-center" onClick={e => e.stopPropagation()}>
                                             <div className="flex justify-center gap-0.5 md:gap-1 items-center shrink-0">

@@ -94,7 +94,7 @@ const ClientLedger: React.FC = () => {
 
     let customerLedgerEntries = ledger.filter((entry: any) => { const mc = entry.customerId === selectedCustomerId; const ms = selectedSubAccountNames.length === 0 || selectedSubAccountNames.includes(entry.subAccountName || 'Main'); return mc && ms; }).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
     if (dateCutoff) customerLedgerEntries = customerLedgerEntries.filter((e: any) => new Date(e.date) >= dateCutoff);
-    let openingBalance = 0;
+    let openingBalance = Number(selectedCustomer?.balance || 0);
     if (dateCutoff) {
       const allBefore = ledger.filter((entry: any) => { const mc = entry.customerId === selectedCustomerId; const ms = selectedSubAccountNames.length === 0 || selectedSubAccountNames.includes(entry.subAccountName || 'Main'); return mc && ms && new Date(entry.date) < dateCutoff; }).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
       allBefore.forEach((entry: any) => { const d = entry.debitAccountId === arAccId || entry.debitAccountId === '1100'; const c = entry.creditAccountId === arAccId || entry.creditAccountId === '1100'; if (d) openingBalance += entry.amount; if (c) openingBalance -= entry.amount; });

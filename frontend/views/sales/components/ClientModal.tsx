@@ -5,6 +5,7 @@ import { getDefaultPaymentTermsForSegment } from '../../../utils/helpers';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useSales } from '../../../context/SalesContext';
+import { buildLedgerFromRecords } from '../../../services/customerLedger';
 import { getPlaceholder } from '../../../constants/placeholders';
 import { currencyService } from '../../../services/currencyService';
 import type { PortalCredentials } from '../../../services/adminPortalClient';
@@ -68,7 +69,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
 
   const { invoices } = useFinance();
   const { companyConfig } = useAuth();
-  const { customers } = useSales();
+  const { customers, customerPayments = [] } = useSales();
 
   useEffect(() => {
     if (customer) {
@@ -120,12 +121,21 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
   }, []);
 
   const calcOutstanding = (custId: string | undefined) => {
-    if (!custId) return 0;
+    const opening = Number(formData.balance || 0);
+    if (!custId) return opening;
     const invs = (invoices || []).filter((inv: any) =>
-      (inv.customerId === custId || inv.customerName === formData.name) &&
-      inv.status !== 'Paid' && inv.status !== 'Cancelled'
+      inv.customerId === custId || inv.customerName === formData.name
     );
-    return invs.reduce((sum: number, inv: any) => sum + ((inv.totalAmount || 0) - (inv.paidAmount || 0)), 0);
+    const pays = (customerPayments || []).filter((p: any) =>
+      p.customerId === custId || p.customerName === formData.name
+    );
+    const { closingBalance } = buildLedgerFromRecords({
+      customerId: custId,
+      invoices: invs as any[],
+      payments: pays as any[],
+      openingBalance: opening,
+    });
+    return closingBalance;
   };
 
   const outstandingBalance = calcOutstanding((customer as any)?.id || (formData as any).id);
@@ -456,6 +466,9 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                         <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
                         <input type="number" name="balance" value={formData.balance} onChange={handleChange}
                           placeholder="0.00" style={{ ...inputStyle, paddingLeft: 28 }} />
+                      </div>
+                      <div style={{ marginTop: 5, fontSize: 10, color: inkSoft, fontWeight: 500, lineHeight: 1.35 }}>
+                        The starting amount this customer owed when they were added. It is the opening balance — the live outstanding balance is opening + invoices − payments − credit notes.
                       </div>
                     </div>
                     <div>

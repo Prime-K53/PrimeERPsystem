@@ -323,8 +323,8 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
   // backend (services/customerLedger.ts). The stored customers.balance field
   // is a deprecated cache and is no longer the financial source of truth.
   const canonicalLedger = useMemo(
-    () => buildLedgerFromRecords({ customerId: customer.id, invoices: customerInvoices, payments: customerPaymentsList }),
-    [customer.id, customerInvoices, customerPaymentsList]
+    () => buildLedgerFromRecords({ customerId: customer.id, invoices: customerInvoices, payments: customerPaymentsList, openingBalance: Number(customer.balance || 0) }),
+    [customer.id, customer.balance, customerInvoices, customerPaymentsList]
   );
 
   // KPIs — derived from the canonical ledger to stay consistent with the

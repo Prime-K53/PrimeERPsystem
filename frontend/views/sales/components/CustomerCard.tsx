@@ -5,6 +5,7 @@ import { adminLifecycle, type PortalCredentials } from '../../../services/adminP
 
 interface CustomerCardProps {
   customer: Customer;
+  balance?: number;
   onClose: () => void;
   onViewProfile?: (customer: Customer) => void;
   onEdit?: (customer: Customer) => void;
@@ -31,7 +32,7 @@ const btnStyle: React.CSSProperties = {
 };
 
 export const CustomerCard: React.FC<CustomerCardProps> = ({
-  customer, onClose, onViewProfile, onEdit,
+  customer, balance, onClose, onViewProfile, onEdit,
   onCreateInvoice, onCreateQuote, onStatement, onWhatsApp, onPortalUpdate,
 }) => {
   const [portalCreds, setPortalCreds] = useState<PortalCredentials | null>(null);
@@ -184,8 +185,8 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
             <div style={{ padding: 12, borderRadius: 10, background: teal[50], border: `1px solid ${teal[100]}`, position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: danger, borderRadius: '10px 10px 0 0' }} />
-              <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.08, textTransform: 'uppercase', color: inkSoft, marginBottom: 4 }}>Open Balance</div>
-              <div style={{ fontSize: 20, fontWeight: 500, color: danger, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>${(customer.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+              <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.08, textTransform: 'uppercase', color: inkSoft, marginBottom: 4 }}>Outstanding Balance</div>
+              <div style={{ fontSize: 20, fontWeight: 500, color: danger, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>{((balance ?? customer.balance) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
             </div>
             <div style={{ padding: 12, borderRadius: 10, background: teal[50], border: `1px solid ${teal[100]}`, position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: '#059669', borderRadius: '10px 10px 0 0' }} />

@@ -266,6 +266,24 @@ async function loadCustomerPayments(customerId) {
   return verifyScope(rows, customerId);
 }
 
+/**
+ * Opening balance = the starting financial position recorded when the customer
+ * was created or imported. It lives on `customers.balance` (NEVER a running
+ * total — transaction flows only mutate `walletBalance`). This is the single
+ * source of truth for "where this customer began" and must be fed into the
+ * ledger so it is never silently dropped or double-counted.
+ */
+async function loadCustomerOpeningBalance(customerId) {
+  try {
+    const row = await repo.getById('customers', customerId);
+    if (!row) return 0;
+    const obj = row.data && typeof row.data === 'object' ? row.data : row;
+    return toNum(obj.balance);
+  } catch {
+    return 0;
+  }
+}
+
 /** Defense-in-depth JS ownership check (mirrors portalService.scopedRows). */
 function verifyScope(rows, customerId) {
   const target = String(customerId || '');
@@ -281,10 +299,13 @@ function verifyScope(rows, customerId) {
  * Authoritative ledger for one customer.
  * Loaders may be injected (tests); default reads Supabase via the repo.
  */
-async function buildLedger(customerId, { openingBalance = 0, invoices, payments } = {}) {
+async function buildLedger(customerId, { openingBalance, invoices, payments } = {}) {
   const invs = Array.isArray(invoices) ? invoices : await loadCustomerInvoices(customerId);
   const pays = Array.isArray(payments) ? payments : await loadCustomerPayments(customerId);
-  return buildLedgerFromRecords({ customerId, invoices: invs, payments: pays, openingBalance });
+  // When not supplied, fall back to the customer's stored opening balance so
+  // it is never silently dropped.
+  const opening = openingBalance ?? (await loadCustomerOpeningBalance(customerId));
+  return buildLedgerFromRecords({ customerId, invoices: invs, payments: pays, openingBalance: opening });
 }
 
 async function getOutstanding(customerId, opts = {}) {

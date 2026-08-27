@@ -4,7 +4,7 @@ import {
   CheckCircle2, XCircle, FileText, RefreshCw, Loader2, MessageSquare,
   PackageCheck, Inbox, History, ChevronDown, ArrowUpRight, History as HistoryIcon,
   BadgeCheck, Send, Flag, Trash2, HandCoins, MoreVertical, Eye, Download, Edit2, Plus,
-  Clock, Wallet, Ban, X, FileCheck,
+  Clock, Wallet, Ban, X, FileCheck, BellOff,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { formatDateTime, formatDate } from '../../utils/formatters';
@@ -14,7 +14,7 @@ import {
   AdminSalesOrder, AdminDocumentVersion,
 } from '../../services/adminPortalClient';
 import PaymentRequests, { PaymentRequestStats } from './PaymentRequests';
-import { markAlertsReadForActionUrl } from '../../services/systemAlertService';
+import { markAlertsReadForActionUrl, NOTIFICATION_UPDATE_EVENT } from '../../services/systemAlertService';
 import { QuotationRequestList } from './components/SalesLists';
 
 const teal = {
@@ -459,6 +459,7 @@ const QuotationRequests: React.FC = () => {
   const [menuState, setMenuState] = useState<{ id: string; type: 'request' | 'quotation' | 'order'; x: number; y: number } | null>(null);
   const [rejectState, setRejectState] = useState<{ id: string; number?: string } | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [notifClearing, setNotifClearing] = useState(false);
 
   const openRejectDialog = (id: string, number?: string) => {
     setRejectReason('');
@@ -612,6 +613,49 @@ const QuotationRequests: React.FC = () => {
     }
   };
 
+  /** Marks every admin notification (request-pipeline + bell alerts) as read. */
+  const clearAllNotifications = async () => {
+    if (notifClearing) return;
+    setNotifClearing(true);
+    setError(null);
+    try {
+      await Promise.all([
+        adminLifecycle.notifications.markAllRead().catch(() => {}),
+        adminLifecycle.requests.markInboxRead().catch(() => {}),
+        markAlertsReadForActionUrl('/sales-flow/requests').catch(() => {}),
+      ]);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(NOTIFICATION_UPDATE_EVENT));
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to clear notifications');
+    } finally {
+      setNotifClearing(false);
+    }
+  };
+
+  /** Deletes a single request transaction (used by the History tab). */
+  const deleteTransaction = async (id: string) => {
+    await action(`delete_${id}`, () => adminLifecycle.requests.remove(id));
+  };
+
+  /** Bulk-deletes every transaction currently shown in the active tab. */
+  const deleteAllTransactions = async () => {
+    const ids = activeRequests.map((r) => r.id);
+    if (!ids.length) return;
+    if (!window.confirm(`Delete all ${ids.length} transaction(s) shown here? This cannot be undone.`)) return;
+    setBusy('delete_all');
+    setError(null);
+    try {
+      await Promise.all(ids.map((id) => adminLifecycle.requests.remove(id).catch(() => {})));
+      await loadAll();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete transactions');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   /**
    * "Generate Quotation" does not create a quotation and does not reserve a
    * number. It marks the request ready for conversion and opens the STANDARD
@@ -726,7 +770,7 @@ const QuotationRequests: React.FC = () => {
             </p>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {analytics && (
             <span style={{ fontSize: 12, color: inkSoft }}>
               <b style={{ color: ink }}>{analytics.totalRequests || 0}</b> requests •{' '}
@@ -734,6 +778,30 @@ const QuotationRequests: React.FC = () => {
               <b style={{ color: ink }}>{analytics.totalDownloads || 0}</b> downloads
             </span>
           )}
+          {tab === 'history' && (
+            <button
+              onClick={deleteAllTransactions}
+              disabled={busy === 'delete_all' || activeRequests.length === 0}
+              onMouseEnter={e => { if (!(busy === 'delete_all' || activeRequests.length === 0)) { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = danger; e.currentTarget.style.borderColor = '#fecaca'; } }}
+              onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = danger; e.currentTarget.style.borderColor = '#fecaca'; }}
+              style={{
+                ...btnGhost, color: danger, borderColor: '#fecaca',
+                opacity: (busy === 'delete_all' || activeRequests.length === 0) ? 0.5 : 1,
+                cursor: (busy === 'delete_all' || activeRequests.length === 0) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {busy === 'delete_all' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete All Transactions
+            </button>
+          )}
+          <button
+            onClick={clearAllNotifications}
+            disabled={notifClearing}
+            onMouseEnter={e => { if (!notifClearing) { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; } }}
+            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+            style={{ ...btnGhost, opacity: notifClearing ? 0.6 : 1, cursor: notifClearing ? 'not-allowed' : 'pointer' }}
+          >
+            {notifClearing ? <Loader2 size={14} className="animate-spin" /> : <BellOff size={14} />} Clear All Notifications
+          </button>
         </div>
       </div>
 
@@ -833,17 +901,33 @@ const QuotationRequests: React.FC = () => {
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Customer</th>
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Date</th>
                 <th style={{ textAlign: 'center', padding: '10px 14px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Status</th>
+                <th style={{ textAlign: 'center', padding: '10px 14px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {activeRequests.length === 0 ? (
-                <tr><td colSpan={4} style={{ padding: 40, textAlign: 'center', color: inkSoft }}>No rejected, cancelled or converted requests.</td></tr>
+                <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: inkSoft }}>No rejected, cancelled or converted requests.</td></tr>
               ) : activeRequests.map((r) => (
                 <tr key={r.id} style={{ borderTop: `1px solid ${hairline}` }}>
                   <td style={{ padding: '10px 14px', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{r.request_number}</td>
                   <td style={{ padding: '10px 14px' }}>{customerNameMap[r.customer_id] || r.customer_name || 'Unknown Customer'}</td>
                   <td style={{ padding: '10px 14px' }}>{formatDate(r.created_at)}</td>
                   <td style={{ padding: '10px 14px', textAlign: 'center' }}><StatusPill meta={requestStatusMeta} status={r.status} /></td>
+                  <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                    <button
+                      onClick={() => { if (window.confirm(`Delete request ${r.request_number}? This cannot be undone.`)) deleteTransaction(r.id); }}
+                      aria-label={`Delete ${r.request_number}`}
+                      title="Delete transaction"
+                      style={{
+                        border: 'none', background: 'transparent', cursor: 'pointer', color: danger,
+                        display: 'inline-flex', padding: 4, borderRadius: 6,
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

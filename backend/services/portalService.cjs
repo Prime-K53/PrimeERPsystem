@@ -152,7 +152,7 @@ const portalService = {
     const [ledgerPayments] = await Promise.all([
       customerLedger.loadCustomerPayments(customerId),
     ]);
-    const ledger = customerLedger.buildLedgerFromRecords({ customerId, invoices, payments: ledgerPayments });
+    const ledger = customerLedger.buildLedgerFromRecords({ customerId, invoices, payments: ledgerPayments, openingBalance: Number(customer?.balance || 0) });
     const outstandingBalance = ledger.outstandingBalance;
 
     return {
