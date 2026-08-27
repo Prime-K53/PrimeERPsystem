@@ -144,16 +144,26 @@ const useFYFilter = () => {
   const range = useMemo(() => getFYDateRange(), [selectedFinancialYear, getFYDateRange]);
 
   const inFY = useCallback((raw: string | Date | undefined | null): boolean => {
-    if (!range) return true;
+    // If the selected financial year has no usable date range, or its
+    // start_date/end_date (or the transaction date) can't be parsed, don't
+    // exclude transactions — otherwise every sale/invoice fails the check and
+    // the financial performance chart renders empty even though sales exist
+    // (KPIs, which don't use this filter, still show them). FY dates are
+    // frequently unpopulated or stored in a non-ISO format.
+    if (!range || !range.start || !range.end) return true;
     if (!raw) return false;
     const dStr = raw instanceof Date ? raw.toISOString() : String(raw);
     const day = dStr.split('T')[0];
     if (!day) return false;
     try {
       const dt = parseISO(day);
-      return isWithinInterval(dt, { start: parseISO(range.start), end: parseISO(range.end) });
+      const start = parseISO(range.start);
+      const end = parseISO(range.end);
+      // Any unparseable date → include rather than blank the chart.
+      if (Number.isNaN(dt.getTime()) || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return true;
+      return isWithinInterval(dt, { start, end });
     } catch {
-      return false;
+      return true;
     }
   }, [range]);
 
