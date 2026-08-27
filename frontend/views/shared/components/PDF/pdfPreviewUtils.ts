@@ -141,8 +141,9 @@ export const resolvePdfFilePreviewSource = async (
 
 const sanitizeFileName = (title: string): string => {
   const normalized = String(title || 'document').trim()
-    .replace(/[^a-z0-9]+/gi, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
   return normalized || 'document';
 };
 

@@ -128,7 +128,7 @@ export const PreviewModal = ({
     if (!data) return {};
     const r = data as Record<string, unknown>;
     return {
-      number: (r.number || r.invoiceNumber || r.documentNumber || '') as string,
+      number: (r.number || r.invoiceNumber || r.documentNumber || r.orderNumber || r.salesOrderNumber || r.jobOrderNumber || r.quotationNumber || r.jobNumber || '') as string,
       customer: (r.clientName || r.customerName || (r.billTo as any)?.name || '') as string,
       status: (r.status || r.paymentStatus || '') as string,
       date: (r.date || r.invoiceDate || r.issueDate || '') as string,
@@ -149,8 +149,16 @@ export const PreviewModal = ({
       return docMeta.number ? `Invoice ${docMeta.number}` : 'Invoice Preview';
     if (type === 'QUOTATION') return 'Quotation Preview';
     if (type === 'DELIVERY_NOTE') return 'Delivery Note';
+    if (type === 'WORK_ORDER')
+      return docMeta.number ? (docMeta.customer ? `${docMeta.number} - ${docMeta.customer}` : docMeta.number) : 'Work Order';
+    if (type === 'SALES_ORDER')
+      return docMeta.number ? (docMeta.customer ? `${docMeta.number} - ${docMeta.customer}` : docMeta.number) : 'Sales Order';
+    if (type === 'ORDER')
+      return docMeta.number ? (docMeta.customer ? `${docMeta.number} - ${docMeta.customer}` : docMeta.number) : 'Order';
+    if (docMeta.number)
+      return docMeta.customer ? `${docMeta.number} - ${docMeta.customer}` : docMeta.number;
     return 'Document Preview';
-  }, [data, file?.title, titleProp, type, docMeta.number]);
+  }, [data, file?.title, titleProp, type, docMeta.number, docMeta.customer]);
 
   const palette = useMemo(
     () => (docMeta.status ? statusPalette(docMeta.status) : null),
