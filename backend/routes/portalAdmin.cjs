@@ -836,20 +836,7 @@ router.post('/users/auto-create', async (req, res) => {
     }
 
     const password = crypto.randomBytes(9).toString('base64url');
-    const generatedEmail = await (async () => {
-      if (name) {
-        const words = name.split(/\s+/).filter(Boolean);
-        for (const word of words) {
-          const sanitized = word.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (sanitized) {
-            const candidate = `${sanitized}@pps.co`;
-            const existing = await portalAuthService.getPortalUserByEmail(candidate);
-            if (!existing) return candidate;
-          }
-        }
-      }
-      return `${customer_id.toLowerCase()}@pps.co`;
-    })();
+    const generatedEmail = await derivePortalEmail(name, customer_id, null, new Set());
     const user = await portalAuthService.registerPortalUser({
       customer_id,
       email: generatedEmail,
@@ -910,7 +897,7 @@ router.post('/users/:id/regenerate-password', async (req, res) => {
         user = await portalAuthService.registerPortalUser({
           id: portalUserId,
           customer_id: customerId,
-          email: email || info.email || `${customerId}@pps.co`,
+          email: email || info.email || `${customerId}@${PORTAL_EMAIL_DOMAIN}`,
           password: crypto.randomBytes(9).toString('base64url'),
           full_name: name || info.name || '',
           phone: phone || info.phone || '',
@@ -946,19 +933,41 @@ router.post('/users/:id/regenerate-password', async (req, res) => {
  *
  * Destructive by design — requires `{ confirm: true }` in the request body.
  */
-async function derivePortalEmail(name, customerId, excludeUserId) {
-  if (name) {
-    const words = String(name).split(/\s+/).filter(Boolean);
-    for (const word of words) {
-      const sanitized = word.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (sanitized) {
-        const candidate = `${sanitized}@pps.co`;
-        const existing = await portalAuthService.getPortalUserByEmail(candidate);
-        if (!existing || existing.id === excludeUserId) return candidate;
-      }
-    }
+const PORTAL_EMAIL_DOMAIN = 'primeportal.com';
+
+// Derive a stable, recognizable portal login email for a customer. The local
+// part is built from the customer's name (first.last) so it reads naturally,
+// and a numeric suffix is appended when the base collides with another
+// account — checked against both the current batch (usedEmails) and the portal
+// user store. excludeUserId lets an existing customer keep their own email.
+async function derivePortalEmail(name, customerId, excludeUserId, usedEmails) {
+  const safe = String(name || '').toLowerCase().trim();
+  const words = safe.split(/[^a-z0-9]+/).filter(Boolean);
+
+  let base;
+  if (words.length === 0) {
+    base = `customer-${String(customerId).toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+  } else if (words.length === 1) {
+    base = words[0];
+  } else {
+    base = `${words[0]}.${words[words.length - 1]}`;
   }
-  return `${String(customerId).toLowerCase()}@pps.co`;
+
+  let suffix = '';
+  for (;;) {
+    const local = suffix === '' ? base : `${base}${suffix}`;
+    const candidate = `${local}@${PORTAL_EMAIL_DOMAIN}`;
+    if (usedEmails && usedEmails.has(candidate)) {
+      suffix = suffix === '' ? 2 : suffix + 1;
+      continue;
+    }
+    const existing = await portalAuthService.getPortalUserByEmail(candidate);
+    if (!existing || existing.id === excludeUserId) {
+      if (usedEmails) usedEmails.add(candidate);
+      return candidate;
+    }
+    suffix = suffix === '' ? 2 : suffix + 1;
+  }
 }
 
 router.post('/customers/bulk-regenerate', async (req, res) => {
@@ -969,6 +978,7 @@ router.post('/customers/bulk-regenerate', async (req, res) => {
     const customers = (await repo.getAll('customers')) || [];
     const results = [];
     const errors = [];
+    const usedEmails = new Set();
     for (const c of customers) {
       const customerId = c.id;
       const name = c.name || '';
@@ -977,7 +987,7 @@ router.post('/customers/bulk-regenerate', async (req, res) => {
         let created = false;
         let email;
         if (!portalUser) {
-          email = await derivePortalEmail(name, customerId, null);
+          email = await derivePortalEmail(name, customerId, null, usedEmails);
           const password = crypto.randomBytes(9).toString('base64url');
           portalUser = await portalAuthService.registerPortalUser({
             customer_id: customerId,
@@ -989,7 +999,7 @@ router.post('/customers/bulk-regenerate', async (req, res) => {
           });
           created = true;
         } else {
-          email = await derivePortalEmail(name, customerId, portalUser.id);
+          email = await derivePortalEmail(name, customerId, portalUser.id, usedEmails);
           await portalAuthService.updatePortalUser(portalUser.id, { email });
           try {
             await repo.upsert('customers', { ...c, email, updated_at: new Date().toISOString() });
