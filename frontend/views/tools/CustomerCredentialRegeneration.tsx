@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Key, Play, AlertTriangle, CheckCircle, XCircle, RefreshCw, Download, Copy, Mail, UserPlus } from 'lucide-react';
 import { adminLifecycle, type BulkRegenerateResult, type BulkRegenerateResultRow } from '../../services/adminPortalClient';
 import { ConfirmDialog, type ConfirmDialogType } from '../../components/ConfirmDialog';
+import { useSalesStore } from '../../stores/salesStore';
 
 const t = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39' };
 const amber = { 100: '#fbead0', 500: '#d99a3f' };
@@ -24,6 +25,19 @@ const CustomerCredentialRegeneration: React.FC = () => {
                 try {
                     const data = await adminLifecycle.users.bulkRegenerateCredentials();
                     setResult(data);
+                    // Reflect the new portal login emails immediately in the customer
+                    // list and any open customer card (both read from salesStore).
+                    const emailById = new Map<string, string>();
+                    (data.results || []).forEach((r: BulkRegenerateResultRow) => emailById.set(r.customer_id, r.email));
+                    if (emailById.size > 0) {
+                        useSalesStore.setState((state) => ({
+                            customers: (state.customers || []).map((c) =>
+                                emailById.has(c.id)
+                                    ? { ...c, email: emailById.get(c.id)!, portalEmail: emailById.get(c.id)! }
+                                    : c
+                            ),
+                        }));
+                    }
                 } catch (err: any) {
                     setError(err?.message || 'Bulk regeneration failed');
                 } finally { setRunning(false); }
