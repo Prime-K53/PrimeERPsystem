@@ -14120,7 +14120,7 @@ var getRuntimeBackendUrl = () => {
   const configured = String(window?.BACKEND_ORIGIN || "").trim();
   if (configured) return configured;
   if (isFileProtocol()) return "";
-  return "https://primebooks-erp.onrender.com";
+  return "https://primeerpsystem.onrender.com";
 };
 var toFileUrl = (filePath) => {
   const normalized = String(filePath || "").trim();
