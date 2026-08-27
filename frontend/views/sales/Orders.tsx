@@ -561,7 +561,8 @@ const Orders: React.FC = () => {
 
                 let invCost = 0;
                 inv.items?.forEach(item => {
-                    const bom = boms.find(b => b.productId === item.id);
+                    const productKey = item.productId || item.parentId || item.id;
+                    const bom = boms.find(b => b.productId === productKey);
                     if (bom) {
                         const matCost = bom.components.reduce((s, c) => {
                             const m = inventory.find(i => i.id === c.materialId);
@@ -569,8 +570,8 @@ const Orders: React.FC = () => {
                         }, 0);
                         invCost += (matCost + (bom.laborCost || 0)) * item.quantity;
                     } else {
-                        const i = inventory.find(invItm => invItm.id === item.id);
-                        invCost += (i?.cost || 0) * item.quantity;
+                        const invItem = inventory.find(invItm => invItm.id === productKey);
+                        invCost += (invItem?.cost || 0) * item.quantity;
                     }
                 });
                 invProfit = netInvoice - invCost;
@@ -620,7 +621,8 @@ const Orders: React.FC = () => {
             const netInvoice = inv.totalAmount;
             let invCost = 0;
             inv.items?.forEach(item => {
-                const bom = boms.find(b => b.productId === item.id);
+                const productKey = item.productId || item.parentId || item.id;
+                const bom = boms.find(b => b.productId === productKey);
                 if (bom) {
                     const matCost = bom.components.reduce((s, c) => {
                         const m = inventory.find(i => i.id === c.materialId);
@@ -628,8 +630,8 @@ const Orders: React.FC = () => {
                     }, 0);
                     invCost += (matCost + (bom.laborCost || 0)) * item.quantity;
                 } else {
-                    const i = inventory.find(invItm => invItm.id === item.id);
-                    invCost += (i?.cost || 0) * item.quantity;
+                    const invItem = inventory.find(invItm => invItm.id === productKey);
+                    invCost += (invItem?.cost || 0) * item.quantity;
                 }
             });
             monthlyData[monthKey].profit += (netInvoice - invCost);
