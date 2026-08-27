@@ -993,9 +993,6 @@ const DashboardContent: React.FC = () => {
       label: 'Portal Requests', color: '#0ea5e9', icon: <Inbox size={20} />,
       render: (compact: boolean) => {
         const r = requestAnalytics || {};
-        const reqs = r.requests || {};
-        // New/available requests from the customer portal awaiting action.
-        const pendingReview = (reqs.submitted || 0) + (reqs.assigned || 0) + (reqs.under_review || 0) + (reqs.waiting_for_customer || 0) + (reqs.ready_for_conversion || 0);
         const types = r.requestTypes || {};
         const openQuotations = types.quotation || 0;
         const openOrders = types.order || 0;
@@ -1006,8 +1003,8 @@ const DashboardContent: React.FC = () => {
               <div style={{ width: 32, height: 32, borderRadius: 8, background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0ea5e9', flexShrink: 0 }}><Inbox size={16} /></div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1 }}>{pendingReview}</div>
-              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>New requests awaiting review</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1 }}>{openQuotations + openOrders}</div>
+              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>Open portal requests</div>
             </div>
             <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%', margin: '2px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1151,18 +1148,8 @@ const DashboardContent: React.FC = () => {
              </div>
               <div style={{ fontSize: 13, color: '#5c6567', fontWeight: 500 }}>Here's what's happening with your business today.</div>
             </div>
-           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-             {requestAnalytics && (() => {
-               const reqs = requestAnalytics.requests || {};
-               const pendingReview = (reqs.submitted || 0) + (reqs.assigned || 0) + (reqs.under_review || 0) + (reqs.waiting_for_customer || 0) + (reqs.ready_for_conversion || 0);
-               if (pendingReview === 0) return null;
-               return (
-                 <button onClick={() => navigate('/sales-flow/requests')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all .15s ease', whiteSpace: 'nowrap' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.transform = 'translateY(-1px)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.transform = 'translateY(0)'; }}>
-                   <Inbox size={14} /> Needs Attention: {pendingReview} request{pendingReview !== 1 ? 's' : ''} awaiting review <ArrowRight size={14} />
-                 </button>
-               );
-             })()}
-             <button onClick={() => navigate('/reports')} style={{
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => navigate('/reports')} style={{
                background: 'linear-gradient(160deg, #3fa294, #0f544c)', color: '#fff', padding: '10px 20px', borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s ease', boxShadow: '0 1px 2px rgba(11,62,57,.15)', whiteSpace: 'nowrap',
              }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(11,62,57,.25)'; e.currentTarget.style.transform = 'translateY(-1px)'; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.15)'; e.currentTarget.style.transform = 'translateY(0)'; }}>
                {isMobile ? 'Reports' : 'View Detailed Reports'}
