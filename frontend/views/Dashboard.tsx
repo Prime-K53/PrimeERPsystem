@@ -23,10 +23,15 @@ import { dbService } from '../services/db';
 import { formatNumber, parseFormattedNumber } from '../utils/helpers';
 import { currencyService } from '../services/currencyService';
 import {
+  buildFinancialPerformanceChartData,
+  DASHBOARD_PERIOD_DAYS,
+  parseDashboardDate
+} from '../utils/dashboardFinancialPerformance';
+import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
-import { format, isWithinInterval, parseISO } from 'date-fns';
+import { format, isWithinInterval } from 'date-fns';
 import { ConfirmDialog, ConfirmDialogType } from '../components/ConfirmDialog';
 
 // ─── CSS keyframes injected once ──────────────────────────────────────────────
@@ -111,7 +116,7 @@ const isRecognizedInvoice = (invoice: any) => {
 
 const getInvoiceRevenueAmount = (invoice: any) => {
   if (!isRecognizedInvoice(invoice)) return 0;
-  return toSafeNumber(invoice?.totalAmount);
+  return toSafeNumber(invoice?.totalAmount ?? invoice?.total ?? invoice?.amount ?? invoice?.total_amount);
 };
 
 const getGreeting = (): string => {
@@ -134,9 +139,6 @@ const getGreeting = (): string => {
    return `${curr}${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
  };
 
-const hasChartValues = (rows: Array<{ income: number; expenses: number }>) =>
-  rows.some(r => toSafeNumber(r.income) > 0 || toSafeNumber(r.expenses) > 0);
-
 // ─── Financial Year date-range filter ─────────────────────────────────────
 
 const useFYFilter = () => {
@@ -152,15 +154,12 @@ const useFYFilter = () => {
     // frequently unpopulated or stored in a non-ISO format.
     if (!range || !range.start || !range.end) return true;
     if (!raw) return false;
-    const dStr = raw instanceof Date ? raw.toISOString() : String(raw);
-    const day = dStr.split('T')[0];
-    if (!day) return false;
     try {
-      const dt = parseISO(day);
-      const start = parseISO(range.start);
-      const end = parseISO(range.end);
+      const dt = parseDashboardDate(raw);
+      const start = parseDashboardDate(range.start);
+      const end = parseDashboardDate(range.end);
       // Any unparseable date → include rather than blank the chart.
-      if (Number.isNaN(dt.getTime()) || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return true;
+      if (!dt || !start || !end) return true;
       return isWithinInterval(dt, { start, end });
     } catch {
       return true;
@@ -185,7 +184,7 @@ interface KpiData {
 
 // ─── period map ──────────────────────────────────────────────────────────────
 
-const PERIOD_DAYS: Record<string, number> = { Year: 365, Month: 30, Week: 7 };
+const PERIOD_DAYS: Record<string, number> = DASHBOARD_PERIOD_DAYS;
 
 // ─── sparkline ───────────────────────────────────────────────────────────────
 
@@ -1048,93 +1047,27 @@ const DashboardContent: React.FC = () => {
   const loadChartData = useCallback(() => {
     setIsLoading(true);
     try {
-      const now  = new Date();
-      const cData: Record<string, { income: number; expenses: number; pos: number; paid_inv: number; unpaid_inv: number; partial_inv: number; day: string }> = {};
-
-      if (activePeriod === 'Year') {
-        const startYear = parseInt(selectedFinYear.split('/')[0], 10);
-        for (let i = 0; i < 12; i++) {
-          const d = new Date(startYear, finYearStartMonth + i, 1);
-          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-          const label = d.toLocaleDateString('en-US', { month: 'short' });
-          cData[key] = { income: 0, expenses: 0, pos: 0, paid_inv: 0, unpaid_inv: 0, partial_inv: 0, day: label };
-        }
-      } else {
-        const days = PERIOD_DAYS[activePeriod] ?? 30;
-        for (let i = days - 1; i >= 0; i--) {
-          const d = new Date(now); d.setDate(d.getDate() - i);
-          const key = d.toISOString().split('T')[0];
-          const label = activePeriod === 'Week' ? d.toLocaleDateString('en-US', { weekday: 'short' }) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          if (!cData[key]) cData[key] = { income: 0, expenses: 0, pos: 0, paid_inv: 0, unpaid_inv: 0, partial_inv: 0, day: label };
-        }
-      }
-
-      const getChartKey = (dRaw: string) => {
-        if (!dRaw) return null;
-        const dt = new Date(dRaw);
-        return activePeriod === 'Year' ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}` : dRaw.split('T')[0];
-      };
-
-      // POS sales within FY
-      sales.forEach((s: any) => {
-        if (!inFY(s.date || s.createdAt)) return;
-        const key = getChartKey(String(s.date || s.createdAt || ''));
-        if (key && cData[key]) {
-          const total = toSafeNumber(s.totalAmount);
-          if (total > 0) cData[key].pos += total;
-          cData[key].expenses += toSafeNumber(s.cost ?? s.expense ?? 0);
-        }
-      });
-
-      // Invoices within FY
-      invoices.forEach((inv: any) => {
-        if (!inFY(inv.date || inv.createdAt)) return;
-        const key = getChartKey(String(inv.date || inv.createdAt || ''));
-        if (key && cData[key]) {
-          const total = getInvoiceRevenueAmount(inv);
-          const status = String(inv.status || '').toLowerCase();
-          if (status === 'paid' || status === 'completed') cData[key].paid_inv += total;
-          else if (status === 'partial' || status === 'partially paid' || status === 'overdue') cData[key].partial_inv += total;
-          else if (status === 'unpaid' || status === 'due' || status === 'pending') cData[key].unpaid_inv += total;
-          else cData[key].income += total;
-        }
-      });
-
-      // Purchases (expenses) within FY
-      purchases.forEach((p: any) => {
-        if (!inFY(p.date || p.orderDate || p.createdAt)) return;
-        const isPaid = p.status === 'Paid' || p.paymentStatus === 'Paid' || toSafeNumber(p.paidAmount) > 0 || p.paymentStatus === 'Partial';
-        if (!isPaid) return;
-        const key = getChartKey(String(p.date || p.orderDate || p.createdAt || ''));
-        if (key && cData[key]) cData[key].expenses += toSafeNumber(p.paidAmount ?? p.totalAmount ?? p.total);
-      });
-
-      // General Expenses within FY
-      expenses.forEach((e: any) => {
-        if (!inFY(e.date || e.createdAt)) return;
-        const key = getChartKey(String(e.date || e.createdAt || ''));
-        if (key && cData[key]) cData[key].expenses += toSafeNumber(e.amount);
-      });
-
-      Object.values(cData).forEach(entry => { entry.income = entry.pos + entry.paid_inv + entry.unpaid_inv + entry.partial_inv; });
-
-      let formattedData = Object.values(cData);
-      if (!hasChartValues(formattedData)) {
-        if (activePeriod === 'Year') formattedData = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(month => ({ day: month, income: 0, expenses: 0, pos: 0, paid_inv: 0, unpaid_inv: 0, partial_inv: 0 }));
-        else if (activePeriod === 'Week') formattedData = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => ({ day: d, income: 0, expenses: 0, pos: 0, paid_inv: 0, unpaid_inv: 0, partial_inv: 0 }));
-        else formattedData = Array.from({ length: 30 }, (_, i) => ({ day: `${i + 1}`, income: 0, expenses: 0, pos: 0, paid_inv: 0, unpaid_inv: 0, partial_inv: 0 }));
-      }
-      setChartData(formattedData);
+      setChartData(buildFinancialPerformanceChartData({
+        activePeriod,
+        selectedFinYear,
+        financialYearStartMonth: finYearStartMonth,
+        financialYearStartDate: selectedFinancialYear?.start_date,
+        sales,
+        invoices,
+        purchases,
+        expenses,
+        inFY,
+      }));
     } catch (err) { logger.error('Error building chart data', err); }
     finally { setIsLoading(false); }
-  }, [invoices, sales, purchases, expenses, activePeriod, companyConfig, selectedFinYear, inFY]);
+  }, [activePeriod, expenses, finYearStartMonth, inFY, invoices, purchases, sales, selectedFinancialYear?.start_date, selectedFinYear]);
 
   // Re-run whenever the (memoized) loader's inputs change — including the
   // async-loaded sales/invoices/purchases/expenses — so the chart reflects
   // data once it arrives instead of being built once on mount with empty data.
   useEffect(() => { loadChartData(); }, [loadChartData]);
 
-  const hasTransactions = revenueThisMonth > 0 || todaysCollection > 0 || receivables > 0;
+  const hasTransactions = chartData.length > 0 || sales.length > 0 || invoices.length > 0 || purchases.length > 0 || expenses.length > 0 || revenueThisMonth > 0 || todaysCollection > 0 || receivables > 0;
   const fyName = selectedFinancialYear?.name || 'this Financial Year';
 
   return (
