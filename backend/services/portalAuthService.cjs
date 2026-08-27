@@ -531,5 +531,6 @@ module.exports = {
   getTwoFactorSecret,
   ACCESS_TOKEN_EXPIRY,
   REFRESH_TOKEN_EXPIRY_DAYS,
-  generateEventTicket
+  generateEventTicket,
+  syncCustomerPortalData
 };

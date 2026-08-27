@@ -204,6 +204,7 @@ const GlobalSearch = lazyWithRetry('./views/GlobalSearch', () => import('./views
 const ChequeManager = lazyWithRetry('./views/tools/ChequeManager', () => import('./views/tools/ChequeManager'));
 const VatView = lazyWithRetry('./views/vat/VatView', () => import('./views/vat/VatView'));
 const BarcodePrinter = lazyWithRetry('./views/tools/BarcodePrinter', () => import('./views/tools/BarcodePrinter'));
+const CustomerCredentialRegeneration = lazyWithRetry('./views/tools/CustomerCredentialRegeneration', () => import('./views/tools/CustomerCredentialRegeneration'));
 const MarketAdjustments = lazyWithRetry('./views/tools/MarketAdjustments', () => import('./views/tools/MarketAdjustments'));
 const SmartPricing = lazyWithRetry('./views/tools/SmartPricing', () => import('./views/tools/SmartPricing'));
 const SmartOperationsHub = lazyWithRetry('./views/SmartOperationsHub', () => import('./views/SmartOperationsHub'));
@@ -875,6 +876,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/internal-tools/assets" element={<AssetManagement />} />
                   <Route path="/internal-tools/template-builder" element={<DocumentTemplateBuilder />} />
                   <Route path="/internal-tools/api-usage" element={<APIUsageDashboard />} />
+                  <Route path="/internal-tools/customer-credentials" element={<CustomerCredentialRegeneration />} />
                 </Route>
 
                 {/* Smart Operations */}

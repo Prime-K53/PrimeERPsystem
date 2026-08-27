@@ -392,6 +392,26 @@ export interface AdminPortalAccount {
   invite_code?: string | null;
 }
 
+export interface BulkRegenerateResultRow {
+  customer_id: string;
+  customer_name: string;
+  portal_user_id: string;
+  email: string;
+  previous_email: string | null;
+  invite_code: string;
+  invite_expires_at: string;
+  created: boolean;
+}
+
+export interface BulkRegenerateResult {
+  total: number;
+  processed: number;
+  created: number;
+  failed: number;
+  results: BulkRegenerateResultRow[];
+  errors: Array<{ customer_id: string; customer_name: string; error: string }>;
+}
+
 export const adminLifecycle = {
   requests: {
     list(status?: string): Promise<AdminQuotationRequest[]> {
@@ -536,6 +556,9 @@ export const adminLifecycle = {
     },
     regeneratePassword(id: string, payload: { customer_id: string; name?: string; email?: string; phone?: string }): Promise<{ generated_password: string; user_id?: string }> {
       return adminPortalApi.post<{ generated_password: string; user_id?: string }>(`/users/${id}/regenerate-password`, payload);
+    },
+    bulkRegenerateCredentials(): Promise<BulkRegenerateResult> {
+      return adminPortalApi.post<BulkRegenerateResult>('/customers/bulk-regenerate', { confirm: true });
     },
   },
   staff: {

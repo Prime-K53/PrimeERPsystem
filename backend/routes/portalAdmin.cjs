@@ -938,6 +938,95 @@ router.post('/users/:id/regenerate-password', async (req, res) => {
   }
 });
 
+/**
+ * Bulk regenerate portal login emails + invitation codes for every customer.
+ * Overwrites each customer's portal login email with the standard derived
+ * scheme and issues a fresh 30‑minute invitation code. Customers without a
+ * portal account are created (status "invited") so they get a code too.
+ *
+ * Destructive by design — requires `{ confirm: true }` in the request body.
+ */
+async function derivePortalEmail(name, customerId, excludeUserId) {
+  if (name) {
+    const words = String(name).split(/\s+/).filter(Boolean);
+    for (const word of words) {
+      const sanitized = word.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (sanitized) {
+        const candidate = `${sanitized}@pps.co`;
+        const existing = await portalAuthService.getPortalUserByEmail(candidate);
+        if (!existing || existing.id === excludeUserId) return candidate;
+      }
+    }
+  }
+  return `${String(customerId).toLowerCase()}@pps.co`;
+}
+
+router.post('/customers/bulk-regenerate', async (req, res) => {
+  try {
+    if (!req.body || req.body.confirm !== true) {
+      return res.status(400).json({ error: 'Confirmation required. Send { confirm: true } to run this bulk action.' });
+    }
+    const customers = (await repo.getAll('customers')) || [];
+    const results = [];
+    const errors = [];
+    for (const c of customers) {
+      const customerId = c.id;
+      const name = c.name || '';
+      try {
+        let portalUser = await portalAuthService.getPortalUserByCustomerId(customerId);
+        let created = false;
+        let email;
+        if (!portalUser) {
+          email = await derivePortalEmail(name, customerId, null);
+          const password = crypto.randomBytes(9).toString('base64url');
+          portalUser = await portalAuthService.registerPortalUser({
+            customer_id: customerId,
+            email,
+            password,
+            full_name: name,
+            phone: c.phone || '',
+            status: 'invited',
+          });
+          created = true;
+        } else {
+          email = await derivePortalEmail(name, customerId, portalUser.id);
+          await portalAuthService.updatePortalUser(portalUser.id, { email });
+          try {
+            await repo.upsert('customers', { ...c, email, updated_at: new Date().toISOString() });
+          } catch (upsertErr) {
+            console.warn(`[PortalAdmin] Bulk regenerate: customers upsert failed for ${customerId}:`, upsertErr.message);
+          }
+          await portalAuthService.syncCustomerPortalData(customerId, { portalEmail: email }).catch(() => {});
+        }
+        const { code, expires_at } = await portalAuthService.createInviteCode(portalUser.id);
+        results.push({
+          customer_id: customerId,
+          customer_name: name,
+          portal_user_id: portalUser.id,
+          email,
+          previous_email: created ? null : (portalUser.email || null),
+          invite_code: code,
+          invite_expires_at: expires_at,
+          created,
+        });
+      } catch (err) {
+        errors.push({ customer_id: customerId, customer_name: name, error: err.message });
+      }
+    }
+    res.json({
+      total: customers.length,
+      processed: results.length,
+      created: results.filter((r) => r.created).length,
+      failed: errors.length,
+      results,
+      errors,
+    });
+  } catch (err) {
+    console.error('[PortalAdmin] Bulk regenerate credentials error:', err);
+    res.status(500).json({ error: 'Failed to bulk regenerate credentials', detail: err.message });
+  }
+});
+
 router.post('/users/:id/invite', async (req, res) => {
   try {
     const user = await portalAuthService.getPortalUserById(req.params.id);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wrench, CreditCard, Barcode, Upload, MessageSquare, TrendingUp, Database, Package, FileText, Activity } from 'lucide-react';
+import { Wrench, CreditCard, Barcode, Upload, MessageSquare, TrendingUp, Database, Package, FileText, Activity, Key } from 'lucide-react';
 import GenericHub from './GenericHub';
 
 const InternalToolsHub: React.FC = () => {
@@ -59,6 +59,13 @@ const InternalToolsHub: React.FC = () => {
       path: '/internal-tools/api-usage',
       icon: <Activity />,
       color: 'bg-rose-50 text-rose-500'
+    },
+    {
+      label: 'Customer Credentials',
+      description: 'Bulk regenerate every customer\'s portal login email and invitation code.',
+      path: '/internal-tools/customer-credentials',
+      icon: <Key />,
+      color: 'bg-teal-50 text-teal-500'
     }
   ];
 
