@@ -1119,7 +1119,10 @@ const DashboardContent: React.FC = () => {
     finally { setIsLoading(false); }
   }, [invoices, sales, purchases, expenses, activePeriod, companyConfig, selectedFinYear, inFY]);
 
-  useEffect(() => { loadChartData(); }, [selectedFinYear]);
+  // Re-run whenever the (memoized) loader's inputs change — including the
+  // async-loaded sales/invoices/purchases/expenses — so the chart reflects
+  // data once it arrives instead of being built once on mount with empty data.
+  useEffect(() => { loadChartData(); }, [loadChartData]);
 
   const hasTransactions = revenueThisMonth > 0 || todaysCollection > 0 || receivables > 0;
   const fyName = selectedFinancialYear?.name || 'this Financial Year';
@@ -1264,7 +1267,7 @@ const DashboardContent: React.FC = () => {
                   {!isMobile && <div style={{ marginLeft: 4 }}><PeriodDropdown value={activePeriod} onChange={setActivePeriod} /></div>}
                 </div>
               </div>
-              <div style={{ width: '100%', flex: 1, minWidth: 0, minHeight: 150, overflow: 'hidden' }}>
+               <div style={{ width: '100%', height: isMobile ? 220 : 280, minWidth: 0, overflow: 'hidden' }}>
                 {chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={150}>
                     <AreaChart data={chartData} margin={{ top: 8, right: isMobile ? 4 : 16, left: isMobile ? -24 : -8, bottom: -8 }}>
