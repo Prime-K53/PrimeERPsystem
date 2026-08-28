@@ -103,12 +103,7 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
     headers.Authorization = `Bearer ${token}`;
   }
 
-  console.log(`[SYNC-FORENSIC] STAGE-8 syncApiClient.sendSyncOps()`, {
-    endpoint: SYNC_ENDPOINT,
-    opCount: ops.length,
-    hasToken: !!token,
-    tables: ops.map(o => o.table),
-  });
+  /* SYNC-FORENSIC suppressed: STAGE-8 syncApiClient.sendSyncOps() */
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 25000);
@@ -121,11 +116,7 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
       signal: controller.signal,
     });
 
-    console.log(`[SYNC-FORENSIC] STAGE-8 syncApiClient HTTP response`, {
-      status: res.status,
-      statusText: res.statusText,
-      ok: res.ok,
-    });
+    /* SYNC-FORENSIC suppressed: STAGE-8 syncApiClient HTTP response */
 
     if (res.status === 503) {
       throw new Error('Cloud database is not configured on this server');
@@ -135,7 +126,9 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
     }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error((body as any)?.error || `Sync gateway failed (${res.status})`);
+      const detail = (body as any)?.detail;
+      const errorMsg = detail ? `${(body as any)?.error || 'Sync gateway failed'}: ${detail}` : ((body as any)?.error || `Sync gateway failed (${res.status})`);
+      throw new Error(errorMsg);
     }
 
     const payload = await res.json() as SyncOpsResponse;

@@ -302,9 +302,7 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
   const domain = sanitizeRecord(payload);
   const incomingVersion = Number(payload._version ?? payload.version);
 
-  console.log(`[SYNC-FORENSIC] STAGE-13 cloudSyncStore.upsertRow()`, {
-    table, id, incomingVersion, hasDomain: !!domain,
-  });
+  /* SYNC-FORENSIC suppressed: STAGE-13 cloudSyncStore.upsertRow() */
 
   // B6: Atomic versioned write — single PATCH with WHERE version = expected.
   if (Number.isFinite(incomingVersion)) {
@@ -335,9 +333,7 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
         // tombstone-resurrection / unversioned-create POST below.
         if (!existing) {
           const createdRow = { id, data: domain, updated_at: serverNow, version: 1 };
-          console.log(`[SYNC-FORENSIC] STAGE-13 atomic PATCH 0 rows + row absent → INSERT (create)`, {
-            table, id,
-          });
+          /* SYNC-FORENSIC suppressed: STAGE-13 atomic PATCH 0 rows + row absent → INSERT (create) */
           const created = await cloudHttp.post(`${SUPABASE_URL}/rest/v1/${table}`, createdRow, {
             headers: { ...adminHeaders(), Prefer: 'resolution=merge-duplicates,return=representation' },
             params: { on_conflict: 'id' },
@@ -352,9 +348,7 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
           };
         }
 
-        console.log(`[SYNC-FORENSIC] STAGE-13 OCC conflict (atomic PATCH, 0 rows)`, {
-          table, id, incomingVersion, serverVersion,
-        });
+        /* SYNC-FORENSIC suppressed: STAGE-13 OCC conflict (atomic PATCH, 0 rows) */
         return {
           id,
           conflicted: true,
@@ -364,9 +358,7 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
         };
       }
       const saved = updated[0];
-      console.log(`[SYNC-FORENSIC] STAGE-13 atomic PATCH OK`, {
-        table, id, savedVersion: saved?.version, savedId: saved?.id,
-      });
+      /* SYNC-FORENSIC suppressed: STAGE-13 atomic PATCH OK */
       return {
         id: saved?.id || id,
         updatedAt: saved?.updated_at || serverNow,
@@ -393,9 +385,7 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
     if (isTombstone && Number.isFinite(incomingVersion)) {
       // Tombstone resurrection with version: overwrite the tombstone.
       const row = { id, data: domain, updated_at: serverNow, version: serverVersion + 1 };
-      console.log(`[SYNC-FORENSIC] STAGE-13 cloudSyncStore.upsertRow() TOMBSTONE RESURRECT`, {
-        table, id, serverVersion, newVersion: serverVersion + 1,
-      });
+      /* SYNC-FORENSIC suppressed: STAGE-13 cloudSyncStore.upsertRow() TOMBSTONE RESURRECT */
       const res = await cloudHttp.post(`${SUPABASE_URL}/rest/v1/${table}`, row, {
         headers: { ...adminHeaders(), Prefer: 'resolution=merge-duplicates,return=representation' },
         params: { on_conflict: 'id' },
@@ -422,18 +412,14 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
 
   // Genuine create: no row exists, so stamp the initial version.
   const row = { id, data: domain, updated_at: serverNow, version: 1 };
-  console.log(`[SYNC-FORENSIC] STAGE-13 Supabase upsert NEW RECORD (no version)`, {
-    table, id,
-  });
+  /* SYNC-FORENSIC suppressed: STAGE-13 Supabase upsert NEW RECORD (no version) */
   const res = await cloudHttp.post(`${SUPABASE_URL}/rest/v1/${table}`, row, {
     headers: { ...adminHeaders(), Prefer: 'resolution=merge-duplicates,return=representation' },
     params: { on_conflict: 'id' },
     timeout: 20000,
   });
   const saved = Array.isArray(res.data) ? (res.data[0] || null) : res.data;
-  console.log(`[SYNC-FORENSIC] STAGE-13 Supabase upsert OK (new record v1)`, {
-    table, id, savedVersion: saved?.version, savedId: saved?.id,
-  });
+  /* SYNC-FORENSIC suppressed: STAGE-13 Supabase upsert OK (new record v1) */
   return {
     id: saved?.id || id,
     updatedAt: saved?.updated_at || serverNow,
@@ -607,11 +593,7 @@ async function purgeTombstones(table, retentionDays, archiveFn = null) {
  */
 async function applyOp(op) {
   const { operationId, table, recordId, operation, payload } = op || {};
-  console.log(`[SYNC-FORENSIC] STAGE-12 cloudSyncStore.applyOp()`, {
-    table, recordId, operation, operationId,
-    hasPayload: !!payload,
-    payloadKeys: payload ? Object.keys(payload).slice(0, 10) : [],
-  });
+  /* SYNC-FORENSIC suppressed: STAGE-12 cloudSyncStore.applyOp() */
   if (!table || typeof table !== 'string') {
     return { operationId, ok: false, error: 'table is required', retryable: false };
   }

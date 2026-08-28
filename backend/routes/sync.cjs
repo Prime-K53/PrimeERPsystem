@@ -21,6 +21,18 @@ const cloudSyncStore = require('../services/cloudSyncStore.cjs');
 
 const router = express.Router();
 
+const safeJsonStringify = (value) => {
+  const seen = new WeakSet();
+  return JSON.stringify(value, (_key, val) => {
+    if (typeof val === 'object' && val !== null) {
+      if (seen.has(val)) return undefined;
+      seen.add(val);
+    }
+    if (typeof val === 'bigint') return val.toString();
+    return val;
+  });
+};
+
 // Allow-list of cloud tables the sync gateway may write. Union of the two
 // frontend maps (services/cloudDb STORE_TO_TABLE + services/db CLOUD_TABLE_MAP)
 // plus the realtime/extra tables. Kept server-side so the browser cannot
@@ -170,11 +182,7 @@ router.post('/ops', async (req, res) => {
     }
 
     const { ops } = req.body || {};
-    console.log(`[SYNC-FORENSIC] STAGE-9 backend POST /api/sync/ops received`, {
-      opCount: Array.isArray(ops) ? ops.length : 0,
-      tables: Array.isArray(ops) ? ops.map(o => o?.table) : [],
-      ip: req.ip,
-    });
+    /* SYNC-FORENSIC suppressed: STAGE-9 backend POST /api/sync/ops received */
     if (!Array.isArray(ops) || ops.length === 0) {
       return res.status(400).json({ error: 'ops array is required' });
     }
@@ -229,12 +237,7 @@ router.post('/ops', async (req, res) => {
 
       let result;
       try {
-        console.log(`[SYNC-FORENSIC] STAGE-10 backend applyOp()`, {
-          table,
-          recordId: op.recordId,
-          operation: op.operation,
-          operationId: op.operationId,
-        });
+        /* SYNC-FORENSIC suppressed: STAGE-10 backend applyOp() */
         result = await cloudSyncStore.applyOp({
           operationId: op.operationId,
           table,
@@ -242,16 +245,7 @@ router.post('/ops', async (req, res) => {
           operation: op.operation,
           payload: op.payload,
         });
-        console.log(`[SYNC-FORENSIC] STAGE-10 backend applyOp() RESULT`, {
-          table,
-          recordId: op.recordId,
-          ok: result?.ok,
-          version: result?.version,
-          conflict: result?.conflict,
-          error: result?.error,
-          replayed: result?.replayed,
-          id: result?.id,
-        });
+        /* SYNC-FORENSIC suppressed: STAGE-10 backend applyOp() RESULT */
       } catch (opErr) {
         // applyOp is designed to return per-op failures, but a defensive catch
         // here guarantees a bad op never escapes as a 500 — it becomes a
@@ -270,20 +264,17 @@ router.post('/ops', async (req, res) => {
     }
 
     const okCount = results.filter((r) => r.ok).length;
-    console.log(`[SYNC-FORENSIC] STAGE-11 backend response sent`, {
-      processed: results.length,
-      succeeded: okCount,
-      failed: results.length - okCount,
-    });
-    res.json({
+    /* SYNC-FORENSIC suppressed: STAGE-11 backend response sent */
+    res.set('Content-Type', 'application/json').send(safeJsonStringify({
       ok: true,
       processed: results.length,
       succeeded: okCount,
       results,
-    });
+    }));
   } catch (err) {
-    console.error('[sync] POST /ops error:', err?.message || err);
-    res.status(500).json({ error: 'Sync gateway failed' });
+    console.error('[sync] POST /ops error:', err);
+    console.error('[sync] POST /ops error stack:', err?.stack);
+    res.status(500).json({ error: 'Sync gateway failed', detail: err?.message || String(err) });
   }
 });
 

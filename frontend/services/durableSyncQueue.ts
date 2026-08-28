@@ -276,15 +276,7 @@ export const durableSyncQueue = {
       conflictCount: 0,
     };
     await db.put('operations', item);
-    console.log(`[SYNC-FORENSIC] STAGE-3 durableSyncQueue.enqueue() persisted`, {
-      queueId: item.id,
-      operationId: item.operationId,
-      table: item.table,
-      recordId: item.recordId,
-      operation: item.operation,
-      status: item.status,
-      payloadSizeBytes: item.payloadSizeBytes,
-    });
+    /* SYNC-FORENSIC suppressed: STAGE-3 durableSyncQueue.enqueue() persisted */
     return item;
   },
 
@@ -360,12 +352,7 @@ export const durableSyncQueue = {
       op.lastAttempt = now;
       await db.put('operations', op);
     }
-    console.log(`[SYNC-FORENSIC] STAGE-4 durableSyncQueue.dequeue() returned`, {
-      count: ready.length,
-      limit,
-      totalPending: allPending.length,
-      items: ready.map(o => ({ id: o.id, operationId: o.operationId, table: o.table, recordId: o.recordId, operation: o.operation })),
-    });
+    /* SYNC-FORENSIC suppressed: STAGE-4 durableSyncQueue.dequeue() returned */
     return ready;
   },
 
@@ -566,9 +553,14 @@ export const durableSyncQueue = {
     const db = await getDb();
     const failed = await db.getAllFromIndex('operations', 'by-status', IDBKeyRange.only('failed'));
     let count = 0;
+    const MAX_RETRIES = 10;
     for (const item of failed) {
-      await db.put('operations', { ...item, status: 'pending' });
-      count++;
+      if ((item.retryCount || 0) >= MAX_RETRIES) {
+        await db.put('operations', { ...item, status: 'dead_letter', errorType: 'permanent' });
+      } else {
+        await db.put('operations', { ...item, status: 'pending' });
+        count++;
+      }
     }
     return count;
   },
