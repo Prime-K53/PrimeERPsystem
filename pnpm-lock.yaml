@@ -125,6 +125,9 @@ importers:
         specifier: ^7.2.2
         version: 7.2.2(supports-color@8.1.1)
     optionalDependencies:
+      '@img/sharp-linux-x64':
+        specifier: ^0.34.5
+        version: 0.34.5
       ioredis:
         specifier: ^5.4.1
         version: 5.11.1(supports-color@8.1.1)

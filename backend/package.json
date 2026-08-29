@@ -52,6 +52,7 @@
     "zod": "^3.22.4"
   },
   "optionalDependencies": {
+    "@img/sharp-linux-x64": "^0.34.5",
     "ioredis": "^5.4.1"
   }
 }

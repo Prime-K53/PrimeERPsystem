@@ -14,7 +14,25 @@
 //   4. Resize to the recommended 1500 × 500 px (WebP) — exact 3:1, no stretch
 //   5. Return the optimized buffer + metadata for the ad record
 
-const sharp = require('sharp');
+// Lazy-load sharp so a missing native binary doesn't crash the server at startup.
+// On Linux (Render), the correct platform binary must be installed; see package.json
+// optionalDependencies for @img/sharp-linux-x64.
+let _sharp = null;
+function getSharp() {
+  if (!_sharp) {
+    try {
+      _sharp = require('sharp');
+    } catch (err) {
+      throw new BannerImageError(
+        'Image processing is unavailable on this server (sharp module failed to load). ' +
+        'Ensure @img/sharp-linux-x64 is installed for linux-x64 deployments.',
+        'SHARP_UNAVAILABLE',
+        503
+      );
+    }
+  }
+  return _sharp;
+}
 
 const BANNER_SPEC = {
   bannerType: 'customer_portal_banner',
@@ -72,6 +90,7 @@ async function bestCropOffset(inputBuffer, axis, cropLen, sourceLen) {
   if (cropLen >= sourceLen) return 0;
   const PROXY = 96; // proxy edge length — energy analysis stays cheap
 
+  const sharp = getSharp();
   let pipeline = sharp(inputBuffer, { failOn: 'error' }).rotate().grayscale();
   pipeline = axis === 'y'
     ? pipeline.resize({ width: PROXY, withoutEnlargement: true })
@@ -148,6 +167,7 @@ async function processBannerImage(inputBuffer) {
 
   let meta;
   try {
+    const sharp = getSharp();
     meta = await sharp(inputBuffer).metadata();
   } catch (err) {
     throw new BannerImageError('The uploaded file is not a valid image.', 'INVALID_IMAGE');
@@ -200,6 +220,7 @@ async function processBannerImage(inputBuffer) {
   const outW = spec.recommendedWidth;
   const outH = spec.recommendedHeight;
 
+  const sharp = getSharp();
   let pipeline = sharp(inputBuffer).rotate().extract({
     left: cropX,
     top: cropY,
@@ -209,7 +230,7 @@ async function processBannerImage(inputBuffer) {
   if (cropW !== outW || cropH !== outH) {
     pipeline = pipeline.resize(outW, outH, {
       fit: 'cover',
-      position: sharp.strategy.attention,
+      position: getSharp().strategy.attention,
     });
   }
   pipeline = pipeline.webp({ quality: spec.outputQuality });
