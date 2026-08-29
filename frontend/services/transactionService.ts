@@ -1185,22 +1185,6 @@ export const transactionService = {
                     logger.error('Referral reward processing failed:', err)
                 )
             );
-            import('./engagementEngine').then(({ engagementEngine }) =>
-                engagementEngine.emit('invoice.paid', {
-                    source: 'transactionService',
-                    entityType: 'invoice',
-                    entityId: saleResult._paidInvoice.id,
-                    data: {
-                        customerId: saleResult._paidInvoice.customerId,
-                        totalAmount: saleResult._paidInvoice.totalAmount,
-                        paidAmount: saleResult._paidInvoice.paidAmount,
-                        referredBy: saleResult._paidInvoice.referredBy,
-                    },
-                    correlationId: `invoice-${saleResult._paidInvoice.id}`,
-                }).catch(err =>
-                    logger.error('Engagement processing failed:', err)
-                )
-            );
         }
         return saleResult;
     },
@@ -2183,25 +2167,6 @@ export const transactionService = {
             }
         );
         console.log('[REFERRAL] processInvoice complete. invoice.id:', invoice.id, 'referredBy:', invoice.referredBy, 'status:', invoice.status, 'customerId:', invoice.customerId);
-        if (invoice.status === 'Paid' && invoice.customerId) {
-            import('./engagementEngine').then(({ engagementEngine }) =>
-                engagementEngine.emit('invoice.paid', {
-                    source: 'transactionService',
-                    entityType: 'invoice',
-                    entityId: invoice.id,
-                    data: {
-                        customerId: invoice.customerId,
-                        totalAmount: invoice.totalAmount,
-                        paidAmount: invoice.paidAmount,
-                        referredBy: invoice.referredBy,
-                    },
-                    correlationId: `invoice-${invoice.id}`,
-                }).catch(err =>
-                    logger.error('Engagement processing failed:', err)
-                )
-            );
-        }
-
         if (invoice.referredBy) {
             console.log('[REFERRAL] calling registerReferralFromInvoice for', invoice.id, 'referredBy:', invoice.referredBy);
             import('./referralService').then(({ referralService }) =>
@@ -2803,22 +2768,6 @@ export const transactionService = {
             import('./referralService').then(({ referralService }) =>
                 referralService.processInvoiceReward(pi).catch(err =>
                     logger.error('Referral reward processing failed for payment:', err)
-                )
-            );
-            import('./engagementEngine').then(({ engagementEngine }) =>
-                engagementEngine.emit('invoice.paid', {
-                    source: 'transactionService',
-                    entityType: 'invoice',
-                    entityId: pi.id,
-                    data: {
-                        customerId: pi.customerId,
-                        totalAmount: pi.totalAmount,
-                        paidAmount: pi.paidAmount,
-                        referredBy: pi.referredBy,
-                    },
-                    correlationId: `invoice-${pi.id}`,
-                }).catch(err =>
-                    logger.error('Engagement processing failed:', err)
                 )
             );
         }

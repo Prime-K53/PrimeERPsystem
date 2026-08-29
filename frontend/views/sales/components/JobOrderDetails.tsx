@@ -272,7 +272,7 @@ export const JobOrderDetails: React.FC<JobOrderDetailsProps> = ({ jobOrder, onCl
                                         <h3 style={{ margin: '0 0 12px', fontSize: 10, fontWeight: 800, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, display: 'flex', alignItems: 'center', gap: 6 }}>
                                             <Droplet size={14} color={teal[600]} /> Verified Ink Metrics
                                         </h3>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                                        <div className="job-order-ink-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                                             <div style={{ textAlign: 'center', padding: 10, background: '#ecfeff', borderRadius: 8, border: '1px solid #a5f3fc' }}>
                                                 <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase' }}>Cyan</p>
                                                 <p style={{ margin: '4px 0 0', fontWeight: 800, color: ink }}>{jobOrder.inkCoverage.cyan}%</p>

@@ -5,17 +5,17 @@
 export type PortalAdStatus = 'draft' | 'scheduled' | 'active' | 'paused' | 'expired';
 
 /**
- * Metadata captured when a banner is prepared for the customer portal's 4:1
+ * Metadata captured when a banner is prepared for the customer portal's 3:1
  * banner area. Stored inside the ad record (portal_ads.data JSONB envelope).
  */
 export interface PortalAdImageMeta {
   /** Banner type — always 'customer_portal_banner'. */
   bannerType: string;
-  /** Final asset width in px (1600 for a fully prepared banner). */
+  /** Final asset width in px (1500 for a fully prepared banner). */
   width: number;
-  /** Final asset height in px (400 for a fully prepared banner). */
+  /** Final asset height in px (500 for a fully prepared banner). */
   height: number;
-  /** Aspect ratio of the final asset (4 = 4:1). */
+  /** Aspect ratio of the final asset (3 = 3:1). */
   aspectRatio: number;
   /** Stored format — 'webp' for prepared banners; absent for URL-probed assets. */
   format?: string;

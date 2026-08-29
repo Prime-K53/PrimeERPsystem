@@ -394,6 +394,21 @@ Format: {"title":"...","subtitle":"...","badge":"...","ctaLabel":"...","emoji":"
       };
     }
   }
+
+  async generateAIResponse(prompt: string, systemInstruction?: string): Promise<string> {
+    await this.ensureLoaded();
+    if (!this.config.enabled || !this.config.apiKey) {
+      throw new Error('AI not configured. Go to Marketing Messages > AI Settings to configure.');
+    }
+
+    const messages: { role: string; content: string }[] = [];
+    if (systemInstruction) {
+      messages.push({ role: 'system', content: systemInstruction });
+    }
+    messages.push({ role: 'user', content: prompt });
+
+    return this.callAPI(messages);
+  }
 }
 
 export const aiService = new AIService();

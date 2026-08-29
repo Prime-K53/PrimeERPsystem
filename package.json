@@ -17,6 +17,7 @@
     "dev": "concurrently -n \"backend,frontend\" -c \"magenta,cyan\" \"npm run backend\" \"npm run frontend\"",
     "backend": "cross-env JWT_SECRET=prime-erp-dev-secret-key-2026 SESSION_SECRET=prime-erp-dev-session-secret-2026 ENCRYPTION_KEY=prime-erp-dev-encryption-key-2026 npm run dev --workspace=backend",
     "frontend": "npm run dev --workspace=frontend",
+    "build:doc-renderer": "npm run build:doc-renderer --workspace=frontend",
     "build": "npm run build --workspace=frontend",
     "start": "node scripts/start-server.cjs",
     "stop": "node scripts/stop-server.cjs",

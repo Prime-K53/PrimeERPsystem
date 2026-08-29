@@ -554,6 +554,19 @@ const QuotationRequests: React.FC = () => {
     return requests.filter((r) => INBOX_STATUSES.includes(r.status));
   }, [requests, tab, inboxRequests]);
 
+  const tabStats = useMemo(() => {
+    const isConverted = (r: AdminQuotationRequest) =>
+      r.status === 'converted' || Boolean((r as any).converted_at);
+    const converted = activeRequests.filter(isConverted).length;
+    let documents = 0;
+    if (tab === 'quotations') documents = quotations.length;
+    else if (tab === 'orders') documents = orders.length;
+    else if (tab === 'payments') documents = paymentCount;
+    else if (tab === 'history') documents = activeRequests.filter((r) => r.status === 'converted').length;
+    else documents = quotations.length + orders.length;
+    return { requests: activeRequests.length, converted, downloads: documents };
+  }, [activeRequests, quotations.length, orders.length, paymentCount, tab]);
+
   const money = useCallback((v: number) => `${currency}${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, [currency]);
 
   const tabKpis = useMemo<KpiItem[]>(() => {
@@ -773,9 +786,9 @@ const QuotationRequests: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {analytics && (
             <span style={{ fontSize: 12, color: inkSoft }}>
-              <b style={{ color: ink }}>{analytics.totalRequests || 0}</b> requests •{' '}
-              <b style={{ color: ink }}>{analytics.convertedQuotations || 0}</b> converted •{' '}
-              <b style={{ color: ink }}>{analytics.totalDownloads || 0}</b> downloads
+              <b style={{ color: ink }}>{tabStats.requests}</b> requests •{' '}
+              <b style={{ color: ink }}>{tabStats.converted}</b> converted •{' '}
+              <b style={{ color: ink }}>{tabStats.downloads}</b> downloads
             </span>
           )}
           {tab === 'history' && (

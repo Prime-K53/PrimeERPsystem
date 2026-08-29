@@ -99,7 +99,7 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
         return 'N/A';
     };
     const buildServiceDescription = (line: any) => {
-        const base = line?.name || line?.productName || line?.description || 'N/A';
+        const base = line?.desc || line?.description || line?.name || line?.productName || line?.product_name || line?.item_description || line?.itemDescription || 'N/A';
         const service = line?.serviceDetails;
         if (!service) return base;
 
@@ -262,8 +262,8 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
 
     const baseData = {
         number: resolvedNumber,
-        date: new Date(item.orderDate || item.date || item.nextRunDate || Date.now()).toLocaleDateString(),
-        dueDate: normalizeDateInputValue(item.dueDate || item.validUntil || item.expiryDate || ''),
+        date: new Date(item.invoiceDate || item.invoice_date || item.orderDate || item.order_date || item.date || item.nextRunDate || item.created_at || item.issuedAt || item.issued_at || Date.now()).toLocaleDateString(),
+        dueDate: normalizeDateInputValue(item.dueDate || item.due_date || item.due_at || item.validUntil || item.expiryDate || ''),
         paymentTerms: resolveFirstText(
             item.paymentTerms,
             item.payment_terms

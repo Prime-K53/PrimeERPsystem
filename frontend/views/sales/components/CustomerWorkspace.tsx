@@ -35,8 +35,6 @@ import { referralTimelineService } from '../../../services/referralTimelineServi
 import { referralAuditService } from '../../../services/referralAuditService';
 import type { Referral, ReferralReward } from '../../../types/referral';
 import type { ReferralTimelineEntry, ReferralAuditEntry } from '../../../types/referral-extended';
-import { EngagementDashboard } from './EngagementDashboard';
-import { EngagementTimeline } from './EngagementTimeline';
 import { buildLedgerFromRecords } from '../../../services/customerLedger';
 
 const teal = {
@@ -119,7 +117,7 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
   const { addAuditLog, companyConfig, auditLogs, notify } = useAuth();
   const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
-  const [activeTab, setActiveTab] = useState<'Overview' | 'Timeline' | 'Invoices' | 'Payments' | 'Ledger' | 'Accounting' | 'Wallet' | 'Referrals' | 'Engagement' | 'Documents' | 'Segmentation' | 'Settings' | 'Security Audit'>('Overview');
+  const [activeTab, setActiveTab] = useState<'Overview' | 'Timeline' | 'Invoices' | 'Payments' | 'Ledger' | 'Accounting' | 'Wallet' | 'Referrals' | 'Documents' | 'Segmentation' | 'Settings' | 'Security Audit'>('Overview');
   const [accountMenu, setAccountMenu] = useState<{ id: string, type: 'debit' | 'credit', x: number, y: number } | null>(null);
   const [viewingAccountId, setViewingAccountId] = useState<string | null>(null);
   const [referrals, setReferrals] = useState<Referral[]>([]);
@@ -289,7 +287,6 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
       title: 'Growth',
       items: [
         { id: 'Referrals', icon: TrendingUp, label: 'Referrals', desc: 'Referral program & reward earnings' },
-        { id: 'Engagement', icon: MessageSquare, label: 'Engagement', desc: 'Interaction metrics & activity timeline' },
       ]
     },
     {
@@ -1539,23 +1536,6 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
                       )}
                     </tbody>
                   </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Engagement' && (
-            <div className="space-y-6 animate-in fade-in duration-300" style={{ padding: 24 }}>
-              <EngagementDashboard customerId={customer.id} customer={customer} />
-              <div style={{ background: paper, borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
-                <div style={{ padding: '14px 20px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ margin: 0, fontWeight: 700, color: ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <History size={18} style={{ color: teal[600] }} />
-                    Engagement Timeline
-                  </h3>
-                </div>
-                <div className="p-6 max-h-80 overflow-y-auto custom-scrollbar">
-                  <EngagementTimeline customerId={customer.id} limit={30} />
                 </div>
               </div>
             </div>

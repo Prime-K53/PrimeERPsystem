@@ -108,6 +108,7 @@ async function sendOfficialDocument(req, res, { docType, fetchRecord, resolveFil
       type: renderType,
       rawData: record,
       customers: ownerCustomer ? [ownerCustomer] : [],
+      source: 'portal',
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -128,8 +129,16 @@ router.get('/invoices/:id/document', async (req, res) => {
   await sendOfficialDocument(req, res, {
     docType: 'invoice',
     renderType: 'INVOICE',
-    fetchRecord: async (_userId, customerId) =>
-      portalService.getInvoiceById(req.params.id, customerId),
+    fetchRecord: async (_userId, customerId) => {
+      const invoice = await portalService.getInvoiceById(req.params.id, customerId);
+      if (!invoice) return null;
+      const ownerCustomer = await repo.getById('customers', customerId).catch(() => null);
+      if (ownerCustomer) {
+        invoice.totalCustomerOutstanding = Number(ownerCustomer.outstandingBalance ?? ownerCustomer.balance ?? 0);
+        invoice.walletBalance = Number(ownerCustomer.walletBalance ?? ownerCustomer.wallet_balance ?? 0);
+      }
+      return invoice;
+    },
     resolveFilename: (r) => `${r.invoiceNumber || r.invoice_number || r.id}.pdf`,
   });
 });
@@ -189,6 +198,7 @@ router.get('/payments/:id/document', async (req, res) => {
       type: 'RECEIPT',
       rawData: receiptData,
       customers: ownerCustomer ? [ownerCustomer] : [],
+      source: 'portal',
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -240,6 +250,7 @@ router.get('/deliveries/:id/document', async (req, res) => {
       type: 'DELIVERY_NOTE',
       rawData: note,
       customers: ownerCustomer ? [ownerCustomer] : [],
+      source: 'portal',
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -310,6 +321,7 @@ router.get('/customers/statement/document', async (req, res) => {
       type: 'ACCOUNT_STATEMENT',
       rawData: statementData,
       customers: ownerCustomer ? [ownerCustomer] : [],
+      source: 'portal',
     });
 
     res.setHeader('Content-Type', 'application/pdf');

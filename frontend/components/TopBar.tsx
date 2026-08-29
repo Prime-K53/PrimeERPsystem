@@ -221,9 +221,9 @@ const TopBar: React.FC<TopBarProps> = ({ toggleSidebar, toggleCollapse }) => {
 
   return (
     <header style={{
-      height: 56,
-      paddingLeft: 24,
-      paddingRight: 24,
+      height: 48,
+      paddingLeft: 14,
+      paddingRight: 14,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -231,7 +231,10 @@ const TopBar: React.FC<TopBarProps> = ({ toggleSidebar, toggleCollapse }) => {
       top: 0,
       zIndex: 30,
       borderBottom: `1px solid ${hairline}`,
-      background: paper,
+      background: 'rgba(254, 253, 251, 0.85)',
+      backdropFilter: 'saturate(180%) blur(12px)',
+      WebkitBackdropFilter: 'saturate(180%) blur(12px)',
+      boxShadow: '0 1px 2px rgba(15, 84, 76, 0.04)',
       fontFamily: "'Inter','DM Sans',sans-serif",
       fontSize: 13.5,
       color: ink

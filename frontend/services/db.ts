@@ -6,9 +6,7 @@ import {
 } from '../types';
 import type { Referral, ReferralReward } from '../types/referral';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
-import type { EngagementTimelineEntry, EngagementAuditEntry, PointEntry, PointBalance, CashbackEntry, MembershipTier, CustomerTier, GiftCard, GiftCardTransaction, AffiliateAccount, AffiliateCommission, Promotion, CustomerReward, EngagementAnalytics } from '../types/engagement';
 import type { PortalAd } from '../types/ads';
-import type { ProductAttribute } from '../types/attributes';
 import { calculateCustomerPaymentSnapshot } from './receiptCalculationService';
 
 import {
@@ -132,7 +130,6 @@ interface NexusDB extends DBSchema {
     whatsappTemplates: { key: string; value: any; };
     whatsappCampaigns: { key: string; value: any; };
     whatsappAutomations: { key: string; value: any; };
-    productAttributes: { key: string; value: ProductAttribute; };
     taxRates: { key: string; value: TaxRate; };
     customerPricingTiers: { key: string; value: any; };
     discountRules: { key: string; value: any; };
@@ -144,20 +141,6 @@ interface NexusDB extends DBSchema {
     referralAnalytics: { key: string; value: ReferralAnalytics; };
     referralReversals: { key: string; value: ReversalRequest; };
     referralEventHistory: { key: string; value: ReferralEvent; };
-    engagementTimeline: { key: string; value: EngagementTimelineEntry; };
-    engagementAudit: { key: string; value: EngagementAuditEntry; };
-    engagementPoints: { key: string; value: PointEntry; };
-    engagementPointBalances: { key: string; value: PointBalance; };
-    engagementCashback: { key: string; value: CashbackEntry; };
-    engagementMembershipTiers: { key: string; value: MembershipTier; };
-    engagementCustomerTiers: { key: string; value: CustomerTier; };
-    engagementGiftCards: { key: string; value: GiftCard; };
-    engagementGiftCardTransactions: { key: string; value: GiftCardTransaction; };
-    engagementAffiliates: { key: string; value: AffiliateAccount; };
-    engagementAffiliateCommissions: { key: string; value: AffiliateCommission; };
-    engagementPromotions: { key: string; value: Promotion; };
-    engagementCustomerRewards: { key: string; value: CustomerReward; };
-    engagementAnalytics: { key: string; value: EngagementAnalytics; };
     portalAds: { key: string; value: PortalAd; };
 
 }
@@ -370,7 +353,6 @@ const LOCAL_ONLY_STORES = new Set([
   'idempotencyKeys',
   'customerNotificationLogs',
   'alerts', 'auditLogs',
-  'productAttributes',
   // Users are auth records only — no `users` table exists in Supabase
   // (staff profiles live in `profiles`), so keep them local to avoid
   // 404s on /rest/v1/users from the background sync engine.
@@ -495,20 +477,6 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   referralAnalytics: 'referral_analytics',
   referralReversals: 'referral_reversals',
   referralEventHistory: 'referral_event_history',
-  engagementTimeline: 'engagement_timeline',
-  engagementAudit: 'engagement_audit',
-  engagementPoints: 'engagement_points',
-  engagementPointBalances: 'engagement_point_balances',
-  engagementCashback: 'engagement_cashback',
-  engagementMembershipTiers: 'engagement_membership_tiers',
-  engagementCustomerTiers: 'engagement_customer_tiers',
-  engagementGiftCards: 'engagement_gift_cards',
-  engagementGiftCardTransactions: 'engagement_gift_card_transactions',
-  engagementAffiliates: 'engagement_affiliates',
-  engagementAffiliateCommissions: 'engagement_affiliate_commissions',
-  engagementPromotions: 'engagement_promotions',
-  engagementCustomerRewards: 'engagement_customer_rewards',
-  engagementAnalytics: 'engagement_analytics',
   portalAds: 'portal_ads',
 
 };
@@ -565,8 +533,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'bankCashFlowForecasts', 'bankAlerts', 'bankCategories',
     'idempotencyKeys',
     'settings', 'profitMarginSettings', 'customerNotificationLogs',
-    'whatsappChats', 'whatsappTemplates', 'whatsappCampaigns', 'whatsappAutomations',
-    'productAttributes',
+    'whatsappChats', 'whatsappTemplates', 'whatsappCampaigns',     'whatsappAutomations',
     'taxRates',
     'customerPricingTiers',
     'discountRules',
@@ -578,20 +545,6 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'referralAnalytics',
     'referralReversals',
     'referralEventHistory',
-    'engagementTimeline',
-    'engagementAudit',
-    'engagementPoints',
-    'engagementPointBalances',
-    'engagementCashback',
-    'engagementMembershipTiers',
-    'engagementCustomerTiers',
-    'engagementGiftCards',
-    'engagementGiftCardTransactions',
-    'engagementAffiliates',
-    'engagementAffiliateCommissions',
-    'engagementPromotions',
-    'engagementCustomerRewards',
-    'engagementAnalytics',
     'portalAds',
 
 ];

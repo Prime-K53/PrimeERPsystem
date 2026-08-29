@@ -17,13 +17,13 @@ const makeFile = (name: string, type: string, size: number): File =>
   new File([new Uint8Array(size)], name, { type });
 
 describe('bannerImage (customer_portal_banner spec)', () => {
-  it('declares the canonical spec', () => {
+  it('declares the canonical 3:1 spec', () => {
     expect(BANNER_SPEC.bannerType).toBe('customer_portal_banner');
-    expect(BANNER_SPEC.targetRatio).toBe(4);
-    expect(BANNER_SPEC.recommendedWidth).toBe(1600);
-    expect(BANNER_SPEC.recommendedHeight).toBe(400);
+    expect(BANNER_SPEC.targetRatio).toBe(3);
+    expect(BANNER_SPEC.recommendedWidth).toBe(1500);
+    expect(BANNER_SPEC.recommendedHeight).toBe(500);
     expect(BANNER_SPEC.minWidth).toBe(1200);
-    expect(BANNER_SPEC.minHeight).toBe(300);
+    expect(BANNER_SPEC.minHeight).toBe(400);
     expect(BANNER_SPEC.maxBytes).toBe(2 * 1024 * 1024);
     expect(BANNER_SPEC.outputFormat).toBe('webp');
   });
@@ -63,57 +63,70 @@ describe('bannerImage (customer_portal_banner spec)', () => {
   });
 
   describe('aspectConformance', () => {
-    it('recognizes 4:1 sources', () => {
-      expect(aspectConformance(1600, 400)).toBe(true);
-      expect(aspectConformance(1200, 300)).toBe(true);
-      expect(aspectConformance(1920, 480)).toBe(true);
-      expect(aspectConformance(2000, 500)).toBe(true);
+    it('recognizes 3:1 sources', () => {
+      expect(aspectConformance(1500, 500)).toBe(true);   // exact recommended
+      expect(aspectConformance(1200, 400)).toBe(true);   // exact minimum
+      expect(aspectConformance(1800, 600)).toBe(true);   // larger 3:1
+      expect(aspectConformance(2000, 667)).toBe(true);   // within 2% tolerance
     });
 
-    it('rejects non-4:1 sources', () => {
-      expect(aspectConformance(1600, 600)).toBe(false);
-      expect(aspectConformance(1200, 1200)).toBe(false);
-      expect(aspectConformance(400, 400)).toBe(false);
-      expect(aspectConformance(800, 150)).toBe(false);
+    it('rejects non-3:1 sources', () => {
+      expect(aspectConformance(1600, 400)).toBe(false);  // old 4:1 — must now be rejected
+      expect(aspectConformance(1500, 750)).toBe(false);  // 2:1
+      expect(aspectConformance(1200, 1200)).toBe(false); // 1:1
+      expect(aspectConformance(800, 150)).toBe(false);   // ~5.3:1
     });
   });
 
   describe('largestFourToOneRegion', () => {
-    it('finds the largest 4:1 region without upscaling', () => {
-      expect(largestFourToOneRegion(1600, 400)).toEqual({ width: 1600, height: 400 });
-      expect(largestFourToOneRegion(1920, 480)).toEqual({ width: 1920, height: 480 });
-      expect(largestFourToOneRegion(1600, 600)).toEqual({ width: 1600, height: 400 });
-      expect(largestFourToOneRegion(1200, 1200)).toEqual({ width: 1200, height: 300 });
-      expect(largestFourToOneRegion(400, 400)).toEqual({ width: 400, height: 100 });
-      expect(largestFourToOneRegion(3000, 500)).toEqual({ width: 2000, height: 500 });
+    it('finds the largest 3:1 region without upscaling', () => {
+      // Exact 3:1 — unchanged.
+      expect(largestFourToOneRegion(1500, 500)).toEqual({ width: 1500, height: 500 });
+      expect(largestFourToOneRegion(1800, 600)).toEqual({ width: 1800, height: 600 });
+      // Too tall — crop height.
+      expect(largestFourToOneRegion(1500, 750)).toEqual({ width: 1500, height: 500 });
+      // Square 1200×1200 — crop height: floor(1200/3)=400 → {1200, 400}.
+      expect(largestFourToOneRegion(1200, 1200)).toEqual({ width: 1200, height: 400 });
+      // Small square.
+      expect(largestFourToOneRegion(400, 400)).toEqual({ width: 399, height: 133 });
+      // Wider than 3:1 (3000×500) — crop width: 500*3=1500 → {1500, 500}.
+      expect(largestFourToOneRegion(3000, 500)).toEqual({ width: 1500, height: 500 });
+      // Zero dimensions.
       expect(largestFourToOneRegion(0, 0)).toBeNull();
     });
   });
 
   describe('buildBannerValidation', () => {
-    it('accepts exact-recommended 1600 × 400 without cropping', () => {
-      const r = buildBannerValidation(1600, 400);
+    it('accepts exact-recommended 1500 × 500 without cropping', () => {
+      const r = buildBannerValidation(1500, 500);
       expect(r.ok).toBe(true);
       expect(r.conformant).toBe(true);
       expect(r.needsCrop).toBe(false);
-      expect(r.output).toEqual({ width: 1600, height: 400 });
+      expect(r.output).toEqual({ width: 1500, height: 500 });
     });
 
-    it('accepts minimum 1200 × 300 without cropping', () => {
-      const r = buildBannerValidation(1200, 300);
+    it('accepts minimum 1200 × 400 without cropping', () => {
+      const r = buildBannerValidation(1200, 400);
       expect(r.ok).toBe(true);
       expect(r.conformant).toBe(true);
     });
 
-    it('accepts larger 4:1 1920 × 480 without cropping', () => {
-      const r = buildBannerValidation(1920, 480);
+    it('accepts larger 3:1 1800 × 600 without cropping', () => {
+      const r = buildBannerValidation(1800, 600);
       expect(r.ok).toBe(true);
       expect(r.conformant).toBe(true);
     });
 
-    it('requires a crop for 1600 × 600', () => {
-      const r = buildBannerValidation(1600, 600);
+    it('requires a crop for 1500 × 750 (2:1)', () => {
+      const r = buildBannerValidation(1500, 750);
       expect(r.ok).toBe(true);
+      expect(r.conformant).toBe(false);
+      expect(r.needsCrop).toBe(true);
+    });
+
+    it('requires a crop for 1600 × 400 (old 4:1 — now non-conformant)', () => {
+      const r = buildBannerValidation(1600, 400);
+      expect(r.ok).toBe(true);   // large enough: largestRegion(1600,400)={1200,400} ≥ min
       expect(r.conformant).toBe(false);
       expect(r.needsCrop).toBe(true);
     });
@@ -131,14 +144,14 @@ describe('bannerImage (customer_portal_banner spec)', () => {
       expect(r.error).toMatch(/too small/i);
     });
 
-    it('rejects a very small 4:1 image (1000 × 250)', () => {
-      const r = buildBannerValidation(1000, 250);
+    it('rejects a very small 3:1 image (1000 × 334) — region height 333 < 400', () => {
+      const r = buildBannerValidation(1000, 334);
       expect(r.ok).toBe(false);
       expect(r.code).toBe('SMALL');
     });
 
-    it('rejects 1200 × 299 (below minimum after crop normalization)', () => {
-      const r = buildBannerValidation(1200, 299);
+    it('rejects 1200 × 399 (below minimum height after crop normalization)', () => {
+      const r = buildBannerValidation(1200, 399);
       expect(r.ok).toBe(false);
       expect(r.code).toBe('SMALL');
     });
@@ -146,40 +159,44 @@ describe('bannerImage (customer_portal_banner spec)', () => {
 
   describe('crop math', () => {
     it('coverTransform fits the window without distortion', () => {
-      const t = coverTransform(1200, 1200, 400, 100);
-      expect(t.scale).toBeCloseTo(400 / 1200);
+      // 3:1 crop window: 300 × 100. Source: 1200 × 400 (3:1).
+      const t = coverTransform(1200, 400, 300, 100);
+      expect(t.scale).toBeCloseTo(300 / 1200);
       expect(t.panX).toBe(0);
       expect(t.panY).toBe(0);
     });
 
     it('clampPan keeps the image covering the window', () => {
-      // 1000 × 250 at scale 0.4 = 400 × 100 — exactly the window, no pan allowed.
-      expect(clampPan(250, 250, 0.4, 1000, 250, 400, 100)).toEqual({ panX: 0, panY: 0 });
-      // Zoomed 2× (800 × 200 display) → 200 px of play per axis.
-      expect(clampPan(500, -500, 0.8, 1000, 250, 400, 100)).toEqual({ panX: 200, panY: -50 });
+      // 900 × 300 at scale 1/3 = 300 × 100 — exactly the window, no pan allowed.
+      expect(clampPan(250, 250, 1 / 3, 900, 300, 300, 100)).toEqual({ panX: 0, panY: 0 });
+      // Zoomed 2× (600 × 200 display) → 150 px of play on X, 50 on Y.
+      expect(clampPan(500, -500, 2 / 3, 900, 300, 300, 100)).toEqual({ panX: 150, panY: -50 });
     });
 
     it('cropRectFromTransform maps the window back to source pixels', () => {
-      const src = cropRectFromTransform({ scale: 0.5, panX: 0, panY: 0 }, 1200, 1200, 400, 100);
-      expect(src.width).toBe(800);
-      expect(src.height).toBe(200);
-      expect(src.x).toBe(200);
-      expect(src.y).toBe(500);
+      // 3:1 window: 300 × 100. Source: 1200 × 400 (3:1). Scale 0.25.
+      // imgW=300, imgH=100. originX=0, originY=0. x=0, y=0, w=1200, h=400.
+      const src = cropRectFromTransform({ scale: 0.25, panX: 0, panY: 0 }, 1200, 400, 300, 100);
+      expect(src.width).toBe(1200);
+      expect(src.height).toBe(400);
+      expect(src.x).toBe(0);
+      expect(src.y).toBe(0);
     });
 
     it('cropRectFromTransform clamps pan to the source bounds', () => {
-      const src = cropRectFromTransform({ scale: 0.4, panX: 9999, panY: -9999 }, 1000, 250, 400, 100);
+      // 900 × 300 at scale 1/3 = 300 × 100 — exactly window, no pan allowed.
+      const src = cropRectFromTransform({ scale: 1 / 3, panX: 9999, panY: -9999 }, 900, 300, 300, 100);
       expect(src.x).toBe(0);
       expect(src.y).toBe(0);
-      expect(src.width).toBe(1000);
-      expect(src.height).toBe(250);
+      expect(src.width).toBe(900);
+      expect(src.height).toBe(300);
     });
   });
 
   describe('metadata helpers', () => {
-    it('isConformantMeta accepts 4:1 metadata only', () => {
-      expect(isConformantMeta({ bannerType: 'customer_portal_banner', width: 1600, height: 400, aspectRatio: 4, format: 'webp', fileSize: 100 })).toBe(true);
-      expect(isConformantMeta({ bannerType: 'customer_portal_banner', width: 1600, height: 600, aspectRatio: 2.67, format: 'webp', fileSize: 100 })).toBe(false);
+    it('isConformantMeta accepts 3:1 metadata only', () => {
+      expect(isConformantMeta({ bannerType: 'customer_portal_banner', width: 1500, height: 500, aspectRatio: 3, format: 'webp', fileSize: 100 })).toBe(true);
+      expect(isConformantMeta({ bannerType: 'customer_portal_banner', width: 1600, height: 400, aspectRatio: 4, format: 'webp', fileSize: 100 })).toBe(false);
       expect(isConformantMeta(null)).toBe(false);
       expect(isConformantMeta(undefined)).toBe(false);
     });
@@ -190,7 +207,7 @@ describe('bannerImage (customer_portal_banner spec)', () => {
       expect(formatBannerBytes(2.5 * 1024 * 1024)).toBe('2.50 MB');
     });
 
-    it('preparedBannerFile is a 2 MB WebP upload', () => {
+    it('preparedBannerFile is a WebP upload', () => {
       const f = preparedBannerFile(new Blob([new Uint8Array(8)], { type: 'image/webp' }));
       expect(f.type).toBe('image/webp');
       expect(f.name).toBe('banner.webp');

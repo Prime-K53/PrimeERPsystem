@@ -1,18 +1,18 @@
 // ─── Customer Portal Banner Image Service (ERP side) ─────────────────────────
 // Mirrors the backend bannerImageService spec so the ERP UI can validate,
-// interactively crop to 4:1, and prepare a banner before it is uploaded.
-// The canonical 4:1 ratio is enforced on the actual asset — never by CSS
+// interactively crop to 3:1, and prepare a banner before it is uploaded.
+// The canonical 3:1 ratio is enforced on the actual asset — never by CSS
 // stretching — and the server re-validates everything on upload.
 
 import type { PortalAdImageMeta } from '../types/ads';
 
 export const BANNER_SPEC = {
   bannerType: 'customer_portal_banner',
-  targetRatio: 4,
-  recommendedWidth: 1600,
-  recommendedHeight: 400,
+  targetRatio: 3,
+  recommendedWidth: 1500,
+  recommendedHeight: 500,
   minWidth: 1200,
-  minHeight: 300,
+  minHeight: 400,
   maxBytes: 2 * 1024 * 1024, // ~2 MB for web delivery
   outputFormat: 'webp',
   outputQuality: 0.92,
@@ -32,18 +32,18 @@ export interface BannerValidationResult {
   height?: number;
   /** width / height of the source. */
   ratio?: number;
-  /** True when the source is already 4:1 (within tolerance) — no crop needed. */
+  /** True when the source is already 3:1 (within tolerance) — no crop needed. */
   conformant?: boolean;
-  /** True when the source must be cropped to 4:1 before upload. */
+  /** True when the source must be cropped to 3:1 before upload. */
   needsCrop?: boolean;
-  /** Final prepared asset size (4:1). */
+  /** Final prepared asset size (3:1). */
   output?: { width: number; height: number };
 }
 
 export const BANNER_ERROR_MESSAGES: Record<BannerValidationErrorCode, string> = {
   TYPE: 'Unsupported file type. Accepted formats: WebP, JPG, PNG.',
   SIZE: 'Image is too large — the maximum size is 2 MB.',
-  SMALL: `Image is too small. Minimum acceptable: ${BANNER_SPEC.minWidth} × ${BANNER_SPEC.minHeight} px (4:1).`,
+  SMALL: `Image is too small. Minimum acceptable: ${BANNER_SPEC.minWidth} × ${BANNER_SPEC.minHeight} px (3:1).`,
   LOAD: 'The file could not be read as an image.',
 };
 
@@ -59,14 +59,14 @@ export function validateBannerFile(file: File | null | undefined): BannerValidat
   return { ok: true };
 }
 
-/** True when width/height are 4:1 within the given tolerance (default spec). */
+/** True when width/height are 3:1 within the given tolerance (default spec). */
 export function aspectConformance(width: number, height: number, tolerance = BANNER_SPEC.aspectTolerance): boolean {
   if (!width || !height) return false;
   return Math.abs(width / height - BANNER_SPEC.targetRatio) <= tolerance;
 }
 
 /**
- * Largest 4:1 region that fits inside a source without upscaling, or null
+ * Largest 3:1 region that fits inside a source without upscaling, or null
  * when the source is too small to ever produce a valid banner.
  */
 export function largestFourToOneRegion(width: number, height: number): { width: number; height: number } | null {
@@ -81,8 +81,8 @@ export function largestFourToOneRegion(width: number, height: number): { width: 
 
 /**
  * Structural validation of decoded image dimensions:
- * minimum size gate (even the largest possible 4:1 crop must meet the min),
- * conformance (already 4:1 or needs cropping), and the final output size.
+ * minimum size gate (even the largest possible 3:1 crop must meet the min),
+ * conformance (already 3:1 or needs cropping), and the final output size.
  */
 export function buildBannerValidation(width: number, height: number): BannerValidationResult {
   if (!width || !height) {
@@ -93,7 +93,7 @@ export function buildBannerValidation(width: number, height: number): BannerVali
     return {
       ok: false,
       code: 'SMALL',
-      error: `Image is too small (${width} × ${height} px). Minimum acceptable: ${BANNER_SPEC.minWidth} × ${BANNER_SPEC.minHeight} px (4:1).`,
+      error: `Image is too small (${width} × ${height} px). Minimum acceptable: ${BANNER_SPEC.minWidth} × ${BANNER_SPEC.minHeight} px (3:1).`,
     };
   }
   return {
@@ -107,12 +107,15 @@ export function buildBannerValidation(width: number, height: number): BannerVali
   };
 }
 
-/** Decode a selected file into an orientation-normalized HTMLImageElement. */
-export function loadImageFile(file: File): Promise<HTMLImageElement> {
+/** Decode a selected file into an orientation-normalized HTMLImageElement.
+ *  Returns both the element and the still-live blob URL so the caller can
+ *  display the image and revoke the URL when it is no longer needed.
+ */
+export function loadImageFile(file: File): Promise<{ img: HTMLImageElement; blobUrl: string }> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onload = () => resolve({ img, blobUrl: url });
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(BANNER_ERROR_MESSAGES.LOAD)); };
     img.src = url;
   });
@@ -129,7 +132,7 @@ export function loadImageUrl(url: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Read natural dimensions from a URL (used to flag legacy non-4:1 banners). */
+/** Read natural dimensions from a URL (used to flag legacy non-3:1 banners). */
 export function getImageDimensions(url: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -150,7 +153,7 @@ export interface CropTransform {
   panY: number;
 }
 
-/** Minimum scale so the image fully covers the fixed 4:1 crop window. */
+/** Minimum scale so the image fully covers the fixed 3:1 crop window. */
 export function coverTransform(srcW: number, srcH: number, winW: number, winH: number): CropTransform {
   const scale = Math.max(winW / srcW, winH / srcH);
   return { scale, panX: 0, panY: 0 };
@@ -198,7 +201,7 @@ export function cropRectFromTransform(
 
 // ── Canvas processing ────────────────────────────────────────────────────────
 
-/** Renders a source crop region onto the final 1600 × 400 WebP canvas. */
+/** Renders a source crop region onto the final 1500 × 500 WebP canvas. */
 export function renderBannerCanvas(image: HTMLImageElement, src: { x: number; y: number; width: number; height: number }): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = BANNER_SPEC.recommendedWidth;
@@ -222,9 +225,9 @@ export function canvasToWebPBlob(canvas: HTMLCanvasElement, quality = BANNER_SPE
 }
 
 /**
- * Prepares a conformant (already 4:1) source: crops to the largest 4:1 region
- * (a no-op for exact 4:1 sources, covers tiny rounding drift), scales to the
- * recommended 1600 × 400 canvas and encodes as WebP. Never stretches.
+ * Prepares a conformant (already 3:1) source: crops to the largest 3:1 region
+ * (a no-op for exact 3:1 sources, covers tiny rounding drift), scales to the
+ * recommended 1500 × 500 canvas and encodes as WebP. Never stretches.
  */
 export async function prepareBannerBlob(image: HTMLImageElement): Promise<Blob> {
   const region = largestFourToOneRegion(image.naturalWidth, image.naturalHeight) || {
@@ -249,7 +252,7 @@ export function formatBannerBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-/** True when stored metadata describes a conformant 4:1 banner. */
+/** True when stored metadata describes a conformant 3:1 banner. */
 export function isConformantMeta(meta: PortalAdImageMeta | undefined | null): boolean {
   if (!meta || !meta.width || !meta.height) return false;
   return aspectConformance(meta.width, meta.height);

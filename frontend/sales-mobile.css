@@ -59,43 +59,35 @@
     min-height: 44px;
   }
 
-  /* Line items table card layout on mobile */
-  .order-form-main table thead {
-    display: none;
+  /* Line items: keep the real table on small devices (scroll horizontally
+     if needed) instead of stacking rows into cards. Matches the
+     .clients-table-wrap pattern below. The selector bump beats the
+     `app-layout-frame table { display: block }` rule in index.css that
+     also runs at ≤768px. */
+  .order-form-main.order-form-main table {
+    display: table !important;
+    width: 100%;
   }
 
-  .order-form-main table tbody {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  .order-form-main.order-form-main table thead {
+    display: table-header-group !important;
   }
 
-  .order-form-main table tbody tr {
-    display: flex;
-    flex-direction: column;
-    background: #fff;
-    border: 1px solid #e4ddd1;
-    border-radius: 10px;
-    padding: 12px;
-    gap: 4px;
+  .order-form-main.order-form-main table tbody {
+    display: table-row-group !important;
   }
 
-  .order-form-main table tbody td {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: none;
-    padding: 3px 0;
-    font-size: 12.5px;
+  .order-form-main.order-form-main table tbody tr {
+    display: table-row !important;
   }
 
-  .order-form-main table tbody td::before {
-    content: attr(data-label);
-    font-weight: 600;
-    font-size: 10px;
-    text-transform: uppercase;
-    color: #5c6567;
-    white-space: nowrap;
+  .order-form-main.order-form-main table tbody td {
+    display: table-cell !important;
+  }
+
+  .order-form-main > div > .overflow-x-auto {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* Add Item button full width */
@@ -127,10 +119,9 @@
     flex-wrap: wrap;
   }
 
-  /* Line items card: hide empty col label */
-  .order-form-main table tbody td[data-label=""]::before {
-    display: none;
-  }
+  /* Empty col label on the actions cell — no pseudo-element generated
+     anymore (data-label still drives nothing here) but keep this as a
+     no-op guard so future changes stay obvious. */
 }
 
 @media (max-width: 480px) {
@@ -142,6 +133,173 @@
     font-size: 13px !important;
   }
 }
+
+/* Order form: any inline-style `gridTemplateColumns:"1fr 1fr"` or
+   `1.2fr 1fr` (Item/Service search row and Other-Charges/Totals row)
+   stacks into a single column on small devices. Inline-style rules are
+   the highest specificity, so each override needs !important. */
+@media (max-width: 768px) {
+  .order-form-main .search-row {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Other-Charges / Notes column lives in a `style={{...gridTemplateColumns:"1.2fr 1fr"}}`
+     inline rule. The default form already has a flex layout for the inner
+     controls; we stack the two columns. */
+  .order-form-main .order-form-charges {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+  }
+
+  .order-form-main .order-form-charges > .pr-\[14px\] {
+    padding-right: 0 !important;
+    border-right: none !important;
+  }
+}
+
+/* The order-form outer modal uses inline `padding: 40px 20px` on the
+   backdrop; on phones we want it flush to the screen. */
+@media (max-width: 768px) {
+  .order-form-backdrop {
+    padding: 0 !important;
+  }
+}
+
+/* The form footer has `px-[26px]` (inline) — collapse to 14px on mobile
+   so action buttons fit. The selector bump beats the inline style. */
+@media (max-width: 768px) {
+  .order-form-footer.order-form-footer {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+    justify-content: stretch !important;
+  }
+
+  .order-form-footer > button {
+    flex: 1 1 calc(50% - 8px) !important;
+    min-width: 0 !important;
+    justify-content: center !important;
+  }
+
+  /* When the audit-reason input is shown alongside, push it to its own
+     row so it spans the full width and isn't squeezed. */
+  .order-form-footer > input {
+    flex: 1 1 100% !important;
+    order: -1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .order-form-footer > button {
+    flex: 1 1 100% !important;
+  }
+
+  /* The "notes" textarea and the discount row inside the charges column
+     use absolute-positioned labels that overflow on small widths. */
+  .order-form-main .notes-box textarea {
+    font-size: 13px !important;
+  }
+}
+
+/* ============================================================
+   PROFIT ANALYSIS MODAL — Mobile-first Responsive
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .profit-analysis-modal-backdrop {
+    padding: 0 !important;
+    align-items: flex-end !important;
+  }
+
+  .profit-analysis-modal-panel {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 95vh !important;
+  }
+
+  .profit-analysis-modal-content {
+    padding: 16px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .profit-analysis-modal-panel {
+    border-radius: 0 !important;
+    max-height: 100vh !important;
+  }
+}
+
+/* Inline gridTemplateColumns for the KPI strip (4 cols) and adjustment
+   snapshots (3 cols) collapse on small screens. Each rule needs
+   !important to override the inline style. */
+@media (max-width: 768px) {
+  .profit-analysis-kpis {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .profit-analysis-snapshots {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .profit-analysis-kpis {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================================
+   JOB ORDER DETAILS — Ink coverage grid (4 cols → stacks on mobile)
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .job-order-ink-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .job-order-ink-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================================
+   GENERIC — Detail / modal tables scroll horizontally on small
+   screens instead of clipping. The `.sales-detail-panel` and
+   `.sales-modal-panel` are the shared wrappers; any table inside
+   them can scroll. (Already wrapped in most components, but the
+   rules below are a safety net for inline-styled tables that
+   weren't.)
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .sales-detail-panel table,
+  .sales-modal-panel table {
+    min-width: 540px;
+  }
+}
+
+/* Tabular numbers (JetBrains Mono etc.) can clip on very small
+   screens — fall back to proportional numerals below 360px. */
+@media (max-width: 360px) {
+  .finance-nums {
+    font-variant-numeric: normal;
+  }
+}
+
+/* The OrderForm sidebar is hidden below 768px (above), but the
+   inline `padding: '40px 20px'` on the outer backdrop and the
+   inline `padding: '26px'` on inner sections push content off
+   small screens. These rules are already in place via the
+   `.order-form-backdrop` class and the `[class*="px-[26px]"]`
+   attribute selector. */
+
+
 
 /* ============================================================
    CLIENTS TABLE — Mobile-first Responsive

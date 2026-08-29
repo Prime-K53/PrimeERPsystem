@@ -194,9 +194,6 @@ const Profile = lazyWithRetry('./views/Profile', () => import('./views/Profile')
 const MigrationHealth = lazyWithRetry('./views/admin/MigrationHealth', () => import('./views/admin/MigrationHealth'));
 const SyncHealth = lazyWithRetry('./views/admin/SyncHealth', () => import('./views/admin/SyncHealth'));
 const AcceptanceDashboard = lazyWithRetry('./views/admin/AcceptanceDashboard', () => import('./views/admin/AcceptanceDashboard'));
-const MembershipTiersAdmin = lazyWithRetry('./views/admin/MembershipTiersAdmin', () => import('./views/admin/MembershipTiersAdmin'));
-const PromotionsAdmin = lazyWithRetry('./views/admin/PromotionsAdmin', () => import('./views/admin/PromotionsAdmin'));
-const GiftCardsAdmin = lazyWithRetry('./views/admin/GiftCardsAdmin', () => import('./views/admin/GiftCardsAdmin'));
 const BOMRecipes = lazyWithRetry('./views/production/BOMRecipes', () => import('./views/production/BOMRecipes'));
 const DataImport = lazyWithRetry('./views/admin/DataImport', () => import('./views/admin/DataImport'));
 const LegacyMigrationPage = lazyWithRetry('./views/tools/LegacyMigrationPage', () => import('./views/tools/LegacyMigrationPage'));
@@ -390,6 +387,8 @@ const AppLayout: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const fyDropdownRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const userMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const [userMenuPos, setUserMenuPos] = useState<{ top: number; right: number } | null>(null);
 
   const { selectedFinancialYear, availableFinancialYears, setFinancialYear, isLoading: isFyLoading } = useFinancialYear();
 
@@ -408,8 +407,20 @@ const AppLayout: React.FC = () => {
         setShowUserMenu(false);
       }
     };
+    const reposition = () => {
+      const rect = userMenuButtonRef.current?.getBoundingClientRect();
+      if (rect) {
+        setUserMenuPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
   }, [showUserMenu]);
 
   const currentFyDisplay = selectedFinancialYear
@@ -540,11 +551,37 @@ const AppLayout: React.FC = () => {
         toggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
       <div className="app-content-shell flex-1 flex flex-col h-full min-w-0 transition-all duration-300">
-        <div className="pb-2 shrink-0">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0" style={{ background: '#FEFDFB', borderBottom: '1.4px solid #e4ddd1', padding: '10px 20px', borderRadius: 0 }}>
+        <div className="pb-1.5 shrink-0">
+          <div
+            className="relative flex items-center gap-1.5 sm:gap-2 min-w-0"
+            style={{
+              background: 'rgba(255, 255, 255, 0.85)',
+              backdropFilter: 'saturate(180%) blur(14px)',
+              WebkitBackdropFilter: 'saturate(180%) blur(14px)',
+              borderBottom: '1px solid #ebe4d6',
+              padding: '7px 14px',
+              borderRadius: 0,
+              boxShadow: '0 1px 0 rgba(15,84,76,0.04), 0 6px 18px -12px rgba(15,84,76,0.10)',
+              position: 'relative',
+              zIndex: 50,
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2,
+                background: 'linear-gradient(90deg, #146b60 0%, #3fa294 45%, #d99a3f 100%)',
+                opacity: 0.9,
+                pointerEvents: 'none',
+              }}
+            />
             <button
               type="button"
-              className="md:hidden p-2 rounded-lg border border-[#e4ddd1] bg-[#FEFDFB] text-[#5c6567] hover:bg-[#f3ede3] transition-colors shrink-0"
+              className="md:hidden p-2 rounded-lg border border-[#ebe4d6] bg-white text-[#5c6567] hover:bg-[#f6f1e7] hover:border-[#d4cdc2] transition-colors shrink-0"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open Sidebar"
             >
@@ -553,30 +590,30 @@ const AppLayout: React.FC = () => {
             <button
               onClick={() => { setSearchOpen(true); setSearchQuery(''); }}
               className="hidden sm:flex items-center gap-2"
-              style={{ width: 300, padding: '9px 14px', borderRadius: 999, border: '1.4px solid #e4ddd1', background: '#FEFDFB', fontFamily: "'Inter', -apple-system, sans-serif", fontSize: 12.5, color: '#5c6567', cursor: 'pointer', transition: 'all 0.15s ease' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#d4cdc2'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = '#e4ddd1'; e.currentTarget.style.boxShadow = 'none'; }}
+              style={{ width: 300, padding: '6px 12px', borderRadius: 999, border: '1px solid #ebe4d6', background: '#FFFFFF', fontFamily: "'Inter', -apple-system, sans-serif", fontSize: 12.5, color: '#5c6567', cursor: 'pointer', transition: 'all 0.15s ease', boxShadow: '0 1px 2px rgba(15,84,76,0.03)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#f6f1e7'; e.currentTarget.style.borderColor = '#d4cdc2'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#ebe4d6'; }}
             >
               <SearchIcon size={14} />
               <span>Search...</span>
             </button>
             <div className="flex items-center gap-2 ml-auto">
               <button onClick={() => navigate('/smart-operations/pricing')} title="Calculator" aria-label="Open calculator" style={{
-                padding: '9px 16px', borderRadius: 999, border: '1.4px solid #e4ddd1', background: '#FEFDFB', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0b6e6e', transition: 'all 0.15s ease', fontFamily: "'Inter', -apple-system, sans-serif", fontSize: 12.5, fontWeight: 600,
-              }} onMouseEnter={e => { e.currentTarget.style.borderColor = '#d4cdc2'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)'; }} onMouseLeave={e => { e.currentTarget.style.borderColor = '#e4ddd1'; e.currentTarget.style.boxShadow = 'none'; }}>
+                padding: '6px 12px', borderRadius: 999, border: '1px solid #ebe4d6', background: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0b6e6e', transition: 'all 0.15s ease', fontFamily: "'Inter', -apple-system, sans-serif", fontSize: 12.5, fontWeight: 600, boxShadow: '0 1px 2px rgba(15,84,76,0.03)',
+              }} onMouseEnter={e => { e.currentTarget.style.background = '#eef7f6'; e.currentTarget.style.borderColor = '#a6d9d3'; }} onMouseLeave={e => { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#ebe4d6'; }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Calculator size={14} /><span className="hidden md:inline">Calculator</span></div>
               </button>
 
               <button onClick={() => setIsWhatsAppModalOpen(true)} title="Messages" aria-label="Open messages" style={{
-                padding: '9px 16px', borderRadius: 999, border: '1.4px solid #e4ddd1', background: '#FEFDFB', cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#0b6e6e', position: 'relative', transition: 'all 0.15s ease', fontFamily: "'Inter', -apple-system, sans-serif", fontSize: 12.5, fontWeight: 600,
-              }} onMouseEnter={e => { e.currentTarget.style.borderColor = '#d4cdc2'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)'; }} onMouseLeave={e => { e.currentTarget.style.borderColor = '#e4ddd1'; e.currentTarget.style.boxShadow = 'none'; }}>
+                padding: '6px 12px', borderRadius: 999, border: '1px solid #ebe4d6', background: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#0b6e6e', position: 'relative', transition: 'all 0.15s ease', fontFamily: "'Inter', -apple-system, sans-serif", fontSize: 12.5, fontWeight: 600, boxShadow: '0 1px 2px rgba(15,84,76,0.03)',
+              }} onMouseEnter={e => { e.currentTarget.style.background = '#eef7f6'; e.currentTarget.style.borderColor = '#a6d9d3'; }} onMouseLeave={e => { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#ebe4d6'; }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><MessageSquare size={14} /><span className="hidden md:inline">Messages</span></div>
               </button>
 
               <div ref={fyDropdownRef} style={{ position: 'relative' }}>
                 <button onClick={() => setShowFyDropdown(prev => !prev)} title={selectedFinancialYear ? `Financial Year: ${selectedFinancialYear.name}${selectedFinancialYear.is_closed ? ' (Closed)' : ''}` : 'Select Financial Year'} aria-label="Select Financial Year" style={{
-                  padding: '9px 16px', borderRadius: 999, border: showFyDropdown ? '1.4px solid #d4cdc2' : '1.4px solid #e4ddd1', background: '#FEFDFB', cursor: 'pointer', display: 'flex', alignItems: 'center', color: showFyDropdown ? '#0b6e6e' : '#5c6567', position: 'relative', transition: 'all 0.15s ease', fontFamily: "'Inter', -apple-system, sans-serif", fontSize: 12.5, fontWeight: 600,
-                }} onMouseEnter={e => { e.currentTarget.style.borderColor = '#d4cdc2'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)'; }} onMouseLeave={e => { if (!showFyDropdown) { e.currentTarget.style.borderColor = '#e4ddd1'; e.currentTarget.style.boxShadow = 'none'; } }}>
+                  padding: '6px 12px', borderRadius: 999, border: '1px solid #ebe4d6', background: showFyDropdown ? '#eef7f6' : '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', color: showFyDropdown ? '#146b60' : '#5c6567', position: 'relative', transition: 'all 0.15s ease', fontFamily: "'Inter', -apple-system, sans-serif", fontSize: 12.5, fontWeight: 600, boxShadow: '0 1px 2px rgba(15,84,76,0.03)', borderColor: showFyDropdown ? '#a6d9d3' : '#ebe4d6',
+                }} onMouseEnter={e => { if (!showFyDropdown) { e.currentTarget.style.background = '#eef7f6'; e.currentTarget.style.borderColor = '#a6d9d3'; } }} onMouseLeave={e => { if (!showFyDropdown) { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#ebe4d6'; } }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CalendarDays size={14} color="#0b6e6e" />
                     {!isMobile && <span>{isFyLoading ? 'Loading...' : 'Financial Year'}</span>}
@@ -612,13 +649,13 @@ const AppLayout: React.FC = () => {
                 ref={notificationBellRef}
                 onClick={() => setNotificationCenterOpen(!notificationCenterOpen)}
                 style={{
-                  width: 38, height: 38, borderRadius: 999, background: '#FEFDFB', border: '1.4px solid #e4ddd1', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', transition: 'all 0.15s ease',
+                  width: 32, height: 32, borderRadius: 999, background: '#FFFFFF', border: '1px solid #ebe4d6', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', transition: 'all 0.15s ease', boxShadow: '0 1px 2px rgba(15,84,76,0.03)',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#d4cdc2'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)'; }} onMouseLeave={e => { e.currentTarget.style.borderColor = '#e4ddd1'; e.currentTarget.style.boxShadow = 'none'; }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#f6f1e7'; e.currentTarget.style.borderColor = '#d4cdc2'; }} onMouseLeave={e => { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#ebe4d6'; }}
               >
                 <Bell size={16} color="#0b6e6e" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1" style={{ width: 8, height: 8, borderRadius: 999, background: '#d99a3f' }} />
+                  <span className="absolute top-1 right-1" style={{ width: 9, height: 9, borderRadius: 999, background: '#d99a3f', boxShadow: '0 0 0 2px #FFFFFF' }} />
                 )}
               </button>
               <NotificationCenter
@@ -639,24 +676,35 @@ const AppLayout: React.FC = () => {
                 anchorEl={notificationBellRef.current}
               />
             </div>
-            <div ref={userMenuRef} className="relative flex items-center gap-2 pl-2" style={{ borderLeft: '1.4px solid #e4ddd1' }}>
+            <div ref={userMenuRef} className="relative flex items-center gap-2 pl-3" style={{ borderLeft: '1px solid #ebe4d6', marginLeft: 4, position: 'relative', zIndex: 60 }}>
               <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
+                ref={userMenuButtonRef}
+                onClick={() => {
+                  if (showUserMenu) {
+                    setShowUserMenu(false);
+                    return;
+                  }
+                  const rect = userMenuButtonRef.current?.getBoundingClientRect();
+                  if (rect) {
+                    setUserMenuPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+                  }
+                  setShowUserMenu(true);
+                }}
                 className="flex items-center py-1 rounded-full hover:bg-[#f3ede3] transition-colors"
               >
                 <div style={{
-                  width: 38, height: 38, borderRadius: 999, background: 'linear-gradient(160deg, #3fa294, #0f544c)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontSize: 14, fontWeight: 700, boxShadow: '0 1px 2px rgba(11,62,57,.15)',
+                  width: 32, height: 32, borderRadius: 999, background: 'linear-gradient(160deg, #3fa294, #0f544c)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontSize: 13, fontWeight: 700, boxShadow: '0 2px 8px rgba(15,84,76,0.22), 0 0 0 1px rgba(15,84,76,0.06)',
                 }}>
                   {(user?.fullName || user?.username || 'U').charAt(0).toUpperCase()}
                 </div>
               </button>
-              {showUserMenu && (
+              {showUserMenu && userMenuPos && (
                 <div style={{
-                  position: 'absolute', right: 0, top: '100%', marginTop: 8,
+                  position: 'fixed', top: userMenuPos.top, right: userMenuPos.right,
                   width: 224, background: '#FEFDFB',
                   borderRadius: 14,
                   boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
-                  overflow: 'hidden', zIndex: 50
+                  overflow: 'hidden', zIndex: 70
                 }}>
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #146b60, #3fa294 40%, #d99a3f 100%)' }} />
                   <div style={{ padding: '16px 16px 10px', marginTop: 3 }}>
@@ -887,7 +935,6 @@ const AppLayout: React.FC = () => {
                   <Route path="/smart-operations/messages" element={<MarketingMessages />} />
                   <Route path="/smart-operations/ads" element={<ProtectedRoute permission="admin.settings"><AdsManager /></ProtectedRoute>} />
                   <Route path="/smart-operations/referrals" element={<ProtectedRoute permission="referrals.view"><Referrals /></ProtectedRoute>} />
-                  <Route path="/smart-operations/promotions" element={<ProtectedRoute permission="admin.settings"><PromotionsAdmin /></ProtectedRoute>} />
                 </Route>
 
                 {/* AI Analytics (redirects to AI Workspace) */}
@@ -930,9 +977,6 @@ const AppLayout: React.FC = () => {
                 <Route path="/admin/migration-health" element={<ErrorBoundary name="Admin"><MigrationHealth /></ErrorBoundary>} />
                 <Route path="/admin/sync-health" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><SyncHealth /></ProtectedRoute></ErrorBoundary>} />
                 <Route path="/admin/acceptance" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><AcceptanceDashboard /></ProtectedRoute></ErrorBoundary>} />
-                <Route path="/admin/membership-tiers" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><MembershipTiersAdmin /></ProtectedRoute></ErrorBoundary>} />
-                <Route path="/admin/promotions" element={<Navigate to="/smart-operations/promotions" replace />} />
-                <Route path="/admin/gift-cards" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><GiftCardsAdmin /></ProtectedRoute></ErrorBoundary>} />
                 <Route path="/profile" element={<ErrorBoundary name="Profile"><Profile /></ErrorBoundary>} />
                 <Route path="/settings" element={<ErrorBoundary name="Settings"><ProtectedRoute permission="admin.settings"><Settings /></ProtectedRoute></ErrorBoundary>} />
 

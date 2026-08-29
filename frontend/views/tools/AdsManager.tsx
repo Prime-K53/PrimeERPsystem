@@ -119,7 +119,7 @@ const toCanonical = (f: Partial<PortalAd>): PortalAd => ({
   aiPrompt: f.aiPrompt,
 })
 
-// Banners pasted as a plain URL bypass the 4:1 preparation pipeline, so they
+// Banners pasted as a plain URL bypass the 3:1 preparation pipeline, so they
 // carry no dimension metadata. Probe the actual asset so the API metadata the
 // portal receives always matches the real image; the portal can then decide
 // cover/contain without a runtime dimension probe. Failures are non-fatal —
@@ -202,6 +202,7 @@ export const AdsManager: React.FC = () => {
   const [aiTone, setAiTone] = useState('friendly')
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState('')
+  const [subtitleGenerating, setSubtitleGenerating] = useState(false)
 
   // ── Image upload state ──
   const [uploadingImage, setUploadingImage] = useState(false)
@@ -209,10 +210,14 @@ export const AdsManager: React.FC = () => {
   const [dragOver, setDragOver] = useState(false)
   const [cropTarget, setCropTarget] = useState<{
     image: HTMLImageElement
+    /** Still-live blob URL for rendering inside the crop modal. */
+    blobUrl: string
     sourceName: string
     onDone: (blob: Blob, output: { width: number; height: number }) => void
   } | null>(null)
-  // ad id → banner is 4:1 conformant (checked lazily for legacy banners)
+  const [urlPreviewStatus, setUrlPreviewStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [urlPreviewDims, setUrlPreviewDims] = useState<{ w: number; h: number } | null>(null)
+  // ad id → banner is 3:1 conformant (checked lazily for legacy banners)
   const [conformance, setConformance] = useState<Record<string, boolean>>({})
 
   const openNew = () => { setEditingId(null); setForm(emptyForm()); setActiveTab('Details'); setShowNew(true) }
@@ -337,8 +342,8 @@ export const AdsManager: React.FC = () => {
   }
 
   // ── Banner image pipeline: validate → crop/prepare → upload → preview ──
-  // Every banner is prepared as an exact 4:1 asset (1600 × 400 WebP) so the
-  // portal banner area never stretches or distorts it. Non-4:1 sources open
+  // Every banner is prepared as an exact 3:1 asset (1500 × 500 WebP) so the
+  // portal banner area never stretches or distorts it. Non-3:1 sources open
   // the interactive crop tool; the backend re-validates on upload.
 
   const applyUploadedBanner = (url: string, meta: any) =>
@@ -358,25 +363,28 @@ export const AdsManager: React.FC = () => {
     }
     setUploadingImage(true)
     try {
-      const img = await loadImageFile(file)
+      const { img, blobUrl } = await loadImageFile(file)
       const report = buildBannerValidation(img.naturalWidth, img.naturalHeight)
       if (!report.ok) {
+        URL.revokeObjectURL(blobUrl)
         setNotify({ kind: 'error', text: report.error || 'Invalid image.' })
         return
       }
       if (report.conformant) {
-        // Already 4:1 → prepare directly (resize + WebP), no crop needed.
+        // Already 3:1 → prepare directly (resize + WebP), no crop needed.
         const blob = await prepareBannerBlob(img)
+        URL.revokeObjectURL(blobUrl) // done with the source
         const result = await doUpload(blob)
         applyUploadedBanner(result.url, result.meta)
         setNotify({
           kind: 'success',
-          text: `Banner prepared as 4:1 ${result.meta.format.toUpperCase()} (${result.meta.width} × ${result.meta.height} px) and uploaded.`,
+          text: `Banner prepared as 3:1 ${result.meta.format.toUpperCase()} (${result.meta.width} × ${result.meta.height} px) and uploaded.`,
         })
       } else {
-        // Not 4:1 → interactive crop with safe-area guide.
+        // Not 3:1 → interactive crop with safe-area guide.
         setCropTarget({
           image: img,
+          blobUrl,
           sourceName: file.name,
           onDone: async (blob, output) => {
             setUploadingImage(true)
@@ -385,7 +393,7 @@ export const AdsManager: React.FC = () => {
               applyUploadedBanner(result.url, result.meta)
               setNotify({
                 kind: 'success',
-                text: `Banner cropped to 4:1 (${output.width} × ${output.height} px), prepared as WebP and uploaded.`,
+                text: `Banner cropped to 3:1 (${output.width} × ${output.height} px), prepared as WebP and uploaded.`,
               })
             } catch (err: any) {
               setNotify({ kind: 'error', text: err?.message || 'Upload failed after cropping. Please try again.' })
@@ -402,7 +410,7 @@ export const AdsManager: React.FC = () => {
     }
   }
 
-  // Re-crop an existing (possibly legacy / non-4:1) banner asset.
+  // Re-crop an existing (possibly legacy / non-3:1) banner asset.
   const handleRecrop = async (ad: PortalAd) => {
     if (!ad.imageUrl) return
     setUploadingImage(true)
@@ -421,7 +429,7 @@ export const AdsManager: React.FC = () => {
               imageMeta: result.meta,
               updatedAt: new Date().toISOString(),
             } as PortalAd)
-            setNotify({ kind: 'success', text: 'Banner re-cropped to 4:1 and replaced.' })
+            setNotify({ kind: 'success', text: 'Banner re-cropped to 3:1 and replaced.' })
             await load()
           } catch (err: any) {
             setNotify({ kind: 'error', text: err?.message || 'Re-crop failed. Please try again.' })
@@ -437,7 +445,7 @@ export const AdsManager: React.FC = () => {
     }
   }
 
-  // Flag legacy banners that do not conform to the 4:1 spec.
+  // Flag legacy banners that do not conform to the 3:1 spec.
   useEffect(() => {
     let cancelled = false
     const run = async () => {
@@ -498,8 +506,27 @@ export const AdsManager: React.FC = () => {
     }
   }
 
+  const handleGenerateSubtitle = async () => {
+    const title = (form.title || '').trim()
+    if (!title) {
+      setNotify({ kind: 'error', text: 'Enter an ad title first so the AI has context.' })
+      return
+    }
+    setSubtitleGenerating(true)
+    try {
+      const prompt = `Generate a medium-length subtitle (1-2 sentences, 80-120 characters) for a banner ad with this headline:\n\n"${title}"\n\nThe subtitle should complement the headline, highlight a key benefit or create urgency, and be suitable for a printing business. Do not repeat the headline. No quotes, no markdown.`
+      const result = await aiService.generateAIResponse(prompt, 'You are a concise marketing copywriter. Write a single subtitle line. Do not use quotes or markdown. No disclaimers.')
+      setForm(prev => ({ ...prev, subtitle: result.trim() }))
+      setNotify({ kind: 'success', text: 'Subtitle generated.' })
+    } catch (err: any) {
+      setNotify({ kind: 'error', text: err?.message || 'AI generation failed.' })
+    } finally {
+      setSubtitleGenerating(false)
+    }
+  }
+
   // Portal-style banner preview (mirrors CustomerDashboard carousel slide).
-  // The container enforces the SAME 4:1 ratio the customer portal uses, so
+  // The container enforces the SAME 3:1 ratio the customer portal uses, so
   // the preview shows exactly the proportions customers see.
   const BannerPreview = ({ ad, compact = false }: { ad: Partial<PortalAd>; compact?: boolean }) => {
     const title = ad.title || 'Your ad title'
@@ -512,7 +539,7 @@ export const AdsManager: React.FC = () => {
 
     const frame: React.CSSProperties = {
       borderRadius: 14, overflow: 'hidden', position: 'relative',
-      aspectRatio: '4 / 1', minHeight: compact ? 84 : 96,
+      aspectRatio: '3 / 1', minHeight: compact ? 84 : 96,
       width: '100%',
     }
 
@@ -699,7 +726,7 @@ export const AdsManager: React.FC = () => {
         }}>
           <FileWarning size={16} style={{ flexShrink: 0 }} />
           <span style={{ flex: 1, minWidth: 220 }}>
-            {nonConformingAds.length} banner{nonConformingAds.length > 1 ? 's' : ''} don&apos;t match the 4:1 spec — they may appear cropped or distorted on the portal. Re-crop to fix.
+            {nonConformingAds.length} banner{nonConformingAds.length > 1 ? 's' : ''} don&apos;t match the 3:1 spec — they may appear cropped or distorted on the portal. Re-crop to fix.
           </span>
           <button onClick={() => setStatusFilter('all')} style={{ background: 'transparent', border: 'none', color: '#92400e', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
             Re-crop banners
@@ -780,12 +807,12 @@ export const AdsManager: React.FC = () => {
                       <StatusBadge status={status} />
                       {ad.imageUrl && conformance[ad.id] === false && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: amber[100], color: '#92400e' }}>
-                          <FileWarning size={11} /> Not 4:1
+                          <FileWarning size={11} /> Not 3:1
                         </span>
                       )}
                       {ad.imageUrl && conformance[ad.id] === true && isConformantMeta(ad.imageMeta) && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: teal[100], color: teal[700] }}>
-                          <ShieldCheck size={11} /> 4:1 &middot; {ad.imageMeta.width} × {ad.imageMeta.height}
+                          <ShieldCheck size={11} /> 3:1 &middot; {ad.imageMeta.width} × {ad.imageMeta.height}
                         </span>
                       )}
                     </div>
@@ -811,7 +838,7 @@ export const AdsManager: React.FC = () => {
                       {status === 'active' ? <Pause size={13} /> : <Play size={13} />}
                     </button>
                     {ad.imageUrl && conformance[ad.id] === false && (
-                      <button title="Re-crop to 4:1" onClick={() => handleRecrop(ad)}
+                      <button title="Re-crop to 3:1" onClick={() => handleRecrop(ad)}
                         style={{ height: 32, padding: '0 10px', borderRadius: 8, border: 'none', cursor: 'pointer', background: amber[100], color: '#92400e', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 700, transition: 'transform .12s ease' }}
                         onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)' }}
                         onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
@@ -943,12 +970,37 @@ export const AdsManager: React.FC = () => {
 
                       <div style={{ marginBottom: 18 }}>
                         <label style={labelStyle}>Subtitle</label>
-                        <textarea
-                          value={form.subtitle || ''}
-                          onChange={(e) => setForm(p => ({ ...p, subtitle: e.target.value }))}
-                          rows={2}
-                          placeholder="One supporting line customers see under the headline..."
-                          style={{ ...modalInputStyle, resize: 'none', minHeight: 52, lineHeight: 1.5 }} />
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                          <textarea
+                            value={form.subtitle || ''}
+                            onChange={(e) => setForm(p => ({ ...p, subtitle: e.target.value }))}
+                            rows={2}
+                            placeholder="One supporting line customers see under the headline..."
+                            style={{ ...modalInputStyle, resize: 'none', minHeight: 52, lineHeight: 1.5, flex: 1 }} />
+                          <button
+                            type="button"
+                            onClick={handleGenerateSubtitle}
+                            disabled={subtitleGenerating}
+                            title="Generate subtitle with AI"
+                            style={{
+                              fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700,
+                              padding: '5px 11px', borderRadius: 8, border: 'none',
+                              background: `linear-gradient(135deg, ${violet[500]}, #6D44B8)`,
+                              color: '#fff', cursor: subtitleGenerating ? 'not-allowed' : 'pointer',
+                              display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
+                              flexShrink: 0, opacity: subtitleGenerating ? 0.5 : 1,
+                              marginTop: 1,
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                              {subtitleGenerating
+                                ? <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                : <><path d="M12 3l1.6 4.9L18.5 9.5 13.6 11 12 16l-1.6-5-4.9-1.5 4.9-1.6L12 3z" fill="currentColor"/><path d="M8 18h8M10 21h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></>
+                              }
+                            </svg>
+                            {subtitleGenerating ? 'Generating…' : 'AI'}
+                          </button>
+                        </div>
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
@@ -1010,7 +1062,7 @@ export const AdsManager: React.FC = () => {
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                           <label style={{ ...labelStyle, marginBottom: 0 }}>Banner Image (optional)</label>
                           <div style={{ display: 'flex', gap: 4, padding: 3, background: '#f1f2f4', borderRadius: 8 }}>
-                            <button type="button" onClick={() => setImageMode('upload')} style={{
+                            <button type="button" onClick={() => { setImageMode('upload'); setUrlPreviewStatus('idle'); setUrlPreviewDims(null) }} style={{
                               padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
                               display: 'flex', alignItems: 'center', gap: 5,
                               background: imageMode === 'upload' ? '#fff' : 'transparent', color: imageMode === 'upload' ? teal[700] : inkSoft,
@@ -1018,7 +1070,7 @@ export const AdsManager: React.FC = () => {
                             }}>
                               <UploadCloud size={12} /> Upload
                             </button>
-                            <button type="button" onClick={() => setImageMode('url')} style={{
+                            <button type="button" onClick={() => { setImageMode('url'); setUrlPreviewStatus('idle'); setUrlPreviewDims(null) }} style={{
                               padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
                               display: 'flex', alignItems: 'center', gap: 5,
                               background: imageMode === 'url' ? '#fff' : 'transparent', color: imageMode === 'url' ? teal[700] : inkSoft,
@@ -1046,7 +1098,7 @@ export const AdsManager: React.FC = () => {
                               {form.imageMeta && (
                                 <div style={{ position: 'absolute', left: 8, bottom: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(15,23,42,.72)', color: '#fff' }}>
-                                    <ShieldCheck size={11} color={teal[300]} /> 4:1 prepared &middot; {form.imageMeta.width} × {form.imageMeta.height} &middot; {form.imageMeta.format.toUpperCase()} &middot; {formatBannerBytes(form.imageMeta.fileSize)}
+                                    <ShieldCheck size={11} color={teal[300]} /> 3:1 prepared &middot; {form.imageMeta.width} × {form.imageMeta.height} &middot; {form.imageMeta.format.toUpperCase()} &middot; {formatBannerBytes(form.imageMeta.fileSize)}
                                   </span>
                                 </div>
                               )}
@@ -1056,10 +1108,10 @@ export const AdsManager: React.FC = () => {
                               <div style={{ marginBottom: 8, padding: '9px 12px', borderRadius: 9, background: teal[50], border: `1px solid ${teal[200]}`, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
                                 <ShieldCheck size={15} style={{ color: teal[600], flexShrink: 0, marginTop: 1 }} />
                                 <div style={{ fontSize: 11.5, color: teal[800], lineHeight: 1.55 }}>
-                                  <b>Recommended size: {BANNER_SPEC.recommendedWidth} × {BANNER_SPEC.recommendedHeight} px</b> &nbsp;&middot;&nbsp; <b>Aspect ratio: 4:1</b>
+                                  <b>Recommended size: {BANNER_SPEC.recommendedWidth} × {BANNER_SPEC.recommendedHeight} px</b> &nbsp;&middot;&nbsp; <b>Aspect ratio: 3:1</b>
                                   <br />
                                   Minimum {BANNER_SPEC.minWidth} × {BANNER_SPEC.minHeight} px &middot; WebP preferred (JPG/PNG accepted) &middot; up to 2 MB.
-                                  Images that aren&apos;t 4:1 open a crop tool — banners are never stretched.
+                                  Images that aren&apos;t 3:1 open a crop tool — banners are never stretched.
                                 </div>
                               </div>
                               <label
@@ -1099,10 +1151,142 @@ export const AdsManager: React.FC = () => {
                             </>
                           )
                         ) : (
-                          <input type="text" value={form.imageUrl || ''}
-                            onChange={(e) => setForm(p => ({ ...p, imageUrl: e.target.value }))}
-                            placeholder="https://… (leave empty to use the gradient)"
-                            style={modalInputStyle} />
+                          <>
+                            {/* URL input row */}
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <input
+                                type="text"
+                                value={form.imageUrl || ''}
+                                onChange={(e) => {
+                                  const url = e.target.value
+                                  setForm(p => ({ ...p, imageUrl: url, imageMeta: undefined }))
+                                  if (!url.trim()) { setUrlPreviewStatus('idle'); setUrlPreviewDims(null); return }
+                                  setUrlPreviewStatus('loading')
+                                  setUrlPreviewDims(null)
+                                  const img = new Image()
+                                  img.onload = () => {
+                                    setUrlPreviewStatus('ok')
+                                    setUrlPreviewDims({ w: img.naturalWidth, h: img.naturalHeight })
+                                  }
+                                  img.onerror = () => { setUrlPreviewStatus('error'); setUrlPreviewDims(null) }
+                                  img.src = url
+                                }}
+                                placeholder="https://… (leave empty to use the gradient)"
+                                style={{ ...modalInputStyle, flex: 1 }}
+                              />
+                              {form.imageUrl && (
+                                <button
+                                  type="button"
+                                  title="Remove image URL"
+                                  onClick={() => {
+                                    setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined }))
+                                    setUrlPreviewStatus('idle')
+                                    setUrlPreviewDims(null)
+                                  }}
+                                  style={{
+                                    width: 34, height: 34, borderRadius: 8, border: 'none', flexShrink: 0,
+                                    cursor: 'pointer', background: 'rgba(181,73,63,.1)', color: danger,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  }}
+                                >
+                                  <X size={14} />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Live preview panel */}
+                            {urlPreviewStatus === 'loading' && (
+                              <div style={{
+                                marginTop: 10, borderRadius: 10, border: `1.4px dashed ${hairline}`,
+                                background: '#faf9f6', display: 'flex', alignItems: 'center',
+                                justifyContent: 'center', gap: 8, padding: '18px 0',
+                                color: inkSoft, fontSize: 12,
+                              }}>
+                                <Loader2 size={16} className="animate-spin" style={{ color: teal[500] }} />
+                                Loading preview…
+                              </div>
+                            )}
+
+                            {urlPreviewStatus === 'error' && (
+                              <div style={{
+                                marginTop: 10, borderRadius: 10, border: `1.4px solid #f3c1bd`,
+                                background: '#fef0ee', display: 'flex', alignItems: 'center',
+                                gap: 8, padding: '10px 14px', color: danger, fontSize: 12, fontWeight: 600,
+                              }}>
+                                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                                Could not load image — check the URL or use the Upload tab instead.
+                              </div>
+                            )}
+
+                            {urlPreviewStatus === 'ok' && form.imageUrl && (
+                              <div style={{
+                                marginTop: 10, borderRadius: 10, overflow: 'hidden',
+                                border: `1.4px solid ${teal[200]}`, position: 'relative', background: '#0d1420',
+                              }}>
+                                <img
+                                  src={form.imageUrl}
+                                  alt="Banner preview"
+                                  style={{
+                                    width: '100%', aspectRatio: '4 / 1', minHeight: 80,
+                                    objectFit: 'cover', display: 'block',
+                                  }}
+                                />
+                                {/* Overlay badges */}
+                                <div style={{
+                                  position: 'absolute', inset: 0, pointerEvents: 'none',
+                                  background: 'linear-gradient(to top, rgba(0,0,0,.45) 0%, transparent 55%)',
+                                }} />
+                                {urlPreviewDims && (
+                                  <div style={{
+                                    position: 'absolute', bottom: 8, left: 8,
+                                    display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
+                                  }}>
+                                    <span style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                                      fontSize: 10, fontWeight: 700, padding: '3px 9px',
+                                      borderRadius: 20, background: 'rgba(15,23,42,.72)', color: '#fff',
+                                    }}>
+                                      {urlPreviewDims.w} × {urlPreviewDims.h} px
+                                    </span>
+                                    {aspectConformance(urlPreviewDims.w, urlPreviewDims.h) ? (
+                                      <span style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                                        fontSize: 10, fontWeight: 700, padding: '3px 9px',
+                                        borderRadius: 20, background: teal[600], color: '#fff',
+                                      }}>
+                                        <ShieldCheck size={10} /> 3:1 ✓
+                                      </span>
+                                    ) : (
+                                      <span style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                                        fontSize: 10, fontWeight: 700, padding: '3px 9px',
+                                        borderRadius: 20, background: amber[500], color: '#fff',
+                                      }}>
+                                        <AlertTriangle size={10} /> Not 3:1 — may appear cropped
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  title="Remove image"
+                                  onClick={() => {
+                                    setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined }))
+                                    setUrlPreviewStatus('idle')
+                                    setUrlPreviewDims(null)
+                                  }}
+                                  style={{
+                                    position: 'absolute', top: 8, right: 8,
+                                    width: 28, height: 28, borderRadius: 7, border: 'none',
+                                    cursor: 'pointer', background: 'rgba(181,73,63,.85)', color: '#fff',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  }}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            )}
+                          </>
                         )}
 
                         <div style={{ marginTop: 8, fontSize: 11, color: inkSoft, lineHeight: 1.5 }}>
@@ -1242,14 +1426,14 @@ export const AdsManager: React.FC = () => {
                     <>
                       <div style={sectionLabelStyle}><span>Live Preview</span></div>
                       <p style={{ fontSize: 12, color: inkSoft, margin: '0 0 14px', lineHeight: 1.5 }}>
-                        Exactly how this ad renders in the customer portal banner carousel — the preview uses the same 4:1 banner area as the portal.
+                        Exactly how this ad renders in the customer portal banner carousel — the preview uses the same 3:1 banner area as the portal.
                       </p>
                       <BannerPreview ad={form} />
                       {form.imageMeta && aspectConformance(form.imageMeta.width, form.imageMeta.height) && (
                         <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 9, background: teal[50], border: `1px solid ${teal[200]}`, fontSize: 11.5, color: teal[800], fontWeight: 600 }}>
                           <ShieldCheck size={14} style={{ color: teal[600], flexShrink: 0 }} />
                           <span>
-                            4:1 compliant &middot; {form.imageMeta.width} × {form.imageMeta.height} px &middot; aspect {form.imageMeta.aspectRatio}:1
+                            3:1 compliant &middot; {form.imageMeta.width} × {form.imageMeta.height} px &middot; aspect {form.imageMeta.aspectRatio}:1
                             {form.imageMeta.format ? ` &middot; ${form.imageMeta.format.toUpperCase()}` : ''}
                             {typeof form.imageMeta.fileSize === 'number' ? ` &middot; ${formatBannerBytes(form.imageMeta.fileSize)}` : ''}
                           </span>
@@ -1258,7 +1442,7 @@ export const AdsManager: React.FC = () => {
                       {form.imageUrl && (!form.imageMeta || !aspectConformance(form.imageMeta.width, form.imageMeta.height)) && (
                         <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 9, background: '#fdf6e3', border: `1.4px solid ${amber[300]}`, fontSize: 11.5, color: '#92400e', fontWeight: 600 }}>
                           <FileWarning size={14} style={{ flexShrink: 0 }} />
-                          <span>This banner is not 4:1 compliant — re-crop it so it displays correctly on the portal.</span>
+                          <span>This banner is not 3:1 compliant — re-crop it so it displays correctly on the portal.</span>
                         </div>
                       )}
                       <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: '#f8fafc', border: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft, lineHeight: 1.6 }}>
@@ -1324,13 +1508,21 @@ export const AdsManager: React.FC = () => {
         </div>
       )}
 
-      {/* ── Interactive 4:1 crop tool ── */}
+      {/* ── Interactive 3:1 crop tool ── */}
       {cropTarget && (
         <BannerCropModal
           image={cropTarget.image}
+          blobUrl={cropTarget.blobUrl}
           sourceName={cropTarget.sourceName}
-          onCancel={() => setCropTarget(null)}
-          onConfirm={(blob, output) => cropTarget.onDone(blob, output)}
+          onCancel={() => {
+            URL.revokeObjectURL(cropTarget.blobUrl)
+            setCropTarget(null)
+          }}
+          onConfirm={(blob, output) => {
+            URL.revokeObjectURL(cropTarget.blobUrl)
+            cropTarget.onDone(blob, output)
+            setCropTarget(null)
+          }}
         />
       )}
     </div>

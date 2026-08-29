@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 
 const getCompanyNameFromStorage = () => {
-  if (typeof window === 'undefined') return 'Prime ERP';
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'Prime ERP';
 
   const saved = localStorage.getItem('nexus_company_config');
   if (!saved) return 'Prime ERP';

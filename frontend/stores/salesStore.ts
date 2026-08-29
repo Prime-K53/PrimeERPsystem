@@ -346,17 +346,6 @@ addCustomerPayment: async (payment) => {
     set(state => ({ customers: [...state.customers, newCustomer] }));
     try {
       await api.customers.save(newCustomer);
-      import('../services/engagementEngine').then(({ engagementEngine }) =>
-        engagementEngine.emit('customer.created', {
-          source: 'salesStore',
-          entityType: 'customer',
-          entityId: newCustomer.id,
-          data: { customerId: newCustomer.id },
-          correlationId: `customer-${newCustomer.id}`,
-        }).catch(err =>
-          console.error('Engagement customer.created processing failed:', err)
-        )
-      );
       let credentials: PortalCredentials | null = null;
       try {
         const portalAccount = await adminLifecycle.users.autoCreate({

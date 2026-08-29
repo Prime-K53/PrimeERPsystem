@@ -434,7 +434,8 @@ export const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({ onCl
 
               {/* Items Table */}
               <div style={{ borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden', background: paper }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
                   <thead>
                     <tr style={{ background: hairline, borderBottom: `1px solid ${hairline}` }}>
                       <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: inkSoft }}>Product Item</th>
@@ -497,7 +498,8 @@ export const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({ onCl
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                  </table>
+                </div>
               </div>
             </div>
           )}

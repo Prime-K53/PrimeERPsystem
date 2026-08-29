@@ -921,7 +921,8 @@ router.post('/users/:id/regenerate-password', async (req, res) => {
     res.json({ generated_password: new_password, user_id: adoptedId });
   } catch (err) {
     console.error('[PortalAdmin] Regenerate password error:', err);
-    res.status(500).json({ error: 'Failed to regenerate password' });
+    console.error('[PortalAdmin] Regenerate password stack:', err?.stack);
+    res.status(500).json({ error: 'Failed to regenerate password', detail: err?.message || String(err) });
   }
 });
 
@@ -1061,10 +1062,10 @@ router.post('/users/:id/invite', async (req, res) => {
 
 // ─── Portal Banner Ad Image Upload ─────────────────────────────────────────
 // Smart Operations Hub → Ads. Every banner is prepared for the customer
-// portal's 4:1 banner area by bannerImageService (validate → exact 4:1 crop
-// → 1600 × 400 WebP). The ERP UI performs an interactive 4:1 crop before
+// portal's 3:1 banner area by bannerImageService (validate → exact 3:1 crop
+// → 1500 × 500 WebP). The ERP UI performs an interactive 3:1 crop before
 // uploading; this endpoint enforces the same spec server-side (defense in
-// depth) so the stored asset is always a 4:1, never stretched.
+// depth) so the stored asset is always a 3:1, never stretched.
 // The optimized image is stored in the PUBLIC Supabase Storage bucket
 // `prime-erp-public` (banner images are public marketing content shown to
 // every portal customer) and the stable public URL plus final metadata is
@@ -1095,7 +1096,7 @@ router.post('/ads/upload', (req, res, next) => {
       return res.status(400).json({ error: 'No image file provided' });
     }
 
-    // Validate → crop to exact 4:1 → optimize to 1600 × 400 WebP.
+    // Validate → crop to exact 3:1 → optimize to 1500 × 500 WebP.
     let prepared;
     try {
       prepared = await processBannerImage(req.file.buffer);

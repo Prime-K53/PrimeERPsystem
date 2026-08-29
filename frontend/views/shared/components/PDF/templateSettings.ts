@@ -95,7 +95,7 @@ const normalizeFontFamily = (value?: string): PrimePdfFontFamily => {
 };
 
 export const getStoredCompanyConfig = (): CompanyConfig | null => {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return null;
 
   const saved = localStorage.getItem('nexus_company_config');
   if (!saved) return null;

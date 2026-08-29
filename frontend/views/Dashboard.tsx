@@ -1079,7 +1079,7 @@ const DashboardContent: React.FC = () => {
         maxWidth: 1520, width: '100%', overflow: 'hidden', flex: 1,
       }}>
         <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: isMobile ? '20px 16px 0' : isTablet ? '24px 24px 0' : '28px 32px 0', flexWrap: 'wrap', gap: isMobile ? 16 : 24, marginBottom: isMobile ? 8 : 12,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: isMobile ? '10px 16px 0' : isTablet ? '12px 24px 0' : '14px 32px 0', flexWrap: 'wrap', gap: isMobile ? 16 : 24, marginBottom: isMobile ? 8 : 12,
         }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

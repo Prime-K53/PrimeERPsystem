@@ -55,6 +55,38 @@ async function applyPortalPermissions(pdfBuffer, options = {}) {
       pdfDoc.setAuthor(options.companyName);
     }
 
+    // Apply visual portal watermark layer to all pages
+    try {
+      const { rgb, degrees, StandardFonts } = require('pdf-lib');
+      const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const pages = pdfDoc.getPages();
+      for (const page of pages) {
+        const { width, height } = page.getSize();
+        // Diagonal semi-transparent PORTAL COPY watermark
+        page.drawText('PORTAL COPY', {
+          x: Math.max(20, width / 2 - 140),
+          y: Math.max(20, height / 2 - 40),
+          size: 48,
+          font,
+          color: rgb(0.7, 0.7, 0.7),
+          opacity: 0.18,
+          rotate: degrees(45),
+        });
+
+        // Footer provenance tag
+        page.drawText('DOWNLOADED FROM CUSTOMER PORTAL', {
+          x: Math.max(15, width / 2 - 110),
+          y: 12,
+          size: 8,
+          font,
+          color: rgb(0.4, 0.4, 0.4),
+          opacity: 0.6,
+        });
+      }
+    } catch (wmErr) {
+      console.warn('[portalPdfPostProcess] Failed to draw visual watermark:', wmErr.message);
+    }
+
     // Save with permissions
     // PDF 1.7 permission flags:
     //   - Printing: allowed (bit 3 = 4)

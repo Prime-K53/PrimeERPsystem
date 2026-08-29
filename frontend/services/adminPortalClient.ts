@@ -82,7 +82,7 @@ export const adminPortalApi = {
 
 /**
  * Uploads a banner image for a portal ad; returns the stable public URL plus
- * the metadata of the prepared asset (server prepares an exact 4:1 WebP).
+ * the metadata of the prepared asset (server prepares an exact 3:1 WebP).
  */
 export async function uploadAdImage(file: File): Promise<{ url: string; path: string; meta: PortalAdImageMeta }> {
   const form = new FormData();

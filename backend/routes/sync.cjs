@@ -110,7 +110,7 @@ const MAX_BATCH_SIZE = 100;
 const VALID_TABLE_PATTERN = /^[a-z_][a-z0-9_]*$/;
 
 // ─── portal_ads payload validation (Customer Portal banner pipeline) ────────
-// The portal renders banners at a fixed 4:1 area, so a record carrying an
+// The portal renders banners at a fixed 3:1 area, so a record carrying an
 // arbitrary/non-image URL or inconsistent dimension metadata could break the
 // dashboard layout. This focused guard runs only for the portal_ads table —
 // every other table keeps its existing generic gateway behavior.

@@ -1965,7 +1965,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 .order-form-scroll::-webkit-scrollbar-thumb:hover { background: #3fa294; }`;
 
     return (
-        <div style={{
+        <div className="order-form-backdrop" style={{
             position: 'fixed', inset: 0, zIndex: 9999,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'rgba(15, 23, 42, 0.6)',
@@ -2606,7 +2606,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                         </div>
 
                         <div className="bg-[#FEFDFB] border border-[#E4DFD1] rounded-[12px] overflow-hidden p-[22px]">
-                        <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:"22px"}}>
+                        <div className="order-form-charges" style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:"22px"}}>
                             <div className="pr-[14px] border-r border-[#E4DFD1]">
                                 <div className="flex items-center gap-[6px] mb-[6px]">
                                     <input type="checkbox" className="rounded accent-[#146b60]"

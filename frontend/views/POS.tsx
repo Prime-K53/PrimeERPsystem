@@ -80,8 +80,6 @@ const POS: React.FC = () => {
     open: false,
     type: 'photocopy'
   });
-  const [giftCardModal, setGiftCardModal] = useState(false);
-  const [giftCardForm, setGiftCardForm] = useState({ amount: 50, message: '', color: '#10b981' });
   const [selectedSalesAccountId, setSelectedSalesAccountId] = useState('4000');
   const [bomTemplates, setBomTemplates] = useState<BOMTemplate[]>([]);
 
@@ -474,28 +472,6 @@ const POS: React.FC = () => {
   const handleQuickTypePrinting = () => {
     setQuickPrintModal({ open: true, type: 'printing' });
   };
-
-  const handleSellGiftCard = () => {
-    if (giftCardForm.amount <= 0) return
-    const gcCode = `GC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
-    const giftItem: any = {
-      id: `GIFT-${Date.now()}`,
-      itemId: 'GIFT-CARD',
-      name: `Gift Card $${giftCardForm.amount}`,
-      type: 'Service',
-      price: giftCardForm.amount,
-      quantity: 1,
-      isGiftCard: true,
-      giftCardCode: gcCode,
-      giftCardAmount: giftCardForm.amount,
-      giftCardMessage: giftCardForm.message,
-      giftCardColor: giftCardForm.color,
-      priceLocked: true,
-    }
-    commitAddToCart(giftItem)
-    setGiftCardModal(false)
-    setGiftCardForm({ amount: 50, message: '', color: '#10b981' })
-  }
 
 const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number) => {
         const isPhotocopy = printType === 'photocopy';
@@ -1281,29 +1257,6 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
         }
       }
 
-      // Create gift cards for any gift card items in the cart
-      for (const cartItem of cart) {
-        if (cartItem.isGiftCard) {
-          const gcCode = cartItem.giftCardCode || `GC-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
-          await dbService.put('engagementGiftCards', {
-            id: `GC-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-            code: gcCode,
-            customerId: customerId !== 'walk-in' ? customerId : null,
-            initialBalance: cartItem.giftCardAmount || cartItem.price || 0,
-            currentBalance: cartItem.giftCardAmount || cartItem.price || 0,
-            status: 'active',
-            type: 'digital',
-            purchasedWith: saleId,
-            giftMessage: cartItem.giftCardMessage || null,
-            designColor: cartItem.giftCardColor || '#10b981',
-            rechargeable: true,
-            transferable: false,
-            expiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
-            createdAt: new Date().toISOString(),
-          } as any)
-        }
-      }
-
       // Create production jobs for printing services
       const { addProductionJob, createProductionJob } = usePrintingStore.getState();
       createProductionJobsFromSale(cart, saleId, addProductionJob, createProductionJob);
@@ -1389,9 +1342,6 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
                  <button onClick={handleQuickTypePrinting} className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#23282A] hover:bg-[#eef7f6] hover:border-[#a6d9d3] hover:text-[#0b3e39] transition-all flex items-center gap-1.5 shadow-sm">
                   <FileText size={14} /> Type & Print
                 </button>
-                 <button onClick={() => setGiftCardModal(true)} className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#0f544c] hover:bg-[#eef7f6] hover:border-[#a6d9d3] hover:text-[#0b3e39] transition-all flex items-center gap-1.5 shadow-sm">
-                 <Gift size={14} /> Gift Card
-               </button>
 <select value={selectedSalesAccountId} onChange={e => setSelectedSalesAccountId(e.target.value)}
                    className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#23282A] hover:border-[#a6d9d3] transition-all shadow-sm outline-none cursor-pointer">
                  {(accounts || []).filter((a: any) => a.type === 'Revenue').map(acc => (
@@ -1697,33 +1647,6 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           >
             <FileDown size={12} /> Download Receipt
           </button>
-        </div>
-      )}
-
-      {/* Gift Card Sell Modal */}
-      {giftCardModal && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4">
-          <div className="bg-[#FEFDFB] rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold text-[#23282A] mb-4">Sell Gift Card</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-[#5c6567] mb-1">Amount ($)</label>
-                <input type="number" value={giftCardForm.amount} onChange={e => setGiftCardForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))} className="w-full text-lg font-bold border border-[#e4ddd1] rounded-lg px-3 py-2 text-right" min={1} autoFocus />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#5c6567] mb-1">Gift Message (optional)</label>
-                <input type="text" value={giftCardForm.message} onChange={e => setGiftCardForm(prev => ({ ...prev, message: e.target.value }))} className="w-full text-sm border border-[#e4ddd1] rounded-lg px-3 py-2" placeholder="Happy Birthday!" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#5c6567] mb-1">Card Color</label>
-                <input type="color" value={giftCardForm.color} onChange={e => setGiftCardForm(prev => ({ ...prev, color: e.target.value }))} className="w-full h-10 border border-[#e4ddd1] rounded-lg cursor-pointer" />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button onClick={handleSellGiftCard} className="flex-1 px-4 py-2.5 text-sm font-bold text-white rounded-xl transition-all" style={{ background: 'linear-gradient(155deg, #1f8577, #0f544c)' }}>Add to Cart</button>
-                <button onClick={() => { setGiftCardModal(false); setGiftCardForm({ amount: 50, message: '', color: '#10b981' }) }} className="px-4 py-2.5 text-sm font-bold text-[#5c6567] bg-[#FEFDFB] border border-[#e4ddd1] rounded-xl hover:bg-[#eef7f6]">Cancel</button>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 

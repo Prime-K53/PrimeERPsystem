@@ -322,7 +322,6 @@ export interface CompanyConfig {
     [key: string]: any;
   };
   referralSettings?: import('./types/referral').ReferralSettings;
-  engagementSettings?: import('./types/engagement').EngagementSettings;
 }
 
 export {

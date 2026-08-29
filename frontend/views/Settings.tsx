@@ -56,11 +56,9 @@ import { CloudTab } from './settings/tabs/CloudTab';
 import { IntegrationsTab } from './settings/tabs/IntegrationsTab';
 
 import { PricingAdminTab } from './settings/tabs/PricingAdminTab';
-import { AttributesTab } from './settings/tabs/AttributesTab';
 import { FinishingOptionsTab } from './settings/tabs/FinishingOptionsTab';
 import ComplianceSettings, { ComplianceConfig } from '../components/ComplianceSettings';
 import { ReferralSettingsTab } from './settings/tabs/ReferralSettingsTab';
-import { EngagementSettingsTab } from './settings/tabs/EngagementSettingsTab';
 import { AISettingsTab } from './settings/tabs/AISettingsTab';
 import CustomizeDashboard from '../components/dashboard/CustomizeDashboard';
 import { useDashboardStore } from '../stores/dashboardStore';
@@ -885,20 +883,6 @@ const Settings: React.FC = () => {
             ]
         },
         {
-            title: 'Engagement',
-            items: [
-                { id: 'Engagement', icon: Award, label: 'Engagement', desc: 'Loyalty, cashback, membership, gift cards, affiliate, promotions, rewards' },
-                { id: 'MembershipTiers', icon: Award, label: 'Membership Tiers', desc: 'Manage loyalty tiers and benefits' },
-                { id: 'GiftCards', icon: CreditCard, label: 'Gift Cards', desc: 'Issue and manage gift cards' },
-            ]
-        },
-        {
-            title: 'Product Data',
-            items: [
-                { id: 'Attributes', icon: Layers, label: 'Attributes', desc: 'Manage product attributes like Size, Color for variant generation' },
-            ]
-        },
-        {
             title: 'System & Advanced',
             items: [
                 { id: 'Integrations', icon: Globe, label: 'Integrations', desc: 'API and external services' },
@@ -974,7 +958,7 @@ const Settings: React.FC = () => {
               overflowX: 'auto', WebkitOverflowScrolling: 'touch',
               scrollbarWidth: 'none',
             }}>
-              <style>{`.mobile-settings-tabs::-webkit-scrollbar { display: none; }`}</style>
+              <style>{`.mobile-settings-tabs::-webkit-scrollbar { display: none; } .settings-sidebar::-webkit-scrollbar, .settings-content::-webkit-scrollbar { width: 6px; } .settings-sidebar::-webkit-scrollbar-thumb, .settings-content::-webkit-scrollbar-thumb { background: rgba(16,24,40,0.18); border-radius: 3px; } .settings-sidebar::-webkit-scrollbar-thumb:hover, .settings-content::-webkit-scrollbar-thumb:hover { background: rgba(16,24,40,0.32); }`}</style>
               <div className="mobile-settings-tabs" style={{ display: 'flex', gap: 0, padding: '0 8px', minWidth: 'max-content' }}>
                 {filteredGroups.flatMap(g => g.items).map(tab => {
                   const isActive = activeTab === tab.id;
@@ -983,8 +967,6 @@ const Settings: React.FC = () => {
                     <button
                       key={tab.id}
                       onClick={() => {
-                        if (tab.id === 'MembershipTiers') return navigate('/admin/membership-tiers');
-                        if (tab.id === 'GiftCards') return navigate('/admin/gift-cards');
                         setActiveTab(tab.id);
                       }}
                       style={{
@@ -1050,13 +1032,14 @@ const Settings: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex flex-1 overflow-hidden" style={{ minHeight: 'calc(100vh - 120px)' }}>
+            <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 120px)' }}>
                 {/* Premium Sidebar — hidden on mobile */}
-                <div className="hidden md:flex" style={{
-                  width: 286, flexShrink: 0,
+                <div className="hidden md:flex settings-sidebar" style={{
+                  width: 286, flexShrink: 0, minHeight: 0,
                   background: '#FFFFFF',
                   borderRight: '1px solid rgba(16,24,40,0.07)',
-                  flexDirection: 'column', position: 'relative', overflowY: 'auto'
+                  flexDirection: 'column', position: 'relative', overflowY: 'auto',
+                  scrollbarWidth: 'thin', scrollbarColor: 'rgba(16,24,40,0.2) transparent',
                 }}>
                     <div style={{
                       color: '#8b938f', fontSize: 11, letterSpacing: '1px',
@@ -1077,8 +1060,6 @@ const Settings: React.FC = () => {
                                     <button
                                         key={item.id}
                                         onClick={() => {
-                                          if (item.id === 'MembershipTiers') return navigate('/admin/membership-tiers')
-                                          if (item.id === 'GiftCards') return navigate('/admin/gift-cards')
                                           setActiveTab(item.id)
                                         }}
                                         style={{
@@ -1129,7 +1110,11 @@ const Settings: React.FC = () => {
                 </div>
 
                 {/* Content Area */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-7" style={{ background: 'linear-gradient(180deg, #F7F6F2 0%, #F2F1EB 100%)' }}>
+                <div className="flex-1 overflow-y-auto p-4 md:p-7 settings-content" style={{
+                  background: 'linear-gradient(180deg, #F7F6F2 0%, #F2F1EB 100%)',
+                  minHeight: 0,
+                  scrollbarWidth: 'thin', scrollbarColor: 'rgba(16,24,40,0.2) transparent',
+                }}>
                     <div style={{ maxWidth: '920px', margin: '0 auto' }}>
 
                         {activeTab === 'General' && (
@@ -3474,14 +3459,6 @@ id: `webhook-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                         )}
 
                         {
-                            activeTab === 'Attributes' && (
-                                <div style={{ marginTop: '24px' }}>
-                                    <AttributesTab />
-                                </div>
-                            )
-                        }
-
-                        {
                             activeTab === 'Finishing' && (
                                 <FinishingOptionsTab config={config} setConfig={setConfig} notify={notify} items={inventory} />
                             )
@@ -3498,12 +3475,6 @@ id: `webhook-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                         {
                             activeTab === 'Referrals' && (
                                 <ReferralSettingsTab config={config} setConfig={setConfig} />
-                            )
-                        }
-
-                        {
-                            activeTab === 'Engagement' && (
-                                <EngagementSettingsTab />
                             )
                         }
 

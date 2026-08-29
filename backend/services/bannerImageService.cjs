@@ -1,34 +1,34 @@
 // ─── Customer Portal Banner Image Service ────────────────────────────────────
 // Canonical preparation pipeline for the `customer_portal_banner` type.
 //
-// The customer portal renders banners in a responsive 4:1 area. Every banner
-// uploaded through the ERP must therefore be prepared as an exact 4:1 asset so
+// The customer portal renders banners in a responsive 3:1 area. Every banner
+// uploaded through the ERP must therefore be prepared as an exact 3:1 asset so
 // the portal never stretches or distorts an image.
 //
 // Pipeline (server-side, defense-in-depth — the ERP UI also validates and
-// offers an interactive 4:1 crop before uploading):
+// offers an interactive 3:1 crop before uploading):
 //   1. Validate payload (bytes, real image, allowed format)
 //   2. Normalize EXIF orientation
-//   3. Crop to an exact 4:1 region — positioned intelligently (content-energy
-//      analysis) when the source is not 4:1
-//   4. Resize to the recommended 1600 × 400 px (WebP) — exact 4:1, no stretch
+//   3. Crop to an exact 3:1 region — positioned intelligently (content-energy
+//      analysis) when the source is not 3:1
+//   4. Resize to the recommended 1500 × 500 px (WebP) — exact 3:1, no stretch
 //   5. Return the optimized buffer + metadata for the ad record
 
 const sharp = require('sharp');
 
 const BANNER_SPEC = {
   bannerType: 'customer_portal_banner',
-  targetRatio: 4,
-  recommendedWidth: 1600,
-  recommendedHeight: 400,
+  targetRatio: 3,
+  recommendedWidth: 1500,
+  recommendedHeight: 500,
   minWidth: 1200,
-  minHeight: 300,
+  minHeight: 400,
   maxBytes: 2 * 1024 * 1024, // ~2 MB for web delivery
   outputFormat: 'webp',
   outputQuality: 82,
   allowedFormats: ['webp', 'jpeg', 'png'],
-  // The ERP UI crops to exactly 4:1; anything within 2% of 4:1 is treated as
-  // conformant (covers rounding drift) and only normalized to exact 4:1.
+  // The ERP UI crops to exactly 3:1; anything within 2% of 3:1 is treated as
+  // conformant (covers rounding drift) and only normalized to exact 3:1.
   aspectTolerance: 0.02,
 };
 
@@ -41,7 +41,7 @@ class BannerImageError extends Error {
   }
 }
 
-/** Largest 4:1 region that fits inside a source without upscaling. */
+/** Largest 3:1 region that fits inside a source without upscaling. */
 function largestFourToOneRegion(width, height) {
   if (!width || !height) return null;
   const ratio = width / height;
@@ -60,7 +60,7 @@ function largestFourToOneRegion(width, height) {
  * The scan downscales to grayscale, computes per-line gradient energy (edges —
  * where logos, text and product shots live) and slides the crop window across
  * the line-energy array, picking the window that contains the most content.
- * Used as the intelligent fallback for non-4:1 uploads that bypass the UI crop.
+ * Used as the intelligent fallback for non-3:1 uploads that bypass the UI crop.
  *
  * @param {Buffer} inputBuffer original bytes (EXIF orientation applied inside)
  * @param {'x'|'y'} axis       'x' = window moves horizontally (cropping width)
@@ -164,12 +164,12 @@ async function processBannerImage(inputBuffer) {
   const srcW = needsSwap ? meta.height : meta.width;
   const srcH = needsSwap ? meta.width : meta.height;
 
-  // Minimum-size gate: even the largest possible 4:1 crop of this source must
+  // Minimum-size gate: even the largest possible 3:1 crop of this source must
   // meet the minimum acceptable banner dimensions.
   const region = largestFourToOneRegion(srcW, srcH);
   if (!region || region.width < spec.minWidth || region.height < spec.minHeight) {
     throw new BannerImageError(
-      `Image is too small — the minimum acceptable banner is ${spec.minWidth} × ${spec.minHeight} px (4:1).`,
+      `Image is too small — the minimum acceptable banner is ${spec.minWidth} × ${spec.minHeight} px (3:1).`,
       'IMAGE_TOO_SMALL'
     );
   }
@@ -195,7 +195,7 @@ async function processBannerImage(inputBuffer) {
     cropY = Math.max(0, Math.min(bestY, srcH - cropH));
   }
 
-  // Final asset: exact 4:1, exactly the recommended canvas (no upscaling
+  // Final asset: exact 3:1, exactly the recommended canvas (no upscaling
   // beyond the minimum acceptable source), WebP, metadata stripped.
   const outW = spec.recommendedWidth;
   const outH = spec.recommendedHeight;

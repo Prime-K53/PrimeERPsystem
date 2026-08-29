@@ -103,7 +103,7 @@ const QuotationRequestsHub: React.FC = () => {
 
   return (
     <GenericHub
-      title="Quotation Requests"
+      title="Requests"
       subtitle="Review customer requests, issue quotations, and convert accepted quotes into orders."
       options={options}
       accentColor="#146b60"

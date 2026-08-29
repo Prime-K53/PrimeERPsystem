@@ -73,13 +73,13 @@ export const ProfitAnalysisModal: React.FC<ProfitAnalysisModalProps> = ({ invoic
   }, [invoice, boms, inventory, workOrders]);
 
   return (
-    <div style={{
+    <div className="profit-analysis-modal-backdrop" style={{
       position: 'fixed', inset: 0, zIndex: 9999,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'rgba(15, 23, 42, 0.6)',
       padding: '40px 20px', fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink,
     }}>
-      <div style={{
+      <div className="profit-analysis-modal-panel" style={{
         width: 960, maxWidth: '100%', maxHeight: '92vh',
         background: paper, borderRadius: 14,
         boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
@@ -129,11 +129,11 @@ export const ProfitAnalysisModal: React.FC<ProfitAnalysisModalProps> = ({ invoic
           </button>
         </div>
 
-        <div style={{ padding: '24px 28px 8px', overflowY: 'auto', flex: 1 }}>
+        <div className="profit-analysis-modal-content" style={{ padding: '24px 28px 8px', overflowY: 'auto', flex: 1 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
             {/* KPI Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+            <div className="profit-analysis-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
               <div style={{ padding: 16, background: paper, borderRadius: 12, border: `1px solid ${hairline}`, borderLeft: `4px solid #3b82f6`, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                 <div style={{ padding: 8, borderRadius: 8, background: '#eff6ff', color: '#2563eb' }}>
                   <DollarSign size={18} />
@@ -180,7 +180,7 @@ export const ProfitAnalysisModal: React.FC<ProfitAnalysisModalProps> = ({ invoic
                   <ShieldCheck size={15} color={teal[600]} />
                   <h3 style={{ margin: 0, fontSize: 10, fontWeight: 800, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08 }}>Market Adjustment Audit (Snapshot)</h3>
                 </div>
-                <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                <div className="profit-analysis-snapshots" style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
                   {analysis.snapshots.map((adj, idx) => (
                     <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, background: teal[50], borderRadius: 8, border: `1px solid ${teal[100]}` }}>
                       <div>
