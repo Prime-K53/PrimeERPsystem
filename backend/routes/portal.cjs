@@ -1289,6 +1289,32 @@ router.delete('/support/tickets/:id/attachments/:attachmentId', async (req, res)
   }
 });
 
+// ─── Support Articles (FAQ) ─────────────────────────────────────────────────────
+// Returns a list of help articles for the customer portal FAQ section.
+// Currently returns an empty array; integrate a CMS or static content table to populate.
+router.get('/support/articles', async (req, res) => {
+  try {
+    const articles = await portalService.getSupportArticles();
+    res.json(articles);
+  } catch (err) {
+    console.error('[Portal] Support articles error:', err);
+    res.status(500).json({ error: 'Failed to load articles' });
+  }
+});
+
+router.get('/support/articles/:slug', async (req, res) => {
+  try {
+    const article = await portalService.getSupportArticle(req.params.slug);
+    if (!article) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    res.json(article);
+  } catch (err) {
+    console.error('[Portal] Support article error:', err);
+    res.status(500).json({ error: 'Failed to load article' });
+  }
+});
+
 // ─── Shipments / Tracking (customer-facing, read-only) ─────────────────────────
 // Today's in-flight deliveries (feeds the "Pending delivery today" banner).
 // Lightweight enough for the portal to poll while the dashboard stays cached.

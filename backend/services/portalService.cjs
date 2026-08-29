@@ -821,9 +821,24 @@ const portalService = {
     if (!invoice) return null;
     const invoiceCustomerId = invoice.customerId || invoice.customer_id || null;
     if (customerId && String(invoiceCustomerId) !== String(customerId)) return null;
-    invoice.line_items = invoice.items || parseJson(invoice.line_items_json, []);
+    let lineItems = null;
+    if (Array.isArray(invoice.items)) {
+      lineItems = invoice.items;
+    } else if (typeof invoice.items === 'string') {
+      lineItems = parseJson(invoice.items, null);
+    }
+    if (!lineItems) {
+      if (Array.isArray(invoice.line_items)) {
+        lineItems = invoice.line_items;
+      } else if (typeof invoice.line_items === 'string') {
+        lineItems = parseJson(invoice.line_items, null);
+      } else if (invoice.line_items_json) {
+        lineItems = parseJson(invoice.line_items_json, []);
+      }
+    }
+    invoice.line_items = Array.isArray(lineItems) ? lineItems : [];
+    invoice.items = invoice.line_items;
     delete invoice.line_items_json;
-    delete invoice.items;
     return invoice;
   },
 
@@ -1719,6 +1734,14 @@ const portalService = {
       }
 
       return result;
+  },
+
+  async getSupportArticles() {
+    return [];
+  },
+
+  async getSupportArticle(slug) {
+    return null;
   },
 
 };
