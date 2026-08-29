@@ -164,6 +164,9 @@ importers:
       dexie:
         specifier: ^4.0.10
         version: 4.4.3
+      es-toolkit:
+        specifier: ^1.47.1
+        version: 1.47.1
       fontkit:
         specifier: ^2.0.4
         version: 2.0.4
