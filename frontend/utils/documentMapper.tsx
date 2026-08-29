@@ -376,16 +376,46 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
         );
 
       default: // Invoice or Quotation
+        const getQty = (item: any) => {
+          const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
+          if (isQuickPhoto) {
+            const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+            const copies = item.serviceDetails.copies || item.quantity || 1;
+            return Math.ceil(pages / 2) * copies;
+          }
+          return item.quantity;
+        };
+        const getDesc = (item: any) => {
+          const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
+          if (isQuickPhoto) {
+            const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+            const copies = item.serviceDetails.copies || item.quantity || 1;
+            const sheets = Math.ceil(pages / 2) * copies;
+            const unitPrice = sheets > 0 ? item.price / sheets : item.price;
+            return `${item.name} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+          }
+          return item.name;
+        };
         const columns = options.showPrices
           ? [
-            { header: 'Qty', accessor: 'quantity', align: 'center' as const },
-            { header: 'Description', accessor: 'name', wrapSafe: true },
-            { header: 'Price', accessor: 'unitPrice', isCurrency: true },
+            { header: 'Qty', accessor: 'quantity', align: 'center' as const, render: (_: any, item: any) => getQty(item) },
+            { header: 'Description', accessor: 'name', wrapSafe: true, render: (_: any, item: any) => getDesc(item) },
+            { header: 'Price', accessor: 'unitPrice', isCurrency: true, render: (val: number, item: any) => {
+              const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
+              if (isQuickPhoto) {
+                const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+                const copies = item.serviceDetails.copies || item.quantity || 1;
+                const sheets = Math.ceil(pages / 2) * copies;
+                const unitPrice = sheets > 0 ? item.price / sheets : item.price;
+                return `${currency}${unitPrice.toFixed(2)}`;
+              }
+              return `${currencySymbol}${Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+            }},
             { header: 'Total', accessor: 'total', isCurrency: true }
           ]
           : [
-            { header: 'Qty', accessor: 'quantity', align: 'center' as const },
-            { header: 'Description', accessor: 'name', wrapSafe: true }
+            { header: 'Qty', accessor: 'quantity', align: 'center' as const, render: (_: any, item: any) => getQty(item) },
+            { header: 'Description', accessor: 'name', wrapSafe: true, render: (_: any, item: any) => getDesc(item) }
           ];
 
         return (

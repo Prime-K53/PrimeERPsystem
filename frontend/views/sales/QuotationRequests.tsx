@@ -4,7 +4,7 @@ import {
   CheckCircle2, XCircle, FileText, RefreshCw, Loader2, MessageSquare,
   PackageCheck, Inbox, History, ChevronDown, ArrowUpRight, History as HistoryIcon,
   BadgeCheck, Send, Flag, Trash2, HandCoins, MoreVertical, Eye, Download, Edit2, Plus,
-  Clock, Wallet, Ban, X, FileCheck, BellOff,
+  Clock, Wallet, Ban, X, FileCheck, BellOff, Users, ChevronRight, Calendar,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { formatDateTime, formatDate } from '../../utils/formatters';
@@ -34,6 +34,8 @@ const REQUEST_TABS = [
   { key: 'quotations', label: 'Quotations', icon: FileText, statuses: [] },
   { key: 'orders', label: 'Orders', icon: PackageCheck, statuses: [] },
   { key: 'payments', label: 'Payment Requests', icon: HandCoins, statuses: [] },
+  { key: 'assignments', label: 'Staff Assignments', icon: Users, statuses: [] },
+  { key: 'timeline', label: 'Timeline', icon: Clock, statuses: [] },
   { key: 'history', label: 'History', icon: History, statuses: ['rejected', 'cancelled', 'converted'] },
 ] as const;
 
@@ -450,6 +452,8 @@ const QuotationRequests: React.FC = () => {
     quotations: { title: 'Quotations', desc: 'Review official quotations, track versions, signatures, and conversions.' },
     orders: { title: 'Orders', desc: 'Manage sales orders, track fulfillment status, and advance production milestones.' },
     payments: { title: 'Payment Requests', desc: 'Manage bank-transfer payment intents linked to requests and orders.' },
+    assignments: { title: 'Staff Assignments', desc: 'View and manage requests grouped by assigned salesperson.' },
+    timeline: { title: 'Timeline', desc: 'View all requests chronologically with status tracking.' },
     history: { title: 'History', desc: 'Audit trail of rejected, cancelled, and converted requests.' },
   };
   const activeTabMeta = tabMeta[tab] || tabMeta.inbox;
@@ -835,6 +839,8 @@ const QuotationRequests: React.FC = () => {
               : t.key === 'quotations' ? requests.filter((r) => INBOX_STATUSES.includes(r.status) && r.request_type !== 'order').length
               : t.key === 'orders' ? requests.filter((r) => INBOX_STATUSES.includes(r.status) && r.request_type === 'order').length
               : t.key === 'payments' ? paymentCount
+              : t.key === 'assignments' ? requests.filter((r) => INBOX_STATUSES.includes(r.status) && r.assigned_to).length
+              : t.key === 'timeline' ? requests.length
               : requests.filter((r) => r.status === 'rejected' || r.status === 'cancelled' || r.status === 'converted').length;
             return (
               <button key={t.key} onClick={() => setTab(t.key)} style={chipStyle(tab === t.key)}>
@@ -876,32 +882,35 @@ const QuotationRequests: React.FC = () => {
         />
       )}
       {tab === 'payments' && <PaymentRequests embedded onCountChange={setPaymentCount} onStatsChange={setPaymentStats} />}
-      {(tab === 'quotations' || tab === 'orders') && (
-        <QuotationRequestList
-          data={activeRequests}
-          viewMode="List"
+      {tab === 'quotations' && (
+        <QuotationPanel
+          quotations={quotations}
+          busy={busy}
+          onAction={(key, fn) => action(key, fn)}
+          cardStyle={cardStyle}
+          inputStyle={inputStyle}
+          btnPrimary={btnPrimary}
+          btnGhost={btnGhost}
           customerNameMap={customerNameMap}
-          onView={(r) => setSelectedRequest(r)}
-          onEdit={(r) => setSelectedRequest(r)}
-          onDelete={(id) => {
-            if (window.confirm('Delete this request?')) {
-              action(`delete_${id}`, () => adminLifecycle.requests.remove(id));
-            }
+          onDelete={async (id) => {
+            if (!window.confirm('Permanently delete this quotation? This cannot be undone.')) return;
+            await action(`del_quote_${id}`, () => adminLifecycle.quotations.remove(id));
+            loadAll();
           }}
-          onAction={(r, act) => {
-            if (act === 'generate_quote') {
-              startQuoteFlow(r);
-            } else if (act === 'generate_order') {
-              startOrderFlow(r);
-            } else if (act === 'reject') {
-              openRejectDialog(r.id, r.request_number);
-            } else if (act === 'view_quotation') {
-              const q = quotations.find(q => q.id === r.quotation_id);
-              if (q) setSelectedQuotation(q);
-            } else if (act === 'view_order') {
-              const o = orders.find(o => o.id === r.sales_order_id);
-              if (o) setSelectedOrder(o);
-            }
+        />
+      )}
+      {tab === 'orders' && (
+        <OrdersPanel
+          orders={orders}
+          busy={busy}
+          onAction={(key, fn) => action(key, fn)}
+          cardStyle={cardStyle}
+          inputStyle={inputStyle}
+          btnGhost={btnGhost}
+          onDelete={async (id) => {
+            if (!window.confirm('Permanently delete this order? This cannot be undone.')) return;
+            await action(`del_order_${id}`, () => adminLifecycle.orders.remove(id));
+            loadAll();
           }}
         />
       )}
@@ -946,6 +955,25 @@ const QuotationRequests: React.FC = () => {
             </tbody>
           </table>
         </div>
+      )}
+
+      {tab === 'assignments' && (
+        <AssignmentsPanel
+          requests={requests.filter((r) => INBOX_STATUSES.includes(r.status))}
+          staff={staff}
+          staffNameMap={staffNameMap}
+          onAssign={(id, salesId, salesName) => action(`assign_${id}`, () => adminLifecycle.requests.assign(id, { assignTo: salesId, assignToName: salesName }))}
+          onView={(r) => setSelectedRequest(r)}
+          busy={busy}
+        />
+      )}
+
+      {tab === 'timeline' && (
+        <TimelinePanel
+          requests={requests}
+          customerNameMap={customerNameMap}
+          onView={(r) => setSelectedRequest(r)}
+        />
       )}
 
       {menuState && menuState.type === 'request' && (
@@ -1117,6 +1145,17 @@ const QuotationRequests: React.FC = () => {
               {selectedQuotation.status === 'accepted' && (
                 <button onClick={() => { action(`convert_${selectedQuotation.id}`, () => adminLifecycle.quotations.convertToOrder(selectedQuotation.id, {})); setSelectedQuotation(null); }} style={{ ...btnPrimary, padding: '8px 14px', fontSize: 12 }}><ArrowUpRight size={14} /> Convert to Order</button>
               )}
+              {(selectedQuotation.status === 'expired' || selectedQuotation.status === 'rejected') && (
+                <button
+                  onClick={() => {
+                    if (!window.confirm(`Permanently delete quotation ${selectedQuotation.quotation_number}? This cannot be undone.`)) return;
+                    action(`del_quote_${selectedQuotation.id}`, () => adminLifecycle.quotations.remove(selectedQuotation.id)).then(() => setSelectedQuotation(null));
+                  }}
+                  style={{ ...btnGhost, padding: '8px 14px', fontSize: 12, color: '#b91c1c', borderColor: '#fecaca' }}
+                >
+                  <Trash2 size={14} /> Permanently Delete
+                </button>
+              )}
               <button onClick={() => setSelectedQuotation(null)} style={{ ...btnGhost, padding: '8px 14px', fontSize: 12 }}>Close</button>
             </div>
           </div>
@@ -1168,6 +1207,17 @@ const QuotationRequests: React.FC = () => {
               <p style={{ fontSize: 12.5, color: inkSoft, marginBottom: 14 }}><b>From request:</b> {selectedOrder.source_request_number}</p>
             )}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {selectedOrder.status === 'Cancelled' && (
+                <button
+                  onClick={() => {
+                    if (!window.confirm(`Permanently delete order ${selectedOrder.order_number}? This cannot be undone.`)) return;
+                    action(`del_order_${selectedOrder.id}`, () => adminLifecycle.orders.remove(selectedOrder.id)).then(() => setSelectedOrder(null));
+                  }}
+                  style={{ ...btnGhost, padding: '8px 14px', fontSize: 12, color: '#b91c1c', borderColor: '#fecaca' }}
+                >
+                  <Trash2 size={14} /> Permanently Delete
+                </button>
+              )}
               <button onClick={() => setSelectedOrder(null)} style={{ ...btnGhost, padding: '8px 14px', fontSize: 12 }}>Close</button>
             </div>
           </div>
@@ -1564,9 +1614,10 @@ interface QuotePanelProps {
   btnPrimary: React.CSSProperties;
   btnGhost: React.CSSProperties;
   customerNameMap: Record<string, string>;
+  onDelete: (id: string) => void;
 }
 
-const QuotationPanel: React.FC<QuotePanelProps> = ({ quotations, busy, onAction, cardStyle, inputStyle, btnPrimary, btnGhost, customerNameMap }) => {
+const QuotationPanel: React.FC<QuotePanelProps> = ({ quotations, busy, onAction, cardStyle, inputStyle, btnPrimary, btnGhost, customerNameMap, onDelete }) => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [regenerateForm, setRegenerateForm] = useState<Record<string, any>>({});
   const [conversion, setConversion] = useState<Record<string, { deliveryDate: string; notes: string }>>({});
@@ -1819,6 +1870,27 @@ const QuotationPanel: React.FC<QuotePanelProps> = ({ quotations, busy, onAction,
                 )}
 
                 <AdminDiscussion docType="quotation" docId={q.id} customerId={q.customer_id} busy={busy} onAction={onAction} cardStyle={cardStyle} inputStyle={inputStyle} btnGhost={btnGhost} />
+
+                {(q.status === 'expired' || q.status === 'rejected') && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                    <button
+                      onClick={() => onDelete(q.id)}
+                      disabled={busy === `del_quote_${q.id}`}
+                      style={{
+                        padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                        fontSize: 12, fontWeight: 700, border: 'none',
+                        background: '#fef2f2', color: '#b91c1c',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        opacity: busy === `del_quote_${q.id}` ? 0.5 : 1,
+                        transition: 'all .15s ease',
+                      }}
+                      onMouseEnter={e => { if (busy !== `del_quote_${q.id}`) { e.currentTarget.style.background = '#fee2e2'; } }}
+                      onMouseLeave={e => { e.currentTarget.style.background = '#fef2f2'; }}
+                    >
+                      {busy === `del_quote_${q.id}` ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Permanently Delete
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1962,9 +2034,10 @@ interface OrdersPanelProps {
   cardStyle: React.CSSProperties;
   inputStyle: React.CSSProperties;
   btnGhost: React.CSSProperties;
+  onDelete: (id: string) => void;
 }
 
-const OrdersPanel: React.FC<OrdersPanelProps> = ({ orders, busy, onAction, cardStyle, inputStyle, btnGhost }) => {
+const OrdersPanel: React.FC<OrdersPanelProps> = ({ orders, busy, onAction, cardStyle, inputStyle, btnGhost, onDelete }) => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [statusForm, setStatusForm] = useState<Record<string, { status: string; note: string }>>({});
 
@@ -2069,6 +2142,27 @@ const OrdersPanel: React.FC<OrdersPanelProps> = ({ orders, busy, onAction, cardS
                       </button>
                     </>
                   )}
+
+                  {(o.status === 'Cancelled') && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                      <button
+                        onClick={() => onDelete(o.id)}
+                        disabled={busy === `del_order_${o.id}`}
+                        style={{
+                          padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                          fontSize: 12, fontWeight: 700, border: 'none',
+                          background: '#fef2f2', color: '#b91c1c',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          opacity: busy === `del_order_${o.id}` ? 0.5 : 1,
+                          transition: 'all .15s ease',
+                        }}
+                        onMouseEnter={e => { if (busy !== `del_order_${o.id}`) { e.currentTarget.style.background = '#fee2e2'; } }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '#fef2f2'; }}
+                      >
+                        {busy === `del_order_${o.id}` ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Permanently Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -2169,6 +2263,317 @@ const VersionHistoryOverlay: React.FC<VersionOverlayProps> = ({ open, onClose, v
             })
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+/* ─── Staff Assignments Panel ─────────────────────────────────── */
+
+interface AssignmentsPanelProps {
+  requests: AdminQuotationRequest[];
+  staff: { id: string; username: string }[];
+  staffNameMap: Record<string, string>;
+  onAssign: (id: string, salesId: string, salesName: string) => void;
+  onView: (r: AdminQuotationRequest) => void;
+  busy: string | null;
+}
+
+const AssignmentsPanel: React.FC<AssignmentsPanelProps> = ({ requests, staff, staffNameMap, onAssign, onView, busy }) => {
+  const [expandedStaff, setExpandedStaff] = useState<string | null>(null);
+  const [assignSelect, setAssignSelect] = useState<Record<string, string>>({});
+  const [showUnassigned, setShowUnassigned] = useState(false);
+
+  const assigned = useMemo(() => {
+    const map: Record<string, AdminQuotationRequest[]> = {};
+    for (const r of requests) {
+      if (r.assigned_to) {
+        if (!map[r.assigned_to]) map[r.assigned_to] = [];
+        map[r.assigned_to].push(r);
+      }
+    }
+    return map;
+  }, [requests]);
+
+  const unassigned = useMemo(() => requests.filter((r) => !r.assigned_to), [requests]);
+
+  const totalAssigned = Object.values(assigned).reduce((s, arr) => s + arr.length, 0);
+
+  if (requests.length === 0) {
+    return (
+      <div style={{ background: paper, borderRadius: 14, border: `1px solid ${hairline}`, padding: 40, textAlign: 'center' }}>
+        <Users size={32} style={{ color: inkSoft, margin: '0 auto 12px' }} />
+        <p style={{ fontSize: 13, color: inkSoft, margin: 0 }}>No requests to assign.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <button
+          onClick={() => setShowUnassigned(false)}
+          style={{
+            padding: '7px 16px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+            background: !showUnassigned ? teal[500] : '#eef1f4', color: !showUnassigned ? '#fff' : '#475569',
+            border: 'none', transition: 'all .15s ease',
+          }}
+        >
+          <Users size={13} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+          Assigned ({totalAssigned})
+        </button>
+        <button
+          onClick={() => setShowUnassigned(true)}
+          style={{
+            padding: '7px 16px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+            background: showUnassigned ? amber[500] : '#eef1f4', color: showUnassigned ? '#fff' : '#475569',
+            border: 'none', transition: 'all .15s ease',
+          }}
+        >
+          <Clock size={13} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+          Unassigned ({unassigned.length})
+        </button>
+      </div>
+
+      {showUnassigned ? (
+        <div style={{ background: paper, borderRadius: 14, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', background: amber[100], borderBottom: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Clock size={14} style={{ color: amber[600] }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: amber[600] }}>Unassigned Requests — needs attention</span>
+          </div>
+          {unassigned.length === 0 ? (
+            <p style={{ padding: 24, textAlign: 'center', fontSize: 13, color: inkSoft }}>All requests are assigned.</p>
+          ) : (
+            <div>
+              {unassigned.map((r) => (
+                <AssignmentRow
+                  key={r.id}
+                  r={r}
+                  staff={staff}
+                  assignSelect={assignSelect}
+                  setAssignSelect={setAssignSelect}
+                  onAssign={onAssign}
+                  onView={onView}
+                  busy={busy}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {Object.entries(assigned).map(([staffId, reqs]) => {
+            const staffMember = staff.find((s) => s.id === staffId);
+            const staffName = staffNameMap[staffId] || staffMember?.username || staffId;
+            const expanded = expandedStaff === staffId;
+            const sub = reqs.reduce((s, r) => s + Number(r.subtotal || 0), 0);
+            return (
+              <div key={staffId} style={{ background: paper, borderRadius: 14, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
+                <div
+                  onClick={() => setExpandedStaff(expanded ? null : staffId)}
+                  style={{
+                    padding: '14px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', gap: 14, background: teal[50],
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>{staffName.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: ink }}>{staffName}</p>
+                      <p style={{ margin: 0, fontSize: 11, color: inkSoft }}>{reqs.length} request{reqs.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 14, color: teal[700] }}>
+                      K {sub.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                    <ChevronRight size={16} style={{ color: inkSoft, transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform .2s' }} />
+                  </div>
+                </div>
+                {expanded && (
+                  <div>
+                    {reqs.map((r) => (
+                      <AssignmentRow
+                        key={r.id}
+                        r={r}
+                        staff={staff}
+                        assignSelect={assignSelect}
+                        setAssignSelect={setAssignSelect}
+                        onAssign={onAssign}
+                        onView={onView}
+                        busy={busy}
+                        compact
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AssignmentRow: React.FC<{
+  r: AdminQuotationRequest;
+  staff: { id: string; username: string }[];
+  assignSelect: Record<string, string>;
+  setAssignSelect: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  onAssign: (id: string, salesId: string, salesName: string) => void;
+  onView: (r: AdminQuotationRequest) => void;
+  busy: string | null;
+  compact?: boolean;
+}> = ({ r, staff, assignSelect, setAssignSelect, onAssign, onView, busy, compact }) => {
+  const meta = requestStatusMeta[r.status] || { label: r.status, color: '#475569', bg: '#f8fafc' };
+  const sub = r.items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px',
+      borderTop: `1px solid ${hairline}`, flexWrap: 'wrap',
+    }}>
+      {!compact && (
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <MessageSquare size={16} style={{ color: teal[600] }} />
+        </div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 12 }}>{r.request_number}</span>
+          <span style={{ fontSize: 11, color: inkSoft }}>{r.customer_name || 'Unknown'}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 999, background: meta.bg, color: meta.color }}>{meta.label}</span>
+        </div>
+        {compact && <span style={{ fontSize: 11, color: inkSoft }}>{r.customer_name || 'Unknown'}</span>}
+      </div>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 13, color: ink }}>
+        K {sub.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+      </span>
+      <select
+        value={assignSelect[r.id] || r.assigned_to || ''}
+        onChange={(e) => setAssignSelect((prev) => ({ ...prev, [r.id]: e.target.value }))}
+        style={{ ...selectStyle, flex: '0 0 160px', fontSize: 12 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <option value="">Reassign...</option>
+        {staff.map((s) => (
+          <option key={s.id} value={s.id}>{s.username}</option>
+        ))}
+      </select>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          const salesId = assignSelect[r.id];
+          if (!salesId) return;
+          const salesName = staff.find((s) => s.id === salesId)?.username || salesId;
+          onAssign(r.id, salesId, salesName);
+          setAssignSelect((prev) => { const n = { ...prev }; delete n[r.id]; return n; });
+        }}
+        disabled={!assignSelect[r.id] || busy === `assign_${r.id}`}
+        style={{
+          padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+          fontSize: 11, fontWeight: 700, border: 'none',
+          background: assignSelect[r.id] ? teal[500] : '#eef1f4',
+          color: assignSelect[r.id] ? '#fff' : '#94a3b8',
+          opacity: !assignSelect[r.id] || busy === `assign_${r.id}` ? 0.5 : 1,
+        }}
+      >
+        {busy === `assign_${r.id}` ? <Loader2 size={12} className="animate-spin" /> : 'Assign'}
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onView(r); }}
+        style={{ padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 600, border: `1px solid ${hairline}`, background: paper, color: inkSoft }}
+        title="View request"
+      >
+        <Eye size={13} />
+      </button>
+    </div>
+  );
+};
+
+/* ─── Timeline Panel ─────────────────────────────────────────── */
+
+interface TimelinePanelProps {
+  requests: AdminQuotationRequest[];
+  customerNameMap: Record<string, string>;
+  onView: (r: AdminQuotationRequest) => void;
+}
+
+const TimelinePanel: React.FC<TimelinePanelProps> = ({ requests, customerNameMap, onView }) => {
+  const sorted = useMemo(() =>
+    [...requests].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+    [requests]
+  );
+
+  if (requests.length === 0) {
+    return (
+      <div style={{ background: paper, borderRadius: 14, border: `1px solid ${hairline}`, padding: 40, textAlign: 'center' }}>
+        <Calendar size={32} style={{ color: inkSoft, margin: '0 auto 12px' }} />
+        <p style={{ fontSize: 13, color: inkSoft, margin: 0 }}>No requests to display.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: paper, borderRadius: 14, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 18px', background: teal[50], borderBottom: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Calendar size={14} style={{ color: teal[600] }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: teal[700] }}>Request Timeline — chronological view</span>
+      </div>
+      <div style={{ position: 'relative', padding: '0 0 0 36px' }}>
+        {sorted.map((r, idx) => {
+          const meta = requestStatusMeta[r.status] || { label: r.status, color: '#475569', bg: '#f8fafc' };
+          const isLast = idx === sorted.length - 1;
+          const subtotal = r.items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+          return (
+            <div key={r.id} style={{ position: 'relative', padding: '0 18px 0 0' }}>
+              <div style={{
+                position: 'absolute', left: -30, top: 18,
+                width: 12, height: 12, borderRadius: '50%',
+                background: meta.color, border: `2px solid ${paper}`,
+                boxShadow: `0 0 0 2px ${meta.color}`,
+                zIndex: 1,
+              }} />
+              {!isLast && (
+                <div style={{
+                  position: 'absolute', left: -24, top: 32,
+                  width: 2, bottom: 0,
+                  background: hairline,
+                }} />
+              )}
+              <div
+                onClick={() => onView(r)}
+                style={{
+                  marginBottom: 16, padding: '14px 16px', borderRadius: 12,
+                  background: idx % 2 === 0 ? '#fafaf8' : paper,
+                  border: `1px solid ${hairline}`, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+                  transition: 'box-shadow .15s ease',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 8px rgba(0,0,0,.08)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 12 }}>{r.request_number}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 999, background: meta.bg, color: meta.color }}>{meta.label}</span>
+                    <span style={{ fontSize: 11, color: inkSoft }}>{r.request_type || 'quotation'}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 12, color: inkSoft }}>
+                    {customerNameMap[r.customer_id] || r.customer_name || 'Unknown Customer'} • {formatDate(r.created_at)}
+                    {r.assigned_to ? ` • Assigned: ${r.assigned_to}` : ''}
+                  </p>
+                </div>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 14, color: teal[700] }}>
+                  K {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+                <ChevronRight size={14} style={{ color: inkSoft }} />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

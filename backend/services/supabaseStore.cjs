@@ -116,15 +116,46 @@ async function getCustomer(customerId) {
 
 // ─── Invoices ───────────────────────────────────────────────────────────
 
+function resolveStoreItemName(x) {
+  if (!x) return '';
+  const candidates = [
+    x.description,
+    x.desc,
+    x.item_description,
+    x.itemDescription,
+    x.item_name,
+    x.itemName,
+    x.name,
+    x.productName,
+    x.product_name,
+    x.title,
+    x.label,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return c.trim();
+    }
+  }
+  return '';
+}
+
 function mapInvoiceLineItems(items) {
   if (!Array.isArray(items)) return [];
   return items.map((it) => {
     const x = it || {};
+    const resolvedName = resolveStoreItemName(x);
+    const qty = num(x.quantity ?? x.qty);
+    const unitPrice = num(x.unitPrice ?? x.unit_price ?? x.price ?? x.selling_price);
+    const lineTotal = num(x.subtotal ?? x.lineTotalNet ?? x.line_total ?? x.subTotal ?? x.total ?? (qty * unitPrice));
     return {
-      item_name: x.productName || x.itemName || x.name || x.desc || x.description || '',
-      quantity: num(x.quantity),
-      unit_price: num(x.unitPrice ?? x.unit_price ?? x.price ?? x.selling_price),
-      line_total: num(x.subtotal ?? x.lineTotalNet ?? x.line_total ?? x.subTotal ?? x.price * x.quantity),
+      ...x,
+      item_name: resolvedName || x.item_name || x.name || x.productName || 'Item',
+      name: resolvedName || x.name || x.productName || 'Item',
+      productName: resolvedName || x.productName || x.name || 'Item',
+      description: resolvedName || x.description || '',
+      quantity: qty,
+      unit_price: unitPrice,
+      line_total: lineTotal,
     };
   });
 }
@@ -147,6 +178,9 @@ function mapInvoice(row) {
     notes: d.notes || null,
     document_title: d.documentTitle || null,
     line_items: mapInvoiceLineItems(d.items || d.line_items),
+    items: mapInvoiceLineItems(d.items || d.line_items),
+    paymentTerms: d.paymentTerms || d.payment_terms || null,
+    payment_terms: d.paymentTerms || d.payment_terms || null,
     _customerId: d.customerId || null,
   };
 }

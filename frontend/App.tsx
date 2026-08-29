@@ -887,6 +887,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/sales-flow/leads" element={<ProtectedRoute permission="sales.view"><LeadBoard /></ProtectedRoute>} />
                   <Route path="/sales-flow/sales-orders" element={<ProtectedRoute permission="sales.view"><SalesOrdersView /></ProtectedRoute>} />
                   <Route path="/sales-flow/job-tickets" element={<ProtectedRoute permission="sales.view"><JobTickets /></ProtectedRoute>} />
+                  <Route path="/sales-flow/referral-rewards" element={<ProtectedRoute permission="sales.view"><Referrals /></ProtectedRoute>} />
                   <Route path="/sales-flow/tasks" element={<Tasks />} />
                   <Route path="/sales-flow/customers" element={<Navigate to="/sales-flow/clients" replace />} />
                   <Route path="/sales-flow/clients" element={<ProtectedRoute permission="sales.view"><Clients /></ProtectedRoute>} />

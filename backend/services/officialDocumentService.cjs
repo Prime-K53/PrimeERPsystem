@@ -60,11 +60,11 @@ async function getCompanyConfig() {
     if (!row) {
       const allSettings = await repo.getAll('settings');
       row = (allSettings || []).find(
-        (s) => s.key === 'companyConfig' || s.key === 'nexus_company_config' || s.id === 'companyConfig'
+        (s) => s.key === 'companyConfig' || s.key === 'nexus_company_config' || s.id === 'companyConfig' || s.id === 'nexus_company_config'
       );
     }
     if (row) {
-      const val = row.value ?? row.val ?? row.data?.value ?? row;
+      const val = row.value ?? row.val ?? row.data?.value ?? row.data ?? row;
       config = typeof val === 'string' ? JSON.parse(val) : val;
     }
   } catch (_) { /* branding is best-effort */ }
@@ -91,13 +91,25 @@ async function getCompanyConfig() {
   };
 
   if (!config) return defaultConfig;
+  const companyName = config.companyName || config.name || defaultConfig.companyName;
+  const companyAddress = config.companyAddress || config.addressLine1 || config.address || defaultConfig.companyAddress;
+  const companyPhone = config.companyPhone || config.phone || defaultConfig.companyPhone;
+  const companyEmail = config.companyEmail || config.email || defaultConfig.companyEmail;
+  const companyLogo = config.companyLogo || config.logo || config.logoUrl || null;
+
   return {
     ...defaultConfig,
     ...config,
-    companyName: config.companyName || config.name || defaultConfig.companyName,
-    companyAddress: config.companyAddress || config.address || defaultConfig.companyAddress,
-    companyPhone: config.companyPhone || config.phone || defaultConfig.companyPhone,
-    companyEmail: config.companyEmail || config.email || defaultConfig.companyEmail,
+    companyName,
+    companyAddress,
+    addressLine1: companyAddress,
+    companyPhone,
+    phone: companyPhone,
+    companyEmail,
+    email: companyEmail,
+    companyLogo,
+    logo: companyLogo,
+    logoUrl: companyLogo,
     invoiceTemplates: {
       ...defaultConfig.invoiceTemplates,
       ...(config.invoiceTemplates || {}),
@@ -105,6 +117,33 @@ async function getCompanyConfig() {
       showAccountSummary: config.invoiceTemplates?.showAccountSummary !== false,
     },
   };
+}
+
+/**
+ * Helper to resolve the authoritative line item description from an ERP line item object.
+ * Checks historical line description first, then item/product master names, ignoring empty/whitespace strings.
+ */
+function resolveItemDescription(it) {
+  if (!it) return 'Item';
+  const candidates = [
+    it.description,
+    it.desc,
+    it.item_description,
+    it.itemDescription,
+    it.item_name,
+    it.itemName,
+    it.name,
+    it.productName,
+    it.product_name,
+    it.title,
+    it.label,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return 'Item';
 }
 
 /**
@@ -128,6 +167,12 @@ function normalizeRecordForRenderer(raw) {
     record.due_date = dueDate;
   }
 
+  const paymentTerms = record.paymentTerms || record.payment_terms || record.terms;
+  if (paymentTerms) {
+    record.paymentTerms = paymentTerms;
+    record.payment_terms = paymentTerms;
+  }
+
   let items = Array.isArray(record.items) ? record.items : null;
   if (!items) {
     for (const key of ['line_items', 'lineItems', 'items_json']) {
@@ -143,22 +188,22 @@ function normalizeRecordForRenderer(raw) {
   }
   if (!items) items = [];
   record.items = items.map((it) => {
-    const description = String(
-      it?.desc || it?.description || it?.name || it?.productName || it?.product_name || it?.item_description || it?.itemDescription || 'Item'
-    );
+    const description = resolveItemDescription(it);
     const quantity = Number(it?.quantity ?? it?.qty ?? 0) || 0;
-    const price = Number(it?.price ?? it?.unitPrice ?? it?.unit_price ?? 0) || 0;
+    const price = Number(it?.price ?? it?.unitPrice ?? it?.unit_price ?? it?.selling_price ?? 0) || 0;
+    const total = Number(it?.total ?? it?.lineTotal ?? it?.line_total ?? it?.subtotal ?? it?.totalAmount ?? (quantity * price)) || 0;
     return {
       ...it,
       desc: description,
       description,
       name: it?.name || description,
       productName: it?.productName || description,
+      item_name: it?.item_name || description,
       quantity,
       qty: quantity,
       price,
       unitPrice: price,
-      total: Number(it?.total ?? it?.lineTotal ?? it?.line_total ?? quantity * price) || 0,
+      total,
     };
   });
   return record;
@@ -203,6 +248,7 @@ module.exports = {
   loadRenderer,
   isRendererAvailable,
   getCompanyConfig,
+  normalizeRecordForRenderer,
   renderOfficialPdf,
   buildContentDisposition,
 };

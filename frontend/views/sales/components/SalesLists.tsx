@@ -395,8 +395,12 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
 
                 <div className="my-1 border-t border-[#e4ddd1]"></div>
                 <button onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(order, 'cancel_order'); }} className="w-full text-left px-4 py-2 text-xs font-bold text-[#b97e2b] hover:bg-[#fbead0] flex items-center gap-3 transition-colors"><XCircle size={14} /> Cancel Order</button>
-                <div className="my-1 border-t border-[#e4ddd1]"></div>
-                <button onClick={() => { setOpenMenuId(null); props.onDelete(order.id); }} className="w-full text-left px-4 py-2 text-xs text-[#b5493f] hover:bg-[#f5f2ed] flex items-center gap-3 transition-colors"><Trash2 size={14} /> Delete</button>
+                {order.status === 'Cancelled' && (
+                    <>
+                        <div className="my-1 border-t border-[#e4ddd1]"></div>
+                        <button onClick={() => { setOpenMenuId(null); props.onDelete(order.id); }} className="w-full text-left px-4 py-2 text-xs text-[#b5493f] hover:bg-[#f5f2ed] flex items-center gap-3 transition-colors"><Trash2 size={14} /> Permanently Delete</button>
+                    </>
+                )}
             </div>
         );
     };

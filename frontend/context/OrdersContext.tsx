@@ -19,6 +19,7 @@ interface OrdersContextType {
   updateOrderStatus: (id: string, status: Order['status']) => Promise<void>;
   recordPayment: (orderId: string, payment: Partial<OrderPayment>) => Promise<void>;
   cancelOrder: (id: string, reason: string) => Promise<void>;
+  deleteSalesOrder: (id: string) => Promise<void>;
   getOrderById: (id: string) => Order | undefined;
   convertQuotationToOrder: (quotation: Quotation) => Promise<string>;
 }
@@ -316,6 +317,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       updateOrderStatus: handleUpdateStatus,
       recordPayment: handleRecordPayment,
       cancelOrder: handleCancelOrder,
+      deleteSalesOrder: store.deleteSalesOrder,
       getOrderById,
       convertQuotationToOrder: handleConvertQuotationToOrder
     }}>

@@ -486,6 +486,9 @@ export const adminLifecycle = {
     updateStatus(id: string, body: { status: string; note?: string }): Promise<{ id: string; status: string; orderNumber: string | null }> {
       return adminPortalApi.post<{ id: string; status: string; orderNumber: string | null }>(`/orders/${id}/status`, body);
     },
+    remove(id: string): Promise<{ id: string; status: string; deleted: boolean }> {
+      return adminPortalApi.delete<{ id: string; status: string; deleted: boolean }>(`/orders/${id}`);
+    },
   },
   quotations: {
     list(): Promise<AdminQuotation[]> {
@@ -499,6 +502,9 @@ export const adminLifecycle = {
     },
     convertToOrder(id: string, body: { deliveryDate?: string; notes?: string }): Promise<any> {
       return adminPortalApi.post<any>(`/quotations/${id}/convert-to-order`, body);
+    },
+    remove(id: string): Promise<{ id: string; status: string; deleted: boolean }> {
+      return adminPortalApi.delete<{ id: string; status: string; deleted: boolean }>(`/quotations/${id}`);
     },
     versions: {
       list(id: string): Promise<AdminDocumentVersion[]> {

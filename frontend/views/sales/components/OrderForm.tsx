@@ -21,7 +21,7 @@ import { Loader2 } from 'lucide-react';
 import QuickPrintModal from '../../../components/QuickPrintModal';
 import { calculateSellingPrice, calculateServicePrice } from '../../../utils/pricing/pricingEngine';
 import { getPlaceholder } from '../../../constants/placeholders';
-import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage } from '../../../utils/pricing';
+import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../../../utils/pricing';
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
 import { displayPrice } from '../../../services/pricingDisplayService';
 import { resolveCustomerPrice, getApplicableDiscounts, applyDiscounts, incrementDiscountUsage, getCustomerPricingTier } from '../../../services/customerPricingService';
@@ -2523,7 +2523,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                         </td>
                                                         <td data-label="Qty" className="px-2 py-1 text-center text-sm text-slate-800">
                                                             {item.id?.startsWith('QUICK-')
-                                                                ? `${item.serviceDetails?.pages || item.pages || 0} pages`
+                                                                ? (() => { const pages = item.serviceDetails?.pages || item.pagesOverride || 1; const copies = item.serviceDetails?.copies || 1; const sheets = Math.ceil(pages / 2) * copies; return `${sheets} ${sheets === 1 ? 'sheet' : 'sheets'}`; })()
                                                                 : <input
                                                                     type="number"
                                                                     min={1}
@@ -2777,12 +2777,14 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                         open={quickPrintModal.open}
                         onClose={() => setQuickPrintModal({ open: false, type: 'photocopy' })}
                         type={quickPrintModal.type}
-                        pricePerPage={quickPrintModal.type === 'photocopy' 
+                        pricePerPage={quickPrintModal.type === 'photocopy'
                             ? (companyConfig.transactionSettings?.pos?.photocopyPrice ?? 2.00)
                             : (companyConfig.transactionSettings?.pos?.typePrintingPrice ?? 5.00)}
                         costPerPage={quickPrintModal.type === 'photocopy'
                             ? calculatePhotocopyCostPerPage(inventory)
                             : calculateTypePrintingCostPerPage(inventory)}
+                        paperCostPerSheet={quickPrintModal.type === 'photocopy' ? calculatePhotocopyCostBreakdown(inventory).paperCostPerSheet : undefined}
+                        tonerCostPerPage={quickPrintModal.type === 'photocopy' ? calculatePhotocopyCostBreakdown(inventory).tonerCostPerPage : undefined}
                         currency={currency}
                         staplePrice={companyConfig.transactionSettings?.pos?.staplePrice}
                         pinningItem={(() => {

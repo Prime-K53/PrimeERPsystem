@@ -7,6 +7,8 @@ interface QuickPrintModalProps {
   type: 'photocopy' | 'printing';
   pricePerPage: number;
   costPerPage?: number;
+  paperCostPerSheet?: number;
+  tonerCostPerPage?: number;
   currency: string;
   staplePrice?: number;
   onConfirm: (quantity: number, pages: number, total: number, type: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number) => void;
@@ -26,7 +28,7 @@ const hairline = '#e4ddd1';
 const danger = '#b5493f';
 
 const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
-  open, onClose, type, pricePerPage, costPerPage, currency,
+  open, onClose, type, pricePerPage, costPerPage, paperCostPerSheet, tonerCostPerPage, currency,
   onConfirm, pinningItem, staplePrice
 }) => {
   const [quantity, setQuantity] = useState(1);
@@ -203,17 +205,29 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
               <span style={{ fontWeight: 600, color: ink }}>{fc(printTotal)}</span>
             </div>
 
-            {costPerPage ? (
+            {(costPerPage || paperCostPerSheet !== undefined || tonerCostPerPage !== undefined) ? (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 12 }}>
-                  <span style={{ color: inkSoft }}>Toner Cost ({fc(costPerPage)}/pg)</span>
-                  <span style={{ fontWeight: 600, color: ink }}>{fc(materialCost)}</span>
-                </div>
-                <div style={{ borderTop: `1px dashed ${hairline}`, margin: '4px 0' }}></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 12 }}>
-                  <span style={{ color: inkSoft }}>Cost Price</span>
-                  <span style={{ fontWeight: 600, color: ink }}>{fc(materialCost)}</span>
-                </div>
+                {(tonerCostPerPage !== undefined || paperCostPerSheet !== undefined) && (
+                  <>
+                    {paperCostPerSheet !== undefined && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 12 }}>
+                        <span style={{ color: inkSoft }}>Paper Cost ({fc(paperCostPerSheet)}/sheet)</span>
+                        <span style={{ fontWeight: 600, color: ink }}>{fc(paperCostPerSheet * totalSheets)}</span>
+                      </div>
+                    )}
+                    {tonerCostPerPage !== undefined && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 12 }}>
+                        <span style={{ color: inkSoft }}>Toner Cost ({fc(tonerCostPerPage)}/pg)</span>
+                        <span style={{ fontWeight: 600, color: ink }}>{fc(tonerCostPerPage * totalPages)}</span>
+                      </div>
+                    )}
+                    <div style={{ borderTop: `1px dashed ${hairline}`, margin: '4px 0' }}></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 12 }}>
+                      <span style={{ color: inkSoft }}>Total Cost</span>
+                      <span style={{ fontWeight: 600, color: ink }}>{fc(materialCost)}</span>
+                    </div>
+                  </>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 12 }}>
                   <span style={{ color: inkSoft }}>Selling Price</span>
                   <span style={{ fontWeight: 600, color: ink }}>{fc(printTotal)}</span>

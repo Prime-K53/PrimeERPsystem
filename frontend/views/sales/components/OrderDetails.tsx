@@ -270,10 +270,18 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
 
                         <div style={{ padding: 14, borderRadius: 10, border: `1px solid ${danger}30`, background: `${danger}08` }}>
                             <h3 style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: danger, textTransform: 'uppercase', letterSpacing: 0.06 }}>Danger Zone</h3>
-                            <button onClick={() => onAction(order, 'cancel_order')} disabled={isCancelled}
-                                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1.4px solid ${danger}30`, cursor: 'pointer', background: paper, color: danger, fontWeight: 600, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: isCancelled ? 0.5 : 1 }}>
-                                <X size={14} /> Cancel Order
-                            </button>
+                            {!isCancelled && (
+                                <button onClick={() => onAction(order, 'cancel_order')}
+                                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1.4px solid ${danger}30`, cursor: 'pointer', background: paper, color: danger, fontWeight: 600, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                    <X size={14} /> Cancel Order
+                                </button>
+                            )}
+                            {isCancelled && (
+                                <button onClick={() => onAction(order, 'delete')}
+                                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: danger, color: '#fff', fontWeight: 600, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                    <Trash2 size={14} /> Permanently Delete
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

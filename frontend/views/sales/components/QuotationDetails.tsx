@@ -247,14 +247,18 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
                 <div style={{ padding: 20, borderRadius: 12, border: `1px solid ${danger}30`, background: `${danger}08` }}>
                   <h3 style={{ margin: '0 0 12px', fontSize: 10, fontWeight: 700, color: danger, textTransform: 'uppercase', letterSpacing: 0.08 }}>Danger Zone</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <button onClick={() => onAction(quotation, 'status_Rejected')}
-                      style={{ width: '100%', padding: '10px 16px', border: `1.4px solid ${danger}30`, borderRadius: 9, cursor: 'pointer', background: paper, color: danger, fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      <X size={16} /> Reject Quotation
-                    </button>
-                    <button onClick={() => onAction(quotation, 'delete')}
-                      style={{ width: '100%', padding: '10px 16px', border: 'none', borderRadius: 9, cursor: 'pointer', background: danger, color: '#fff', fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      <Trash2 size={16} /> Delete Record
-                    </button>
+                    {quotation.status !== 'Rejected' && quotation.status !== 'Converted' && (
+                      <button onClick={() => onAction(quotation, 'status_Rejected')}
+                        style={{ width: '100%', padding: '10px 16px', border: `1.4px solid ${danger}30`, borderRadius: 9, cursor: 'pointer', background: paper, color: danger, fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                        <X size={16} /> Reject Quotation
+                      </button>
+                    )}
+                    {(quotation.status === 'Rejected' || quotation.status === 'Expired') && (
+                      <button onClick={() => onAction(quotation, 'delete')}
+                        style={{ width: '100%', padding: '10px 16px', border: 'none', borderRadius: 9, cursor: 'pointer', background: danger, color: '#fff', fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                        <Trash2 size={16} /> Permanently Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -30,6 +30,15 @@ const toSafeNumber = (value: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const paper = '#FEFDFB';
+const ink = '#23282A';
+const inkSoft = '#5c6567';
+const hairline = '#e4ddd1';
+const teal = { 50: '#eef7f6', 100: '#d4ebe3', 200: '#a6d9d3', 400: '#3fa294', 500: '#2d9a8a', 600: '#1f8577', 700: '#166b5e', 800: '#0f544c', 900: '#0a3d34' };
+const amber = { 50: '#fef9e7', 100: '#fef3c7', 200: '#fde68a', 400: '#d99a3f', 500: '#d99a3f', 600: '#b45309', 700: '#92400e', 800: '#78350f', 900: '#451a03' };
+const danger = { 50: '#fef2f2', 100: '#fee2e2', 200: '#fecaca', 400: '#dc2626', 500: '#b5493f', 600: '#991b1b', 700: '#7f1d1d', 800: '#450a0a', 900: '#1a0505' };
+const emerald = { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 400: '#16a34a', 500: '#16a34a', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b' };
+
 type Tab = 'duplicates' | 'validation' | 'overdue' | 'suspicious' | 'tax';
 
 const TABS: { key: Tab; label: string; icon: React.FC<{ size?: number }>; desc: string; color: string }[] = [
@@ -73,15 +82,6 @@ const InvoiceIntelligence: React.FC = () => {
 
   const invoices = Array.isArray(contextInvoices) ? contextInvoices : [];
   const customers = Array.isArray(contextCustomers) ? contextCustomers : [];
-
-  const paper = '#FEFDFB';
-  const ink = '#23282A';
-  const inkSoft = '#5c6567';
-  const hairline = '#e4ddd1';
-  const teal = { 50: '#eef7f6', 100: '#d4ebe3', 200: '#a6d9d3', 400: '#3fa294', 500: '#2d9a8a', 600: '#1f8577', 700: '#166b5e', 800: '#0f544c', 900: '#0a3d34' };
-  const amber = { 50: '#fef9e7', 100: '#fef3c7', 200: '#fde68a', 400: '#d99a3f', 500: '#d99a3f', 600: '#b45309', 700: '#92400e', 800: '#78350f', 900: '#451a03' };
-  const danger = { 50: '#fef2f2', 100: '#fee2e2', 200: '#fecaca', 400: '#dc2626', 500: '#b5493f', 600: '#991b1b', 700: '#7f1d1d', 800: '#450a0a', 900: '#1a0505' };
-  const emerald = { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 400: '#16a34a', 500: '#16a34a', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b' };
 
   const [activeTab, setActiveTab] = useState<Tab>('duplicates');
   const [loading, setLoading] = useState(false);

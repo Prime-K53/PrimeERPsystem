@@ -309,7 +309,20 @@ const CleanInvoiceTemplate = ({
   const renderRow = (item: any, i: number) => {
     const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
     let formattedDesc = item.desc || item.name;
-    if (isService) {
+    let qty = item.qty;
+    let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
+    let total = item.total;
+
+    const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
+    if (isQuickPhoto) {
+      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+      const copies = item.serviceDetails.copies || item.qty || 1;
+      const sheets = Math.ceil(pages / 2) * copies;
+      qty = sheets;
+      unitPrice = sheets > 0 ? item.price / sheets : item.price;
+      total = item.price;
+      formattedDesc = `${item.name} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+    } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
       const itemName = item.name || item.desc || 'Service';
@@ -317,13 +330,13 @@ const CleanInvoiceTemplate = ({
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
     }
-      
+
     return (
       <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e0e0e0', minHeight: 24, alignItems: 'center', paddingVertical: 4 }}>
         <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155' }}>{formattedDesc}</Text>
-        <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{item.qty}</Text>
-        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {(item.price || (item.qty ? item.total / item.qty : 0)).toFixed(2)}</Text>
-        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {item.total.toFixed(2)}</Text>
+        <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{qty}</Text>
+        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {unitPrice.toFixed(2)}</Text>
+        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {total.toFixed(2)}</Text>
       </View>
     );
   };
@@ -636,7 +649,20 @@ const ModernInvoiceTemplate = ({
   const renderRow = (item: any, i: number) => {
     const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
     let formattedDesc = item.desc || item.name;
-    if (isService) {
+    let qty = item.qty;
+    let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
+    let total = item.total;
+
+    const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
+    if (isQuickPhoto) {
+      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+      const copies = item.serviceDetails.copies || item.qty || 1;
+      const sheets = Math.ceil(pages / 2) * copies;
+      qty = sheets;
+      unitPrice = sheets > 0 ? item.price / sheets : item.price;
+      total = item.price;
+      formattedDesc = `${item.name} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+    } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
       const itemName = item.name || item.desc || 'Service';
@@ -644,18 +670,18 @@ const ModernInvoiceTemplate = ({
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
     }
-    
+
     const bgColor = i % 2 !== 0 ? '#F5F5F5' : 'transparent';
-      
+
     return (
       <View key={i} style={{ flexDirection: 'row', backgroundColor: bgColor, minHeight: 28, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 }}>
         <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
-        <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{item.qty}</Text>
+        <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{qty}</Text>
         <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>
-            {currency} {(item.price || (item.qty ? item.total / item.qty : 0)).toLocaleString('en-US', {minimumFractionDigits: 2})}
+            {currency} {unitPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}
         </Text>
         <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>
-            {currency} {item.total.toLocaleString('en-US', {minimumFractionDigits: 2})}
+            {currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}
         </Text>
       </View>
     );
@@ -923,7 +949,20 @@ const ProfessionalInvoiceTemplate = ({
   const renderRow = (item: any, i: number) => {
     const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
     let formattedDesc = item.desc || item.name;
-    if (isService) {
+    let qty = item.qty;
+    let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
+    let total = item.total;
+
+    const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
+    if (isQuickPhoto) {
+      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+      const copies = item.serviceDetails.copies || item.qty || 1;
+      const sheets = Math.ceil(pages / 2) * copies;
+      qty = sheets;
+      unitPrice = sheets > 0 ? item.price / sheets : item.price;
+      total = item.price;
+      formattedDesc = `${item.name} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+    } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
       const itemName = item.name || item.desc || 'Service';
@@ -931,13 +970,13 @@ const ProfessionalInvoiceTemplate = ({
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
     }
-      
+
     return (
       <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#eeeeee', minHeight: 24, alignItems: 'center', paddingVertical: 5 }}>
         <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
-        <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{item.qty}</Text>
-        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {(item.price || (item.qty ? item.total / item.qty : 0)).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
-        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {item.total.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+        <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
+        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {unitPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
       </View>
     );
   };

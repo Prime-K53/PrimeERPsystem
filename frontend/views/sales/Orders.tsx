@@ -149,7 +149,7 @@ const Orders: React.FC = () => {
 
     const { createDeliveryNote, checkAndApplyLateFees } = useFinance();
     const { convertQuotationToWorkOrder, convertQuotationToJobTicket, convertOrderToJobTicket } = useSales();
-    const { orders, cancelOrder, updateOrderStatus, recordPayment, createOrder, convertQuotationToOrder } = useOrders();
+    const { orders, cancelOrder, updateOrderStatus, recordPayment, createOrder, convertQuotationToOrder, deleteSalesOrder } = useOrders();
     const { confirm, ConfirmDialogComponent } = useConfirmDialog();
     const [confirmState, setConfirmState] = useState<{
       open: boolean;
@@ -421,6 +421,17 @@ const Orders: React.FC = () => {
         }
 
         if (activeView === 'Orders') {
+            const orderToDelete = orders.find(o => o.id === id);
+            if (orderToDelete?.status === 'Cancelled') {
+                if (!window.confirm(`Permanently delete cancelled order ${orderToDelete.orderNumber || id}? This cannot be undone.`)) return;
+                try {
+                    await deleteSalesOrder(id);
+                    notify("Order permanently deleted", "success");
+                } catch (err: any) {
+                    notify("Failed to delete: " + (err?.message || err), "error");
+                }
+                return;
+            }
             setCancelReasonText('');
             setCancelReasonModal({
                 open: true,

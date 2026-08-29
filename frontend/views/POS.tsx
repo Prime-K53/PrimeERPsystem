@@ -34,7 +34,7 @@ import { logger } from '../services/logger';
 import { generateNextId, roundToCurrency, formatNumber, downloadBlob } from '../utils/helpers';
 import { attachDocumentSecurity } from '../utils/documentSecurity';
 import { initializePrimePdfFonts, resolvePrimeTemplateSettings, getStoredCompanyConfig } from './shared/components/PDF/templateSettings';
-import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredRoundingDifference, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage } from '../utils/pricing';
+import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredRoundingDifference, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../utils/pricing';
 import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/pricingEngine';
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 import { PrintingPOSIntegrator, isPrintingService, createProductionJobsFromSale } from '../components/printing/PrintingPOSIntegrator';
@@ -1613,6 +1613,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           costPerPage={quickPrintModal.type === 'photocopy'
             ? calculatePhotocopyCostPerPage(inventory)
             : calculateTypePrintingCostPerPage(inventory)}
+          paperCostPerSheet={quickPrintModal.type === 'photocopy' ? calculatePhotocopyCostBreakdown(inventory).paperCostPerSheet : undefined}
+          tonerCostPerPage={quickPrintModal.type === 'photocopy' ? calculatePhotocopyCostBreakdown(inventory).tonerCostPerPage : undefined}
           currency={currency}
           staplePrice={companyConfig.transactionSettings?.pos?.staplePrice}
           pinningItem={(() => {

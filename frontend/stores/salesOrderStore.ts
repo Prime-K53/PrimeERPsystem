@@ -101,7 +101,7 @@ export const useSalesOrderStore = create<SalesOrderState>((set, get) => ({
     const existingOrder = get().salesOrders.find((o) => o.id === id);
     if (existingOrder) {
       const canonical = salesOrderService.canonicalizeStatus(existingOrder.status);
-      if (salesOrderService.isTerminalStatus(canonical)) {
+      if (salesOrderService.isTerminalStatus(canonical) && canonical !== 'Cancelled') {
         throw new Error(`Cannot delete a sales order in terminal status: ${canonical}`);
       }
     }

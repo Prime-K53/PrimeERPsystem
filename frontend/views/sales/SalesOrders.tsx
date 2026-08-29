@@ -34,9 +34,10 @@ interface RowActionsProps {
   onEdit: (o: any) => void;
   onConvert: (o: any) => void;
   onChangeStatus: (o: any, s: string) => void;
+  onDelete: (o: any) => void;
 }
 
-const RowActions: React.FC<RowActionsProps> = ({ order, onEdit, onConvert, onChangeStatus }) => (
+const RowActions: React.FC<RowActionsProps> = ({ order, onEdit, onConvert, onChangeStatus, onDelete }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
     <button
       onClick={() => onEdit(order)}
@@ -89,6 +90,32 @@ const RowActions: React.FC<RowActionsProps> = ({ order, onEdit, onConvert, onCha
     >
       Convert
     </button>
+    {order.status === 'Cancelled' && (
+      <button
+        onClick={() => onDelete(order)}
+        title="Permanently delete cancelled order"
+        style={{
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 12,
+          fontWeight: 600,
+          padding: '10px 12px',
+          borderRadius: 9,
+          cursor: 'pointer',
+          background: '#fef2f2',
+          border: `1.4px solid #fecaca`,
+          color: '#b91c1c',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 5,
+          transition: 'all .15s ease',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#fee2e2'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = '#fef2f2'; }}
+      >
+        <Trash2 size={14} />
+      </button>
+    )}
     <select
       value={order.status}
       onChange={(e) => onChangeStatus(order, e.target.value)}
@@ -214,6 +241,16 @@ const SalesOrders: React.FC = () => {
       toast.success(`Sales order status updated to ${status}`);
     } catch (err: any) {
       toast.error('Failed to update status: ' + (err?.message || err));
+    }
+  };
+
+  const handleDelete = async (order: any) => {
+    if (!window.confirm(`Permanently delete sales order ${order.orderNumber || order.id}? This cannot be undone.`)) return;
+    try {
+      await store.deleteSalesOrder(order.id);
+      toast.success('Sales order permanently deleted');
+    } catch (err: any) {
+      toast.error('Failed to delete: ' + (err?.message || err));
     }
   };
 
@@ -355,7 +392,7 @@ const SalesOrders: React.FC = () => {
                       </div>
                     </div>
                     <div style={{ borderTop: `1px solid ${hairline}`, padding: '10px 12px' }}>
-                      <RowActions order={o} onEdit={setEditing} onConvert={handleConvertToInvoice} onChangeStatus={changeStatus} />
+                        <RowActions order={o} onEdit={setEditing} onConvert={handleConvertToInvoice} onChangeStatus={changeStatus} onDelete={handleDelete} />
                     </div>
                   </div>
                 );
@@ -408,7 +445,7 @@ const SalesOrders: React.FC = () => {
                       </td>
                       <td style={{ padding: '10px 14px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, fontWeight: 600, color: ink, whiteSpace: 'nowrap' }}>{o.total}</td>
                       <td style={{ padding: '10px 14px', minWidth: 230 }}>
-                        <RowActions order={o} onEdit={setEditing} onConvert={handleConvertToInvoice} onChangeStatus={changeStatus} />
+                      <RowActions order={o} onEdit={setEditing} onConvert={handleConvertToInvoice} onChangeStatus={changeStatus} onDelete={handleDelete} />
                       </td>
                     </tr>
                   );
