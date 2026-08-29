@@ -131,6 +131,9 @@ importers:
       '@reduxjs/toolkit':
         specifier: ^2.12.0
         version: 2.12.0(react-redux@9.3.0(@types/react@18.3.31)(react@18.3.1)(redux@5.0.1))(react@18.3.1)
+      '@rollup/rollup-linux-x64-gnu':
+        specifier: ^4.62.2
+        version: 4.62.2
       '@stripe/react-stripe-js':
         specifier: ^6.8.0
         version: 6.8.0(@stripe/stripe-js@9.12.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -265,9 +268,6 @@ importers:
         specifier: ^4.0.17
         version: 4.1.8(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@6.4.3(@types/node@25.9.3)(jiti@1.21.7)(terser@5.48.0))
     optionalDependencies:
-      '@rollup/rollup-linux-x64-gnu':
-        specifier: ^4.62.2
-        version: 4.62.2
       '@rollup/rollup-win32-x64-msvc':
         specifier: ^4.62.2
         version: 4.62.2
@@ -7419,8 +7419,7 @@ snapshots:
   '@rollup/rollup-linux-x64-gnu@4.62.0':
     optional: true
 
-  '@rollup/rollup-linux-x64-gnu@4.62.2':
-    optional: true
+  '@rollup/rollup-linux-x64-gnu@4.62.2': {}
 
   '@rollup/rollup-linux-x64-musl@4.62.0':
     optional: true
