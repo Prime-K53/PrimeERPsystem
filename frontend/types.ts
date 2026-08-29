@@ -145,6 +145,7 @@ export interface InvoiceTemplatesConfig {
   showDueDate?: boolean;
   showOutstandingAndWalletBalances?: boolean;
   showAccountSummary?: boolean;
+  showConversionHistory?: boolean;
   [key: string]: any; // Dynamic boolean flags for template options
 }
 

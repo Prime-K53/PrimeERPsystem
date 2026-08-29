@@ -204841,7 +204841,7 @@ var DEFAULT_PRIME_TEMPLATE_SETTINGS = {
   showPaymentTerms: true,
   showDueDate: true,
   showOutstandingAndWalletBalances: false,
-  showAccountSummary: false
+  showAccountSummary: false,
 };
 var fontsInitialized = false;
 var pdfDebugLoggingEnabled = isPdfDebugLoggingEnabled();
@@ -204923,7 +204923,7 @@ var resolvePrimeTemplateSettings = (companyConfig) => {
     showPaymentTerms: templateConfig.showPaymentTerms !== false,
     showDueDate: templateConfig.showDueDate !== false,
     showOutstandingAndWalletBalances: Boolean(templateConfig.showOutstandingAndWalletBalances),
-    showAccountSummary: Boolean(templateConfig.showAccountSummary)
+    showAccountSummary: Boolean(templateConfig.showAccountSummary),
   };
 };
 var getDefaultPaymentTermsLabel = (companyConfig) => {
@@ -205452,7 +205452,16 @@ var CleanInvoiceTemplate = ({
         ` as of ${todayStr}`
       ] }) });
     })(),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { wrap: false, style: { marginTop: 15, flex: 1 }, children: templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { wrap: false, style: { marginTop: 15, flex: 1 }, children: templateSettings.showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      InvoiceInfoPanel,
+      {
+        type: "account_summary",
+        settings: templateSettings,
+        data: dataAny,
+        config: config2,
+        fontScale
+      }
+    ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
       InvoiceInfoPanel,
       {
         type: "payment_terms",
@@ -205683,7 +205692,16 @@ var ModernInvoiceTemplate = ({
     })(),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { wrap: false, style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 15, flex: 1, gap: 20 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "column", flex: 1 }, children: [
-        templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        templateSettings.showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          InvoiceInfoPanel,
+          {
+            type: "account_summary",
+            settings: templateSettings,
+            data: dataAny,
+            config: config2,
+            fontScale
+          }
+        ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
           InvoiceInfoPanel,
           {
             type: "payment_terms",

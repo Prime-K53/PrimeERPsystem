@@ -524,13 +524,21 @@ const CleanInvoiceTemplate = ({
 
         {/* Footer info (Notes etc) */}
         <View wrap={false} style={{ marginTop: 15, flex: 1 }}>
-          {templateSettings.showPaymentTerms ? (
-            <InvoiceInfoPanel 
-              type="payment_terms" 
-              settings={templateSettings} 
-              data={dataAny} 
-              config={config} 
-              fontScale={fontScale} 
+          {showAccountSummary ? (
+            <InvoiceInfoPanel
+              type="account_summary"
+              settings={templateSettings}
+              data={dataAny}
+              config={config}
+              fontScale={fontScale}
+            />
+          ) : templateSettings.showPaymentTerms ? (
+            <InvoiceInfoPanel
+              type="payment_terms"
+              settings={templateSettings}
+              data={dataAny}
+              config={config}
+              fontScale={fontScale}
             />
           ) : null}
         </View>
@@ -796,13 +804,21 @@ const ModernInvoiceTemplate = ({
         {/* Footer info (QR and Signature) */}
         <View wrap={false} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 15, flex: 1, gap: 20 }}>
           <View style={{ flexDirection: 'column', flex: 1 }}>
-            {templateSettings.showPaymentTerms ? (
-              <InvoiceInfoPanel 
-                type="payment_terms" 
-                settings={templateSettings} 
-                data={dataAny} 
-                config={config} 
-                fontScale={fontScale} 
+            {showAccountSummary ? (
+              <InvoiceInfoPanel
+                type="account_summary"
+                settings={templateSettings}
+                data={dataAny}
+                config={config}
+                fontScale={fontScale}
+              />
+            ) : templateSettings.showPaymentTerms ? (
+              <InvoiceInfoPanel
+                type="payment_terms"
+                settings={templateSettings}
+                data={dataAny}
+                config={config}
+                fontScale={fontScale}
               />
             ) : null}
             
@@ -1108,6 +1124,8 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   const fontScale = templateSettings.bodyFontSize / 12;
   const showDueDate = templateSettings.showDueDate;
   const showPaymentTerms = templateSettings.showPaymentTerms;
+  const showAccountSummary = templateSettings.showAccountSummary;
+  const showConversionHistory = templateSettings.showConversionHistory !== false;
   const paymentTermsLabel = String(dataAny?.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
   const companyName = config?.companyName || 'Prime Printing & Stationery';
   const companyAddress = config?.addressLine1 || 'Lilongwe, Malawi';
@@ -1248,7 +1266,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
       <Document title={`Sales Exchange - ${String(d.exchangeNumber)}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
           {isCancelled && <CancelledWatermark />}
-          {Boolean(d.isConverted) && !!cd && (
+          {showConversionHistory && Boolean(d.isConverted) && !!cd && (
             <View style={[s.conversionBox, { position: 'absolute', top: 40, right: 40, zIndex: 10 }]}>
               <Text style={s.conversionTitle}>Conversion History</Text>
               <Text>Converted from {String(cd.sourceType)} {String(cd.sourceNumber)}</Text>
@@ -1797,7 +1815,7 @@ if (type === 'POS_RECEIPT') {
 
             {/* Conversion Details Box */}
             {/* Conversion / Acceptance Details Box */}
-            {('isConverted' in data && !!data.isConverted) && (!!conversionDetails || type === 'QUOTATION') && (
+            {showConversionHistory && ('isConverted' in data && !!data.isConverted) && (!!conversionDetails || type === 'QUOTATION') && (
               <View wrap={false} style={[s.conversionBox, { marginLeft: 20 }]}>
                 <Text style={s.conversionTitle}>{type === 'QUOTATION' ? 'Acceptance Details' : 'Conversion History'}</Text>
                 {type === 'QUOTATION' && 'date' in data ? (

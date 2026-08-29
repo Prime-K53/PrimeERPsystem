@@ -554,7 +554,8 @@ const Settings: React.FC = () => {
             invoiceTemplates: {
                 ...DEFAULT_PRIME_TEMPLATE_SETTINGS,
                 ...(companyConfig?.invoiceTemplates || {}),
-                showOutstandingAndWalletBalances: companyConfig?.invoiceTemplates?.showOutstandingAndWalletBalances ?? false
+                showOutstandingAndWalletBalances: companyConfig?.invoiceTemplates?.showOutstandingAndWalletBalances ?? false,
+                showConversionHistory: companyConfig?.invoiceTemplates?.showConversionHistory ?? true
             },
             pricingSettings: {
                 ...DEFAULT_PRICING_SETTINGS,
@@ -2099,8 +2100,9 @@ const Settings: React.FC = () => {
                                                 { key: 'showCompanyLogo', label: 'Show Company Logo', sub: 'Display logo on top right/left.' },
                                                 { key: 'showPaymentTerms', label: 'Include Payment Terms', sub: 'Add terms & conditions footer.' },
                                                 { key: 'showDueDate', label: 'Show Due Date', sub: 'Highlight payment deadline.' },
-                                                { key: 'showAccountSummary', label: 'Show Account Summary', sub: 'Replaces Payment Terms with an account balance summary.' },
-                                                { key: 'showOutstandingAndWalletBalances', label: 'Invoice Balance Details', sub: 'Show outstanding and wallet balances on general invoices.' }
+                                                { key: 'showAccountSummary', label: 'Account Summary', sub: 'Replace Payment Terms with a full account balance statement.' },
+                                                { key: 'showOutstandingAndWalletBalances', label: 'Invoice Balance Details', sub: 'Show outstanding and wallet balances on invoices.' },
+                                                { key: 'showConversionHistory', label: 'Conversion History Box', sub: 'Show the conversion/acceptance history box on documents.' }
                                             ].map(item => (
                                                 <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', borderRadius: '12px', transition: 'all .15s ease' }}>
                                                     <div>

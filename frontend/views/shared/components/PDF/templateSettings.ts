@@ -26,6 +26,7 @@ export interface PrimeTemplateSettings {
   showDueDate: boolean;
   showOutstandingAndWalletBalances: boolean;
   showAccountSummary: boolean;
+  showConversionHistory: boolean;
 }
 
 export const DEFAULT_PRIME_TEMPLATE_SETTINGS: PrimeTemplateSettings = {
@@ -40,6 +41,7 @@ export const DEFAULT_PRIME_TEMPLATE_SETTINGS: PrimeTemplateSettings = {
   showDueDate: true,
   showOutstandingAndWalletBalances: false,
   showAccountSummary: false,
+  showConversionHistory: true,
 };
 
 let fontsInitialized = false;
@@ -141,6 +143,7 @@ export const resolvePrimeTemplateSettings = (companyConfig?: CompanyConfig | nul
     showDueDate: templateConfig.showDueDate !== false,
     showOutstandingAndWalletBalances: Boolean(templateConfig.showOutstandingAndWalletBalances),
     showAccountSummary: Boolean(templateConfig.showAccountSummary),
+    showConversionHistory: templateConfig.showConversionHistory !== false,
   };
 };
 

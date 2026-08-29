@@ -1210,7 +1210,7 @@ const DashboardContent: React.FC = () => {
                   {!isMobile && <div style={{ marginLeft: 4 }}><PeriodDropdown value={activePeriod} onChange={setActivePeriod} /></div>}
                 </div>
               </div>
-               <div style={{ width: '100%', height: isMobile ? 220 : 280, minWidth: 0, overflow: 'hidden' }}>
+               <div style={{ width: '100%', flex: 1, minHeight: isMobile ? 220 : 280, minWidth: 0 }}>
                 {chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={150}>
                     <AreaChart data={chartData} margin={{ top: 8, right: isMobile ? 4 : 16, left: isMobile ? -24 : -8, bottom: -8 }}>

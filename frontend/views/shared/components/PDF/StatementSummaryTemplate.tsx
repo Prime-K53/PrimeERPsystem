@@ -50,7 +50,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           </View>
         )}
         {/* Conversion History for Statement (if applicable) */}
-        {'isConverted' in data && !!(data as any).isConverted && !!(data as any).conversionDetails && (
+        {templateSettings.showConversionHistory !== false && 'isConverted' in data && !!(data as any).isConverted && !!(data as any).conversionDetails && (
           <View style={[s.conversionBox, { position: 'absolute', top: 40, right: 40, zIndex: 10 }]}>
             <Text style={s.conversionTitle}>Conversion History</Text>
             <Text>Converted from {(data as any).conversionDetails.sourceType} {(data as any).conversionDetails.sourceNumber}</Text>

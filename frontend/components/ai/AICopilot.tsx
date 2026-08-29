@@ -330,7 +330,7 @@ export default function AICopilot() {
                   {listening ? <MicOff size={16} /> : <Mic size={16} />}
                 </button>
               )}
-              <button onClick={handleSend} disabled={typing || !input.trim()} style={{
+              <button type="button" onClick={() => handleSend()} disabled={typing || !input.trim()} style={{
                 border: 'none', background: '#3b82f6', color: '#fff', cursor: 'pointer', width: 38, height: 38, borderRadius: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 opacity: typing || !input.trim() ? 0.5 : 1,
