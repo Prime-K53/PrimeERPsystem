@@ -10,10 +10,6 @@
     "frontend",
     "backend"
   ],
-  "supportedArchitectures": {
-    "os": ["current", "linux", "win32", "darwin"],
-    "cpu": ["current", "x64", "arm64"]
-  },
   "scripts": {
     "install-all": "npm install",
     "install:frontend": "npm install --workspace=frontend",
@@ -39,11 +35,6 @@
     "esbuild": "^0.24.2",
     "lru-cache": "^5.1.1",
     "multer": "^2.2.0"
-  },
-  "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.63.1",
-    "@rollup/rollup-linux-x64-musl": "^4.63.1",
-    "@rollup/rollup-win32-x64-msvc": "^4.63.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1"
