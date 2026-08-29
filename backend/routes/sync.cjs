@@ -18,6 +18,7 @@
  */
 const express = require('express');
 const cloudSyncStore = require('../services/cloudSyncStore.cjs');
+const portalLifecycleService = require('../services/portalLifecycleService.cjs');
 
 const router = express.Router();
 
@@ -261,6 +262,20 @@ router.post('/ops', async (req, res) => {
       }
 
       results.push(result);
+
+      // ─── SSE invalidation for portal_ads ────────────────────────────────────
+      // Tombstoned/deleted ads must disappear from the Portal banner immediately.
+      // Broadcasting on both 'portal' (customers) and 'admin' channels so the
+      // ERP Smart Operations Hub also refreshes its ad list on every write.
+      if (result.ok && table === 'portal_ads' && result.id) {
+        const adPayload = {
+          docType: 'portal_ad',
+          docId: result.id,
+          ...(op.operation === 'delete' ? { event: 'deleted' } : { event: 'upserted' }),
+        };
+        portalLifecycleService.emitEntityChange('portal', adPayload);
+        portalLifecycleService.emitEntityChange('admin', adPayload);
+      }
     }
 
     const okCount = results.filter((r) => r.ok).length;
