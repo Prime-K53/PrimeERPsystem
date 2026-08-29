@@ -14,6 +14,7 @@
     "install-all": "npm install",
     "install:frontend": "npm install --workspace=frontend",
     "install:backend": "npm install --workspace=backend",
+    "postinstall": "node -e \"try{require('child_process').execSync('npm rebuild rollup',{stdio:'ignore'})}catch(e){}\"",
     "dev": "concurrently -n \"backend,frontend\" -c \"magenta,cyan\" \"npm run backend\" \"npm run frontend\"",
     "backend": "cross-env JWT_SECRET=prime-erp-dev-secret-key-2026 SESSION_SECRET=prime-erp-dev-session-secret-2026 ENCRYPTION_KEY=prime-erp-dev-encryption-key-2026 npm run dev --workspace=backend",
     "frontend": "npm run dev --workspace=frontend",
@@ -26,16 +27,6 @@
     "build:portable": "npm run build --workspace=frontend && npm run build:backend-exe && npm run assemble-release",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@google/genai",
-      "esbuild",
-      "prime-erp-workspace",
-      "protobufjs",
-      "sharp",
-      "sqlite3"
-    ]
   },
   "dependencies": {
     "@supabase/server": "^1.3.0",
