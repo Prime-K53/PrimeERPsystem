@@ -1148,10 +1148,11 @@ const portalLifecycleService = {
 
   // Active PORTAL banner ads for display (display only). Managed in
   // Smart Operations Hub → Ads. Ordered by priority (highest first).
+  // Tombstoned ads (data.deleted = true) are excluded — the ERP is authoritative.
   async getActivePortalAds(customerId) {
     let rows = [];
     try {
-      rows = await repo.getAll('portal_ads');
+      rows = await repo.getAll('portal_ads', { 'data->>deleted': 'neq.true' });
     } catch (err) {
       console.warn('[Portal] portal_ads read failed:', err?.message || err);
       rows = [];
@@ -1177,6 +1178,10 @@ const portalLifecycleService = {
 
     const now = Date.now();
     return rows
+      .filter((ad) => {
+        if (ad.deleted === true || ad.deletedAt) return false;
+        return true;
+      })
       .map((ad) => ({
         id: ad.id,
         title: ad.title || '',
