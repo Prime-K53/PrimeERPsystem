@@ -5,7 +5,7 @@ RUN apk add --no-cache python3 make g++ sqlite-dev
 
 COPY package*.json ./
 RUN npm ci --only=production
-RUN npm rebuild sqlite3
+RUN npm rebuild sqlite3 --build-from-source
 
 COPY . .
 EXPOSE 3000

@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node index.cjs",
     "dev": "node index.cjs",
-    "postinstall": "node -e \"try{require('child_process').execSync('npm rebuild sqlite3',{stdio:'ignore'})}catch(e){}\"",
+    "postinstall": "node -e \"try{require('child_process').execSync('npm rebuild sqlite3',{stdio:'inherit'})}catch(e){console.error('[postinstall] sqlite3 rebuild failed:',e.message)}\"",
     "rebuild:sqlite3": "npm rebuild sqlite3",
     "test": "jest --forceExit --detectOpenHandles",
     "test:unit": "jest tests/profitMargin.unit.test.js --no-coverage",
