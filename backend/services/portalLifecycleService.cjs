@@ -1040,7 +1040,7 @@ const portalLifecycleService = {
     return { published: true, payload };
   },
 
-  async createQuotationRequest({ portalUserId, customerId, customerName, requestType, items, notes, requestedDeliveryDate, attachments, reorderOf, reorderOfNumber, promotionCode, context = {} }) {
+  async createQuotationRequest({ portalUserId, customerId, customerName, requestType, items, notes, requestedDeliveryDate, attachments, reorderOf, reorderOfNumber, promotionCode, referredByCode, context = {} }) {
     if (!Array.isArray(items) || items.length === 0) throw new Error('At least one line item is required');
     const requestTypeValue = requestType === 'order' ? 'order' : 'quotation';
     const normalizedAttachments = Array.isArray(attachments) ? attachments.slice(0, 20).map((a) => ({
@@ -1072,9 +1072,10 @@ const portalLifecycleService = {
       `INSERT INTO quotation_requests
          (id, request_number, customer_id, customer_name, request_type, items, subtotal,
           discount_total, total, promotion, promotion_applied,
-          notes, status, requested_delivery_date, attachments, reorder_of, reorder_of_number, created_by)
-       VALUES (?, ?, ?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, requestNumber, customerId, customerName, requestTypeValue, JSON.stringify(storedItems), subtotal, discountTotal, total, promotion ? JSON.stringify(promotion) : null, promotionApplied ? 1 : 0, notes || null, REQUEST_STATUS.SUBMITTED, requestedDeliveryDate || null, normalizedAttachments.length ? JSON.stringify(normalizedAttachments) : null, reorderOf || null, reorderOfNumber || null, portalUserId]
+          notes, status, requested_delivery_date, attachments, reorder_of, reorder_of_number,
+          referred_by_code, created_by)
+       VALUES (?, ?, ?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, requestNumber, customerId, customerName, requestTypeValue, JSON.stringify(storedItems), subtotal, discountTotal, total, promotion ? JSON.stringify(promotion) : null, promotionApplied ? 1 : 0, notes || null, REQUEST_STATUS.SUBMITTED, requestedDeliveryDate || null, normalizedAttachments.length ? JSON.stringify(normalizedAttachments) : null, reorderOf || null, reorderOfNumber || null, referredByCode || null, portalUserId]
     );
 
     // Usage is recorded only after the request row exists (atomic, best-effort).
@@ -1977,6 +1978,22 @@ const portalLifecycleService = {
     );
     const now = nowIso();
 
+    // Resolve referred_by_id from customer_referrals using the referred_by_code.
+    let resolvedReferredById = null;
+    if (request.referred_by_code) {
+      try {
+        const referralRows = await getAll(
+          'SELECT referred_by_id FROM customer_referrals WHERE referral_code = ? AND deleted_at IS NULL LIMIT 1',
+          [request.referred_by_code]
+        );
+        if (referralRows && referralRows.length > 0) {
+          resolvedReferredById = referralRows[0].referred_by_id || null;
+        }
+      } catch (err) {
+        console.warn('[PortalLifecycle] Could not resolve referral code:', err?.message);
+      }
+    }
+
     await runQuery('BEGIN TRANSACTION');
     try {
       // Merge with the cloud row when the ERP record already exists so the
@@ -2017,6 +2034,13 @@ const portalLifecycleService = {
         discount_total: discount,
         promotion_applied: promotion ? 1 : 0,
         subtotal_before_discount: subtotal,
+        // Referral attribution: resolve referred_by_id from customer_referrals using
+        // the referred_by_code stored at quotation-request creation time.
+        // This populates sales_orders.referred_by (SQLite) and sales_orders.data
+        // (Supabase) for the backend referral lifecycle hook.
+        referred_by: resolvedReferredById,
+        referred_by_id: resolvedReferredById,
+        referred_by_code: request.referred_by_code || null,
         // Order-level pricing evidence aggregates (metadata only — these are
         // NOT accounting amounts; total/subtotal above are untouched).
         materialTotal: pricingTotals.materialTotal,

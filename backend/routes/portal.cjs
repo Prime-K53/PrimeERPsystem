@@ -436,7 +436,7 @@ router.get('/requests', async (req, res) => {
 
 router.post('/requests', idempotencyMiddleware(), async (req, res) => {
   try {
-    const { id, customer_id, email, full_name } = req.portalUser;
+    const { id, customer_id, email, full_name, referred_by_code } = req.portalUser;
     const { requestType, items, notes, requestedDeliveryDate, attachments, reorderOf, reorderOfNumber, promotionCode } = req.body;
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'At least one line item is required' });
@@ -455,6 +455,7 @@ router.post('/requests', idempotencyMiddleware(), async (req, res) => {
       reorderOf: reorderOf || null,
       reorderOfNumber: reorderOfNumber || null,
       promotionCode: promotionCode || null,
+      referredByCode: referred_by_code || null,
       context: requestContext(req),
     });
     res.status(201).json(result);

@@ -3006,9 +3006,9 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
       const now = new Date().toISOString();
       await new Promise((resolve, reject) => {
         sq.run(
-          `INSERT INTO sales_orders (id, quotation_id, customer_id, orderDate, deliveryDate, status, items, subtotal, discounts, tax, other_charges, total, notes, created_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )`,
-          [o.id, o.quotationId || null, o.customerId || null, o.orderDate || now, o.deliveryDate || null, o.status || 'Draft', JSON.stringify(o.items), o.subtotal || 0, o.discounts || 0, o.tax || 0, o.otherCharges || 0, o.total || 0, o.notes || '', req.userId, now],
+          `INSERT INTO sales_orders (id, quotation_id, customer_id, orderDate, deliveryDate, status, items, subtotal, discounts, tax, other_charges, total, notes, referred_by, created_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [o.id, o.quotationId || null, o.customerId || null, o.orderDate || now, o.deliveryDate || null, o.status || 'Draft', JSON.stringify(o.items), o.subtotal || 0, o.discounts || 0, o.tax || 0, o.otherCharges || 0, o.total || 0, o.notes || '', o.referredBy || null, req.userId, now],
           function(err) {
             if (err) return reject(err);
             resolve();
@@ -3032,15 +3032,15 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
 
       // Read existing order for referredBy and status comparison (before update)
       const [existingRow] = await new Promise((resolve, reject) => {
-        sq.getAll('SELECT customer_id, status, referred_by FROM sales_orders WHERE id = ?', [id], (err, rows) => {
+        sq.getAll("SELECT customer_id, status, json_extract(data, '$.referred_by_id') as referred_by_id FROM sales_orders WHERE id = ?", [id], (err, rows) => {
           if (err) reject(err); else resolve(rows || []);
         });
       });
 
       await new Promise((resolve, reject) => {
         sq.run(
-          `UPDATE sales_orders SET quotation_id = ?, customer_id = ?, orderDate = ?, deliveryDate = ?, status = ?, items = ?, subtotal = ?, discounts = ?, tax = ?, other_charges = ?, total = ?, notes = ?, updated_by = ?, updated_at = ? WHERE id = ?`,
-          [o.quotationId || null, o.customerId || null, o.orderDate || null, o.deliveryDate || null, o.status || 'Draft', JSON.stringify(o.items || []), o.subtotal || 0, o.discounts || 0, o.tax || 0, o.otherCharges || 0, o.total || 0, o.notes || '', req.userId, new Date().toISOString(), id],
+          `UPDATE sales_orders SET quotation_id = ?, customer_id = ?, orderDate = ?, deliveryDate = ?, status = ?, items = ?, subtotal = ?, discounts = ?, tax = ?, other_charges = ?, total = ?, notes = ?, referred_by = ?, updated_by = ?, updated_at = ? WHERE id = ?`,
+          [o.quotationId || null, o.customerId || null, o.orderDate || null, o.deliveryDate || null, o.status || 'Draft', JSON.stringify(o.items || []), o.subtotal || 0, o.discounts || 0, o.tax || 0, o.otherCharges || 0, o.total || 0, o.notes || '', o.referredBy || existingRow?.referred_by || null, req.userId, new Date().toISOString(), id],
           function(err) {
             if (err) reject(err);
             else resolve();
@@ -3055,7 +3055,7 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
       const newStatus = o.status || 'Draft';
       if (qualifyingStatuses.includes(newStatus)) {
         const customerId = o.customerId || existingRow?.customer_id;
-        const referredBy = o.referredBy || existingRow?.referred_by;
+        const referredBy = o.referredBy || existingRow?.referred_by_id;
         if (referredBy && customerId && referredBy !== customerId) {
           setImmediate(() => {
             referralService.processBackendOrderReferral({

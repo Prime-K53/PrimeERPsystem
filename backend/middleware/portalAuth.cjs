@@ -13,6 +13,7 @@ function generatePortalToken(user) {
     customer_id: user.customer_id,
     email: user.email,
     full_name: user.full_name || null,
+    referred_by_code: user.referred_by_code || null,
     role: 'portal_customer'
   };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: portalAuthService.ACCESS_TOKEN_EXPIRY });

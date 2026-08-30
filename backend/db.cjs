@@ -996,6 +996,7 @@ const initDb = () => {
         { table: 'sales_orders', column: 'erp_order_id', type: 'TEXT' },
         // Phase 4 — Customer-facing shipment tracking
         { table: 'sales_orders', column: 'tracking_number', type: 'TEXT' },
+        { table: 'sales_orders', column: 'referred_by', type: 'TEXT' },
         { table: 'sales_orders', column: 'carrier', type: 'TEXT' },
         { table: 'sales_orders', column: 'driver_name', type: 'TEXT' },
         { table: 'sales_orders', column: 'vehicle_no', type: 'TEXT' },
@@ -1077,6 +1078,7 @@ const initDb = () => {
         { table: 'quotation_requests', column: 'reorder_of_number', type: 'TEXT' },
         { table: 'quotation_requests', column: 'marked', type: 'INTEGER DEFAULT 0' },
         { table: 'quotation_requests', column: 'deleted_at', type: 'TEXT' },
+        { table: 'quotation_requests', column: 'referred_by_code', type: 'TEXT' },
         // Customer Portal 2FA (Phase: portal security)
         { table: 'portal_users', column: 'two_factor_enabled', type: "INTEGER DEFAULT 0" },
         { table: 'portal_users', column: 'two_factor_secret', type: 'TEXT' },

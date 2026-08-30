@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const router = express.Router();
 const portalAuthService = require('../services/portalAuthService.cjs');
 const { generatePortalToken, verifyPortalToken } = require('../middleware/portalAuth.cjs');
+const ReferralService = require('../services/referralService.cjs');
+const referralService = new ReferralService();
 
 // In-memory store for pending 2FA verifications (keyed by a temporary token)
 const pendingTwoFactor = new Map();
@@ -222,6 +224,117 @@ router.post('/activate', async (req, res) => {
   } catch (err) {
     console.error('[PortalAuth] Activate error:', err);
     res.status(err.code === 'NOT_INVITED' ? 409 : 400).json({ error: err.message || 'Failed to activate account' });
+  }
+});
+
+router.post('/register', async (req, res) => {
+  try {
+    const { companyName, contactName, email, password, phone, tier, referredByCode } = req.body || {};
+
+    if (!companyName || typeof companyName !== 'string' || companyName.trim().length < 2) {
+      return res.status(400).json({ error: 'Company name must be at least 2 characters' });
+    }
+    if (!contactName || typeof contactName !== 'string' || contactName.trim().length < 2) {
+      return res.status(400).json({ error: 'Contact name must be at least 2 characters' });
+    }
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await portalAuthService.getPortalUserByEmail(normalizedEmail);
+    if (existingUser) {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
+
+    const fraudSignals = await referralService.checkFraudSignals({
+      customerId: null,
+      email: normalizedEmail,
+      phone: phone || null,
+      organisation: companyName.trim(),
+      referredById: null,
+    });
+    const highSeveritySignals = fraudSignals.filter(s => s.severity === 'high');
+    if (highSeveritySignals.length > 0) {
+      return res.status(409).json({ error: 'An account with this details already exists' });
+    }
+
+    let referrerInfo = null;
+    if (referredByCode && typeof referredByCode === 'string' && referredByCode.trim()) {
+      const code = referredByCode.trim().toUpperCase();
+      const referrerRows = await referralService._get(
+        'SELECT cr.*, c.name as referrer_name FROM customer_referrals cr JOIN customers c ON c.id = cr.referred_by_id WHERE UPPER(cr.referral_code) = ? LIMIT 1',
+        [code]
+      );
+      if (!referrerRows) {
+        return res.status(400).json({ error: 'Invalid referral code' });
+      }
+      referrerInfo = referrerRows;
+    }
+
+    const customerId = `cust_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const fullName = contactName.trim();
+
+    await portalAuthService.registerPortalUser({
+      customer_id: customerId,
+      email: normalizedEmail,
+      password,
+      full_name: fullName,
+      phone: phone || null,
+      status: 'active',
+    });
+
+    await portalAuthService.syncCustomerPortalData(customerId, {
+      name: companyName.trim(),
+      email: normalizedEmail,
+      phone: phone || null,
+      referred_by_code: referredByCode && referrerInfo ? referredByCode.trim().toUpperCase() : null,
+    });
+
+    if (referrerInfo) {
+      try {
+        await referralService.register({
+          customer_id: customerId,
+          referred_by_id: referrerInfo.referred_by_id,
+          referred_by_name: referrerInfo.referrer_name || 'Referrer',
+        });
+      } catch (referralErr) {
+        console.warn('[PortalAuth] Referral registration failed (non-blocking):', referralErr.message);
+      }
+    }
+
+    const token = generatePortalToken({ id: null, customer_id: customerId, email: normalizedEmail, referred_by_code: referredByCode && referrerInfo ? referredByCode.trim().toUpperCase() : null });
+    const refreshToken = crypto.randomBytes(48).toString('hex');
+    const ip = req.ip || req.connection?.remoteAddress;
+    const ua = req.headers['user-agent'];
+
+    const user = await portalAuthService.getPortalUserByEmail(normalizedEmail);
+    if (user && user.id) {
+      await portalAuthService.createSession(user.id, refreshToken, ip, ua);
+    }
+
+    res.status(201).json({
+      message: 'Registration successful',
+      user: {
+        id: user?.id || null,
+        customer_id: customerId,
+        email: normalizedEmail,
+        full_name: fullName,
+        phone: phone || null,
+      },
+      access_token: token,
+      refresh_token: refreshToken,
+      expires_in: '30m',
+    });
+  } catch (err) {
+    console.error('[PortalAuth] Registration error:', err);
+    if (err.message && err.message.includes('unique')) {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
+    res.status(500).json({ error: 'Registration failed. Please try again.' });
   }
 });
 
