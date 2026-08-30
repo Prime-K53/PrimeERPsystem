@@ -1303,7 +1303,6 @@ router.delete('/support/tickets/:id/attachments/:attachmentId', async (req, res)
 
 // ─── Support Articles (FAQ) ─────────────────────────────────────────────────────
 // Returns a list of help articles for the customer portal FAQ section.
-// Currently returns an empty array; integrate a CMS or static content table to populate.
 router.get('/support/articles', async (req, res) => {
   try {
     const articles = await portalService.getSupportArticles();
@@ -1324,6 +1323,17 @@ router.get('/support/articles/:slug', async (req, res) => {
   } catch (err) {
     console.error('[Portal] Support article error:', err);
     res.status(500).json({ error: 'Failed to load article' });
+  }
+});
+
+// ─── Company Contact Info for Portal Support ──────────────────────────────────
+router.get('/support/company-info', async (req, res) => {
+  try {
+    const info = await portalService.getCompanyContactInfo();
+    res.json(info);
+  } catch (err) {
+    console.error('[Portal] Company contact info error:', err);
+    res.status(500).json({ error: 'Failed to load company contact info' });
   }
 });
 

@@ -40,7 +40,19 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
   const totalPages = quantity * pagesPerCopy;
   const totalSheets = type === 'photocopy' ? quantity * Math.ceil(pagesPerCopy / 2) : totalPages;
   const printTotal = (type === 'photocopy' ? totalSheets : (pricingMethod === 'per_page' ? totalPages : totalSheets)) * pricePerPage;
-  const materialCost = costPerPage ? (pricingMethod === 'per_page' ? totalPages : totalSheets) * costPerPage : 0;
+
+  const computedMaterialCost = useMemo(() => {
+    if (paperCostPerSheet !== undefined || tonerCostPerPage !== undefined) {
+      const paperTotal = (paperCostPerSheet ?? 0) * totalSheets;
+      const tonerTotal = (tonerCostPerPage ?? 0) * totalPages;
+      return paperTotal + tonerTotal;
+    }
+    if (costPerPage !== undefined) {
+      return costPerPage * totalPages;
+    }
+    return 0;
+  }, [paperCostPerSheet, tonerCostPerPage, costPerPage, totalSheets, totalPages]);
+  const materialCost = computedMaterialCost;
 
   const effectiveStaplePrice = useMemo(() => {
     if (typeof staplePrice === 'number' && staplePrice > 0) return staplePrice;
@@ -154,16 +166,24 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
             </div>
 
             <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 10 }}>Pricing Method</div>
-            <div style={{ display: 'flex', border: `1.4px solid ${hairline}`, borderRadius: 10, overflow: 'hidden', marginBottom: 16 }}>
-              <button type="button" onClick={() => setPricingMethod('per_page')}
-                style={{ flex: 1, padding: '8px 12px', border: 'none', cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', background: pricingMethod === 'per_page' ? teal[600] : paper, color: pricingMethod === 'per_page' ? '#fff' : inkSoft, transition: 'all .12s' }}>
-                Per Page
-              </button>
-              <button type="button" onClick={() => setPricingMethod('per_sheet')}
-                style={{ flex: 1, padding: '8px 12px', border: 'none', cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', background: pricingMethod === 'per_sheet' ? teal[600] : paper, color: pricingMethod === 'per_sheet' ? '#fff' : inkSoft, transition: 'all .12s' }}>
-                Per Sheet
-              </button>
-            </div>
+            {isPhotocopy ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, background: teal[50], marginBottom: 16, fontSize: 12, color: inkSoft }}>
+                <Copy size={12} color={teal[600]} />
+                <span style={{ fontWeight: 600, color: teal[700] }}>Per Sheet</span>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: inkSoft }}>Photocopy is charged per physical sheet (double-sided)</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', border: `1.4px solid ${hairline}`, borderRadius: 10, overflow: 'hidden', marginBottom: 16 }}>
+                <button type="button" onClick={() => setPricingMethod('per_page')}
+                  style={{ flex: 1, padding: '8px 12px', border: 'none', cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', background: pricingMethod === 'per_page' ? teal[600] : paper, color: pricingMethod === 'per_page' ? '#fff' : inkSoft, transition: 'all .12s' }}>
+                  Per Page
+                </button>
+                <button type="button" onClick={() => setPricingMethod('per_sheet')}
+                  style={{ flex: 1, padding: '8px 12px', border: 'none', cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', background: pricingMethod === 'per_sheet' ? teal[600] : paper, color: pricingMethod === 'per_sheet' ? '#fff' : inkSoft, transition: 'all .12s' }}>
+                  Per Sheet
+                </button>
+              </div>
+            )}
 
             {effectiveStaplePrice !== null && (
               <>

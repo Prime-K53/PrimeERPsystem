@@ -1164,6 +1164,16 @@ const Settings: React.FC = () => {
                                                 onChange={e => setConfig({ ...config, phone: e.target.value })}
                                             />
                                         </div>
+                                        <div>
+                                            <label style={labelStyle}>WhatsApp Number</label>
+                                            <input
+                                                type="text"
+                                                style={inputStyle}
+                                                placeholder="e.g. +265 992 526 222"
+                                                value={config.whatsappNumber || ''}
+                                                onChange={e => setConfig({ ...config, whatsappNumber: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 

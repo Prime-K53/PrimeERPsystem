@@ -15,6 +15,31 @@ const daysBetween = (a: string, b: string): number => {
 const normalizeStatus = (status?: string): string =>
   String(status || '').trim().toLowerCase();
 
+const lineItemsFingerprint = (invoice: any): string => {
+  const items = invoice.items || [];
+  return items
+    .map((it: any) => {
+      const id = String(it.itemId || it.sku || it.id || '').trim().toLowerCase();
+      const qty = toSafeNumber(it.quantity, 1);
+      const price = toSafeNumber(it.price);
+      return `${id}|${qty}|${price.toFixed(2)}`;
+    })
+    .sort()
+    .join(';');
+};
+
+const lineItemsJaccard = (a: any, b: any): number => {
+  const itemsA = (a.items || []).map((it: any) => String(it.itemId || it.sku || it.id || '').trim().toLowerCase()).filter(Boolean);
+  const itemsB = (b.items || []).map((it: any) => String(it.itemId || it.sku || it.id || '').trim().toLowerCase()).filter(Boolean);
+  if (itemsA.length === 0 || itemsB.length === 0) return 0;
+  const setA = new Set(itemsA);
+  const setB = new Set(itemsB);
+  let intersection = 0;
+  setA.forEach(x => { if (setB.has(x)) intersection += 1; });
+  const union = new Set([...itemsA, ...itemsB]).size;
+  return union > 0 ? intersection / union : 0;
+};
+
 export async function detectDuplicateInvoices(
   invoices: any[]
 ): Promise<{ invoiceId: string; duplicateOf: string; confidence: number; reason: string }[]> {
@@ -59,6 +84,31 @@ export async function detectDuplicateInvoices(
           reason: `Same customer, same amount (${aAmount.toFixed(2)}), ${daysDiff} day(s) apart`
         });
         seen.add(b.id);
+        continue;
+      }
+
+      const aFingerprint = lineItemsFingerprint(a);
+      const bFingerprint = lineItemsFingerprint(b);
+      if (aFingerprint && bFingerprint && aFingerprint === bFingerprint) {
+        results.push({
+          invoiceId: b.id,
+          duplicateOf: a.id,
+          confidence: 0.88,
+          reason: `Identical line items (same SKUs, quantities, and unit prices)`
+        });
+        seen.add(b.id);
+        continue;
+      }
+
+      const jaccard = lineItemsJaccard(a, b);
+      if (jaccard >= 0.7) {
+        results.push({
+          invoiceId: b.id,
+          duplicateOf: a.id,
+          confidence: 0.7 + (jaccard - 0.7) * 0.5,
+          reason: `Strong line-item overlap (${(jaccard * 100).toFixed(0)}% of SKUs match)`
+        });
+        seen.add(b.id);
       }
     }
   }
@@ -84,19 +134,6 @@ export function validateInvoiceTotals(invoice: any): { valid: boolean; issues: s
     );
   }
 
-  const tax = toSafeNumber(invoice.tax);
-  const taxRate = toSafeNumber(invoice.taxRate);
-  const subtotal = items.length > 0 ? itemsSum : totalAmount;
-
-  if (tax && taxRate) {
-    const expectedTax = Math.round(subtotal * taxRate * 100) / 10000;
-    if (Math.abs(tax - expectedTax) > 0.01) {
-      issues.push(
-        `Tax amount (${tax.toFixed(2)}) does not match expected tax at rate ${taxRate}% (${expectedTax.toFixed(2)})`
-      );
-    }
-  }
-
   const discount = toSafeNumber(invoice.discount);
   if (discount && items.length > 0) {
     const discountedSum = itemsSum - discount;
@@ -115,23 +152,6 @@ export function validateInvoiceTotals(invoice: any): { valid: boolean; issues: s
   }
 
   return { valid: issues.length === 0, issues };
-}
-
-export function identifyMissingTaxInfo(invoice: any): string[] {
-  const missing: string[] = [];
-
-  if (invoice.tax === undefined || invoice.tax === null) {
-    missing.push('tax');
-  }
-  if (invoice.taxRate === undefined || invoice.taxRate === null) {
-    missing.push('taxRate');
-  }
-
-  if (!invoice.currency) {
-    missing.push('currency');
-  }
-
-  return missing;
 }
 
 export function flagOverduePayments(

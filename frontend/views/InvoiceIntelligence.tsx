@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { logger } from '@/services/logger';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, AlertCircle, CheckCircle2, Clock,
-  FileText, Shield, Copy, Percent,
+  FileText, Shield, Copy,
   DollarSign, Loader2, Flag, Users, Ban,
   TrendingUp, TrendingDown, ChevronRight, BrainCircuit,
   Search, BarChart3
@@ -12,7 +12,7 @@ import { useSales } from '../context/SalesContext';
 import { useFinance } from '../context/FinanceContext';
 import {
   detectDuplicateInvoices, validateInvoiceTotals,
-  identifyMissingTaxInfo, flagOverduePayments,
+  flagOverduePayments,
   detectSuspiciousInvoices
 } from '../services/invoiceIntelligenceService';
 import { formatCurrency } from '../services/reportSummaryService';
@@ -39,14 +39,13 @@ const amber = { 50: '#fef9e7', 100: '#fef3c7', 200: '#fde68a', 400: '#d99a3f', 5
 const danger = { 50: '#fef2f2', 100: '#fee2e2', 200: '#fecaca', 400: '#dc2626', 500: '#b5493f', 600: '#991b1b', 700: '#7f1d1d', 800: '#450a0a', 900: '#1a0505' };
 const emerald = { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 400: '#16a34a', 500: '#16a34a', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b' };
 
-type Tab = 'duplicates' | 'validation' | 'overdue' | 'suspicious' | 'tax';
+type Tab = 'duplicates' | 'validation' | 'overdue' | 'suspicious';
 
 const TABS: { key: Tab; label: string; icon: React.FC<{ size?: number }>; desc: string; color: string }[] = [
   { key: 'duplicates', label: 'Duplicate Detection', icon: Copy, desc: 'Flag potentially duplicated invoices', color: teal[600] },
   { key: 'validation', label: 'Validation Issues', icon: AlertCircle, desc: 'Invoice total mismatches and errors', color: danger[500] },
   { key: 'overdue', label: 'Overdue Payments', icon: Clock, desc: 'Past-due invoices requiring follow-up', color: amber[500] },
   { key: 'suspicious', label: 'Suspicious Activity', icon: Shield, desc: 'High-risk invoice patterns detected', color: danger[500] },
-  { key: 'tax', label: 'Missing Tax Info', icon: Percent, desc: 'Incomplete tax documentation', color: amber[600] },
 ];
 
 const SeverityBadge = ({ severity }: { severity: 'low' | 'medium' | 'high' | 'critical' }) => {
@@ -84,12 +83,15 @@ const InvoiceIntelligence: React.FC = () => {
   const customers = Array.isArray(contextCustomers) ? contextCustomers : [];
 
   const [activeTab, setActiveTab] = useState<Tab>('duplicates');
+  const [hasRun, setHasRun] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [duplicates, setDuplicates] = useState<{ invoiceId: string; duplicateOf: string; confidence: number; reason: string }[]>([]);
-  const [validationResults, setValidationResults] = useState<{ invoiceId: string; valid: boolean; issues: string[] }[]>([]);
-  const [missingTaxInvoices, setMissingTaxInvoices] = useState<{ invoiceId: string; customerName: string; missingFields: string[] }[]>([]);
-  const [overduePayments, setOverduePayments] = useState<{ invoiceId: string; customerName: string; amountDue: number; daysOverdue: number; severity: 'low' | 'medium' | 'high' }[]>([]);
-  const [suspiciousInvoices, setSuspiciousInvoices] = useState<{ invoiceId: string; flags: string[]; riskScore: number }[]>([]);
+  const [duplicates, setDuplicates] = useState<{ invoiceId: string; duplicateOf: string; confidence: number; reason: string; invoiceA?: any; invoiceB?: any }[]>([]);
+  const [validationResults, setValidationResults] = useState<{ invoiceId: string; valid: boolean; issues: string[]; invoice?: any }[]>([]);
+  const [overduePayments, setOverduePayments] = useState<{ invoiceId: string; customerName: string; amountDue: number; daysOverdue: number; severity: 'low' | 'medium' | 'high'; invoice?: any }[]>([]);
+  const [suspiciousInvoices, setSuspiciousInvoices] = useState<{ invoiceId: string; flags: string[]; riskScore: number; invoice?: any }[]>([]);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const autoRunRef = useRef(false);
 
   const invoicesCount = invoices.length;
   const customersCount = customers.length;
@@ -97,24 +99,32 @@ const InvoiceIntelligence: React.FC = () => {
   const runAnalysis = async () => {
     setLoading(true);
     try {
+      const invoiceById = new Map<string, any>();
+      invoices.forEach((inv: any) => invoiceById.set(inv.id, inv));
+
       const duplicateResults = await detectDuplicateInvoices(invoices);
-      setDuplicates(duplicateResults);
+      const enrichedDuplicates = duplicateResults.map(d => ({
+        ...d,
+        invoiceB: invoiceById.get(d.invoiceId),
+        invoiceA: invoiceById.get(d.duplicateOf)
+      }));
+      setDuplicates(enrichedDuplicates);
 
       const validation = invoices
-        .map((inv: any) => ({ invoiceId: inv.id, ...validateInvoiceTotals(inv) }))
+        .map((inv: any) => ({ invoiceId: inv.id, invoice: inv, ...validateInvoiceTotals(inv) }))
         .filter((r: any) => !r.valid);
       setValidationResults(validation);
 
-      const missing = invoices
-        .map((inv: any) => ({ invoiceId: inv.id, customerName: inv.customerName || 'Unknown', missingFields: identifyMissingTaxInfo(inv) }))
-        .filter((r: any) => r.missingFields.length > 0);
-      setMissingTaxInvoices(missing);
-
       const overdue = flagOverduePayments(invoices, { lateFeeEnabled: true, graceDays: 3 });
-      setOverduePayments(overdue);
+      setOverduePayments(overdue.map(o => ({ ...o, invoice: invoiceById.get(o.invoiceId) })));
 
       const suspicious = detectSuspiciousInvoices(invoices);
-      setSuspiciousInvoices(suspicious.filter((s: any) => s.riskScore > 0));
+      setSuspiciousInvoices(
+        suspicious
+          .filter((s: any) => s.riskScore > 0)
+          .map(s => ({ ...s, invoice: invoiceById.get(s.invoiceId) }))
+      );
+      setHasRun(true);
     } catch (err) {
       logger.error('InvoiceIntelligence analysis error', err);
     } finally {
@@ -122,7 +132,62 @@ const InvoiceIntelligence: React.FC = () => {
     }
   };
 
-  const totalIssues = validationResults.length + missingTaxInvoices.length + suspiciousInvoices.length + overduePayments.length;
+  useEffect(() => {
+    if (autoRunRef.current) return;
+    if (!invoices || invoices.length === 0) return;
+    autoRunRef.current = true;
+    runAnalysis();
+  }, [invoices]);
+
+  const toggleRow = (key: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const renderLineItems = (invoice: any) => {
+    if (!invoice) return <div style={{ fontSize: 11, color: inkSoft, fontStyle: 'italic' }}>Invoice data unavailable</div>;
+    const items = invoice.items || [];
+    if (items.length === 0) return <div style={{ fontSize: 11, color: inkSoft, fontStyle: 'italic' }}>No line items recorded for this invoice</div>;
+    return (
+      <div style={{ padding: '10px 14px', background: '#f8fafc', border: `1px solid ${hairline}`, borderRadius: 8, marginTop: 6 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+          Matching line items ({items.length})
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${hairline}` }}>
+              <th style={{ textAlign: 'left', padding: '4px 6px', fontWeight: 600, color: inkSoft }}>Item</th>
+              <th style={{ textAlign: 'left', padding: '4px 6px', fontWeight: 600, color: inkSoft }}>SKU</th>
+              <th style={{ textAlign: 'right', padding: '4px 6px', fontWeight: 600, color: inkSoft }}>Qty</th>
+              <th style={{ textAlign: 'right', padding: '4px 6px', fontWeight: 600, color: inkSoft }}>Unit</th>
+              <th style={{ textAlign: 'right', padding: '4px 6px', fontWeight: 600, color: inkSoft }}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it: any, idx: number) => {
+              const qty = toSafeNumber(it.quantity, 1);
+              const price = toSafeNumber(it.price);
+              return (
+                <tr key={idx} style={{ borderBottom: `1px dotted ${hairline}` }}>
+                  <td style={{ padding: '4px 6px', color: ink }}>{it.name || it.description || '—'}</td>
+                  <td style={{ padding: '4px 6px', color: inkSoft, fontFamily: 'monospace' }}>{it.sku || it.itemId || '—'}</td>
+                  <td style={{ padding: '4px 6px', textAlign: 'right', color: ink, fontVariantNumeric: 'tabular-nums' }}>{qty}</td>
+                  <td style={{ padding: '4px 6px', textAlign: 'right', color: ink, fontVariantNumeric: 'tabular-nums' }}>{price.toFixed(2)}</td>
+                  <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 600, color: ink, fontVariantNumeric: 'tabular-nums' }}>{(qty * price).toFixed(2)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const totalIssues = validationResults.length + suspiciousInvoices.length + overduePayments.length;
 
   if (loading) {
     return (
@@ -174,26 +239,57 @@ const InvoiceIntelligence: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {duplicates.map((d, i) => (
-                          <tr key={i} style={{ borderBottom: `1px solid ${hairline}` }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafbfb'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            <td style={{ padding: '10px 14px', fontWeight: 600, color: ink, fontFamily: 'monospace', fontSize: 12 }}>{d.invoiceId.slice(0, 12)}...</td>
-                            <td style={{ padding: '10px 14px', fontWeight: 600, color: ink, fontFamily: 'monospace', fontSize: 12 }}>{d.duplicateOf.slice(0, 12)}...</td>
-                            <td style={{ padding: '10px 14px' }}>
-                              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, backgroundColor: d.confidence >= 0.9 ? danger[50] : amber[50], color: d.confidence >= 0.9 ? danger[500] : amber[600] }}>
-                                {(d.confidence * 100).toFixed(0)}%
-                              </span>
-                            </td>
-                            <td style={{ padding: '10px 14px', fontSize: 12, color: inkSoft }}>{d.reason}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                              <button onClick={() => navigate(`/sales-flow/invoices?id=${d.invoiceId}`)} style={{ border: 'none', background: teal[50], color: teal[700], padding: '5px 12px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                Review <ChevronRight size={12} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {duplicates.map((d, i) => {
+                          const rowKey = `dup-${i}`;
+                          const isOpen = expandedRows.has(rowKey);
+                          return (
+                            <React.Fragment key={i}>
+                              <tr style={{ borderBottom: `1px solid ${hairline}` }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafbfb'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <td style={{ padding: '10px 14px', fontWeight: 600, color: ink, fontFamily: 'monospace', fontSize: 12 }}>{d.invoiceId.slice(0, 12)}...</td>
+                                <td style={{ padding: '10px 14px', fontWeight: 600, color: ink, fontFamily: 'monospace', fontSize: 12 }}>{d.duplicateOf.slice(0, 12)}...</td>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, backgroundColor: d.confidence >= 0.9 ? danger[50] : amber[50], color: d.confidence >= 0.9 ? danger[500] : amber[600] }}>
+                                    {(d.confidence * 100).toFixed(0)}%
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 14px', fontSize: 12, color: inkSoft }}>{d.reason}</td>
+                                <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                  <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                                    <button onClick={() => toggleRow(rowKey)} title="Show matching line items" style={{ border: `1px solid ${hairline}`, background: isOpen ? teal[600] : paper, color: isOpen ? '#fff' : teal[700], padding: '5px 10px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <FileText size={11} /> {isOpen ? 'Hide' : 'Items'}
+                                    </button>
+                                    <button onClick={() => navigate(`/sales-flow/invoices?id=${d.invoiceId}`)} style={{ border: 'none', background: teal[50], color: teal[700], padding: '5px 12px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      Review <ChevronRight size={12} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                              {isOpen && (
+                                <tr>
+                                  <td colSpan={5} style={{ padding: '0 14px 10px', background: '#fafbfb' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                      <div>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                                          Invoice A: {d.duplicateOf.slice(0, 16)}
+                                        </div>
+                                        {renderLineItems(d.invoiceA)}
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                                          Invoice B: {d.invoiceId.slice(0, 16)}
+                                        </div>
+                                        {renderLineItems(d.invoiceB)}
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -220,20 +316,34 @@ const InvoiceIntelligence: React.FC = () => {
               </div>
               {validationResults.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {validationResults.slice(0, 10).map((r, i) => (
-                    <div key={i} style={{ padding: '14px 18px', borderRadius: 14, backgroundColor: danger[50], border: `1.4px solid ${danger[200]}` }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: danger[700], fontFamily: 'monospace' }}>{r.invoiceId.slice(0, 12)}...</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: danger[500], backgroundColor: danger[200], padding: '2px 8px', borderRadius: 9 }}>Invalid</span>
-                      </div>
-                      {r.issues.map((issue, j) => (
-                        <div key={j} style={{ fontSize: 12, color: inkSoft, padding: '2px 0', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                          <span style={{ color: danger[500], flexShrink: 0 }}>•</span>
-                          <span>{issue}</span>
+                  {validationResults.slice(0, 10).map((r, i) => {
+                    const rowKey = `val-${i}`;
+                    const isOpen = expandedRows.has(rowKey);
+                    return (
+                      <div key={i} style={{ padding: '14px 18px', borderRadius: 14, backgroundColor: danger[50], border: `1.4px solid ${danger[200]}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: danger[700], fontFamily: 'monospace' }}>{r.invoiceId.slice(0, 12)}...</span>
+                          <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: danger[500], backgroundColor: danger[200], padding: '2px 8px', borderRadius: 9 }}>Invalid</span>
+                            <button onClick={() => toggleRow(rowKey)} style={{ border: `1px solid ${hairline}`, background: isOpen ? teal[600] : paper, color: isOpen ? '#fff' : teal[700], padding: '3px 10px', borderRadius: 9, fontSize: 10, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <FileText size={10} /> {isOpen ? 'Hide' : 'Items'}
+                            </button>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  ))}
+                        {r.issues.map((issue, j) => (
+                          <div key={j} style={{ fontSize: 12, color: inkSoft, padding: '2px 0', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                            <span style={{ color: danger[500], flexShrink: 0 }}>•</span>
+                            <span>{issue}</span>
+                          </div>
+                        ))}
+                        {isOpen && (
+                          <div style={{ marginTop: 8 }}>
+                            {renderLineItems(r.invoice)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   {validationResults.length > 10 && (
                     <div style={{ textAlign: 'center', fontSize: 12, color: inkSoft, fontWeight: 600, padding: 8 }}>
                       +{validationResults.length - 10} more issues
@@ -274,28 +384,46 @@ const InvoiceIntelligence: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {overduePayments.map((o, i) => (
-                          <tr key={i} style={{ borderBottom: `1px solid ${hairline}` }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafbfb'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            <td style={{ padding: '10px 14px', fontWeight: 600, color: ink }}>{o.customerName}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: danger[500], fontVariantNumeric: 'tabular-nums' }}>
-                              {formatCurrency(o.amountDue)}
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>
-                              <span style={{ color: o.daysOverdue > 30 ? danger[500] : amber[600] }}>
-                                {o.daysOverdue} {o.daysOverdue === 1 ? 'day' : 'days'}
-                              </span>
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center' }}><SeverityBadge severity={o.severity} /></td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                              <button onClick={() => navigate(`/sales-flow/invoices?id=${o.invoiceId}`)} style={{ border: 'none', background: teal[50], color: teal[700], padding: '5px 12px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                View <ChevronRight size={12} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {overduePayments.map((o, i) => {
+                          const rowKey = `ovr-${i}`;
+                          const isOpen = expandedRows.has(rowKey);
+                          return (
+                            <React.Fragment key={i}>
+                              <tr style={{ borderBottom: `1px solid ${hairline}` }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafbfb'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <td style={{ padding: '10px 14px', fontWeight: 600, color: ink }}>{o.customerName}</td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: danger[500], fontVariantNumeric: 'tabular-nums' }}>
+                                  {formatCurrency(o.amountDue)}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>
+                                  <span style={{ color: o.daysOverdue > 30 ? danger[500] : amber[600] }}>
+                                    {o.daysOverdue} {o.daysOverdue === 1 ? 'day' : 'days'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'center' }}><SeverityBadge severity={o.severity} /></td>
+                                <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                  <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                                    <button onClick={() => toggleRow(rowKey)} title="Show invoice line items" style={{ border: `1px solid ${hairline}`, background: isOpen ? teal[600] : paper, color: isOpen ? '#fff' : teal[700], padding: '5px 10px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <FileText size={11} /> {isOpen ? 'Hide' : 'Items'}
+                                    </button>
+                                    <button onClick={() => navigate(`/sales-flow/invoices?id=${o.invoiceId}`)} style={{ border: 'none', background: teal[50], color: teal[700], padding: '5px 12px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      View <ChevronRight size={12} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                              {isOpen && (
+                                <tr>
+                                  <td colSpan={5} style={{ padding: '0 14px 10px', background: '#fafbfb' }}>
+                                    {renderLineItems(o.invoice)}
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -322,98 +450,47 @@ const InvoiceIntelligence: React.FC = () => {
               </div>
               {suspiciousInvoices.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-                  {suspiciousInvoices.map((s, i) => (
-                    <div key={i} style={{
-                      padding: '18px', borderRadius: 14,
-                      backgroundColor: s.riskScore >= 70 ? danger[50] : s.riskScore >= 40 ? amber[50] : '#f8fafc',
-                      border: `1.4px solid ${s.riskScore >= 70 ? danger[200] : s.riskScore >= 40 ? amber[100] : hairline}`,
-                      display: 'flex', flexDirection: 'column', gap: 10,
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', color: ink }}>
-                          {s.invoiceId.slice(0, 14)}...
-                        </span>
-                        <RiskScoreBadge score={s.riskScore} />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {s.flags.map((flag, j) => (
-                          <div key={j} style={{ fontSize: 11, color: inkSoft, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                            <Flag size={12} color={danger[500]} style={{ flexShrink: 0, marginTop: 1 }} />
-                            <span>{flag}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <button onClick={() => navigate(`/sales-flow/invoices?id=${s.invoiceId}`)} style={{
-                        border: 'none', background: teal[50], color: teal[700], padding: '6px 14px', borderRadius: 9,
-                        fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
-                        alignSelf: 'flex-start', marginTop: 4,
+                  {suspiciousInvoices.map((s, i) => {
+                    const rowKey = `sus-${i}`;
+                    const isOpen = expandedRows.has(rowKey);
+                    return (
+                      <div key={i} style={{
+                        padding: '18px', borderRadius: 14,
+                        backgroundColor: s.riskScore >= 70 ? danger[50] : s.riskScore >= 40 ? amber[50] : '#f8fafc',
+                        border: `1.4px solid ${s.riskScore >= 70 ? danger[200] : s.riskScore >= 40 ? amber[100] : hairline}`,
+                        display: 'flex', flexDirection: 'column', gap: 10,
                       }}>
-                        Investigate <ChevronRight size={12} />
-                      </button>
-                    </div>
-                  ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', color: ink }}>
+                            {s.invoiceId.slice(0, 14)}...
+                          </span>
+                          <RiskScoreBadge score={s.riskScore} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {s.flags.map((flag, j) => (
+                            <div key={j} style={{ fontSize: 11, color: inkSoft, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                              <Flag size={12} color={danger[500]} style={{ flexShrink: 0, marginTop: 1 }} />
+                              <span>{flag}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <button onClick={() => toggleRow(rowKey)} style={{ border: `1px solid ${hairline}`, background: isOpen ? teal[600] : paper, color: isOpen ? '#fff' : teal[700], padding: '6px 14px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <FileText size={12} /> {isOpen ? 'Hide Items' : 'Show Items'}
+                          </button>
+                          <button onClick={() => navigate(`/sales-flow/invoices?id=${s.invoiceId}`)} style={{
+                            border: 'none', background: teal[50], color: teal[700], padding: '6px 14px', borderRadius: 9,
+                            fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+                          }}>
+                            Investigate <ChevronRight size={12} />
+                          </button>
+                        </div>
+                        {isOpen && renderLineItems(s.invoice)}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : emptyState(<Shield size={28} color={emerald[500]} />, 'No suspicious activity detected.')}
-          </div>
-        );
-
-      case 'tax':
-        return (
-          <div>
-<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <div>
-                  <h2 style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontWeight: 400, fontSize: 18, margin: 0, color: ink, letterSpacing: '-0.01em' }}>Missing Tax Information</h2>
-                  <p style={{ fontSize: 13, color: inkSoft, margin: '4px 0 0' }}>
-                    {missingTaxInvoices.length > 0 ? `${missingTaxInvoices.length} invoice${missingTaxInvoices.length !== 1 ? 's' : ''} with incomplete tax data` : 'All invoices have complete tax info'}
-                  </p>
-                </div>
-                {missingTaxInvoices.length > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: amber[600], backgroundColor: amber[50], padding: '4px 12px', borderRadius: 9 }}>
-                    {missingTaxInvoices.length} affected
-                  </span>
-                )}
-              </div>
-              {missingTaxInvoices.length > 0 ? (
-                <div style={{ border: `1.4px solid ${hairline}`, borderRadius: 14, overflow: 'hidden', background: paper }}>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead>
-                        <tr style={{ backgroundColor: teal[50], borderBottom: `1.4px solid ${hairline}` }}>
-                          <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700, fontSize: 11, color: inkSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Invoice ID</th>
-                          <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700, fontSize: 11, color: inkSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Customer</th>
-                          <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700, fontSize: 11, color: inkSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Missing Fields</th>
-                          <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 700, fontSize: 11, color: inkSoft, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {missingTaxInvoices.map((m, i) => (
-                          <tr key={i} style={{ borderBottom: `1px solid ${hairline}` }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafbfb'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            <td style={{ padding: '10px 14px', fontWeight: 600, color: ink, fontFamily: 'monospace', fontSize: 12 }}>{m.invoiceId.slice(0, 12)}...</td>
-                            <td style={{ padding: '10px 14px', fontWeight: 600, color: ink }}>{m.customerName}</td>
-                            <td style={{ padding: '10px 14px' }}>
-                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                {m.missingFields.map((field, j) => (
-                                  <span key={j} style={{ fontSize: 10, fontWeight: 700, backgroundColor: danger[50], color: danger[500], padding: '2px 8px', borderRadius: 9 }}>
-                                    {field}
-                                  </span>
-                                ))}
-                              </div>
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                              <button onClick={() => navigate(`/sales-flow/invoices?id=${m.invoiceId}`)} style={{ border: 'none', background: teal[50], color: teal[700], padding: '5px 12px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                Fix <ChevronRight size={12} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : emptyState(<CheckCircle2 size={28} color={emerald[500]} />, 'All invoices have complete tax information.')}
           </div>
         );
     }

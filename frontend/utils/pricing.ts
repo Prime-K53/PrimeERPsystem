@@ -542,7 +542,7 @@ export function calculatePhotocopyCostPerPage(inventory: Item[]): number {
   const toner = findDefaultToner(inventory);
   const paperUnitCost = paper ? resolveItemCost(paper) : 0;
   const conversionRate = paper ? resolveConversionRate(paper) : DEFAULT_REAM_SIZE;
-  const paperCostPerPage = conversionRate > 0 ? paperUnitCost / (conversionRate * 2) : 0;
+  const paperCostPerPage = conversionRate > 0 ? paperUnitCost / conversionRate : 0;
   let tonerCostPerPage = 0;
   if (toner) {
     const perUnitCost = Number((toner as any).cost_per_unit ?? 0);
@@ -562,7 +562,7 @@ export function calculatePhotocopyCostBreakdown(inventory: Item[]): { paperCostP
   const toner = findDefaultToner(inventory);
   const paperUnitCost = paper ? resolveItemCost(paper) : 0;
   const conversionRate = paper ? resolveConversionRate(paper) : DEFAULT_REAM_SIZE;
-  const paperCostPerSheet = conversionRate > 0 ? paperUnitCost / (conversionRate * 2) : 0;
+  const paperCostPerSheet = conversionRate > 0 ? paperUnitCost / conversionRate : 0;
   let tonerCostPerPage = 0;
   if (toner) {
     const perUnitCost = Number((toner as any).cost_per_unit ?? 0);

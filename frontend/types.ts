@@ -220,6 +220,7 @@ export interface CompanyConfig {
   tagline?: string;
   email: string;
   phone: string;
+  whatsappNumber?: string;
   addressLine1: string;
   city?: string;
   country?: string;
