@@ -17,6 +17,8 @@ const emailService = require('./emailService.cjs');
 const workflowEngine = require('./workflowEngine.cjs');
 const promotionEngine = require('./promotionEngine.cjs');
 const promotionService = require('./promotionService.cjs');
+const { ReferralService } = require('./referralService.cjs');
+const referralService = new ReferralService();
 
 // ─── Centralized status enums ────────────────────────────────────────────────
 const REQUEST_STATUS = Object.freeze({
@@ -602,6 +604,18 @@ async function runOrderPromotion({ customerId, items, promotionCode }) {
 
   // Line items keep the ERP master price PLUS explicit discount fields so the
   // ERP always sees WHY the price differs — never a silently changed master.
+  let referralFirstOrderDiscount = 0;
+  let referralFirstOrderDiscountPct = 0;
+  try {
+    const discountPct = await referralService.getReferredCustomerFirstOrderDiscount(customerId);
+    if (discountPct > 0) {
+      referralFirstOrderDiscount = round2(subtotal * (discountPct / 100));
+      referralFirstOrderDiscountPct = discountPct;
+    }
+  } catch (err) {
+    console.warn('[PortalLifecycle] First-order referral discount check failed:', err?.message);
+  }
+
   const storedItems = calculation.lines.map((l) => {
     const line = {
       productId: l.productId,
@@ -635,10 +649,14 @@ async function runOrderPromotion({ customerId, items, promotionCode }) {
     return line;
   });
 
+  const totalAfterReferralDiscount = round2(calculation.subtotalAfterDiscount - referralFirstOrderDiscount);
+
   return {
     subtotal,
     discountTotal: calculation.discountTotal,
-    total: calculation.subtotalAfterDiscount,
+    referralFirstOrderDiscount,
+    referralFirstOrderDiscountPercent: referralFirstOrderDiscount > 0 ? referralFirstOrderDiscountPct : 0,
+    total: totalAfterReferralDiscount,
     promotion,
     promotionApplied: calculation.applied,
     primary,
@@ -1045,7 +1063,10 @@ const portalLifecycleService = {
     });
     const storedItems = promoResult.items;
     const subtotal = promoResult.subtotal;
-    const { discountTotal, total, promotion, promotionApplied } = promoResult;
+    const referralDiscount = promoResult.referralFirstOrderDiscount || 0;
+    const discountTotal = promoResult.discountTotal + referralDiscount;
+    const total = promoResult.total;
+    const { promotion, promotionApplied } = promoResult;
 
     await runQuery(
       `INSERT INTO quotation_requests
@@ -1115,8 +1136,10 @@ const portalLifecycleService = {
       lines: result.items,
       subtotal: result.subtotal,
       discountTotal: result.discountTotal,
+      referralFirstOrderDiscount: result.referralFirstOrderDiscount || 0,
+      referralFirstOrderDiscountPercent: result.referralFirstOrderDiscountPercent || 0,
       subtotalBeforeDiscount: result.subtotal,
-      subtotalAfterDiscount: result.total,
+      subtotalAfterDiscount: result.subtotal - result.discountTotal,
       taxableSubtotal: result.total,
       grandTotal: result.total,
       metadata: result.calculation.metadata || {},

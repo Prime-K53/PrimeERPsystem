@@ -17,6 +17,7 @@ interface QuickPrintModalProps {
     conversionRate: number;
     materialId?: string;
   } | null;
+  serviceName?: string;
 }
 
 const teal: Record<string, string> = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -29,7 +30,7 @@ const danger = '#b5493f';
 
 const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
   open, onClose, type, pricePerPage, costPerPage, paperCostPerSheet, tonerCostPerPage, currency,
-  onConfirm, pinningItem, staplePrice
+  onConfirm, pinningItem, staplePrice, serviceName
 }) => {
   const [quantity, setQuantity] = useState(1);
   const [pagesPerCopy, setPagesPerCopy] = useState(1);
@@ -114,7 +115,7 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
                 fontFamily: "'DM Serif Display', 'Georgia', serif", fontWeight: 400,
                 fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
               }}>
-                {isPhotocopy ? 'Quick Photocopy' : 'Type & Printing'}
+                {isPhotocopy ? 'Quick Photocopy' : (serviceName || 'Type & Printing')}
               </h1>
               <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>
                 {isPhotocopy ? 'Photocopy Service' : 'Printing Service'} &mdash; {fc(pricePerPage)} per {isPhotocopy ? 'sheet' : (pricingMethod === 'per_page' ? 'page' : 'sheet')}
@@ -200,10 +201,12 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
                 <span style={{ fontWeight: 600, color: inkSoft }}>{totalPages}</span>
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 12 }}>
-              <span style={{ color: inkSoft }}>{pricingMethod === 'per_page' ? 'Page' : 'Sheet'} Cost</span>
-              <span style={{ fontWeight: 600, color: ink }}>{fc(printTotal)}</span>
-            </div>
+            {false && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 12 }}>
+                <span style={{ color: inkSoft }}>{pricingMethod === 'per_page' ? 'Page' : 'Sheet'} Cost</span>
+                <span style={{ fontWeight: 600, color: ink }}>{fc(printTotal)}</span>
+              </div>
+            )}
 
             {(costPerPage || paperCostPerSheet !== undefined || tonerCostPerPage !== undefined) ? (
               <>

@@ -77,6 +77,8 @@ END $$;
 -- Live shape today: id, data, company_id, created_at, updated_at.
 -- Missing: `version` (backend envelope requires it). Additive, idempotent.
 -- The CREATE TABLE IF NOT EXISTS guards a fresh chain that skips 0003.
+-- Also add `lifecycle_status` for the event-based referral lifecycle:
+--   REGISTERED → VERIFIED → ORDER_PLACED → QUALIFIED → REWARDED / REVERSED
 
 CREATE TABLE IF NOT EXISTS public.customer_referrals (
     id TEXT PRIMARY KEY,
@@ -96,6 +98,15 @@ CREATE TABLE IF NOT EXISTS public.referral_rewards (
 
 ALTER TABLE public.customer_referrals ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE public.referral_rewards   ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0;
+
+-- lifecycle_status: event-based lifecycle state (see Phase 2 of referral audit)
+-- Backward-compatible: NULL maps to 'registered' (the implicit state of existing referrals)
+ALTER TABLE public.customer_referrals ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'registered';
+ALTER TABLE public.referral_rewards   ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'registered';
+
+-- Add expression indexes for lifecycle_status filtering
+CREATE INDEX IF NOT EXISTS idx_customer_referrals_lifecycle ON public.customer_referrals ((data->>'lifecycle_status'));
+CREATE INDEX IF NOT EXISTS idx_referral_rewards_lifecycle   ON public.referral_rewards   ((data->>'lifecycle_status'));
 
 -- Belt-and-braces: guarantee the envelope columns exist regardless of the
 -- historical shape encountered (covers any other legacy variant).

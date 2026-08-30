@@ -71,12 +71,17 @@ const POS: React.FC = () => {
     
     const handleConfigureService = (service: Item) => {
         if (isPrintingService(service)) {
-            setSelectedPrintingService(service);
+            setQuickPrintModal({ open: true, type: 'printing', serviceName: service.name, serviceItemId: service.id });
         } else {
             setSelectedServiceForCalculator(service);
         }
     };
-  const [quickPrintModal, setQuickPrintModal] = useState<{ open: boolean; type: 'photocopy' | 'printing' }>({
+  const [quickPrintModal, setQuickPrintModal] = useState<{
+    open: boolean;
+    type: 'photocopy' | 'printing';
+    serviceName?: string;
+    serviceItemId?: string;
+  }>({
     open: false,
     type: 'photocopy'
   });
@@ -470,12 +475,13 @@ const POS: React.FC = () => {
   };
 
   const handleQuickTypePrinting = () => {
-    setQuickPrintModal({ open: true, type: 'printing' });
+    setQuickPrintModal({ open: true, type: 'printing', serviceName: undefined, serviceItemId: undefined });
   };
 
 const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number) => {
         const isPhotocopy = printType === 'photocopy';
-        const pricePerPage = isPhotocopy 
+        const isServiceItem = !!quickPrintModal.serviceItemId;
+        const pricePerPage = isPhotocopy
           ? (companyConfig.transactionSettings?.pos?.photocopyPrice ?? 2.00)
           : (companyConfig.transactionSettings?.pos?.typePrintingPrice ?? 5.00);
 
@@ -492,16 +498,14 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
 
         const quickItem: CartItem = {
           id: `QUICK-${isPhotocopy ? 'PHOTO' : 'PRINT'}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          itemId: isPhotocopy ? 'SVC-PHOTOCOPY' : 'SVC-TYPE-PRINT',
-          name: isPhotocopy ? 'Photocopy' : 'Type & Printing',
-          sku: isPhotocopy ? 'QUICK-PHOTO' : 'QUICK-PRINT',
-          desc: isPhotocopy 
-            ? `Quick Photocopy (${pagesPerCopy} pages, ${Math.ceil(pagesPerCopy / 2)} sheets × ${quantity} copies)`
-            : `Type & Printing (${pagesPerCopy} pages × ${quantity} copies)`,
-          price: finalPrice,
-          cost: materialCost,
-          cost_price: materialCost,
-          quantity: 1,
+          itemId: isPhotocopy ? 'SVC-PHOTOCOPY' : (quickPrintModal.serviceItemId || 'SVC-TYPE-PRINT'),
+          name: isPhotocopy ? 'Photocopy' : (quickPrintModal.serviceName || 'Type & Printing'),
+          sku: isPhotocopy ? 'QUICK-PHOTO' : (quickPrintModal.serviceItemId ? `SVC-PRINT-${quickPrintModal.serviceItemId.slice(-6)}` : 'QUICK-PRINT'),
+          desc: isPhotocopy ? 'Photocopy' : (quickPrintModal.serviceName || 'Type & Printing'),
+          price: pricePerPage,
+          cost: materialCost / totalSheets,
+          cost_price: materialCost / totalSheets,
+          quantity: totalSheets,
           pagesOverride: pagesPerCopy,
           category: 'Service',
           type: 'Service',
@@ -1607,6 +1611,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
         <QuickPrintModal
           open={quickPrintModal.open}
           type={quickPrintModal.type}
+          serviceName={quickPrintModal.serviceName}
           pricePerPage={quickPrintModal.type === 'photocopy'
             ? (companyConfig.transactionSettings?.pos?.photocopyPrice ?? 2.00)
             : (companyConfig.transactionSettings?.pos?.typePrintingPrice ?? 5.00)}
@@ -1632,9 +1637,9 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           })()}
           onConfirm={(quantity, pagesPerCopy, total, printType, pinningCost, pinningCount) => {
             handleQuickPrintConfirm(quantity, pagesPerCopy, total, printType, pinningCost, pinningCount);
-            setQuickPrintModal({ open: false, type: quickPrintModal.type });
+            setQuickPrintModal({ open: false, type: quickPrintModal.type, serviceName: quickPrintModal.serviceName, serviceItemId: quickPrintModal.serviceItemId });
           }}
-          onClose={() => setQuickPrintModal({ open: false, type: quickPrintModal.type })}
+          onClose={() => setQuickPrintModal({ open: false, type: quickPrintModal.type, serviceName: quickPrintModal.serviceName, serviceItemId: quickPrintModal.serviceItemId })}
         />
       )}
 

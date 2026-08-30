@@ -1258,6 +1258,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
           : calculateTypePrintingCostPerPage(inventory);
 
         const totalPages = pagesPerCopy * quantity;
+        const totalSheets = isPhotocopy ? quantity * Math.ceil(pagesPerCopy / 2) : totalPages;
         const materialCost = costPerPage * totalPages;
         const unitCostPerCopy = totalPages > 0 ? materialCost : 0;
 
@@ -1266,15 +1267,13 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         const newItem: CartItem = {
           id: `QUICK-${isPhotocopy ? 'PHOTO' : 'PRINT'}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           itemId: isPhotocopy ? 'SVC-PHOTOCOPY' : 'SVC-TYPE-PRINT',
-          name: isPhotocopy ? 'Quick Photocopy' : 'Type & Printing',
+          name: isPhotocopy ? 'Photocopy' : 'Type & Printing',
           sku: isPhotocopy ? 'QUICK-PHOTO' : 'QUICK-PRINT',
-          desc: isPhotocopy 
-            ? `Quick Photocopy (${pagesPerCopy} pages, ${Math.ceil(pagesPerCopy / 2)} sheets x ${quantity} copies)`
-            : `Type & Printing (${pagesPerCopy} pages x ${quantity} copies)`,
-          price: finalPrice,
-          cost: materialCost,
-          cost_price: materialCost,
-          quantity: 1,
+          desc: isPhotocopy ? 'Photocopy' : 'Type & Printing',
+          price: pricePerPage,
+          cost: materialCost / totalSheets,
+          cost_price: materialCost / totalSheets,
+          quantity: totalSheets,
           pagesOverride: pagesPerCopy,
           category: 'Service',
           type: 'Service',

@@ -2298,7 +2298,7 @@ if (type === 'POS_RECEIPT') {
           <View style={{ marginTop: 20 }}>
             <View style={s.tableHeader}>
               <Text style={{ flex: 1, textAlign: 'center' }}>Qty</Text>
-              <Text style={{ flex: 3 }}>Class / Subject</Text>
+              <Text style={{ flex: 3 }}>Class</Text>
               <Text style={{ flex: 1, textAlign: 'right' }}>Price</Text>
               <Text style={{ flex: 1.5, textAlign: 'right' }}>Total</Text>
             </View>

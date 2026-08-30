@@ -42,6 +42,7 @@ export interface ReferralSettings {
   rewardType: 'fixed' | 'percentage' | 'hybrid'
   rewardValue: number
   rewardPercentage: number
+  referredCustomerDiscountPercentage: number
   minPurchaseAmount: number
   maxRewardAmount: number
   requireApproval: boolean
@@ -86,6 +87,7 @@ export const DEFAULT_REFERRAL_SETTINGS: ReferralSettings = {
   rewardType: 'percentage',
   rewardValue: 0,
   rewardPercentage: 5,
+  referredCustomerDiscountPercentage: 5,
   minPurchaseAmount: 0,
   maxRewardAmount: 0,
   requireApproval: true,

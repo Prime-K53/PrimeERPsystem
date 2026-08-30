@@ -28,6 +28,23 @@ function generateId(): string {
   return `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+async function getFirstOrderDiscountForCustomer(customerId: string): Promise<{ discountPct: number; isFirstOrder: boolean }> {
+  const settings = getReferralSettings();
+  if (!settings.enabled) return { discountPct: 0, isFirstOrder: false };
+
+  const allInvoices = await dbService.getAll<any>('invoices');
+  const priorInvoices = allInvoices.filter(inv =>
+    inv.customerId === customerId &&
+    ['Paid', 'paid', 'Completed'].includes(String(inv.status || ''))
+  );
+  const isFirstOrder = priorInvoices.length === 0;
+
+  if (!isFirstOrder) return { discountPct: 0, isFirstOrder: false };
+
+  const discountPct = (settings as any).referredCustomerDiscountPercentage ?? 5;
+  return { discountPct: Math.max(0, discountPct), isFirstOrder: true };
+}
+
 export const referralService = {
   async registerReferral(customerId: string, referredById: string, referredByName?: string, actorId?: string): Promise<Referral> {
     const referral: Referral = {
@@ -374,5 +391,11 @@ export const referralService = {
     if (params?.entity_type) all = all.filter(l => l.entityType === params.entity_type);
     if (params?.entity_id) all = all.filter(l => l.entityId === params.entity_id);
     return { logs: all, total: all.length };
+  },
+
+  // First-Order Discount (Phase 5)
+  // Returns the discount percentage for the referred customer's first qualifying order.
+  async getFirstOrderDiscountForCustomer(customerId: string): Promise<{ discountPct: number; isFirstOrder: boolean }> {
+    return getFirstOrderDiscountForCustomer(customerId);
   },
 }

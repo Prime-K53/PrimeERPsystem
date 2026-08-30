@@ -164,6 +164,84 @@ class ReferralService {
     return tryGenerate();
   }
 
+  // ── Fraud Protection helpers (Phase 6) ─────────────────────────
+  // Normalize phone number: strip spaces, country code prefixes (+265, 265, 0).
+  normalizePhone(phone) {
+    if (!phone) return null;
+    return String(phone).replace(/\s+/g, '').replace(/^(\+?265|265|0)/, '').replace(/[^0-9]/g, '') || null;
+  }
+
+  // Normalize email: lowercase, trim.
+  normalizeEmail(email) {
+    if (!email) return null;
+    return String(email).toLowerCase().trim().replace(/\s+/g, '') || null;
+  }
+
+  // Normalize organisation name: lowercase, trim, collapse spaces.
+  normalizeOrg(org) {
+    if (!org) return null;
+    return String(org).toLowerCase().trim().replace(/\s+/g, ' ').replace(/[^a-z0-9 ]/g, '') || null;
+  }
+
+  async checkFraudSignals({ customerId, email, phone, organisation, referredById }) {
+    const signals = [];
+    const normalizedEmail = this.normalizeEmail(email);
+    const normalizedPhone = this.normalizePhone(phone);
+    const normalizedOrg = this.normalizeOrg(organisation);
+
+    if (!normalizedEmail && !normalizedPhone && !normalizedOrg) return signals;
+
+    // Check for duplicate email (normalized) excluding self
+    if (normalizedEmail) {
+      const existingByEmail = await this._get(
+        `SELECT id, email, phone, organisation FROM customers WHERE LOWER(TRIM(REPLACE(email, ' ', ''))) = ? AND id != ? LIMIT 1`,
+        [normalizedEmail, customerId || '']
+      );
+      if (existingByEmail) {
+        signals.push({
+          type: 'duplicate_email',
+          severity: 'high',
+          message: `Customer with email '${email}' already exists (ID: ${existingByEmail.id})`,
+          matchedCustomerId: existingByEmail.id,
+        });
+      }
+    }
+
+    // Check for duplicate phone (normalized) excluding self
+    if (normalizedPhone) {
+      const existingByPhone = await this._get(
+        `SELECT id, email, phone, organisation FROM customers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '+265', ''), '265', ''), '^0', ''), '/[^0-9]/g', '') = ? AND id != ? LIMIT 1`,
+        [normalizedPhone, customerId || '']
+      );
+      if (existingByPhone) {
+        signals.push({
+          type: 'duplicate_phone',
+          severity: 'high',
+          message: `Customer with phone '${phone}' already exists (ID: ${existingByPhone.id})`,
+          matchedCustomerId: existingByPhone.id,
+        });
+      }
+    }
+
+    // Organisation as a risk signal (not an automatic rejection)
+    if (normalizedOrg && normalizedOrg.length >= 3) {
+      const existingByOrg = await this._get(
+        `SELECT id, email, phone, organisation FROM customers WHERE LOWER(TRIM(REPLACE(REPLACE(organisation, ' ', ''), '/[^a-z0-9]/g', ''))) LIKE ? AND id != ? LIMIT 1`,
+        [`%${normalizedOrg}%`, customerId || '']
+      );
+      if (existingByOrg) {
+        signals.push({
+          type: 'same_organisation',
+          severity: 'low',
+          message: `Customer in same organisation '${organisation}' exists (ID: ${existingByOrg.id}). Review for potential fraud.`,
+          matchedCustomerId: existingByOrg.id,
+        });
+      }
+    }
+
+    return signals;
+  }
+
   // ── Referral CRUD ──────────────────────────────────────────────
 
   async getAll(params) {
@@ -225,6 +303,215 @@ class ReferralService {
       'SELECT * FROM customer_referrals WHERE id = ? AND deleted_at IS NULL',
       [id]
     );
+  }
+
+  // ── Lifecycle (Phase 2) ─────────────────────────────────────────
+  // Lifecycle states: REGISTERED → VERIFIED → ORDER_PLACED → QUALIFIED → REWARDED / REVERSED
+  // Backward-compatible: existing 'active' referrals default to REGISTERED.
+
+  get LIFECYCLE_STATES() {
+    return {
+      REGISTERED:    'registered',
+      VERIFIED:      'verified',
+      ORDER_PLACED:  'order_placed',
+      QUALIFIED:     'qualified',
+      REWARDED:      'rewarded',
+      REVERSED:      'reversed',
+    };
+  }
+
+  get LIFECYCLE_TRANSITIONS() {
+    return {
+      registered:   ['verified'],
+      verified:     ['order_placed'],
+      order_placed: ['qualified'],
+      qualified:    ['rewarded', 'reversed'],
+      rewarded:     ['reversed'],
+      reversed:     [],
+    };
+  }
+
+  async getLifecycleStatus(referralId) {
+    const referral = await this._get(
+      'SELECT lifecycle_status FROM customer_referrals WHERE id = ? AND deleted_at IS NULL',
+      [referralId]
+    );
+    return referral?.lifecycle_status || this.LIFECYCLE_STATES.REGISTERED;
+  }
+
+  async advanceLifecycle(referralId, newStatus, metadata = {}) {
+    const referral = await this._get(
+      'SELECT * FROM customer_referrals WHERE id = ? AND deleted_at IS NULL',
+      [referralId]
+    );
+    if (!referral) throw new Error('Referral not found');
+
+    const current = referral.lifecycle_status || this.LIFECYCLE_STATES.REGISTERED;
+    const allowed = this.LIFECYCLE_TRANSITIONS[current] || [];
+    if (!allowed.includes(newStatus)) {
+      throw new Error(`Invalid lifecycle transition: ${current} → ${newStatus}`);
+    }
+
+    await this._run(
+      `UPDATE customer_referrals SET lifecycle_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [newStatus, referralId]
+    );
+
+    await this.addTimelineEntry({
+      referralId,
+      eventType: `lifecycle_${newStatus}`,
+      title: `Lifecycle: ${newStatus.replace('_', ' ')}`,
+      description: `Referral transitioned to '${newStatus}' state`,
+      metadata: { previousState: current, newState: newStatus, ...metadata },
+    });
+
+    await this.addAuditLog({
+      entityType: 'referral',
+      entityId: referralId,
+      action: 'lifecycle_advance',
+      actorId: metadata.actorId || 'system',
+      actorName: metadata.actorName || 'System',
+      fieldName: 'lifecycle_status',
+      oldValue: current,
+      newValue: newStatus,
+    });
+
+    return this._get('SELECT * FROM customer_referrals WHERE id = ?', [referralId]);
+  }
+
+  // ── First-Order Discount (Phase 5) ────────────────────────────
+  // Check if the referred customer is placing their first qualifying order.
+  // Uses the invoices table to count prior orders for this customer.
+
+  async isReferredCustomerFirstQualifyingOrder(referredCustomerId, excludeInvoiceId = null) {
+    const referral = await this._get(
+      'SELECT * FROM customer_referrals WHERE customer_id = ? AND status IN (?, ?) AND deleted_at IS NULL LIMIT 1',
+      [referredCustomerId, 'active', 'converted']
+    );
+    if (!referral) return false;
+
+    let sql = 'SELECT COUNT(*) as count FROM invoices WHERE customer_id = ? AND status IN (?, ?, ?)';
+    const params = [referredCustomerId, 'Paid', 'paid', 'Completed'];
+
+    if (excludeInvoiceId) {
+      sql += ' AND id != ?';
+      params.push(excludeInvoiceId);
+    }
+
+    const result = await this._get(sql, params);
+    return (result?.count || 0) === 0;
+  }
+
+  async getReferredCustomerFirstOrderDiscount(referredCustomerId, invoiceId = null) {
+    const isFirst = await this.isReferredCustomerFirstQualifyingOrder(referredCustomerId, invoiceId);
+    if (!isFirst) return 0;
+
+    const settings = await this.getSettings();
+    const discountPct = settings.referredCustomerDiscountPercentage ?? 5;
+    return Math.max(0, discountPct);
+  }
+
+  // ── Backend Order Lifecycle Hook (Phase 4) ─────────────────────
+  // Called by PUT /api/sales-orders/:id when order transitions to a qualifying
+  // status (e.g. Fulfilled). This is the authoritative backend referral engine.
+  //
+  // Flow:
+  //  1. Read the order to find referredBy
+  //  2. Find the active referral for this customer
+  //  3. Check qualification rules (first order, minimum amount, etc.)
+  //  4. Auto-create pending reward (backend-authoritative, not frontend)
+  //  5. Record lifecycle events
+  //
+  // Returns: { rewardCreated: boolean, referralId: string|null, discountPct: number }
+
+  async processBackendOrderReferral({ orderId, orderStatus, customerId, totalAmount, referredBy, referredByName, invoiceId, idempotencyKey }) {
+    try {
+      if (!referredBy || referredBy === customerId) {
+        return { rewardCreated: false, reason: 'no_referrer', referralId: null, discountPct: 0 };
+      }
+
+      const settings = await this.getSettings();
+      if (!settings.enabled) {
+        return { rewardCreated: false, reason: 'program_disabled', referralId: null, discountPct: 0 };
+      }
+
+      // Find active referral for this customer + referrer pair
+      const referral = await this._get(
+        'SELECT * FROM customer_referrals WHERE customer_id = ? AND referred_by_id = ? AND status = ? AND deleted_at IS NULL LIMIT 1',
+        [customerId, referredBy, 'active']
+      );
+
+      if (!referral) {
+        return { rewardCreated: false, reason: 'no_active_referral', referralId: null, discountPct: 0 };
+      }
+
+      // Check minimum purchase amount
+      if (settings.minPurchaseAmount > 0 && (totalAmount || 0) < settings.minPurchaseAmount) {
+        return { rewardCreated: false, reason: 'below_minimum', referralId: referral.id, discountPct: 0 };
+      }
+
+      // Check for existing reward on this order/invoice (idempotency)
+      if (invoiceId) {
+        const existingReward = await this._get(
+          "SELECT id FROM referral_rewards WHERE referral_id = ? AND invoice_id = ? AND status != 'cancelled'",
+          [referral.id, invoiceId]
+        );
+        if (existingReward) {
+          return { rewardCreated: false, reason: 'reward_exists', referralId: referral.id, discountPct: 0 };
+        }
+      }
+
+      // Calculate reward amount
+      let amount = settings.rewardType === 'fixed'
+        ? settings.rewardValue
+        : (totalAmount || 0) * ((settings.rewardPercentage || 5) / 100);
+      if (settings.maxRewardAmount > 0 && amount > settings.maxRewardAmount) {
+        amount = settings.maxRewardAmount;
+      }
+      amount = Math.round(amount * 100) / 100;
+
+      // Create reward
+      const rewardId = randomUUID();
+      await this._run(
+        `INSERT INTO referral_rewards (id, referral_id, customer_id, invoice_id, invoice_amount, amount, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [rewardId, referral.id, referredBy, invoiceId || orderId, totalAmount || 0, amount, new Date().toISOString()]
+      );
+
+      // Advance referral lifecycle
+      const currentLifecycle = referral.lifecycle_status || this.LIFECYCLE_STATES.REGISTERED;
+      if (currentLifecycle === this.LIFECYCLE_STATES.REGISTERED) {
+        try { await this.advanceLifecycle(referral.id, this.LIFECYCLE_STATES.VERIFIED, { actorId: 'system', actorName: 'System' }); } catch { /* already may have advanced */ }
+      }
+      if (['registered', 'verified'].includes(currentLifecycle)) {
+        try { await this.advanceLifecycle(referral.id, this.LIFECYCLE_STATES.ORDER_PLACED, { actorId: 'system', actorName: 'System' }); } catch { /* already may have advanced */ }
+      }
+      try { await this.advanceLifecycle(referral.id, this.LIFECYCLE_STATES.QUALIFIED, { actorId: 'system', actorName: 'System', invoiceId: invoiceId || orderId }); } catch { /* already may have advanced */ }
+
+      // Timeline entry for reward
+      await this.addTimelineEntry({
+        referralId: referral.id,
+        eventType: 'reward_auto_created',
+        title: 'Reward Auto-Created (Backend)',
+        description: `Backend lifecycle hook created pending reward of ${amount} for order ${orderId}`,
+        amount,
+        metadata: { orderId, orderStatus, invoiceId, totalAmount, idempotencyKey },
+      });
+
+      await this.addAuditLog({
+        entityType: 'reward',
+        entityId: rewardId,
+        action: 'auto_created_backend',
+        actorId: 'system',
+        actorName: 'System',
+        reason: `Backend order lifecycle hook: order ${orderId} qualified`,
+      });
+
+      return { rewardCreated: true, referralId: referral.id, rewardId, amount, discountPct: 0 };
+    } catch (err) {
+      console.error('[ReferralService] processBackendOrderReferral error:', err.message);
+      return { rewardCreated: false, reason: 'error', error: err.message, referralId: null, discountPct: 0 };
+    }
   }
 
   async delete(id) {
@@ -1016,6 +1303,7 @@ class ReferralService {
         rewardType: 'percentage',
         rewardValue: 0,
         rewardPercentage: 5,
+        referredCustomerDiscountPercentage: 5,
         minPurchaseAmount: 0,
         maxRewardAmount: 0,
         requireApproval: true,

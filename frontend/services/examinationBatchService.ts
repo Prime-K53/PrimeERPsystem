@@ -497,7 +497,7 @@ const buildLocalInvoicePayload = async (
       itemId: String(cls?.id || `${invoiceId}-${index + 1}`),
       name: String(cls?.class_name || `Class ${index + 1}`),
       sku: `EXM-${String(cls?.id || index + 1)}`,
-      description: `${Array.isArray(cls?.subjects) ? cls.subjects.length : 0} subject(s)`,
+      description: String(cls?.class_name || `Class ${index + 1}`),
       category: 'Examination',
       type: 'Service',
       unit: 'learner',

@@ -1274,6 +1274,7 @@ const portalService = {
       maxRewardAmount: settings.maxRewardAmount || 0,
       expiryDays: settings.expiryDays || 365,
       requireApproval: settings.requireApproval ?? true,
+      referredCustomerDiscountPercentage: settings.referredCustomerDiscountPercentage ?? 5,
       shareMessage: 'Invite friends and earn rewards.',
     };
   },

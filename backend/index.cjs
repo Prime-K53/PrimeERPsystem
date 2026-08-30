@@ -18,6 +18,8 @@ const { randomUUID } = require('crypto');
 const { getFrontendDistPath } = require('./appRoot.cjs');
 const repo = require('./services/supabaseRepository.cjs');
 const paymentRequestService = require('./services/paymentRequestService.cjs');
+const { default: ReferralService } = require('./services/referralService.cjs');
+const referralService = new ReferralService();
 console.log('Requiring bootstrap...');
 const bootstrap = require('./bootstrap.cjs');
 const portalLifecycleService = require('./services/portalLifecycleService.cjs');
@@ -3027,6 +3029,14 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
       const id = req.params.id;
       const o = req.body || {};
       await validateFyDate('orderDate', o);
+
+      // Read existing order for referredBy and status comparison (before update)
+      const [existingRow] = await new Promise((resolve, reject) => {
+        sq.getAll('SELECT customer_id, status, referred_by FROM sales_orders WHERE id = ?', [id], (err, rows) => {
+          if (err) reject(err); else resolve(rows || []);
+        });
+      });
+
       await new Promise((resolve, reject) => {
         sq.run(
           `UPDATE sales_orders SET quotation_id = ?, customer_id = ?, orderDate = ?, deliveryDate = ?, status = ?, items = ?, subtotal = ?, discounts = ?, tax = ?, other_charges = ?, total = ?, notes = ?, updated_by = ?, updated_at = ? WHERE id = ?`,
@@ -3037,6 +3047,31 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
           }
         );
       });
+
+      // ── Backend Referral Lifecycle Hook (Phase 4) ─────────────────────────
+      // When order transitions to Fulfilled/Completed, auto-create referral reward
+      // if conditions are met. This is the authoritative backend path.
+      const qualifyingStatuses = ['Fulfilled', 'Completed'];
+      const newStatus = o.status || 'Draft';
+      if (qualifyingStatuses.includes(newStatus)) {
+        const customerId = o.customerId || existingRow?.customer_id;
+        const referredBy = o.referredBy || existingRow?.referred_by;
+        if (referredBy && customerId && referredBy !== customerId) {
+          setImmediate(() => {
+            referralService.processBackendOrderReferral({
+              orderId: id,
+              orderStatus: newStatus,
+              customerId,
+              totalAmount: o.total || 0,
+              referredBy,
+              referredByName: o.referredByName || null,
+              invoiceId: null,
+              idempotencyKey: `order_referral_${id}_${newStatus}`,
+            }).catch(err => console.error('[Backend Referral Hook] Error:', err.message));
+          });
+        }
+      }
+
       portalLifecycleService.emitEntityChange('portal', { customerId: o.customerId, docType: 'order', docId: id, status: o.status || 'Draft', orderNumber: o.orderNumber || null });
       portalLifecycleService.emitEntityChange('admin', { customerId: o.customerId, docType: 'order', docId: id, status: o.status || 'Draft', orderNumber: o.orderNumber || null });
       res.json({ status: 'updated' });

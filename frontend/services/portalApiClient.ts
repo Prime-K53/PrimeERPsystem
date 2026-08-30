@@ -618,6 +618,8 @@ export interface PortalOrderPreview {
   lines: PortalOrderPreviewLine[];
   subtotal: number;
   discountTotal: number;
+  referralFirstOrderDiscount: number;
+  referralFirstOrderDiscountPercent: number;
   subtotalBeforeDiscount: number;
   subtotalAfterDiscount: number;
   taxableSubtotal: number;
