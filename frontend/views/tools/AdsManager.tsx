@@ -84,6 +84,7 @@ const STATUS_META: Record<PortalAdStatus, { bg: string; fg: string; dot: string 
 const emptyForm = (): Partial<PortalAd> => ({
   title: '',
   subtitle: '',
+  description: '',
   badge: 'Special Offer',
   ctaLabel: 'Order Now',
   ctaTarget: '/portal/orders',
@@ -107,6 +108,7 @@ const toCanonical = (f: Partial<PortalAd>): PortalAd => ({
   imageMeta: f.imageMeta,
   gradient: f.gradient || GRADIENT_PRESETS[0].value,
   emoji: f.emoji || '🎯',
+  description: f.description || '',
   priority: Number(f.priority ?? 0) || 0,
   startsAt: f.startsAt ? new Date(f.startsAt).toISOString() : new Date().toISOString(),
   endsAt: f.endsAt ? new Date(f.endsAt).toISOString() : '',
@@ -492,6 +494,7 @@ export const AdsManager: React.FC = () => {
           ...prev,
           title: result.title,
           subtitle: result.subtitle,
+          description: result.description,
           badge: result.badge,
           ctaLabel: result.ctaLabel,
           emoji: result.emoji,
@@ -908,42 +911,29 @@ export const AdsManager: React.FC = () => {
               </button>
             </div>
 
-            <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-              {/* Sidebar Nav */}
-              <div style={{ width: 212, flexShrink: 0, background: `linear-gradient(180deg, ${teal[800]}, ${teal[900]})`, padding: '18px 12px', position: 'relative' }}>
-                <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 10, backgroundImage: 'radial-gradient(circle, rgba(254,253,251,.9) 2.2px, transparent 2.3px)', backgroundSize: '10px 16px', backgroundPosition: '4px 8px', opacity: 0.12 }} />
-                <div style={{ color: 'rgba(255,255,255,.4)', fontSize: 10, letterSpacing: 0.16, textTransform: 'uppercase', fontWeight: 600, padding: '4px 12px 10px' }}>
-                  Ad Setup
-                </div>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              {/* Horizontal Tab Bar */}
+              <div style={{ display: 'flex', gap: 0, padding: '0 24px', borderBottom: `1.4px solid ${hairline}`, background: paper, flexShrink: 0, overflowX: 'auto' }}>
                 {modalTabs.map((tab) => {
-                  const isActive = activeTab === tab.id
-                  const Icon = tab.icon
+                  const isActive = activeTab === tab.id;
+                  const Icon = tab.icon;
                   return (
                     <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '10px 12px', borderRadius: 8,
-                      color: isActive ? '#fff' : 'rgba(255,255,255,.62)',
-                      fontSize: 13, fontWeight: 500, cursor: 'pointer', marginBottom: 2,
-                      transition: 'all .15s ease', position: 'relative',
-                      width: '100%', border: 'none', background: 'transparent', textAlign: 'left',
-                      ...(isActive ? { background: `linear-gradient(90deg, rgba(217,154,63,.18), rgba(217,154,63,.05))`, boxShadow: `inset 3px 0 0 ${amber[500]}` } : {})
+                      display: 'inline-flex', alignItems: 'center', gap: 7,
+                      padding: '11px 18px', border: 'none', borderBottom: `2px solid ${isActive ? teal[600] : 'transparent'}`,
+                      background: 'transparent', cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                      fontSize: 12.5, fontWeight: isActive ? 700 : 500,
+                      color: isActive ? teal[700] : inkSoft,
+                      transition: 'all .12s', whiteSpace: 'nowrap',
                     }}
-                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,.06)'; e.currentTarget.style.color = '#fff'; }}
-                      onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,.62)'; } }}
+                      onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.color = teal[600]; (e.currentTarget as HTMLElement).style.borderBottomColor = teal[200]; }}}
+                      onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.color = inkSoft; (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent'; }}}
                     >
-                      <Icon size={16} style={{ flexShrink: 0, opacity: 0.85 }} />
+                      <Icon size={14} style={{ flexShrink: 0 }} />
                       {tab.label}
-                      <span style={{ marginLeft: 'auto', width: 16, height: 16, borderRadius: '50%', background: isActive ? amber[500] : 'rgba(255,255,255,.12)', fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isActive ? teal[900] : 'rgba(255,255,255,.55)', fontWeight: isActive ? 600 : 400 }}>
-                        {modalTabs.indexOf(tab) + 1}
-                      </span>
                     </button>
-                  )
+                  );
                 })}
-                <div style={{ position: 'absolute', bottom: 18, left: 12, right: 22, padding: 12, borderRadius: 8, background: 'rgba(255,255,255,.045)', border: '1px dashed rgba(255,255,255,.14)' }}>
-                  <p style={{ margin: 0, fontSize: 10.5, color: 'rgba(255,255,255,.42)', lineHeight: 1.5 }}>
-                    Use the <b style={{ color: amber[300], fontWeight: 600 }}>AI Studio</b> to draft a whole ad from a one-line brief, then fine-tune here.
-                  </p>
-                </div>
               </div>
 
               {/* Form Area */}
@@ -1003,6 +993,16 @@ export const AdsManager: React.FC = () => {
                             {subtitleGenerating ? 'Generating…' : 'AI'}
                           </button>
                         </div>
+                      </div>
+
+                      <div style={{ marginBottom: 18 }}>
+                        <label style={labelStyle}>Description <span style={{ fontSize: 10, color: inkSoft, fontWeight: 400 }}>(rich ad copy — AI auto-fills this)</span></label>
+                        <textarea
+                          value={form.description || ''}
+                          onChange={(e) => setForm(p => ({ ...p, description: e.target.value }))}
+                          rows={5}
+                          placeholder="Premium paragraph description of the offer. AI generates this automatically when you click 'Generate Ad with AI'."
+                          style={{ ...modalInputStyle, resize: 'vertical', minHeight: 110, lineHeight: 1.6, fontSize: 12.5 }} />
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
@@ -1316,9 +1316,9 @@ export const AdsManager: React.FC = () => {
                         <textarea
                           value={aiBrief}
                           onChange={(e) => { setAiBrief(e.target.value); setAiError('') }}
-                          rows={3}
-                          placeholder='e.g. "20% off all business cards this month for returning customers"'
-                          style={{ ...modalInputStyle, resize: 'none', minHeight: 78, lineHeight: 1.5 }} />
+                          rows={4}
+                          placeholder={'e.g. "20% off business cards for returning corporate clients this November — premium stock, fast turnaround, available to businesses with an existing account."'}
+                          style={{ ...modalInputStyle, resize: 'none', minHeight: 90, lineHeight: 1.5 }} />
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
@@ -1456,31 +1456,29 @@ export const AdsManager: React.FC = () => {
                             <span>CTA: <b style={{ color: ink }}>{form.ctaLabel || '—'}</b> → <b style={{ color: teal[700] }}>{form.ctaTarget || '/portal/orders'}</b></span>
                             <span>Emoji: <b style={{ color: ink }}>{form.emoji || '—'}</b></span>
                             <span>Priority: <b style={{ color: ink }}>{form.priority || 0}</b></span>
+                            {form.description && (
+                              <span style={{ marginTop: 4 }}>Description: <b style={{ color: ink, fontWeight: 400, fontStyle: 'italic' }}>{form.description.slice(0, 120)}{form.description.length > 120 ? '…' : ''}</b></span>
+                            )}
                           </div>
                         </div>
                     </>
                   )}
 
                   {/* Footer */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 26, paddingBottom: 22 }}>
-                    <span style={{ fontSize: 11, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>
-                      Step {stepNumber} of {totalSteps}
-                    </span>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <button type="button" onClick={() => { setShowNew(false); setEditingId(null); setForm(emptyForm()) }} style={{ padding: '10px 16px', borderRadius: 10, border: `1.4px solid ${hairline}`, fontWeight: 600, fontSize: 13, color: ink, background: 'transparent', cursor: 'pointer', lineHeight: 1.4 }}>
-                        Cancel
-                      </button>
-                      <button type="submit" disabled={saving} style={{
-                        padding: '10px 20px', borderRadius: 10, fontWeight: 600, fontSize: 13,
-                        border: 'none', cursor: saving ? 'default' : 'pointer',
-                        background: `linear-gradient(135deg, ${teal[500]}, ${teal[700]})`, color: '#fff', lineHeight: 1.4,
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        boxShadow: '0 8px 20px -8px rgba(15,84,76,.55)',
-                      }}>
-                        {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
-                        {saving ? 'Saving…' : (editingId ? 'Save Changes' : 'Create Ad')}
-                      </button>
-                    </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 26, paddingBottom: 22, gap: 10 }}>
+                    <button type="button" onClick={() => { setShowNew(false); setEditingId(null); setForm(emptyForm()) }} style={{ padding: '10px 16px', borderRadius: 10, border: `1.4px solid ${hairline}`, fontWeight: 600, fontSize: 13, color: ink, background: 'transparent', cursor: 'pointer', lineHeight: 1.4 }}>
+                      Cancel
+                    </button>
+                    <button type="submit" disabled={saving} style={{
+                      padding: '10px 20px', borderRadius: 10, fontWeight: 600, fontSize: 13,
+                      border: 'none', cursor: saving ? 'default' : 'pointer',
+                      background: `linear-gradient(135deg, ${teal[500]}, ${teal[700]})`, color: '#fff', lineHeight: 1.4,
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      boxShadow: '0 8px 20px -8px rgba(15,84,76,.55)',
+                    }}>
+                      {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
+                      {saving ? 'Saving…' : (editingId ? 'Save Changes' : 'Create Ad')}
+                    </button>
                   </div>
                 </form>
               </div>

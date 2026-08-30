@@ -233235,7 +233235,19 @@ var CleanInvoiceTemplate = ({
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
     let formattedDesc = item.desc || item.name;
-    if (isService) {
+    let qty = item.qty;
+    let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
+    let total = item.total;
+    const isQuickPhoto = (item.id?.startsWith("QUICK-") || item.sku === "QUICK-PHOTO") && item.serviceDetails;
+    if (isQuickPhoto) {
+      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+      const copies = item.serviceDetails.copies || item.qty || 1;
+      const sheets = Math.ceil(pages / 2) * copies;
+      qty = sheets;
+      unitPrice = sheets > 0 ? item.price / sheets : item.price;
+      total = item.price;
+      formattedDesc = `${item.name} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+    } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
       const itemName = item.name || item.desc || "Service";
@@ -233245,16 +233257,16 @@ var CleanInvoiceTemplate = ({
     }
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#e0e0e0", minHeight: 24, alignItems: "center", paddingVertical: 4 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155" }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: item.qty }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: qty }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
         currency,
         " ",
-        (item.price || (item.qty ? item.total / item.qty : 0)).toFixed(2)
+        unitPrice.toFixed(2)
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
         currency,
         " ",
-        item.total.toFixed(2)
+        total.toFixed(2)
       ] })
     ] }, i2);
   };
@@ -233523,7 +233535,19 @@ var ModernInvoiceTemplate = ({
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
     let formattedDesc = item.desc || item.name;
-    if (isService) {
+    let qty = item.qty;
+    let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
+    let total = item.total;
+    const isQuickPhoto = (item.id?.startsWith("QUICK-") || item.sku === "QUICK-PHOTO") && item.serviceDetails;
+    if (isQuickPhoto) {
+      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+      const copies = item.serviceDetails.copies || item.qty || 1;
+      const sheets = Math.ceil(pages / 2) * copies;
+      qty = sheets;
+      unitPrice = sheets > 0 ? item.price / sheets : item.price;
+      total = item.price;
+      formattedDesc = `${item.name} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+    } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
       const itemName = item.name || item.desc || "Service";
@@ -233534,16 +233558,16 @@ var ModernInvoiceTemplate = ({
     const bgColor = i2 % 2 !== 0 ? "#F5F5F5" : "transparent";
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", backgroundColor: bgColor, minHeight: 28, alignItems: "center", paddingVertical: 6, paddingHorizontal: 4 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: item.qty }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: qty }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: [
         currency,
         " ",
-        (item.price || (item.qty ? item.total / item.qty : 0)).toLocaleString("en-US", { minimumFractionDigits: 2 })
+        unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
-        item.total.toLocaleString("en-US", { minimumFractionDigits: 2 })
+        total.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] })
     ] }, i2);
   };
@@ -233764,7 +233788,19 @@ var ProfessionalInvoiceTemplate = ({
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
     let formattedDesc = item.desc || item.name;
-    if (isService) {
+    let qty = item.qty;
+    let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
+    let total = item.total;
+    const isQuickPhoto = (item.id?.startsWith("QUICK-") || item.sku === "QUICK-PHOTO") && item.serviceDetails;
+    if (isQuickPhoto) {
+      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
+      const copies = item.serviceDetails.copies || item.qty || 1;
+      const sheets = Math.ceil(pages / 2) * copies;
+      qty = sheets;
+      unitPrice = sheets > 0 ? item.price / sheets : item.price;
+      total = item.price;
+      formattedDesc = `${item.name} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+    } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
       const itemName = item.name || item.desc || "Service";
@@ -233774,16 +233810,16 @@ var ProfessionalInvoiceTemplate = ({
     }
     return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#eeeeee", minHeight: 24, alignItems: "center", paddingVertical: 5 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: item.qty }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: qty }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
-        (item.price || (item.qty ? item.total / item.qty : 0)).toLocaleString("en-US", { minimumFractionDigits: 2 })
+        unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
-        item.total.toLocaleString("en-US", { minimumFractionDigits: 2 })
+        total.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] })
     ] }, i2);
   };
@@ -234955,7 +234991,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
         type === "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "center" }, children: "Qty" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 3 }, children: "Class / Subject" }),
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 3 }, children: "Class" }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.5, textAlign: "right" }, children: "Total" })
           ] }),

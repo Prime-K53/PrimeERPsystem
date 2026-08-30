@@ -29,6 +29,7 @@ export interface PortalAd {
   id: string;
   title: string;
   subtitle?: string;
+  description?: string;           // rich AI-generated paragraph copy
   badge?: string;               // small chip label e.g. "New" / "Limited Time"
   ctaLabel?: string;            // button text e.g. "Order Now"
   ctaTarget?: string;           // portal path e.g. "/portal/orders"

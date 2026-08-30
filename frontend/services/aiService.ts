@@ -17,6 +17,7 @@ export interface SmartReplySuggestion {
 export interface GeneratedAdCopy {
   title: string;
   subtitle: string;
+  description: string;
   badge: string;
   ctaLabel: string;
   emoji: string;
@@ -109,10 +110,18 @@ Format: {"name":"...","content":"...","category":"...","variables":["name","comp
       analyzeSentiment: `Analyze the sentiment of this customer message and return a JSON object with keys: "sentiment" (one of: positive, neutral, negative, urgent), "priority" (one of: high, normal, low), "summary" (one sentence describing the message), and "suggestedTags" (array of 1-3 tag strings).
 Format: {"sentiment":"...","priority":"...","summary":"...","suggestedTags":["..."]}`,
 
-      generateAdCopy: `You are a creative marketing copywriter for a print shop / ERP company's customer portal.
-Generate ONE compelling banner ad for the customer portal based on the user's brief.
-Return a JSON object with keys: "title" (short, punchy headline, max 6 words), "subtitle" (one supporting sentence, max 14 words), "badge" (2-4 word label like "Limited Time" or "New Offer"), "ctaLabel" (short button text like "Order Now" or "Learn More"), "emoji" (a single relevant emoji), and "gradient" (a CSS linear-gradient using rich colors, e.g. linear-gradient(135deg, #0b3e39 0%, #1f8577 100%)).
-Format: {"title":"...","subtitle":"...","badge":"...","ctaLabel":"...","emoji":"...","gradient":"..."}`,
+      generateAdCopy: `You are a senior copywriter for a premium print shop and business services company. Your writing is polished, persuasive, and professional — the kind of copy you'd see in a Fortune 500 marketing campaign or a high-end agency pitch.
+
+Generate a compelling banner ad campaign for their customer portal. Return a JSON object with keys:
+- "title": Short, punchy headline (max 6 words) that grabs attention instantly
+- "subtitle": One powerful supporting sentence (max 14 words) that reinforces the value proposition
+- "description": A rich 2-3 paragraph premium business ad description. Paragraph 1 hooks the reader with a benefit-driven opening. Paragraph 2 expands on the offer with specific details, social proof, or urgency. Paragraph 3 closes with a soft call-to-action tone. Write in an authoritative yet approachable voice — avoid clichés, avoid filler words, avoid "Add". Every word must earn its place.
+- "badge": 2-4 word label such as "Limited Time", "New Arrival", "Exclusive Offer", "Members Only"
+- "ctaLabel": Short button text (2-4 words) like "Order Now", "Learn More", "Get Started", "Claim Offer"
+- "emoji": A single emoji that reinforces the brand feel (professional, not playful)
+- "gradient": A CSS linear-gradient using two rich hex colors, e.g. linear-gradient(135deg, #0b3e39 0%, #1f8577 100%)
+
+Format: {"title":"...","subtitle":"...","description":"...","badge":"...","ctaLabel":"...","emoji":"...","gradient":"..."}`,
     };
     return prompts[context] || prompts.smartReply;
   }
@@ -286,6 +295,7 @@ Format: {"title":"...","subtitle":"...","badge":"...","ctaLabel":"...","emoji":"
         return {
           title: parsed.title,
           subtitle: parsed.subtitle || '',
+          description: parsed.description || '',
           badge: parsed.badge || 'Special Offer',
           ctaLabel: parsed.ctaLabel || 'Order Now',
           emoji: parsed.emoji || '🎯',
@@ -316,6 +326,7 @@ Format: {"title":"...","subtitle":"...","badge":"...","ctaLabel":"...","emoji":"
       return {
         title: desc.split(/\s+/).slice(0, 6).join(' ') || 'Big Savings Inside',
         subtitle: 'Limited-time offer — grab yours before it ends.',
+        description: `${desc.split(/\s+/).slice(0, 12).join(' ')}. This exclusive promotion is available for a limited time only, offering exceptional value for businesses and individuals alike. Don't miss this opportunity to save big on premium print services.`,
         badge: 'Limited Time',
         ctaLabel: 'Shop Now',
         emoji: '🏷️',
@@ -326,6 +337,7 @@ Format: {"title":"...","subtitle":"...","badge":"...","ctaLabel":"...","emoji":"
       return {
         title: 'Fresh & New — Just Arrived',
         subtitle: desc || 'Discover our latest products and services.',
+        description: `Introducing something fresh and exciting to our product lineup. We've listened to our customers and delivered exactly what you've been asking for. Be among the first to experience this new offering — designed with quality and value in mind.`,
         badge: 'New Arrival',
         ctaLabel: 'Explore',
         emoji: '✨',
@@ -336,6 +348,7 @@ Format: {"title":"...","subtitle":"...","badge":"...","ctaLabel":"...","emoji":"
       return {
         title: 'Refer & Earn Rewards',
         subtitle: 'Invite a friend and both of you earn rewards.',
+        description: `Share the word about our services with friends, colleagues, and business partners. For every qualified referral that becomes a customer, you'll receive exclusive rewards and credits. It's a simple, straightforward way to earn while helping others discover quality print services.`,
         badge: 'Referral Bonus',
         ctaLabel: 'Refer Now',
         emoji: '🎁',
@@ -346,6 +359,7 @@ Format: {"title":"...","subtitle":"...","badge":"...","ctaLabel":"...","emoji":"
       return {
         title: 'Unlock Member Perks',
         subtitle: 'Enjoy exclusive benefits at every loyalty tier.',
+        description: `Our loyalty program is designed to reward our most valued customers with exclusive perks, priority service, and special pricing. As a member, you'll gain access to premium features, early access to promotions, and personalized offers tailored to your business needs.`,
         badge: 'Members Only',
         ctaLabel: 'View Benefits',
         emoji: '👑',
@@ -359,6 +373,9 @@ Format: {"title":"...","subtitle":"...","badge":"...","ctaLabel":"...","emoji":"
       subtitle: desc
         ? 'Take advantage of this special offer today.'
         : 'Explore premium services tailored just for you.',
+      description: desc
+        ? `${desc}. We pride ourselves on delivering exceptional quality and value, backed by responsive customer service and fast turnaround times. Experience the difference with a team that treats every project — big or small — with the same dedication and care.`
+        : `We offer a comprehensive range of business and print services designed to help you look professional and operate efficiently. From concept to completion, our team is committed to quality, reliability, and customer satisfaction at every step.`,
       badge: 'Special Offer',
       ctaLabel: 'Order Now',
       emoji: '🎯',

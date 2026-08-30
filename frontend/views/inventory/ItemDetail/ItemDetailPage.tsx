@@ -312,35 +312,6 @@ export const ItemDetailPage: React.FC = () => {
             {activeTab === 'suppliers' && <SuppliersTab item={item} suppliers={suppliers} />}
             {activeTab === 'transactions' && <TransactionsTab transactions={transactions} />}
             {activeTab === 'documents' && <AttachmentsTab item={item} />}
-                      <div className="text-[10px] text-slate-400 mt-1">{stockCalc.currentStock} units @ {pricingCalc.costPrice.toFixed(2)}</div>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Available Ratio</div>
-                      <div className={`text-lg font-bold mt-1 ${stockCalc.available < stockCalc.currentStock * 0.5 ? 'text-amber-600' : 'text-green-600'}`}>{stockCalc.currentStock > 0 ? ((stockCalc.available / stockCalc.currentStock) * 100).toFixed(0) : '0'}%</div>
-                      <div className="text-[10px] text-slate-400 mt-1">{stockCalc.available} of {stockCalc.currentStock} avail.</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="detail-card full">
-                  <h3><DollarSign size={15} /> Financial Analytics</h3>
-                  <div className="grid grid-cols-3 gap-4 mt-4">
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Cost Price</div>
-                      <div className="text-lg font-bold text-slate-800 mt-1">{pricingCalc.costPrice.toFixed(2)}</div>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Selling Price</div>
-                      <div className={`text-lg font-bold mt-1 ${pricingCalc.sellingPrice > pricingCalc.costPrice ? 'text-green-600' : 'text-slate-800'}`}>{pricingCalc.sellingPrice > 0 ? pricingCalc.sellingPrice.toFixed(2) : '—'}</div>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Margin</div>
-                      <div className={`text-lg font-bold mt-1 ${pricingCalc.markup >= pricingCalc.minimumMarkup ? 'text-green-600' : pricingCalc.markup > 0 ? 'text-amber-600' : 'text-slate-800'}`}>{pricingCalc.markup > 0 ? `${pricingCalc.markup.toFixed(1)}%` : '—'}</div>
-                      <div className="text-[10px] text-slate-400 mt-1">Target: {pricingCalc.minimumMarkup}%</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </Suspense>
         </div>
 
