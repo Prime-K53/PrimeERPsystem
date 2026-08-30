@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, ChevronLeft, ChevronRight, Edit3, Copy, Printer, QrCode, Archive, Download, Plus, ArrowUpDown, Package, Layers, DollarSign, Warehouse, ShoppingCart, TrendingUp, FlaskConical, Building2, FileText, ClipboardCheck, History, BarChart3, Sparkles, X, Box, Tag, Grid3X3, Ruler, Globe, Eye } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight, Edit3, Copy, Printer, QrCode, Archive, Plus, ArrowUpDown, Package, Layers, DollarSign, Building2, FileText, Sparkles, X, Box, Tag, Ruler, Globe, Eye } from 'lucide-react';
 import { useItemDetail } from './hooks/useItemDetail';
 
 import StockAdjustmentModal from '../components/StockAdjustmentModal';
@@ -11,35 +11,21 @@ import { useInventory } from '../../../context/InventoryContext';
 import { useAuth } from '../../../context/AuthContext';
 import { OverviewTab } from './tabs/OverviewTab';
 import { InventoryTab } from './tabs/InventoryTab';
-import { WarehousesTab } from './tabs/WarehousesTab';
 import { PricingTab } from './tabs/PricingTab';
 import { SuppliersTab } from './tabs/SuppliersTab';
-import { RecipesTab } from './tabs/RecipesTab';
-import { ProductionTab } from './tabs/ProductionTab';
 import { AttachmentsTab } from './tabs/AttachmentsTab';
 import type { Item } from '../../../types';
 import '../inventory-reference.css';
 
 const TransactionsTab = lazy(() => import('./tabs/TransactionsTab').then(m => ({ default: m.TransactionsTab })));
-const PurchaseHistoryTab = lazy(() => import('./tabs/PurchaseHistoryTab').then(m => ({ default: m.PurchaseHistoryTab })));
-const SalesHistoryTab = lazy(() => import('./tabs/SalesHistoryTab').then(m => ({ default: m.SalesHistoryTab })));
-const AuditLogTab = lazy(() => import('./tabs/AuditLogTab').then(m => ({ default: m.AuditLogTab })));
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: <Eye size={14} /> },
   { id: 'inventory', label: 'Inventory', icon: <Layers size={14} /> },
-  { id: 'warehouses', label: 'Warehouses', icon: <Warehouse size={14} /> },
   { id: 'pricing', label: 'Pricing', icon: <DollarSign size={14} /> },
-  { id: 'procurement', label: 'Procurement', icon: <ShoppingCart size={14} /> },
-  { id: 'sales', label: 'Sales', icon: <TrendingUp size={14} /> },
-  { id: 'production', label: 'Production', icon: <FlaskConical size={14} /> },
-  { id: 'bom', label: 'BOM', icon: <Grid3X3 size={14} /> },
   { id: 'suppliers', label: 'Suppliers', icon: <Building2 size={14} /> },
   { id: 'transactions', label: 'Transactions', icon: <ArrowUpDown size={14} />, lazy: true },
   { id: 'documents', label: 'Documents', icon: <FileText size={14} /> },
-  { id: 'quality', label: 'Quality', icon: <ClipboardCheck size={14} /> },
-  { id: 'activity', label: 'Activity Log', icon: <History size={14} />, lazy: true },
-  { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={14} /> },
 ];
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -237,50 +223,56 @@ export const ItemDetailPage: React.FC = () => {
 
       {/* ── STICKY HEADER ── */}
       <div className="item-detail-top">
-        <div className="item-identity">
+        <div className="item-identity" style={{ padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 16 }}>
           <div className="item-avatar">
             {TYPE_ICONS[item.type || ''] || <Package size={22} />}
           </div>
-          <div className="item-detail-header-info">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <h1>{item.name}</h1>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h1 style={{ fontFamily: "'DM Serif Display', 'Georgia', serif", fontWeight: 400, fontSize: 20, margin: 0, color: '#0b3e39', letterSpacing: 0.2 }}>{item.name}</h1>
               <span className={`item-type-badge ${getTypeBadgeClass()}`}>{item.type || ext.classification || 'Item'}</span>
               <span className={`item-status-badge ${stockStatus}`}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
                 {getStockStatusLabel()}
               </span>
             </div>
-            <div className="item-meta">
-              <span className="item-meta-sku">{item.sku}</span>
-              {item.barcode && <span className="item-meta-sku">Barcode: {item.barcode}</span>}
-              {item.category && <span className="item-meta-chip"><Tag size={10} /> {item.category}</span>}
-              {ext.brand && <span className="item-meta-chip">{item.brand || ext.brand}</span>}
-              <span className="item-meta-chip"><Ruler size={10} /> {item.unit || 'pcs'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, padding: '2px 7px', background: '#eef7f6', borderRadius: 5, color: '#5c6567' }}>{item.sku}</span>
+              {item.category && <span style={{ fontSize: 11, color: '#5c6567', display: 'flex', alignItems: 'center', gap: 3 }}><Tag size={10} /> {item.category}</span>}
+              {ext.brand && <span style={{ fontSize: 11, color: '#5c6567' }}>{item.brand || ext.brand}</span>}
+              <span style={{ fontSize: 11, color: '#5c6567', display: 'flex', alignItems: 'center', gap: 3 }}><Ruler size={10} /> {item.unit || 'pcs'}</span>
               <span style={{ fontSize: 10, color: '#94A3B8' }}>Updated {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</span>
             </div>
           </div>
-          <div className="item-quick-actions">
-            <button className="qa-btn primary" onClick={() => setIsEditing(true)}><Edit3 size={13} /> Edit</button>
-            <button className="qa-btn" onClick={onDuplicate}><Copy size={13} /> Duplicate</button>
-            <button className="qa-icon" title="Print Barcode" onClick={() => setPrintMode('barcode')}><Printer size={14} /></button>
-            <button className="qa-icon" title="Generate QR" onClick={() => setPrintMode('qrcode')}><QrCode size={14} /></button>
-            <button className="qa-icon" title="Export"><Download size={14} /></button>
-            {isStockTracked && <button className="qa-icon" title="Adjust Stock" onClick={() => setIsAdjustOpen(true)}><Plus size={14} /></button>}
-            {isStockTracked && <button className="qa-icon" title="Transfer" onClick={() => setIsTransferOpen(true)}><ArrowUpDown size={14} /></button>}
-            <button className="qa-icon" title={item?.status === 'Inactive' ? 'Activate' : 'Archive'} onClick={handleToggleStatus}><Archive size={14} /></button>
-            {prevItem && <button className="qa-icon" onClick={() => navigate(`/supply-chain/inventory/${prevItem.id}`)} title="Previous"><ChevronLeft size={14} /></button>}
-            {nextItem && <button className="qa-icon" onClick={() => navigate(`/supply-chain/inventory/${nextItem.id}`)} title="Next"><ChevronRight size={14} /></button>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <button className="qa-btn primary" onClick={() => setIsEditing(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 600, border: '1.4px solid transparent', background: 'linear-gradient(155deg, #1f8577, #0f544c)', color: '#fff', cursor: 'pointer', boxShadow: '0 6px 16px -6px rgba(15,84,76,.55)' }}>
+              <Edit3 size={13} /> Edit
+            </button>
+            <button className="qa-btn" onClick={onDuplicate} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 600, border: '1.4px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer' }}>
+              <Copy size={13} /> Duplicate
+            </button>
+            <button className="qa-icon" title="Print Barcode" onClick={() => setPrintMode('barcode')} style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Printer size={14} />
+            </button>
+            <button className="qa-icon" title="Generate QR" onClick={() => setPrintMode('qrcode')} style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <QrCode size={14} />
+            </button>
+            <button className="qa-icon" title={item?.status === 'Inactive' ? 'Activate' : 'Archive'} onClick={handleToggleStatus} style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Archive size={14} />
+            </button>
+            {prevItem && <button className="qa-icon" onClick={() => navigate(`/supply-chain/inventory/${prevItem.id}`)} title="Previous" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={14} /></button>}
+            {nextItem && <button className="qa-icon" onClick={() => navigate(`/supply-chain/inventory/${nextItem.id}`)} title="Next" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={14} /></button>}
           </div>
         </div>
 
         {/* ── KPI DASHBOARD ── */}
         <div className="item-kpi-bar">
-          <div className="item-kpi-grid">
+          <div className="item-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, padding: '12px 28px' }}>
             {kpis.map(kpi => (
-              <div key={kpi.label} className="item-kpi-card" style={{ borderLeft: `3px solid ${kpi.color}` }}>
-                <div className="item-kpi-label">{kpi.label}</div>
-                <div className="item-kpi-value">{kpi.value}</div>
-                <div className="item-kpi-sub">{kpi.sub}</div>
+              <div key={kpi.label} style={{ background: '#FEFDFB', border: '1px solid #e4ddd1', borderRadius: 12, boxShadow: '0 1px 2px rgba(0,0,0,.03)', padding: '10px 14px', borderLeft: `3px solid ${kpi.color}` }}>
+                <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '-.02em', color: '#5c6567', marginBottom: 2 }}>{kpi.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#23282A', fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{kpi.value}</div>
+                <div style={{ fontSize: 9, color: '#5c6567', marginTop: 1 }}>{kpi.sub}</div>
               </div>
             ))}
           </div>
@@ -289,12 +281,7 @@ export const ItemDetailPage: React.FC = () => {
         {/* ── TAB NAV ── */}
         <div className="item-tab-bar">
           {TABS.map(tab => {
-            const showTab = tab.id === 'overview' || tab.id === 'inventory' || tab.id === 'warehouses' || tab.id === 'pricing' ||
-              tab.id === 'suppliers' || tab.id === 'transactions' || tab.id === 'documents' || tab.id === 'quality' || tab.id === 'activity' || tab.id === 'analytics' ||
-              (tab.id === 'procurement' && isRaw) ||
-              (tab.id === 'sales' && isProduct) ||
-              (tab.id === 'production' && (isRaw || isProduct)) ||
-              (tab.id === 'bom' && isProduct);
+            const showTab = TABS.some(t => t.id === tab.id);
             if (!showTab) return null;
             return (
               <button key={tab.id} className={`item-tab ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
@@ -322,56 +309,9 @@ export const ItemDetailPage: React.FC = () => {
             {activeTab === 'warehouses' && <WarehousesTab item={item} />}
             {activeTab === 'pricing' && <PricingTab item={item} />}
             {activeTab === 'procurement' && <PurchaseHistoryTab purchases={purchases} itemId={item.id || ''} />}
-            {activeTab === 'sales' && <SalesHistoryTab sales={sales} itemId={item.id || ''} />}
-            {activeTab === 'production' && <ProductionTab item={item} productionData={[...productionData.workOrders, ...productionData.batches]} />}
-            {activeTab === 'bom' && <RecipesTab item={item} />}
             {activeTab === 'suppliers' && <SuppliersTab item={item} suppliers={suppliers} />}
             {activeTab === 'transactions' && <TransactionsTab transactions={transactions} />}
             {activeTab === 'documents' && <AttachmentsTab item={item} />}
-            {activeTab === 'quality' && (
-              <div className="space-y-4">
-                <div className="detail-card full">
-                  <h3><ClipboardCheck size={15} /> Stock Health</h3>
-                  <div className="grid grid-cols-3 gap-4 mt-3">
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Current Stock</div>
-                      <div className={`text-lg font-bold mt-1 ${(stockCalc?.currentStock || 0) <= 0 ? 'text-red-600' : (stockCalc?.currentStock || 0) <= (item.reorderPoint || 0) ? 'text-amber-600' : 'text-green-600'}`}>{stockCalc?.currentStock || 0}</div>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Reorder Point</div>
-                      <div className="text-lg font-bold text-slate-800 mt-1">{item.reorderPoint || '—'}</div>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Min Stock Level</div>
-                      <div className="text-lg font-bold text-slate-800 mt-1">{item.minStockLevel || '—'}</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="detail-card full">
-                  <h3><Package size={15} /> Item Details</h3>
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-3 mt-3 text-sm">
-                    <div className="flex justify-between"><span className="text-slate-500">Unit</span><span className="font-medium">{item.unit || 'pcs'}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">Category</span><span className="font-medium">{item.category || '—'}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">Status</span><span className={`font-medium ${item.status === 'Inactive' ? 'text-slate-400' : 'text-green-600'}`}>{item.status || 'Active'}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">Preferred Supplier</span><span className="font-medium">{item.preferredSupplierId || '—'}</span></div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {activeTab === 'activity' && <AuditLogTab auditLog={auditLogs} />}
-            {activeTab === 'analytics' && pricingCalc && stockCalc && (
-              <div className="space-y-6">
-                <div className="detail-card full">
-                  <h3><BarChart3 size={15} /> Inventory Analytics</h3>
-                  <div className="grid grid-cols-3 gap-4 mt-4">
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Stock Turnover</div>
-                      <div className="text-lg font-bold text-slate-800 mt-1">{pricingCalc.profit > 0 ? ((stockCalc.currentStock / Math.max(1, pricingCalc.profit)) * 12).toFixed(1) : '—'}x</div>
-                      <div className="text-[10px] text-slate-400 mt-1">Annual estimate</div>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="text-xs text-slate-500">Stock Value</div>
-                      <div className="text-lg font-bold text-slate-800 mt-1">{stockCalc.inventoryValue.toLocaleString()}</div>
                       <div className="text-[10px] text-slate-400 mt-1">{stockCalc.currentStock} units @ {pricingCalc.costPrice.toFixed(2)}</div>
                     </div>
                     <div className="bg-slate-50 rounded-lg p-4 text-center">

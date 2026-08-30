@@ -1618,7 +1618,11 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           costPerPage={quickPrintModal.type === 'photocopy'
             ? calculatePhotocopyCostPerPage(inventory)
             : calculateTypePrintingCostPerPage(inventory)}
-          paperCostPerSheet={quickPrintModal.type === 'photocopy' ? calculatePhotocopyCostBreakdown(inventory).paperCostPerSheet : undefined}
+          paperCostPerSheet={(() => {
+            if (quickPrintModal.type !== 'photocopy') return undefined;
+            const serviceItem = quickPrintModal.serviceItemId ? inventory.find(i => i.id === quickPrintModal.serviceItemId) : null;
+            return serviceItem?.smartPricing?.paperCost ?? calculatePhotocopyCostBreakdown(inventory).paperCostPerSheet;
+          })()}
           tonerCostPerPage={quickPrintModal.type === 'photocopy' ? calculatePhotocopyCostBreakdown(inventory).tonerCostPerPage : undefined}
           currency={currency}
           staplePrice={companyConfig.transactionSettings?.pos?.staplePrice}

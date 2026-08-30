@@ -159,11 +159,11 @@ export const OverviewTab: React.FC<Props> = ({ item }) => {
                   );
                 }
                 return (
-                  <div key={f.label} style={f.span === 2 ? { gridColumn: 'span 2' } : {}}>
-                    <span style={{ fontSize: 10, fontWeight: 500, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 2 }}>{f.label}</span>
-                    <span style={{
+                  <div key={f.label} className="prime-card-field" style={f.span === 2 ? { gridColumn: 'span 2' } : {}}>
+                    <span className="label">{f.label}</span>
+                    <span className="value" style={{
                       fontWeight: f.bold ? 600 : 400,
-                      fontFamily: f.mono ? 'monospace' : f.amount ? "'Inter', sans-serif" : undefined,
+                      fontFamily: f.mono ? "'JetBrains Mono', monospace" : f.amount ? "'Inter', sans-serif" : undefined,
                       fontVariantNumeric: f.amount ? 'tabular-nums' : undefined,
                       color: f.amount ? '#111827' : f.accent ? t[500] : f.enabled ? t[500] : ink,
                       textTransform: f.capitalize ? 'capitalize' as const : undefined,

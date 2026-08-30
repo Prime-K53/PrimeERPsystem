@@ -508,7 +508,7 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
       }
 
       const loadedVariants = (item as any).variants;
-      if (loadedVariants && loadedVariants.length > 0) {
+      if (loadedVariants && loadedVariants.length > 0 && (item.type === 'Product' || (item as any).classification === 'product')) {
         setVariants(loadedVariants.map((v: any) => ({
           name: v.name || '',
           bomCost: v.bomCost ?? v.costPrice ?? 0,
@@ -519,21 +519,19 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
           bomStaples: v.bomStaples,
           bomTape: v.bomTape,
         })));
-      } else {
+      } else if (item.type !== 'Product') {
         setVariants([]);
       }
       const loadedStatVariants = (item as any).variants as any;
-      if (loadedStatVariants && item.type === 'Stationery') {
-        if (loadedStatVariants.length > 0) {
-          setStatVariants(loadedStatVariants.map((v: any) => ({
-            name: v.name || '',
-            qtyPack: v.unitsPerPack || 12,
-            packCost: v.costPerPack || 0,
-            sellItem: v.sellingPrice || 0,
-          })));
-        } else {
-          setStatVariants([]);
-        }
+      if (loadedStatVariants && loadedStatVariants.length > 0 && (item.type === 'Stationery' || (item as any).classification === 'stationery')) {
+        setStatVariants(loadedStatVariants.map((v: any) => ({
+          name: v.name || '',
+          qtyPack: v.unitsPerPack || v.qtyPack || 12,
+          packCost: v.costPerPack || v.packCost || 0,
+          sellItem: v.sellingPrice || v.selling || v.sellItem || 0,
+        })));
+      } else if (item.type !== 'Stationery') {
+        setStatVariants([]);
       }
     } else {
       setName('');
@@ -985,7 +983,7 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
         bomStaples: productBomStaples,
         bomTape: productBomTape,
         variants: variants.filter(v => v.name.trim() || v.bomCost > 0).map(v => ({
-          name: v.name,
+          name: v.name.startsWith(name) ? v.name : `${name} - ${v.name}`,
           costPrice: v.cost || v.bomCost,
           sellingPrice: v.selling,
           bomCost: v.bomCost,
@@ -1027,7 +1025,7 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
       const savedVariants = statVariants.filter(v => v.name.trim());
       stationeryExtras = {
         variants: savedVariants.map(v => ({
-          name: v.name,
+          name: v.name.startsWith(name) ? v.name : `${name} - ${v.name}`,
           costPrice: v.qtyPack > 0 ? v.packCost / v.qtyPack : 0,
           sellingPrice: v.sellItem,
           unitsPerPack: v.qtyPack,

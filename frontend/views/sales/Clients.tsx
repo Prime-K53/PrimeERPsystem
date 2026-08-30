@@ -363,7 +363,7 @@ export const Clients: React.FC = () => {
     e.stopPropagation();
     // Anchor the dropdown to the trigger button via fixed positioning so it is
     // never clipped/overlapped by the scrollable table wrapper.
-    setMenuAnchor((e.currentTarget as HTMLElement).getBoundingClientRect());
+    setMenuAnchor((e.currentTarget as HTMLElement)?.getBoundingClientRect() ?? null);
     setActiveMenuId(prev => (prev === id ? null : id));
   };
 

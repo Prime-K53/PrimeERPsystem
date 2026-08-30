@@ -301,7 +301,7 @@ const handleProduce = useCallback((item: Item) => {
     setOpenActionMenu(prev =>
       prev && prev.id === id
         ? null
-        : { id, anchor: e?.currentTarget.getBoundingClientRect() }
+        : { id, anchor: e?.currentTarget?.getBoundingClientRect() ?? null }
     );
   }, []);
 

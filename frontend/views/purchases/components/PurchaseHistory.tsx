@@ -59,6 +59,7 @@ const useContextMenu = () => {
         const container = (e.currentTarget as HTMLElement).closest('.relative');
         if (container) {
             const rect = container.getBoundingClientRect();
+            if (!rect) { setMenuPos({ x: e.clientX, y: e.clientY }); setOpenMenuId(id); setActiveSubmenu(null); return; }
             let x = e.clientX - rect.left;
             let y = e.clientY - rect.top;
             if (x + 256 > rect.width) x = rect.width - 256 - 10;

@@ -115,7 +115,7 @@ const ActionRow: React.FC<ActionRowProps> = ({ item, ...p }) => {
       ))}
       <td className="table-body-cell w-16 text-right" data-label="Actions" onClick={e => e.stopPropagation()}>
         <div className="relative inline-flex" ref={menuRef}>
-          <button onClick={(e) => { setMenuAnchor(e.currentTarget.getBoundingClientRect()); setMenuOpen(v => !v); }}
+          <button onClick={(e) => { setMenuAnchor(e.currentTarget?.getBoundingClientRect() ?? null); setMenuOpen(v => !v); }}
             className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all">
             <MoreHorizontal size={16} />
           </button>

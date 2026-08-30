@@ -294,6 +294,48 @@ h2.pp{ font-family:'Inter',sans-serif; font-weight:600; font-size:16px; margin:0
 .fs-bar-fill-dash{ height:100%; border-radius:3px; transition:width .6s ease; background:linear-gradient(90deg, #1f8577, #0f544c); }
 
 /* ============================================================
+   SHARED CARD COMPONENT — Consistent across all views
+   ============================================================ */
+.prime-card{
+  background:var(--inv-paper);
+  border-radius:14px;
+  border:1.4px solid var(--inv-hairline);
+  overflow:hidden;
+  box-shadow:0 1px 2px rgba(0,0,0,0.05);
+  transition:box-shadow .15s ease,transform .15s ease;
+}
+.prime-card:hover{ box-shadow:0 4px 12px rgba(0,0,0,0.08); }
+.prime-card-header{
+  padding:14px 20px;
+  background:var(--inv-line-soft);
+  border-bottom:1.4px solid var(--inv-hairline);
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.prime-card-header-icon{
+  padding:6px;
+  border-radius:9px;
+  background:var(--inv-paper);
+  box-shadow:0 1px 2px rgba(0,0,0,0.05);
+  color:var(--inv-muted);
+}
+.prime-card-header-title{
+  font-size:12px;
+  font-weight:600;
+  color:var(--inv-muted);
+  text-transform:uppercase;
+  letter-spacing:0.5;
+}
+.prime-card-body{ padding:20px; }
+.prime-card-grid-2{ display:grid; gridTemplateColumns:1fr 1fr; gap:24px; font-size:14px; }
+.prime-card-grid-3{ display:grid; gridTemplateColumns:1fr 1fr 1fr; gap:16px; }
+.prime-card-field{ display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--inv-line); font-size:12.5px; }
+.prime-card-field:last-child{ border-bottom:none; }
+.prime-card-field .label{ color:var(--inv-muted); }
+.prime-card-field .value{ font-weight:500; color:var(--inv-text); font-family:'JetBrains Mono',monospace; }
+
+/* ============================================================
    ITEM DETAIL PAGE — Premium ERP View
    ============================================================ */
 .item-detail-shell{ min-height:0; flex:1; display:flex; flex-direction:column; background:var(--inv-paper); }

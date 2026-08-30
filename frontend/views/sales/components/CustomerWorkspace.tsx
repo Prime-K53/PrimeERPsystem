@@ -1364,7 +1364,8 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
                             <div className="relative">
                               <button
                                 onClick={(e) => {
-                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const rect = e.currentTarget?.getBoundingClientRect();
+                                  if (!rect) return;
                                   setAccountMenu({ id: entry.debitAccountId, type: 'debit', x: rect.left, y: rect.bottom });
                                 }}
                                 className="text-[11px] font-black text-blue-700 bg-blue-50 px-2 py-1 rounded-lg inline-flex items-center gap-1 hover:bg-blue-100 transition-colors"
@@ -1378,7 +1379,8 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
                             <div className="relative">
                               <button
                                 onClick={(e) => {
-                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const rect = e.currentTarget?.getBoundingClientRect();
+                                  if (!rect) return;
                                   setAccountMenu({ id: entry.creditAccountId, type: 'credit', x: rect.left, y: rect.bottom });
                                 }}
                                 className="text-[11px] font-black text-rose-700 bg-rose-50 px-2 py-1 rounded-lg inline-flex items-center gap-1 hover:bg-rose-100 transition-colors"

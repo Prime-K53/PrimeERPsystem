@@ -105,6 +105,7 @@ const useContextMenu = () => {
             setOpenMenuId(null);
         } else {
             const root = document.documentElement;
+            if (!root) { setOpenMenuId(id); return; }
             const rootRect = root.getBoundingClientRect();
             const zoom = rootRect.width / root.offsetWidth || 1;
 
