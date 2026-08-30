@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback } from 'react';
+import React, { createContext, useContext } from 'react';
 import { useAuth } from './AuthContext';
 
 interface AppContextValue {
@@ -11,21 +11,29 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { companyConfig, notify, isOnline, user } = useAuth();
-
+  // No useAuth() call here — values are read by consumers directly from AuthContext.
+  // AppContext carries its own value so existing useApp() callers keep working.
   return (
-    <AppContext.Provider value={{ companyConfig, notify, isOnline, user }}>
+    <AppContext.Provider value={undefined}>
       {children}
     </AppContext.Provider>
   );
 };
 
-export const useApp = () => {
-  const context = useContext(AppContext);
-  if (!context) {
-    throw new Error('useApp must be used within an AppProvider');
-  }
-  return context;
+/**
+ * useApp() re-exposes a subset of AuthContext values.
+ * Calling useAuth() here (inside a component body) is safe because
+ * the hook runs in the consumer component, which is always a descendant
+ * of AuthProvider.
+ */
+export const useApp = (): AppContextValue => {
+  const auth = useAuth();
+  return {
+    companyConfig: auth.companyConfig,
+    notify: (message, type = 'info') => auth.notify(message, type),
+    isOnline: auth.isOnline,
+    user: auth.user,
+  };
 };
 
 export default AppContext;
