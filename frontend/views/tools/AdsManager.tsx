@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { dbService } from '../../services/db'
 import type { PortalAd, PortalAdStatus } from '../../types/ads'
+import { useAuth } from '../../context/AuthContext'
 import { aiService } from '../../services/aiService'
 import { uploadAdImage } from '../../services/adminPortalClient'
 import {
@@ -195,6 +196,7 @@ export const AdsManager: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<PortalAd | null>(null)
   const [saving, setSaving] = useState(false)
   const [notify, setNotify] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  const { companyConfig } = useAuth()
 
   // ── AI Studio state ──
   const [aiBrief, setAiBrief] = useState('')
@@ -276,7 +278,7 @@ export const AdsManager: React.FC = () => {
     }
     setSaving(true)
     try {
-      const record = toCanonical(await resolveUrlImageMeta(form))
+      const record = toCanonical({ ...await resolveUrlImageMeta(form), companyId: companyConfig?.id })
       await dbService.put('portalAds', record)
       setShowNew(false)
       setForm(emptyForm())
@@ -306,7 +308,7 @@ export const AdsManager: React.FC = () => {
     setSaving(true)
     try {
       const existing = ads.find((a) => a.id === editingId)
-      const record = toCanonical(await resolveUrlImageMeta({ ...existing, ...form, id: editingId }))
+      const record = toCanonical({ ...await resolveUrlImageMeta({ ...existing, ...form, id: editingId }), companyId: companyConfig?.id })
       await dbService.put('portalAds', record)
       setShowNew(false)
       setEditingId(null)
