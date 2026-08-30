@@ -524,8 +524,8 @@ function findDefaultPaper(items: Item[]): Item | undefined {
 
 function findDefaultToner(items: Item[]): Item | undefined {
   return items.find(i =>
-    /toner|ink|cartridge/i.test(i.name || '') ||
-    /toner|ink|cartridge/i.test(i.category || '')
+    i.name?.toLowerCase().includes('toner') ||
+    i.category?.toLowerCase().includes('toner')
   );
 }
 
