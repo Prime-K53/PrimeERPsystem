@@ -1069,6 +1069,17 @@ router.put('/notifications/read-all', async (req, res) => {
 });
 
 // ─── Referrals ────────────────────────────────────────────────
+router.get('/referrals/code', async (req, res) => {
+  try {
+    const { customer_id } = req.portalUser;
+    const data = await portalService.getReferralCode(req.portalUser.id, customer_id);
+    res.json(data);
+  } catch (err) {
+    console.error('[Portal] Referral code error:', err);
+    res.status(500).json({ error: 'Failed to load referral code' });
+  }
+});
+
 router.get('/referrals', async (req, res) => {
   try {
     const { id, customer_id} = req.portalUser;

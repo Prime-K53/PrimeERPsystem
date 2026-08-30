@@ -1092,9 +1092,8 @@ const portalService = {
   async getProfile(customerId) {
     const cloud = await getOneById('customers', customerId);
     if (!cloud) return null;
-    // [LEDGER] Derive balance from the authoritative ledger instead of the
-    // deprecated stored cache field.
     const ledger = await customerLedger.buildLedger(customerId);
+    const { referralCode } = await this.getReferralCode(null, customerId);
     return {
       id: cloud.id,
       full_name: cloud.name || '',
@@ -1110,7 +1109,8 @@ const portalService = {
       creditLimit: Number(cloud.creditLimit) || 0,
       outstandingBalance: ledger.outstandingBalance,
       status: cloud.status || '',
-      created_at: cloud.created_at || null
+      created_at: cloud.created_at || null,
+      referralCode: referralCode || null,
     };
   },
 
@@ -1189,6 +1189,17 @@ const portalService = {
       })),
       total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1,
     };
+  },
+
+  async getReferralCode(portalUserId, customerId) {
+    const rows = await repo.getAll('customer_referrals', {
+      'data->>customer_id': `eq.${customerId}`,
+      limit: 1,
+    });
+    if (rows && rows.length > 0) {
+      return { referralCode: rows[0].referral_code, shareMessage: null };
+    }
+    return { referralCode: null, shareMessage: null };
   },
 
   async getReferralById(id, portalUserId, customerId) {
