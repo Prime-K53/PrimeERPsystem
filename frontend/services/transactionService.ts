@@ -4956,6 +4956,21 @@ export const transactionService = {
                 order.cancelReason = reason;
                 await orderStore.put(order);
 
+                // Trigger automatic referral reward reversal for any approved referral rewards linked to this order
+                import('./referralService').then(({ referralService }) => {
+                    referralService.getAllRewards().then(rewards => {
+                        const orderRewards = rewards.filter(r =>
+                            r.invoiceId === order.id && r.status === 'approved'
+                        );
+                        orderRewards.forEach(reward => {
+                            referralService.createReversal({
+                                reward_id: reward.id,
+                                reason: `Order ${order.orderNumber || order.id} was cancelled — reward auto-reversed`
+                            }).catch(err => console.error('[Referral] Auto-reversal failed for reward', reward.id, err));
+                        });
+                    }).catch(err => console.error('[Referral] Could not load rewards for auto-reversal:', err));
+                }).catch(err => console.error('[Referral] Could not import referralService for auto-reversal:', err));
+
                 return { success: true };
             }
         );

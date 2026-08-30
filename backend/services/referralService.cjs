@@ -222,7 +222,7 @@ class ReferralService {
 
   async getById(id) {
     return this._get(
-      'SELECT * FROM customer_referrals WHERE id = ?deleted_at IS NULL',
+      'SELECT * FROM customer_referrals WHERE id = ? AND deleted_at IS NULL',
       [id]
     );
   }
@@ -419,7 +419,24 @@ class ReferralService {
       );
       if (!referral) throw new Error('Referral not found or is not active');
 
+      // Prevent duplicate reward for the same referral+invoice
+      const existing = await this._get(
+        "SELECT * FROM referral_rewards WHERE referral_id = ? AND invoice_id = ? AND status != 'cancelled'",
+        [data.referral_id, data.invoice_id]
+      );
+      if (existing) throw new Error('A reward for this referral and invoice already exists');
+
+      // Enforce allowMultipleRewards
       const settings = await this.getSettings();
+      if (!settings.allowMultipleRewards) {
+        const existingForReferral = await this._all(
+          "SELECT * FROM referral_rewards WHERE referral_id = ? AND status != 'cancelled'",
+          [data.referral_id]
+        );
+        if (existingForReferral.length > 0) {
+          throw new Error('Multiple rewards per referral are not allowed');
+        }
+      }
       let amount = data.amount;
       if (amount === undefined || amount === null) {
         if (settings.rewardType === 'fixed') {
@@ -533,6 +550,11 @@ class ReferralService {
         `UPDATE referral_rewards SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP, cancelled_by = ?, cancel_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [rejectedBy, reason || null, id]
       );
+
+      // Reverse wallet credit if the reward was already approved
+      if (reward.status === 'approved') {
+        await this.reverseWalletForReward(reward, rejectedBy, reason || 'Reward rejected');
+      }
 
       await this.notificationService.sendRewardRejectedNotification(reward, referral, reason);
       await this._createPortalNotifications(
@@ -655,7 +677,7 @@ class ReferralService {
   async getActiveCampaign() {
     const now = new Date().toISOString();
     return this._get(
-      "SELECT * FROM referral_campaignsstatus = 'active' AND start_date <= ? AND (end_date IS NULL OR end_date >= ?) ORDER BY created_at DESC LIMIT 1",
+      "SELECT * FROM referral_campaigns WHERE status = 'active' AND start_date <= ? AND (end_date IS NULL OR end_date >= ?) ORDER BY created_at DESC LIMIT 1",
       [now, now]
     );
   }
@@ -817,6 +839,17 @@ class ReferralService {
       );
 
       if (reward) {
+        // Reverse the wallet credit associated with this approved reward
+        if (reward.status === 'approved') {
+          await this.reverseWalletForReward(reward, approvedBy, notes || 'Reversal approved');
+        }
+
+        // Mark the reward as cancelled after reversal
+        await this._run(
+          `UPDATE referral_rewards SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP, cancelled_by = ?, cancel_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [approvedBy, 'Reversed: ' + (notes || 'Reward reversal approved'), reward.id]
+        );
+
         await this.notificationService.sendReversalProcessedNotification(reversal, reward);
         await this._createPortalNotifications(
           reward.customer_id,
@@ -952,7 +985,7 @@ class ReferralService {
     const conversionRate = totalCount > 0 ? (convertedCount / totalCount) * 100 : 0;
 
     const revenueAttributed = await this._get(
-      'SELECT COALESCE(SUM(invoice_amount), 0) as revenue FROM referral_rewardscreated_at BETWEEN ? AND ? AND status IN (\'approved\', \'paid\')',
+      'SELECT COALESCE(SUM(invoice_amount), 0) as revenue FROM referral_rewards WHERE created_at BETWEEN ? AND ? AND status IN (\'approved\', \'paid\')',
       [periodStart, periodEnd + 'T23:59:59.999Z']
     );
 
@@ -1126,6 +1159,55 @@ class ReferralService {
       });
     } catch (err) {
       console.error('[Referral] Wallet SSE/notification failed:', err.message);
+    }
+  }
+
+  async reverseWalletForReward(reward, actorId = 'system', reason = '') {
+    const targetCustomerId = reward.customer_id;
+    const reversalAmount = Math.abs(reward.amount);
+
+    const account = await this._get(
+      "SELECT id FROM chart_of_accounts WHERE type = 'liability' LIMIT 1",
+      []
+    );
+    const accountId = account ? account.id : null;
+
+    if (accountId) {
+      await this._run(
+        `INSERT INTO ledger_entries (id, account_id, account_code, account_name, entry_type, amount, currency, description, reference_type, reference_id, journal_id, entry_date, created_by)
+         VALUES (?, ?, ?, ?, 'debit', ?, 'USD', ?, 'referral_reversal', ?, ?, ?, ?, ?)`,
+        [randomUUID(), accountId, null, null, reversalAmount,
+         `Referral reward reversal for reward ${reward.id}: ${reason}`,
+         reward.id, null, new Date().toISOString(), actorId]
+      );
+    }
+
+    await this._run(
+      'UPDATE customers SET walletBalance = COALESCE(walletBalance, 0) - ? WHERE id = ?',
+      [reversalAmount, targetCustomerId]
+    );
+
+    const balanceRow = await this._get('SELECT walletBalance FROM customers WHERE id = ?', [targetCustomerId]);
+    const balance = balanceRow ? balanceRow.walletBalance || 0 : 0;
+    const walletPayload = {
+      customerId: targetCustomerId,
+      docType: 'wallet',
+      event: 'balance_changed',
+      delta: -reversalAmount,
+      balance,
+    };
+    try {
+      portalLifecycleService.emitEntityChange('portal', walletPayload);
+      portalLifecycleService.emitEntityChange('admin', walletPayload);
+      await portalLifecycleService.notifyCustomer({
+        customerId: targetCustomerId,
+        type: 'payment',
+        title: 'Wallet debited',
+        body: `A referral reward of ${reversalAmount.toFixed(2)} has been reversed from your wallet.`,
+        link: '/wallet',
+      });
+    } catch (err) {
+      console.error('[Referral] Wallet reversal SSE/notification failed:', err.message);
     }
   }
 }
