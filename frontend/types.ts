@@ -2403,3 +2403,19 @@ export interface QuoteRequestItem {
   targetPrice?: number;
   notes?: string;
 }
+
+export interface SupportArticle {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  body: string;
+  category: string;
+  tags: string[];
+  helpful?: number;
+  not_helpful?: number;
+  last_updated?: string;
+  updated_at?: string;
+  created_at?: string;
+  version?: number;
+}

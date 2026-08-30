@@ -1136,6 +1136,122 @@ router.post('/ads/upload', (req, res, next) => {
   }
 });
 
+// ─── Support Articles (FAQ) ─────────────────────────────────────────────────────
+
+router.get('/support/articles', async (req, res) => {
+  try {
+    const rows = await repo.getAll('support_articles');
+    rows.sort((a, b) => String(a.category || '').localeCompare(String(b.category || '')));
+    res.json(rows.map(a => ({
+      id: a.id,
+      slug: a.slug,
+      title: a.title,
+      summary: a.summary || '',
+      body: a.body || '',
+      category: a.category || 'General',
+      tags: a.tags || [],
+      helpful: Number(a.helpful || 0),
+      notHelpful: Number(a.not_helpful || 0),
+      lastUpdated: a.last_updated || a.updated_at || new Date().toISOString(),
+      createdAt: a.created_at || new Date().toISOString(),
+    })));
+  } catch (err) {
+    console.error('[PortalAdmin] List support articles error:', err);
+    res.status(500).json({ error: 'Failed to load support articles' });
+  }
+});
+
+router.post('/support/articles', async (req, res) => {
+  try {
+    const { id, slug, title, summary, body, category, tags } = req.body || {};
+    if (!id || !title) {
+      return res.status(400).json({ error: 'id and title are required' });
+    }
+    const now = new Date().toISOString();
+    const article = {
+      id: String(id),
+      slug: slug || String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+      title: String(title),
+      summary: summary || '',
+      body: body || '',
+      category: category || 'General',
+      tags: Array.isArray(tags) ? tags : [],
+      helpful: 0,
+      not_helpful: 0,
+      last_updated: now,
+      created_at: now,
+      updated_at: now,
+      version: 1,
+    };
+    await repo.upsert('support_articles', article);
+    res.status(201).json({
+      id: article.id,
+      slug: article.slug,
+      title: article.title,
+      summary: article.summary,
+      body: article.body,
+      category: article.category,
+      tags: article.tags,
+      helpful: 0,
+      notHelpful: 0,
+      lastUpdated: article.last_updated,
+    });
+  } catch (err) {
+    console.error('[PortalAdmin] Create support article error:', err);
+    res.status(500).json({ error: 'Failed to create support article' });
+  }
+});
+
+router.put('/support/articles/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, summary, body, category, tags } = req.body || {};
+    const existing = await repo.getById('support_articles', id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    const now = new Date().toISOString();
+    const updated = {
+      ...existing,
+      title: title !== undefined ? String(title) : existing.title,
+      summary: summary !== undefined ? String(summary) : existing.summary,
+      body: body !== undefined ? String(body) : existing.body,
+      category: category !== undefined ? String(category) : existing.category,
+      tags: Array.isArray(tags) ? tags : existing.tags,
+      last_updated: now,
+      updated_at: now,
+      version: Number(existing.version || 0) + 1,
+    };
+    await repo.upsert('support_articles', updated);
+    res.json({
+      id: updated.id,
+      slug: updated.slug,
+      title: updated.title,
+      summary: updated.summary,
+      body: updated.body,
+      category: updated.category,
+      tags: updated.tags,
+      helpful: Number(updated.helpful || 0),
+      notHelpful: Number(updated.not_helpful || 0),
+      lastUpdated: updated.last_updated,
+    });
+  } catch (err) {
+    console.error('[PortalAdmin] Update support article error:', err);
+    res.status(500).json({ error: 'Failed to update support article' });
+  }
+});
+
+router.delete('/support/articles/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await repo.delete('support_articles', id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[PortalAdmin] Delete support article error:', err);
+    res.status(500).json({ error: 'Failed to delete support article' });
+  }
+});
+
 // Staff (sales users) available for request assignment
 router.get('/staff', async (req, res) => {
   try {

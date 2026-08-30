@@ -294,6 +294,15 @@ router.post('/register', async (req, res) => {
       referred_by_code: referredByCode && referrerInfo ? referredByCode.trim().toUpperCase() : null,
     });
 
+    try {
+      const personalCode = await referralService.generateReferralCode();
+      await portalAuthService.syncCustomerPortalData(customerId, {
+        referralCode: personalCode,
+      });
+    } catch (codeErr) {
+      console.warn('[PortalAuth] Failed to generate personal referral code:', codeErr.message);
+    }
+
     if (referrerInfo) {
       try {
         await referralService.register({

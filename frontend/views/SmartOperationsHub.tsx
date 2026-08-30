@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, Calculator, MessageSquare, Gift, BadgePercent, Megaphone } from 'lucide-react';
+import { TrendingUp, Calculator, MessageSquare, Gift, BadgePercent, Megaphone, HelpCircle } from 'lucide-react';
 import GenericHub from './GenericHub';
 
 const SmartOperationsHub: React.FC = () => {
@@ -45,6 +45,13 @@ const SmartOperationsHub: React.FC = () => {
       path: '/smart-operations/ads',
       icon: <Megaphone />,
       color: 'bg-violet-50 text-violet-600'
+    },
+    {
+      label: 'FAQ Manager',
+      description: 'Manage the customer portal knowledge base and FAQ articles.',
+      path: '/smart-operations/faq',
+      icon: <HelpCircle />,
+      color: 'bg-emerald-50 text-emerald-600'
     }
   ];
 

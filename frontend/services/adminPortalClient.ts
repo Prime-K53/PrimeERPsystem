@@ -583,4 +583,18 @@ export const adminLifecycle = {
       return adminPortalApi.post<{ ok: boolean; cleared: string[] }>('/company/reset', {});
     },
   },
+  supportArticles: {
+    list(): Promise<SupportArticle[]> {
+      return adminPortalApi.get<SupportArticle[]>('/support/articles');
+    },
+    create(payload: SupportArticle): Promise<SupportArticle> {
+      return adminPortalApi.post<SupportArticle>('/support/articles', payload);
+    },
+    update(id: string, payload: Partial<SupportArticle>): Promise<SupportArticle> {
+      return adminPortalApi.put<SupportArticle>(`/support/articles/${id}`, payload);
+    },
+    remove(id: string): Promise<{ success: boolean }> {
+      return adminPortalApi.delete<{ success: boolean }>(`/support/articles/${id}`);
+    },
+  },
 };
