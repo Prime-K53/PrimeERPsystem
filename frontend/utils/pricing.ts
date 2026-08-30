@@ -517,8 +517,8 @@ const DEFAULT_TONER_CAPACITY = 20000;
 
 function findDefaultPaper(items: Item[]): Item | undefined {
   return items.find(i =>
-    i.name?.toLowerCase().includes('paper') ||
-    i.category?.toLowerCase().includes('paper')
+    /paper|bond/i.test(i.name || '') ||
+    /paper|bond/i.test(i.category || '')
   );
 }
 
