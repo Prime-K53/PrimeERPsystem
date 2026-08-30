@@ -18,7 +18,7 @@ const { randomUUID } = require('crypto');
 const { getFrontendDistPath } = require('./appRoot.cjs');
 const repo = require('./services/supabaseRepository.cjs');
 const paymentRequestService = require('./services/paymentRequestService.cjs');
-const { default: ReferralService } = require('./services/referralService.cjs');
+const ReferralService = require('./services/referralService.cjs');
 const referralService = new ReferralService();
 console.log('Requiring bootstrap...');
 const bootstrap = require('./bootstrap.cjs');

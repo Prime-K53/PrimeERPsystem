@@ -17,8 +17,15 @@ const emailService = require('./emailService.cjs');
 const workflowEngine = require('./workflowEngine.cjs');
 const promotionEngine = require('./promotionEngine.cjs');
 const promotionService = require('./promotionService.cjs');
-const { ReferralService } = require('./referralService.cjs');
-const referralService = new ReferralService();
+
+let _referralService = null;
+function getReferralService() {
+  if (!_referralService) {
+    const ReferralService = require('./referralService.cjs');
+    _referralService = new ReferralService();
+  }
+  return _referralService;
+}
 
 // ─── Centralized status enums ────────────────────────────────────────────────
 const REQUEST_STATUS = Object.freeze({
@@ -607,7 +614,7 @@ async function runOrderPromotion({ customerId, items, promotionCode }) {
   let referralFirstOrderDiscount = 0;
   let referralFirstOrderDiscountPct = 0;
   try {
-    const discountPct = await referralService.getReferredCustomerFirstOrderDiscount(customerId);
+    const discountPct = await getReferralService().getReferredCustomerFirstOrderDiscount(customerId);
     if (discountPct > 0) {
       referralFirstOrderDiscount = round2(subtotal * (discountPct / 100));
       referralFirstOrderDiscountPct = discountPct;
