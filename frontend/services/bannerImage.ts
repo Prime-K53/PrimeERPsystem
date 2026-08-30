@@ -214,12 +214,17 @@ export function renderBannerCanvas(image: HTMLImageElement, src: { x: number; y:
   return canvas;
 }
 
-/** toBlob('image/webp') wrapper. */
+/** toBlob('image/webp') wrapper with PNG fallback for mobile browsers where
+ *  canvas.toBlob('image/webp') silently returns null. */
 export function canvasToWebPBlob(canvas: HTMLCanvasElement, quality = BANNER_SPEC.outputQuality): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error('Could not encode the prepared banner as WebP'));
+      if (blob) return resolve(blob);
+      // WebP encoding failed (common on some mobile browsers) — fall back to PNG.
+      canvas.toBlob((pngBlob) => {
+        if (pngBlob) return resolve(pngBlob);
+        reject(new Error('Could not encode the banner as WebP or PNG. Try a different image.'));
+      }, 'image/png', 0.92);
     }, `image/${BANNER_SPEC.outputFormat}`, quality);
   });
 }
@@ -240,9 +245,13 @@ export async function prepareBannerBlob(image: HTMLImageElement): Promise<Blob> 
   return canvasToWebPBlob(canvas);
 }
 
-/** Builds the final `File` uploaded to POST /ads/upload. */
+/** Builds the final `File` uploaded to POST /ads/upload.
+ *  Uses the blob's actual MIME type (webp or png) so the backend
+ *  sharp library receives a file it can actually decode. */
 export function preparedBannerFile(blob: Blob): File {
-  return new File([blob], `banner.${BANNER_SPEC.outputFormat}`, { type: `image/${BANNER_SPEC.outputFormat}` });
+  const actualType = blob.type || `image/${BANNER_SPEC.outputFormat}`;
+  const extension = actualType === 'image/png' ? 'png' : 'webp';
+  return new File([blob], `banner.${extension}`, { type: actualType });
 }
 
 /** Formats bytes for the preview UI (e.g. "412 KB"). */
