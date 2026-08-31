@@ -18,7 +18,7 @@ export function isOrderInvoiced(order: any): boolean {
 export function getOrderDisplayStatus(order: Order | any): string {
   const status = (order && order.status) || '';
   if (status === 'Cancelled') return 'Cancelled';
-  if (isOrderInvoiced(order)) return 'Converted';
+  if (isOrderInvoiced(order)) return 'Done';
   return 'Processing';
 }
 
@@ -30,7 +30,7 @@ export const orderStatusClasses: Record<string, string> = {
   Processing: 'bg-blue-100 text-blue-700 border-blue-200',
   Pending: 'bg-blue-100 text-blue-700 border-blue-200',
   Confirmed: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-  Converted: 'bg-teal-100 text-teal-700 border-teal-200',
+  Done: 'bg-teal-100 text-teal-700 border-teal-200',
   Completed: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   Paid: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   'Partially Paid': 'bg-amber-100 text-amber-700 border-amber-200',

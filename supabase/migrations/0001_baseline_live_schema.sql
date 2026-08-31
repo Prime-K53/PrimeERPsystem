@@ -37,7 +37,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.is_company_staff() TO authenticated;
 
--- get_current_company_id: app.company_id setting w/ legacy fallback
+-- get_current_company_id: app.company_id setting → JWT app_metadata fallback → legacy → NULL
 CREATE OR REPLACE FUNCTION public.get_current_company_id()
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -48,13 +48,33 @@ AS $$
 DECLARE
   v_company TEXT;
 BEGIN
+  -- Priority 1: PostgreSQL session setting (set by backend REST API)
   v_company := NULLIF(current_setting('app.company_id', TRUE), '')::TEXT;
   IF v_company IS NOT NULL THEN
     RETURN v_company;
   END IF;
+
+  -- Priority 2: JWT app_metadata.tenant_id (server-stamped by set_user_app_metadata)
+  BEGIN
+    v_company := NULLIF((auth.jwt() -> 'app_metadata' ->> 'tenant_id'), '')::TEXT;
+    IF v_company IS NOT NULL THEN
+      RETURN v_company;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  -- Priority 3: JWT app_metadata.company_id
+  BEGIN
+    v_company := NULLIF((auth.jwt() -> 'app_metadata' ->> 'company_id'), '')::TEXT;
+    IF v_company IS NOT NULL THEN
+      RETURN v_company;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  -- Priority 4: Legacy function fallback
   IF to_regprocedure('public.get_user_company_id()') IS NOT NULL THEN
     RETURN public.get_user_company_id();
   END IF;
+
   RETURN NULL;
 END;
 $$;

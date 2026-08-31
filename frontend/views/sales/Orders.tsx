@@ -31,6 +31,7 @@ import { OfflineImage } from '../../components/OfflineImage';
 import { ProfitAnalysisModal } from './components/ProfitAnalysisModal';
 import { extractInvoiceData, generateAIResponse } from '../../services/geminiService';
 import { QuotationList, InvoiceList, SalesOrderList, SalesExchangeList, SalesSkeletonLoader, OrdersList } from './components/SalesLists';
+import { getOrderDisplayStatus } from './components/orderStatusUtils';
 import { useSearchSort } from '../../hooks/useSearchSort';
 import SearchSortToolbar from '../../components/SearchSortToolbar';
 import { ExchangeRequestModal } from './components/ExchangeRequestModal';
@@ -1305,7 +1306,12 @@ const Orders: React.FC = () => {
                              activeView === 'Subscriptions' ? subscriptionSearchSort : null;
 
     const processedQuotations = quotationSearchSort.processedData;
-    const processedOrders = orderSearchSort.processedData;
+    const processedOrders = useMemo(() => {
+        const data = [...orderSearchSort.processedData];
+        const processing = data.filter(o => getOrderDisplayStatus(o) === 'Processing');
+        const others = data.filter(o => getOrderDisplayStatus(o) !== 'Processing');
+        return [...processing, ...others];
+    }, [orderSearchSort.processedData]);
     const processedJobOrders = jobOrderSearchSort.processedData;
     const processedExchanges = exchangeSearchSort.processedData;
     const processedSubscriptions = subscriptionSearchSort.processedData;
@@ -1661,7 +1667,7 @@ const Orders: React.FC = () => {
                             New Exchange Request
                         </button>
                     )}
-                    {(activeView === 'Invoices' || activeView === 'Orders') && selectedInvoiceIds.length > 0 && (
+                    {(activeView === 'Invoices' || activeView === 'Orders' || activeView === 'Quotations') && selectedInvoiceIds.length > 0 && (
                         <div className="flex items-center gap-2 px-3 py-1.5 bg-[#eef7f6] border border-[#d3ece9] rounded-xl animate-in fade-in slide-in-from-right-4">
                             <span className="text-[10px] font-bold text-[#0b3e39] uppercase tracking-tight">{selectedInvoiceIds.length} Selected</span>
                             <div className="w-px h-4 bg-[#a6d9d3] mx-1"></div>
@@ -1847,11 +1853,11 @@ const Orders: React.FC = () => {
                         <SalesSkeletonLoader type={viewMode === 'Card' ? 'grid' : 'table'} />
                     ) : (
                         <>
-                            {activeView === 'Quotations' && <QuotationList data={processedQuotations} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} onAction={handleAction} viewMode={viewMode} onSort={handleSort} sortConfig={{ field: activeSearchSort?.sortField || 'date', direction: activeSearchSort?.sortDirection || 'desc' }} searchTerm={activeSearchSort?.searchTerm} onSearchChange={activeSearchSort?.setSearchTerm} onSearchClear={activeSearchSort?.clearSearch} />}
+                            {activeView === 'Quotations' && <QuotationList data={processedQuotations} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} onAction={handleAction} viewMode={viewMode} selectedIds={selectedInvoiceIds} onSelect={handleSelectInvoice} onSort={handleSort} sortConfig={{ field: activeSearchSort?.sortField || 'date', direction: activeSearchSort?.sortDirection || 'desc' }} searchTerm={activeSearchSort?.searchTerm} onSearchChange={activeSearchSort?.setSearchTerm} onSearchClear={activeSearchSort?.clearSearch} />}
                             {activeView === 'Invoices' && <InvoiceList data={processedInvoices} onView={(inv) => setSelectedInvoiceForDetail(inv)} onEdit={handleEdit} onDelete={handleDelete} onAction={handleAction} viewMode={viewMode} selectedIds={selectedInvoiceIds} onSelect={handleSelectInvoice} onSort={handleSort} sortConfig={{ field: activeSearchSort?.sortField || 'date', direction: activeSearchSort?.sortDirection || 'desc' }} selectedId={selectedInvoiceForDetail?.id} searchTerm={activeSearchSort?.searchTerm} onSearchChange={activeSearchSort?.setSearchTerm} onSearchClear={activeSearchSort?.clearSearch} />}
                             {activeView === 'Subscriptions' && <SubscriptionView data={processedSubscriptions} onEdit={handleEdit} onView={handleView} onDelete={handleDelete} onAction={handleAction} onSort={handleSort} sortConfig={{ field: activeSearchSort?.sortField || 'nextRunDate', direction: activeSearchSort?.sortDirection || 'desc' }} />}
                             {activeView === 'SalesOrders' && <SalesOrderList data={processedJobOrders} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} onAction={handleAction} viewMode={viewMode} onSort={handleSort} sortConfig={{ field: activeSearchSort?.sortField || 'date', direction: activeSearchSort?.sortDirection || 'desc' }} />}
-                            {activeView === 'Orders' && <OrdersList data={processedOrders} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} onAction={handleAction} viewMode={viewMode} onSort={handleSort} sortConfig={{ field: activeSearchSort?.sortField || 'orderDate', direction: activeSearchSort?.sortDirection || 'desc' }} searchTerm={activeSearchSort?.searchTerm} onSearchChange={activeSearchSort?.setSearchTerm} onSearchClear={activeSearchSort?.clearSearch} />}
+                            {activeView === 'Orders' && <OrdersList data={processedOrders} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} onAction={handleAction} viewMode={viewMode} selectedIds={selectedInvoiceIds} onSelect={handleSelectInvoice} onSort={handleSort} sortConfig={{ field: activeSearchSort?.sortField || 'orderDate', direction: activeSearchSort?.sortDirection || 'desc' }} searchTerm={activeSearchSort?.searchTerm} onSearchChange={activeSearchSort?.setSearchTerm} onSearchClear={activeSearchSort?.clearSearch} />}
                             {activeView === 'Exchanges' && <SalesExchangeList data={processedExchanges} onView={handleView} onEdit={handleEdit} onDelete={(id) => deleteSalesExchange(id)} onAction={handleAction} viewMode={viewMode} selectedIds={selectedInvoiceIds} onSelect={handleSelectInvoice} onSort={handleSort} sortConfig={{ field: activeSearchSort?.sortField || 'date', direction: activeSearchSort?.sortDirection || 'desc' }} />}
                         </>
                     )}

@@ -99,7 +99,7 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
         return 'N/A';
     };
     const buildServiceDescription = (line: any) => {
-        const base = line?.desc || line?.description || line?.name || line?.productName || line?.product_name || line?.item_description || line?.itemDescription || 'N/A';
+        const base = line?.name || line?.productName || line?.product_name || line?.itemName || line?.item_name || line?.title || line?.label || line?.desc || line?.description || line?.item_description || line?.itemDescription || 'N/A';
         const service = line?.serviceDetails;
         if (!service) return base;
 
@@ -151,11 +151,11 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             reason: item.reason || item.exchange_reason || 'N/A',
             remarks: item.remarks || '',
             items: exchangeItems.map((i: any) => ({
-                desc: i.product_name || i.productName || i.description || i.name || i.desc || 'Item',
+                desc: i.product_name || i.productName || i.name || i.itemName || i.item_name || i.title || i.label || i.desc || i.description || 'Item',
                 qtyReturned: toNum(i.qty_returned ?? i.qtyReturned ?? i.quantityReturned),
                 qtyReplaced: toNum(i.qty_replaced ?? i.qtyReplaced ?? i.quantityReplaced),
                 priceDiff: toNum(i.price_difference ?? i.priceDifference ?? i.priceDiff),
-                replacedProductName: i.replaced_product_name || i.replacedProductName || i.product_name || i.productName || i.description || i.name || 'Same Product'
+                replacedProductName: i.replaced_product_name || i.replacedProductName || i.product_name || i.productName || i.name || i.description || 'Same Product'
             })),
             totalPriceDiff: toNum(item.total_price_difference || item.totalPriceDiff ||
                 exchangeItems.reduce((sum: number, i: any) => sum + toNum(i.price_difference ?? i.priceDifference ?? i.priceDiff), 0))

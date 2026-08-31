@@ -478,24 +478,52 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                         <table className="w-full text-left text-[11px] md:text-[13px] table-auto md:table-fixed">
                             <thead className="bg-slate-50/80 backdrop-blur text-slate-500 sticky top-0 z-10 shadow-sm">
                                 <tr>
-                                    <SortableTh field="orderNumber" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[14.28%]">Order No.</SortableTh>
-                                    <SortableTh field="orderDate" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[14.28%] hidden sm:table-cell">Date</SortableTh>
-                                    <SortableTh field="customerName" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[14.28%]">Customer</SortableTh>
-                                    <SortableTh field="totalAmount" sortConfig={props.sortConfig} onSort={props.onSort} className="text-right md:w-[14.28%] hidden sm:table-cell">Total</SortableTh>
-                                    <SortableTh field="paidAmount" sortConfig={props.sortConfig} onSort={props.onSort} className="text-right md:w-[14.28%] hidden lg:table-cell">Paid</SortableTh>
-                                    <SortableTh field="status" sortConfig={props.sortConfig} onSort={props.onSort} className="text-center md:w-[14.28%]">Status</SortableTh>
-                                    <th className="table-header text-center md:w-[14.28%]">Actions</th>
+                                    <th className="table-header text-center hidden md:table-cell md:w-[3%]">
+                                        <input
+                                            type="checkbox"
+                                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            checked={props.data.length > 0 && props.selectedIds?.length === props.data.length}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    props.data.forEach(o => {
+                                                        if (!props.selectedIds?.includes(o.id)) props.onSelect?.(o.id);
+                                                    });
+                                                } else {
+                                                    props.data.forEach(o => {
+                                                        if (props.selectedIds?.includes(o.id)) props.onSelect?.(o.id);
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </th>
+                                    <SortableTh field="orderNumber" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[11.42%]">Order No.</SortableTh>
+                                    <SortableTh field="orderDate" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[11.42%] hidden sm:table-cell">Date</SortableTh>
+                                    <SortableTh field="customerName" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[11.42%]">Customer</SortableTh>
+                                    <SortableTh field="totalAmount" sortConfig={props.sortConfig} onSort={props.onSort} className="text-right md:w-[11.42%] hidden sm:table-cell">Total</SortableTh>
+                                    <SortableTh field="paidAmount" sortConfig={props.sortConfig} onSort={props.onSort} className="text-right md:w-[11.42%] hidden lg:table-cell">Paid</SortableTh>
+                                    <SortableTh field="status" sortConfig={props.sortConfig} onSort={props.onSort} className="text-center md:w-[11.42%]">Status</SortableTh>
+                                    <th className="table-header text-center md:w-[11.42%]">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/50">
-                                {(currentItems || []).map((o: Order) => (
+                                {(currentItems || []).map((o: Order) => {
+                                    const isChecked = props.selectedIds?.includes(o.id);
+                                    return (
                                     <tr
                                         key={o.id}
                                         id={`ord-${o.id}`}
-                                        className="hover:bg-blue-50/50 cursor-pointer transition-colors group"
+                                        className={`transition-colors cursor-pointer group ${isChecked ? 'bg-blue-50/80' : 'hover:bg-blue-50/50 border-l-4 border-l-transparent'}`}
                                         onClick={(e) => handleRowClick(e, o.id)}
                                         onContextMenu={(e) => handleContextMenu(e, o.id)}
                                     >
+                                        <td className="table-body-cell text-center hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                                type="checkbox"
+                                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                checked={isChecked}
+                                                onChange={() => props.onSelect?.(o.id)}
+                                            />
+                                        </td>
                                         <td className="table-body-cell text-left font-mono font-bold truncate">
                                             <DocLink
                                                 docNumber={o.orderNumber}
@@ -531,7 +559,8 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                                             </div>
                                         </td>
                                     </tr>
-                                ))}
+                                );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -1382,26 +1411,54 @@ export const QuotationList: React.FC<ListProps<Quotation>> = (props) => {
                         <table className="w-full text-left text-[11px] md:text-[13px] table-auto md:table-fixed">
                             <thead className="bg-slate-50/80 backdrop-blur text-slate-500 sticky top-0 z-10 shadow-sm">
                                 <tr>
-                                    <SortableTh field="id" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[16.66%]">Quote No.</SortableTh>
-                                    <SortableTh field="date" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[16.66%] hidden sm:table-cell">Date</SortableTh>
-                                    <SortableTh field="customerName" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[16.66%]">Customer</SortableTh>
-                                    <SortableTh field="total" sortConfig={props.sortConfig} onSort={props.onSort} className="text-right md:w-[16.66%] hidden sm:table-cell">Total</SortableTh>
-                                    <SortableTh field="status" sortConfig={props.sortConfig} onSort={props.onSort} className="text-center md:w-[16.66%]">Status</SortableTh>
-                                    <th className="table-header text-center md:w-[16.66%]">Actions</th>
+                                    <th className="table-header text-center hidden md:table-cell md:w-[3%]">
+                                        <input
+                                            type="checkbox"
+                                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            checked={props.data.length > 0 && props.selectedIds?.length === props.data.length}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    props.data.forEach(q => {
+                                                        if (!props.selectedIds?.includes(q.id)) props.onSelect?.(q.id);
+                                                    });
+                                                } else {
+                                                    props.data.forEach(q => {
+                                                        if (props.selectedIds?.includes(q.id)) props.onSelect?.(q.id);
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </th>
+                                    <SortableTh field="id" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[13.85%]">Quote No.</SortableTh>
+                                    <SortableTh field="date" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[13.85%] hidden sm:table-cell">Date</SortableTh>
+                                    <SortableTh field="customerName" sortConfig={props.sortConfig} onSort={props.onSort} className="text-left md:w-[13.85%]">Customer</SortableTh>
+                                    <SortableTh field="total" sortConfig={props.sortConfig} onSort={props.onSort} className="text-right md:w-[13.85%] hidden sm:table-cell">Total</SortableTh>
+                                    <SortableTh field="status" sortConfig={props.sortConfig} onSort={props.onSort} className="text-center md:w-[13.85%]">Status</SortableTh>
+                                    <th className="table-header text-center md:w-[13.85%]">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/50">
-                                {(currentItems || []).map((q: any) => (
+                                {(currentItems || []).map((q: any) => {
+                                    const isChecked = props.selectedIds?.includes(q.id);
+                                    return (
                                     <tr
                                         key={q.id}
                                         id={`qt-${q.id}`}
-                                        className="hover:bg-blue-50/50 cursor-pointer transition-colors group"
+                                        className={`transition-colors cursor-pointer group ${isChecked ? 'bg-blue-50/80' : 'hover:bg-blue-50/50 border-l-4 border-l-transparent'}`}
                                         onClick={(e) => handleRowClick(e, q.id)}
                                         onContextMenu={(e) => handleContextMenu(e, q.id)}
                                         onMouseEnter={(e) => onMouseEnter(q.id, e)}
                                         onMouseMove={onMouseMove}
                                         onMouseLeave={onMouseLeave}
                                     >
+                                        <td className="table-body-cell text-center hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                                type="checkbox"
+                                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                checked={isChecked}
+                                                onChange={() => props.onSelect?.(q.id)}
+                                            />
+                                        </td>
                                         <td className="table-body-cell text-left font-mono font-bold truncate">
                                             <DocLink
                                                 docNumber={q.id}
@@ -1438,7 +1495,8 @@ export const QuotationList: React.FC<ListProps<Quotation>> = (props) => {
                                             </div>
                                         </td>
                                     </tr>
-                                ))}
+                                );
+                                })}
                             </tbody>
                         </table>
                     </div>

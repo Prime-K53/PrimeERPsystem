@@ -92,7 +92,7 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
 
       return {
         ...item,
-        name: item.name ?? item.description ?? item.itemName ?? 'Item',
+        name: item.name ?? item.productName ?? item.product_name ?? item.itemName ?? item.item_name ?? item.title ?? item.desc ?? item.description ?? 'Item',
         sku: item.sku ?? item.itemId ?? item.id ?? '',
         quantity: qty,
         unitPrice,
@@ -115,7 +115,7 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
       );
       return {
         ...item,
-        description: item.description ?? item.name ?? item.itemName ?? 'Item',
+        description: item.name ?? item.productName ?? item.product_name ?? item.itemName ?? item.item_name ?? item.title ?? item.desc ?? item.description ?? 'Item',
         units,
         rate,
         total

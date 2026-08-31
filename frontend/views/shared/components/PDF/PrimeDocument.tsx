@@ -308,7 +308,7 @@ const CleanInvoiceTemplate = ({
 
   const renderRow = (item: any, i: number) => {
     const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
-    let formattedDesc = item.desc || item.name;
+    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || '';
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -321,11 +321,11 @@ const CleanInvoiceTemplate = ({
       qty = sheets;
       unitPrice = sheets > 0 ? item.price / sheets : item.price;
       total = item.price;
-      formattedDesc = `${item.name} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || 'Quick Photo'} — ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.desc || 'Service';
+      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Service';
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
@@ -648,7 +648,7 @@ const ModernInvoiceTemplate = ({
 
   const renderRow = (item: any, i: number) => {
     const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
-    let formattedDesc = item.desc || item.name;
+    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || '';
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -661,11 +661,11 @@ const ModernInvoiceTemplate = ({
       qty = sheets;
       unitPrice = sheets > 0 ? item.price / sheets : item.price;
       total = item.price;
-      formattedDesc = `${item.name} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || 'Quick Photo'} — ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.desc || 'Service';
+      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Service';
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
@@ -948,7 +948,7 @@ const ProfessionalInvoiceTemplate = ({
   
   const renderRow = (item: any, i: number) => {
     const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
-    let formattedDesc = item.desc || item.name;
+    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || '';
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -961,11 +961,11 @@ const ProfessionalInvoiceTemplate = ({
       qty = sheets;
       unitPrice = sheets > 0 ? item.price / sheets : item.price;
       total = item.price;
-      formattedDesc = `${item.name} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || 'Quick Photo'} — ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.desc || 'Service';
+      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Service';
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
@@ -1901,11 +1901,11 @@ if (type === 'POS_RECEIPT') {
                     (type === 'INVOICE' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'QUOTATION');
                   
                   // Format description based on item type and document type
-                  let formattedDesc = String(item.desc || '');
+                  let formattedDesc = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || '');
                   if (useSimplifiedFormat) {
                     const totalPages = Number(item.totalPages || item.pages || 0);
                     const copies = Number(item.copies || item.qty || 1);
-                    const itemName = String(item.name || item.desc || 'Service');
+                    const itemName = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Service');
                     formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
                   }
                   

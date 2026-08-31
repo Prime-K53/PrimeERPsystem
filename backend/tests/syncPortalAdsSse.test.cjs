@@ -160,3 +160,58 @@ describe('portal_ads SSE broadcast logic', () => {
     });
   });
 });
+
+const { validatePortalAdPayload } = require('../routes/sync.cjs');
+
+describe('validatePortalAdPayload imageUrl validation', () => {
+  it('accepts empty string imageUrl "" for text/gradient ads', () => {
+    const op = {
+      operation: 'upsert',
+      payload: {
+        id: 'AD_1001',
+        title: 'Special 10% Off',
+        imageUrl: '',
+      },
+    };
+    expect(validatePortalAdPayload(op)).toBeNull();
+  });
+
+  it('accepts null or omitted imageUrl', () => {
+    const op1 = { operation: 'upsert', payload: { id: 'AD_1002', title: 'Ad', imageUrl: null } };
+    const op2 = { operation: 'upsert', payload: { id: 'AD_1003', title: 'Ad' } };
+    expect(validatePortalAdPayload(op1)).toBeNull();
+    expect(validatePortalAdPayload(op2)).toBeNull();
+  });
+
+  it('accepts valid http and https image URLs', () => {
+    const opHttps = {
+      operation: 'upsert',
+      payload: { id: 'AD_1004', imageUrl: 'https://example.com/banner.webp' },
+    };
+    const opHttp = {
+      operation: 'upsert',
+      payload: { id: 'AD_1005', imageUrl: 'http://example.com/banner.png' },
+    };
+    expect(validatePortalAdPayload(opHttps)).toBeNull();
+    expect(validatePortalAdPayload(opHttp)).toBeNull();
+  });
+
+  it('rejects non-empty invalid image URLs', () => {
+    const opInvalidStr = {
+      operation: 'upsert',
+      payload: { id: 'AD_1006', imageUrl: 'not-a-valid-url' },
+    };
+    const opFtp = {
+      operation: 'upsert',
+      payload: { id: 'AD_1007', imageUrl: 'ftp://example.com/image.png' },
+    };
+    expect(validatePortalAdPayload(opInvalidStr)).toBe('portal_ads imageUrl must be a valid http(s) URL');
+    expect(validatePortalAdPayload(opFtp)).toBe('portal_ads imageUrl must be a valid http(s) URL');
+  });
+
+  it('bypasses validation for delete operations', () => {
+    const opDelete = { operation: 'delete', payload: { id: 'AD_1008' } };
+    expect(validatePortalAdPayload(opDelete)).toBeNull();
+  });
+});
+

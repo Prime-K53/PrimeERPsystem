@@ -26,7 +26,7 @@ interface InventoryContextType {
     fetchInventory: (silent?: boolean) => Promise<void>;
     fetchProcurementData: () => Promise<void>;
 
-    addItem: (item: Item) => Promise<void>;
+    addItem: (item: Item) => Promise<Item>;
     updateItem: (item: Item, reason?: string) => Promise<void>;
     recalculatePrice: (itemId: string) => Promise<Item | undefined>;
     deleteItem: (id: string, reason?: string) => Promise<void>;
@@ -143,21 +143,22 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const toLowStockItems = (items: Item[]) =>
         items.map(i => ({ id: i.id, name: i.name, sku: i.sku, stock: i.stock, reorderPoint: i.reorderPoint ?? 0 }));
 
-    const addItem = async (item: Item): Promise<void> => {
+    const addItem = async (item: Item): Promise<Item> => {
         try {
-            await storeAddItem(item);
+            const savedItem = await storeAddItem(item);
             addAuditLog({
                 action: 'CREATE',
                 entityType: 'Item',
-                entityId: item.name,
-                details: `Created new ${item.type || 'item'}: ${item.name}`,
-                newValue: item
+                entityId: savedItem.name,
+                details: `Created new ${savedItem.type || 'item'}: ${savedItem.name}`,
+                newValue: savedItem
             });
             // Fire-and-forget sync to backend - don't block the save operation
             syncBomRelevantInventory('item creation').catch((error) => {
                 console.warn('Background inventory sync failed:', error);
             });
             checkAndSendLowStockAlerts(toLowStockItems(inventory)).catch(() => {});
+            return savedItem;
         } catch (err: any) {
             throw err;
         }

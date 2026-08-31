@@ -252,8 +252,8 @@ const StatementExportDialog: React.FC<StatementExportDialogProps> = ({
 
       const transactions = (data.transactions || []).map((t) => ({
         date: t.date,
-        reference: t.description || '',
-        memo: '',
+        reference: t.reference || '',
+        memo: t.description || '',
         debit: Number(t.debit || 0),
         credit: Number(t.credit || 0),
         runningBalance: Number(t.balance || 0),

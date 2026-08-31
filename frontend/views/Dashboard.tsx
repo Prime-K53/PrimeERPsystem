@@ -1210,9 +1210,9 @@ const DashboardContent: React.FC = () => {
                   {!isMobile && <div style={{ marginLeft: 4 }}><PeriodDropdown value={activePeriod} onChange={setActivePeriod} /></div>}
                 </div>
               </div>
-               <div style={{ width: '100%', flex: 1, minHeight: isMobile ? 220 : 280, minWidth: 0 }}>
+             <div style={{ width: '100%', minHeight: isMobile ? 220 : 280, minWidth: 0 }}>
                 {chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={150}>
+                  <ResponsiveContainer width="100%" height={isMobile ? 220 : 280} minWidth={0} minHeight={isMobile ? 220 : 280}>
                     <AreaChart data={chartData} margin={{ top: 8, right: isMobile ? 4 : 16, left: isMobile ? -24 : -8, bottom: -8 }}>
                       <defs>
                         <linearGradient id="gradIncome" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#16a34a" stopOpacity={0.6} /><stop offset="60%" stopColor="#22c55e" stopOpacity={0.15} /><stop offset="100%" stopColor="#bbf7d0" stopOpacity={0} /></linearGradient>
@@ -1227,7 +1227,7 @@ const DashboardContent: React.FC = () => {
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div style={{ height: '100%', minHeight: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#94a3b8', fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px dashed rgba(148,163,184,0.28)', borderRadius: 18, background: 'rgba(248,250,252,0.7)', padding: '16px 20px' }}>
+                  <div style={{ height: isMobile ? 220 : 280, minHeight: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#94a3b8', fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px dashed rgba(148,163,184,0.28)', borderRadius: 18, background: 'rgba(248,250,252,0.7)', padding: '16px 20px' }}>
                     {hasTransactions ? 'No financial activity is available for the selected period yet.' : `No transactions have been recorded for Financial Year ${fyName}.`}
                   </div>
                 )}

@@ -231792,7 +231792,7 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
     return "N/A";
   };
   const buildServiceDescription = (line2) => {
-    const base = line2?.desc || line2?.description || line2?.name || line2?.productName || line2?.product_name || line2?.item_description || line2?.itemDescription || "N/A";
+    const base = line2?.name || line2?.productName || line2?.product_name || line2?.itemName || line2?.item_name || line2?.title || line2?.label || line2?.desc || line2?.description || line2?.item_description || line2?.itemDescription || "N/A";
     const service = line2?.serviceDetails;
     if (!service) return base;
     return `${base} (${toNum(service.pages)} pages)`;
@@ -231837,11 +231837,11 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
       reason: item.reason || item.exchange_reason || "N/A",
       remarks: item.remarks || "",
       items: exchangeItems.map((i2) => ({
-        desc: i2.product_name || i2.productName || i2.description || i2.name || i2.desc || "Item",
+        desc: i2.product_name || i2.productName || i2.name || i2.itemName || i2.item_name || i2.title || i2.label || i2.desc || i2.description || "Item",
         qtyReturned: toNum(i2.qty_returned ?? i2.qtyReturned ?? i2.quantityReturned),
         qtyReplaced: toNum(i2.qty_replaced ?? i2.qtyReplaced ?? i2.quantityReplaced),
         priceDiff: toNum(i2.price_difference ?? i2.priceDifference ?? i2.priceDiff),
-        replacedProductName: i2.replaced_product_name || i2.replacedProductName || i2.product_name || i2.productName || i2.description || i2.name || "Same Product"
+        replacedProductName: i2.replaced_product_name || i2.replacedProductName || i2.product_name || i2.productName || i2.name || i2.description || "Same Product"
       })),
       totalPriceDiff: toNum(item.total_price_difference || item.totalPriceDiff || exchangeItems.reduce((sum, i2) => sum + toNum(i2.price_difference ?? i2.priceDifference ?? i2.priceDiff), 0))
     };
@@ -233234,7 +233234,7 @@ var CleanInvoiceTemplate = ({
   const legalFooterLine2 = `${companyFlatContact1}`;
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
-    let formattedDesc = item.desc || item.name;
+    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "";
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -233246,11 +233246,11 @@ var CleanInvoiceTemplate = ({
       qty = sheets;
       unitPrice = sheets > 0 ? item.price / sheets : item.price;
       total = item.price;
-      formattedDesc = `${item.name} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photo"} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.desc || "Service";
+      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "Service";
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
       }
@@ -233306,7 +233306,7 @@ var CleanInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 20 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Item Description" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Qty" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Unit Price" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Amount" })
@@ -233534,7 +233534,7 @@ var ModernInvoiceTemplate = ({
   const qrCodeDataUrl = resolvePdfQrCodeSource(String(dataAny.securityQrCodeDataUrl || ""));
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
-    let formattedDesc = item.desc || item.name;
+    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "";
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -233546,11 +233546,11 @@ var ModernInvoiceTemplate = ({
       qty = sheets;
       unitPrice = sheets > 0 ? item.price / sheets : item.price;
       total = item.price;
-      formattedDesc = `${item.name} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photo"} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.desc || "Service";
+      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "Service";
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
       }
@@ -233611,7 +233611,7 @@ var ModernInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 15 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Item Description" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Qty." }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Unit Price" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Amount" })
@@ -233787,7 +233787,7 @@ var ProfessionalInvoiceTemplate = ({
   const outstandingDisplay = showInvoiceBalances && type === "INVOICE" ? resolvedOutstandingBalance : totalAmount - amountPaid;
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
-    let formattedDesc = item.desc || item.name;
+    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "";
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -233799,11 +233799,11 @@ var ProfessionalInvoiceTemplate = ({
       qty = sheets;
       unitPrice = sheets > 0 ? item.price / sheets : item.price;
       total = item.price;
-      formattedDesc = `${item.name} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photo"} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.desc || "Service";
+      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "Service";
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
       }
@@ -233873,7 +233873,7 @@ var ProfessionalInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 15 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: "#222222", paddingBottom: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase" }, children: "Item Description" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase" }, children: "Description" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Qty" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Unit" }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Price" })
@@ -234118,7 +234118,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Item Description" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Returned" }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Replaced" })
         ] }),
@@ -234657,18 +234657,18 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
           isFinancial && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableSectionTight, children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: "Qty" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Item Description" }),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colPrice, children: "Price" }),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colTotal, children: "Total" })
             ] }),
             ("items" in data2 ? dataAny.items : []).map((item, i2) => {
               const isService = item.category === "service" || item.type === "service" || item.isService === true;
               const useSimplifiedFormat = isService && (type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" || type === "QUOTATION");
-              let formattedDesc = String(item.desc || "");
+              let formattedDesc = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "");
               if (useSimplifiedFormat) {
                 const totalPages = Number(item.totalPages || item.pages || 0);
                 const copies = Number(item.copies || item.qty || 1);
-                const itemName = String(item.name || item.desc || "Service");
+                const itemName = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "Service");
                 formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
               }
               return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
@@ -234868,7 +234868,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
         type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold", marginBottom: 10 }, children: "DELIVERY ITEMS CHECKLIST" }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Item Description" }),
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: "Qty Shipped" })
           ] }),
           ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [

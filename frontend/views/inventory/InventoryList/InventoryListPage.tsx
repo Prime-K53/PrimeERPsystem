@@ -276,8 +276,14 @@ const [isModalOpen, setIsModalOpen] = useState(false);
         await updateItem(savedItem);
         notify?.('Item updated successfully', 'success');
       } else {
-        await addItem(savedItem);
+        const newItem = await addItem(savedItem);
         notify?.('Item created successfully', 'success');
+        if (newItem?.id) {
+          navigate(`/supply-chain/inventory/${newItem.id}`);
+          setIsModalOpen(false);
+          setEditingItem(null);
+          return;
+        }
       }
       refresh();
       setIsModalOpen(false);
@@ -285,7 +291,7 @@ const [isModalOpen, setIsModalOpen] = useState(false);
     } catch (error: any) {
       notify?.(`Save failed: ${error?.message || 'Unknown error'}`, 'error');
     }
-  }, [updateItem, addItem, notify, refresh]);
+  }, [updateItem, addItem, notify, refresh, navigate]);
 
   const handleViewItem = useCallback((item: Item) => {
     navigate(`/supply-chain/inventory/${item.id}`);

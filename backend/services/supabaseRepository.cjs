@@ -37,6 +37,7 @@ function fromSupabaseRow(row) {
   return {
     ...data,
     id: row.id,
+    company_id: row.company_id,
     // Canonical server timestamp: the DB column (DEFAULT NOW()) is the
     // authoritative creation time for every envelope row. Without this the
     // API drops the date entirely (quotation/order requests showed

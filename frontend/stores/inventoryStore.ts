@@ -23,7 +23,7 @@ interface InventoryState {
   error: string | null;
 
   fetchInventory: (silent?: boolean) => Promise<void>;
-  addItem: (item: Item) => Promise<void>;
+  addItem: (item: Item) => Promise<Item>;
   updateItem: (item: Item) => Promise<void>;
   recalculatePrice: (itemId: string) => Promise<Item | undefined>;
   deleteItem: (id: string) => Promise<void>;
@@ -144,6 +144,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     }));
     await transactionService.saveItem(savedItem);
     await get().fetchInventory(true);
+    return savedItem;
   },
 
   updateItem: async (item: Item) => {

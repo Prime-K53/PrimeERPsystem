@@ -132,7 +132,7 @@ function validatePortalAdPayload(op) {
   if (p.title != null && typeof p.title !== 'string') {
     return 'portal_ads title must be a string';
   }
-  if (p.imageUrl != null) {
+  if (p.imageUrl != null && p.imageUrl !== '') {
     if (typeof p.imageUrl !== 'string' || !HTTP_URL_PATTERN.test(p.imageUrl)) {
       return 'portal_ads imageUrl must be a valid http(s) URL';
     }
@@ -365,5 +365,7 @@ router.post('/tombstones/purge', async (req, res) => {
     res.status(500).json({ error: 'Tombstone purge failed' });
   }
 });
+
+router.validatePortalAdPayload = validatePortalAdPayload;
 
 module.exports = router;
