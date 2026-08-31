@@ -1,16 +1,9 @@
 import React from 'react';
 
-/**
- * Sleek Design Tokens — PrimePrinting Customer Portal
- * Based on the Prime-portal reference app "Sleek" palette.
- */
-
-// ── Font ──────────────────────────────────────────────
 export const FONT_FAMILY = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+export const MONO_FAMILY = "'JetBrains Mono','Fira Code',monospace";
 
-// ── Color Palette ─────────────────────────────────────
 export const colors = {
-  // Primary — deep executive navy
   navy: {
     50:  '#EFF3F9',
     100: '#D6E1F0',
@@ -23,7 +16,6 @@ export const colors = {
     800: '#071836',
     900: '#04102B',
   },
-  // Secondary — slate grays
   slate: {
     50:  '#F8FAFC',
     100: '#F1F5F9',
@@ -36,7 +28,6 @@ export const colors = {
     800: '#1E293B',
     900: '#0F172A',
   },
-  // Tertiary — emerald
   emerald: {
     50:  '#ECFDF5',
     100: '#D1FAE5',
@@ -49,7 +40,6 @@ export const colors = {
     800: '#064E3B',
     900: '#022C22',
   },
-  // Semantic
   white: '#FFFFFF',
   background: '#F8FAFC',
   surface: '#FFFFFF',
@@ -62,9 +52,56 @@ export const colors = {
   successLight: '#ECFDF5',
   info: '#2563EB',
   infoLight: '#EFF6FF',
-} as const;
+  indigo: {
+    50:  '#EEF2FF',
+    100: '#E0E7FF',
+    200: '#C7D2FE',
+    300: '#A5B4FC',
+    400: '#818CF8',
+    500: '#6366F1',
+    600: '#4F46E5',
+    700: '#4338CA',
+    800: '#3730A3',
+    900: '#312E81',
+  },
+  violet: {
+    50:  '#F5F3FF',
+    100: '#EDE9FE',
+    200: '#DDD6FE',
+    300: '#C4B5FD',
+    400: '#A78BFA',
+    500: '#8B5CF6',
+    600: '#7C3AED',
+    700: '#6D28D9',
+    800: '#5B21B6',
+    900: '#4C1D95',
+  },
+  rose: {
+    50:  '#FFF1F2',
+    100: '#FFE4E6',
+    200: '#FECDD3',
+    300: '#FDA4AF',
+    400: '#FB7185',
+    500: '#F43F5E',
+    600: '#E11D48',
+    700: '#BE123C',
+    800: '#9F1239',
+    900: '#881337',
+  },
+  amber: {
+    50:  '#FFFBEB',
+    100: '#FEF3C7',
+    200: '#FDE68A',
+    300: '#FCD34D',
+    400: '#FBBF24',
+    500: '#F59E0B',
+    600: '#D97706',
+    700: '#B45309',
+    800: '#92400E',
+    900: '#78350F',
+  },
+};
 
-// ── Shadows ───────────────────────────────────────────
 export const shadows = {
   xs:  '0 1px 2px rgba(15,23,42,0.04)',
   sm:  '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
@@ -73,9 +110,11 @@ export const shadows = {
   xl:  '0 20px 25px -5px rgba(15,23,42,0.1), 0 8px 10px -6px rgba(15,23,42,0.06)',
   card: '0 1px 3px rgba(15,23,42,0.04), 0 1px 2px rgba(15,23,42,0.02)',
   elevated: '0 4px 12px -2px rgba(15,23,42,0.1)',
-} as const;
+  glow: '0 0 20px rgba(99,102,241,0.15)',
+  glowEmerald: '0 0 20px rgba(5,150,105,0.2)',
+  glowNavy: '0 0 20px rgba(15,44,89,0.2)',
+};
 
-// ── Border Radius ─────────────────────────────────────
 export const radius = {
   xs:   4,
   sm:   6,
@@ -83,10 +122,10 @@ export const radius = {
   lg:   12,
   xl:   16,
   '2xl': 20,
+  '3xl': 24,
   full: 9999,
-} as const;
+};
 
-// ── Spacing Scale ─────────────────────────────────────
 export const spacing = {
   0: 0,
   1: 4,
@@ -100,12 +139,8 @@ export const spacing = {
   10: 40,
   12: 48,
   16: 64,
-} as const;
+};
 
-// ── Typography ────────────────────────────────────────
-// Portal module spec: 13.5px base, 13px table body, 13.5–14.4px table
-// headers, 20–24px titles, 12–13px labels, line-height 1.4–1.5,
-// weights 400–600 for hierarchy.
 export const typography = {
   fontFamily: FONT_FAMILY,
   sizes: {
@@ -128,6 +163,7 @@ export const typography = {
     medium: 500,
     semibold: 600,
     bold: 700,
+    extrabold: 800,
   },
   lineHeights: {
     tight: 1.2,
@@ -135,11 +171,9 @@ export const typography = {
     table: 1.4,
     relaxed: 1.6,
   },
-} as const;
+};
 
-// ── Component Tokens ──────────────────────────────────
 export const componentTokens = {
-  // Cards
   card: {
     background: colors.white,
     border: `1px solid ${colors.outline}`,
@@ -147,7 +181,6 @@ export const componentTokens = {
     padding: spacing[3],
     shadow: shadows.card,
   },
-  // Inputs
   input: {
     background: colors.white,
     border: `1px solid ${colors.outline}`,
@@ -157,7 +190,6 @@ export const componentTokens = {
     focusBorder: colors.navy[500],
     focusRing: `0 0 0 3px ${colors.navy[100]}`,
   },
-  // Buttons
   button: {
     primary: {
       background: `linear-gradient(135deg, ${colors.navy[500]} 0%, ${colors.navy[700]} 100%)`,
@@ -184,7 +216,6 @@ export const componentTokens = {
       shadow: `0 2px 8px -1px ${colors.error}40`,
     },
   },
-  // Nav
   sidebar: {
     background: `linear-gradient(180deg, ${colors.navy[500]}, ${colors.navy[800]})`,
     width: 286,
@@ -196,4 +227,32 @@ export const componentTokens = {
     itemHover: 'rgba(255,255,255,0.85)',
     itemActive: colors.white,
   },
-} as const;
+};
+
+export const NAVY = '#0F2C59';
+export const EMERALD = '#059669';
+export const TEAL_GRADIENT = 'linear-gradient(135deg, #146b60 0%, #0f544c 100%)';
+export const INDIGO_GRADIENT = 'linear-gradient(135deg, #4F46E5 0%, #3730A3 100%)';
+export const VIOLET_GRADIENT = 'linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)';
+export const ROSE_GRADIENT = 'linear-gradient(135deg, #F43F5E 0%, #E11D48 100%)';
+export const AMBER_GRADIENT = 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)';
+
+export const glassSidebarStyle: React.CSSProperties = {
+  background: 'linear-gradient(180deg, rgba(15,44,89,0.95) 0%, rgba(7,24,54,0.98) 100%)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+};
+
+export const glassCardStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.8)',
+  backdropFilter: 'blur(12px)',
+  WebkitBackdropFilter: 'blur(12px)',
+  border: '1px solid rgba(255,255,255,0.6)',
+};
+
+export const glassMorphismStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.6)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  border: '1px solid rgba(255,255,255,0.4)',
+};

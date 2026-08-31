@@ -184,7 +184,7 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
           <div className="space-y-6">
             <ItemizedTable
               columns={[
-                { header: 'Item Description', accessor: 'name', wrapSafe: true },
+                { header: 'Description', accessor: 'name', wrapSafe: true },
                 { header: 'Qty', accessor: 'quantity', align: 'center' as const }
               ]}
               data={normalized.items}

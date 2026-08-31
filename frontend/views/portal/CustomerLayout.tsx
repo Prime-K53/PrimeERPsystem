@@ -34,21 +34,91 @@ class PortalErrorBoundary extends Component<{ children: ReactNode }, ErrorBounda
     if (this.state.hasError) {
       return (
         <div style={{ padding: 12 }}>
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, padding: 20, textAlign: 'center' }}>
-            <div style={{ width: 48, height: 48, margin: '0 auto 10px', borderRadius: '50%', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <AlertTriangle size={24} style={{ color: '#DC2626' }} />
+          <div style={{
+            background: 'rgba(255,255,255,0.9)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: '1px solid rgba(226,232,240,0.8)',
+            borderRadius: 16,
+            padding: 24,
+            textAlign: 'center',
+            boxShadow: '0 4px 24px rgba(15,44,89,0.08)',
+          }}>
+            <div style={{
+              width: 56,
+              height: 56,
+              margin: '0 auto 14px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <AlertTriangle size={26} style={{ color: '#DC2626' }} />
             </div>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0F2C59', margin: '0 0 6px' }}>Something went wrong</h2>
-            <p style={{ fontSize: 12.5, color: '#475569', margin: '0 0 16px', lineHeight: 1.4 }}>An unexpected error occurred.</p>
-            <button onClick={this.handleRetry} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#fff', background: '#0F2C59', border: 'none', cursor: 'pointer' }}>
-              <RefreshCw size={12} /> Try Again
+            <h2 style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: '#0F172A',
+              margin: '0 0 8px',
+              letterSpacing: '-0.01em',
+            }}>
+              Something went wrong
+            </h2>
+            <p style={{
+              fontSize: 13,
+              color: '#64748B',
+              margin: '0 0 20px',
+              lineHeight: 1.5,
+            }}>
+              An unexpected error occurred. Please try again.
+            </p>
+            <button
+              onClick={this.handleRetry}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 20px',
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#fff',
+                background: 'linear-gradient(135deg, #0F2C59 0%, #0A1F42 100%)',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px -2px rgba(15,44,89,0.3)',
+              }}
+            >
+              <RefreshCw size={14} /> Try Again
             </button>
             {this.state.error && (
-              <details style={{ marginTop: 20, textAlign: 'left' }}>
-                <summary style={{ fontSize: 11, color: '#94A3B8', cursor: 'pointer' }}>Error details</summary>
+              <details style={{
+                marginTop: 20,
+                textAlign: 'left',
+                padding: '12px 16px',
+                background: 'rgba(248,250,252,0.8)',
+                borderRadius: 10,
+                border: '1px solid #E2E8F0',
+              }}>
+                <summary style={{
+                  fontSize: 11,
+                  color: '#94A3B8',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}>
+                  Error details
+                </summary>
                 <pre style={{
-                  marginTop: 8, padding: 12, background: '#F8FAFC', borderRadius: 10,
-                  fontSize: 11, color: '#94A3B8', overflow: 'auto', maxHeight: 180,
+                  marginTop: 10,
+                  padding: 12,
+                  background: '#fff',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  color: '#64748B',
+                  overflow: 'auto',
+                  maxHeight: 160,
+                  fontFamily: "'JetBrains Mono', monospace",
                 }}>
                   {this.state.error.message}
                   {this.state.error.stack && `\n\n${this.state.error.stack}`}
@@ -92,7 +162,6 @@ const CustomerLayout: React.FC = () => {
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
-  // Tab identity: the portal is PrimePORTAL, never "Prime ERP System".
   useEffect(() => {
     document.title = currentTitle && currentTitle !== 'Customer Portal'
       ? `PrimePORTAL · ${currentTitle}`
@@ -123,8 +192,24 @@ const CustomerLayout: React.FC = () => {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: 28, height: 28, border: '2.5px solid #E2E8F0', borderTopColor: '#0F2C59', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #F8FAFC 0%, #EEF2F9 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <div style={{
+          width: 32,
+          height: 32,
+          border: '3px solid rgba(15,44,89,0.1)',
+          borderTopColor: '#0F2C59',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
       </div>
     );
   }
@@ -137,32 +222,66 @@ const CustomerLayout: React.FC = () => {
     <ThemeProvider>
       <ToastProvider>
         <div style={{
-          minHeight: '100vh', background: '#F8FAFC',
-          fontFamily: SF, color: '#1E293B',
-          position: 'relative', overflow: 'hidden',
+          minHeight: '100vh',
+          background: 'linear-gradient(135deg, #F8FAFC 0%, #EEF2F9 50%, #F1F5F9 100%)',
+          fontFamily: SF,
+          color: '#1E293B',
+          position: 'relative',
+          overflow: 'hidden',
         }}>
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'radial-gradient(ellipse at 20% 0%, rgba(99,102,241,0.05) 0%, transparent 50%)',
+            pointerEvents: 'none',
+          }} />
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'radial-gradient(ellipse at 80% 100%, rgba(5,150,105,0.04) 0%, transparent 50%)',
+            pointerEvents: 'none',
+          }} />
+
           {sidebarOpen && (
             <div
               onClick={closeSidebar}
               style={{
-                position: 'fixed', inset: 0, zIndex: 40,
-                background: 'rgba(16,27,61,0.4)',
+                position: 'fixed',
+                inset: 0,
+                zIndex: 40,
+                background: 'rgba(15,44,89,0.3)',
+                backdropFilter: 'blur(4px)',
               }}
             />
           )}
-          <PortalSidebar isOpen={sidebarOpen} onClose={closeSidebar} collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} moduleName={location.pathname === '/portal/dashboard' ? undefined : currentTitle} />
+          <PortalSidebar
+            isOpen={sidebarOpen}
+            onClose={closeSidebar}
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setSidebarCollapsed}
+            moduleName={location.pathname === '/portal/dashboard' ? undefined : currentTitle}
+          />
           <main
             id="main-content"
             style={{
-              // NOTE: no z-index here on purpose. Giving <main> a z-index would
-              // create a stacking context that traps module modals (z-index 90+)
-              // BELOW the fixed MobileBottomNav (z-index 50) — hiding modal
-              // footer buttons behind the nav bar.
-              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-              overflowX: 'auto', overflowY: 'auto',
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              overflowX: 'auto',
+              overflowY: 'auto',
+              transition: 'left 0.2s ease',
             }}
           >
-            <div className="portal-module" style={{ padding: '10px 12px 16px' }}>
+            <div
+              className="portal-module"
+              style={{
+                padding: '12px 14px 20px',
+                maxWidth: 1400,
+                margin: '0 auto',
+              }}
+            >
               <PortalErrorBoundary>
                 <Outlet />
               </PortalErrorBoundary>

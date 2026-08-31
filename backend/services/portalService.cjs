@@ -1350,34 +1350,39 @@ const portalService = {
   },
 
   async getReferralFunnelStats(customerId) {
-    const allReferrals = await getAllFrom('customer_referrals', { referred_by_id: `eq.${customerId}` });
-    const referrals = Array.isArray(allReferrals) ? allReferrals.filter((r) => !r.deleted_at) : [];
-    const referralIds = referrals.map((r) => r.id);
+    try {
+      const allReferrals = await getAllFrom('customer_referrals', { 'data->>referred_by_id': `eq.${customerId}` });
+      const referrals = Array.isArray(allReferrals) ? allReferrals.filter((r) => !r.deleted_at) : [];
+      const referralIds = referrals.map((r) => r.id);
 
-    let myRewards = [];
-    if (referralIds.length > 0) {
-      const allRewards = await getAllFrom('referral_rewards', { customer_id: `eq.${customerId}` });
-      myRewards = Array.isArray(allRewards) ? allRewards : [];
+      let myRewards = [];
+      if (referralIds.length > 0) {
+        const allRewards = await getAllFrom('referral_rewards', { 'data->>customer_id': `eq.${customerId}` });
+        myRewards = Array.isArray(allRewards) ? allRewards : [];
+      }
+
+      const total = referrals.length;
+      const signedUp = referrals.filter((r) => String(r.status || '') === 'active').length;
+      const qualified = referrals.filter((r) => String(r.status || '') === 'active' && r.pending_invoice_id).length;
+      const rewardApproved = myRewards.filter((r) => ['approved', 'paid'].includes(String(r.status || ''))).length;
+      const paid = myRewards.filter((r) => String(r.status || '') === 'paid').length;
+      const pendingRewardAmount = myRewards.filter((r) => String(r.status || '') === 'pending').reduce((s, r) => s + Number(r.amount || 0), 0);
+      const totalEarned = myRewards.filter((r) => ['approved', 'paid'].includes(String(r.status || ''))).reduce((s, r) => s + Number(r.amount || 0), 0);
+
+      return {
+        total,
+        signedUp,
+        qualified,
+        rewardApproved,
+        paid,
+        pendingRewardAmount,
+        totalEarned,
+        conversionRate: total > 0 ? Math.round((paid / total) * 100) : 0,
+      };
+    } catch (err) {
+      console.warn('[portalService] getReferralFunnelStats error:', err?.message);
+      return { total: 0, signedUp: 0, qualified: 0, rewardApproved: 0, paid: 0, pendingRewardAmount: 0, totalEarned: 0, conversionRate: 0 };
     }
-
-    const total = referrals.length;
-    const signedUp = referrals.filter((r) => String(r.status || '') === 'active').length;
-    const qualified = referrals.filter((r) => String(r.status || '') === 'active' && r.pending_invoice_id).length;
-    const rewardApproved = myRewards.filter((r) => ['approved', 'paid'].includes(String(r.status || ''))).length;
-    const paid = myRewards.filter((r) => String(r.status || '') === 'paid').length;
-    const pendingRewardAmount = myRewards.filter((r) => String(r.status || '') === 'pending').reduce((s, r) => s + Number(r.amount || 0), 0);
-    const totalEarned = myRewards.filter((r) => ['approved', 'paid'].includes(String(r.status || ''))).reduce((s, r) => s + Number(r.amount || 0), 0);
-
-    return {
-      total,
-      signedUp,
-      qualified,
-      rewardApproved,
-      paid,
-      pendingRewardAmount,
-      totalEarned,
-      conversionRate: total > 0 ? Math.round((paid / total) * 100) : 0,
-    };
   },
 
   async getSupportTickets(portalUserId, customerId) {

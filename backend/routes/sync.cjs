@@ -175,12 +175,16 @@ router.post('/ops', async (req, res) => {
     // tokens carry role='portal_customer'; ERP tokens carry roles like
     // 'Admin', 'User', 'Company Admin', etc.
     const callerRole = String(req.user?.role || '').toLowerCase();
-    if (!req.user || callerRole === 'portal_customer' || callerRole === '') {
+    const hasUser = Boolean(req.user);
+    const authMode = req.authMode || 'none';
+    if (!hasUser || callerRole === 'portal_customer' || callerRole === '') {
+      console.warn('[sync] SYNC_AUTH_FAILED: hasUser=%s authMode=%s role="%s" path=%s', hasUser, authMode, callerRole, req.path);
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Sync gateway requires an ERP user token. Portal customers cannot write business data.',
       });
     }
+    console.log('[sync] SYNC_AUTH_OK: authMode=%s role=%s userId=%s', authMode, callerRole, req.user?.id);
 
     const { ops } = req.body || {};
     /* SYNC-FORENSIC suppressed: STAGE-9 backend POST /api/sync/ops received */

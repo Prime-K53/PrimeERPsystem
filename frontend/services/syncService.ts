@@ -158,6 +158,7 @@ const STORE_TO_TABLE: Record<string, string> = {
   financialYears: 'financial_years',
   userPreferences: 'user_preferences',
   tasks: 'tasks',
+  portalAds: 'portal_ads',
 };
 
 const TABLES_TO_SYNC = [
@@ -196,6 +197,7 @@ const TABLES_TO_SYNC = [
   'whatsappChats', 'whatsappTemplates', 'whatsappCampaigns', 'whatsappAutomations',
   'taxRates',
   'customerNotificationLogs',
+  'portalAds',
 ];
 
 const getTable = (storeName: string): string => STORE_TO_TABLE[storeName] || storeName;

@@ -22,6 +22,7 @@ const mockGetById = jest.fn();
 jest.mock('../services/supabaseRepository.cjs', () => ({
   isConfigured: () => true,
   getAll: (...args) => mockGetAll(...args),
+  getAllStrict: (...args) => mockGetAll(...args),
   getById: (...args) => mockGetById(...args),
 }));
 
@@ -71,7 +72,7 @@ describe('getActivePortalAds', () => {
 
       const result = await getActivePortalAds('cust-1');
 
-      expect(mockGetAll).toHaveBeenCalledWith('portal_ads', expect.objectContaining({ 'data->>deleted': 'neq.true' }));
+      expect(mockGetAll).toHaveBeenCalledWith('portal_ads');
       const activeTitles = result.map((ad) => ad.title);
       expect(activeTitles).not.toContain('Deleted Ad');
       expect(activeTitles).toContain('Live Ad');

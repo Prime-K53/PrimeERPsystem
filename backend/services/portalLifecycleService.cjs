@@ -1183,7 +1183,7 @@ const portalLifecycleService = {
   async getActivePortalAds(customerId) {
     let rows = [];
     try {
-      rows = await repo.getAll('portal_ads', { 'data->>deleted': 'neq.true' });
+      rows = await repo.getAllStrict('portal_ads');
     } catch (err) {
       console.warn('[Portal] portal_ads read failed:', err?.message || err);
       rows = [];

@@ -397,7 +397,7 @@ const CleanInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 20 }}>
           <View style={{ flexDirection: 'row', backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: 'center' }}>
-            <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Item Description</Text>
+            <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Description</Text>
             <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Qty</Text>
             <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Unit Price</Text>
             <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Amount</Text>
@@ -746,7 +746,7 @@ const ModernInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
           <View style={{ flexDirection: 'row', backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center' }}>
-            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Item Description</Text>
+            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Description</Text>
             <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Qty.</Text>
             <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Unit Price</Text>
             <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Amount</Text>
@@ -1050,7 +1050,7 @@ const ProfessionalInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
           <View style={{ flexDirection: 'row', borderBottomWidth: 1.5, borderBottomColor: '#222222', paddingBottom: 6 }}>
-            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase' }}>Item Description</Text>
+            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase' }}>Description</Text>
             <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Qty</Text>
             <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Unit</Text>
             <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Price</Text>
@@ -1342,7 +1342,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View style={{ marginTop: 20 }}>
             <View style={s.tableHeader}>
-              <Text style={s.colDesc}>Item Description</Text>
+              <Text style={s.colDesc}>Description</Text>
               <Text style={[s.colQty, { width: 60 }]}>Returned</Text>
               <Text style={[s.colQty, { width: 60 }]}>Replaced</Text>
             </View>
@@ -1882,7 +1882,7 @@ if (type === 'POS_RECEIPT') {
                 {/* 1. Restored Table Header with 2px border */}
                 <View style={s.tableHeader}>
                   <Text style={s.colQty}>Qty</Text>
-                  <Text style={s.colDesc}>Item Description</Text>
+                  <Text style={s.colDesc}>Description</Text>
                   <Text style={s.colPrice}>Price</Text>
                   <Text style={s.colTotal}>Total</Text>
                 </View>
@@ -2161,7 +2161,7 @@ if (type === 'POS_RECEIPT') {
               DELIVERY ITEMS CHECKLIST
             </Text>
             <View style={s.tableHeader}>
-              <Text style={s.colDesc}>Item Description</Text>
+              <Text style={s.colDesc}>Description</Text>
               <Text style={s.colQty}>Qty Shipped</Text>
             </View>
 

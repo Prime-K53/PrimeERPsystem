@@ -1197,7 +1197,7 @@ const DashboardContent: React.FC = () => {
 
           {widgets.find(w => w.id === 'chart')?.visible !== false && (
              <div style={{
-               background: '#FEFDFB', border: '1px solid #e4ddd1', borderRadius: 14, padding: isMobile ? '20px' : '28px', boxShadow: '0 1px 2px rgba(11,62,57,.04)', display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%',
+               background: '#FEFDFB', border: '1px solid #e4ddd1', borderRadius: 14, padding: isMobile ? '20px' : '28px', boxShadow: '0 1px 2px rgba(11,62,57,.04)', display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%', minHeight: 0,
              }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isMobile ? 16 : 24, flexWrap: 'wrap', gap: 8 }}>
                 <div>

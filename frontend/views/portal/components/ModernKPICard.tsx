@@ -1,7 +1,7 @@
 import React from 'react';
-import { TrendingUp, TrendingDown, ChevronRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, ArrowUpRight, ChevronRight } from 'lucide-react';
 
-interface PremiumKPICardProps {
+interface ModernKPICardProps {
   label: string;
   value: string | number;
   icon: React.ElementType;
@@ -15,9 +15,11 @@ interface PremiumKPICardProps {
   badgeColor?: string;
   lightBg?: string;
   iconBg?: string;
+  description?: string;
+  delay?: number;
 }
 
-const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
+const ModernKPICard: React.FC<ModernKPICardProps> = ({
   label,
   value,
   icon: Icon,
@@ -31,6 +33,8 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
   badgeColor,
   lightBg,
   iconBg,
+  description,
+  delay = 0,
 }) => {
   const bgColor = lightBg || '#fff';
   const iconBackground = iconBg || gradient;
@@ -38,7 +42,7 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
   return (
     <div
       onClick={onClick}
-      className="pkpi-card"
+      className="mkpi-card"
       style={{
         position: 'relative',
         borderRadius: 20,
@@ -52,11 +56,12 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        animation: `mkpiFadeIn 0.4s ease ${delay}ms both`,
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = 'translateY(-3px)';
-        e.currentTarget.style.boxShadow = '0 12px 28px -8px rgba(15,44,89,0.12)';
-        e.currentTarget.style.borderColor = 'rgba(99,102,241,0.25)';
+        e.currentTarget.style.boxShadow = '0 12px 28px -8px rgba(15,44,89,0.12), 0 4px 8px -4px rgba(15,44,89,0.06)';
+        e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)';
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)';
@@ -68,34 +73,34 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
         className="absolute inset-0 pointer-events-none"
         style={{
           background: gradient,
-          opacity: 0.04,
+          opacity: 0.03,
         }}
       />
 
       {glowColor && (
         <div
-          className="absolute -top-12 -right-12 w-32 h-32 rounded-full pointer-events-none"
+          className="absolute -top-10 -right-10 w-28 h-28 rounded-full pointer-events-none"
           style={{
             background: `radial-gradient(circle, ${glowColor} 0%, transparent 70%)`,
-            opacity: 0.5,
+            opacity: 0.4,
           }}
         />
       )}
 
       <div style={{ padding: '16px 16px 14px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
           <div
-            className="pkpi-icon"
+            className="mkpi-icon"
             style={{
-              width: 44,
-              height: 44,
+              width: 42,
+              height: 42,
               borderRadius: 14,
               background: iconBackground,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: '#fff',
-              boxShadow: `0 4px 14px -4px ${iconBg || 'rgba(0,0,0,0.2)'}`,
+              boxShadow: `0 4px 14px -4px ${iconBg || gradient}`,
               transition: 'transform 0.2s ease, box-shadow 0.2s ease',
             }}
           >
@@ -122,8 +127,8 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
               <ChevronRight
                 size={18}
                 color="#CBD5E0"
-                style={{ flexShrink: 0 }}
-                className="pkpi-chevron"
+                style={{ flexShrink: 0, transition: 'transform 0.15s ease' }}
+                className="mkpi-chevron"
               />
             )}
           </div>
@@ -136,6 +141,7 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
             color: '#64748B',
             marginBottom: 4,
             letterSpacing: '0.01em',
+            textTransform: 'uppercase',
           }}>
             {label}
           </div>
@@ -150,6 +156,17 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
           }}>
             {value}
           </div>
+
+          {description && (
+            <div style={{
+              fontSize: 11.5,
+              color: '#94A3B8',
+              marginTop: 4,
+              lineHeight: 1.4,
+            }}>
+              {description}
+            </div>
+          )}
 
           {sublabel && (
             <div style={{
@@ -173,7 +190,7 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
               marginTop: 8,
               fontSize: 11,
               fontWeight: 700,
-              padding: '4px 10px',
+              padding: '4px 8px',
               borderRadius: 8,
               background: trend.positive ? 'rgba(5,150,105,0.08)' : 'rgba(220,38,38,0.08)',
               width: 'fit-content',
@@ -195,11 +212,15 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
       </div>
 
       <style>{`
-        .pkpi-card:hover .pkpi-icon {
-          transform: translateY(-2px) scale(1.05);
+        @keyframes mkpiFadeIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .mkpi-card:hover .mkpi-icon {
+          transform: translateY(-2px) scale(1.06);
           box-shadow: 0 8px 20px -6px rgba(0,0,0,0.25);
         }
-        .pkpi-card:hover .pkpi-chevron {
+        .mkpi-card:hover .mkpi-chevron {
           transform: translateX(3px);
         }
       `}</style>
@@ -207,4 +228,4 @@ const PremiumKPICard: React.FC<PremiumKPICardProps> = ({
   );
 };
 
-export default PremiumKPICard;
+export default ModernKPICard;

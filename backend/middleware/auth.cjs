@@ -131,10 +131,10 @@ const verifyToken = async (req, res, next) => {
     // Fall back to Supabase JWT verification if configured
     if (SUPABASE_ENABLED) {
       try {
-        const sbRes = await axios.get(`${SUPABASE_URL}/auth/v1/user`, {
+          const sbRes = await axios.get(`${SUPABASE_URL}/auth/v1/user`, {
           headers: {
             Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_ANON_KEY
+            apikey: SUPABASE_SECRET_KEY
           },
           timeout: 5000
         });
