@@ -1272,7 +1272,7 @@ const DashboardContent: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 14, fontWeight: 500, color: '#5c6567', letterSpacing: '0.01em' }}>{getGreeting()},</span>
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#0b3e39' }}>{user?.fullName || user?.name || user?.username || 'there'}</span>
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#0b3e39' }}>Admin</span>
               <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 <ChevronDown size={16} color="#5b578c" style={{ transform: showCompanyMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
               </div>
