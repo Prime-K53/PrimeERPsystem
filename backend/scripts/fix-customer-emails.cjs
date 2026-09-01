@@ -1,6 +1,6 @@
 /*
  * One-off data fix: normalize the ERP customer portal emails to the
- * recommended `{name-word}@primeportal.com` pattern.
+ * recommended `{name-word}@prime.mw` pattern.
  *
  * Updates backend SQLite:
  *   - portal_users.email   (the address the customer uses to log into the portal)
@@ -19,9 +19,9 @@ const sqlite3 = require('sqlite3');
 const axios = require('axios');
 
 const FIX = {
-  'CUST-0001': 'mtakataka@primeportal.com',
-  'CUST-0002': 'msungo@primeportal.com',
-  'CUST-0003': 'police@primeportal.com',
+  'CUST-0001': 'mtakataka@prime.mw',
+  'CUST-0002': 'msungo@prime.mw',
+  'CUST-0003': 'police@prime.mw',
 };
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');

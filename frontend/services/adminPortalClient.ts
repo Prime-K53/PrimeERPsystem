@@ -399,7 +399,7 @@ export interface BulkRegenerateResultRow {
   email: string;
   previous_email: string | null;
   invite_code: string;
-  invite_expires_at: string;
+  invite_expires_at: string | null;
   created: boolean;
 }
 
@@ -565,6 +565,9 @@ export const adminLifecycle = {
     },
     bulkRegenerateCredentials(): Promise<BulkRegenerateResult> {
       return adminPortalApi.post<BulkRegenerateResult>('/customers/bulk-regenerate', { confirm: true });
+    },
+    regenerateCustomerCredentials(customerId: string, name?: string): Promise<BulkRegenerateResultRow> {
+      return adminPortalApi.post<BulkRegenerateResultRow>(`/customers/${customerId}/regenerate-credentials`, { name });
     },
   },
   staff: {

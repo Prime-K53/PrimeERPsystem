@@ -929,12 +929,12 @@ router.post('/users/:id/regenerate-password', async (req, res) => {
 /**
  * Bulk regenerate portal login emails + invitation codes for every customer.
  * Overwrites each customer's portal login email with the standard derived
- * scheme and issues a fresh 30‑minute invitation code. Customers without a
+ * scheme and issues a non‑expiring invitation code. Customers without a
  * portal account are created (status "invited") so they get a code too.
  *
  * Destructive by design — requires `{ confirm: true }` in the request body.
  */
-const PORTAL_EMAIL_DOMAIN = 'primeportal.com';
+const PORTAL_EMAIL_DOMAIN = 'prime.mw';
 
 // Derive a stable, recognizable portal login email for a customer. The local
 // part is built from the customer's name (first.last) so it reads naturally,
@@ -1009,7 +1009,7 @@ router.post('/customers/bulk-regenerate', async (req, res) => {
           }
           await portalAuthService.syncCustomerPortalData(customerId, { portalEmail: email }).catch(() => {});
         }
-        const { code, expires_at } = await portalAuthService.createInviteCode(portalUser.id);
+        const { code, expires_at } = await portalAuthService.createInviteCode(portalUser.id, null);
         results.push({
           customer_id: customerId,
           customer_name: name,
@@ -1035,6 +1035,53 @@ router.post('/customers/bulk-regenerate', async (req, res) => {
   } catch (err) {
     console.error('[PortalAdmin] Bulk regenerate credentials error:', err);
     res.status(500).json({ error: 'Failed to bulk regenerate credentials', detail: err.message });
+  }
+});
+
+/**
+ * Regenerate portal login email and invitation code for a specific customer.
+ * Re-derives the portal email from the current customer name (to pick up renames)
+ * and issues a non‑expiring invitation code. Used when a customer has been
+ * renamed and needs updated credentials.
+ */
+router.post('/customers/:customerId/regenerate-credentials', async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const { name } = req.body || {};
+    const customer = (await repo.getAll('customers'))?.find((c) => c.id === customerId);
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    const customerName = name || customer.name || '';
+    const portalUser = await portalAuthService.getPortalUserByCustomerId(customerId);
+
+    if (!portalUser) {
+      return res.status(404).json({ error: 'Portal account not found for this customer. Use the bulk regenerate to create one.' });
+    }
+
+    const email = await derivePortalEmail(customerName, customerId, portalUser.id, null);
+    await portalAuthService.updatePortalUser(portalUser.id, { email });
+
+    try {
+      await repo.upsert('customers', { ...customer, email, updated_at: new Date().toISOString() });
+    } catch (upsertErr) {
+      console.warn(`[PortalAdmin] Per-customer regenerate: customers upsert failed for ${customerId}:`, upsertErr.message);
+    }
+    await portalAuthService.syncCustomerPortalData(customerId, { portalEmail: email }).catch(() => {});
+
+    const { code, expires_at } = await portalAuthService.createInviteCode(portalUser.id, null);
+
+    res.json({
+      customer_id: customerId,
+      customer_name: customerName,
+      portal_user_id: portalUser.id,
+      email,
+      previous_email: portalUser.email || null,
+      invite_code: code,
+      invite_expires_at: expires_at,
+    });
+  } catch (err) {
+    console.error('[PortalAdmin] Per-customer regenerate error:', err);
+    res.status(500).json({ error: 'Failed to regenerate credentials', detail: err.message });
   }
 });
 

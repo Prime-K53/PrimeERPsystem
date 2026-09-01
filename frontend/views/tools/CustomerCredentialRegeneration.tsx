@@ -13,12 +13,13 @@ const CustomerCredentialRegeneration: React.FC = () => {
     const [result, setResult] = useState<BulkRegenerateResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState<string | null>(null);
+    const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
     const [confirmState, setConfirmState] = useState<{ open: boolean; title: string; message: string; confirmText?: string; type?: ConfirmDialogType; onConfirm?: () => void }>({ open: false, title: '', message: '' });
 
     const handleRun = () => {
         setConfirmState({
             open: true, title: 'Regenerate ALL customer credentials',
-            message: 'This overwrites every customer\'s portal login email with the standard derived address (e.g. name@primeportal.com) and issues a fresh 30‑minute invitation code. Customers without a portal account will be created (invited).\n\nTheir old login email will stop working immediately. This cannot be undone.\n\nContinue?',
+            message: 'This overwrites every customer\'s portal login email with the standard derived address (e.g. name@prime.mw) and issues a non‑expiring invitation code. Customers without a portal account will be created (invited).\n\nTheir old login email will stop working immediately. This cannot be undone.\n\nContinue?',
             type: 'warning', confirmText: 'Regenerate All',
             onConfirm: async () => {
                 setRunning(true); setResult(null); setError(null);
@@ -43,6 +44,34 @@ const CustomerCredentialRegeneration: React.FC = () => {
                 } finally { setRunning(false); }
             }
         });
+    };
+
+    const handleRegenerateOne = async (r: BulkRegenerateResultRow) => {
+        setRegeneratingId(r.customer_id);
+        try {
+            const updated = await adminLifecycle.users.regenerateCustomerCredentials(r.customer_id, r.customer_name);
+            setResult((prev) => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    results: prev.results.map((row) =>
+                        row.customer_id === r.customer_id ? { ...row, ...updated } : row
+                    ),
+                };
+            });
+            // Also update the salesStore so the client list reflects the new email
+            useSalesStore.setState((state) => ({
+                customers: (state.customers || []).map((c) =>
+                    c.id === r.customer_id
+                        ? { ...c, email: updated.email, portalEmail: updated.email }
+                        : c
+                ),
+            }));
+        } catch (err: any) {
+            setError(err?.message || 'Regeneration failed for this customer');
+        } finally {
+            setRegeneratingId(null);
+        }
     };
 
     const copy = (text: string, key: string) => {
@@ -101,7 +130,7 @@ const CustomerCredentialRegeneration: React.FC = () => {
                     <div style={{ background: '#fef7ed', borderRadius: 14, padding: 16, border: `1.4px solid #fde6c8`, display: 'flex', gap: 12 }}>
                         <AlertTriangle size={20} style={{ color: amber[500], flexShrink: 0, marginTop: 1 }} />
                         <div style={{ fontSize: 13, color: '#7c4a03', lineHeight: 1.5 }}>
-                            <strong>Heads up:</strong> This action rewrites all customer portal login emails and rotates their invitation codes. The previous login email for each customer stops working right away. New codes expire in 30 minutes — share them with customers promptly (or use the portal invitation flow).
+                            <strong>Heads up:</strong> This action rewrites all customer portal login emails and rotates their invitation codes. The previous login email for each customer stops working right away. Invitation codes do not expire — share them with customers at any time.
                         </div>
                     </div>
 
@@ -155,7 +184,7 @@ const CustomerCredentialRegeneration: React.FC = () => {
                             <div style={{ background: paper, borderRadius: 14, border: `1.4px solid ${hairline}`, overflow: 'hidden' }}>
                                 <div style={{ padding: '12px 16px', borderBottom: `1.4px solid ${hairline}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <h4 style={{ fontSize: 14, fontWeight: 700, color: ink, margin: 0 }}>Results</h4>
-                                    <span style={{ fontSize: 11, color: inkSoft }}>{result.results.length} customers · codes expire in 30 min</span>
+                                    <span style={{ fontSize: 11, color: inkSoft }}>{result.results.length} customers · codes do not expire</span>
                                 </div>
                                 <div style={{ maxHeight: 420, overflowY: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -166,6 +195,7 @@ const CustomerCredentialRegeneration: React.FC = () => {
                                                 <th style={{ padding: '8px 12px', fontWeight: 700 }}>New Login Email</th>
                                                 <th style={{ padding: '8px 12px', fontWeight: 700 }}>Invite Code</th>
                                                 <th style={{ padding: '8px 12px', fontWeight: 700 }}>Status</th>
+                                                <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center', width: 90 }}>Action</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -187,7 +217,21 @@ const CustomerCredentialRegeneration: React.FC = () => {
                                                             {r.created ? 'Created' : 'Updated'}
                                                         </span>
                                                     </td>
-                                                </tr>
+                                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                                        <button
+                                                            onClick={() => handleRegenerateOne(r)}
+                                                            disabled={regeneratingId === r.customer_id}
+                                                            title="Regenerate credentials for this customer"
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid ${hairline}`, background: regeneratingId === r.customer_id ? t[50] : paper, color: regeneratingId === r.customer_id ? t[600] : t[600], cursor: regeneratingId === r.customer_id ? 'not-allowed' : 'pointer', fontSize: 11, fontWeight: 600, transition: 'all .12s', opacity: regeneratingId === r.customer_id ? 0.7 : 1 }}
+                                                        >
+                                                            {regeneratingId === r.customer_id
+                                                                ? <RefreshCw size={11} className="animate-spin" />
+                                                                : <RefreshCw size={11} />
+                                                            }
+                                                            Regenerate
+                                                        </button>
+                                                    </td>
+                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>

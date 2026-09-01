@@ -271,7 +271,7 @@ const findValidPasswordReset = async (portalUserId, code) => {
     'portal_user_id': `eq.${portalUserId}`,
     'code': `eq.${code}`,
     'used_at': 'is.null',
-    'expires_at': `gt.${new Date().toISOString()}`,
+    'or': ` (expires_at.is.null, expires_at.gt.${new Date().toISOString()}) `,
     order: 'created_at.desc',
     limit: 1
   });
@@ -291,9 +291,11 @@ const revokeUserPasswordResets = async (portalUserId) => {
   await Promise.all(resets.map(r => repo.portalEntities.portal_password_resets.update(r.id, { used_at: now })));
 };
 
-const createInviteCode = async (portalUserId) => {
+const createInviteCode = async (portalUserId, expiresInSeconds = 30 * 60) => {
   const code = crypto.randomInt(100000, 1000000).toString();
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  const expiresAt = expiresInSeconds
+    ? new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+    : null;
   await revokeUserPasswordResets(portalUserId);
   await createPasswordReset(portalUserId, code, expiresAt);
   return { code, expires_at: expiresAt };
