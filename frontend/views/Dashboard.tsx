@@ -13,7 +13,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Clock,
   Briefcase, Users, ChevronDown, User,
   MessageSquare, Calculator, FileText, Zap, ArrowRight, ChevronRight,
-  Sparkles, Database, BarChart2, X, ArrowUp, ArrowDown, Building2,
+   Sparkles, Database, BarChart2, X, ArrowUp, ArrowDown, Building2, Wallet,
   Star, Inbox, Calendar, CalendarDays, Check, Download } from 'lucide-react';
 import WhatsAppMarketingModal from '../components/WhatsAppMarketingModal';
 import { adminLifecycle } from '../services/adminPortalClient';
@@ -79,6 +79,16 @@ const DASHBOARD_STYLES = `
     white-space: nowrap;
     animation: marquee-horizontal 7s ease-in-out infinite alternate;
   }
+  @keyframes skeleton-shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .dashboard-skeleton {
+    background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 40%, #f1f5f9 80%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+    border-radius: 8px;
+  }
 `;
 
 const DashboardStyleInjector = () => {
@@ -126,18 +136,18 @@ const getGreeting = (): string => {
    return 'Good evening';
  };
 
- const formatShortCurrency = (currency: string, value: number): string => {
-   const curr = (currency || '').trim();
-   if (value >= 1_000_000) {
-     const mVal = value / 1_000_000;
-     return `${curr}${mVal % 1 === 0 ? mVal : mVal.toFixed(1)}M`;
-   }
-   if (value >= 1_000) {
-     const kVal = value / 1_000;
-     return `${curr}${kVal % 1 === 0 ? kVal : kVal.toFixed(1)}k`;
-   }
-   return `${curr}${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
- };
+  const formatShortCurrency = (currency: string, value: number): string => {
+    const curr = (currency || '').trim();
+    if (value >= 1_000_000) {
+      const mVal = value / 1_000_000;
+      return `${curr}${mVal % 1 === 0 ? mVal : mVal.toFixed(1)}M`;
+    }
+    if (value >= 1_000) {
+      const kVal = value / 1_000;
+      return `${curr}${kVal % 1 === 0 ? kVal : kVal.toFixed(1)}k`;
+    }
+    return `${curr}${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  };
 
 // ─── Financial Year date-range filter ─────────────────────────────────────
 
@@ -230,14 +240,18 @@ interface PremiumKpiCardProps {
   animDelay?: number;
   onClick?: () => void;
   children?: React.ReactNode;
+  sparkData?: { v: number }[];
+  sparkColor?: string;
+  ariaLabel?: string;
 }
 
 const PremiumKpiCard = ({
   title, subtitle, icon, iconBg, iconColor, accentColor,
-  value, trend, trendLabel, badge, badgeBg, badgeColor, badgeIcon, showChevron, progress, topRightIndicator, compact, animDelay = 0, onClick, children
+  value, trend, trendLabel, badge, badgeBg, badgeColor, badgeIcon, showChevron, progress, topRightIndicator, compact, animDelay = 0, onClick, children, sparkData, sparkColor, ariaLabel
 }: PremiumKpiCardProps) => {
   const [animated, setAnimated] = useState(false);
   const trendUp = (trend ?? 0) >= 0;
+  const sparkStroke = sparkColor || iconColor;
 
   useEffect(() => {
     const start = setTimeout(() => setAnimated(true), animDelay);
@@ -249,9 +263,18 @@ const PremiumKpiCard = ({
     return () => { clearTimeout(start); clearInterval(interval); };
   }, [animDelay]);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
+  };
+
   return (
     <div
       className="kpi-card-shimmer"
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={ariaLabel || title}
+      onKeyDown={handleKeyDown}
       style={{
         position: 'relative',
         background: '#FEFDFB',
@@ -260,23 +283,29 @@ const PremiumKpiCard = ({
         boxShadow: '0 1px 2px rgba(11,62,57,.04)',
         border: '1px solid #e4ddd1',
         borderTop: `2px solid ${accentColor}44`,
-        cursor: 'pointer',
-        transition: 'box-shadow 0.22s ease, transform 0.22s ease, background 0.22s ease',
+        borderLeft: `3px solid ${accentColor}22`,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'box-shadow 0.22s ease, transform 0.22s ease, background 0.22s ease, border-color 0.22s ease',
         display: 'flex',
         flexDirection: 'column',
         gap: compact ? 8 : 16,
         overflow: 'hidden',
         minHeight: 0,
         fontFamily: "'Inter', sans-serif",
+        outline: 'none',
       }}
       onClick={onClick}
+      onFocus={(e) => { e.currentTarget.style.boxShadow = `0 0 0 3px ${accentColor}33, 0 1px 2px rgba(11,62,57,.06), 0 4px 12px rgba(11,62,57,.08)`; }}
+      onBlur={(e) => { e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)'; }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.06), 0 4px 12px rgba(11,62,57,.08)';
+        e.currentTarget.style.boxShadow = `0 1px 2px rgba(11,62,57,.06), 0 4px 12px ${accentColor}1f`;
         e.currentTarget.style.transform = 'translateY(-2px)';
+        e.currentTarget.style.borderLeftColor = `${accentColor}77`;
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)';
         e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.borderLeftColor = `${accentColor}22`;
       }}
     >
       {children ? children : (
@@ -369,6 +398,7 @@ const PremiumKpiCard = ({
                       borderRadius: 6,
                       letterSpacing: '-0.01em',
                     }}>
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: trendUp ? '#16a34a' : '#dc2626', boxShadow: `0 0 0 0 ${trendUp ? '#16a34a' : '#dc2626'}`, animation: 'subtle-pulse 1.8s ease-in-out infinite' }} aria-hidden="true" />
                       {trendUp ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
                       {trendUp ? '+' : ''}{trend.toFixed(1)}%
                     </span>
@@ -399,6 +429,31 @@ const PremiumKpiCard = ({
                 </div>
               )}
             </div>
+
+            {sparkData && sparkData.length > 1 && (
+              <div style={{ width: '100%', marginTop: 4, height: 28, minWidth: 0 }} aria-hidden="true">
+                <ResponsiveContainer width="100%" height={28} minHeight={28} minWidth={0}>
+                  <AreaChart data={sparkData} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id={`spark-grad-${accentColor.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={sparkStroke} stopOpacity={0.28} />
+                        <stop offset="100%" stopColor={sparkStroke} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      type="monotone"
+                      dataKey="v"
+                      stroke={sparkStroke}
+                      fill={`url(#spark-grad-${accentColor.replace('#', '')})`}
+                      fillOpacity={1}
+                      strokeWidth={1.8}
+                      isAnimationActive={false}
+                      dot={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -416,6 +471,16 @@ const PremiumKpiCard = ({
     </div>
   );
 };
+
+// ─── Skeleton loader ─────────────────────────────────────────────────────────
+const KpiSkeleton = () => (
+  <div style={{ background: '#FEFDFB', border: '1px solid #e4ddd1', borderRadius: 14, padding: 24, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 168 }} aria-hidden="true">
+    <div className="dashboard-skeleton" style={{ width: 42, height: 42, borderRadius: 12 }} />
+    <div className="dashboard-skeleton" style={{ width: '60%', height: 12 }} />
+    <div className="dashboard-skeleton" style={{ width: '40%', height: 28 }} />
+    <div className="dashboard-skeleton" style={{ width: '100%', height: 32, marginTop: 8 }} />
+  </div>
+);
 
 // ─── Sliding Info Card component ──────────────────────────────────────────
 // ... (unchanged)
@@ -679,7 +744,7 @@ const DashboardContent: React.FC = () => {
   const isDesktop = screenWidth >= 1024;
 
   const { companyConfig, resetSystem } = useAuth();
-  const { accounts, invoices, expenses } = useFinance();
+  const { accounts, invoices, expenses, ledger } = useFinance();
   const { customers, sales, customerPayments, quotations, jobOrders } = useSales();
   const { workOrders } = useProduction();
   const { purchases, suppliers } = useProcurement();
@@ -787,18 +852,35 @@ const DashboardContent: React.FC = () => {
   // FY filter
   const { inFY } = useFYFilter();
 
-  // Account balances filtered by FY (only transactions within FY affect dashboard)
+  // Account balances computed from ledger (real balances) — matches by id OR code to handle UUID vs numeric ID mismatch
   const { cashBalance, bankBalance, chequeBalance, walletBalance } = (() => {
     if (!accounts || accounts.length === 0) return { cashBalance: 0, bankBalance: 0, chequeBalance: 0, walletBalance: 0 };
+    // Compute real balance per account from ledger entries (type-aware signs)
+    const ledgerBalances: Record<string, number> = {};
+    accounts.forEach((acc: any) => { ledgerBalances[acc.id] = 0; });
+    (ledger || []).forEach((entry: any) => {
+      if (entry.amount == null) return;
+      const debitAcc = accounts.find((a: any) => a.id === entry.debitAccountId || a.code === entry.debitAccountId);
+      const creditAcc = accounts.find((a: any) => a.id === entry.creditAccountId || a.code === entry.creditAccountId);
+      if (debitAcc) {
+        const sign = (debitAcc.type === 'Asset' || debitAcc.type === 'Expense') ? 1 : -1;
+        ledgerBalances[debitAcc.id] = (ledgerBalances[debitAcc.id] || 0) + (entry.amount * sign);
+      }
+      if (creditAcc) {
+        const sign = (creditAcc.type === 'Asset' || creditAcc.type === 'Expense') ? -1 : 1;
+        ledgerBalances[creditAcc.id] = (ledgerBalances[creditAcc.id] || 0) + (entry.amount * sign);
+      }
+    });
+    // Categorize into cash/bank/cheque/wallet — only Asset accounts, by name
     let cash = 0, bank = 0, cheque = 0, wallet = 0;
     accounts.forEach((acc: any) => {
+      if (acc.type !== 'Asset') return;
       const name = String(acc.name || '').toLowerCase();
-      const type = String(acc.type || '').toLowerCase();
-      const bal  = toSafeNumber(acc.balance);
-      if (name.includes('cash') || type === 'cash')     cash   += bal;
-      else if (name.includes('cheque') || type === 'cheque') cheque += bal;
-      else if (name.includes('wallet') || type === 'wallet') wallet += bal;
-      else bank += bal;
+      const bal = ledgerBalances[acc.id] ?? toSafeNumber(acc.balance);
+      if (name.includes('cash'))       cash   += bal;
+      else if (name.includes('cheque')) cheque += bal;
+      else if (name.includes('wallet')) wallet += bal;
+      else if (name.includes('bank') || name.includes('mobile')) bank += bal;
     });
     return { cashBalance: cash, bankBalance: bank, chequeBalance: cheque, walletBalance: wallet };
   })();
@@ -884,6 +966,38 @@ const DashboardContent: React.FC = () => {
     return activeJobOrders + activeWorkOrders + activeQuotations;
   })();
 
+  // Real counts used by the Unpaid KPI
+  const unpaidInvoices = useMemo(() => invoices.filter((i: any) => {
+    const s = String(i.status || '').toLowerCase();
+    return s === 'unpaid' || s === 'partial' || s === 'overdue';
+  }), [invoices]);
+  const unpaidCount = unpaidInvoices.length;
+
+  // Receivables "new today" — total receivables created today
+  const receivablesNewToday = useMemo(() => invoices
+    .filter((inv: any) => String(inv.date || inv.createdAt || '').startsWith(todayStr))
+    .filter((inv: any) => {
+      const s = String(inv.status || '').toLowerCase();
+      return s === 'unpaid' || s === 'partial' || s === 'overdue';
+    })
+    .reduce((s: number, inv: any) => s + Math.max(0, toSafeNumber(inv.totalAmount) - toSafeNumber(inv.paidAmount)), 0),
+    [invoices, todayStr]);
+
+  const unpaidCountTrend = useMemo(() => {
+    const todayUnpaid = invoices.filter((inv: any) => {
+      const s = String(inv.status || '').toLowerCase();
+      if (!(s === 'unpaid' || s === 'partial' || s === 'overdue')) return false;
+      return String(inv.date || inv.createdAt || '').startsWith(todayStr);
+    }).length;
+    const yesterdayUnpaid = invoices.filter((inv: any) => {
+      const s = String(inv.status || '').toLowerCase();
+      if (!(s === 'unpaid' || s === 'partial' || s === 'overdue')) return false;
+      return String(inv.date || inv.createdAt || '').startsWith(yesterdayStr);
+    }).length;
+    if (yesterdayUnpaid === 0) return todayUnpaid > 0 ? 100 : 0;
+    return Number(((todayUnpaid - yesterdayUnpaid) / yesterdayUnpaid) * 100).toFixed(1);
+  }, [invoices, todayStr, yesterdayStr]);
+
   const lastUnpaidInvoice = (() => {
     const unpaid = [...invoices].filter(inv => inv.status === 'Unpaid' || inv.status === 'Partial' || inv.status === 'Overdue')
       .sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
@@ -900,11 +1014,85 @@ const DashboardContent: React.FC = () => {
   const pendingJobsCount = jobOrders.filter(j => String(j.status || '').toLowerCase() === 'pending').length;
   const activeJobOrdersList = jobOrders.filter((j: any) => !['Completed', 'Cancelled', 'Closed', 'Delivered'].includes(String(j.status || '')));
 
-  // sparkline seeds
-  const spark1 = [{ v: 10 }, { v: 15 }, { v: 12 }, { v: 25 }, { v: 18 }, { v: 30 }, { v: 28 }];
-  const spark2 = [{ v: 20 }, { v: 18 }, { v: 25 }, { v: 22 }, { v: 35 }, { v: 30 }, { v: 40 }];
-  const spark3 = [{ v: 30 }, { v: 25 }, { v: 35 }, { v: 20 }, { v: 15 }, { v: 25 }, { v: 20 }];
-  const spark4 = [{ v: 15 }, { v: 25 }, { v: 20 }, { v: 35 }, { v: 45 }, { v: 30 }, { v: 50 }];
+  // Real sparkline data — last 7 days of daily revenue from invoices/sales
+  const dailyRevenueSpark = useMemo(() => {
+    const days: { v: number }[] = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dayStr = d.toISOString().split('T')[0];
+      const mm = d.getMonth();
+      const yyyy = d.getFullYear();
+      const sum = invoices
+        .filter((inv: any) => {
+          const invDate = new Date(inv.date || inv.createdAt || '');
+          if (Number.isNaN(invDate.getTime())) return false;
+          if (invDate.getMonth() !== mm || invDate.getFullYear() !== yyyy) return false;
+          return String(inv.date || inv.createdAt || '').startsWith(dayStr);
+        })
+        .reduce((s: number, inv: any) => s + getInvoiceRevenueAmount(inv), 0);
+      days.push({ v: sum });
+    }
+    return days;
+  }, [invoices]);
+
+  const dailyCollectionSpark = useMemo(() => {
+    const days: { v: number }[] = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dayStr = d.toISOString().split('T')[0];
+      const sum = customerPayments
+        .filter((p: any) => String(p.status || '').toLowerCase() !== 'voided')
+        .filter((p: any) => String(p.date || p.createdAt || '').startsWith(dayStr))
+        .reduce((s: number, p: any) => s + toSafeNumber(p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount), 0);
+      days.push({ v: sum });
+    }
+    return days;
+  }, [customerPayments]);
+
+  const receivablesSpark = useMemo(() => {
+    const days: { v: number }[] = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dayStr = d.toISOString().split('T')[0];
+      const sum = invoices
+        .filter((inv: any) => {
+          const s = String(inv.status || '').toLowerCase();
+          if (s === 'cancelled' || s === 'voided' || s === 'draft' || s === 'paid') return false;
+          if (!(s === 'unpaid' || s === 'partial' || s === 'overdue')) return false;
+          return String(inv.date || inv.createdAt || '').startsWith(dayStr);
+        })
+        .reduce((s: number, inv: any) => s + Math.max(0, toSafeNumber(inv.totalAmount) - toSafeNumber(inv.paidAmount)), 0);
+      days.push({ v: sum });
+    }
+    return days;
+  }, [invoices]);
+
+  const activeJobsSpark = useMemo(() => {
+    const days: { v: number }[] = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dayStr = d.toISOString().split('T')[0];
+      const cnt = jobOrders
+        .filter((j: any) => !['Completed', 'Cancelled', 'Closed', 'Delivered'].includes(String(j.status || '')))
+        .filter((j: any) => String(j.date || j.createdAt || '').startsWith(dayStr)).length;
+      days.push({ v: cnt });
+    }
+    return days;
+  }, [jobOrders]);
+
+  // Stable fallback for sparklines when there's no data yet (keeps the chart looking intentional)
+  const revenue7d = dailyRevenueSpark.length === 7 && dailyRevenueSpark.some(d => d.v > 0) ? dailyRevenueSpark : [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }];
+  const collection7d = dailyCollectionSpark.length === 7 && dailyCollectionSpark.some(d => d.v > 0) ? dailyCollectionSpark : [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }];
+  const receivables7d = receivablesSpark.length === 7 && receivablesSpark.some(d => d.v > 0) ? receivablesSpark : [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }];
+  const activeJobs7d = activeJobsSpark.length === 7 && activeJobsSpark.some(d => d.v > 0) ? activeJobsSpark : [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }];
 
   const activeSubscriptionsCount = useMemo(() => {
     // subscriptions from useFinance (recurringInvoices)
@@ -1037,10 +1225,10 @@ const DashboardContent: React.FC = () => {
   ];
 
   const kpiCards: KpiData[] = [
-    { label: 'Revenue (This Month)', value: formatShortCurrency(currency, revenueThisMonth), rawValue: revenueThisMonth, trend: revenueTrend, trendLabel: 'vs last month', icon: <DollarSign size={22} color="#fff" />, gradient: ['#0d7c71', '#129a8e'], sparkData: spark1 },
-    { label: "Today's Collection", value: formatShortCurrency(currency, todaysCollection), rawValue: todaysCollection, trend: collectionTrend, trendLabel: 'vs yesterday', icon: <Clock size={22} color="#fff" />, gradient: ['#5ebd69', '#45a750'], sparkData: spark2 },
-    { label: 'Receivables', value: formatShortCurrency(currency, receivables), rawValue: receivables, trend: null, trendLabel: overdueCount > 0 ? `${overdueCount} overdue invoice${overdueCount > 1 ? 's' : ''}` : 'Outstanding balance', icon: <Users size={22} color="#fff" />, gradient: ['#d9663b', '#e67a4d'], sparkData: spark3 },
-    { label: 'Active Jobs', value: formatNumber(activeJobs), rawValue: activeJobs, trend: null, trendLabel: 'In progress', icon: <Briefcase size={22} color="#fff" />, gradient: ['#177db8', '#2094d0'], sparkData: spark4 },
+    { label: 'Revenue (This Month)', value: formatShortCurrency(currency, revenueThisMonth), rawValue: revenueThisMonth, trend: revenueTrend, trendLabel: 'vs last month', icon: <DollarSign size={22} color="#fff" />, gradient: ['#0d7c71', '#129a8e'], sparkData: revenue7d },
+    { label: "Today's Collection", value: formatShortCurrency(currency, todaysCollection), rawValue: todaysCollection, trend: collectionTrend, trendLabel: 'vs yesterday', icon: <Clock size={22} color="#fff" />, gradient: ['#5ebd69', '#45a750'], sparkData: collection7d },
+    { label: 'Receivables', value: formatShortCurrency(currency, receivables), rawValue: receivables, trend: null, trendLabel: overdueCount > 0 ? `${overdueCount} overdue invoice${overdueCount > 1 ? 's' : ''}` : 'Outstanding balance', icon: <Users size={22} color="#fff" />, gradient: ['#d9663b', '#e67a4d'], sparkData: receivables7d },
+    { label: 'Active Jobs', value: formatNumber(activeJobs), rawValue: activeJobs, trend: null, trendLabel: 'In progress', icon: <Briefcase size={22} color="#fff" />, gradient: ['#177db8', '#2094d0'], sparkData: activeJobs7d },
   ];
 
   // ── chart data load ───────────────────────────────────────────────────────
@@ -1079,17 +1267,17 @@ const DashboardContent: React.FC = () => {
         maxWidth: 1520, width: '100%', overflow: 'hidden', flex: 1,
       }}>
         <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: isMobile ? '10px 16px 0' : isTablet ? '12px 24px 0' : '14px 32px 0', flexWrap: 'wrap', gap: isMobile ? 16 : 24, marginBottom: isMobile ? 8 : 12,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: isMobile ? '10px 16px 0' : isTablet ? '12px 24px 0' : '14px 32px 0', flexWrap: 'wrap', gap: isMobile ? 16 : 24, marginBottom: isMobile ? 8 : 12, position: 'sticky', top: 0, zIndex: 20, background: 'rgba(243, 237, 227, 0.85)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', marginLeft: isMobile ? -8 : isTablet ? -16 : -32, marginRight: isMobile ? -8 : isTablet ? -16 : -32, paddingLeft: isMobile ? 8 : isTablet ? 16 : 32, paddingRight: isMobile ? 8 : isTablet ? 16 : 32, paddingBottom: 8, borderBottom: '1px solid rgba(228, 221, 209, 0.6)',
         }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: '#5c6567', letterSpacing: '0.02em' }}>{getGreeting()}, </span>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0b3e39' }}>Prime Printing</span>
+              <span style={{ fontSize: 14, fontWeight: 500, color: '#5c6567', letterSpacing: '0.01em' }}>{getGreeting()},</span>
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#0b3e39' }}>{user?.fullName || user?.name || user?.username || 'there'}</span>
               <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 <ChevronDown size={16} color="#5b578c" style={{ transform: showCompanyMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
               </div>
             </div>
-             <div style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: 30, color: '#0b3e39', letterSpacing: '0.2px', lineHeight: 1.2, fontWeight: 400 }}>
+             <div style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: isMobile ? 22 : 30, color: '#0b3e39', letterSpacing: '0.1px', lineHeight: 1.25, fontWeight: 400 }}>
                {format(new Date(), isMobile ? 'EEE, MMM d' : 'EEEE, MMMM d, yyyy')}
              </div>
               <div style={{ fontSize: 13, color: '#5c6567', fontWeight: 500 }}>Here's what's happening with your business today.</div>
@@ -1108,11 +1296,35 @@ const DashboardContent: React.FC = () => {
         }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: isMobile ? 12 : 24, minWidth: 0 }}>
             {!hasTransactions && (
-              <div style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', borderRadius: 16, padding: '16px 20px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: '#64748b' }}>
-                <CalendarDays size={20} style={{ color: '#94a3b8', flexShrink: 0 }} />
-                <div><span style={{ fontWeight: 600, color: '#475569' }}>No transactions recorded for {fyName}.</span> {' '}Create your first transaction to see dashboard analytics.</div>
+              <div style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #ecfeff, #f0fdf4)', borderRadius: 16, padding: isMobile ? '20px' : '28px', border: '1px solid #bbf7d0', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: 16 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg, #16a34a, #0d7c71)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0, boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)' }}>
+                  <Sparkles size={24} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#0b3e39', marginBottom: 4, letterSpacing: '-0.01em' }}>Welcome to {companyConfig?.companyName || 'your dashboard'}</div>
+                  <div style={{ fontSize: 13, color: '#475569', fontWeight: 500, lineHeight: 1.5 }}>
+                    No transactions recorded for {fyName} yet. Create your first invoice, order, or payment to see live analytics here.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => navigate('/sales-flow/invoices')} style={{ background: '#0b3e39', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <FileText size={14} /> New Invoice
+                  </button>
+                  <button onClick={() => navigate('/sales-flow/orders')} style={{ background: '#fff', color: '#0b3e39', border: '1.4px solid #0b3e39', padding: '10px 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Briefcase size={14} /> New Order
+                  </button>
+                </div>
               </div>
             )}
+            {isLoading && !hasTransactions ? (
+              <>
+                <KpiSkeleton />
+                <KpiSkeleton />
+                <KpiSkeleton />
+                <KpiSkeleton />
+              </>
+            ) : (
+              <>
             {widgets.find(w => w.id === 'info-card')?.visible !== false && <SlidingInfoCard slides={infoSlides} compact={isMobile} animDelay={8000} />}
             {widgets.find(w => w.id === 'collection')?.visible !== false && (
               <PremiumKpiCard title="Today's Collection" icon={<Clock size={isMobile ? 16 : 20} />} iconBg="rgba(16, 185, 129, 0.12)" iconColor="#10B981" accentColor="#10B981" compact={isMobile} animDelay={2000} onClick={() => navigate('/sales-flow/payments')}>
@@ -1128,8 +1340,20 @@ const DashboardContent: React.FC = () => {
                       {collectionTrend >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}{collectionTrend >= 0 ? '+' : ''}{collectionTrend.toFixed(1)}% vs yest
                     </div>
                   </div>
-                  <div style={{ width: '100%', marginTop: 4, height: 48, minWidth: 0 }}>
-                    <ResponsiveContainer width="100%" height={48} minHeight={48} minWidth={0}><AreaChart data={spark2}><Area type="monotone" dataKey="v" stroke="#10b981" fill="#10b981" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} dot={false} /></AreaChart></ResponsiveContainer>
+                  <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Wallet size={12} />
+                      Cash in Hand
+                    </div>
+                    <div style={{ fontSize: 12, color: '#0f172a', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{currency}{cashBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Building2 size={12} />
+                      Bank Account
+                    </div>
+                    <div style={{ fontSize: 12, color: '#0f172a', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{currency}{bankBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                   </div>
                 </div>
               </PremiumKpiCard>
@@ -1175,23 +1399,24 @@ const DashboardContent: React.FC = () => {
                     <div style={{ width: 32, height: 32, borderRadius: 8, background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#dc2626', flexShrink: 0 }}><FileText size={16} /></div>
                   </div>
                   <KpiValueAnimator animDelay={6000}><div style={{ fontSize: 28, fontWeight: 800, color: '#dc2626', letterSpacing: '-0.02em', lineHeight: 1 }}>{formatShortCurrency(currency, receivables)}</div></KpiValueAnimator>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: '#64748b', maxWidth: '100px', lineHeight: 1.25 }}>
-                      {overdueCount + (invoices.filter(i => i.status === 'Unpaid' || i.status === 'Partial').length - overdueCount)} outstanding invoices
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>
+                      {unpaidCount} outstanding invoice{unpaidCount === 1 ? '' : 's'}
+                      {overdueCount > 0 && <span style={{ color: '#dc2626', fontWeight: 700 }}> · {overdueCount} overdue</span>}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 2 }}>↑ {formatShortCurrency(currency, receivables)}</div>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#b45309', backgroundColor: '#fffbeb', padding: '1px 6px', borderRadius: 6, textTransform: 'lowercase' }}>new</div>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 700, color: Number(unpaidCountTrend) >= 0 ? '#16a34a' : '#dc2626', backgroundColor: Number(unpaidCountTrend) >= 0 ? '#f0fdf4' : '#fef2f2', padding: '2px 7px', borderRadius: 6, letterSpacing: '-0.01em' }}>
+                      {Number(unpaidCountTrend) >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}{Number(unpaidCountTrend) >= 0 ? '+' : ''}{unpaidCountTrend}% vs yest
                     </div>
                   </div>
                   <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: 12, color: '#1e293b', fontWeight: 500 }}>{lastUnpaidInvoice ? (lastUnpaidInvoice.clientName || lastUnpaidInvoice.customerName) : 'No high debt'}</div>
                     <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{formatShortCurrency(currency, lastUnpaidInvoice ? (toSafeNumber(lastUnpaidInvoice.totalAmount) - toSafeNumber(lastUnpaidInvoice.paidAmount)) : 0)}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>{lastUnpaidInvoice ? format(new Date(lastUnpaidInvoice.date || lastUnpaidInvoice.createdAt), 'MMM d') : '—'}</div>
                   </div>
                 </div>
               </PremiumKpiCard>
+            )}
+              </>
             )}
           </div>
 
@@ -1203,16 +1428,22 @@ const DashboardContent: React.FC = () => {
                 <div>
                   <h3 style={{ fontSize: isMobile ? 18 : 20, fontWeight: 800, color: '#2e2a5d', margin: 0, letterSpacing: '-0.02em' }}>Financial performance</h3>
                   {!isMobile && <div style={{ fontSize: 13, color: '#5b578c', fontWeight: 500, marginTop: 3 }}>Revenue & Expenditures</div>}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
+                </div>                <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#16a34a' }} /><span style={{ fontSize: 10, fontWeight: 600, color: '#5b578c' }}>Income</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#dc2626' }} /><span style={{ fontSize: 10, fontWeight: 600, color: '#5b578c' }}>Expenses</span></div>
                   {!isMobile && <div style={{ marginLeft: 4 }}><PeriodDropdown value={activePeriod} onChange={setActivePeriod} /></div>}
                 </div>
               </div>
-             <div style={{ width: '100%', minHeight: isMobile ? 220 : 280, minWidth: 0 }}>
-                {chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={isMobile ? 220 : 280} minWidth={0} minHeight={isMobile ? 220 : 280}>
+             <div style={{ width: '100%', flex: 1, minHeight: isMobile ? 220 : 280, minWidth: 0 }}>
+                {isLoading && !hasTransactions ? (
+                  <div aria-hidden="true" style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div className="dashboard-skeleton" style={{ width: '100%', height: 24 }} />
+                    <div className="dashboard-skeleton" style={{ width: '90%', height: 24 }} />
+                    <div className="dashboard-skeleton" style={{ width: '95%', height: 24 }} />
+                    <div className="dashboard-skeleton" style={{ width: '70%', height: 24, marginTop: 12 }} />
+                  </div>
+                ) : chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={isMobile ? 220 : 280}>
                     <AreaChart data={chartData} margin={{ top: 8, right: isMobile ? 4 : 16, left: isMobile ? -24 : -8, bottom: -8 }}>
                       <defs>
                         <linearGradient id="gradIncome" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#16a34a" stopOpacity={0.6} /><stop offset="60%" stopColor="#22c55e" stopOpacity={0.15} /><stop offset="100%" stopColor="#bbf7d0" stopOpacity={0} /></linearGradient>

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { CompanyConfig, FinishingOption, Item } from '../../../types';
 import { currencyService } from '../../../services/currencyService';
 import { BookOpen, Image, Paperclip, Scissors, Triangle, PanelTop } from 'lucide-react';
@@ -74,15 +74,38 @@ export const FinishingOptionsTab: React.FC<FinishingOptionsTabProps> = ({ config
   const options = getOptions(config);
   const bomRates = useMemo(() => computeBomRates(items), [items]);
 
+  useEffect(() => {
+    let changed = false;
+    const synced = options.map(opt => {
+      if (!BOM_OPTION_IDS.has(opt.id)) return opt;
+      const meta = OPTION_META[opt.id];
+      const unit = resolveBomPrice(meta?.bomSource);
+      if (Math.abs(Number(opt.price || 0) - unit) > 0.001) {
+        changed = true;
+        return { ...opt, price: unit };
+      }
+      return opt;
+    });
+    if (changed) setConfig(prev => setOptions(prev, synced));
+  }, [bomRates.tape, bomRates.cover, bomRates.staple]);
+
   const resolveBomPrice = (bomSource?: 'tape' | 'cover' | 'staple') => {
     if (!bomSource) return 0;
     return Math.round(bomRates[bomSource] * 100) / 100;
   };
 
   const updateOption = (id: string, field: keyof FinishingOption, value: any) => {
-    const updated = options.map(opt =>
-      opt.id === id ? { ...opt, [field]: value } : opt
-    );
+    const isBom = BOM_OPTION_IDS.has(id);
+    const updated = options.map(opt => {
+      if (opt.id !== id) return opt;
+      const next: any = { ...opt, [field]: value };
+      if (isBom && field === 'quantity') {
+        const meta = OPTION_META[id];
+        const unit = resolveBomPrice(meta?.bomSource);
+        next.price = Math.round((Number(unit) || 0) * 100) / 100;
+      }
+      return next;
+    });
     setConfig(prev => setOptions(prev, updated));
   };
 

@@ -1011,7 +1011,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const fakeUser = dbUsers.find(u => u.isSuperAdmin || u.role === 'Admin') || {
               id: 'USR-LOCAL',
               username: username,
-              fullName: username,
+              fullName: username.includes('@') ? username.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : username,
               name: username,
               email: getEmailForUser(username),
               role: 'Admin' as UserRole,
@@ -1243,7 +1243,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     await dbService.put('users', userData);
-    
+
     setAllUsers(prev => {
       const exists = prev.some(item => item.id === userData.id);
       if (exists) {
@@ -1251,7 +1251,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return [...prev, userData];
     });
-    
+
+    if (user?.id === userData.id) {
+      setUser(userData);
+    }
+
     notify('User records synchronized', 'success');
   };
 

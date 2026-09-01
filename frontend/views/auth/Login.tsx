@@ -30,7 +30,7 @@ const Login: React.FC = () => {
       const user = {
         id: staff.id,
         username: staff.username,
-        fullName: staff.username,
+        fullName: staff.username?.includes('@') ? staff.username.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : staff.username,
         name: staff.username,
         email: staff.email,
         role: staff.role || 'Staff',

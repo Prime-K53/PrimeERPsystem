@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell,
@@ -95,17 +95,19 @@ const dropdownVariants: any = {
   },
 };
 
-const NotificationCenter: React.FC<NotificationCenterProps> = ({
-  isOpen,
-  onClose,
-  notifications,
-  onMarkRead,
-  onMarkAllRead,
-  onClear,
-  anchorEl,
-}) => {
+const NotificationCenter = React.forwardRef<HTMLDivElement, NotificationCenterProps>((props, ref) => {
+  const { isOpen, onClose, notifications, onMarkRead, onMarkAllRead, onClear, anchorEl } = props;
   const [tab, setTab] = useState<Tab>('all');
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const setRefs = useCallback((el: HTMLDivElement | null) => {
+    dropdownRef.current = el;
+    if (typeof ref === 'function') {
+      ref(el);
+    } else if (ref) {
+      ref.current = el;
+    }
+  }, [ref]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -185,7 +187,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          ref={dropdownRef}
+          ref={setRefs}
           key="nc-dropdown"
           variants={dropdownVariants}
           initial="hidden"
@@ -480,6 +482,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
       )}
     </AnimatePresence>
   );
-};
+});
+
+NotificationCenter.displayName = 'NotificationCenter';
 
 export default NotificationCenter;

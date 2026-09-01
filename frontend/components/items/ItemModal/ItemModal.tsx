@@ -64,6 +64,28 @@ const BOM_DEFAULT_RATES = {
   tape: 1.20,
 };
 
+const FINISHING_NAME_TO_BOM: Record<string, 'tape' | 'cover' | 'staple' | null> = {
+  'Binding': 'tape',
+  'binding': 'tape',
+  'Cover Pages': 'cover',
+  'coverPages': 'cover',
+  'Stapling': 'staple',
+  'stapling': 'staple',
+  'Cutting & Trimming': null,
+  'cutting': null,
+  'Hole Punching': null,
+  'holePunch': null,
+  'Folding': null,
+  'folding': null,
+};
+
+function getLiveFinishingUnitPrice(name: string, bomRates: { tape: number; cover: number; staple: number }): number {
+  const src = FINISHING_NAME_TO_BOM[name];
+  if (!src) return 0;
+  const unit = bomRates[src] || 0;
+  return Math.round(unit * 100) / 100;
+}
+
 const s: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed', inset: 0,
@@ -677,11 +699,6 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
     return rate > 0 ? rawBuyCost / rate : 0;
   }, [rawBuyCost, rawConvRate]);
 
-  const serviceFinishingTotal = useMemo(() =>
-    serviceFinishing.filter(f => f.active).reduce((s, f) => s + f.price * (f.quantity || 1), 0),
-    [serviceFinishing]
-  );
-
   const bomRates = useMemo(() => {
     const rawItems = allItems?.filter(i => i.type === 'Raw Material' || (i as any).classification === 'raw') || [];
     const paperItem = resolveRawMaterial(rawItems, /paper|bond/i, ['paper', 'bond']);
@@ -705,6 +722,17 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
       },
     };
   }, [allItems]);
+
+  const serviceFinishingTotal = useMemo(() =>
+    serviceFinishing.filter(f => f.active).reduce((s, f) => {
+      const liveUnit = getLiveFinishingUnitPrice(f.name, { tape: bomRates.tape, cover: bomRates.cover, staple: bomRates.staple });
+      if (liveUnit > 0) {
+        return s + liveUnit * (f.quantity || 1);
+      }
+      return s + f.price * (f.quantity || 1);
+    }, 0),
+    [serviceFinishing, bomRates]
+  );
 
   const productBomTotal = useMemo(() => {
     return Math.ceil(productBomPages / PAGES_PER_SHEET) * bomRates.paper
@@ -1008,7 +1036,14 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
           pricingMethod,
           paperCost: servicePaperCost,
           tonerCost: serviceTonerCost,
-          finishingOptions: serviceFinishing.filter(f => f.active),
+          finishingOptions: serviceFinishing.filter(f => f.active).map(f => {
+            const liveUnit = getLiveFinishingUnitPrice(f.name, { tape: bomRates.tape, cover: bomRates.cover, staple: bomRates.staple });
+            return {
+              ...f,
+              price: liveUnit > 0 ? liveUnit : f.price,
+              enabled: true,
+            };
+          }),
           turnaround,
           rushSurcharge,
           trackStock: false,

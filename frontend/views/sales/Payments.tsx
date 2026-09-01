@@ -672,6 +672,8 @@ const Payments: React.FC = () => {
     });
 
     const [customerSearchTerm, setCustomerSearchTerm] = useState('');
+    const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+    const customerDropdownRef = useRef<HTMLDivElement>(null);
     const [isClientModalOpen, setIsClientModalOpen] = useState(false);
  
     const [allocations, setAllocations] = useState<Array<{ invoiceId: string; orderId?: string; amount: number; [key: string]: any }>>([]);
@@ -929,7 +931,7 @@ const Payments: React.FC = () => {
                     );
                     const unpaidOrders = orders.filter(o =>
                         (o.customerName === customerName || o.customerId === customerId) &&
-                        o.status !== 'Completed' && o.status !== 'Paid' && o.status !== 'Cancelled' && o.status !== 'Converted'
+                        o.status === 'Processing'
                     );
                     const totalDue = unpaid.reduce((s, i) => s + (i.totalAmount - (i.paidAmount || 0)), 0) +
                         unpaidOrders.reduce((s, o) => s + (o.totalAmount - (o.paidAmount || 0)), 0);
@@ -1162,6 +1164,16 @@ const Payments: React.FC = () => {
         }
     };
 
+    const filteredCustomers = useMemo(() => {
+        const term = (customerSearchTerm || '').toLowerCase().trim();
+        if (!term) return customers || [];
+        return (customers || []).filter((c: any) =>
+            (c.name || '').toLowerCase().includes(term) ||
+            (c.id || '').toLowerCase().includes(term) ||
+            (c.phone || '').toLowerCase().includes(term)
+        );
+    }, [customers, customerSearchTerm]);
+
     const availableInvoices = useMemo(() => {
         if (!formData.customerName) return [];
 
@@ -1219,10 +1231,7 @@ const Payments: React.FC = () => {
             const subAccountMatch = !formData.subAccountName ||
                 formData.subAccountName === 'Main' ||
                 o.subAccountName === formData.subAccountName;
-            const statusMatch = o.status !== 'Completed' &&
-                o.status !== 'Paid' &&
-                o.status !== 'Cancelled' &&
-                o.status !== 'Converted';
+            const statusMatch = o.status === 'Processing';
             return customerMatch && subAccountMatch && statusMatch;
         });
         return baseOrders;
@@ -1450,29 +1459,65 @@ const Payments: React.FC = () => {
                                                         + New Customer
                                                     </button>
                                                 </div>
-                                                <input
-                                                    list="customer-options"
-                                                    placeholder="-- Choose Client --"
-                                                    value={formData.customerName}
-                                                    disabled={editMode}
-                                                    onChange={e => {
-                                                        const name = e.target.value;
-                                                        const customer = customers.find((c: any) => c.name === name);
-                                                        setFormData({
-                                                            ...formData,
-                                                            customerName: name,
-                                                            customerId: customer?.id || '',
-                                                            subAccountName: 'Main'
-                                                        });
-                                                        setAllocations([]);
-                                                        setCustomerSearchTerm('');
-                                                    }}
-                                                    style={{ width:'100%', height:36, padding:'0 10px', border:'1.4px solid #e4ddd1', borderRadius:8, fontSize:13, fontWeight:600, background:'#FEFDFB', color:'#23282A', fontFamily:'inherit', outline:'none' }}
-                                                />
-                                                <datalist id="customer-options">
-                                                    <option value="-- Choose Client --" />
-                                                    {customerNames.map(name => <option key={name} value={name} />)}
-                                                </datalist>
+                                                <div ref={customerDropdownRef} style={{ position:'relative' }}>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search customer..."
+                                                        value={customerSearchTerm || formData.customerName || ''}
+                                                        disabled={editMode}
+                                                        onChange={e => { setCustomerSearchTerm(e.target.value); setShowCustomerDropdown(true); }}
+                                                        onFocus={() => setShowCustomerDropdown(true)}
+                                                        onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                                                        style={{ width:'100%', height:36, padding:'0 32px 0 10px', border:'1.4px solid #e4ddd1', borderRadius:8, fontSize:13, fontWeight:600, background:'#FEFDFB', color:'#23282A', fontFamily:'inherit', outline:'none' }}
+                                                    />
+                                                    <Search size={14} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'#5c6567' }} />
+                                                    {showCustomerDropdown && (
+                                                        <div style={{ position:'absolute', left:0, right:0, top:'100%', zIndex:50, marginTop:4, background:'#fff', border:'1px solid #e4ddd1', borderRadius:8, boxShadow:'0 4px 12px rgba(0,0,0,0.08)', maxHeight:320, overflowY:'auto' }}>
+                                                            {filteredCustomers.length > 0 ? filteredCustomers.map((c: any) => (
+                                                                <button
+                                                                    key={c.id}
+                                                                    type="button"
+                                                                    onMouseDown={e => {
+                                                                        e.preventDefault();
+                                                                        setFormData({ ...formData, customerName: c.name, customerId: c.id, subAccountName: 'Main' });
+                                                                        setAllocations([]);
+                                                                        setCustomerSearchTerm('');
+                                                                        setShowCustomerDropdown(false);
+                                                                    }}
+                                                                    style={{ width:'100%', textAlign:'left', padding:'8px 10px', fontSize:13, color:'#23282A', background:'transparent', border:'none', borderBottom:'1px solid #f0ebe0', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'space-between' }}
+                                                                    onMouseEnter={e => { e.currentTarget.style.background = '#eef7f6'; }}
+                                                                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                                                                >
+                                                                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.name}</span>
+                                                                    {(c.balance || c.outstandingBalance) ? (
+                                                                        <span style={{ marginLeft:8, fontSize:11, fontWeight:600, whiteSpace:'nowrap', color: (Number(c.balance || c.outstandingBalance) > 0) ? '#b5493f' : '#1f8577' }}>
+                                                                            {currency}{(Number(c.balance || c.outstandingBalance)).toLocaleString()}
+                                                                        </span>
+                                                                    ) : null}
+                                                                </button>
+                                                            )) : customerSearchTerm.trim() ? null : (
+                                                                <div style={{ padding:'8px 10px', fontSize:13, color:'#5c6567' }}>No customers found</div>
+                                                            )}
+                                                            {customerSearchTerm.trim() && (
+                                                                <button
+                                                                    type="button"
+                                                                    onMouseDown={e => {
+                                                                        e.preventDefault();
+                                                                        setFormData({ ...formData, customerName: customerSearchTerm.trim(), customerId: '' });
+                                                                        setAllocations([]);
+                                                                        setCustomerSearchTerm('');
+                                                                        setShowCustomerDropdown(false);
+                                                                    }}
+                                                                    style={{ width:'100%', textAlign:'left', padding:'8px 10px', fontSize:13, color:'#146b60', background:'transparent', border:'none', borderTop:'1px solid #e4ddd1', cursor:'pointer', fontFamily:'inherit', fontWeight:600 }}
+                                                                    onMouseEnter={e => { e.currentTarget.style.background = '#eef7f6'; }}
+                                                                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                                                                >
+                                                                    + Add New Customer "{customerSearchTerm.trim()}"
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                                 {formData.customerName && (() => {
                                                     const cust = customers.find((c: any) => c.name === formData.customerName);
                                                     const bal = cust?.walletBalance || 0;

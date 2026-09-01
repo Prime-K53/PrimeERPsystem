@@ -140,22 +140,27 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
             finalAccounts = [];
           }
       } else {
-          // Ensure core banking accounts exist and have correct names
+          // Ensure core banking accounts exist and have correct names/ids
           const coreAccountCodes = ['1000', '1050', '1060'];
           for (const code of coreAccountCodes) {
               const defaultAcc = DEFAULT_ACCOUNTS.find(a => a.code === code);
               const existingAcc = finalAccounts.find(a => a.code === code);
-              
+
               if (defaultAcc) {
                   if (!existingAcc) {
                       // Add missing core account
                       await dbService.put('accounts', defaultAcc);
                       finalAccounts.push(defaultAcc);
-                  } else if (existingAcc.name !== defaultAcc.name) {
-                      // Update name if different
-                      const updatedAcc = { ...existingAcc, name: defaultAcc.name };
-                      await dbService.put('accounts', updatedAcc);
-                      finalAccounts = finalAccounts.map(a => a.code === code ? updatedAcc : a);
+                  } else {
+                      // Update name AND id when code matches — id must match ledger's numeric codes
+                      const needsUpdate = existingAcc.name !== defaultAcc.name || existingAcc.id !== code;
+                      if (needsUpdate) {
+                          const updatedAcc = { ...existingAcc, id: code, name: defaultAcc.name };
+                          // Delete old record (with UUID key) and put new one (with numeric key)
+                          await dbService.delete('accounts', existingAcc.id);
+                          await dbService.put('accounts', updatedAcc);
+                          finalAccounts = finalAccounts.map(a => a.code === code ? updatedAcc : a);
+                      }
                   }
               }
           }

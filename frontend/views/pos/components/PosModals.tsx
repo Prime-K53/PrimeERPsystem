@@ -73,10 +73,36 @@ const tealBtn: React.CSSProperties = {
 };
 
 const dangerBtn: React.CSSProperties = {
-  ...tealBtn,
-  background: `linear-gradient(155deg, #dc2626, #b91c1c)`,
-  boxShadow: `0 6px 16px -6px rgba(185,28,28,.55)`,
+    ...tealBtn,
+    background: `linear-gradient(155deg, #dc2626, #b91c1c)`,
+    boxShadow: `0 6px 16px -6px rgba(185,28,28,.55)`,
 };
+
+const BOM_OPTION_IDS = new Set(['binding', 'coverPages', 'stapling']);
+const OPTION_META: Record<string, { bomSource?: 'tape' | 'cover' | 'staple' }> = {
+    binding: { bomSource: 'tape' },
+    coverPages: { bomSource: 'cover' },
+    stapling: { bomSource: 'staple' },
+    cutting: {},
+    holePunch: {},
+    folding: {},
+};
+const BOM_DEFAULT_RATES: Record<'tape' | 'cover' | 'staple', number> = { tape: 1.20, cover: 15.00, staple: 0.50 };
+function computeBomRatesFromInventory(items: Item[]): Record<'tape' | 'cover' | 'staple', number> {
+    const raw = (items || []).filter(i => i.type === 'Raw Material' || (i as any).classification === 'raw');
+    const tapeItem = raw.find(i => /tape|binding tape/i.test(i.name || ''));
+    const coverItem = raw.find(i => /card|cover|board/i.test(i.name || ''));
+    const stapleItem = raw.find(i => /staple/i.test(i.name || ''));
+    return {
+        tape: tapeItem ? Number(((tapeItem.cost_price || tapeItem.cost || 0) / ((tapeItem as any).conversionRate || 1)).toFixed(2)) : BOM_DEFAULT_RATES.tape,
+        cover: coverItem ? Number(((coverItem.cost_price || coverItem.cost || 0) / ((coverItem as any).conversionRate || 1)).toFixed(2)) : BOM_DEFAULT_RATES.cover,
+        staple: stapleItem ? Number(((stapleItem.cost_price || stapleItem.cost || 0) / ((stapleItem as any).conversionRate || 1)).toFixed(2)) : BOM_DEFAULT_RATES.staple,
+    };
+}
+function resolveBomPrice(source: 'tape' | 'cover' | 'staple', items: Item[]): number {
+    const rates = computeBomRatesFromInventory(items);
+    return Math.round((rates[source] || 0) * 100) / 100;
+}
 
 // --- Printing Variant Modal ---
 export const PrintingVariantModal: React.FC<{
@@ -317,16 +343,26 @@ export const ServiceCalculatorModal: React.FC<{
 
     const resolveFinishingCost = useCallback((id: string): number => {
         if (!sp) return 0;
-        const savedCost = sp.finishingSelections?.find((o: any) => o?.id === id)?.price ?? (sp.finishingOptionCosts || {})[id] ?? finishingCostOverrides[id] ?? companyConfig?.productionSettings?.finishingOptions?.find((o: any) => o?.id === id)?.price ?? 0;
-        if (savedCost > 0) return Number(savedCost);
+        const storedConfig = companyConfig?.productionSettings?.finishingOptions?.find((o: any) => o?.id === id);
+        if (BOM_OPTION_IDS.has(id)) {
+            const meta = OPTION_META[id];
+            const unit = meta?.bomSource ? resolveBomPrice(meta.bomSource, inventory) : 0;
+            if (unit > 0) {
+                const qty = Number(storedConfig?.quantity ?? sp.finishingSelections?.find((o: any) => o?.id === id)?.quantity ?? 1) || 1;
+                return Math.round(unit * qty * 100) / 100;
+            }
+        }
+        const savedCost = sp.finishingSelections?.find((o: any) => o?.id === id)?.price ?? (sp.finishingOptionCosts || {})[id] ?? finishingCostOverrides[id] ?? storedConfig?.price ?? 0;
+        if (Number(savedCost) > 0) return Number(savedCost);
         if (sp.finishingOptions) {
             const opt = sp.finishingOptions.find((o: any) => (o.name || o.id) === id);
             if (opt && Number(opt.price) > 0) return Number(opt.price);
         }
         const fees = ((sp.finishingEnabled || []) as string[]);
         const fb = fees.length > 0 && Number(sp.finishingCost) > 0 ? Number(sp.finishingCost) / (fees.length * Math.max(1, Number(sp.copies) || 1)) : 0;
-        return fb > 0 ? Number(fb.toFixed(2)) : ({ binding: 150, coverPages: 20, cutting: 30, holePunch: 20, folding: 15, stapling: 10 }[id] || 0);
-    }, [sp, companyConfig, finishingCostOverrides]);
+        if (fb > 0) return Number(fb.toFixed(2));
+        return ({ binding: 150, coverPages: 20, cutting: 30, holePunch: 20, folding: 15, stapling: 10 }[id] || 0);
+    }, [sp, companyConfig, finishingCostOverrides, inventory]);
 
     const costBreakdown = useMemo(() => {
         let paperCost = 0, sheetsPerCopy = 0, totalSheets = 0, costPerSheet = 0;
@@ -336,6 +372,7 @@ export const ServiceCalculatorModal: React.FC<{
         if (sp) {
             sheetsPerCopy = Math.ceil(pages / 2);
             totalSheets = sheetsPerCopy * copies;
+            const finishingMultiplier = sp.pricingMethod === 'per_job' ? 1 : copies;
 
             if (paper) {
                 const rs = Number(paper.conversionRate || paper.conversion_rate || 500);
@@ -361,12 +398,13 @@ export const ServiceCalculatorModal: React.FC<{
             }
 
             fd = enabledFinishing.map(id => {
-                let cost = resolveFinishingCost(id);
-                if (cost === 0 && sp.finishingOptions) {
+                let perCopyCost = resolveFinishingCost(id);
+                if (perCopyCost === 0 && sp.finishingOptions) {
                     const opt = sp.finishingOptions.find((o: any) => (o.name || o.id) === id);
-                    if (opt) cost = Number(opt.price) || 0;
+                    if (opt) perCopyCost = Number(opt.price) || 0;
                 }
-                return { id, name: getFinishingName(id), cost, total: cost };
+                const total = Number((perCopyCost * finishingMultiplier).toFixed(2));
+                return { id, name: getFinishingName(id), cost: perCopyCost, total };
             });
             fc = Number(fd.reduce((s, f) => s + f.total, 0).toFixed(2));
         }
@@ -378,6 +416,7 @@ export const ServiceCalculatorModal: React.FC<{
         if (!sp) { const flat = service.serviceConfig?.baseLaborCost || service.serviceConfig?.baseRate || service.cost || 0; return flat * (pageCount / (Number(service.pages) || 1)) * copyCount; }
         const totalSheets = Math.ceil(pageCount / 2) * copyCount;
         const totalPages = pageCount * copyCount;
+        const finishingMultiplier = sp.pricingMethod === 'per_job' ? 1 : copyCount;
         let pc = 0, tc = 0;
         if (sp.paperItemId) {
             const p = inventory.find((i: any) => i.id === sp.paperItemId);
@@ -400,12 +439,12 @@ export const ServiceCalculatorModal: React.FC<{
             tc = Number((totalPages * Number(sp.tonerCost)).toFixed(2));
         }
         const fc = enabledFinishing.reduce((s, id) => {
-            let cost = resolveFinishingCost(id);
-            if (cost === 0 && sp.finishingOptions) {
+            let perCopyCost = resolveFinishingCost(id);
+            if (perCopyCost === 0 && sp.finishingOptions) {
                 const opt = sp.finishingOptions.find((o: any) => (o.name || o.id) === id);
-                if (opt) cost = Number(opt.price) || 0;
+                if (opt) perCopyCost = Number(opt.price) || 0;
             }
-            return s + cost;
+            return s + perCopyCost * finishingMultiplier;
         }, 0);
         return Number((pc + tc + fc).toFixed(2));
     }, [service, inventory, sp, enabledFinishing, resolveFinishingCost]);

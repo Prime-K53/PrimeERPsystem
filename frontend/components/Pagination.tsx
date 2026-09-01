@@ -35,14 +35,14 @@ const Pagination: React.FC<PaginationProps> = ({
   const endItem = Math.min(currentPage * itemsPerPage, totalItems);
 
   return (
-    <div className="px-4 py-2.5 bg-white/90 backdrop-blur-md border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+    <div className="px-3 py-1.5 bg-white/90 backdrop-blur-md border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
       <div className="flex flex-wrap items-center gap-3 sm:gap-4">
         <div className="text-[12px] text-slate-500">
           Showing <span className="font-semibold text-slate-800">{startItem}</span> to <span className="font-semibold text-slate-800">{endItem}</span> of <span className="font-semibold text-slate-800">{totalItems}</span> results
         </div>
-        
+
         {showItemsPerPage && onItemsPerPageChange && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
             <span className="text-[11px] text-slate-400">per page</span>
             <select
               value={itemsPerPage}
