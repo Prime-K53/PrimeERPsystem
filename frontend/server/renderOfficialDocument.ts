@@ -62,6 +62,7 @@ export async function renderOfficialDocumentPdf(
     createElement(PrimeDocument as any, {
       type,
       data: securedData,
+      configOverride: (input.companyConfig as any) || null,
       customers: (input.customers || []) as any,
     }) as any
   ).toBlob();

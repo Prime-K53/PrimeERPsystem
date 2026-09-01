@@ -227,6 +227,7 @@ const corsOptions = {
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-mode', 'x-correlation-id', 'x-idempotency-key', 'x-user-id', 'x-user-role', 'x-user-email', 'x-user-is-super-admin', 'x-dev-bypass', 'Idempotency-Key'],
+  exposedHeaders: ['Content-Disposition'],
   credentials: true
 };
 

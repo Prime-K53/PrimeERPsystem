@@ -5,7 +5,6 @@ import { Item, Warehouse } from '../types';
 import { api } from '../services/api';
 import { dbService } from '../services/db';
 import { SEED_ITEM_IDS, SEED_ITEMS, MOCK_WAREHOUSES } from '../constants';
-import { generateNextId } from '../utils/helpers';
 import { generateLocalId } from '../utils/idGeneration';
 import { validateMinimumMarkup } from '../services/pricingValidationService';
 
@@ -34,7 +33,16 @@ interface InventoryState {
   transferStock: (itemId: string, fromLocationId: string, toLocationId: string, quantity: number) => Promise<void>;
 }
 
-const resolveNextInventoryId = async (currentInventory: Item[]) => {
+const resolveInventoryTypeKey = (itemType?: string): string => {
+  const t = String(itemType || '').toLowerCase();
+  if (t === 'raw material' || t === 'material' || t === 'raw' || t === 'consumable') return 'INV-RM';
+  if (t === 'product' || t === 'products' || t === 'finished good' || t === 'finished goods') return 'INV-PRD';
+  if (t === 'service' || t === 'services' || t === 'printing service') return 'INV-SVC';
+  if (t === 'stationery' || t === 'stationaries') return 'INV-STA';
+  return 'INV-PRD';
+};
+
+const resolveNextInventoryId = async (currentInventory: Item[], itemType?: string) => {
   const inventoryMap = new Map<string, Item>();
 
   for (const item of currentInventory || []) {
@@ -54,7 +62,17 @@ const resolveNextInventoryId = async (currentInventory: Item[]) => {
     // Keep ID generation resilient even if a refresh fails.
   }
 
-  return generateNextId('ITM', Array.from(inventoryMap.values()));
+  const prefix = resolveInventoryTypeKey(itemType);
+  const allItems = Array.from(inventoryMap.values());
+  const matching = allItems.filter(i => String(i.id || '').toUpperCase().startsWith(prefix.toUpperCase() + '-'));
+  const maxSeq = matching.reduce((max, i) => {
+    const m = String(i.id || '').match(/-(\d+)$/);
+    if (!m) return max;
+    const n = parseInt(m[1], 10);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  const nextSeq = String(maxSeq + 1).padStart(4, '0');
+  return `${prefix}-${nextSeq}`;
 };
 
 export const useInventoryStore = create<InventoryState>((set, get) => ({
@@ -137,7 +155,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       pricingValidated: !isSellable || validation.valid,
       validationTimestamp: new Date().toISOString(),
     };
-    const id = newItem.id || await resolveNextInventoryId(get().inventory);
+    const id = newItem.id || await resolveNextInventoryId(get().inventory, newItem.type);
     const savedItem = { ...newItem, id };
     set(state => ({
       inventory: [...state.inventory.filter(i => i.id !== id), savedItem]

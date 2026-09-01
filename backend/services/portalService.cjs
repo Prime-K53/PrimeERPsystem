@@ -9,6 +9,7 @@ const ReferralService = require('./referralService.cjs');
 const referralService = new ReferralService();
 const { customerFilter, withCustomerScope } = require('./portalScope.cjs');
 const customerLedger = require('./customerLedger.cjs');
+const companyConfigService = require('./companyConfigService.cjs');
 
 const TICKET_ATTACHMENTS_DIR = path.join(__dirname, '..', 'storage', 'ticket-attachments');
 
@@ -971,6 +972,8 @@ const portalService = {
     }
 
     return {
+      customer_id: (customer && customer.id) || customerId,
+      customer_name: (customer && customer.name) || 'Customer',
       opening_balance: openingBalance,
       closing_balance: mapped.length > 0 ? mapped[mapped.length - 1].balance : openingBalance,
       outstanding_balance: ledger.outstandingBalance,
@@ -1808,33 +1811,13 @@ const portalService = {
   },
 
   async getCompanyContactInfo() {
-    try {
-      const rows = await repo.getAll('settings', { 'data->>key': 'eq.companyConfig' });
-      let row = (rows || [])[0];
-      if (!row) {
-        const allSettings = await repo.getAll('settings');
-        row = (allSettings || []).find(
-          (s) => s.key === 'companyConfig' || s.key === 'nexus_company_config' || s.id === 'companyConfig' || s.id === 'nexus_company_config'
-        );
-      }
-      if (row) {
-        const val = row.value ?? row.val ?? row.data?.value ?? row.data ?? row;
-        const config = typeof val === 'string' ? JSON.parse(val) : val;
-        return {
-          companyName: config.companyName || config.name || 'Prime Printing',
-          email: config.companyEmail || config.email || null,
-          phone: config.companyPhone || config.phone || null,
-          phones: config.phones || (config.phone ? [config.phone] : []),
-          whatsapp: config.whatsappNumber || config.whatsapp || null,
-        };
-      }
-    } catch (_) { /* best-effort */ }
+    const config = await companyConfigService.getCompanyConfig();
     return {
-      companyName: 'Prime Printing',
-      email: null,
-      phone: null,
-      phones: [],
-      whatsapp: null,
+      companyName: config.companyName || config.name || 'Prime ERP',
+      email: config.email || null,
+      phone: config.phone || null,
+      phones: config.phone ? [config.phone] : [],
+      whatsapp: config.whatsappNumber || config.whatsapp || null,
     };
   },
 

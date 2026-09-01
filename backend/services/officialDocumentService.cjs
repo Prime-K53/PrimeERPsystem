@@ -14,7 +14,7 @@
  */
 
 const path = require('path');
-const repo = require('./supabaseRepository.cjs');
+const { getCompanyConfig } = require('./companyConfigService.cjs');
 
 const portalPdfPostProcess = require('./portalPdfPostProcess.cjs');
 
@@ -47,77 +47,6 @@ async function isRendererAvailable() {
   try { await loadRenderer(); return true; } catch { return false; }
 }
 
-/**
- * Company configuration for branding/terms. Read from the cloud settings
- * table when present; otherwise null — the canonical mapper falls back to the
- * same safe placeholders the staff UI uses on a fresh install.
- */
-async function getCompanyConfig() {
-  let config = null;
-  try {
-    const rows = await repo.getAll('settings', { 'data->>key': 'eq.companyConfig' });
-    let row = (rows || [])[0];
-    if (!row) {
-      const allSettings = await repo.getAll('settings');
-      row = (allSettings || []).find(
-        (s) => s.key === 'companyConfig' || s.key === 'nexus_company_config' || s.id === 'companyConfig' || s.id === 'nexus_company_config'
-      );
-    }
-    if (row) {
-      const val = row.value ?? row.val ?? row.data?.value ?? row.data ?? row;
-      config = typeof val === 'string' ? JSON.parse(val) : val;
-    }
-  } catch (_) { /* branding is best-effort */ }
-
-  const defaultConfig = {
-    companyName: 'Prime Printing Service',
-    companyAddress: 'Along M5 Road Mtakataka',
-    companyPhone: '+265 992 526 222',
-    companyEmail: 'info@primeprinting.mw',
-    currencySymbol: 'K',
-    invoiceTemplates: {
-      engine: 'Classic',
-      accentColor: '#3b82f6',
-      companyNameFontSize: 18,
-      bodyFontSize: 12,
-      fontFamily: 'Helvetica',
-      logoWidth: 140,
-      showCompanyLogo: true,
-      showPaymentTerms: true,
-      showDueDate: true,
-      showOutstandingAndWalletBalances: true,
-      showAccountSummary: true,
-    },
-  };
-
-  if (!config) return defaultConfig;
-  const companyName = config.companyName || config.name || defaultConfig.companyName;
-  const companyAddress = config.companyAddress || config.addressLine1 || config.address || defaultConfig.companyAddress;
-  const companyPhone = config.companyPhone || config.phone || defaultConfig.companyPhone;
-  const companyEmail = config.companyEmail || config.email || defaultConfig.companyEmail;
-  const companyLogo = config.companyLogo || config.logo || config.logoUrl || null;
-
-  return {
-    ...defaultConfig,
-    ...config,
-    companyName,
-    companyAddress,
-    addressLine1: companyAddress,
-    companyPhone,
-    phone: companyPhone,
-    companyEmail,
-    email: companyEmail,
-    companyLogo,
-    logo: companyLogo,
-    logoUrl: companyLogo,
-    invoiceTemplates: {
-      ...defaultConfig.invoiceTemplates,
-      ...(config.invoiceTemplates || {}),
-      showOutstandingAndWalletBalances: config.invoiceTemplates?.showOutstandingAndWalletBalances !== false,
-      showAccountSummary: config.invoiceTemplates?.showAccountSummary !== false,
-    },
-  };
-}
 
 /**
  * Helper to resolve the authoritative line item description from an ERP line item object.

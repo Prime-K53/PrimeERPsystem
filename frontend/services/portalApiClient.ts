@@ -4,6 +4,12 @@ import { portalLog, readPortalCache, writePortalCache } from './portalCache';
 const PORTAL_SESSION_KEY = 'portal_session';
 const DEFAULT_TIMEOUT_MS = 15000;
 
+export interface PortalDownload {
+  blob: Blob;
+  filename: string | null;
+  contentType: string;
+}
+
 interface PortalSessionData {
   access_token: string;
   refresh_token: string;
@@ -223,6 +229,72 @@ async function request<T>(
   return data;
 }
 
+export function parseDownloadFilename(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null;
+
+  const encoded = contentDisposition.match(/filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim().replace(/^"|"$/g, ''));
+    } catch {
+      // Fall back to the plain filename parameter below.
+    }
+  }
+
+  const quoted = contentDisposition.match(/filename\s*=\s*"([^"]+)"/i)?.[1];
+  if (quoted) return quoted;
+
+  const unquoted = contentDisposition.match(/filename\s*=\s*([^;]+)/i)?.[1];
+  return unquoted ? unquoted.trim() : null;
+}
+
+async function requestDownload(
+  endpoint: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<PortalDownload> {
+  const url = `${API_BASE_URL}/portal${endpoint}`;
+  const timeoutMs = options.timeoutMs ?? 60000;
+  const headers: Record<string, string> = {
+    Accept: 'application/pdf',
+    ...(options.headers as Record<string, string>),
+  };
+
+  const token = getPortalAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let response = await fetchWithTimeout(url, { ...options, method: 'GET', headers }, timeoutMs);
+  if (response.status === 401 && !options.headers?.['X-Refresh-Attempt']) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers.Authorization = `Bearer ${newToken}`;
+      headers['X-Refresh-Attempt'] = 'true';
+      response = await fetchWithTimeout(url, { ...options, method: 'GET', headers }, timeoutMs);
+    } else {
+      clearPortalSession();
+      window.dispatchEvent(new Event('portal-session-expired'));
+    }
+  }
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const error: any = new Error(body.message || body.error || `Download failed with status ${response.status}`);
+    error.status = response.status;
+    error.body = body;
+    throw error;
+  }
+
+  const contentType = response.headers.get('Content-Type') || '';
+  if (!contentType.toLowerCase().includes('application/pdf')) {
+    throw new Error('The server did not return an official PDF statement.');
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: parseDownloadFilename(response.headers.get('Content-Disposition')),
+    contentType,
+  };
+}
+
 /**
  * Build a canonical query string used by both the API client and the modules
  * so local-first cache keys exactly match request URLs.
@@ -267,6 +339,10 @@ export const portalApi = {
 
   rawRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     return request<T>(endpoint, options);
+  },
+
+  download(endpoint: string): Promise<PortalDownload> {
+    return requestDownload(endpoint);
   },
 };
 
@@ -962,6 +1038,10 @@ export const portalLifecycle = {
       if (params?.endDate) qs.set('endDate', params.endDate);
       const q = qs.toString();
       return portalApi.get(q ? `/statements?${q}` : '/statements');
+    },
+    download(params: { startDate: string; endDate: string }): Promise<PortalDownload> {
+      const qs = new URLSearchParams({ from: params.startDate, to: params.endDate });
+      return portalApi.download(`/customers/statement/document?${qs.toString()}`);
     },
   },
 

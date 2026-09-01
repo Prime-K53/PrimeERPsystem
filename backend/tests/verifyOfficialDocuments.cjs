@@ -6,9 +6,9 @@
  *   2. Runtime dependencies: react, react-dom, @react-pdf/renderer, qrcode, pdf-lib
  *   3. All 6 document types: INVOICE, QUOTATION, ORDER, RECEIPT, DELIVERY_NOTE, ACCOUNT_STATEMENT
  *   4. Output validity: Buffer > 0 bytes, starts with %PDF-
- *   5. Watermark & Security:
- *        - source: 'portal' -> PORTAL COPY + DOWNLOADED FROM CUSTOMER PORTAL present in PDF
- *        - source: 'erp' -> PORTAL COPY absent from PDF
+ *   5. Portal metadata & Security:
+ *        - source: 'portal' -> portal metadata/permissions present, but no visual watermark overlay
+ *        - source: 'erp' -> no portal metadata
  *   6. Slash-containing IDs: INV-P726%2F027 decoded correctly
  *   7. Accounting firewall: zero database writes during PDF rendering
  */
@@ -130,8 +130,8 @@ async function runVerification() {
     });
   }
 
-  // 4. Portal watermark verification
-  await test('Portal document (source: "portal") contains PORTAL COPY watermark & security metadata', async () => {
+  // 4. Portal metadata verification
+  await test('Portal document (source: "portal") keeps authoritative PDF content and adds only portal metadata', async () => {
     const { buffer } = await officialDocumentService.renderOfficialPdf({
       type: 'INVOICE',
       rawData: {
@@ -155,15 +155,16 @@ async function runVerification() {
     assert.strictEqual(pdfDoc.getSubject(), 'Customer Portal Download',
       'Subject must be set to Customer Portal Download');
 
-    // Verify watermark text is embedded in PDF stream bytes
     const pdfString = buffer.toString('latin1');
-    assert.ok(
-      pdfString.includes('PORTAL COPY') || pdfString.includes('PORTAL'),
-      'PDF stream must contain PORTAL watermark text'
+    assert.strictEqual(
+      pdfString.includes('PORTAL COPY'),
+      false,
+      'Portal PDF must not contain a visual PORTAL COPY watermark'
     );
-    assert.ok(
-      pdfString.includes('DOWNLOADED FROM CUSTOMER PORTAL') || pdfString.includes('PORTAL'),
-      'PDF stream must contain DOWNLOADED FROM CUSTOMER PORTAL footer text'
+    assert.strictEqual(
+      pdfString.includes('DOWNLOADED FROM CUSTOMER PORTAL'),
+      false,
+      'Portal PDF must not contain a portal-only footer overlay'
     );
   });
 

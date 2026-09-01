@@ -145,6 +145,64 @@ const formatSecurityTimestamp = (value?: string) => {
   return String(value || 'Unknown time');
 };
 
+const pickFirstText = (...values: Array<unknown>) => {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
+};
+
+const buildCompanyAddress = (config?: CompanyConfig | null) => {
+  return [config?.addressLine1, config?.city, config?.country]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+};
+
+const normalizeCompanyIdentity = (config?: CompanyConfig | null) => {
+  const companyName = pickFirstText(config?.companyName, 'Prime ERP');
+  const companyAddress = buildCompanyAddress(config);
+  const rawPhone = pickFirstText(config?.phone);
+  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, '$1 | ');
+  const companyEmail = pickFirstText(config?.email);
+  const website = pickFirstText((config as any)?.website, (config as any)?.companyWebsite);
+  return {
+    companyName,
+    companyAddress,
+    rawPhone,
+    formattedPhone,
+    companyPhone: formattedPhone || rawPhone,
+    companyEmail,
+    website,
+  };
+};
+
+const resolveFooterText = (config: CompanyConfig | null | undefined, paymentTermsLabel: string, showPaymentTerms: boolean) => {
+  const configuredFooter = pickFirstText(
+    config?.footer,
+    config?.receiptFooter,
+    config?.transactionSettings?.pos?.receiptFooter
+  );
+  if (configuredFooter) {
+    return configuredFooter;
+  }
+  return showPaymentTerms
+    ? `This is a computer-generated document. No signature required. Payment terms: ${paymentTermsLabel}.`
+    : 'This is a computer-generated document. No signature required.';
+};
+
+const buildFooterContactLine = (config?: CompanyConfig | null) => {
+  const { companyName, companyAddress, companyPhone, companyEmail, website } = normalizeCompanyIdentity(config);
+  return [
+    companyName,
+    companyAddress,
+    companyPhone ? `Phone ${companyPhone}` : '',
+    companyEmail,
+    website,
+  ].filter(Boolean).join(', ');
+};
+
 const isCancelledStatus = (status?: string | boolean, data?: any): boolean => {
   if (data?.isCancelled === true || data?.cancelled === true) return true;
   const str = String(status || data?.status || data?.transactionStatus || data?.paymentStatus || data?.orderStatus || '').trim().toLowerCase();
@@ -244,12 +302,7 @@ const CleanInvoiceTemplate = ({
   const fontScale = templateSettings.bodyFontSize / 12;
 
   // Company Details
-  const companyName = config?.companyName || 'Prime Printing & Stationery';
-  const companyAddress = config?.addressLine1 || 'Lilongwe, Malawi';
-  const rawPhone = config?.phone || '';
-  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, '$1 | ');
-  const companyPhone = formattedPhone || 'N/A';
-  const companyEmail = config?.email || 'N/A';
+  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
   const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
   
   const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
@@ -298,13 +351,8 @@ const CleanInvoiceTemplate = ({
 
   const showPaymentTerms = templateSettings.showPaymentTerms;
   const paymentTermsLabel = String(dataAny.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
-   
-  const companyEnquiryLine = [companyName, companyAddress].filter(Boolean).join(', ');
-  const companyFlatContact1 = `${companyEnquiryLine}, Phone ${companyPhone}`;
-  const legalFooterLine1 = showPaymentTerms
-    ? `This is a computer-generated document. No signature required. Payment terms: ${paymentTermsLabel}.`
-    : 'This is a computer-generated document. No signature required, For enquiries contact:';
-  const legalFooterLine2 = `${companyFlatContact1}`;
+  const legalFooterLine1 = resolveFooterText(config, paymentTermsLabel, showPaymentTerms);
+  const legalFooterLine2 = buildFooterContactLine(config);
 
   const renderRow = (item: any, i: number) => {
     const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
@@ -355,9 +403,9 @@ const CleanInvoiceTemplate = ({
               ) : (
                 <Text style={{ fontSize: templateSettings.companyNameFontSize, fontWeight: 'bold', color: accentColor, marginBottom: 8 }}>{companyName}</Text>
               )}
-              <Text style={{ fontSize: 9 * fontScale, color: '#64748b', lineHeight: 1.4 }}>{companyAddress}</Text>
-              <Text style={{ fontSize: 9 * fontScale, color: '#64748b', marginTop: 2 }}>{companyPhone}</Text>
-              {companyEmail !== 'N/A' && <Text style={{ fontSize: 9 * fontScale, color: '#64748b', marginTop: 2 }}>{companyEmail}</Text>}
+              {!!companyAddress && <Text style={{ fontSize: 9 * fontScale, color: '#64748b', lineHeight: 1.4 }}>{companyAddress}</Text>}
+              {!!companyPhone && <Text style={{ fontSize: 9 * fontScale, color: '#64748b', marginTop: 2 }}>{companyPhone}</Text>}
+              {!!companyEmail && <Text style={{ fontSize: 9 * fontScale, color: '#64748b', marginTop: 2 }}>{companyEmail}</Text>}
            </View>
            <View style={{ flex: 1, alignItems: 'flex-end', textAlign: 'right' }}>
               <Text style={{ fontSize: 26 * fontScale, fontWeight: '300', color: '#1e293b', letterSpacing: 1.5 }}>{docTitle}</Text>
@@ -584,9 +632,7 @@ const ModernInvoiceTemplate = ({
   const fontScale = templateSettings.bodyFontSize / 12;
 
   // Company Details
-  const companyName = config?.companyName || 'Prime Printing & Stationery';
-  const companyPhone = config?.phone || 'N/A';
-  const companyEmail = config?.email || 'N/A';
+  const { companyName, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
   const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
   
   const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
@@ -727,8 +773,8 @@ const ModernInvoiceTemplate = ({
             <View style={{ backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 12, minWidth: 150 }}>
               <Text style={{ color: '#ffffff', fontSize: 10 * fontScale, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>COMPANY INFO</Text>
             </View>
-            {companyPhone !== 'N/A' && <Text style={{ fontSize: 11 * fontScale, color: '#333333', marginBottom: 3 }}>{companyPhone}</Text>}
-            {companyEmail !== 'N/A' && <Text style={{ fontSize: 11 * fontScale, color: '#333333', marginBottom: 3 }}>{companyEmail}</Text>}
+            {!!companyPhone && <Text style={{ fontSize: 11 * fontScale, color: '#333333', marginBottom: 3 }}>{companyPhone}</Text>}
+            {!!companyEmail && <Text style={{ fontSize: 11 * fontScale, color: '#333333', marginBottom: 3 }}>{companyEmail}</Text>}
           </View>
           
           <View style={{ flex: 1 }}>
@@ -854,8 +900,8 @@ const ModernInvoiceTemplate = ({
               </View>
               <View style={{ justifyContent: 'center', flex: 1 }}>
                 <Text style={{ fontWeight: 'bold', fontSize: 11 * fontScale, color: '#111111', marginBottom: 4 }}>More Info:</Text>
-                {companyPhone !== 'N/A' && <Text style={{ fontSize: 10 * fontScale, color: '#333333', marginBottom: 2 }}>{companyPhone}</Text>}
-                {companyEmail !== 'N/A' && <Text style={{ fontSize: 10 * fontScale, color: '#333333' }}>{companyEmail}</Text>}
+                {!!companyPhone && <Text style={{ fontSize: 10 * fontScale, color: '#333333', marginBottom: 2 }}>{companyPhone}</Text>}
+                {!!companyEmail && <Text style={{ fontSize: 10 * fontScale, color: '#333333' }}>{companyEmail}</Text>}
               </View>
             </View>
           </View>
@@ -894,12 +940,7 @@ const ProfessionalInvoiceTemplate = ({
   const fontScale = templateSettings.bodyFontSize / 12;
 
   // Company Details
-  const companyName = config?.companyName || 'Prime Printing & Stationery';
-  const companyAddress = config?.addressLine1 || 'Lilongwe, Malawi';
-  const rawPhone = config?.phone || '';
-  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, '$1 | ');
-  const companyPhone = formattedPhone || 'N/A';
-  const companyEmail = config?.email || 'N/A';
+  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
   const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
   
   const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
@@ -998,9 +1039,9 @@ const ProfessionalInvoiceTemplate = ({
           </View>
           <View style={{ textAlign: 'right', alignItems: 'flex-end' }}>
             <Text style={{ fontSize: 13 * fontScale, fontWeight: 'bold', color: '#111111', marginBottom: 2 }}>{companyName}</Text>
-            <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyAddress}</Text>
-            <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyPhone}</Text>
-            {companyEmail !== 'N/A' && <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyEmail}</Text>}
+            {!!companyAddress && <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyAddress}</Text>}
+            {!!companyPhone && <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyPhone}</Text>}
+            {!!companyEmail && <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyEmail}</Text>}
           </View>
         </View>
 
@@ -1128,10 +1169,10 @@ const ProfessionalInvoiceTemplate = ({
               
               <View style={{ alignItems: 'flex-start', width: '100%' }}>
                <Text style={{ fontSize: 8 * fontScale, color: '#aaaaaa', lineHeight: 1.4, textAlign: 'left', marginTop: 4 }}>
-                   This is a computer-generated document. No signature required, For enquiries contact:
+                   {resolveFooterText(config, getDefaultPaymentTermsLabel(config), templateSettings.showPaymentTerms)}
                  </Text>
                  <Text style={{ fontSize: 8 * fontScale, color: '#aaaaaa', lineHeight: 1.4, textAlign: 'left', marginTop: 1 }}>
-                   {`${companyName}, ${companyAddress}, Phone ${companyPhone}`}
+                   {buildFooterContactLine(config)}
                 </Text>
              </View>
           </View>
@@ -1166,22 +1207,11 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   const showAccountSummary = templateSettings.showAccountSummary;
   const showConversionHistory = templateSettings.showConversionHistory !== false;
   const paymentTermsLabel = String(dataAny?.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
-  const companyName = config?.companyName || 'Prime Printing & Stationery';
-  const companyAddress = config?.addressLine1 || 'Lilongwe, Malawi';
+  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
 
-  // Format phone numbers if they are concatenated without separators
-  const rawPhone = config?.phone || '';
-  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, '$1 | ');
-  const companyPhone = formattedPhone || 'N/A';
-  const companyEmail = config?.email || 'N/A';
-
-  const companyContact = `${formattedPhone} | ${config?.email || ''}`;
-  const companyEnquiryLine = [companyName, companyAddress].filter(Boolean).join(', ');
-  const companyFlatContact2 = `${companyEnquiryLine}, Phone ${companyPhone}`;
-  const legalFooterLine1 = showPaymentTerms
-    ? `This is a computer-generated document. No signature required. Payment terms: ${paymentTermsLabel}.`
-    : 'This is a computer-generated document. No signature required, For enquiries contact:';
-  const legalFooterLine2 = `${companyFlatContact2}`;
+  const companyContact = [formattedPhone, companyEmail].filter(Boolean).join(' | ');
+  const legalFooterLine1 = resolveFooterText(config, paymentTermsLabel, showPaymentTerms);
+  const legalFooterLine2 = buildFooterContactLine(config);
   const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
   const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
@@ -1504,7 +1534,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             data={rc}
             companyName={companyName}
             legalFooterLine1="This is a computer-generated payment receipt. No signature required if digitally authorized."
-            legalFooterLine2={`${companyName}, ${companyAddress}, Phone ${companyPhone}`}
+            legalFooterLine2={buildFooterContactLine(config)}
             fontScale={fontScale}
           />
         </Page>

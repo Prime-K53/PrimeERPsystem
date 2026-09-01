@@ -155,9 +155,9 @@ const styles = StyleSheet.create({
 export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) => {
   const config = getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config);
-  const companyName = config?.companyName || 'Prime Printing & Stationery';
-  const companyAddress = config?.addressLine1 || 'Lilongwe, Malawi';
-  const companyContact = `${config?.phone || ''} | ${config?.email || ''}`;
+  const companyName = String(config?.companyName || '').trim() || 'Prime ERP';
+  const companyAddress = [config?.addressLine1, config?.city, config?.country].filter(Boolean).join(', ');
+  const companyContact = [config?.phone || '', config?.email || ''].filter(Boolean).join(' | ');
   const logo = resolvePdfLogoSource(config, true);
 
   return (
@@ -233,8 +233,8 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
         ))}
 
         <View style={styles.footer}>
-          <Text>This is a computer-generated statement and does not require a signature.</Text>
-          <Text>Please contact {config?.email || 'accounts@prime-erp.com'} for any discrepancies.</Text>
+          <Text>{String(config?.footer || '').trim() || 'This is a computer-generated statement and does not require a signature.'}</Text>
+          <Text>Please contact {config?.email || 'info@primeerp.com'} for any discrepancies.</Text>
         </View>
       </Page>
     </Document>

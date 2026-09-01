@@ -150,8 +150,12 @@ export const PosReceiptSchema = z.object({
 
 // 4. Statement Schema
 export const StatementSchema = z.object({
+  number: z.string().optional(),
+  statementNumber: z.string().optional(),
   date: z.string(), // Issue date
   customerName: z.string(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
   startDate: z.string(),
   endDate: z.string(),
   currency: z.string().default('MWK'),

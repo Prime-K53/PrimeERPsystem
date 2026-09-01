@@ -1,15 +1,10 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   FileText, Download, Loader2, Share2, CheckCircle2, X, CalendarDays,
 } from 'lucide-react';
-import { createElement } from 'react';
-import { pdf } from '@react-pdf/renderer';
 import { portalLifecycle } from '../../services/portalApiClient';
-
-import { attachDocumentSecurity } from '../../utils/documentSecurity';
-import { initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
-import { PrimeDocument } from '../shared/components/PDF/PrimeDocument';
-import { useAuth } from '../../context/AuthContext';
+import { useCustomerAuth } from '../../context/CustomerAuthContext';
+import { downloadBlob } from '../../utils/helpers';
 import { useSearchParams } from 'react-router-dom';
 import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
@@ -29,6 +24,8 @@ interface Transaction {
 }
 
 interface StatementData {
+  customer_id?: string;
+  customer_name?: string;
   opening_balance: number;
   closing_balance: number;
   outstanding_balance?: number;
@@ -222,7 +219,8 @@ interface StatementExportDialogProps {
   data: StatementData;
   startDate: string;
   endDate: string;
-  companyName?: string;
+  customerId?: string;
+  customerName?: string;
   periodFilter: PeriodFilter;
 }
 
@@ -232,66 +230,28 @@ const StatementExportDialog: React.FC<StatementExportDialogProps> = ({
   data,
   startDate,
   endDate,
-  companyName,
+  customerId,
+  customerName,
   periodFilter,
 }) => {
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  // Stable, human-friendly account ID derived from the company name.
-  const accountId = useMemo(() => {
-    const base = (companyName || 'CUS').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) || 'CUS';
-    const code = [...base].reduce((acc, ch) => acc + ch.charCodeAt(0), 0).toString(16).toUpperCase().padStart(4, '0');
-    return `ACC-${base}-${code}`;
-  }, [companyName]);
 
   const handleDownloadPdf = useCallback(async () => {
     setDownloading(true);
+    setDownloadError(null);
     try {
-      await initializePrimePdfFonts();
-
-      const transactions = (data.transactions || []).map((t) => ({
-        date: t.date,
-        reference: t.reference || '',
-        memo: t.description || '',
-        debit: Number(t.debit || 0),
-        credit: Number(t.credit || 0),
-        runningBalance: Number(t.balance || 0),
-      }));
-
-      const totalInvoiced = transactions.reduce((sum, t) => sum + t.debit, 0);
-      const totalReceived = transactions.reduce((sum, t) => sum + t.credit, 0);
-
-      const statementData = {
-        date: new Date().toLocaleDateString(),
-        customerName: companyName || 'Customer',
-        startDate: startDate || 'N/A',
-        endDate: endDate || 'N/A',
-        currency: 'MWK',
-        openingBalance: Number(data.opening_balance || 0),
-        transactions,
-        totalInvoiced,
-        totalReceived,
-        finalBalance: Number(data.closing_balance || 0),
-      };
-
-      const secured = await attachDocumentSecurity(statementData, companyName);
-      const blob = await pdf(createElement(PrimeDocument as any, { type: 'ACCOUNT_STATEMENT', data: secured }) as any).toBlob();
-
-      const url = URL.createObjectURL(blob);
-      const a = window.document.createElement('a');
-      a.href = url;
-      a.download = `Statement-${startDate || 'start'}_to_${endDate || 'end'}.pdf`;
-      window.document.body.appendChild(a);
-      a.click();
-      window.document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Failed to generate statement PDF:', err);
+      const result = await portalLifecycle.statements.download({ startDate, endDate });
+      const fallbackName = `Statement-${customerId || 'customer'}_${startDate}_to_${endDate}.pdf`;
+      downloadBlob(result.blob, result.filename || fallbackName);
+    } catch (err: any) {
+      console.error('Failed to download official statement PDF:', err);
+      setDownloadError(err?.message || 'Failed to download the official customer statement.');
     } finally {
       setDownloading(false);
     }
-  }, [data, startDate, endDate, companyName]);
+  }, [customerId, startDate, endDate]);
 
   const handleCopyLink = useCallback(async () => {
     try {
@@ -395,8 +355,8 @@ const StatementExportDialog: React.FC<StatementExportDialogProps> = ({
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
               {[
-                { label: 'Company', value: companyName || 'Customer', mono: false },
-                { label: 'Account ID', value: accountId, mono: true },
+                { label: 'Customer', value: customerName || 'Customer', mono: false },
+                { label: 'Customer ID', value: customerId || 'N/A', mono: true },
                 { label: 'Statement Period', value: `${startDate} to ${endDate}`, mono: false },
               ].map((row) => (
                 <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
@@ -463,8 +423,14 @@ const StatementExportDialog: React.FC<StatementExportDialogProps> = ({
               ) : (
                 <Download size={18} />
               )}
-              {downloading ? 'Generating...' : 'Download Official PDF Statement'}
+              {downloading ? 'Downloading...' : 'Download Official PDF Statement'}
             </button>
+
+            {downloadError && (
+              <div style={{ padding: '10px 12px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', fontSize: 12, fontWeight: 500 }}>
+                {downloadError}
+              </div>
+            )}
 
             <button
               onClick={handleCopyLink}
@@ -529,7 +495,7 @@ const CustomerAccountStatements: React.FC = () => {
     return PERIODS.some(({ key }) => key === p) ? (p as PeriodFilter) : 'all';
   });
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const { companyConfig } = useAuth();
+  const { user } = useCustomerAuth();
 
   // Keep the shareable ?period= param in sync so shared links land on the right period.
   const setPeriodFilter = useCallback((filter: PeriodFilter) => {
@@ -762,7 +728,8 @@ const CustomerAccountStatements: React.FC = () => {
         data={data || { opening_balance: 0, closing_balance: 0, transactions: [] }}
         startDate={currentStart}
         endDate={currentEnd}
-        companyName={companyConfig?.companyName}
+        customerId={data?.customer_id || user?.customer_id}
+        customerName={data?.customer_name || user?.full_name}
         periodFilter={periodFilter}
       />
     </div>

@@ -279,7 +279,7 @@ const [isModalOpen, setIsModalOpen] = useState(false);
         const newItem = await addItem(savedItem);
         notify?.('Item created successfully', 'success');
         if (newItem?.id) {
-          navigate(`/supply-chain/inventory/${newItem.id}`);
+          navigate(`/supply-chain/inventory/${encodeURIComponent(newItem.id)}`);
           setIsModalOpen(false);
           setEditingItem(null);
           return;
@@ -294,7 +294,7 @@ const [isModalOpen, setIsModalOpen] = useState(false);
   }, [updateItem, addItem, notify, refresh, navigate]);
 
   const handleViewItem = useCallback((item: Item) => {
-    navigate(`/supply-chain/inventory/${item.id}`);
+    navigate(`/supply-chain/inventory/${encodeURIComponent(item.id)}`);
   }, [navigate]);
 
 const handleProduce = useCallback((item: Item) => {
@@ -332,7 +332,7 @@ const handleProduce = useCallback((item: Item) => {
   }, []);
 
   const handleTransferStock = useCallback((item: Item) => {
-    navigate(`/supply-chain/inventory/${item.id}?tab=warehouses`);
+    navigate(`/supply-chain/inventory/${encodeURIComponent(item.id)}?tab=warehouses`);
   }, [navigate]);
 
   const handleToggleStatus = useCallback(async (item: Item) => {

@@ -230794,9 +230794,13 @@ var PosReceiptSchema = external_exports.object({
   }).optional()
 });
 var StatementSchema = external_exports.object({
+  number: external_exports.string().optional(),
+  statementNumber: external_exports.string().optional(),
   date: external_exports.string(),
   // Issue date
   customerName: external_exports.string(),
+  address: external_exports.string().optional(),
+  phone: external_exports.string().optional(),
   startDate: external_exports.string(),
   endDate: external_exports.string(),
   currency: external_exports.string().default("MWK"),
@@ -231858,8 +231862,9 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
   const isWorkOrder = targetType === "WORK_ORDER" || "quantityPlanned" in item;
   const isPurchaseOrder = targetType === "PO";
   const isQuotation = targetType === "QUOTATION" || !isInvoice && !isSubscription && !isDeliveryNote && !isJobOrder && !isWorkOrder && !isPurchaseOrder && !isOrder && !("totalAmount" in item);
-  const docType = targetType || (isExaminationInvoice ? "EXAMINATION_INVOICE" : isSubscription ? "SUBSCRIPTION" : isDeliveryNote ? "DELIVERY_NOTE" : isJobOrder ? "WORK_ORDER" : isWorkOrder ? "WORK_ORDER" : isInvoice ? "INVOICE" : isOrder ? "SALES_ORDER" : "QUOTATION");
-  const resolvedNumber = docType === "INVOICE" || docType === "EXAMINATION_INVOICE" ? item.invoiceNumber || item.id?.toString() || "TBD" : docType === "ORDER" || docType === "SALES_ORDER" || docType === "WORK_ORDER" ? item.orderNumber || item.id?.toString() || "TBD" : docType === "DELIVERY_NOTE" ? item.dnNumber || item.deliveryNoteNumber || item.id?.toString() || "TBD" : item.id?.toString() || item.invoiceNumber || item.orderNumber || "TBD";
+  const isStatement = targetType === "ACCOUNT_STATEMENT" || targetType === "ACCOUNT_STATEMENT_SUMMARY" || "finalBalance" in item && "openingBalance" in item && Array.isArray(item.transactions);
+  const docType = targetType || (isStatement ? "ACCOUNT_STATEMENT" : isExaminationInvoice ? "EXAMINATION_INVOICE" : isSubscription ? "SUBSCRIPTION" : isDeliveryNote ? "DELIVERY_NOTE" : isJobOrder ? "WORK_ORDER" : isWorkOrder ? "WORK_ORDER" : isInvoice ? "INVOICE" : isOrder ? "SALES_ORDER" : "QUOTATION");
+  const resolvedNumber = isStatement ? String(item.statementNumber || item.number || "").trim() : docType === "INVOICE" || docType === "EXAMINATION_INVOICE" ? item.invoiceNumber || item.id?.toString() || "TBD" : docType === "ORDER" || docType === "SALES_ORDER" || docType === "WORK_ORDER" ? item.orderNumber || item.id?.toString() || "TBD" : docType === "DELIVERY_NOTE" ? item.dnNumber || item.deliveryNoteNumber || item.id?.toString() || "TBD" : item.id?.toString() || item.invoiceNumber || item.orderNumber || "TBD";
   const explicitConversionDetails = item.conversionDetails ? {
     sourceType: item.conversionDetails.sourceType || item.conversionDetails.source_type || "Quotation",
     sourceNumber: item.conversionDetails.sourceNumber || item.conversionDetails.source_number || item.quotationId || item.quotation_id || item.orderNumber || item.invoiceNumber || item.invoiceId || "N/A",
@@ -231994,6 +231999,33 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
     }
     return item.status || "Pending";
   })();
+  if (docType === "ACCOUNT_STATEMENT" || docType === "ACCOUNT_STATEMENT_SUMMARY") {
+    const statementTransactions = Array.isArray(item.transactions) ? item.transactions : [];
+    const statementData = {
+      number: resolvedNumber || void 0,
+      statementNumber: resolvedNumber || void 0,
+      date: String(item.date || (/* @__PURE__ */ new Date()).toLocaleDateString()),
+      customerName: resolveFirstText(item.customerName, item.customer_name, item.clientName, item.client_name) || "Customer",
+      address: resolveFirstText(item.address, item.customerAddress, item.customer_address, item.billingAddress, item.billing_address),
+      phone: resolveFirstText(item.phone, item.customerPhone, item.customer_phone),
+      startDate: String(item.startDate || item.start_date || "N/A"),
+      endDate: String(item.endDate || item.end_date || "N/A"),
+      currency,
+      openingBalance: toNum(item.openingBalance ?? item.opening_balance ?? 0),
+      transactions: statementTransactions.map((txn) => ({
+        date: String(txn.date || ""),
+        reference: String(txn.reference || txn.ref || ""),
+        memo: resolveFirstText(txn.memo, txn.description, txn.details),
+        debit: toNum(txn.debit),
+        credit: toNum(txn.credit),
+        runningBalance: toNum(txn.runningBalance ?? txn.balance)
+      })),
+      totalInvoiced: toNum(item.totalInvoiced ?? item.total_invoiced ?? statementTransactions.reduce((sum, txn) => sum + toNum(txn.debit), 0)),
+      totalReceived: toNum(item.totalReceived ?? item.total_received ?? statementTransactions.reduce((sum, txn) => sum + toNum(txn.credit), 0)),
+      finalBalance: toNum(item.finalBalance ?? item.closingBalance ?? item.closing_balance ?? 0)
+    };
+    return StatementSchema.parse(statementData);
+  }
   if (docType === "INVOICE" || docType === "EXAMINATION_INVOICE" || docType === "SALES_ORDER" || docType === "PO" || docType === "QUOTATION" || docType === "ORDER" || docType === "SUBSCRIPTION") {
     const financialData = {
       ...baseData,
@@ -232925,6 +232957,38 @@ var formatAmount = (amount) => {
     maximumFractionDigits: 2
   });
 };
+var pickFirstText = (...values) => {
+  for (const value2 of values) {
+    const normalized = String(value2 ?? "").trim();
+    if (normalized) return normalized;
+  }
+  return "";
+};
+var buildCompanyAddress = (config2) => {
+  return [config2?.addressLine1, config2?.city, config2?.country].map((value2) => String(value2 ?? "").trim()).filter(Boolean).join(", ");
+};
+var buildFooterLine1 = (config2) => {
+  return pickFirstText(
+    config2?.footer,
+    config2?.receiptFooter,
+    config2?.transactionSettings?.pos?.receiptFooter,
+    "This is a computer-generated document. No signature required."
+  );
+};
+var buildFooterLine2 = (config2) => {
+  const companyName = pickFirstText(config2?.companyName, "Prime ERP");
+  const address = buildCompanyAddress(config2);
+  const phone = pickFirstText(config2?.phone);
+  const email3 = pickFirstText(config2?.email);
+  const website = pickFirstText(config2?.website, config2?.companyWebsite);
+  return [
+    companyName,
+    address,
+    phone ? `Phone ${phone}` : "",
+    email3,
+    website
+  ].filter(Boolean).join(", ");
+};
 var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
   const currency = data2.currency || "MWK";
   const config2 = configOverride || getStoredCompanyConfig();
@@ -232933,7 +232997,11 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
     fontFamily: templateSettings.fontFamily,
     fontSize: templateSettings.bodyFontSize
   };
-  const companyName = config2?.companyName || "PRIME PRINTING INC";
+  const companyName = pickFirstText(config2?.companyName, "Prime ERP");
+  const companyAddress = buildCompanyAddress(config2);
+  const companyPhone = pickFirstText(config2?.phone);
+  const companyEmail = pickFirstText(config2?.email);
+  const companyWebsite = pickFirstText(config2?.website, config2?.companyWebsite);
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
   const fontScale = templateSettings.bodyFontSize / 12;
   const isCancelled = String(data2.status || data2.transactionStatus || "").toLowerCase() === "cancelled" || String(data2.status || data2.transactionStatus || "").toLowerCase() === "canceled" || data2.isCancelled === true || data2.cancelled === true;
@@ -232941,7 +233009,7 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
     Document,
     {
       title: `Statement - ${data2.customerName}`,
-      author: "Prime ERP",
+      author: companyName,
       subject: "Account Statement Summary",
       creator: "Prime ERP System",
       children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
@@ -232961,7 +233029,15 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.headerContainer, children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.companySide, children: [
-            logo ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Image, { src: logo, style: { marginBottom: 6, width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: "#1e293b", marginBottom: 2 }, children: companyName }),
+            logo ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Image, { src: logo, style: { marginBottom: 6, width: templateSettings.logoWidth } }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: "#1e293b", marginBottom: 2 }, children: companyName }),
+            companyAddress ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyAddress }) : null,
+            companyPhone ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: [
+              "Phone ",
+              companyPhone
+            ] }) : null,
+            companyEmail ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyEmail }) : null,
+            companyWebsite ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyWebsite }) : null,
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(View, { style: { marginTop: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", fontStyle: "italic", marginTop: 2 }, children: [
               "Generated on: ",
               (/* @__PURE__ */ new Date()).toLocaleString("en-GB")
@@ -232969,6 +233045,10 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.statementSide, children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: [docStyles.title, { fontSize: 24, marginBottom: 2 }], children: "Account Statement" }),
+            Boolean(data2.statementNumber || data2.number) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontSize: 10, color: "#64748b", marginBottom: 2 }, children: [
+              "Statement Number: ",
+              String(data2.statementNumber || data2.number)
+            ] }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontSize: 10, color: "#64748b", marginBottom: 5 }, children: [
               data2.startDate,
               " \u2014 ",
@@ -233034,8 +233114,8 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
         ] }, i2)),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.securityFooter, fixed: true, children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.securityFooterText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: [docStyles.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: "This is a computer-generated document. No signature required. For enquiries contact:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: [docStyles.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: `${companyName}${config2?.addressLine1 ? `, ${config2.addressLine1}` : ""}${config2?.phone ? `, Phone ${config2.phone}` : ""}` })
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: [docStyles.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: buildFooterLine1(config2) }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: [docStyles.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: buildFooterLine2(config2) })
           ] }),
           (() => {
             const qrUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
@@ -233129,6 +233209,54 @@ var formatSecurityTimestamp = (value2) => {
   }
   return String(value2 || "Unknown time");
 };
+var pickFirstText2 = (...values) => {
+  for (const value2 of values) {
+    const normalized = String(value2 ?? "").trim();
+    if (normalized) return normalized;
+  }
+  return "";
+};
+var buildCompanyAddress2 = (config2) => {
+  return [config2?.addressLine1, config2?.city, config2?.country].map((value2) => String(value2 ?? "").trim()).filter(Boolean).join(", ");
+};
+var normalizeCompanyIdentity = (config2) => {
+  const companyName = pickFirstText2(config2?.companyName, "Prime ERP");
+  const companyAddress = buildCompanyAddress2(config2);
+  const rawPhone = pickFirstText2(config2?.phone);
+  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, "$1 | ");
+  const companyEmail = pickFirstText2(config2?.email);
+  const website = pickFirstText2(config2?.website, config2?.companyWebsite);
+  return {
+    companyName,
+    companyAddress,
+    rawPhone,
+    formattedPhone,
+    companyPhone: formattedPhone || rawPhone,
+    companyEmail,
+    website
+  };
+};
+var resolveFooterText = (config2, paymentTermsLabel, showPaymentTerms) => {
+  const configuredFooter = pickFirstText2(
+    config2?.footer,
+    config2?.receiptFooter,
+    config2?.transactionSettings?.pos?.receiptFooter
+  );
+  if (configuredFooter) {
+    return configuredFooter;
+  }
+  return showPaymentTerms ? `This is a computer-generated document. No signature required. Payment terms: ${paymentTermsLabel}.` : "This is a computer-generated document. No signature required.";
+};
+var buildFooterContactLine = (config2) => {
+  const { companyName, companyAddress, companyPhone, companyEmail, website } = normalizeCompanyIdentity(config2);
+  return [
+    companyName,
+    companyAddress,
+    companyPhone ? `Phone ${companyPhone}` : "",
+    companyEmail,
+    website
+  ].filter(Boolean).join(", ");
+};
 var isCancelledStatus = (status, data2) => {
   if (data2?.isCancelled === true || data2?.cancelled === true) return true;
   const str = String(status || data2?.status || data2?.transactionStatus || data2?.paymentStatus || data2?.orderStatus || "").trim().toLowerCase();
@@ -233186,12 +233314,7 @@ var CleanInvoiceTemplate = ({
 }) => {
   const dataAny = data2;
   const fontScale = templateSettings.bodyFontSize / 12;
-  const companyName = config2?.companyName || "Prime Printing & Stationery";
-  const companyAddress = config2?.addressLine1 || "Lilongwe, Malawi";
-  const rawPhone = config2?.phone || "";
-  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, "$1 | ");
-  const companyPhone = formattedPhone || "N/A";
-  const companyEmail = config2?.email || "N/A";
+  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
   const currency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
   const accentColor = templateSettings.accentColor || "#5a9e96";
@@ -233228,10 +233351,8 @@ var CleanInvoiceTemplate = ({
   const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
   const showPaymentTerms = templateSettings.showPaymentTerms;
   const paymentTermsLabel = String(dataAny.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
-  const companyEnquiryLine = [companyName, companyAddress].filter(Boolean).join(", ");
-  const companyFlatContact1 = `${companyEnquiryLine}, Phone ${companyPhone}`;
-  const legalFooterLine1 = showPaymentTerms ? `This is a computer-generated document. No signature required. Payment terms: ${paymentTermsLabel}.` : "This is a computer-generated document. No signature required, For enquiries contact:";
-  const legalFooterLine2 = `${companyFlatContact1}`;
+  const legalFooterLine1 = resolveFooterText(config2, paymentTermsLabel, showPaymentTerms);
+  const legalFooterLine2 = buildFooterContactLine(config2);
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
     let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "";
@@ -233276,9 +233397,9 @@ var CleanInvoiceTemplate = ({
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 40 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
         !!logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth, marginBottom: 10 } }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: accentColor, marginBottom: 8 }, children: companyName }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", lineHeight: 1.4 }, children: companyAddress }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", marginTop: 2 }, children: companyPhone }),
-        companyEmail !== "N/A" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", marginTop: 2 }, children: companyEmail })
+        !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", lineHeight: 1.4 }, children: companyAddress }),
+        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", marginTop: 2 }, children: companyPhone }),
+        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", marginTop: 2 }, children: companyEmail })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 26 * fontScale, fontWeight: "300", color: "#1e293b", letterSpacing: 1.5 }, children: docTitle }),
@@ -233484,9 +233605,7 @@ var ModernInvoiceTemplate = ({
 }) => {
   const dataAny = data2;
   const fontScale = templateSettings.bodyFontSize / 12;
-  const companyName = config2?.companyName || "Prime Printing & Stationery";
-  const companyPhone = config2?.phone || "N/A";
-  const companyEmail = config2?.email || "N/A";
+  const { companyName, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
   const currency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
   const accentColor = templateSettings.accentColor || "#739F99";
@@ -233597,8 +233716,8 @@ var ModernInvoiceTemplate = ({
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 30 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, paddingRight: 20 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: "flex-start", marginBottom: 12, minWidth: 150 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#ffffff", fontSize: 10 * fontScale, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: "COMPANY INFO" }) }),
-        companyPhone !== "N/A" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#333333", marginBottom: 3 }, children: companyPhone }),
-        companyEmail !== "N/A" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#333333", marginBottom: 3 }, children: companyEmail })
+        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#333333", marginBottom: 3 }, children: companyPhone }),
+        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#333333", marginBottom: 3 }, children: companyEmail })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: "flex-end", marginBottom: 12, minWidth: 150 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#ffffff", fontSize: 10 * fontScale, fontWeight: "bold", textAlign: "right", textTransform: "uppercase", letterSpacing: 1 }, children: "BILL TO" }) }),
@@ -233720,8 +233839,8 @@ var ModernInvoiceTemplate = ({
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { children: renderQrImage(qrCodeDataUrl, 56) || /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: 56, height: 56, backgroundColor: "#eeeeee" } }) }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { justifyContent: "center", flex: 1 }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: 11 * fontScale, color: "#111111", marginBottom: 4 }, children: "More Info:" }),
-            companyPhone !== "N/A" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", marginBottom: 2 }, children: companyPhone }),
-            companyEmail !== "N/A" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333" }, children: companyEmail })
+            !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", marginBottom: 2 }, children: companyPhone }),
+            !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333" }, children: companyEmail })
           ] })
         ] })
       ] }),
@@ -233745,12 +233864,7 @@ var ProfessionalInvoiceTemplate = ({
 }) => {
   const dataAny = data2;
   const fontScale = templateSettings.bodyFontSize / 12;
-  const companyName = config2?.companyName || "Prime Printing & Stationery";
-  const companyAddress = config2?.addressLine1 || "Lilongwe, Malawi";
-  const rawPhone = config2?.phone || "";
-  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, "$1 | ");
-  const companyPhone = formattedPhone || "N/A";
-  const companyEmail = config2?.email || "N/A";
+  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
   const currency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
   const accentColor = templateSettings.accentColor || "#E8450A";
@@ -233830,9 +233944,9 @@ var ProfessionalInvoiceTemplate = ({
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { alignItems: "center", justifyContent: "center" }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#222222", fontSize: templateSettings.logoWidth * 0.4, fontWeight: "bold" }, children: companyName.charAt(0) }) }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { textAlign: "right", alignItems: "flex-end" }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 13 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 2 }, children: companyName }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyAddress }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyPhone }),
-        companyEmail !== "N/A" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyEmail })
+        !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyAddress }),
+        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyPhone }),
+        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyEmail })
       ] })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 25 }, children: [
@@ -233964,8 +234078,8 @@ var ProfessionalInvoiceTemplate = ({
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#666666", lineHeight: 1.6 }, children: getDefaultPaymentTermsLabel(config2) })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { alignItems: "flex-start", width: "100%" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, color: "#aaaaaa", lineHeight: 1.4, textAlign: "left", marginTop: 4 }, children: "This is a computer-generated document. No signature required, For enquiries contact:" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, color: "#aaaaaa", lineHeight: 1.4, textAlign: "left", marginTop: 1 }, children: `${companyName}, ${companyAddress}, Phone ${companyPhone}` })
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, color: "#aaaaaa", lineHeight: 1.4, textAlign: "left", marginTop: 4 }, children: resolveFooterText(config2, getDefaultPaymentTermsLabel(config2), templateSettings.showPaymentTerms) }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, color: "#aaaaaa", lineHeight: 1.4, textAlign: "left", marginTop: 1 }, children: buildFooterContactLine(config2) })
         ] })
       ] })
     ] })
@@ -233992,17 +234106,10 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
   const showAccountSummary2 = templateSettings.showAccountSummary;
   const showConversionHistory = templateSettings.showConversionHistory !== false;
   const paymentTermsLabel = String(dataAny?.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
-  const companyName = config2?.companyName || "Prime Printing & Stationery";
-  const companyAddress = config2?.addressLine1 || "Lilongwe, Malawi";
-  const rawPhone = config2?.phone || "";
-  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, "$1 | ");
-  const companyPhone = formattedPhone || "N/A";
-  const companyEmail = config2?.email || "N/A";
-  const companyContact = `${formattedPhone} | ${config2?.email || ""}`;
-  const companyEnquiryLine = [companyName, companyAddress].filter(Boolean).join(", ");
-  const companyFlatContact2 = `${companyEnquiryLine}, Phone ${companyPhone}`;
-  const legalFooterLine1 = showPaymentTerms ? `This is a computer-generated document. No signature required. Payment terms: ${paymentTermsLabel}.` : "This is a computer-generated document. No signature required, For enquiries contact:";
-  const legalFooterLine2 = `${companyFlatContact2}`;
+  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
+  const companyContact = [formattedPhone, companyEmail].filter(Boolean).join(" | ");
+  const legalFooterLine1 = resolveFooterText(config2, paymentTermsLabel, showPaymentTerms);
+  const legalFooterLine2 = buildFooterContactLine(config2);
   const currency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
@@ -234260,7 +234367,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
           data: rc2,
           companyName,
           legalFooterLine1: "This is a computer-generated payment receipt. No signature required if digitally authorized.",
-          legalFooterLine2: `${companyName}, ${companyAddress}, Phone ${companyPhone}`,
+          legalFooterLine2: buildFooterContactLine(config2),
           fontScale
         }
       )
@@ -235334,6 +235441,7 @@ async function renderOfficialDocumentPdf(input) {
     (0, import_react5.createElement)(PrimeDocument, {
       type,
       data: securedData,
+      configOverride: input.companyConfig || null,
       customers: input.customers || []
     })
   ).toBlob();

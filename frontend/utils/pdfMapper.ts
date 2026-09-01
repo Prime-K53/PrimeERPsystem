@@ -1,4 +1,4 @@
-import { ExaminationInvoiceSchema, FinancialDocSchema, LogisticsDocSchema, PrimeDocData, SalesExchangeSchema, SubscriptionDocSchema } from '../views/shared/components/PDF/schemas';
+import { ExaminationInvoiceSchema, FinancialDocSchema, LogisticsDocSchema, PrimeDocData, SalesExchangeSchema, StatementSchema, SubscriptionDocSchema } from '../views/shared/components/PDF/schemas';
 import { bomService } from '../services/bomService';
 import { currencyService } from '../services/currencyService';
 import { inferSignatureInputMode, resolveSignatureDataUrl } from './signatureUtils';
@@ -181,7 +181,11 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
     const isPurchaseOrder = targetType === 'PO';
     const isQuotation = targetType === 'QUOTATION' || (!isInvoice && !isSubscription && !isDeliveryNote && !isJobOrder && !isWorkOrder && !isPurchaseOrder && !isOrder && !('totalAmount' in item));
 
-    const docType = targetType || (isExaminationInvoice ? 'EXAMINATION_INVOICE' :
+    const isStatement = targetType === 'ACCOUNT_STATEMENT' || targetType === 'ACCOUNT_STATEMENT_SUMMARY'
+        || ('finalBalance' in item && 'openingBalance' in item && Array.isArray(item.transactions));
+
+    const docType = targetType || (isStatement ? 'ACCOUNT_STATEMENT' :
+        isExaminationInvoice ? 'EXAMINATION_INVOICE' :
         isSubscription ? 'SUBSCRIPTION' :
         isDeliveryNote ? 'DELIVERY_NOTE' :
             isJobOrder ? 'WORK_ORDER' :
@@ -189,13 +193,15 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
                     isInvoice ? 'INVOICE' :
                         isOrder ? 'SALES_ORDER' : 'QUOTATION');
 
-    const resolvedNumber = (docType === 'INVOICE' || docType === 'EXAMINATION_INVOICE')
-        ? (item.invoiceNumber || item.id?.toString() || 'TBD')
-        : ((docType === 'ORDER' || docType === 'SALES_ORDER' || docType === 'WORK_ORDER')
-            ? (item.orderNumber || item.id?.toString() || 'TBD')
-            : (docType === 'DELIVERY_NOTE'
-                ? (item.dnNumber || item.deliveryNoteNumber || item.id?.toString() || 'TBD')
-                : (item.id?.toString() || item.invoiceNumber || item.orderNumber || 'TBD')));
+    const resolvedNumber = isStatement
+        ? String(item.statementNumber || item.number || '').trim()
+        : ((docType === 'INVOICE' || docType === 'EXAMINATION_INVOICE')
+            ? (item.invoiceNumber || item.id?.toString() || 'TBD')
+            : ((docType === 'ORDER' || docType === 'SALES_ORDER' || docType === 'WORK_ORDER')
+                ? (item.orderNumber || item.id?.toString() || 'TBD')
+                : (docType === 'DELIVERY_NOTE'
+                    ? (item.dnNumber || item.deliveryNoteNumber || item.id?.toString() || 'TBD')
+                    : (item.id?.toString() || item.invoiceNumber || item.orderNumber || 'TBD'))));
 
     const explicitConversionDetails = item.conversionDetails ? {
         sourceType: item.conversionDetails.sourceType || item.conversionDetails.source_type || 'Quotation',
@@ -361,6 +367,34 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
 
         return item.status || 'Pending';
     })();
+
+    if (docType === 'ACCOUNT_STATEMENT' || docType === 'ACCOUNT_STATEMENT_SUMMARY') {
+        const statementTransactions = Array.isArray(item.transactions) ? item.transactions : [];
+        const statementData = {
+            number: resolvedNumber || undefined,
+            statementNumber: resolvedNumber || undefined,
+            date: String(item.date || new Date().toLocaleDateString()),
+            customerName: resolveFirstText(item.customerName, item.customer_name, item.clientName, item.client_name) || 'Customer',
+            address: resolveFirstText(item.address, item.customerAddress, item.customer_address, item.billingAddress, item.billing_address),
+            phone: resolveFirstText(item.phone, item.customerPhone, item.customer_phone),
+            startDate: String(item.startDate || item.start_date || 'N/A'),
+            endDate: String(item.endDate || item.end_date || 'N/A'),
+            currency,
+            openingBalance: toNum(item.openingBalance ?? item.opening_balance ?? 0),
+            transactions: statementTransactions.map((txn: any) => ({
+                date: String(txn.date || ''),
+                reference: String(txn.reference || txn.ref || ''),
+                memo: resolveFirstText(txn.memo, txn.description, txn.details),
+                debit: toNum(txn.debit),
+                credit: toNum(txn.credit),
+                runningBalance: toNum(txn.runningBalance ?? txn.balance),
+            })),
+            totalInvoiced: toNum(item.totalInvoiced ?? item.total_invoiced ?? statementTransactions.reduce((sum: number, txn: any) => sum + toNum(txn.debit), 0)),
+            totalReceived: toNum(item.totalReceived ?? item.total_received ?? statementTransactions.reduce((sum: number, txn: any) => sum + toNum(txn.credit), 0)),
+            finalBalance: toNum(item.finalBalance ?? item.closingBalance ?? item.closing_balance ?? 0),
+        };
+        return StatementSchema.parse(statementData);
+    }
 
     if (docType === 'INVOICE' || docType === 'EXAMINATION_INVOICE' || docType === 'SALES_ORDER' || docType === 'PO' || docType === 'QUOTATION' || docType === 'ORDER' || docType === 'SUBSCRIPTION') {
         const financialData = {

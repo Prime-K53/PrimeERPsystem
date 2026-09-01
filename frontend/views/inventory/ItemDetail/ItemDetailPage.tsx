@@ -87,7 +87,7 @@ export const ItemDetailPage: React.FC = () => {
   const onDuplicate = useCallback(async () => {
     if (!item) return;
     const dup = await handleDuplicate();
-    if (dup) navigate(`/supply-chain/inventory/${dup.id}`);
+    if (dup) navigate(`/supply-chain/inventory/${encodeURIComponent(dup.id)}`);
   }, [item, handleDuplicate, navigate]);
 
   const handleToggleStatus = useCallback(async () => {
@@ -260,8 +260,8 @@ export const ItemDetailPage: React.FC = () => {
             <button className="qa-icon" title={item?.status === 'Inactive' ? 'Activate' : 'Archive'} onClick={handleToggleStatus} style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <Archive size={14} />
             </button>
-            {prevItem && <button className="qa-icon" onClick={() => navigate(`/supply-chain/inventory/${prevItem.id}`)} title="Previous" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={14} /></button>}
-            {nextItem && <button className="qa-icon" onClick={() => navigate(`/supply-chain/inventory/${nextItem.id}`)} title="Next" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={14} /></button>}
+            {prevItem && <button className="qa-icon" onClick={() => navigate(`/supply-chain/inventory/${encodeURIComponent(prevItem.id)}`)} title="Previous" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={14} /></button>}
+            {nextItem && <button className="qa-icon" onClick={() => navigate(`/supply-chain/inventory/${encodeURIComponent(nextItem.id)}`)} title="Next" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={14} /></button>}
           </div>
         </div>
 

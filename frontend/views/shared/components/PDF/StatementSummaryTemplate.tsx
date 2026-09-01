@@ -18,6 +18,46 @@ const formatAmount = (amount: number) => {
   });
 };
 
+const pickFirstText = (...values: Array<unknown>) => {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
+};
+
+const buildCompanyAddress = (config?: CompanyConfig | null) => {
+  return [config?.addressLine1, config?.city, config?.country]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+};
+
+const buildFooterLine1 = (config?: CompanyConfig | null) => {
+  return pickFirstText(
+    config?.footer,
+    config?.receiptFooter,
+    config?.transactionSettings?.pos?.receiptFooter,
+    'This is a computer-generated document. No signature required.'
+  );
+};
+
+const buildFooterLine2 = (config?: CompanyConfig | null) => {
+  const companyName = pickFirstText(config?.companyName, 'Prime ERP');
+  const address = buildCompanyAddress(config);
+  const phone = pickFirstText(config?.phone);
+  const email = pickFirstText(config?.email);
+  const website = pickFirstText((config as any)?.website, (config as any)?.companyWebsite);
+
+  return [
+    companyName,
+    address,
+    phone ? `Phone ${phone}` : '',
+    email,
+    website,
+  ].filter(Boolean).join(', ');
+};
+
 export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOverride?: CompanyConfig | null }> = ({ data, configOverride = null }) => {
   const currency = data.currency || 'MWK';
   const config = configOverride || getStoredCompanyConfig();
@@ -26,7 +66,11 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
     fontFamily: templateSettings.fontFamily,
     fontSize: templateSettings.bodyFontSize,
   };
-  const companyName = config?.companyName || 'PRIME PRINTING INC';
+  const companyName = pickFirstText(config?.companyName, 'Prime ERP');
+  const companyAddress = buildCompanyAddress(config);
+  const companyPhone = pickFirstText(config?.phone);
+  const companyEmail = pickFirstText(config?.email);
+  const companyWebsite = pickFirstText((config as any)?.website, (config as any)?.companyWebsite);
   const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
   const fontScale = templateSettings.bodyFontSize / 12;
 
@@ -39,7 +83,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
   return (
     <Document
       title={`Statement - ${data.customerName}`}
-      author="Prime ERP"
+      author={companyName}
       subject="Account Statement Summary"
       creator="Prime ERP System"
     >
@@ -63,9 +107,20 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           <View style={s.companySide}>
             {logo ? (
               <Image src={logo} style={{ marginBottom: 6, width: templateSettings.logoWidth }} />
-            ) : (
-              <Text style={{ fontSize: templateSettings.companyNameFontSize, fontWeight: 'bold', color: '#1e293b', marginBottom: 2 }}>{companyName}</Text>
-            )}
+            ) : null}
+            <Text style={{ fontSize: templateSettings.companyNameFontSize, fontWeight: 'bold', color: '#1e293b', marginBottom: 2 }}>{companyName}</Text>
+            {companyAddress ? (
+              <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{companyAddress}</Text>
+            ) : null}
+            {companyPhone ? (
+              <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>Phone {companyPhone}</Text>
+            ) : null}
+            {companyEmail ? (
+              <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{companyEmail}</Text>
+            ) : null}
+            {companyWebsite ? (
+              <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{companyWebsite}</Text>
+            ) : null}
             <View style={{ marginTop: 4 }}>
               <Text style={{ fontSize: 8, color: '#64748b', fontStyle: 'italic', marginTop: 2 }}>Generated on: {new Date().toLocaleString('en-GB')}</Text>
             </View>
@@ -74,6 +129,11 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           {/* Right: Statement Title and Balance Summary Table */}
           <View style={s.statementSide}>
             <Text style={[s.title, { fontSize: 24, marginBottom: 2 }]}>Account Statement</Text>
+            {Boolean((data as any).statementNumber || (data as any).number) && (
+              <Text style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>
+                Statement Number: {String((data as any).statementNumber || (data as any).number)}
+              </Text>
+            )}
             <Text style={{ fontSize: 10, color: '#64748b', marginBottom: 5 }}>{data.startDate} — {data.endDate}</Text>
 
             <View style={s.summaryTable}>
@@ -134,10 +194,10 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
          <View style={s.securityFooter} fixed>
            <View style={s.securityFooterText}>
              <Text style={[s.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
-               This is a computer-generated document. No signature required. For enquiries contact:
+               {buildFooterLine1(config)}
              </Text>
              <Text style={[s.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
-               {`${companyName}${config?.addressLine1 ? `, ${config.addressLine1}` : ''}${config?.phone ? `, Phone ${config.phone}` : ''}`}
+               {buildFooterLine2(config)}
              </Text>
            </View>
            {(() => {

@@ -2073,14 +2073,14 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                         <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">Voucher Date</label>
                         <input type="date" value={formData.date}
                             onChange={e => handleVoucherDateChange(e.target.value)}
-                            className="w-full bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] text-[13px] text-[#23282A] outline-none focus:border-[#146b60] focus:bg-[#eef7f6] transition-colors [color-scheme:dark]" />
+                            className="w-full bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] text-[13px] text-[#23282A] outline-none focus:border-[#146b60] focus:bg-[#eef7f6] transition-colors [color-scheme:light] [accent-color:#146b60]" />
                     </div>
 
                     <div className="docket-field mb-[10px]">
                         <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">Due Date</label>
                         <input type="date" value={formData.dueDate}
                             onChange={e => setFormData({ ...formData, dueDate: e.target.value })}
-                            className="w-full bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] text-[13px] text-[#23282A] outline-none focus:border-[#146b60] focus:bg-[#eef7f6] transition-colors [color-scheme:dark]" />
+                            className="w-full bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] text-[13px] text-[#23282A] outline-none focus:border-[#146b60] focus:bg-[#eef7f6] transition-colors [color-scheme:light] [accent-color:#146b60]" />
                     </div>
 
                     <div className="docket-field mb-[10px]">
@@ -2094,6 +2094,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                     <div className="docket-field mb-[10px]">
                         <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">Invoice Status</label>
                         <select value={type === 'Invoice' ? 'Invoice' : type === 'Quotation' ? 'Quotation' : type}
+                            readOnly
                             className="w-full bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] text-[13px] text-[#23282A] outline-none transition-colors">
                             <option className="text-[#23282A]">{type === 'Invoice' ? 'Sales Invoice' : type === 'Quotation' ? 'Quotation' : type}</option>
                             <option className="text-[#23282A]">Proforma</option>
@@ -2450,15 +2451,15 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     </div>
                                     <div>
                                         <label className="text-xs text-slate-500 font-medium block mb-1">Start Date</label>
-                                        <input type="date" value={formData.startDate} onChange={e => handleRecurringStartDateChange(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-colors" />
+                                        <input type="date" value={formData.startDate} onChange={e => handleRecurringStartDateChange(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-[#146b60]/20 focus:border-[#146b60] transition-colors [accent-color:#146b60]" />
                                     </div>
                                     <div>
                                         <label className="text-xs text-slate-500 font-medium block mb-1">End Date</label>
-                                        <input type="date" value={formData.endDate} min={formData.startDate || undefined} onChange={e => setFormData({ ...formData, endDate: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-colors" />
+                                        <input type="date" value={formData.endDate} min={formData.startDate || undefined} onChange={e => setFormData({ ...formData, endDate: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-[#146b60]/20 focus:border-[#146b60] transition-colors [accent-color:#146b60]" />
                                     </div>
                                     <div>
                                         <label className="text-xs text-slate-500 font-medium block mb-1">Next Billing Date</label>
-                                        <input type="date" value={formData.nextRunDate} onChange={e => setFormData({ ...formData, nextRunDate: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-colors" />
+                                        <input type="date" value={formData.nextRunDate} onChange={e => setFormData({ ...formData, nextRunDate: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-[#146b60]/20 focus:border-[#146b60] transition-colors [accent-color:#146b60]" />
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-4">

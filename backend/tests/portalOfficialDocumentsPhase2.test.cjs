@@ -55,6 +55,19 @@ const store = {
       ],
     }],
   ]),
+  settings: new Map([
+    ['companyConfig', {
+      id: 'companyConfig',
+      key: 'companyConfig',
+      value: {
+        companyName: 'Prime Printing Service',
+        phone: '+265 992 528 222',
+        email: 'info.primemw@gmail.com',
+        addressLine1: 'Along M5 Road Mtakataka',
+        currencySymbol: 'K',
+      },
+    }],
+  ]),
   delivery_notes: new Map([
     ['dn_a1', {
       id: 'dn_a1',
@@ -342,6 +355,11 @@ describe('Customer Statement — official document', () => {
     expect(buffer.slice(0, 4).toString('ascii')).toBe('%PDF');
     expect(renderOfficialDocumentPdf).toHaveBeenCalledWith(expect.objectContaining({
       type: 'ACCOUNT_STATEMENT',
+      companyConfig: expect.objectContaining({
+        companyName: 'Prime Printing Service',
+        phone: '+265 992 528 222',
+        email: 'info.primemw@gmail.com',
+      }),
       rawData: expect.objectContaining({
         customerName: 'Customer A',
         openingBalance: 1000,
@@ -379,6 +397,42 @@ describe('Customer Statement — official document', () => {
           expect.objectContaining({ debit: 1000, credit: 0 }),
           expect.objectContaining({ debit: 0, credit: 500 }),
         ]),
+      }),
+    }));
+  });
+
+  it('uses authoritative company settings instead of stale statement defaults', async () => {
+    const statementData = {
+      date: '2026-08-23',
+      customerName: 'Customer A',
+      startDate: '2026-01-01',
+      endDate: '2026-08-23',
+      currency: 'K',
+      openingBalance: 0,
+      transactions: [
+        { date: '2026-01-15', reference: 'Invoice', memo: '', debit: 1000, credit: 0, runningBalance: 1000 },
+      ],
+      totalInvoiced: 1000,
+      totalReceived: 0,
+      finalBalance: 1000,
+    };
+
+    await officialDocumentService.renderOfficialPdf({
+      type: 'ACCOUNT_STATEMENT',
+      rawData: statementData,
+      customers: [store.customers.get('cust_a')],
+    });
+
+    expect(renderOfficialDocumentPdf).toHaveBeenCalledWith(expect.objectContaining({
+      companyConfig: expect.objectContaining({
+        companyName: 'Prime Printing Service',
+        phone: '+265 992 528 222',
+        email: 'info.primemw@gmail.com',
+      }),
+    }));
+    expect(renderOfficialDocumentPdf).not.toHaveBeenCalledWith(expect.objectContaining({
+      companyConfig: expect.objectContaining({
+        companyName: 'Prime Printing & Stationery',
       }),
     }));
   });
