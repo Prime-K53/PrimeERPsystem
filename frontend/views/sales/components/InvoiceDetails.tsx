@@ -1,16 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     X, CheckCircle, Clock, DollarSign, Printer, Edit2, Download,
     FileText, ArrowRight, History, Trash2,
     AlertTriangle, Plus, CreditCard, FileCheck as PaymentIcon,
-    ChevronRight, Send, ExternalLink, TrendingUp, BarChart3, Zap, Lock, RefreshCw, Ban, Truck, Eye, Percent, User, Wallet
+    ChevronRight, Send, ExternalLink, TrendingUp, BarChart3, Zap, Lock, RefreshCw, Ban, Truck, Eye, Percent, User, Wallet, Package,
+    ChevronDown, ChevronUp, Info, Copy, FileText as CreditNoteIcon, Mail, MessageSquare, TruckIcon, Link2, EyeOff, PlusCircle,
+    Layers3, Coins, TrendingUp as TrendingUpIcon, ArrowDownRight, ArrowUpRight, Ruler, Scale
 } from 'lucide-react';
 import { Invoice, CustomerPayment, InvoiceAllocation } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useSales } from '../../../context/SalesContext';
 import { useExamination } from '../../../context/ExaminationContext';
+import { useInventoryStore } from '../../../stores/inventoryStore';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import TransactionPricingInsights from './TransactionPricingInsights';
 import AIDocumentSummarizer from '../../../components/ai/AIDocumentSummarizer';
@@ -41,13 +44,24 @@ const hairline = '#e4ddd1';
 const danger = '#b5493f';
 
 export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initialInvoice, onClose, onEdit, onAction, isSubscription = false }) => {
-    const { companyConfig, auditLogs, notify } = useAuth();
+    const { companyConfig, auditLogs, notify, user } = useAuth();
     const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment } = useFinance();
     const { customers = [] } = useSales();
     const { batches = [] } = useExamination();
+    const { inventory = [] } = useInventoryStore();
 
     const { handlePreview } = useDocumentPreview();
     const navigate = useNavigate();
+
+    const canEdit = useMemo(() => user?.role === 'Admin' || user?.role === 'Company Admin' || user?.isSuperAdmin || user?.role === 'Manager', [user]);
+
+    const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+    const [editingItemId, setEditingItemId] = useState<string | null>(null);
+    const [editQty, setEditQty] = useState<number>(0);
+    const [editPrice, setEditPrice] = useState<number>(0);
+    const [itemPopoverId, setItemPopoverId] = useState<string | null>(null);
+    const [newComment, setNewComment] = useState('');
+    const [comments, setComments] = useState<Array<{ id: string; text: string; author: string; date: string }>>([]);
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
     const invoice = useMemo(() =>
@@ -70,7 +84,7 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
     
     const docTitle = 'Invoice';
 
-    const [activeTab, setActiveTab] = useState<'Overview' | 'Financials' | 'Payments' | 'Activity'>('Overview');
+    const [activeTab, setActiveTab] = useState<'Overview' | 'Financials' | 'Payments' | 'Comments' | 'Activity'>('Overview');
     const [showAllocationModal, setShowAllocationModal] = useState(false);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
@@ -83,6 +97,90 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
     const hasDeliveryNote = useMemo(() =>
         (deliveryNotes || []).some(dn => dn.invoiceId === invoice.id)
         , [deliveryNotes, invoice.id]);
+
+    const linkedDeliveryNote = useMemo(() =>
+        (deliveryNotes || []).find(dn => dn.invoiceId === invoice.id)
+        , [deliveryNotes, invoice.id]);
+
+    const customerOutstanding = useMemo(() => {
+        if (!invoice.customerId) return 0;
+        return (invoices || []).filter(inv =>
+            inv.customerId === invoice.customerId &&
+            inv.id !== invoice.id &&
+            inv.status !== 'Cancelled' &&
+            inv.status !== 'Paid'
+        ).reduce((sum, inv) => sum + Math.max(0, (inv.totalAmount || 0) - (inv.paidAmount || 0)), 0);
+    }, [invoices, invoice.customerId, invoice.id]);
+
+    const quotationRef = useMemo(() => {
+        const ref = (invoice as Record<string, unknown>).sourceQuotationId || (invoice as Record<string, unknown>).quotationId;
+        return ref ? String(ref) : null;
+    }, [invoice]);
+
+    const toggleExpandedItem = useCallback((itemId: string) => {
+        setExpandedItems(prev => {
+            const next = new Set(prev);
+            if (next.has(itemId)) next.delete(itemId);
+            else next.add(itemId);
+            return next;
+        });
+    }, []);
+
+    const startEditItem = useCallback((item: any) => {
+        setEditingItemId(item.id);
+        setEditQty(Number(item.quantity));
+        setEditPrice(Number(item.price));
+    }, []);
+
+    const cancelEditItem = useCallback(() => {
+        setEditingItemId(null);
+        setEditQty(0);
+        setEditPrice(0);
+    }, []);
+
+    const saveEditItem = useCallback(async (item: any) => {
+        if (!invoice.id) return;
+        const updatedItems = (invoice.items || []).map(it =>
+            it.id === item.id ? { ...it, quantity: editQty, price: editPrice } : it
+        );
+        const updatedInvoice = { ...invoice, items: updatedItems };
+        try {
+            await updateInvoice(updatedInvoice);
+            notify('success', 'Line item updated');
+        } catch {
+            notify('error', 'Failed to update line item');
+        }
+        cancelEditItem();
+    }, [invoice, editQty, editPrice, updateInvoice, notify, cancelEditItem]);
+
+    const handleAddComment = useCallback(() => {
+        if (!newComment.trim()) return;
+        const comment = {
+            id: `CMT-${Date.now()}`,
+            text: newComment.trim(),
+            author: user?.name || user?.userRole || 'Staff',
+            date: new Date().toISOString()
+        };
+        setComments(prev => [comment, ...prev]);
+        setNewComment('');
+    }, [newComment, user]);
+
+    const handleDuplicateInvoice = useCallback(() => {
+        navigate('/sales-flow/invoices', { state: { action: 'duplicate', invoice } });
+    }, [navigate, invoice]);
+
+    const handleCreateCreditNote = useCallback(() => {
+        navigate('/sales-flow/invoices', { state: { action: 'credit_note', invoice } });
+    }, [navigate, invoice]);
+
+    const handleEmailInvoice = useCallback(() => {
+        if (!invoice.customerId) { notify('warn', 'No customer linked to this invoice'); return; }
+        navigate('/sales-flow/invoices', { state: { action: 'email', invoice } });
+    }, [navigate, invoice, notify]);
+
+    const handlePrintInvoice = useCallback(() => {
+        handlePreview(invoice);
+    }, [handlePreview, invoice]);
 
     const handleStatusOverride = async (newStatus: string) => {
         setIsUpdatingStatus(true);
@@ -131,6 +229,88 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
             payment.allocations && payment.allocations.some((a: any) => a.invoiceId === invoice.id)
         ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [customerPayments, invoice.id]);
+
+    const timelineEvents = useMemo(() => {
+        const events: Array<{
+            id: string;
+            date: Date;
+            type: 'created' | 'status_change' | 'payment' | 'audit' | 'credit';
+            title: string;
+            description?: string;
+            amount?: number;
+            icon: React.ReactNode;
+            color: string;
+            bgColor: string;
+        }> = [];
+
+        events.push({
+            id: `created-${invoice.id}`,
+            date: new Date(invoice.date),
+            type: 'created',
+            title: 'Invoice Created',
+            description: `Invoice #${invoice.id} issued to ${invoice.customerName || 'Unknown'}`,
+            icon: <FileText size={13} />,
+            color: '#059669',
+            bgColor: '#ecfdf5'
+        });
+
+        if (invoice.paidAt) {
+            events.push({
+                id: `paid-${invoice.id}`,
+                date: new Date(invoice.paidAt),
+                type: 'status_change',
+                title: 'Payment Received — Invoice Paid',
+                description: `Full payment of ${currency}${(invoice.totalAmount || 0).toLocaleString()} received`,
+                amount: invoice.totalAmount,
+                icon: <CheckCircle size={13} />,
+                color: '#059669',
+                bgColor: '#ecfdf5'
+            });
+        }
+
+        (paymentHistory || []).forEach(payment => {
+            const allocAmount = payment.allocations?.find((a: any) => a.invoiceId === invoice.id)?.amount || 0;
+            events.push({
+                id: `payment-${payment.id}`,
+                date: new Date(payment.date),
+                type: 'payment',
+                title: `Payment Received — ${payment.paymentMethod || 'Unknown method'}`,
+                description: `Ref: ${payment.id} · Status: ${payment.status}`,
+                amount: allocAmount,
+                icon: <CreditCard size={13} />,
+                color: '#2563eb',
+                bgColor: '#eff6ff'
+            });
+        });
+
+        if (invoice.status === 'Cancelled') {
+            events.push({
+                id: `cancelled-${invoice.id}`,
+                date: new Date((invoice as Record<string, unknown>).updatedAt as string || invoice.date),
+                type: 'status_change',
+                title: 'Invoice Cancelled / Voided',
+                description: `Invoice voided after issuance`,
+                icon: <Ban size={13} />,
+                color: '#dc2626',
+                bgColor: '#fef2f2'
+            });
+        }
+
+        (auditLogs || []).filter(log => log.entityId === invoice.id).forEach(log => {
+            events.push({
+                id: `audit-${log.id}`,
+                date: new Date(log.date),
+                type: 'audit',
+                title: `${log.action} ${log.entityType || 'Invoice'}`,
+                description: log.details,
+                icon: log.action === 'CREATE' ? <Plus size={13} /> : log.action === 'UPDATE' ? <Edit2 size={13} /> : <Trash2 size={13} />,
+                color: log.action === 'CREATE' ? '#059669' : log.action === 'UPDATE' ? '#2563eb' : log.action === 'VOID' ? '#dc2626' : inkSoft,
+                bgColor: log.action === 'CREATE' ? '#ecfdf5' : log.action === 'UPDATE' ? '#eff6ff' : log.action === 'VOID' ? '#fef2f2' : hairline
+            });
+        });
+
+        return events.sort((a, b) => b.date.getTime() - a.date.getTime());
+    }, [invoice, paymentHistory, auditLogs, currency]);
 
     const availableCredits = useMemo(() => {
         return (customerPayments || []).filter(payment =>
@@ -245,6 +425,10 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                             {invoice.discount ? `${invoice.discountType === 'percentage' ? invoice.discount + '%' : currency + (invoice.discount || 0).toLocaleString()}` : '-'}
                         </p>
                     </div>
+                    <div className="sales-stat-item">
+                        <p style={{ margin: 0, fontSize: 11, color: inkSoft, fontWeight: 500 }}>Items</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 18, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{invoice.items?.length || 0}</p>
+                    </div>
                     <div className="sales-stat-item" style={{ borderRight: 'none' }}>
                         <p style={{ margin: 0, fontSize: 11, color: inkSoft, fontWeight: 500 }}>Net balance</p>
                         <p style={{ margin: '2px 0 0', fontSize: 18, fontWeight: 700, color: (balanceDue || 0) > 0.001 ? danger : hairline, fontFamily: "'JetBrains Mono', monospace" }}>{currency}{(balanceDue || 0).toLocaleString()}</p>
@@ -252,8 +436,8 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                 </div>
 
                 <div className="sales-tabs">
-                    {['Overview', 'Financials', 'Payments', 'Activity'].map(tab => (
-                        <button key={tab} onClick={() => setActiveTab(tab as 'Overview' | 'Financials' | 'Payments' | 'Activity')}
+                    {['Overview', 'Financials', 'Payments', 'Comments', 'Activity'].map(tab => (
+                        <button key={tab} onClick={() => setActiveTab(tab as 'Overview' | 'Financials' | 'Payments' | 'Comments' | 'Activity')}
                             className={`sales-tab ${activeTab === tab ? 'active' : ''}`}>
                             {tab}
                         </button>
@@ -304,6 +488,199 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                             </div>
                                         </div>
                                     </div>
+
+                                    {invoice.items && invoice.items.length > 0 && (
+                                        <div style={{ borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden', background: paper }}>
+                                            <div style={{ padding: '12px 16px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <h3 style={{ margin: 0, fontSize: 12, color: ink, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    <Package size={14} color={teal[600]} /> Line Items
+                                                </h3>
+                                                <span style={{ fontSize: 10, fontWeight: 700, background: teal[100], color: teal[600], padding: '2px 8px', borderRadius: 4 }}>
+                                                    {invoice.items.length} item{invoice.items.length !== 1 ? 's' : ''}
+                                                </span>
+                                            </div>
+                                            <div style={{ overflowX: 'auto' }}>
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                                    <thead>
+                                                        <tr style={{ borderBottom: `1px solid ${hairline}`, background: teal[50] }}>
+                                                            <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 40 }}>#</th>
+                                                            <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Item / Description</th>
+                                                            <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 70 }}>Qty</th>
+                                                            <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 100 }}>Unit Price</th>
+                                                            <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 100 }}>Line Total</th>
+                                                            <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 90 }}>Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {invoice.items.map((item: any, idx: number) => {
+                                                            const lineTotal = item.lineTotalNet != null
+                                                                ? Number(item.lineTotalNet)
+                                                                : Number(item.quantity || 0) * Number(item.price || 0);
+                                                            const hasBom = item.bomBreakdown && item.bomBreakdown.length > 0;
+                                                            const hasPricingBreakdown = item.pricingBreakdown || (item.adjustmentSnapshots && item.adjustmentSnapshots.length > 0);
+                                                            const invItem = item.productId ? inventory.find((i: any) => i.id === item.productId) : null;
+                                                            const stockLevel = invItem ? Number(invItem.stock || 0) : null;
+                                                            const reservedLevel = invItem ? Number(invItem.reserved || 0) : null;
+                                                            const availableLevel = stockLevel != null && reservedLevel != null ? Math.max(0, stockLevel - reservedLevel) : null;
+                                                            const isLowStock = availableLevel !== null && invItem?.minStockLevel != null && availableLevel <= Number(invItem.minStockLevel);
+                                                            const isEditing = editingItemId === item.id;
+                                                            const isExpanded = expandedItems.has(item.id || `idx-${idx}`);
+                                                            const hasDetail = hasBom || hasPricingBreakdown || availableLevel !== null;
+
+                                                            return (
+                                                                <React.Fragment key={item.id || idx}>
+                                                                    <tr style={{ borderBottom: `1px solid ${hairline}` }}>
+                                                                        <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, color: inkSoft, fontWeight: 600 }}>{idx + 1}</td>
+                                                                        <td style={{ padding: '10px 16px' }}>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                                {hasDetail && (
+                                                                                    <button onClick={() => toggleExpandedItem(item.id || `idx-${idx}`)}
+                                                                                        style={{ padding: 2, border: 'none', background: 'transparent', cursor: 'pointer', color: teal[600], display: 'flex', alignItems: 'center' }}>
+                                                                                        {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                                                                    </button>
+                                                                                )}
+                                                                                <div>
+                                                                                    <p style={{ margin: 0, fontWeight: 600, color: ink, fontSize: 12 }}>{item.name || 'Unnamed item'}</p>
+                                                                                    {item.description && <p style={{ margin: '2px 0 0', fontSize: 11, color: inkSoft }}>{item.description}</p>}
+                                                                                    {item.type && (
+                                                                                        <span style={{ display: 'inline-block', marginTop: 4, padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.04, background: teal[50], color: teal[700] }}>
+                                                                                            {item.type}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                                                                            {isEditing ? (
+                                                                                <input type="number" value={editQty} onChange={e => setEditQty(Number(e.target.value))}
+                                                                                    style={{ width: 56, padding: '4px 6px', borderRadius: 6, border: `1.4px solid ${teal[400]}`, fontSize: 12, fontFamily: "'JetBrains Mono', monospace", textAlign: 'center', color: ink, outline: 'none' }} />
+                                                                            ) : (
+                                                                                <span style={{ fontWeight: 700, color: ink }}>
+                                                                                    {item.quantity}{item.unit && <span style={{ fontSize: 10, color: inkSoft, marginLeft: 2 }}>{item.unit}</span>}
+                                                                                </span>
+                                                                            )}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 8px', textAlign: 'right' }}>
+                                                                            {isEditing ? (
+                                                                                <input type="number" value={editPrice} onChange={e => setEditPrice(Number(e.target.value))}
+                                                                                    style={{ width: 80, padding: '4px 6px', borderRadius: 6, border: `1.4px solid ${teal[400]}`, fontSize: 12, fontFamily: "'JetBrains Mono', monospace", textAlign: 'right', color: ink, outline: 'none' }} />
+                                                                            ) : (
+                                                                                <span style={{ fontWeight: 600, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>
+                                                                                    {currency}{Number(item.price || 0).toLocaleString()}
+                                                                                </span>
+                                                                            )}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, color: teal[700], fontFamily: "'JetBrains Mono', monospace" }}>
+                                                                            {currency}{lineTotal.toLocaleString()}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                                                                {hasPricingBreakdown && (
+                                                                                    <button onClick={() => setItemPopoverId(itemPopoverId === (item.id || `idx-${idx}`) ? null : (item.id || `idx-${idx}`))}
+                                                                                        title="Pricing breakdown" style={{ padding: 3, border: 'none', background: 'transparent', cursor: 'pointer', color: teal[600], display: 'flex', alignItems: 'center', borderRadius: 4 }}>
+                                                                                        <Info size={13} />
+                                                                                    </button>
+                                                                                )}
+                                                                                {availableLevel !== null && (
+                                                                                    <span title={`Stock: ${stockLevel} | Reserved: ${reservedLevel} | Available: ${availableLevel}`}
+                                                                                        style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 5px', borderRadius: 4, fontSize: 9, fontWeight: 700, background: isLowStock ? '#fef2f2' : '#ecfdf5', color: isLowStock ? '#dc2626' : '#059669' }}>
+                                                                                        {isLowStock ? <AlertTriangle size={10} /> : <Package size={10} />} {availableLevel}
+                                                                                    </span>
+                                                                                )}
+                                                                                {canEdit && (
+                                                                                    <button onClick={() => isEditing ? saveEditItem(item) : startEditItem(item)}
+                                                                                        title={isEditing ? 'Save' : 'Edit item'}
+                                                                                        style={{ padding: 3, border: 'none', background: 'transparent', cursor: 'pointer', color: isEditing ? '#059669' : teal[600], display: 'flex', alignItems: 'center', borderRadius: 4 }}>
+                                                                                        {isEditing ? <CheckCircle size={13} /> : <Edit2 size={12} />}
+                                                                                    </button>
+                                                                                )}
+                                                                                {isEditing && (
+                                                                                    <button onClick={cancelEditItem} title="Cancel"
+                                                                                        style={{ padding: 3, border: 'none', background: 'transparent', cursor: 'pointer', color: danger, display: 'flex', alignItems: 'center', borderRadius: 4 }}>
+                                                                                        <X size={13} />
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                    {isExpanded && (hasBom || hasPricingBreakdown || availableLevel !== null) && (
+                                                                        <tr>
+                                                                            <td colSpan={6} style={{ padding: '0 16px 12px 56px', background: teal[50], borderBottom: `1px solid ${hairline}` }}>
+                                                                                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                                                                    {hasBom && item.bomBreakdown && (
+                                                                                        <div style={{ flex: '1 1 200px', padding: '10px 12px', background: paper, borderRadius: 8, border: `1px solid ${teal[100]}` }}>
+                                                                                            <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                                                <Layers3 size={11} color={teal[600]} /> Material Breakdown
+                                                                                            </p>
+                                                                                            {item.bomBreakdown.map((mat: any, mi: number) => (
+                                                                                                <div key={mi} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${hairline}`, fontSize: 11 }}>
+                                                                                                    <span style={{ color: ink, fontWeight: 600 }}>{mat.materialName}</span>
+                                                                                                    <span style={{ color: inkSoft }}>{mat.quantity} {mat.unit}</span>
+                                                                                                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: ink }}>{currency}{(Number(mat.cost) * Number(mat.quantity)).toLocaleString()}</span>
+                                                                                                </div>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {hasPricingBreakdown && item.pricingBreakdown && (
+                                                                                        <div style={{ flex: '1 1 200px', padding: '10px 12px', background: paper, borderRadius: 8, border: `1px solid ${teal[100]}` }}>
+                                                                                            <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                                                <Scale size={11} color={teal[600]} /> Pricing Breakdown
+                                                                                            </p>
+                                                                                            {[
+                                                                                                { label: 'Cost Price', value: item.pricingBreakdown.costPrice, color: '#dc2626' },
+                                                                                                { label: 'Material', value: item.pricingBreakdown.baseMaterialCost },
+                                                                                                { label: 'Adjustments', value: item.pricingBreakdown.adjustmentTotal },
+                                                                                                { label: 'Profit', value: item.pricingBreakdown.profitAmount, color: item.pricingBreakdown.profitAmount >= 0 ? '#059669' : '#dc2626' },
+                                                                                                { label: 'Selling Price', value: item.pricingBreakdown.sellingPrice, bold: true },
+                                                                                            ].map((row, ri) => (
+                                                                                                <div key={ri} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${hairline}`, fontSize: 11 }}>
+                                                                                                    <span style={{ color: inkSoft }}>{row.label}</span>
+                                                                                                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: row.bold ? 700 : 400, color: row.color || ink }}>
+                                                                                                        {currency}{Number(row.value || 0).toLocaleString()}
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {availableLevel !== null && invItem && (
+                                                                                        <div style={{ flex: '1 1 180px', padding: '10px 12px', background: paper, borderRadius: 8, border: `1px solid ${teal[100]}` }}>
+                                                                                            <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                                                <Package size={11} color={teal[600]} /> Stock Info
+                                                                                            </p>
+                                                                                            {[
+                                                                                                { label: 'On Hand', value: stockLevel },
+                                                                                                { label: 'Reserved', value: reservedLevel, color: '#d97706' },
+                                                                                                { label: 'Available', value: availableLevel, color: availableLevel <= (invItem.minStockLevel || 0) ? '#dc2626' : '#059669' },
+                                                                                                { label: 'Min Level', value: invItem.minStockLevel },
+                                                                                            ].map((row, ri) => (
+                                                                                                <div key={ri} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${hairline}`, fontSize: 11 }}>
+                                                                                                    <span style={{ color: inkSoft }}>{row.label}</span>
+                                                                                                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: row.color || ink }}>
+                                                                                                        {row.value != null ? row.value : '-'}
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
+                                                                    )}
+                                                                </React.Fragment>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {invoice.notes && (
+                                        <div style={{ padding: 16, background: paper, borderRadius: 12, border: `1px solid ${hairline}` }}>
+                                            <h3 style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Notes / Terms</h3>
+                                            <p style={{ margin: 0, fontSize: 12, color: ink, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{invoice.notes}</p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div style={{ padding: 16, background: paper, borderRadius: 12, border: `1px solid ${hairline}` }}>
@@ -314,6 +691,22 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                         <button onClick={() => navigate('/sales-flow/payments', { state: { action: 'create', customer: invoice.customerName, customerId: invoice.customerId, invoiceId: invoice.id } })}
                                             style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1.4px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                                             <PaymentIcon size={14} /> Record payment
+                                        </button>
+                                        <button onClick={handleDuplicateInvoice}
+                                            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1.4px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                            <Copy size={14} /> Duplicate invoice
+                                        </button>
+                                        <button onClick={handleCreateCreditNote}
+                                            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1.4px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                            <CreditNoteIcon size={14} /> Create credit note
+                                        </button>
+                                        <button onClick={handleEmailInvoice}
+                                            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1.4px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                            <Mail size={14} /> Email invoice
+                                        </button>
+                                        <button onClick={handlePrintInvoice}
+                                            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: `1.4px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                            <Printer size={14} /> Print / Preview
                                         </button>
                                         {!isSubscription && (
                                             <button onClick={() => onAction(invoice, 'convert_to_recurring')}
@@ -335,6 +728,54 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                         <p style={{ margin: 0, fontSize: 10, color: '#92400e', lineHeight: 1.4 }}>Manual overrides bypass validation but generate full financial logs.</p>
                                     </div>
                                 </div>
+
+                                {invoice.customerId && customerOutstanding > 0 && (
+                                    <div style={{ padding: 16, background: paper, borderRadius: 12, border: `1px solid ${hairline}` }}>
+                                        <h3 style={{ margin: '0 0 8px', fontSize: 11, color: inkSoft, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <Wallet size={14} color={danger} /> Customer outstanding
+                                        </h3>
+                                        <p style={{ margin: '0 0 4px', fontSize: 11, color: inkSoft }}>{invoice.customerName} — total unpaid invoices</p>
+                                        <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: danger, fontFamily: "'JetBrains Mono', monospace" }}>
+                                            {currency}{customerOutstanding.toLocaleString()}
+                                        </p>
+                                        <button onClick={() => navigate('/sales-flow/invoices', { state: { customerId: invoice.customerId } })}
+                                            style={{ marginTop: 8, width: '100%', padding: '6px 12px', borderRadius: 6, border: `1px solid ${hairline}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                            View all invoices <ChevronRight size={12} />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {linkedDeliveryNote && (
+                                    <div style={{ padding: 16, background: paper, borderRadius: 12, border: `1px solid ${hairline}` }}>
+                                        <h3 style={{ margin: '0 0 8px', fontSize: 11, color: inkSoft, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <TruckIcon size={14} color={teal[600]} /> Delivery note
+                                        </h3>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                            <span style={{ fontSize: 12, fontWeight: 700, color: teal[600] }}>{linkedDeliveryNote.id}</span>
+                                            <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: linkedDeliveryNote.status === 'Delivered' ? '#ecfdf5' : linkedDeliveryNote.status === 'Cancelled' ? '#fef2f2' : amber[100], color: linkedDeliveryNote.status === 'Delivered' ? '#059669' : linkedDeliveryNote.status === 'Cancelled' ? '#dc2626' : '#d97706' }}>
+                                                {linkedDeliveryNote.status}
+                                            </span>
+                                        </div>
+                                        <p style={{ margin: '0 0 4px', fontSize: 10, color: inkSoft }}>{new Date(linkedDeliveryNote.date).toLocaleDateString()}</p>
+                                        <button onClick={() => navigate('/supply-chain/delivery-notes/' + encodeURIComponent(linkedDeliveryNote.id))}
+                                            style={{ width: '100%', padding: '6px 12px', borderRadius: 6, border: `1px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                            View delivery note <ExternalLink size={11} />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {quotationRef && (
+                                    <div style={{ padding: 16, background: paper, borderRadius: 12, border: `1px solid ${hairline}` }}>
+                                        <h3 style={{ margin: '0 0 8px', fontSize: 11, color: inkSoft, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <FileText size={14} color={teal[600]} /> Source quotation
+                                        </h3>
+                                        <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 700, color: teal[600] }}>{quotationRef}</p>
+                                        <button onClick={() => navigate('/sales-flow/quotations/' + encodeURIComponent(quotationRef))}
+                                            style={{ width: '100%', padding: '6px 12px', borderRadius: 6, border: `1px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                            View quotation <ExternalLink size={11} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -435,8 +876,99 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                         </div>
                     )}
 
+                    {activeTab === 'Comments' && (
+                        <div className="space-y-6 animate-in fade-in duration-300">
+                            <div style={{ borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden', background: paper }}>
+                                <div style={{ padding: '12px 16px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <h3 style={{ margin: 0, fontSize: 12, color: ink, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <MessageSquare size={16} color={teal[600]} /> Comments & Notes
+                                    </h3>
+                                    <span style={{ fontSize: 10, fontWeight: 700, background: teal[100], color: teal[600], padding: '2px 8px', borderRadius: 4 }}>
+                                        {comments.length}
+                                    </span>
+                                </div>
+                                <div style={{ padding: 16 }}>
+                                    {comments.length === 0 && (
+                                        <div style={{ padding: 24, textAlign: 'center', color: inkSoft, fontStyle: 'italic', fontSize: 12 }}>
+                                            No comments yet. Add the first note below.
+                                        </div>
+                                    )}
+                                    {comments.map(comment => (
+                                        <div key={comment.id} style={{ display: 'flex', gap: 12, padding: 12, background: teal[50], borderRadius: 8, border: `1px solid ${teal[100]}`, marginBottom: 8 }}>
+                                            <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: teal[200], color: teal[700] }}>
+                                                <User size={14} />
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                    <span style={{ fontSize: 12, fontWeight: 700, color: ink }}>{comment.author}</span>
+                                                    <span style={{ fontSize: 11, color: inkSoft }}>{new Date(comment.date).toLocaleString()}</span>
+                                                </div>
+                                                <p style={{ margin: 0, fontSize: 12, color: ink, lineHeight: 1.5 }}>{comment.text}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div style={{ padding: 16, background: paper, borderRadius: 12, border: `1px solid ${hairline}` }}>
+                                <h3 style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Add a comment</h3>
+                                <textarea
+                                    value={newComment}
+                                    onChange={e => setNewComment(e.target.value)}
+                                    placeholder="Write a note about this invoice..."
+                                    rows={3}
+                                    style={{ width: '100%', padding: 10, borderRadius: 8, border: `1.4px solid ${hairline}`, fontSize: 12, fontFamily: "'Inter', sans-serif", color: ink, background: paper, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                                />
+                                <button onClick={handleAddComment} disabled={!newComment.trim()}
+                                    style={{ marginTop: 8, padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: newComment.trim() ? `linear-gradient(155deg, ${teal[500]}, ${teal[700]})` : hairline, color: '#fff', fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <PlusCircle size={14} /> Post comment
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {activeTab === 'Activity' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
+                            <div style={{ borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden', background: paper }}>
+                                <div style={{ padding: '12px 16px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <h3 style={{ margin: 0, fontSize: 12, color: ink, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <History size={16} color={teal[600]} /> Timeline
+                                    </h3>
+                                    <span style={{ fontSize: 10, fontWeight: 700, background: teal[100], color: teal[600], padding: '2px 8px', borderRadius: 4 }}>
+                                        {timelineEvents.length} event{timelineEvents.length !== 1 ? 's' : ''}
+                                    </span>
+                                </div>
+                                <div style={{ padding: 16, maxHeight: '60vh', overflowY: 'auto' }}>
+                                    {timelineEvents.length === 0 ? (
+                                        <div style={{ padding: 32, textAlign: 'center', color: inkSoft, fontStyle: 'italic' }}>No timeline events yet.</div>
+                                    ) : (
+                                        <div style={{ position: 'relative' }}>
+                                            <div style={{ position: 'absolute', left: 16, top: 0, bottom: 0, width: 2, background: teal[100], borderRadius: 1 }} />
+                                            {timelineEvents.map((event, idx) => (
+                                                <div key={event.id} style={{ display: 'flex', gap: 12, padding: '10px 12px', position: 'relative', marginBottom: idx < timelineEvents.length - 1 ? 4 : 0 }}>
+                                                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: event.bgColor, color: event.color, zIndex: 1, position: 'relative', border: `2px solid ${paper}` }}>
+                                                        {event.icon}
+                                                    </div>
+                                                    <div style={{ flex: 1, paddingBottom: idx < timelineEvents.length - 1 ? 12 : 0, borderBottom: idx < timelineEvents.length - 1 ? `1px solid ${hairline}` : 'none' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+                                                            <span style={{ fontSize: 12, fontWeight: 700, color: ink }}>{event.title}</span>
+                                                            <span style={{ fontSize: 10, color: inkSoft, whiteSpace: 'nowrap', marginLeft: 8 }}>{event.date.toLocaleString()}</span>
+                                                        </div>
+                                                        {event.description && (
+                                                            <p style={{ margin: '0 0 4px', fontSize: 11, color: inkSoft, lineHeight: 1.4 }}>{event.description}</p>
+                                                        )}
+                                                        {event.amount != null && event.amount > 0 && (
+                                                            <span style={{ fontSize: 13, fontWeight: 800, color: event.color, fontFamily: "'JetBrains Mono', monospace" }}>
+                                                                {currency}{event.amount.toLocaleString()}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             <div style={{ borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden', background: paper }}>
                                 <div style={{ padding: '12px 16px', borderBottom: `1px solid ${hairline}`, background: teal[50] }}>
                                     <h3 style={{ margin: 0, fontSize: 12, color: ink, display: 'flex', alignItems: 'center', gap: 6 }}>

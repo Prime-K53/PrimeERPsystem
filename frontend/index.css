@@ -1679,7 +1679,7 @@ td {
 }
 @media (min-width: 640px) {
   .sales-stats-row {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(4, 1fr);
     gap: 0;
   }
 }

@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search, Plus, Filter, Download, Phone,
-  MapPin, ChevronRight, User, School, Building2, Landmark,
-  Trash2, Edit, ExternalLink, MoreVertical,
+  ChevronRight, User, School, Building2, Landmark,
+  Trash2, Edit, Edit2, ExternalLink, MoreVertical,
   DollarSign, Clock, CheckCircle, AlertCircle, TrendingUp, AlertTriangle, FileText, Target,
-  Mail, Eye, Send, Wallet, BookOpen, Printer
+  Mail, Eye, Send, Wallet, BookOpen, Printer, LayoutGrid,
+  AlertTriangle as AlertIcon, MapPin,
+  Grid, List, MessageSquare, Phone as PhoneIcon, Send as SendIcon
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSales } from '../../context/SalesContext';
@@ -157,6 +159,7 @@ export const Clients: React.FC = () => {
   const [customerSegment, setCustomerSegment] = useState<string>('All Segments');
   const [pipelineStageFilter, setPipelineStageFilter] = useState<string>('All Stages');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -260,35 +263,6 @@ export const Clients: React.FC = () => {
   }, [customers, searchQuery, filterStatus, selectedMetric, invoices, customerPayments, balanceRange, customerSegment, pipelineStageFilter, runningBalanceByCustomer]);
 
   const { currentItems, currentPage, maxPage, totalItems, next, prev, first, last, setItemsPerPage, itemsPerPage } = usePagination(filteredCustomers, 25);
-
-  const stats = useMemo(() => {
-    const today = new Date();
-    const thirtyDaysAgo = subDays(today, 30);
-
-    const totalBalance = customers.reduce((sum, c) => sum + (runningBalanceByCustomer.get(c.id) ?? Number(c.balance || 0)), 0);
-
-    const overdueBalance = invoices
-      .filter(inv => inv.status !== 'Paid' && inv.status !== 'Cancelled' && isAfter(today, parseISO(inv.dueDate)))
-      .reduce((sum, inv) => sum + (inv.totalAmount - (inv.paidAmount || 0)), 0);
-
-    const openInvoicesTotal = invoices
-      .filter(inv => inv.status === 'Unpaid' || inv.status === 'Partial')
-      .reduce((sum, inv) => sum + (inv.totalAmount - (inv.paidAmount || 0)), 0);
-
-    const paidLast30Days = customerPayments
-      .filter(r => r.status === 'Cleared' && isAfter(parseISO(r.date), thirtyDaysAgo))
-      .reduce((sum, r) => sum + r.amount, 0);
-
-    const activeCount = customers.filter(c => c.status === 'Active').length;
-
-    return {
-      totalBalance,
-      overdueBalance,
-      openInvoicesTotal,
-      paidLast30Days,
-      activeCount
-    };
-  }, [customers, invoices, customerPayments, runningBalanceByCustomer]);
 
   const handleEdit = (customer: Customer) => {
     setSelectedCustomer(customer);
@@ -424,158 +398,59 @@ export const Clients: React.FC = () => {
       </span>
     );
   };
-
   return (
     <div style={pageWrapper}>
-      {/* Header */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
+      <style>{`
+        .client-card:hover .card-quick-actions { opacity: 1 !important; pointer-events: auto !important; }
+      `}</style>
+      {/* Page Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
         <div>
           <h1 style={{
             fontFamily: "'DM Serif Display', 'Georgia', serif", fontWeight: 400,
-            fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
+            fontSize: 24, margin: 0, color: teal[800], letterSpacing: 0.2
           }}>
             Clients
           </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 12.5, color: inkSoft, fontWeight: 500, letterSpacing: 0.01 }}>
-            Manage your client relationships and balances
+          <p style={{ margin: '4px 0 0', fontSize: 12.5, color: inkSoft, fontWeight: 500 }}>
+            {filteredCustomers.length} of {customers.length} clients
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => navigate('/sales-flow/leads')} style={btnGhost}>
-            <Target size={16} /> Lead Board
+            <Target size={15} /> Lead Board
           </button>
           <button onClick={() => exportToCSV(customers.map(c => ({ 'Customer ID': c.id, 'Full name': c.name, 'Billing Address': c.billingAddress || c.address || '', 'Phone number': c.phone, 'Segment': c.segment, 'Shipping Address': c.shippingAddress || '', 'Opening Balance': c.balance || 0, 'Wallet Balance': c.walletBalance || 0, 'Branch Account': c.accountNumber || '' })), 'Clients')} style={btnGhost}>
-            <Download size={16} /> Export
+            <Download size={15} /> Export
           </button>
           <button onClick={handleAddNew} style={btnPrimary}>
-            <Plus size={18} /> New Client
+            <Plus size={16} /> New Client
           </button>
         </div>
       </div>
 
-      {/* Money Bar */}
-      <div className="customers-money-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 18 }}>
-        <div onClick={() => setSelectedMetric(selectedMetric === 'Overdue' ? 'All' : 'Overdue')}
-          style={{
-            cursor: 'pointer', padding: '14px 16px', borderRadius: 14,
-            background: paper, border: `1.4px solid ${hairline}`,
-            borderLeft: `4px solid ${danger}`,
-            display: 'flex', alignItems: 'flex-start', gap: 14,
-            transition: 'transform .15s ease, box-shadow .15s ease',
-            transform: selectedMetric === 'Overdue' ? 'scale(1.01)' : 'scale(1)',
-            boxShadow: selectedMetric === 'Overdue' ? '0 8px 20px -8px rgba(0,0,0,.12)' : '0 1px 3px rgba(0,0,0,.04)'
-          }}>
-          <div style={{ padding: 10, borderRadius: 10, background: '#fef2f2', color: danger, display: 'inline-flex' }}><AlertTriangle size={20} /></div>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>Overdue</p>
-            <p style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0, fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', letterSpacing: 0 }}>
-              {currency}{(stats.overdueBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-        </div>
-        <div onClick={() => setSelectedMetric(selectedMetric === 'Open' ? 'All' : 'Open')}
-          style={{
-            cursor: 'pointer', padding: '14px 16px', borderRadius: 14,
-            background: paper, border: `1.4px solid ${hairline}`,
-            borderLeft: `4px solid ${amber[500]}`,
-            display: 'flex', alignItems: 'flex-start', gap: 14,
-            transition: 'transform .15s ease, box-shadow .15s ease',
-            transform: selectedMetric === 'Open' ? 'scale(1.01)' : 'scale(1)',
-            boxShadow: selectedMetric === 'Open' ? '0 8px 20px -8px rgba(0,0,0,.12)' : '0 1px 3px rgba(0,0,0,.04)'
-          }}>
-          <div style={{ padding: 10, borderRadius: 10, background: amber[100], color: amber[500], display: 'inline-flex' }}><Clock size={20} /></div>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>Open Invoices</p>
-            <p style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0, fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', letterSpacing: 0 }}>
-              {currency}{(stats.openInvoicesTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-        </div>
-        <div onClick={() => setSelectedMetric(selectedMetric === 'Paid' ? 'All' : 'Paid')}
-          style={{
-            cursor: 'pointer', padding: '14px 16px', borderRadius: 14,
-            background: paper, border: `1.4px solid ${hairline}`,
-            borderLeft: `4px solid ${teal[500]}`,
-            display: 'flex', alignItems: 'flex-start', gap: 14,
-            transition: 'transform .15s ease, box-shadow .15s ease',
-            transform: selectedMetric === 'Paid' ? 'scale(1.01)' : 'scale(1)',
-            boxShadow: selectedMetric === 'Paid' ? '0 8px 20px -8px rgba(0,0,0,.12)' : '0 1px 3px rgba(0,0,0,.04)'
-          }}>
-          <div style={{ padding: 10, borderRadius: 10, background: teal[100], color: teal[600], display: 'inline-flex' }}><CheckCircle size={20} /></div>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>Paid (30d)</p>
-            <p style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0, fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', letterSpacing: 0 }}>
-              {currency}{(stats.paidLast30Days || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-        </div>
-        <div onClick={() => setSelectedMetric('All')}
-          style={{
-            cursor: 'pointer', padding: '14px 16px', borderRadius: 14,
-            background: paper, border: `1.4px solid ${hairline}`,
-            borderLeft: `4px solid ${teal[500]}`,
-            display: 'flex', alignItems: 'flex-start', gap: 14,
-            transition: 'transform .15s ease, box-shadow .15s ease',
-            transform: selectedMetric === 'All' ? 'scale(1.01)' : 'scale(1)',
-            boxShadow: selectedMetric === 'All' ? '0 8px 20px -8px rgba(0,0,0,.12)' : '0 1px 3px rgba(0,0,0,.04)'
-          }}>
-          <div style={{ padding: 10, borderRadius: 10, background: teal[50], color: teal[500], display: 'inline-flex' }}><User size={20} /></div>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>Total Balance</p>
-            <p style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0, fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', letterSpacing: 0 }}>
-              {currency}{(stats.totalBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Card */}
-      <div style={{ background: paper, borderRadius: 14, border: `1.4px solid ${hairline}`, overflow: 'visible', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px -14px rgba(0,0,0,.14), 0 1px 3px rgba(0,0,0,.04)' }}>
-        {/* Filters & Search */}
-        <div className="customers-filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: `1px solid ${hairline}`, background: paper, flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', flex: 1, alignItems: 'center', gap: 14, minWidth: 0, flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 480 }}>
-              <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
-              <input
-                type="text"
-                placeholder="Search by name, email or phone..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ ...inputStyle, paddingLeft: 36 }}
-              />
+      {/* Main Content */}
+      <div style={{
+        background: paper, borderRadius: 14, border: `1px solid ${hairline}`,
+        overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)'
+      }}>
+        {/* Toolbar */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '12px 16px', borderBottom: `1px solid ${hairline}`,
+          background: '#fafaf8', flexWrap: 'wrap', gap: 10
+        }}>
+          {/* Search + Filters left */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', width: 280 }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
+              <input type="text" placeholder="Search clients..." value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ ...inputStyle, paddingLeft: 32, fontSize: 12.5, padding: '7px 10px 7px 32px' }} />
             </div>
-
-            {selectedIds.length > 0 && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '6px 10px', borderRadius: 8, border: `1px solid ${teal[200]}`, background: teal[50], color: teal[800] }}>
-                  {selectedIds.length} Selected
-                </span>
-                <div style={{ width: 1, height: 16, background: hairline, margin: '0 2px' }} />
-                <select
-                  onChange={(e) => {
-                    if (e.target.value === 'delete') handleBatchDelete();
-                    else if (e.target.value === 'active') handleBatchStatusUpdate('Active');
-                    else if (e.target.value === 'inactive') handleBatchStatusUpdate('Inactive');
-                    e.target.value = '';
-                  }}
-                  style={{ ...inputStyle, width: 'auto', padding: '7px 28px 7px 12px', fontSize: 12.5 }}
-                >
-                  <option value="">Batch Actions</option>
-                  <option value="active">Make Active</option>
-                  <option value="inactive">Make Inactive</option>
-                  <option value="delete">Delete Selected</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as any)}
-              style={{ ...inputStyle, width: 'auto', padding: '7px 28px 7px 12px', fontSize: 12.5 }}
-            >
-              <option value="All">All Statuses</option>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)}
+              style={{ ...inputStyle, width: 'auto', padding: '7px 28px 7px 10px', fontSize: 12 }}>
+              <option value="All">All Status</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
               <option value="Lead">Lead</option>
@@ -584,250 +459,424 @@ export const Clients: React.FC = () => {
               <option value="Prospect">Prospect</option>
               <option value="Credit Hold">Credit Hold</option>
             </select>
-            <select
-              value={pipelineStageFilter}
-              onChange={(e) => setPipelineStageFilter(e.target.value)}
-              style={{ ...inputStyle, width: 'auto', padding: '7px 28px 7px 12px', fontSize: 12.5 }}
-            >
+            <select value={pipelineStageFilter} onChange={e => setPipelineStageFilter(e.target.value)}
+              style={{ ...inputStyle, width: 'auto', padding: '7px 28px 7px 10px', fontSize: 12 }}>
               <option value="All Stages">All Stages</option>
-              <option value="New">New</option>
-              <option value="Qualified">Qualified</option>
-              <option value="Proposal">Proposal</option>
-              <option value="Negotiation">Negotiation</option>
-              <option value="Won">Won</option>
-              <option value="Lost">Lost</option>
+              <option value="New">New</option><option value="Qualified">Qualified</option>
+              <option value="Proposal">Proposal</option><option value="Negotiation">Negotiation</option>
+              <option value="Won">Won</option><option value="Lost">Lost</option>
             </select>
-            <div id="advanced-filters-wrapper" style={{ position: 'relative', display: 'inline-block' }}>
-              <button onClick={() => setShowAdvancedFilters(prev => !prev)} style={{ padding: '7px 10px', borderRadius: 9, border: `1.4px solid ${hairline}`, background: paper, color: inkSoft, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', transition: 'all .15s ease', fontSize: 12.5, fontWeight: 600 }}>
-                <Filter size={16} /> Advanced
+            <div id="advanced-filters-wrapper" style={{ position: 'relative' }}>
+              <button onClick={() => setShowAdvancedFilters(p => !p)}
+                style={{ padding: '7px 10px', borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: inkSoft, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                <Filter size={13} /> Filters
               </button>
               {showAdvancedFilters && (
-              <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 260, borderRadius: 12, boxShadow: '0 20px 40px -16px rgba(0,0,0,.22)', padding: 18, zIndex: 30, background: paper, border: `1.4px solid ${hairline}` }}>
-                <h4 style={{ fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 14px' }}>Advanced Filters</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div>
-                    <label style={labelStyle}>Balance Range</label>
-                    <select value={balanceRange} onChange={(e) => setBalanceRange(e.target.value)} style={{ ...inputStyle, fontSize: 12.5 }}>
-                      <option value="Any Balance">Any Balance</option>
-                      <option value="Over $1,000">Over $1,000</option>
-                      <option value="Over $5,000">Over $5,000</option>
-                      <option value="Over $10,000">Over $10,000</option>
-                      <option value="Negative (Credit)">Negative (Credit)</option>
-                    </select>
+                <div style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', width: 240, borderRadius: 12, boxShadow: '0 20px 40px -16px rgba(0,0,0,.22)', padding: 16, zIndex: 30, background: paper, border: `1px solid ${hairline}` }}>
+                  <h4 style={{ fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 12px' }}>Advanced Filters</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label style={labelStyle}>Balance Range</label>
+                      <select value={balanceRange} onChange={e => setBalanceRange(e.target.value)} style={{ ...inputStyle, fontSize: 12 }}>
+                        <option value="Any Balance">Any Balance</option>
+                        <option value="Over $1,000">Over $1,000</option>
+                        <option value="Over $5,000">Over $5,000</option>
+                        <option value="Over $10,000">Over $10,000</option>
+                        <option value="Negative (Credit)">Negative (Credit)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Segment</label>
+                      <select value={customerSegment} onChange={e => setCustomerSegment(e.target.value)} style={{ ...inputStyle, fontSize: 12 }}>
+                        <option value="All Segments">All Segments</option>
+                        <option value="Individual">Individual</option>
+                        <option value="School Account">School Account</option>
+                        <option value="Institution">Institution</option>
+                        <option value="Government">Government</option>
+                      </select>
+                    </div>
+                    <button onClick={() => { setBalanceRange('Any Balance'); setCustomerSegment('All Segments'); }}
+                      style={{ ...btnGhost, width: '100%', justifyContent: 'center', fontSize: 12, padding: '6px' }}>
+                      Reset
+                    </button>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Customer Segment</label>
-                    <select value={customerSegment} onChange={(e) => setCustomerSegment(e.target.value)} style={{ ...inputStyle, fontSize: 12.5 }}>
-                      <option value="All Segments">All Segments</option>
-                      <option value="Individual">Individual</option>
-                      <option value="School Account">School Account</option>
-                      <option value="Institution">Institution</option>
-                      <option value="Government">Government</option>
-                    </select>
-                  </div>
-                  <button onClick={() => { setBalanceRange('Any Balance'); setCustomerSegment('All Segments'); }} style={{ ...btnGhost, width: '100%', justifyContent: 'center', marginTop: 2 }}>
-                    Reset Filters
-                  </button>
                 </div>
-              </div>
               )}
             </div>
+
+            {/* Batch Actions */}
+            {selectedIds.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 8, border: `1px solid ${teal[200]}`, background: teal[50], color: teal[800] }}>
+                  {selectedIds.length} selected
+                </span>
+                <select
+                  onChange={e => {
+                    if (e.target.value === 'delete') handleBatchDelete();
+                    else if (e.target.value === 'active') handleBatchStatusUpdate('Active');
+                    else if (e.target.value === 'inactive') handleBatchStatusUpdate('Inactive');
+                    e.target.value = '';
+                  }}
+                  style={{ ...inputStyle, width: 'auto', padding: '6px 24px 6px 10px', fontSize: 12 }}>
+                  <option value="">Batch</option>
+                  <option value="active">Make Active</option>
+                  <option value="inactive">Make Inactive</option>
+                  <option value="delete">Delete</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* View Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 3, borderRadius: 10, border: `1px solid ${hairline}`, background: paper }}>
+            <button onClick={() => setViewMode('grid')}
+              style={{ padding: '6px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: viewMode === 'grid' ? teal[600] : 'transparent', color: viewMode === 'grid' ? '#fff' : inkSoft, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, transition: 'all .15s' }}>
+              <Grid size={13} /> Grid
+            </button>
+            <button onClick={() => setViewMode('list')}
+              style={{ padding: '6px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: viewMode === 'list' ? teal[600] : 'transparent', color: viewMode === 'list' ? '#fff' : inkSoft, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, transition: 'all .15s' }}>
+              <List size={13} /> List
+            </button>
           </div>
         </div>
 
-        {/* Table */}
-        <div className="clients-table-wrap sales-list-scroll" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 340px)' }}>
-          <style>{`
-            .clients-table { border-collapse: separate; border-spacing: 0; }
-            .clients-table tbody tr { transition: background .12s ease; }
-            .clients-table tbody tr:hover > td { background: #f3faf8; }
-            .clients-table tbody tr.selected-row > td { background: #eef7f6; }
-          `}</style>
-          <table className="clients-table" style={{ width: '100%', minWidth: 1080, textAlign: 'left', fontSize: 13, color: ink }}>
-            <thead>
-              <tr>
-                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'center', width: 44, background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                  <input type="checkbox"
-                    style={{ width: 15, height: 15, borderRadius: 6, accentColor: teal[600], cursor: 'pointer', border: `1px solid ${teal[200]}` }}
-                    checked={selectedIds.length === filteredCustomers.length && filteredCustomers.length > 0}
-                    onChange={toggleSelectAll} />
-                </th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Customer</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Contact</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Last Transaction</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Wallet</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Outstanding Balance</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '12px 14px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'center', width: 72, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: inkSoft, fontStyle: 'italic' }}>Loading clients...</td></tr>
-              ) : filteredCustomers.length === 0 ? (
-                <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: inkSoft, fontStyle: 'italic' }}>No clients found matching your criteria.</td></tr>
-              ) : (
-                currentItems.map((customer) => {
-                  const isChecked = selectedIds.includes(customer.id);
+        {/* GRID VIEW */}
+        {viewMode === 'grid' && (
+          <div style={{ padding: '16px', overflowY: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
+            {isLoading ? (
+              <div style={{ padding: 60, textAlign: 'center', color: inkSoft }}>Loading clients...</div>
+            ) : filteredCustomers.length === 0 ? (
+              <div style={{ padding: 60, textAlign: 'center', color: inkSoft, fontStyle: 'italic' }}>No clients found matching your criteria.</div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: 12
+              }}>
+                {currentItems.map(customer => {
                   const pal = avatarPaletteFor(customer.name || customer.id);
-                  const lastTx = getLastTransaction(customer.id);
                   const openBalance = runningBalanceByCustomer.get(customer.id) ?? Number(customer.balance || 0);
                   const owing = openBalance > 0.5;
+                  const lastTx = getLastTransaction(customer.id);
+                  const overdue = invoices.some(inv =>
+                    inv.customerId === customer.id &&
+                    inv.status !== 'Paid' && inv.status !== 'Cancelled' &&
+                    isAfter(new Date(), parseISO(inv.dueDate))
+                  );
+                  const hasOverdue = overdue;
                   return (
-                    <React.Fragment key={customer.id}>
-                      <tr className={isChecked ? 'selected-row' : ''} onClick={(e) => { e.stopPropagation(); setSelectedCardCustomer(customer); }}
-                        style={{ cursor: 'pointer', background: isChecked ? teal[50] : 'transparent' }}>
-                        <td data-label="" style={{ padding: '13px 14px', textAlign: 'center', borderBottom: `1px solid ${hairline}` }} onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox"
-                            style={{ width: 15, height: 15, borderRadius: 6, accentColor: teal[600], cursor: 'pointer', border: `1px solid ${teal[200]}` }}
-                            checked={isChecked}
-                            onChange={() => toggleSelect(customer.id)} />
-                        </td>
-                        <td data-label="Customer" style={{ padding: '13px 14px', borderBottom: `1px solid ${hairline}` }}>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 11 }}>
-                            <button onClick={(e) => { e.stopPropagation(); setExpandedClientId(expandedClientId === customer.id ? null : customer.id); }}
-                              style={{ padding: 4, marginTop: 4, color: inkSoft, background: 'transparent', border: 'none', cursor: 'pointer', display: 'inline-flex', transition: 'color .15s' }}>
-                              <ChevronRight size={14} style={{ transition: 'transform .2s', transform: expandedClientId === customer.id ? 'rotate(90deg)' : 'rotate(0deg)' }} />
-                            </button>
-                            <div style={{ width: 38, height: 38, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: pal.bg, color: pal.text, fontWeight: 700, fontSize: 13, letterSpacing: 0.3, flexShrink: 0, border: `1px solid ${teal[100]}` }}>
-                              {getInitials(customer.name)}
-                            </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ cursor: 'pointer', minWidth: 0 }} onClick={(e) => { e.stopPropagation(); setSelectedWorkspaceCustomer(customer); }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                    <span style={{ fontWeight: 600, color: ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200, display: 'inline-block' }}>{customer.name}</span>
-                                    {statusBadge(customer.status)}
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
-                                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: inkSoft, fontWeight: 600, letterSpacing: 0.02 }}>{customer.id}</div>
-                                  {(customer as Customer & Record<string, unknown>).pipelineStage && (
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, border: `1px solid ${teal[200]}`, background: teal[50], color: teal[700], whiteSpace: 'nowrap', lineHeight: 1.6 }}>
-                                      {(customer as Customer & Record<string, unknown>).pipelineStage}
-                                    </span>
-                                  )}
-                                  {(customer as Customer & Record<string, unknown>).leadSource && (
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, border: `1px solid ${amber[300]}`, background: amber[100], color: amber[600], whiteSpace: 'nowrap', lineHeight: 1.6 }}>
-                                      {(customer as Customer & Record<string, unknown>).leadSource as string}
-                                    </span>
-                                  )}
-                                  {customer.creditHold && <AlertTriangle size={12} style={{ color: danger, marginLeft: 6 }} />}
-                                </div>
-                              </div>
+                    <div key={customer.id} className="client-card"
+                      onClick={() => setSelectedCardCustomer(customer)}
+                      style={{
+                        background: paper, border: `1px solid ${hairline}`, borderRadius: 12,
+                        overflow: 'hidden', cursor: 'pointer',
+                        transition: 'all .18s ease',
+                        position: 'relative'
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLDivElement).style.borderColor = teal[300];
+                        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px -4px rgba(20,107,96,.18)';
+                        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLDivElement).style.borderColor = hairline;
+                        (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
+                        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
+                      }}>
+
+                      {/* Teal top accent strip */}
+                      <div style={{ height: 3, background: `linear-gradient(90deg, ${teal[600]}, ${teal[400]} 60%, ${amber[500]} 100%)` }} />
+
+                      {/* Card header */}
+                      <div style={{ background: `linear-gradient(135deg, ${teal[800]} 0%, ${teal[600]} 100%)`, padding: '14px 14px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                          {/* Avatar */}
+                          <div style={{
+                            width: 42, height: 42, borderRadius: 10,
+                            background: 'rgba(255,255,255,0.15)',
+                            border: '2px solid rgba(255,255,255,0.25)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0, fontSize: 16, fontWeight: 600, color: '#fff'
+                          }}>
+                            {customer.name?.charAt(0)?.toUpperCase() || '?'}{customer.name?.split(' ')[1]?.charAt(0)?.toUpperCase() || ''}
                           </div>
-                        </td>
-                        <td data-label="Contact" style={{ padding: '13px 14px', borderBottom: `1px solid ${hairline}` }}>
-                          {customer.phone || customer.portalEmail || customer.email ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                              {customer.phone && (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: inkSoft, whiteSpace: 'nowrap' }}>
-                                  <Phone size={11} style={{ color: inkSoft, flexShrink: 0 }} />{customer.phone}
-                                </span>
-                              )}
-                              {(customer.portalEmail || customer.email) && (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: teal[700], whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 230 }} title={customer.portalEmail || customer.email}>
-                                  <Mail size={11} style={{ color: teal[500], flexShrink: 0 }} />{customer.portalEmail || customer.email}
-                                </span>
-                              )}
+
+                          {/* Name + meta */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.25, marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {customer.name}
                             </div>
-                          ) : (
-                            <span style={{ color: inkSoft, fontSize: 12 }}>—</span>
-                          )}
-                        </td>
-                        <td data-label="Last Transaction" style={{ padding: '13px 14px', borderBottom: `1px solid ${hairline}`, whiteSpace: 'nowrap' }}>
-                          {lastTx ? (
-                            <>
-                              <div style={{ color: ink, fontWeight: 600, whiteSpace: 'nowrap' }} title={format(parseISO(lastTx.date), 'MMM dd, yyyy hh:mm a')}>
-                                {relativeDate(lastTx.date)}
+                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase', letterSpacing: 0.06 }}>
+                              {customer.id} · {customer.segment || 'Individual'}
+                            </div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 5, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 20, padding: '2px 8px', fontSize: 9.5, color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>
+                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#4ADE80' }} />
+                              {customer.status || 'Active'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Phone + address chips */}
+                        {(customer.phone || customer.address) && (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                            {customer.phone && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 6, padding: '3px 8px', fontSize: 10.5, color: 'rgba(255,255,255,0.85)' }}>
+                                <PhoneIcon size={10} />{customer.phone}
                               </div>
-                              <div style={{ fontSize: 11, color: inkSoft, fontFamily: "'JetBrains Mono', monospace", marginTop: 3, whiteSpace: 'nowrap' }}>
-                                {(lastTx as unknown as { invoiceNumber?: string }).invoiceNumber || (lastTx as unknown as { invoice_number?: string }).invoice_number || lastTx.id}
-                              </div>
-                            </>
-                          ) : (
-                            <span style={{ color: inkSoft, fontSize: 12 }}>—&nbsp;No transactions</span>
-                          )}
-                        </td>
-                        <td data-label="Wallet" style={{ padding: '13px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'right', color: '#111827', fontWeight: 600, fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                          {fmtMoney(customer.walletBalance)}
-                        </td>
-                        <td data-label="Balance" style={{ padding: '13px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: owing ? danger : '#15803d' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: owing ? danger : '#22c55e', flexShrink: 0 }} />
-                            {owing ? fmtMoney(openBalance) : 'Paid'}
-                          </span>
-                        </td>
-                        <td data-label="Actions" style={{ padding: '13px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                          <div style={{ position: 'relative', display: 'inline-block' }}>
-                            <button onClick={(e) => handleRowMenuClick(e, customer.id)}
-                              style={{ padding: '7px 9px', borderRadius: 9, border: `1.4px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'inline-flex', transition: 'all .15s ease', boxShadow: '0 1px 2px rgba(0,0,0,.05)' }}
-                              title="Actions">
-                              <MoreVertical size={15} />
-                            </button>
-                            {activeMenuId === customer.id && (
-                              <div onClick={(e) => e.stopPropagation()} style={{ ...getFloatingMenuStyle(menuAnchor, { minWidth: 224, estimatedHeight: 300 }), borderRadius: 12, boxShadow: '0 16px 36px -12px rgba(0,0,0,.28)', padding: '8px 10px', background: paper, border: `1.4px solid ${hairline}`, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                <button onClick={() => { setActiveMenuId(null); setSelectedWorkspaceCustomer(customer); }} style={menuItemStyle}><Eye size={14} style={{ color: inkSoft }} /> View Profile</button>
-                                <button onClick={() => { setActiveMenuId(null); handleEdit(customer); }} style={menuItemStyle}><Edit size={14} style={{ color: inkSoft }} /> Edit Customer</button>
-                                <button onClick={() => { setActiveMenuId(null); navigate('/sales-flow/invoices', { state: { action: 'create', customer: customer.name } }); }} style={menuItemStyle}><Send size={14} style={{ color: teal[600] }} /> Add Transaction</button>
-                                <button onClick={() => { setActiveMenuId(null); navigate('/sales-flow/payments', { state: { action: 'create', customer: customer.name, isTopUp: true } }); }} style={menuItemStyle}><Wallet size={14} style={{ color: teal[600] }} /> Deposit to Wallet</button>
-                                <button onClick={() => { setActiveMenuId(null); navigate('/revenue/contacts', { state: { customerId: customer.id } }); }} style={menuItemStyle}><BookOpen size={14} style={{ color: inkSoft }} /> View Ledger</button>
-                                <button onClick={() => { setActiveMenuId(null); navigate('/revenue/contacts', { state: { customerId: customer.id } }); }} style={menuItemStyle}><Printer size={14} style={{ color: inkSoft }} /> Print Statement</button>
-                                <div style={{ height: 1, background: hairline, margin: '4px 0' }} />
-                                <button onClick={() => { setActiveMenuId(null); handleDelete(customer.id); }} style={{ ...menuItemStyle, color: danger }}><Trash2 size={14} /> Delete Client</button>
+                            )}
+                            {customer.address && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 6, padding: '3px 8px', fontSize: 10.5, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
+                                <MapPin size={10} />{customer.address}
                               </div>
                             )}
                           </div>
-                        </td>
-                      </tr>
-                      {expandedClientId === customer.id && customer.subAccounts && customer.subAccounts.length > 0 && (
-                        <tr style={{ background: paper }}>
-                          <td style={{ padding: 0, borderBottom: `1px solid ${hairline}` }}></td>
-                          <td colSpan={6} style={{ padding: '18px 22px', borderBottom: `1px solid ${hairline}` }}>
-                            <div style={{ background: paper, borderRadius: 12, border: `1.4px solid ${hairline}`, overflow: 'hidden' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                                <span style={{ fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08 }}>Sub Accounts</span>
+                        )}
+                      </div>
+
+                      {/* Card body */}
+                      <div style={{ padding: '12px 14px' }}>
+                        {/* Balance + Wallet metrics */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div style={{ padding: '9px 10px', borderRadius: 8, background: teal[50], border: `1px solid ${teal[100]}`, position: 'relative', overflow: 'hidden' }}>
+                            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, background: owing ? danger : '#059669', borderRadius: '8px 8px 0 0' }} />
+                            <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.08, color: inkSoft, marginBottom: 3 }}>Outstanding</div>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: owing ? danger : '#059669', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>
+                              {owing ? fmtMoney(openBalance) : 'Paid'}
+                            </div>
+                          </div>
+                          <div style={{ padding: '9px 10px', borderRadius: 8, background: teal[50], border: `1px solid ${teal[100]}`, position: 'relative', overflow: 'hidden' }}>
+                            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, background: '#059669', borderRadius: '8px 8px 0 0' }} />
+                            <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.08, color: inkSoft, marginBottom: 3 }}>Wallet</div>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: '#059669', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>
+                              {fmtMoney(customer.walletBalance)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Badges: Overdue + Pipeline Stage */}
+                        {(hasOverdue || (customer as Customer & Record<string, unknown>).pipelineStage) && (
+                          <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
+                            {hasOverdue && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: '#fef2f2', color: danger, border: `1px solid ${danger}40` }}>
+                                <AlertIcon size={9} /> Overdue
+                              </span>
+                            )}
+                            {(customer as Customer & Record<string, unknown>).pipelineStage && (
+                              <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: teal[50], color: teal[700], border: `1px solid ${teal[200]}` }}>
+                                {(customer as Customer & Record<string, unknown>).pipelineStage as string}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Quick Action Buttons */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5 }}>
+                          <button onClick={(e) => { e.stopPropagation(); navigate('/sales-flow/invoices', { state: { action: 'create', customer: customer.name } }); }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[100]; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[50]; }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={teal[600]} strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                            Invoice
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); navigate('/sales-flow/orders', { state: { action: 'create', customer: customer.name } }); }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[100]; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[50]; }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={teal[600]} strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            Quote
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); navigate('/revenue/contacts', { state: { customerId: customer.id } }); }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[100]; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[50]; }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={teal[600]} strokeWidth="2"><path d="M9 17H5a2 2 0 00-2 2v1M15 17h4a2 2 0 002-2v1M12 11V3M8 7l4-4 4 4"/></svg>
+                            Statement
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); if (customer.phone) window.open(`https://wa.me/${customer.phone.replace(/[^0-9]/g, '')}`, '_blank'); }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[100]; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[50]; }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#25D366" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                            WhatsApp
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaceCustomer(customer); }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: '#f3e8f7', border: `1px solid #d8b4fe`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: '#7c3aed', transition: 'all .12s', gridColumn: 'span 2' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#ede9fe'; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f3e8f7'; }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            View Profile
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); handleEdit(customer); }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: amber[100], border: `1px solid ${amber[300]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: amber[600], transition: 'all .12s', gridColumn: 'span 2' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#fde68a'; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = amber[100]; }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={amber[500]} strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            Edit Details
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* LIST VIEW */}
+        {viewMode === 'list' && (
+          <div className="clients-table-wrap sales-list-scroll" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
+            <style>{`
+              .clients-table tbody tr { transition: background .12s ease; }
+              .clients-table tbody tr:hover > td { background: #f3faf8; }
+              .clients-table tbody tr.selected-row > td { background: #eef7f6; }
+            `}</style>
+            <table className="clients-table" style={{ width: '100%', minWidth: 1080, textAlign: 'left', fontSize: 13, color: ink }}>
+              <thead>
+                <tr>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'center', width: 44, background: teal[50], borderBottom: `1px solid ${hairline}` }}>
+                    <input type="checkbox" style={{ width: 14, height: 14, borderRadius: 5, accentColor: teal[600], cursor: 'pointer' }}
+                      checked={selectedIds.length === filteredCustomers.length && filteredCustomers.length > 0}
+                      onChange={toggleSelectAll} />
+                  </th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Customer</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Contact</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Last Activity</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Wallet</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Outstanding</th>
+                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'center', width: 64, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: inkSoft, fontStyle: 'italic' }}>Loading clients...</td></tr>
+                ) : filteredCustomers.length === 0 ? (
+                  <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: inkSoft, fontStyle: 'italic' }}>No clients found matching your criteria.</td></tr>
+                ) : (
+                  currentItems.map(customer => {
+                    const isChecked = selectedIds.includes(customer.id);
+                    const pal = avatarPaletteFor(customer.name || customer.id);
+                    const lastTx = getLastTransaction(customer.id);
+                    const openBalance = runningBalanceByCustomer.get(customer.id) ?? Number(customer.balance || 0);
+                    const owing = openBalance > 0.5;
+                    const overdue = invoices.some(inv =>
+                      inv.customerId === customer.id && inv.status !== 'Paid' && inv.status !== 'Cancelled' &&
+                      isAfter(new Date(), parseISO(inv.dueDate))
+                    );
+                    return (
+                      <React.Fragment key={customer.id}>
+                        <tr className={isChecked ? 'selected-row' : ''}
+                          onClick={() => setSelectedCardCustomer(customer)}
+                          style={{ cursor: 'pointer', background: isChecked ? teal[50] : owing ? '#fffefa' : 'transparent' }}>
+                          <td style={{ padding: '12px 14px', textAlign: 'center', borderBottom: `1px solid ${hairline}` }} onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" style={{ width: 14, height: 14, borderRadius: 5, accentColor: teal[600], cursor: 'pointer' }}
+                              checked={isChecked} onChange={() => toggleSelect(customer.id)} />
+                          </td>
+                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ width: 36, height: 36, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: pal.bg, color: pal.text, fontWeight: 700, fontSize: 12, letterSpacing: 0.3, flexShrink: 0, border: `1px solid ${teal[100]}` }}>
+                                {getInitials(customer.name)}
                               </div>
-                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                                <thead>
-                                  <tr>
-                                    <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'left', borderBottom: `1px solid ${hairline}` }}>Name</th>
-                                    <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', borderBottom: `1px solid ${hairline}` }}>Wallet</th>
-                                    <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', borderBottom: `1px solid ${hairline}` }}>Balance</th>
-                                    <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'center', borderBottom: `1px solid ${hairline}` }}>Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {customer.subAccounts.map((sub: any) => (
-                                    <tr key={sub.id} style={{ borderBottom: `1px solid ${hairline}` }}>
-                                      <td style={{ padding: '10px 16px', fontWeight: 600, color: ink }}>{sub.name}</td>
-                                      <td style={{ padding: '10px 16px', textAlign: 'right', color: '#111827', fontWeight: 600, fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums' }}>
-                                        {currency}{(sub.walletBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                      </td>
-                                      <td style={{ padding: '10px 16px', textAlign: 'right', color: (sub.balance || 0) > 0 ? danger : '#111827', fontWeight: 600, fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums' }}>
-                                        {currency}{(sub.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                      </td>
-                                      <td style={{ padding: '10px 16px', textAlign: 'center' }}>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '2px 8px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, border: `1px solid ${sub.status === 'Active' ? teal[200] : hairline}`, background: sub.status === 'Active' ? teal[100] : '#f5f5f4', color: sub.status === 'Active' ? teal[700] : inkSoft }}>
-                                          {sub.status}
-                                        </span>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: 600, color: ink }}>{customer.name}</span>
+                                  {statusBadge(customer.status)}
+                                  {overdue && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, fontSize: 9, fontWeight: 700, background: '#fef2f2', color: danger, border: `1px solid ${danger}40` }}><AlertIcon size={8} /> Overdue</span>}
+                                </div>
+                                <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: inkSoft, marginTop: 2 }}>{customer.id}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              {customer.phone && <span style={{ fontSize: 11.5, color: inkSoft, display: 'flex', alignItems: 'center', gap: 5 }}><PhoneIcon size={10} />{customer.phone}</span>}
+                              {(customer.portalEmail || customer.email) && <span style={{ fontSize: 11.5, color: teal[700], display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}><Mail size={10} />{customer.portalEmail || customer.email}</span>}
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
+                            {lastTx ? (
+                              <div>
+                                <div style={{ fontWeight: 600, fontSize: 12 }}>{relativeDate(lastTx.date)}</div>
+                                <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: inkSoft }}>{(lastTx as unknown as { invoiceNumber?: string }).invoiceNumber || (lastTx as unknown as { invoice_number?: string }).invoice_number || lastTx.id}</div>
+                              </div>
+                            ) : <span style={{ color: inkSoft, fontSize: 12 }}>—</span>}
+                          </td>
+                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'right', fontWeight: 600, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtMoney(customer.walletBalance)}
+                          </td>
+                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'right' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 12.5, color: owing ? danger : '#15803d', fontVariantNumeric: 'tabular-nums' }}>
+                              <span style={{ width: 7, height: 7, borderRadius: '50%', background: owing ? danger : '#22c55e', flexShrink: 0 }} />
+                              {owing ? fmtMoney(openBalance) : 'Paid'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                            <div style={{ position: 'relative', display: 'inline-block' }}>
+                              <button onClick={e => handleRowMenuClick(e, customer.id)}
+                                style={{ padding: '6px 8px', borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'inline-flex', boxShadow: '0 1px 2px rgba(0,0,0,.04)' }}>
+                                <MoreVertical size={14} />
+                              </button>
+                              {activeMenuId === customer.id && (
+                                <div onClick={e => e.stopPropagation()} style={{ ...getFloatingMenuStyle(menuAnchor, { minWidth: 220, estimatedHeight: 280 }), borderRadius: 12, boxShadow: '0 16px 36px -12px rgba(0,0,0,.28)', padding: '8px 10px', background: paper, border: `1px solid ${hairline}`, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <button onClick={() => { setActiveMenuId(null); setSelectedWorkspaceCustomer(customer); }} style={menuItemStyle}><Eye size={13} style={{ color: inkSoft }} /> View Profile</button>
+                                  <button onClick={() => { setActiveMenuId(null); handleEdit(customer); }} style={menuItemStyle}><Edit size={13} style={{ color: inkSoft }} /> Edit</button>
+                                  <button onClick={() => { setActiveMenuId(null); navigate('/sales-flow/invoices', { state: { action: 'create', customer: customer.name } }); }} style={menuItemStyle}><Send size={13} style={{ color: teal[600] }} /> New Invoice</button>
+                                  <button onClick={() => { setActiveMenuId(null); navigate('/sales-flow/payments', { state: { action: 'create', customer: customer.name, isTopUp: true } }); }} style={menuItemStyle}><Wallet size={13} style={{ color: teal[600] }} /> Deposit Wallet</button>
+                                  <button onClick={() => { setActiveMenuId(null); navigate('/revenue/contacts', { state: { customerId: customer.id } }); }} style={menuItemStyle}><BookOpen size={13} style={{ color: inkSoft }} /> Ledger</button>
+                                  <div style={{ height: 1, background: hairline, margin: '3px 0' }} />
+                                  <button onClick={() => { setActiveMenuId(null); handleDelete(customer.id); }} style={{ ...menuItemStyle, color: danger }}><Trash2 size={13} /> Delete</button>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ padding: '14px 18px', borderTop: `1px solid ${hairline}`, background: paper, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ color: inkSoft, fontSize: 12.5, fontWeight: 500 }}>
-            Showing page {currentPage} of {maxPage} · {totalItems} total clients
+                        {expandedClientId === customer.id && customer.subAccounts && customer.subAccounts.length > 0 && (
+                          <tr>
+                            <td style={{ padding: 0, borderBottom: `1px solid ${hairline}` }}></td>
+                            <td colSpan={6} style={{ padding: '16px 20px', borderBottom: `1px solid ${hairline}`, background: teal[50] }}>
+                              <div style={{ borderRadius: 10, border: `1px solid ${teal[100]}`, overflow: 'hidden' }}>
+                                <div style={{ padding: '10px 14px', background: teal[100], borderBottom: `1px solid ${teal[200]}` }}>
+                                  <span style={{ fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08 }}>Sub Accounts</span>
+                                </div>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ padding: '8px 14px', fontWeight: 700, color: teal[800], textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.06, textAlign: 'left', borderBottom: `1px solid ${teal[100]}` }}>Name</th>
+                                      <th style={{ padding: '8px 14px', fontWeight: 700, color: teal[800], textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.06, textAlign: 'right', borderBottom: `1px solid ${teal[100]}` }}>Wallet</th>
+                                      <th style={{ padding: '8px 14px', fontWeight: 700, color: teal[800], textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.06, textAlign: 'right', borderBottom: `1px solid ${teal[100]}` }}>Balance</th>
+                                      <th style={{ padding: '8px 14px', fontWeight: 700, color: teal[800], textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.06, textAlign: 'center', borderBottom: `1px solid ${teal[100]}` }}>Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {customer.subAccounts.map((sub: any) => (
+                                      <tr key={sub.id} style={{ borderBottom: `1px solid ${teal[100]}` }}>
+                                        <td style={{ padding: '8px 14px', fontWeight: 600, color: ink }}>{sub.name}</td>
+                                        <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{currency}{(sub.walletBalance || 0).toLocaleString()}</td>
+                                        <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: (sub.balance || 0) > 0 ? danger : ink }}>{currency}{(sub.balance || 0).toLocaleString()}</td>
+                                        <td style={{ padding: '8px 14px', textAlign: 'center' }}>
+                                          <span style={{ padding: '2px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: sub.status === 'Active' ? teal[100] : '#f5f5f4', color: sub.status === 'Active' ? teal[700] : inkSoft }}>{sub.status}</span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        <div style={{ padding: '8px 14px', borderTop: `1px solid ${hairline}`, background: '#fafaf8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ color: inkSoft, fontSize: 11.5, fontWeight: 500 }}>
+            Page {currentPage} of {maxPage} · {totalItems} clients
           </div>
           <Pagination currentPage={currentPage} maxPage={maxPage} totalItems={totalItems} itemsPerPage={itemsPerPage} onNext={next} onPrev={prev} onFirst={first} onLast={last} onItemsPerPageChange={setItemsPerPage} />
         </div>
@@ -838,60 +887,34 @@ export const Clients: React.FC = () => {
           customer={selectedCardCustomer}
           balance={runningBalanceByCustomer.get(selectedCardCustomer.id) ?? Number(selectedCardCustomer.balance || 0)}
           onClose={() => setSelectedCardCustomer(null)}
-          onViewProfile={(c) => {
-            setSelectedCardCustomer(null);
-            setSelectedWorkspaceCustomer(c);
-          }}
-          onEdit={(c) => {
-            setSelectedCardCustomer(null);
-            handleEdit(c);
-          }}
-          onCreateInvoice={(c) => {
-            setSelectedCardCustomer(null);
-            navigate('/sales-flow/invoices', { state: { action: 'create', customer: c.name } });
-          }}
-          onCreateQuote={(c) => {
-            setSelectedCardCustomer(null);
-            navigate('/sales-flow/orders', { state: { action: 'create', customer: c.name } });
-          }}
-          onStatement={(c) => {
-            setSelectedCardCustomer(null);
-            navigate('/revenue/contacts', { state: { customerId: c.id } });
-          }}
-          onWhatsApp={(c) => {
-            setSelectedCardCustomer(null);
-            if (c.phone) {
-              window.open(`https://wa.me/${c.phone.replace(/[^0-9]/g, '')}`, '_blank');
-            }
-          }}
-          onPortalUpdate={(c) => {
-            updateCustomer(c).catch(() => {});
-          }}
+          onViewProfile={c => { setSelectedCardCustomer(null); setSelectedWorkspaceCustomer(c); }}
+          onEdit={c => { setSelectedCardCustomer(null); handleEdit(c); }}
+          onCreateInvoice={c => { setSelectedCardCustomer(null); navigate('/sales-flow/invoices', { state: { action: 'create', customer: c.name } }); }}
+          onCreateQuote={c => { setSelectedCardCustomer(null); navigate('/sales-flow/orders', { state: { action: 'create', customer: c.name } }); }}
+          onStatement={c => { setSelectedCardCustomer(null); navigate('/revenue/contacts', { state: { customerId: c.id } }); }}
+          onWhatsApp={c => { setSelectedCardCustomer(null); if (c.phone) window.open(`https://wa.me/${c.phone.replace(/[^0-9]/g, '')}`, '_blank'); }}
+          onPortalUpdate={c => { updateCustomer(c).catch(() => {}); }}
         />
       )}
 
-        <ClientModal
-          isOpen={isModalOpen}
-          onClose={() => { setIsModalOpen(false); setPendingSegment(undefined); }}
-          onSave={selectedCustomer ? (c) => updateCustomer(c).then(() => null) : addCustomer}
-          customer={selectedCustomer}
-          initialSegment={pendingSegment}
-        />
+      <ClientModal
+        isOpen={isModalOpen}
+        onClose={() => { setIsModalOpen(false); setPendingSegment(undefined); }}
+        onSave={selectedCustomer ? (c) => updateCustomer(c).then(() => null) : addCustomer}
+        customer={selectedCustomer}
+        initialSegment={pendingSegment}
+      />
 
       <ConfirmDialog
         open={confirmState.open}
-        onOpenChange={(open) => !open && setConfirmState(c => ({ ...c, open: false }))}
-        onConfirm={() => {
-          confirmState.onConfirm?.();
-          setConfirmState(c => ({ ...c, open: false }));
-        }}
+        onOpenChange={open => !open && setConfirmState(c => ({ ...c, open: false }))}
+        onConfirm={() => { confirmState.onConfirm?.(); setConfirmState(c => ({ ...c, open: false })); }}
         onCancel={() => setConfirmState(c => ({ ...c, open: false }))}
         title={confirmState.title}
         message={confirmState.message}
         confirmText={confirmState.confirmText}
         type={confirmState.type || 'question'}
       />
-
     </div>
   );
 };
