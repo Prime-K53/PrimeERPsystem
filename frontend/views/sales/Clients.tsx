@@ -44,7 +44,7 @@ const pageWrapper: React.CSSProperties = {
   fontSize: 13.5,
   color: ink,
   minHeight: '100vh',
-  padding: '12px 12px 32px'
+  padding: '8px 8px 24px'
 };
 // Mobile-first: sm: 16px 24px, md: 16px 24px
 const pageWrapperResponsive = `${pageWrapper}`; // Base mobile, use Tailwind classes on container
@@ -72,19 +72,19 @@ const inputStyle: React.CSSProperties = {
 };
 
 const btnPrimary: React.CSSProperties = {
-  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
-  padding: '9px 18px', borderRadius: 9, cursor: 'pointer', border: '1.4px solid transparent',
+  fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600,
+  padding: '6px 12px', borderRadius: 8, cursor: 'pointer', border: '1.4px solid transparent',
   background: 'linear-gradient(155deg, #1f8577, #0f544c)',
-  color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 7,
-  boxShadow: '0 6px 16px -6px rgba(15,84,76,.55)',
+  color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 6,
+  boxShadow: '0 4px 12px -4px rgba(15,84,76,.55)',
   transition: 'all .15s ease'
 };
 
 const btnGhost: React.CSSProperties = {
-  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
-  padding: '9px 18px', borderRadius: 9, cursor: 'pointer',
+  fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600,
+  padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
   background: paper, border: '1.4px solid #e4ddd1', color: inkSoft,
-  display: 'inline-flex', alignItems: 'center', gap: 7, transition: 'all .15s ease'
+  display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all .15s ease'
 };
 
 const selectStyle: React.CSSProperties = {
@@ -437,7 +437,7 @@ export const Clients: React.FC = () => {
         {/* Toolbar */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '12px 16px', borderBottom: `1px solid ${hairline}`,
+          padding: '8px 12px', borderBottom: `1px solid ${hairline}`,
           background: '#fafaf8', flexWrap: 'wrap', gap: 10
         }}>
           {/* Search + Filters left */}
@@ -542,7 +542,7 @@ export const Clients: React.FC = () => {
 
         {/* GRID VIEW */}
         {viewMode === 'grid' && (
-          <div style={{ padding: '16px', overflowY: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
+          <div style={{ padding: '10px', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
             {isLoading ? (
               <div style={{ padding: 60, textAlign: 'center', color: inkSoft }}>Loading clients...</div>
             ) : filteredCustomers.length === 0 ? (
@@ -588,7 +588,7 @@ export const Clients: React.FC = () => {
                       <div style={{ height: 3, background: `linear-gradient(90deg, ${teal[600]}, ${teal[400]} 60%, ${amber[500]} 100%)` }} />
 
                       {/* Card header */}
-                      <div style={{ background: `linear-gradient(135deg, ${teal[800]} 0%, ${teal[600]} 100%)`, padding: '14px 14px 12px' }}>
+                      <div style={{ background: `linear-gradient(135deg, ${teal[800]} 0%, ${teal[600]} 100%)`, padding: '10px 12px 10px' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                           {/* Avatar */}
                           <div style={{
@@ -634,28 +634,28 @@ export const Clients: React.FC = () => {
                       </div>
 
                       {/* Card body */}
-                      <div style={{ padding: '12px 14px' }}>
+                      <div style={{ padding: '10px 12px' }}>
                         {/* Balance + Wallet metrics */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                          <div style={{ padding: '9px 10px', borderRadius: 8, background: teal[50], border: `1px solid ${teal[100]}`, position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                          <div style={{ padding: '8px 10px', borderRadius: 8, background: teal[50], border: `1px solid ${teal[100]}`, position: 'relative', overflow: 'hidden' }}>
                             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, background: owing ? danger : '#059669', borderRadius: '8px 8px 0 0' }} />
                             <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.08, color: inkSoft, marginBottom: 3 }}>Outstanding</div>
-                            <div style={{ fontSize: 16, fontWeight: 600, color: owing ? danger : '#059669', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: owing ? danger : '#059669', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>
                               {owing ? fmtMoney(openBalance) : 'Paid'}
                             </div>
                           </div>
-                          <div style={{ padding: '9px 10px', borderRadius: 8, background: teal[50], border: `1px solid ${teal[100]}`, position: 'relative', overflow: 'hidden' }}>
+                          <div style={{ padding: '8px 10px', borderRadius: 8, background: teal[50], border: `1px solid ${teal[100]}`, position: 'relative', overflow: 'hidden' }}>
                             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, background: '#059669', borderRadius: '8px 8px 0 0' }} />
                             <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.08, color: inkSoft, marginBottom: 3 }}>Wallet</div>
-                            <div style={{ fontSize: 16, fontWeight: 600, color: '#059669', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: '#059669', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>
                               {fmtMoney(customer.walletBalance)}
                             </div>
                           </div>
                         </div>
 
                         {/* Badges: Overdue + Pipeline Stage */}
-                        {(hasOverdue || (customer as Customer & Record<string, unknown>).pipelineStage) && (
-                          <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
+                          {(hasOverdue || (customer as Customer & Record<string, unknown>).pipelineStage) && (
+                            <div style={{ display: 'flex', gap: 5, marginBottom: 8, flexWrap: 'wrap' }}>
                             {hasOverdue && (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: '#fef2f2', color: danger, border: `1px solid ${danger}40` }}>
                                 <AlertIcon size={9} /> Overdue
@@ -672,42 +672,42 @@ export const Clients: React.FC = () => {
                         {/* Quick Action Buttons */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5 }}>
                           <button onClick={(e) => { e.stopPropagation(); navigate('/sales-flow/invoices', { state: { action: 'create', customer: customer.name } }); }}
-                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 3px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[100]; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[50]; }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={teal[600]} strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
                             Invoice
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); navigate('/sales-flow/orders', { state: { action: 'create', customer: customer.name } }); }}
-                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 3px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[100]; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[50]; }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={teal[600]} strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                             Quote
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); navigate('/revenue/contacts', { state: { customerId: customer.id } }); }}
-                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 3px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[100]; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[50]; }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={teal[600]} strokeWidth="2"><path d="M9 17H5a2 2 0 00-2 2v1M15 17h4a2 2 0 002-2v1M12 11V3M8 7l4-4 4 4"/></svg>
                             Statement
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); if (customer.phone) window.open(`https://wa.me/${customer.phone.replace(/[^0-9]/g, '')}`, '_blank'); }}
-                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 3px', background: teal[50], border: `1px solid ${teal[100]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: ink, transition: 'all .12s' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[100]; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = teal[50]; }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#25D366" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
                             WhatsApp
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); setSelectedWorkspaceCustomer(customer); }}
-                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: '#f3e8f7', border: `1px solid #d8b4fe`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: '#7c3aed', transition: 'all .12s', gridColumn: 'span 2' }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 3px', background: '#f3e8f7', border: `1px solid #d8b4fe`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: '#7c3aed', transition: 'all .12s', gridColumn: 'span 2' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#ede9fe'; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f3e8f7'; }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                             View Profile
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); handleEdit(customer); }}
-                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', background: amber[100], border: `1px solid ${amber[300]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: amber[600], transition: 'all .12s', gridColumn: 'span 2' }}
+                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 3px', background: amber[100], border: `1px solid ${amber[300]}`, borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 600, color: amber[600], transition: 'all .12s', gridColumn: 'span 2' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#fde68a'; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = amber[100]; }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={amber[500]} strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -725,7 +725,7 @@ export const Clients: React.FC = () => {
 
         {/* LIST VIEW */}
         {viewMode === 'list' && (
-          <div className="clients-table-wrap sales-list-scroll" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
+          <div className="clients-table-wrap sales-list-scroll" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
             <style>{`
               .clients-table tbody tr { transition: background .12s ease; }
               .clients-table tbody tr:hover > td { background: #f3faf8; }
@@ -874,7 +874,7 @@ export const Clients: React.FC = () => {
         )}
 
         {/* Pagination */}
-        <div style={{ padding: '8px 14px', borderTop: `1px solid ${hairline}`, background: '#fafaf8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ padding: '6px 12px', borderTop: `1px solid ${hairline}`, background: '#fafaf8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <div style={{ color: inkSoft, fontSize: 11.5, fontWeight: 500 }}>
             Page {currentPage} of {maxPage} · {totalItems} clients
           </div>
