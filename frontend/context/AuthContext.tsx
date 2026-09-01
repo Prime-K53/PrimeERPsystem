@@ -39,6 +39,21 @@ function normalizeRoleForDisplay(role: string): string {
   return role === 'Company Admin' ? 'Admin' : role;
 }
 
+/**
+ * After a successful login or session restoration, clear any authorization
+ * block on the sync queue and resume processing. This is the single entry
+ * point that the login flows call before they start periodic sync.
+ */
+async function resumeSyncAfterAuth(): Promise<void> {
+  try {
+    const { durableSyncQueue } = await import('../services/durableSyncQueue');
+    await durableSyncQueue.clearAuthBlocked();
+    await durableSyncQueue.resumeAfterAuth();
+  } catch {
+    // non-fatal; queue state will self-heal on the next interaction
+  }
+}
+
 interface Notification {
   id: string;
   message: string;
@@ -398,21 +413,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (found) return found;
     } catch { /* fall through */ }
 
-    // 2. Build from user_metadata (set during signup)
-    const meta = supabaseUser.user_metadata || {};
-    if (meta.role || meta.is_super_admin) {
+    // 2. Build from user_metadata (set during signup).
+    //
+    // Prime ERP is an Admin-only application. If a Supabase session exists
+    // here it is either an Admin (ERP) or a portal customer — never a
+    // 'Staff'/'User' intermediate. The canonical role resolver picks Admin
+    // when user_metadata.role is missing OR explicitly Admin; portal
+    // customer is only valid if explicitly marked. The backend enforces
+    // the same rule from the verified JWT, so a missing role here must NOT
+    // silently downgrade an Admin to 'Staff' (which would let them sign
+    // in but block every ERP route with 403).
+    const meta = supabaseUser.app_metadata || supabaseUser.user_metadata || {};
+    const explicitRole = typeof meta.role === 'string' ? meta.role : '';
+    const isSuperAdmin = meta.is_super_admin === true;
+    if (explicitRole || isSuperAdmin) {
+      const resolvedRole = explicitRole
+        ? explicitRole
+        : 'Admin';
       return {
         id: userId,
         username: meta.username || supabaseUser.email || 'user',
         fullName: meta.full_name || meta.fullName || 'User',
         name: meta.full_name || meta.fullName || 'User',
         email: supabaseUser.email || meta.email || '',
-        role: (meta.role || 'Staff') as UserRole,
+        role: resolvedRole as UserRole,
         status: 'Active',
         active: true,
-        isSuperAdmin: Boolean(meta.is_super_admin),
-        securityLevel: 'Standard',
-        groupIds: meta.group_ids || (meta.is_super_admin ? ['GRP-ADMIN'] : []),
+        isSuperAdmin,
+        securityLevel: isSuperAdmin ? 'Elevated' : 'Standard',
+        groupIds: meta.group_ids || (isSuperAdmin ? ['GRP-ADMIN'] : []),
         authMode: 'supabase',
       } as User;
     }
@@ -514,8 +543,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (session?.user && !requiresSupabaseSetup) {
             audit('auth', 'cold boot: starting sync engine from loadInitData', { hasSession: true });
             /* SYNC-FORENSIC suppressed: AUTH loadInitData() cold boot sync start */
-            import('../services/syncService').then(({ startPeriodicSync }) => {
+            import('../services/syncService').then(async ({ startPeriodicSync }) => {
               /* SYNC-FORENSIC suppressed: AUTH loadInitData() calling startPeriodicSync() */
+              // Clear any prior 401/403 block so the restored Admin can drain
+              // the queue immediately on cold boot.
+              await resumeSyncAfterAuth();
               startPeriodicSync();
             }).catch(() => {});
           }
@@ -731,8 +763,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && !requiresSetup) {
         /* SYNC-FORENSIC suppressed: AUTH onAuthStateChange starting sync */
         audit('auth', 'starting periodic sync from auth event', { event, requiresSetup });
-        import('../services/syncService').then(({ startPeriodicSync }) => {
+        import('../services/syncService').then(async ({ startPeriodicSync }) => {
           /* SYNC-FORENSIC suppressed: AUTH onAuthStateChange calling startPeriodicSync() */
+          await resumeSyncAfterAuth();
           startPeriodicSync();
         }).catch(() => {});
       }
@@ -780,7 +813,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (user && !prevUserRef.current && SUPABASE_ENABLED) {
       /* SYNC-FORENSIC suppressed: AUTH safety-net user transition */
-      import('../services/syncService').then(({ startPeriodicSync }) => {
+      import('../services/syncService').then(async ({ startPeriodicSync }) => {
+        await resumeSyncAfterAuth();
         startPeriodicSync();
       }).catch(() => {});
     }
@@ -956,8 +990,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           sessionStorage.setItem('nexus_user', sessionPayload);
           localStorage.setItem('nexus_cached_user_session', sessionPayload);
           /* SYNC-FORENSIC suppressed: AUTH login() supabase path — starting sync engine */
-          import('../services/syncService').then(({ startPeriodicSync }) => {
+          import('../services/syncService').then(async ({ startPeriodicSync }) => {
             /* SYNC-FORENSIC suppressed: AUTH login() supabase path — calling startPeriodicSync() */
+            await resumeSyncAfterAuth();
             startPeriodicSync();
           }).catch((err) => {
             /* SYNC-FORENSIC suppressed: AUTH login() supabase path — FAILED to start sync */
@@ -1098,8 +1133,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         /* SYNC-FORENSIC suppressed: AUTH loginWithApi() no credentials provided */
       }
       /* SYNC-FORENSIC suppressed: AUTH loginWithApi() starting sync engine */
-      import('../services/syncService').then(({ startPeriodicSync }) => {
+      import('../services/syncService').then(async ({ startPeriodicSync }) => {
         /* SYNC-FORENSIC suppressed: AUTH loginWithApi() calling startPeriodicSync() */
+        await resumeSyncAfterAuth();
         startPeriodicSync();
       }).catch((err) => {
         /* SYNC-FORENSIC suppressed: AUTH loginWithApi() FAILED to start sync */
@@ -1107,7 +1143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [SUPABASE_ENABLED]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     if (user) {
         addAuditLog({
             action: 'LOGOUT',
@@ -1115,11 +1151,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             entityId: user.id,
             details: `User ${user.username} logged out.`
         });
+        // Stop the sync engine first so any pending requests cannot fire
+        // with the soon-to-be-invalid token. Also clear the authorization
+        // block so a future re-login resumes the queue cleanly.
+        try {
+          const { backgroundSyncService } = await import('../services/backgroundSyncService');
+          backgroundSyncService.stopPeriodicSync();
+        } catch {
+          // non-fatal
+        }
+        try {
+          const { durableSyncQueue } = await import('../services/durableSyncQueue');
+          await durableSyncQueue.clearAuthBlocked();
+        } catch {
+          // non-fatal
+        }
         if (SUPABASE_ENABLED) {
           supabase.auth.signOut();
         }
         setUser(null);
         sessionStorage.removeItem('nexus_user');
+        localStorage.removeItem('nexus_cached_user_session');
         localStorage.removeItem('nexus_company_id');
     }
   }, [user, addAuditLog, SUPABASE_ENABLED]);

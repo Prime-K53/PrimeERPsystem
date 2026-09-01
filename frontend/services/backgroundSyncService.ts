@@ -1,5 +1,5 @@
 import { durableSyncQueue, classifyError, QueuedOperation, QueueMetrics } from './durableSyncQueue';
-import { sendSyncOps, SyncOp, SyncOpResult } from './syncApiClient';
+import { sendSyncOps, SyncOp, SyncOpResult, SyncAuthError } from './syncApiClient';
 import { resolvePushConflict } from './syncConflictResolver';
 import { cloudDb } from './cloudDb';
 import { audit } from './syncAudit';
@@ -140,10 +140,35 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
       const errorMessage = err instanceof Error ? err.message : String(err);
       const errorType = classifyError(errorMessage);
       /* SYNC-FORENSIC suppressed: STAGE-6 sendSyncOps() TRANSPORT FAILURE */
+      // SyncAuthError is a sentinel thrown by syncApiClient for 401/403. These
+      // are PERMANENT authorization failures — the durable queue must not retry
+      // them on the periodic interval, and the sync engine must pause until the
+      // user re-authenticates.
+      if (err instanceof SyncAuthError) {
+        await durableSyncQueue.markAuthBlocked(errorMessage);
+        await durableSyncQueue.setMeta?.('sync_auth_block_reason', {
+          status: err.status,
+          code: err.code,
+          at: new Date().toISOString(),
+          message: errorMessage,
+        });
+        // Pause the engine so the periodic interval becomes a no-op until the
+        // user signs in again. The AuthContext clears this on login.
+        paused = true;
+        notify('sync-failure', { failed: gatewayOps.length, deadLetter: 0, totalBefore: gatewayOps.length, authorizationBlocked: true, status: err.status });
+      }
       for (const { item } of gatewayOps) {
-        await durableSyncQueue.markFailed(item.id, errorMessage);
-        if (errorType === 'permanent') deadLetter++;
-        else failed++;
+        if (err instanceof SyncAuthError) {
+          // Leave item in 'failed' with errorType='unauthorized' so retryFailed()
+          // never auto-resets it. The queue drains again via resumeAfterAuth()
+          // after the user re-authenticates.
+          await durableSyncQueue.markFailed(item.id, errorMessage, 'unauthorized');
+          failed++;
+        } else {
+          await durableSyncQueue.markFailed(item.id, errorMessage);
+          if (errorType === 'permanent') deadLetter++;
+          else failed++;
+        }
       }
     }
   }
@@ -371,6 +396,18 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
   if (paused) {
     /* SYNC-FORENSIC suppressed: syncOnce() SKIPPED — paused (simulated offline) */
     return null;
+  }
+
+  // Authorization-blocked: the sync gateway returned 401/403 for the current
+  // session. RetryFailed() will not auto-requeue these items; the queue will
+  // resume only after the user re-authenticates (AuthContext calls
+  // durableSyncQueue.resumeAfterAuth() and clears the block).
+  try {
+    if (await durableSyncQueue.isAuthBlocked()) {
+      return null;
+    }
+  } catch {
+    // non-fatal; fall through
   }
 
   // Cheap short-circuit: when nothing is pending there is nothing to do, so we

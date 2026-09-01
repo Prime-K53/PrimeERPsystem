@@ -34,6 +34,16 @@ vi.mock('../../../services/syncApiClient', () => ({
   sendSyncOps: mockSendOps,
   getSyncAccessToken: vi.fn(async () => 'tok'),
   isSyncGatewayConfigured: vi.fn(() => true),
+  SyncAuthError: class SyncAuthError extends Error {
+    readonly status: number;
+    readonly code: 'unauthenticated' | 'forbidden';
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'SyncAuthError';
+      this.status = status;
+      this.code = status === 401 ? 'unauthenticated' : 'forbidden';
+    }
+  },
 }));
 
 // The single write path must not involve direct cloud writes from the client.

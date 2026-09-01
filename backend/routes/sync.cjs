@@ -19,6 +19,7 @@
 const express = require('express');
 const cloudSyncStore = require('../services/cloudSyncStore.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
+const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRole: resolveAuthRole, normalize: normalizeRole } = require('../middleware/roles.cjs');
 
 const router = express.Router();
 
@@ -169,19 +170,33 @@ function validatePortalAdPayload(op) {
 
 router.post('/ops', async (req, res) => {
   try {
-    // B5: Authorization — reject portal customers and any unauthenticated caller.
-    // The global verifyToken middleware already authenticated the JWT; we now
-    // enforce that the caller is an ERP user (not a portal customer). Portal
-    // tokens carry role='portal_customer'; ERP tokens carry roles like
-    // 'Admin', 'User', 'Company Admin', etc.
-    const callerRole = String(req.user?.role || '').toLowerCase();
+    // B5 + Admin-only ERP: the sync gateway is the single write path for ALL
+    // business data. Prime ERP is Admin-only, so the gateway requires an
+    // authenticated Admin. The role is resolved from the verified
+    // authentication context set by the global verifyToken middleware — never
+    // from request headers or body. Portal customers are explicitly rejected.
     const hasUser = Boolean(req.user);
     const authMode = req.authMode || 'none';
-    if (!hasUser || callerRole === 'portal_customer' || callerRole === '') {
-      console.warn('[sync] SYNC_AUTH_FAILED: hasUser=%s authMode=%s role="%s" path=%s', hasUser, authMode, callerRole, req.path);
+    const callerRole = resolveAuthRole(req.user);
+    if (!hasUser || callerRole === 'anonymous' || callerRole === '') {
+      console.warn('[sync] SYNC_AUTH_FAILED reason=unauthenticated authMode=%s path=%s', authMode, req.path);
+      return res.status(401).json({
+        error: 'Unauthenticated',
+        message: 'Authentication required to write to the sync gateway.',
+      });
+    }
+    if (roleIsPortalCustomer(callerRole)) {
+      console.warn('[sync] SYNC_AUTH_FAILED reason=portal_customer authMode=%s role=%s userId=%s path=%s', authMode, callerRole, req.user?.id, req.path);
       return res.status(403).json({
         error: 'Forbidden',
-        message: 'Sync gateway requires an ERP user token. Portal customers cannot write business data.',
+        message: 'Sync gateway is Admin-only. Portal customers cannot write business data.',
+      });
+    }
+    if (!roleIsAdmin(callerRole)) {
+      console.warn('[sync] SYNC_AUTH_FAILED reason=non_admin authMode=%s role=%s userId=%s path=%s', authMode, callerRole, req.user?.id, req.path);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Sync gateway requires an Admin. This account is not an Admin.',
       });
     }
     console.log('[sync] SYNC_AUTH_OK: authMode=%s role=%s userId=%s', authMode, callerRole, req.user?.id);

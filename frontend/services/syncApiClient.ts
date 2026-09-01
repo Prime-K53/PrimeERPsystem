@@ -56,6 +56,26 @@ export interface SyncOpsResponse {
 const SYNC_ENDPOINT = `${API_BASE_URL}/sync/ops`;
 
 /**
+ * Sentinel error class for permanent authorization failures (401/403) from the
+ * sync gateway. The durable sync queue must never retry these — they indicate
+ * the current session is no longer authorized to write business data, so
+ * retrying only multiplies the 401/403 storm and burns the user's quota.
+ *
+ * Thrown by `sendSyncOps()`; recognized by `classifyError()` in
+ * durableSyncQueue.ts via the message prefix.
+ */
+export class SyncAuthError extends Error {
+  readonly status: number;
+  readonly code: 'unauthenticated' | 'forbidden';
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'SyncAuthError';
+    this.status = status;
+    this.code = status === 401 ? 'unauthenticated' : 'forbidden';
+  }
+}
+
+/**
  * Get a fresh Supabase access token for the backend to verify.
  * Prefers the app session (nexus_user), falls back to supabase-js session.
  */
@@ -121,8 +141,16 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
     if (res.status === 503) {
       throw new Error('Cloud database is not configured on this server');
     }
+    if (res.status === 429) {
+      // Rate-limited by the gateway. Honor Retry-After when present and back off.
+      const retryAfter = Number(res.headers.get('Retry-After') || 0);
+      const hint = Number.isFinite(retryAfter) && retryAfter > 0 ? ` (retry after ${retryAfter}s)` : '';
+      throw new Error(`Sync gateway rate-limited${hint}`);
+    }
     if (res.status === 401 || res.status === 403) {
-      throw new Error(`Sync gateway rejected the request (${res.status})`);
+      // Permanent authorization failure. The durable queue must not retry
+      // this — the session is no longer authorized to write business data.
+      throw new SyncAuthError(`Sync gateway rejected the request (${res.status})`, res.status);
     }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

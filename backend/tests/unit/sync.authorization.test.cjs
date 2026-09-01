@@ -4,7 +4,8 @@
  * Verifies that:
  *   1. Unauthenticated requests → 401 (handled by global verifyToken)
  *   2. Portal customer tokens → 403 Forbidden
- *   3. ERP user tokens → allowed through
+ *   3. Admin tokens → allowed through
+ *   4. Non-Admin ERP roles (User, etc.) → 403 Forbidden (Admin-only ERP)
  */
 process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_SECRET_KEY = 'test-secret-key';
@@ -46,7 +47,7 @@ function makeToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
 }
 
-describe('B5 — sync gateway authorization', () => {
+describe('B5 — sync gateway authorization (Admin-only)', () => {
   let app;
   beforeAll(() => { app = buildApp(); });
 
@@ -68,7 +69,7 @@ describe('B5 — sync gateway authorization', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('Forbidden');
-    expect(res.body.message).toContain('ERP user token');
+    expect(res.body.message).toContain('Admin');
   });
 
   it('allows Admin role through to sync processing', async () => {
@@ -84,7 +85,7 @@ describe('B5 — sync gateway authorization', () => {
     expect(res.body.results[0].error).toContain('table not allowed');
   });
 
-  it('allows User role through to sync processing', async () => {
+  it('rejects legacy User role with 403 (Admin-only ERP)', async () => {
     const token = makeToken({ id: 'user-1', role: 'User', email: 'user@test.com' });
 
     const res = await request(app)
@@ -92,7 +93,28 @@ describe('B5 — sync gateway authorization', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ ops: [{ table: 'nonexistent_table_xyz', recordId: 'r1', operation: 'upsert', payload: {} }] });
 
-    expect(res.status).toBe(200);
-    expect(res.body.results[0].error).toContain('table not allowed');
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects legacy Accountant role with 403 (Admin-only ERP)', async () => {
+    const token = makeToken({ id: 'acc-1', role: 'Accountant', email: 'acc@test.com' });
+
+    const res = await request(app)
+      .post('/api/sync/ops')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ops: [{ table: 'nonexistent_table_xyz', recordId: 'r1', operation: 'upsert', payload: {} }] });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects empty-role tokens with 401', async () => {
+    const token = makeToken({ id: 'anon-1', role: '', email: 'anon@test.com' });
+
+    const res = await request(app)
+      .post('/api/sync/ops')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ops: [{ table: 'products', recordId: 'r1', operation: 'upsert', payload: {} }] });
+
+    expect(res.status).toBe(401);
   });
 });

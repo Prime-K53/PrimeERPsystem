@@ -28,6 +28,16 @@ vi.mock('idb', () => ({
 
 vi.mock('../../../services/syncApiClient', () => ({
   sendSyncOps: mockSendOps,
+  SyncAuthError: class SyncAuthError extends Error {
+    readonly status: number;
+    readonly code: 'unauthenticated' | 'forbidden';
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'SyncAuthError';
+      this.status = status;
+      this.code = status === 401 ? 'unauthenticated' : 'forbidden';
+    }
+  },
 }));
 
 vi.mock('../../../services/cloudDb', () => ({

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
+const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRole: resolveAuthRole, normalize: normalizeRole } = require('./roles.cjs');
 
 // JWT Secret - must be set via environment variable
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -10,8 +11,14 @@ if (!JWT_SECRET) {
 
 // Supabase config for verifying Supabase JWTs
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-const SUPABASE_ENABLED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && !SUPABASE_URL.includes('placeholder'));
+// Supabase JWT verification is enabled when we have BOTH the URL and the
+// service-role key. The anon key alone is not enough — the server uses the
+// service-role key to call /auth/v1/user, and it silently must NOT degrade
+// to 401/403 when the service-role key is missing (that previously masked
+// real "Supabase not configured" misconfigurations as auth failures).
+const SUPABASE_ENABLED = Boolean(SUPABASE_URL && SUPABASE_SECRET_KEY && !SUPABASE_URL.includes('placeholder'));
 
 // Token expiration time
 const TOKEN_EXPIRATION = '8h';
@@ -140,13 +147,27 @@ const verifyToken = async (req, res, next) => {
         });
         const sbUser = sbRes.data;
         if (sbUser && sbUser.id) {
+          // Prime ERP is an Admin-only application. A Supabase-authenticated
+          // user reaches the ERP only if their identity is Admin. We resolve
+          // the role from the verified JWT/session metadata — never trust a
+          // role supplied by the request. The only legitimate ERP identity is
+          // Admin (or its lowercase alias 'admin'); any non-Admin role here
+          // means this Supabase session belongs to the customer portal and
+          // must be rejected by the route gate, not pre-flattened to a stale
+          // 'User' role that silently bypasses authorization.
+          const meta = sbUser.user_metadata || {};
+          const isSuperAdmin = meta.is_super_admin === true;
+          const resolvedMetaRole = normalizeRole(meta.role);
+          const role = (resolvedMetaRole && roleIsAdmin(resolvedMetaRole)) || isSuperAdmin
+            ? 'Admin'
+            : (resolvedMetaRole || 'portal_customer');
           req.user = {
             id: sbUser.id,
             username: sbUser.email || sbUser.id,
-            role: sbUser.user_metadata?.role || 'User',
+            role,
             email: sbUser.email,
-            isSuperAdmin: sbUser.user_metadata?.is_super_admin === true,
-            permissions: sbUser.user_metadata?.is_super_admin ? ['*'] : []
+            isSuperAdmin,
+            permissions: isSuperAdmin ? ['*'] : []
           };
           req.authMode = 'supabase';
           return next();
@@ -163,15 +184,15 @@ const verifyToken = async (req, res, next) => {
     }
 
     if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Token expired',
-        message: 'Your session has expired. Please login again.' 
+        message: 'Your session has expired. Please login again.'
       });
     }
-    console.warn('[verifyToken] 403 path=%s method=%s url=%s hasBearer=%s', req.path, req.method, req.originalUrl, Boolean(authHeader));
-    return res.status(403).json({ 
+    console.warn('[verifyToken] 401 path=%s method=%s url=%s hasBearer=%s err=%s', req.path, req.method, req.originalUrl, Boolean(authHeader), err.name || err.message);
+    return res.status(401).json({
       error: 'Invalid token',
-      message: 'Authentication failed' 
+      message: 'Authentication failed'
     });
   }
 };
@@ -179,24 +200,40 @@ const verifyToken = async (req, res, next) => {
 /**
  * Require specific role(s) middleware
  * Must be used after verifyToken
- * @param {...string} roles - Allowed roles
+ *
+ * Role comparison is case-insensitive and normalized through the canonical
+ * role model. Any unauthenticated caller → 401; any authenticated caller
+ * whose role is not in the allow-list → 403. The role is read from the
+ * verified authentication context (req.user set by verifyToken) — never
+ * from request headers or body.
+ *
+ * @param {...string} roles - Allowed role strings (canonical case-insensitive)
  */
 const requireRole = (...roles) => {
+  const allowed = new Set(roles.map((r) => normalizeRole(r)).filter(Boolean));
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Authentication required',
-        message: 'Please login to access this resource' 
+        message: 'Please login to access this resource'
       });
     }
-    
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ 
+
+    const callerRole = resolveAuthRole(req.user);
+    if (!callerRole || callerRole === 'anonymous') {
+      return res.status(401).json({
+        error: 'Authentication required',
+        message: 'Please login to access this resource'
+      });
+    }
+
+    if (!allowed.has(callerRole)) {
+      return res.status(403).json({
         error: 'Insufficient permissions',
-        message: `This action requires one of the following roles: ${roles.join(', ')}` 
+        message: `This action requires one of the following roles: ${roles.join(', ')}`
       });
     }
-    
+
     next();
   };
 };

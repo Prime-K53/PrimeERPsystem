@@ -210,7 +210,7 @@ describe('durableSyncQueue', () => {
   });
 
   describe('classifyError', () => {
-    let classifyError: (msg: string) => 'retryable' | 'permanent';
+    let classifyError: (msg: string) => 'retryable' | 'permanent' | 'unauthorized';
 
     beforeAll(async () => {
       const mod = await import('../../../services/durableSyncQueue');
@@ -227,6 +227,12 @@ describe('durableSyncQueue', () => {
       expect(classifyError('violates not-null constraint')).toBe('permanent');
       expect(classifyError('duplicate key value violates unique constraint')).toBe('permanent');
       expect(classifyError('foreign key constraint violation')).toBe('permanent');
+    });
+
+    it('should classify 401/403 from sync gateway as unauthorized', () => {
+      expect(classifyError('Sync gateway rejected the request (401)')).toBe('unauthorized');
+      expect(classifyError('Sync gateway rejected the request (403)')).toBe('unauthorized');
+      expect(classifyError('sync gateway rejected the request (401)')).toBe('unauthorized'); // case-insensitive
     });
 
     it('should default to retryable for unknown errors', () => {
@@ -449,6 +455,89 @@ describe('durableSyncQueue', () => {
 
       const count = await durableSyncQueue.retryFailed();
       expect(count).toBe(2);
+    });
+
+    it('must NOT reset items with errorType=unauthorized (401/403 from sync gateway)', async () => {
+      const i1 = await durableSyncQueue.enqueue({ table: 't', recordId: '1', operation: 'upsert', payload: {} });
+      await durableSyncQueue.markFailed(i1.id, 'Sync gateway rejected the request (403)', 'unauthorized');
+
+      const count = await durableSyncQueue.retryFailed();
+      expect(count).toBe(0); // not re-queued
+
+      const failed = await durableSyncQueue.getAll('failed');
+      expect(failed).toHaveLength(1);
+      expect(failed[0].id).toBe(i1.id);
+    });
+
+    it('must NOT count unauthorized items toward the MAX_RETRIES escalation', async () => {
+      // Simulate many retries — an unauthorized item must never escalate to dead_letter
+      const i1 = await durableSyncQueue.enqueue({ table: 't', recordId: '1', operation: 'upsert', payload: {} });
+      for (let attempt = 0; attempt < 15; attempt++) {
+        await durableSyncQueue.markFailed(i1.id, 'Sync gateway rejected the request (401)', 'unauthorized');
+      }
+
+      const count = await durableSyncQueue.retryFailed();
+      expect(count).toBe(0);
+      const failed = await durableSyncQueue.getAll('failed');
+      expect(failed).toHaveLength(1);
+      const dlq = await durableSyncQueue.getAll('dead_letter');
+      expect(dlq).toHaveLength(0); // never dead-lettered via MAX_RETRIES
+    });
+  });
+
+  describe('resumeAfterAuth', () => {
+    it('must re-queue items that previously failed with 401/403', async () => {
+      const i1 = await durableSyncQueue.enqueue({ table: 't', recordId: '1', operation: 'upsert', payload: {} });
+      const i2 = await durableSyncQueue.enqueue({ table: 't', recordId: '2', operation: 'upsert', payload: {} });
+      await durableSyncQueue.markFailed(i1.id, 'Sync gateway rejected the request (401)', 'unauthorized');
+      await durableSyncQueue.markFailed(i2.id, 'Sync gateway rejected the request (403)', 'unauthorized');
+
+      const count = await durableSyncQueue.resumeAfterAuth();
+      expect(count).toBe(2);
+
+      const pending = await durableSyncQueue.getAll('pending');
+      expect(pending.map((op: any) => op.id)).toContain(i1.id);
+      expect(pending.map((op: any) => op.id)).toContain(i2.id);
+    });
+
+    it('must NOT re-queue items that failed with permanent errors', async () => {
+      const i1 = await durableSyncQueue.enqueue({ table: 't', recordId: '1', operation: 'upsert', payload: {} });
+      await durableSyncQueue.markFailed(i1.id, 'violates foreign key constraint');
+
+      const count = await durableSyncQueue.resumeAfterAuth();
+      expect(count).toBe(0);
+    });
+
+    it('must clear the sync_auth_blocked_at meta key when items are resumed', async () => {
+      const i1 = await durableSyncQueue.enqueue({ table: 't', recordId: '1', operation: 'upsert', payload: {} });
+      await durableSyncQueue.markFailed(i1.id, 'Sync gateway rejected the request (401)', 'unauthorized');
+      await durableSyncQueue.markAuthBlocked('Admin role required');
+
+      await durableSyncQueue.resumeAfterAuth();
+
+      const blocked = await durableSyncQueue.isAuthBlocked();
+      expect(blocked).toBe(false);
+    });
+  });
+
+  describe('auth block lifecycle', () => {
+    it('markAuthBlocked + isAuthBlocked', async () => {
+      await durableSyncQueue.markAuthBlocked('Admin role required');
+      const blocked = await durableSyncQueue.isAuthBlocked();
+      expect(blocked).toBe(true);
+    });
+
+    it('clearAuthBlocked resets isAuthBlocked', async () => {
+      await durableSyncQueue.markAuthBlocked('Admin role required');
+      await durableSyncQueue.clearAuthBlocked();
+      const blocked = await durableSyncQueue.isAuthBlocked();
+      expect(blocked).toBe(false);
+    });
+
+    it('clearAuthBlocked when not blocked is a no-op', async () => {
+      await durableSyncQueue.clearAuthBlocked();
+      const blocked = await durableSyncQueue.isAuthBlocked();
+      expect(blocked).toBe(false);
     });
   });
 

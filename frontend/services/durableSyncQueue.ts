@@ -18,7 +18,7 @@ export interface QueuedOperation {
   lastError: string | null;
   dependsOn: string[];
   fileRef: string | null;
-  errorType?: 'retryable' | 'permanent' | null;
+  errorType?: 'retryable' | 'permanent' | 'unauthorized' | null;
   payloadSizeBytes?: number;
   /** Number of optimistic-concurrency conflicts this op survived before convergence (auto-merge cap). */
   conflictCount?: number;
@@ -140,8 +140,14 @@ const PERMANENT_ERROR_PATTERNS = [
   'policy',
 ];
 
-export function classifyError(message: string): 'retryable' | 'permanent' {
+export function classifyError(message: string): 'retryable' | 'permanent' | 'unauthorized' {
   const lower = message.toLowerCase();
+  // 401/403 from the sync gateway carry a sentinel prefix set by
+  // syncApiClient.SyncAuthError. These are PERMANENT authorization failures —
+  // the durable queue must not retry them on the periodic interval; the user
+  // must re-authenticate before the queue can drain again.
+  if (lower.includes('sync gateway rejected the request (401)')) return 'unauthorized';
+  if (lower.includes('sync gateway rejected the request (403)')) return 'unauthorized';
   for (const pattern of PERMANENT_ERROR_PATTERNS) {
     if (lower.includes(pattern)) return 'permanent';
   }
@@ -368,12 +374,16 @@ export const durableSyncQueue = {
     }
   },
 
-  async markFailed(id: string, error: string): Promise<void> {
+  async markFailed(id: string, error: string, overrideErrorType?: 'retryable' | 'permanent' | 'unauthorized'): Promise<void> {
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item) {
-      const errorType = classifyError(error);
+      const errorType = overrideErrorType || classifyError(error);
+      // Unauthorized items stay in 'failed' — they must NEVER be retried
+      // automatically. Only resumeAfterAuth() (after the user re-authenticates)
+      // moves them back to 'pending'.
       item.status = errorType === 'permanent' ? 'dead_letter' : 'failed';
+      if (errorType === 'unauthorized') item.status = 'failed';
       item.retryCount = item.retryCount + 1;
       item.lastAttempt = new Date().toISOString();
       item.lastError = error;
@@ -555,6 +565,12 @@ export const durableSyncQueue = {
     let count = 0;
     const MAX_RETRIES = 10;
     for (const item of failed) {
+      // Permanent authorization failures (401/403) must NEVER be auto-retried.
+      // They are left in 'failed' until the user re-authenticates and calls
+      // resumeAfterAuth(), which stamps auth_restored and re-queues them once.
+      if (item.errorType === 'unauthorized') {
+        continue;
+      }
       if ((item.retryCount || 0) >= MAX_RETRIES) {
         await db.put('operations', { ...item, status: 'dead_letter', errorType: 'permanent' });
       } else {
@@ -563,6 +579,51 @@ export const durableSyncQueue = {
       }
     }
     return count;
+  },
+
+  /**
+   * After the user has re-authenticated, the queue can safely retry the items
+   * that previously failed with 401/403. We re-queue them once and clear the
+   * auth-block meta key so the sync engine drains normally.
+   */
+  async resumeAfterAuth(): Promise<number> {
+    const db = await getDb();
+    const failed = await db.getAllFromIndex('operations', 'by-status', IDBKeyRange.only('failed'));
+    let count = 0;
+    for (const item of failed) {
+      if (item.errorType !== 'unauthorized') continue;
+      await db.put('operations', {
+        ...item,
+        status: 'pending',
+        errorType: null,
+        lastError: null,
+      });
+      count++;
+    }
+    if (count > 0) {
+      await db.delete('meta', 'sync_auth_blocked_at');
+    }
+    return count;
+  },
+
+  /**
+   * Mark the queue as authorization-blocked. Sync callers should observe this
+   * via isAuthBlocked() and pause background sync until the user signs in again.
+   */
+  async markAuthBlocked(reason: string): Promise<void> {
+    const db = await getDb();
+    await db.put('meta', { key: 'sync_auth_blocked_at', value: { at: new Date().toISOString(), reason } });
+  },
+
+  async clearAuthBlocked(): Promise<void> {
+    const db = await getDb();
+    await db.delete('meta', 'sync_auth_blocked_at');
+  },
+
+  async isAuthBlocked(): Promise<boolean> {
+    const db = await getDb();
+    const record = await db.get('meta', 'sync_auth_blocked_at');
+    return Boolean(record);
   },
 
   async getMetrics(): Promise<QueueMetrics> {

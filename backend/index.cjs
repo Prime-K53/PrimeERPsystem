@@ -2092,7 +2092,7 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
   // modifies the invoice. ERP staff review the request here, then record the
   // REAL accounting payment later through the existing customer-payment /
   // allocation workflow (after verifying the bank receipt).
-  app.get('/api/payment-requests', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), async (req, res) => {
+  app.get('/api/payment-requests', requireRole('Admin'), async (req, res) => {
     try {
       const { status } = req.query;
       const rows = await paymentRequestService.listRequests({ status: status || undefined });
@@ -2103,7 +2103,7 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
     }
   });
 
-  app.get('/api/payment-requests/:id', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), async (req, res) => {
+  app.get('/api/payment-requests/:id', requireRole('Admin'), async (req, res) => {
     try {
       const row = await paymentRequestService.getRequestById(req.params.id);
       if (!row) return res.status(404).json({ error: 'Payment request not found' });
@@ -2117,7 +2117,7 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
   // Review actions: requested → under_review → confirmed | rejected | cancelled.
   // Confirmation NEVER records the actual payment; linkedPaymentId is an
   // optional reference to a payment recorded later by the ERP payment workflow.
-  app.post('/api/payment-requests/:id/review', requireRole('Admin', 'Accountant', 'Manager'), async (req, res) => {
+  app.post('/api/payment-requests/:id/review', requireRole('Admin'), async (req, res) => {
     try {
       const { status, adminNotes, linkedPaymentId } = req.body || {};
       const result = await paymentRequestService.reviewRequest(req.params.id, {
