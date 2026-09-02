@@ -9,6 +9,7 @@ import {
   Building2, Phone, Mail
 } from 'lucide-react';
 import { currencyService } from '../../services/currencyService';
+import { paymentCredit } from '../../services/customerLedger';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useDocumentStore } from '../../stores/documentStore';
 
@@ -86,9 +87,14 @@ const ClientLedger: React.FC = () => {
       const balance = (inv.totalAmount || 0) - (inv.paidAmount || 0);
       if (days <= 0) aging.current += balance; else if (days <= 30) aging.days1to30 += balance; else if (days <= 60) aging.days31to60 += balance; else if (days <= 90) aging.days61to90 += balance; else aging.over90 += balance;
     });
-    customerSales.forEach((sale: any) => { const days = differenceInDays(now, parseISO(sale.date)); const b = (sale.totalAmount || sale.total || 0) - (sale.paidAmount || 0); if (days <= 0) aging.current += b; else if (days <= 30) aging.days1to30 += b; else if (days <= 60) aging.days31to60 += b; else if (days <= 90) aging.days61to90 += b; else aging.over90 += b; });
+    // F-10: POS sales are walk-in and do not extend credit; they must not
+    // contribute to the customer's receivable aging. Previously the line
+    // below added them to the aging buckets, double-counting cash sales
+    // that are already settled at the till.
+    // customerSales.forEach(...) — intentionally removed.
+
     const totalOutstanding = aging.current + aging.days1to30 + aging.days31to60 + aging.days61to90 + aging.over90;
-    const totalPaid = customerPaymentRows.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+    const totalPaid = customerPaymentRows.reduce((sum: number, p: any) => sum + paymentCredit(p), 0);
     const creditLimit = selectedCustomer?.creditLimit || 0;
     const creditUtilization = creditLimit > 0 ? (totalOutstanding / creditLimit) * 100 : 0;
 
@@ -102,10 +108,13 @@ const ClientLedger: React.FC = () => {
     let runningB = openingBalance;
     const entriesWithBalance = customerLedgerEntries.map((entry: any) => { const d = entry.debitAccountId === arAccId || entry.debitAccountId === '1100'; const c = entry.creditAccountId === arAccId || entry.creditAccountId === '1100'; if (d) runningB += entry.amount; if (c) runningB -= entry.amount; return { ...entry, balance: runningB, isDebit: d, isCredit: c }; });
 
+    // F-10: Only invoice + payment entries contribute to the customer
+    // balance. POS sales (even when filtered to the same customer) are
+    // walk-in transactions that do not extend credit; including them
+    // double-counts the cash receipts already on the till.
     const transactions: LedgerTransaction[] = [
       ...customerInvoices.filter((inv: any) => !dateCutoff || new Date(inv.date) >= dateCutoff).map((inv: any) => ({ id: inv.id, date: inv.date, type: 'INVOICE' as const, reference: inv.id, description: `Invoice #${inv.id}`, subAccount: inv.subAccountName || 'Main', debit: (inv.totalAmount || 0) - (inv.paidAmount || 0), credit: 0, balance: 0, status: inv.status })),
-      ...customerPaymentRows.filter((p: any) => !dateCutoff || new Date(p.date) >= dateCutoff).map((payment: any) => ({ id: payment.id, date: payment.date, type: 'PAYMENT' as const, reference: payment.id, description: `Payment - ${payment.paymentMethod || 'Cash'}`, subAccount: payment.subAccountName || 'Main', debit: 0, credit: payment.amount || 0, balance: 0, status: 'Cleared' })),
-      ...customerSales.filter((sale: any) => !dateCutoff || new Date(sale.date) >= dateCutoff).map((sale: any) => ({ id: sale.id, date: sale.date, type: 'POS_SALE' as const, reference: sale.id, description: `POS Sale #${sale.id}`, subAccount: sale.subAccountName || 'Main', debit: (sale.totalAmount || sale.total || 0) - (sale.paidAmount || 0), credit: 0, balance: 0, status: sale.status || 'Partial' })),
+      ...customerPaymentRows.filter((p: any) => !dateCutoff || new Date(p.date) >= dateCutoff).map((payment: any) => ({ id: payment.id, date: payment.date, type: 'PAYMENT' as const, reference: payment.id, description: `Payment - ${payment.paymentMethod || 'Cash'}`, subAccount: payment.subAccountName || 'Main', debit: 0, credit: paymentCredit(payment), balance: 0, status: 'Cleared' })),
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     let txB = openingBalance;

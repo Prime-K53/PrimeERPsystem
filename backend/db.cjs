@@ -1737,10 +1737,41 @@ const initDb = () => {
         is_active INTEGER DEFAULT 1,
         description TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        -- New hierarchical COA fields (Phase 1)
+        company_id TEXT,
+        account_number TEXT,
+        account_type TEXT CHECK(account_type IN ('ASSET','LIABILITY','EQUITY','INCOME','EXPENSE')),
+        account_group TEXT,
+        parent_account_id TEXT,
+        normal_balance TEXT CHECK(normal_balance IN ('DEBIT','CREDIT')),
+        is_system_account INTEGER DEFAULT 0,
+        allow_posting INTEGER DEFAULT 1,
+        opening_balance REAL DEFAULT 0,
+        opening_balance_date TEXT,
+        FOREIGN KEY (parent_account_id) REFERENCES chart_of_accounts(id)
       )`);
 
       db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_chart_of_accounts_code ON chart_of_accounts(code)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_chart_of_accounts_parent ON chart_of_accounts(parent_account_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_chart_of_accounts_type ON chart_of_accounts(account_type)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_chart_of_accounts_number ON chart_of_accounts(account_number)`);
+
+      -- Migrate existing data: set account_number from code if not set
+      db.run(`UPDATE chart_of_accounts SET account_number = code WHERE account_number IS NULL AND code IS NOT NULL`);
+
+      -- Migrate existing data: set account_type from type (lowercase to uppercase)
+      db.run(`UPDATE chart_of_accounts SET account_type = UPPER(type) WHERE account_type IS NULL AND type IS NOT NULL`);
+
+      -- Migrate existing data: set normal_balance based on account_type
+      db.run(`UPDATE chart_of_accounts SET normal_balance = CASE
+        WHEN account_type IN ('ASSET', 'EXPENSE') THEN 'DEBIT'
+        WHEN account_type IN ('LIABILITY', 'EQUITY', 'INCOME') THEN 'CREDIT'
+        ELSE 'DEBIT'
+      END WHERE normal_balance IS NULL AND account_type IS NOT NULL`);
+
+      -- Migrate existing data: set parent_account_id from parent_id
+      db.run(`UPDATE chart_of_accounts SET parent_account_id = parent_id WHERE parent_account_id IS NULL AND parent_id IS NOT NULL`);
 
       db.run(`CREATE TABLE IF NOT EXISTS ledger_entries (
         id TEXT PRIMARY KEY,

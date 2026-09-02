@@ -599,7 +599,55 @@ export interface User {
   securityLevel?: string;
   avatar?: string;
 }
-export type Account = any; // TIER 2: Added as any due to missing definitions
+// Account types for hierarchical Chart of Accounts
+export type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
+export type NormalBalance = 'DEBIT' | 'CREDIT';
+export type AccountGroup =
+  | 'CURRENT_ASSET'
+  | 'FIXED_ASSET'
+  | 'CURRENT_LIABILITY'
+  | 'LONG_TERM_LIABILITY'
+  | 'EQUITY'
+  | 'REVENUE'
+  | 'OTHER_INCOME'
+  | 'COST_OF_SALES'
+  | 'OPERATING_EXPENSE'
+  | 'OTHER_EXPENSE';
+export type AccountSubtype = 'BANK' | 'RECEIVABLE' | 'PAYABLE' | 'INVENTORY' | 'TAX' | 'CASH';
+
+export interface Account {
+  id: string;
+  company_id?: string;
+  account_number: string;
+  name: string;
+  account_type: AccountType;
+  account_group?: AccountGroup;
+  subtype?: AccountSubtype;
+  parent_account_id?: string;
+  normal_balance: NormalBalance;
+  is_system_account: boolean;
+  is_active: boolean;
+  allow_posting: boolean;
+  opening_balance: number;
+  opening_balance_date?: string;
+  description?: string;
+  balance?: number;
+  children?: Account[];
+  depth?: number;
+  // Legacy compatibility fields
+  code?: string;
+  type?: string;
+  category?: string;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: any;
+}
+
+export interface AccountTreeNode extends Account {
+  children: AccountTreeNode[];
+  isExpanded?: boolean;
+  balance?: number;
+}
 export type Warehouse = any; // TIER 2: Added as any due to missing definitions
 export type WorkCenter = any; // TIER 2: Added as any due to missing definitions
 export type ProductionResource = any; // TIER 2: Added as any due to missing definitions

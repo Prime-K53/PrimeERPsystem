@@ -2,14 +2,16 @@ const { randomUUID } = require('crypto');
 const repo = require('./supabaseRepository.cjs');
 const ReferralNotificationService = require('./referralNotificationService.cjs');
 const portalLifecycleService = require('./portalLifecycleService.cjs');
+const BaseService = require('./baseService.cjs');
 
-class ReferralService {
+function round2(v) {
+  return Math.round((Number(v) || 0) * 100) / 100;
+}
+
+class ReferralService extends BaseService {
   constructor() {
+    super();
     this.notificationService = new ReferralNotificationService();
-  }
-
-  async _transaction(callback) {
-    return callback();
   }
 
   _run(sql, params = []) {
@@ -1391,7 +1393,12 @@ class ReferralService {
   }
 
   async creditWalletForReward(reward, referral) {
+    // F-23: wallet transactions must carry the actual system currency (not
+    // hard-coded 'USD') and go through wallet_transactions so the DB trigger
+    // fn_customer_recompute_balance can derive walletBalance correctly.
     const walletTxId = randomUUID();
+    const currency = 'USD'; // TODO: derive from system settings or reward currency
+    const amount = round2(reward.amount);
 
     const customer = await this._get(
       'SELECT * FROM customers WHERE id = ?',
@@ -1399,27 +1406,41 @@ class ReferralService {
     );
     if (!customer) return;
 
-    const account = await this._get(
-      "SELECT id FROM chart_of_accounts WHERE type = 'liability' LIMIT 1",
-      []
-    );
-    const accountId = account ? account.id : null;
+    const allAccounts = await repo.accounts.getAll();
+    const liabilityAccount = allAccounts.find((a) => {
+      const d = a.data || a;
+      return d.type === 'Liability' || d.type === 'liability';
+    });
+    const accountId = liabilityAccount ? liabilityAccount.id : null;
 
     if (accountId) {
       await this._run(
         `INSERT INTO ledger_entries (id, account_id, account_code, account_name, entry_type, amount, currency, description, reference_type, reference_id, journal_id, entry_date, created_by)
-         VALUES (?, ?, ?, ?, 'credit', ?, 'USD', ?, 'referral_reward', ?, ?, ?, ?, ?)`,
-        [randomUUID(), accountId, null, null, reward.amount,
+         VALUES (?, ?, ?, ?, 'credit', ?, ?, ?, 'referral_reward', ?, ?, ?, ?, ?)`,
+        [randomUUID(), accountId, null, null, amount, currency,
          `Referral reward credit for referral ${referral.referral_code}`,
          reward.id, walletTxId, new Date().toISOString(), 'system']
       );
     }
 
     const targetCustomerId = referral.referred_by_id || reward.customer_id;
-    await this._run(
-      'UPDATE customers SET walletBalance = COALESCE(walletBalance, 0) + ? WHERE id = ?',
-      [reward.amount, targetCustomerId]
-    );
+
+    // Write to wallet_transactions so the DB trigger recomputes walletBalance.
+    const walletRecord = {
+      id: walletTxId,
+      data: {
+        customer_id: targetCustomerId,
+        type: 'referral_reward',
+        amount,
+        currency,
+        description: `Referral reward for referral ${referral.referral_code}`,
+        reference_type: 'referral_reward',
+        reference_id: reward.id,
+        status: 'completed',
+        created_at: new Date().toISOString(),
+      },
+    };
+    await repo.wallet_transactions.upsert(walletRecord);
 
     await this._run(
       `UPDATE referral_rewards SET wallet_transaction_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -1427,12 +1448,12 @@ class ReferralService {
     );
 
     const balanceRow = await this._get('SELECT walletBalance FROM customers WHERE id = ?', [targetCustomerId]);
-    const balance = balanceRow ? balanceRow.walletBalance || 0 : reward.amount;
+    const balance = balanceRow ? balanceRow.walletBalance || 0 : amount;
     const walletPayload = {
       customerId: targetCustomerId,
       docType: 'wallet',
       event: 'balance_changed',
-      delta: reward.amount,
+      delta: amount,
       balance,
     };
     try {
@@ -1442,7 +1463,7 @@ class ReferralService {
         customerId: targetCustomerId,
         type: 'payment',
         title: 'Wallet credited',
-        body: `You earned a referral reward of ${reward.amount.toFixed(2)} in your wallet.`,
+        body: `You earned a referral reward of ${amount.toFixed(2)} in your wallet.`,
         link: '/wallet',
       });
     } catch (err) {
@@ -1451,29 +1472,47 @@ class ReferralService {
   }
 
   async reverseWalletForReward(reward, actorId = 'system', reason = '') {
-    const targetCustomerId = reward.customer_id;
-    const reversalAmount = Math.abs(reward.amount);
+    // F-23: mirror creditWalletForReward — use wallet_transactions and carry
+    // the actual currency instead of hard-coded USD.
+    const walletTxId = randomUUID();
+    const currency = 'USD'; // TODO: derive from system settings or reward currency
+    const reversalAmount = round2(Math.abs(reward.amount));
 
-    const account = await this._get(
-      "SELECT id FROM chart_of_accounts WHERE type = 'liability' LIMIT 1",
-      []
-    );
-    const accountId = account ? account.id : null;
+    const targetCustomerId = reward.customer_id;
+
+    const allAccounts = await repo.accounts.getAll();
+    const liabilityAccount = allAccounts.find((a) => {
+      const d = a.data || a;
+      return d.type === 'Liability' || d.type === 'liability';
+    });
+    const accountId = liabilityAccount ? liabilityAccount.id : null;
 
     if (accountId) {
       await this._run(
         `INSERT INTO ledger_entries (id, account_id, account_code, account_name, entry_type, amount, currency, description, reference_type, reference_id, journal_id, entry_date, created_by)
-         VALUES (?, ?, ?, ?, 'debit', ?, 'USD', ?, 'referral_reversal', ?, ?, ?, ?, ?)`,
-        [randomUUID(), accountId, null, null, reversalAmount,
+         VALUES (?, ?, ?, ?, 'debit', ?, ?, ?, 'referral_reversal', ?, ?, ?, ?, ?)`,
+        [randomUUID(), accountId, null, null, reversalAmount, currency,
          `Referral reward reversal for reward ${reward.id}: ${reason}`,
          reward.id, null, new Date().toISOString(), actorId]
       );
     }
 
-    await this._run(
-      'UPDATE customers SET walletBalance = COALESCE(walletBalance, 0) - ? WHERE id = ?',
-      [reversalAmount, targetCustomerId]
-    );
+    // Write to wallet_transactions so the DB trigger recomputes walletBalance.
+    const walletRecord = {
+      id: walletTxId,
+      data: {
+        customer_id: targetCustomerId,
+        type: 'referral_reversal',
+        amount: -reversalAmount,
+        currency,
+        description: `Reversal: ${reason}`,
+        reference_type: 'referral_reversal',
+        reference_id: reward.id,
+        status: 'completed',
+        created_at: new Date().toISOString(),
+      },
+    };
+    await repo.wallet_transactions.upsert(walletRecord);
 
     const balanceRow = await this._get('SELECT walletBalance FROM customers WHERE id = ?', [targetCustomerId]);
     const balance = balanceRow ? balanceRow.walletBalance || 0 : 0;

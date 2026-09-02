@@ -477,27 +477,70 @@ const sanitizeInput = (req, res, next) => {
   next();
 };
 
-// Expanded account/finance validation schemas
+// Expanded account/finance validation schemas for hierarchical COA
+const AccountType = z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']);
+const NormalBalance = z.enum(['DEBIT', 'CREDIT']);
+const AccountGroup = z.enum([
+  'CURRENT_ASSET',
+  'FIXED_ASSET',
+  'CURRENT_LIABILITY',
+  'LONG_TERM_LIABILITY',
+  'EQUITY',
+  'REVENUE',
+  'OTHER_INCOME',
+  'COST_OF_SALES',
+  'OPERATING_EXPENSE',
+  'OTHER_EXPENSE'
+]);
+const AccountSubtype = z.enum(['BANK', 'RECEIVABLE', 'PAYABLE', 'INVENTORY', 'TAX', 'CASH']);
+
 const accountSchemas = {
   create: z.object({
-    code: z.string().regex(/^\d{4}$/, 'Account code must be 4 digits'),
-    name: z.string().min(1, 'Name is required').max(100),
-    type: z.enum(['asset', 'liability', 'equity', 'revenue', 'expense']),
-    category: z.string().optional(),
-    subtype: z.string().optional(),
-    parent_id: z.string().optional(),
-    is_active: z.union([z.boolean(), z.number()]).optional(),
-    description: z.string().max(500).optional()
+    // Legacy fields (backward compatibility)
+    code: z.string().regex(/^\d{4,5}$/, 'Account code must be 4 or 5 digits').optional(),
+    // New structured fields
+    account_number: z.string().regex(/^\d{5}$/, 'Account number must be exactly 5 digits').optional(),
+    name: z.string().min(1, 'Name is required').max(200),
+    account_type: AccountType,
+    account_group: AccountGroup.optional(),
+    subtype: AccountSubtype.optional(),
+    parent_account_id: z.string().uuid().nullable().optional(),
+    normal_balance: NormalBalance.optional(),
+    is_system_account: z.boolean().optional().default(false),
+    allow_posting: z.boolean().optional().default(true),
+    is_active: z.union([z.boolean(), z.number()]).optional().default(true),
+    opening_balance: z.number().optional().default(0),
+    opening_balance_date: z.string().datetime().optional().nullable(),
+    description: z.string().max(500).optional(),
+    company_id: z.string().optional()
   }),
   update: z.object({
-    code: z.string().regex(/^\d{4}$/).optional(),
-    name: z.string().min(1).max(100).optional(),
-    type: z.enum(['asset', 'liability', 'equity', 'revenue', 'expense']).optional(),
-    category: z.string().optional(),
-    subtype: z.string().optional(),
-    parent_id: z.string().nullable().optional(),
+    // Legacy fields
+    code: z.string().regex(/^\d{4,5}$/).optional(),
+    // New structured fields
+    account_number: z.string().regex(/^\d{5}$/).optional(),
+    name: z.string().min(1).max(200).optional(),
+    account_type: AccountType.optional(),
+    account_group: AccountGroup.optional().nullable(),
+    subtype: AccountSubtype.optional().nullable(),
+    parent_account_id: z.string().uuid().nullable().optional(),
+    normal_balance: NormalBalance.optional().nullable(),
+    is_system_account: z.boolean().optional(),
+    allow_posting: z.boolean().optional(),
     is_active: z.union([z.boolean(), z.number()]).optional(),
-    description: z.string().max(500).nullable().optional()
+    opening_balance: z.number().optional(),
+    opening_balance_date: z.string().datetime().optional().nullable(),
+    description: z.string().max(500).nullable().optional(),
+    company_id: z.string().optional()
+  }),
+  // For patching status (activate/deactivate)
+  status: z.object({
+    is_active: z.boolean()
+  }),
+  // For hierarchical queries
+  tree: z.object({
+    company_id: z.string().optional(),
+    include_inactive: z.boolean().optional().default(false)
   })
 };
 

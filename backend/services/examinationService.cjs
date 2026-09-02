@@ -578,13 +578,21 @@ const saveLedgerEntry = async (entry) => {
 };
 
 const postInvoiceLedger = async (invoiceId, invoiceData) => {
-  const arAccount = await runGet(
-    "SELECT * FROM accountstype = 'asset' AND (name LIKE '%receivable%' OR code = '1100')",
-    []
+  // F-02: The previous implementation passed malformed SQL strings to
+  // runGet (missing FROM / WHERE keywords), so extractTable() returned
+  // null and the function always early-returned without posting. The
+  // fix is to use the Supabase REST client directly with proper filters.
+  const allAccounts = await repo.getAll('chart_of_accounts');
+  const arAccount = allAccounts.find(
+    (a) => /receivable/i.test(String(a.data?.name || a.name || ''))
+      || String(a.data?.code || a.code || '') === '1100'
+      || /^11\d{3}$/.test(String(a.data?.code || a.code || ''))
   );
-  const revenueAccount = await runGet(
-    "SELECT * FROM accounts(type = 'revenue' OR name LIKE '%revenue%' OR code = '4000')",
-    []
+  const revenueAccount = allAccounts.find(
+    (a) => /revenue/i.test(String(a.data?.name || a.name || ''))
+      || String(a.data?.code || a.code || '') === '4000'
+      || /^41\d{3}$/.test(String(a.data?.code || a.code || ''))
+      || /revenue|sales/i.test(String(a.data?.type || a.type || ''))
   );
   if (!arAccount || !revenueAccount) return;
   const totalAmount = toNumericValue(invoiceData?.total_amount) ?? 0;

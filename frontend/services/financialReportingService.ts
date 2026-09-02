@@ -1,12 +1,12 @@
 /**
  * Financial Reporting Service
- * 
+ *
  * Generates core financial statements:
  * - Trial Balance
  * - Balance Sheet
  * - Profit & Loss (Income Statement)
  * - Cash Flow Statement
- * 
+ *
  * Follows accounting standards with proper account classification
  */
 
@@ -15,6 +15,87 @@ import { Account, LedgerEntry } from '../types';
 import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
 
 export type AccountType = 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
+
+// Mapping from new uppercase format to display format
+const ACCOUNT_TYPE_TO_DISPLAY: Record<string, AccountType> = {
+  'ASSET': 'Asset',
+  'LIABILITY': 'Liability',
+  'EQUITY': 'Equity',
+  'INCOME': 'Revenue',
+  'EXPENSE': 'Expense'
+};
+
+// Reverse mapping from display/legacy to uppercase
+const DISPLAY_TO_ACCOUNT_TYPE: Record<string, string> = {
+  'Asset': 'ASSET',
+  'asset': 'ASSET',
+  'Liability': 'LIABILITY',
+  'liability': 'LIABILITY',
+  'Equity': 'EQUITY',
+  'equity': 'EQUITY',
+  'Revenue': 'INCOME',
+  'revenue': 'INCOME',
+  'Income': 'INCOME',
+  'income': 'INCOME',
+  'Expense': 'EXPENSE',
+  'expense': 'EXPENSE'
+};
+
+/**
+ * Check if a ledger entry's account reference matches an account.
+ * Supports both:
+ * - NEW entries: entry.debitAccountId === account.id (UUID)
+ * - LEGACY entries: entry.debitAccountId === account.code (e.g., "1000")
+ */
+function accountMatchesEntry(entry: LedgerEntry, account: Account, side: 'debit' | 'credit'): boolean {
+  const entryAccountRef = side === 'debit' ? entry.debitAccountId : entry.creditAccountId;
+  if (!entryAccountRef) return false;
+  
+  // Match by account.id (new canonical ID)
+  if (entryAccountRef === account.id) return true;
+  
+  // Match by account.code (legacy 4-digit code like "1000")
+  if (account.code && entryAccountRef === account.code) return true;
+  
+  // Match by account.account_number (legacy 5-digit code like "11101")
+  if (account.account_number && entryAccountRef === account.account_number) return true;
+  
+  return false;
+}
+
+/**
+ * Get the account type from an account object, handling both legacy and new formats
+ */
+function getAccountType(account: Account): AccountType {
+  // First check new account_type field (uppercase)
+  if (account.account_type) {
+    const normalized = account.account_type.toUpperCase();
+    return ACCOUNT_TYPE_TO_DISPLAY[normalized] || 'Asset';
+  }
+  // Fall back to legacy type field (can be lowercase or titlecase)
+  if (account.type) {
+    const upperType = account.type.toUpperCase();
+    if (upperType === 'REVENUE') return 'Revenue';
+    return ACCOUNT_TYPE_TO_DISPLAY[upperType] || 'Asset';
+  }
+  return 'Asset';
+}
+
+/**
+ * Check if account type is debit-normal (Asset, Expense)
+ */
+function isDebitNormalAccount(account: Account): boolean {
+  const accountType = getAccountType(account);
+  return accountType === 'Asset' || accountType === 'Expense';
+}
+
+/**
+ * Check if account type is credit-normal (Liability, Equity, Revenue)
+ */
+function isCreditNormalAccount(account: Account): boolean {
+  const accountType = getAccountType(account);
+  return accountType === 'Liability' || accountType === 'Equity' || accountType === 'Revenue';
+}
 
 export interface TrialBalanceEntry {
   accountId: string;
@@ -151,30 +232,31 @@ class FinancialReportingService {
 
     for (const account of accounts) {
       // Calculate balance for this account in the period
+      // Support both new account.id and legacy account.code references
       let debitAmount = 0;
       let creditAmount = 0;
 
       const accountEntries = ledger.filter(entry => {
         const entryDate = entry.date?.split('T')[0];
-        return entryDate >= periodStart && 
+        return entryDate >= periodStart &&
                entryDate <= periodEnd &&
-               (entry.debitAccountId === account.id || entry.creditAccountId === account.id);
+               (accountMatchesEntry(entry, account, 'debit') || accountMatchesEntry(entry, account, 'credit'));
       });
 
       for (const entry of accountEntries) {
-        if (entry.debitAccountId === account.id) {
+        if (accountMatchesEntry(entry, account, 'debit')) {
           debitAmount += entry.amount;
         }
-        if (entry.creditAccountId === account.id) {
+        if (accountMatchesEntry(entry, account, 'credit')) {
           creditAmount += entry.amount;
         }
       }
 
       // Calculate running balance based on account type
       let balance = 0;
-      const accountType = account.type as AccountType;
-      
-      if (accountType === 'Asset' || accountType === 'Expense') {
+      const accountType = getAccountType(account);
+
+      if (isDebitNormalAccount(account)) {
         balance = debitAmount - creditAmount;
       } else {
         balance = creditAmount - debitAmount;
@@ -225,27 +307,28 @@ class FinancialReportingService {
     const equity: BalanceSheetItem[] = [];
 
     for (const account of accounts) {
-      const accountType = account.type as AccountType;
-      
+      const accountType = getAccountType(account);
+
       // Skip revenue and expense accounts (they close to retained earnings)
       if (accountType === 'Revenue' || accountType === 'Expense') {
         continue;
       }
 
       // Calculate balance up to the as-of date
+      // Support both new account.id and legacy account.code references
       let balance = 0;
-      
+
       const accountEntries = ledger.filter(entry => {
         const entryDate = entry.date?.split('T')[0];
         return entryDate <= asOfDate &&
-               (entry.debitAccountId === account.id || entry.creditAccountId === account.id);
+               (accountMatchesEntry(entry, account, 'debit') || accountMatchesEntry(entry, account, 'credit'));
       });
 
       for (const entry of accountEntries) {
-        if (entry.debitAccountId === account.id) {
+        if (accountMatchesEntry(entry, account, 'debit')) {
           balance += entry.amount;
         }
-        if (entry.creditAccountId === account.id) {
+        if (accountMatchesEntry(entry, account, 'credit')) {
           balance -= entry.amount;
         }
       }
@@ -343,37 +426,38 @@ class FinancialReportingService {
     const otherExpenses: ProfitLossItem[] = [];
 
     for (const account of accounts) {
-      const accountType = account.type as AccountType;
-      
+      const accountType = getAccountType(account);
+
       if (accountType !== 'Revenue' && accountType !== 'Expense') {
         continue;
       }
 
       // Calculate amount for the period
+      // Support both new account.id and legacy account.code references
       let amount = 0;
       
       const accountEntries = ledger.filter(entry => {
         const entryDate = entry.date?.split('T')[0];
         return entryDate >= periodStart && 
                entryDate <= periodEnd &&
-               (entry.debitAccountId === account.id || entry.creditAccountId === account.id);
+               (accountMatchesEntry(entry, account, 'debit') || accountMatchesEntry(entry, account, 'credit'));
       });
 
       for (const entry of accountEntries) {
         if (accountType === 'Revenue') {
           // Revenue increases on credit
-          if (entry.creditAccountId === account.id) {
+          if (accountMatchesEntry(entry, account, 'credit')) {
             amount += entry.amount;
           }
-          if (entry.debitAccountId === account.id) {
+          if (accountMatchesEntry(entry, account, 'debit')) {
             amount -= entry.amount;
           }
         } else {
           // Expenses increase on debit
-          if (entry.debitAccountId === account.id) {
+          if (accountMatchesEntry(entry, account, 'debit')) {
             amount += entry.amount;
           }
-          if (entry.creditAccountId === account.id) {
+          if (accountMatchesEntry(entry, account, 'credit')) {
             amount -= entry.amount;
           }
         }
@@ -445,9 +529,17 @@ class FinancialReportingService {
       dbService.getAll<LedgerEntry>('ledger')
     ]);
 
-    // Get cash accounts
+    // Get cash accounts (check both legacy code and new account_number)
     const cashAccountIds = accounts
-      .filter(a => a.code?.startsWith('100') || (a.name || '').toLowerCase().includes('cash'))
+      .filter(a => {
+        const code = a.code || '';
+        const number = a.account_number || '';
+        const isCashByCode = code.startsWith('100') || code.startsWith('1110');
+        const isCashByNumber = number.startsWith('11100') || number.startsWith('11101') || number.startsWith('11102');
+        const isCashByName = (a.name || '').toLowerCase().includes('cash');
+        const isCashBySubtype = a.subtype === 'CASH' || a.account_group === 'CURRENT_ASSET';
+        return isCashByCode || isCashByNumber || (isCashByName && isCashBySubtype);
+      })
       .map(a => a.id);
 
     const beginningCash = await this.calculateCashBalance(cashAccountIds, periodStart);
@@ -527,42 +619,70 @@ class FinancialReportingService {
 
   // Helper methods
   private isCurrentAsset(accountCode: string): boolean {
-    return accountCode.startsWith('11') || accountCode.startsWith('10');
+    // Old 4-digit: 10xx, 11xx, 12xx (Cash, Bank, Receivable, Inventory)
+    // New 5-digit: 110xx, 120xx, 130xx (Current asset ranges)
+    return accountCode.startsWith('11') ||
+           accountCode.startsWith('12') ||
+           accountCode.startsWith('13') ||
+           accountCode.startsWith('110') ||
+           accountCode.startsWith('120') ||
+           accountCode.startsWith('130') ||
+           accountCode.startsWith('140');
   }
 
   private isFixedAsset(accountCode: string): boolean {
-    return accountCode.startsWith('15') || accountCode.startsWith('16');
+    // Old 4-digit: 15xx, 16xx
+    // New 5-digit: 150xx, 160xx
+    return accountCode.startsWith('15') ||
+           accountCode.startsWith('16') ||
+           accountCode.startsWith('150') ||
+           accountCode.startsWith('160');
   }
 
   private isCurrentLiability(accountCode: string): boolean {
-    return accountCode.startsWith('20') || accountCode.startsWith('21');
+    // Old 4-digit: 20xx, 21xx
+    // New 5-digit: 210xx, 220xx (Current liability ranges)
+    return accountCode.startsWith('20') ||
+           accountCode.startsWith('21') ||
+           accountCode.startsWith('210') ||
+           accountCode.startsWith('220') ||
+           accountCode.startsWith('230');
+  }
+
+  private isLongTermLiability(accountCode: string): boolean {
+    // New 5-digit: 221xx, 222xx (Long-term liability ranges)
+    return accountCode.startsWith('221') ||
+           accountCode.startsWith('222');
   }
 
   private classifyPLAccount(accountCode: string, accountType: AccountType): ProfitLossItem['category'] {
     if (accountType === 'Revenue') {
-      if (accountCode.startsWith('49')) return 'otherIncome';
+      // Old: 49xx, New: 42xxx (Other income)
+      if (accountCode.startsWith('49') || accountCode.startsWith('420')) return 'otherIncome';
       return 'revenue';
     }
-    
+
     if (accountType === 'Expense') {
-      if (accountCode.startsWith('50')) return 'cogs';
-      if (accountCode.startsWith('69')) return 'otherExpense';
+      // Old: 50xx (COGS), 61xx-68xx (Expenses), 69xx (Other)
+      // New: 51xxx (COGS), 52xxx-53xxx (Operating), 54xxx (Other)
+      if (accountCode.startsWith('50') || accountCode.startsWith('510')) return 'cogs';
+      if (accountCode.startsWith('69') || accountCode.startsWith('540')) return 'otherExpense';
       return 'expense';
     }
-    
+
     return 'expense';
   }
 
   private async calculateRetainedEarnings(asOfDate: string): Promise<number> {
     const ledger = await dbService.getAll<LedgerEntry>('ledger');
     const accounts = await dbService.getAll<Account>('accounts');
-    
+
     const revenueAccountIds = accounts
-      .filter(a => a.type === 'Revenue')
+      .filter(a => getAccountType(a) === 'Revenue')
       .map(a => a.id);
-    
+
     const expenseAccountIds = accounts
-      .filter(a => a.type === 'Expense')
+      .filter(a => getAccountType(a) === 'Expense')
       .map(a => a.id);
 
     let retainedEarnings = 0;
@@ -636,7 +756,12 @@ class FinancialReportingService {
     const ledger = await dbService.getAll<LedgerEntry>('ledger');
 
     const accountIds = accounts
-      .filter(a => a.code?.startsWith(accountCodePrefix))
+      .filter(a => {
+        const code = a.code || '';
+        const number = a.account_number || '';
+        // Check both legacy 4-digit code and new 5-digit account_number
+        return code.startsWith(accountCodePrefix) || number.startsWith(accountCodePrefix);
+      })
       .map(a => a.id);
 
     let beginningBalance = 0;

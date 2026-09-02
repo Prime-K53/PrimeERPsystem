@@ -146,25 +146,47 @@ class FinancialYearService {
     });
 
     const carryForwardBalances = async () => {
-      const balanceSheetAccounts = await repo.accounts.getAll({
-        'data->>type': { in: 'Asset,Liability,Equity' },
+      // F-16: derive the carry-forward balance from ledger_entries, not from
+      // the hand-entered d.balance field.  This ensures the closing balance
+      // is the true sum of all transactions recorded during the year.
+      const balanceSheetAccounts = await repo.accounts.getAll();
+      const bsAccounts = balanceSheetAccounts.filter((a) => {
+        const d = a.data || a;
+        return ['Asset', 'Liability', 'Equity'].includes(d.type);
       });
-      if (balanceSheetAccounts.length > 0 && next) {
+      if (bsAccounts.length > 0 && next) {
         const entryDate = next.data?.start_date || next.start_date;
-        for (const account of balanceSheetAccounts) {
+        for (const account of bsAccounts) {
           const d = account.data || account;
+          // Compute balance from ledger entries (debits positive, credits negative
+          // for normal-balance accounting).  Asset: debit-normal; Liab/Equity: credit-normal.
           const isDebitNormal = d.type === 'Asset';
-          const lineId = crypto.randomUUID();
-          const absBalance = Math.abs(d.balance || 0);
-          const entryType = d.balance > 0
+          const ledgerEntries = await repo.getAll('ledger_entries', {
+            'data->>account_id': `eq.${account.id}`,
+          });
+          let derivedBalance = 0;
+          for (const le of ledgerEntries) {
+            const leData = le.data || le;
+            const amt = Number(leData.amount) || 0;
+            if (leData.entry_type === 'debit') {
+              derivedBalance += isDebitNormal ? amt : -amt;
+            } else {
+              derivedBalance += isDebitNormal ? -amt : amt;
+            }
+          }
+          if (Math.abs(derivedBalance) < 0.001) continue;
+          const absBalance = Math.abs(derivedBalance);
+          const entryType = derivedBalance > 0
             ? (isDebitNormal ? 'debit' : 'credit')
             : (isDebitNormal ? 'credit' : 'debit');
+          const lineId = crypto.randomUUID();
           await repo.upsert('ledger_entries', {
             id: lineId,
             data: {
               account_id: account.id,
               entry_type: entryType,
-              amount: absBalance,
+              amount: Math.round(absBalance * 100) / 100,
+              currency: d.currency || 'USD',
               entry_date: entryDate,
               description: `Opening balance - ${d.name} (carried forward from FY ${fy.name})`,
               created_at: new Date().toISOString(),

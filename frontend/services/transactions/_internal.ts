@@ -54,6 +54,157 @@ export const getGLConfig = () => {
     return defaultConfig;
 };
 
+/**
+ * Resolve an account identifier (code, account_number, or id) to actual account.id
+ * This function bridges legacy code-based references to the new hierarchical COA
+ * 
+ * @param identifier - Legacy code (e.g., '1000'), account_number (e.g., '11101'), or account.id
+ * @param accounts - Optional pre-loaded accounts list
+ * @returns The actual account.id or the identifier if not found (for backward compatibility)
+ */
+export const resolveToAccountId = (identifier: string, accounts?: any[]): string => {
+    if (!identifier) return identifier;
+    
+    if (identifier.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        return identifier;
+    }
+    
+    if (accounts && accounts.length > 0) {
+        const found = accounts.find(a => 
+            a.id === identifier || 
+            a.code === identifier || 
+            a.account_number === identifier
+        );
+        if (found) return found.id;
+    }
+    
+    return identifier;
+};
+
+export async function loadAccountsFromStore(tx: any): Promise<any[]> {
+    try {
+        const accountsStore = tx.objectStore('accounts');
+        return await new Promise((resolve, reject) => {
+            const request = accountsStore.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    } catch {
+        return [];
+    }
+}
+
+export function resolveGLAccount(
+    accountRef: string | undefined,
+    accounts: any[],
+    options: ResolveAccountOptions = {}
+): string | null {
+    if (!accountRef) return null;
+    return resolveAccountForPosting(accountRef, accounts, options);
+}
+
+export interface ResolveAccountOptions {
+    allowInactive?: boolean;
+    allowNonPosting?: boolean;
+    companyId?: string;
+}
+
+export function resolveAccountForPosting(identifier: string, accounts: any[], options: ResolveAccountOptions = {}): string | null {
+    if (!identifier) return null;
+    
+    if (identifier.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        const account = accounts.find(a => a.id === identifier);
+        if (!account) return null;
+        
+        if (!options.allowInactive && (account.is_active === false || account.is_active === 0)) {
+            return null;
+        }
+        if (!options.allowNonPosting && (account.allow_posting === false || account.allow_posting === 0)) {
+            return null;
+        }
+        if (options.companyId && account.company_id && account.company_id !== options.companyId) {
+            return null;
+        }
+        return identifier;
+    }
+    
+    const found = accounts.find(a => 
+        a.id === identifier || 
+        a.code === identifier || 
+        a.account_number === identifier
+    );
+    
+    if (!found) return null;
+    
+    if (!options.allowInactive && (found.is_active === false || found.is_active === 0)) {
+        return null;
+    }
+    if (!options.allowNonPosting && (found.allow_posting === false || found.allow_posting === 0)) {
+        return null;
+    }
+    if (options.companyId && found.company_id && found.company_id !== options.companyId) {
+        return null;
+    }
+    
+    return found.id;
+}
+
+/**
+ * Get account ID by role using the Account Resolution Service
+ * Falls back to legacy code lookup if service unavailable
+ */
+export const getAccountIdByRole = async (role: string): Promise<string | null> => {
+    try {
+        const { accountResolutionService } = await import('../accountResolutionService');
+        const roleMap: Record<string, import('../accountResolutionService').AccountRole> = {
+            'AR': 'AR',
+            'AP': 'AP',
+            'CASH': 'CASH',
+            'BANK': 'BANK',
+            'SALES': 'SALES',
+            'SALES_PRODUCT': 'SALES_PRODUCT',
+            'SALES_SERVICE': 'SALES_SERVICE',
+            'INVENTORY': 'INVENTORY',
+            'COGS': 'COGS',
+            'TAX_PAYABLE': 'TAX_PAYABLE',
+            'RETAINED_EARNINGS': 'RETAINED_EARNINGS',
+            'EXPENSE': 'EXPENSE',
+            'EXPENSE_OPERATING': 'EXPENSE_OPERATING',
+            'EXPENSE_SALARIES': 'EXPENSE_SALARIES',
+            'EXPENSE_RENT': 'EXPENSE_RENT',
+            'EXPENSE_UTILITIES': 'EXPENSE_UTILITIES',
+            'EXPENSE_OTHER': 'EXPENSE_OTHER',
+            'OTHER_INCOME': 'OTHER_INCOME',
+            'PURCHASES': 'PURCHASES',
+            'FIXED_ASSET': 'FIXED_ASSET',
+            'ACCUMULATED_DEPRECIATION': 'ACCUMULATED_DEPRECIATION',
+        };
+        
+        const targetRole = roleMap[role];
+        if (!targetRole) return null;
+        
+        return await accountResolutionService.getAccountIdByRole(targetRole);
+    } catch {
+        // Fall back to legacy glMapping lookup
+        const gl = getGLConfig();
+        const roleToKey: Record<string, keyof typeof gl> = {
+            'AR': 'accountsReceivable',
+            'AP': 'accountsPayable',
+            'CASH': 'cashDrawerAccount',
+            'BANK': 'bankAccount',
+            'SALES': 'defaultSalesAccount',
+            'INVENTORY': 'defaultInventoryAccount',
+            'COGS': 'defaultCOGSAccount',
+            'RETAINED_EARNINGS': 'retainedEarningsAccount',
+            'EXPENSE': 'defaultExpenseAccount',
+            'EXPENSE_SALARIES': 'defaultLaborWagesAccount',
+            'OTHER_INCOME': 'otherIncomeAccount',
+        };
+        const key = roleToKey[role];
+        return key ? (gl[key] as string) : null;
+    }
+};
+
 export const generateId = (prefix: string, randomLength = 9): string => {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, randomLength)}`;
 };
@@ -509,3 +660,55 @@ export const distributePosRetainedAmounts = (
 
     return retained.map(amount => Math.max(0, toMoney(amount)));
 };
+
+export interface JournalLineInput {
+    debitAccountRef?: string;
+    creditAccountRef?: string;
+    amount: number;
+    description: string;
+    referenceId?: string;
+    customerId?: string;
+    customerName?: string;
+    reconciled?: boolean;
+    entryType?: string;
+    date?: string;
+}
+
+export function buildResolvedJournalLine(
+    input: JournalLineInput,
+    accounts: any[],
+    options: ResolveAccountOptions = {}
+): Omit<LedgerEntry, 'id' | 'date'> | null {
+    const resolvedDebit = resolveGLAccount(input.debitAccountRef, accounts, options);
+    const resolvedCredit = resolveGLAccount(input.creditAccountRef, accounts, options);
+    
+    if (!resolvedDebit && !resolvedCredit) {
+        logger.warn('[JOURNAL] Could not resolve either debit or credit account', {
+            debitRef: input.debitAccountRef,
+            creditRef: input.creditAccountRef
+        });
+        return null;
+    }
+    
+    return {
+        debitAccountId: resolvedDebit || input.debitAccountRef!,
+        creditAccountId: resolvedCredit || input.creditAccountRef!,
+        amount: input.amount,
+        description: input.description,
+        referenceId: input.referenceId,
+        customerId: input.customerId,
+        customerName: input.customerName,
+        reconciled: input.reconciled || false,
+        entryType: input.entryType,
+    };
+}
+
+export function buildResolvedJournalLines(
+    inputs: JournalLineInput[],
+    accounts: any[],
+    options: ResolveAccountOptions = {}
+): Omit<LedgerEntry, 'id' | 'date'>[] {
+    return inputs
+        .map(input => buildResolvedJournalLine(input, accounts, options))
+        .filter((line): line is Omit<LedgerEntry, 'id' | 'date'> => line !== null);
+}

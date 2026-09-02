@@ -26,16 +26,17 @@ class ProcurementService {
     const items = await repo.purchaseOrderItems.getAll({ 'data->>purchase_order_id': `eq.${grn.purchase_order_id}` });
     const totalAmount = items.reduce((sum, item) => sum + (Number(item.data?.total_price || item.total_price || 0)), 0);
     if (totalAmount <= 0) return;
-    const inventoryAccount = await repo.accounts.getAll({ 'data->>type': 'eq.asset' }).then(rows => rows.find((a) => {
+    const allAccounts = await repo.accounts.getAll();
+    const inventoryAccount = allAccounts.find((a) => {
       const d = a.data || a;
       const name = String(d.name || '').toLowerCase();
-      return name.includes('inventory') || d.code === '1200';
-    }));
-    const apAccount = await repo.accounts.getAll({ 'data->>type': 'eq.liability' }).then(rows => rows.find((a) => {
+      return name.includes('inventory') || d.code === '1200' || /^12\d{3}$/.test(d.code || '');
+    });
+    const apAccount = allAccounts.find((a) => {
       const d = a.data || a;
       const name = String(d.name || '').toLowerCase();
-      return name.includes('payable') || d.code === '2000';
-    }));
+      return name.includes('payable') || d.code === '2000' || /^21\d{3}$/.test(d.code || '');
+    });
     if (inventoryAccount && apAccount) {
       const po = await repo.purchaseOrders.getById(grn.purchase_order_id);
       const poCurrency = po?.data?.currency || po?.currency || currency;
@@ -196,7 +197,21 @@ class ProcurementService {
     return enriched;
   }
 
-  async createGoodsReceipt(data, userId, currency = 'USD') {
+  async createGoodsReceipt(data, userId, currency = 'USD', opts = {}) {
+    // F-22: idempotency — if the caller provides an idempotency key and a
+    // GRN already exists with that key, return the existing record without
+    // creating duplicate ledger entries.
+    const idemKey = opts && opts.idempotencyKey;
+    if (idemKey) {
+      const existing = await repo.goodsReceipts.getAll({
+        'data->>idempotency_key': `eq.${idemKey}`,
+      });
+      if (existing.length > 0) {
+        const existingGrn = existing[0];
+        return { ...existingGrn, ...(existingGrn.data || {}) };
+      }
+    }
+
     const id = data.id || crypto.randomUUID();
     const record = {
       id,
@@ -206,6 +221,7 @@ class ProcurementService {
         status: 'Received',
         notes: data.notes || null,
         created_by: userId,
+        idempotency_key: idemKey || null,
       },
     };
     await repo.goodsReceipts.upsert(record);

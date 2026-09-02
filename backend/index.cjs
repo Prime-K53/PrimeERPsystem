@@ -1089,11 +1089,29 @@ async function startServer() {
   // Chart of Accounts
   app.get('/api/accounts', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), async (req, res) => {
     try {
-      const rows = await finance.getAccounts();
+      const options = {
+        company_id: req.query.company_id || null,
+        include_inactive: req.query.include_inactive === 'true'
+      };
+      const rows = await finance.getAccounts(options);
       res.json(rows);
     } catch (err) {
       console.error('[Finance] getAccounts error:', err?.message || err);
       res.status(500).json({ error: err?.message || 'Failed to fetch accounts' });
+    }
+  });
+
+  app.get('/api/accounts/tree', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), async (req, res) => {
+    try {
+      const options = {
+        company_id: req.query.company_id || null,
+        include_inactive: req.query.include_inactive === 'true'
+      };
+      const tree = await finance.getAccountTree(options);
+      res.json(tree);
+    } catch (err) {
+      console.error('[Finance] getAccountTree error:', err?.message || err);
+      res.status(500).json({ error: err?.message || 'Failed to fetch account tree' });
     }
   });
 
@@ -1108,13 +1126,25 @@ async function startServer() {
     }
   });
 
+  app.get('/api/accounts/:id/balance', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), async (req, res) => {
+    try {
+      const balance = await finance.calculateAccountBalance(req.params.id);
+      res.json({ account_id: req.params.id, balance });
+    } catch (err) {
+      console.error('[Finance] calculateAccountBalance error:', err?.message || err);
+      res.status(500).json({ error: err?.message || 'Failed to calculate balance' });
+    }
+  });
+
   app.post('/api/accounts', requireRole('Admin', 'Accountant', 'Manager'), validateBody(accountSchemas.create), async (req, res) => {
     try {
-      const row = await finance.createAccount(req.body);
+      const companyId = req.headers['x-company-id'] || req.body.company_id || null;
+      const row = await finance.createAccount(req.body, companyId);
       res.status(201).json(row);
     } catch (err) {
       console.error('[Finance] createAccount error:', err?.message || err);
-      res.status(500).json({ error: err?.message || 'Failed to create account' });
+      const status = err.message.includes('already exists') || err.message.includes('required') ? 400 : 500;
+      res.status(status).json({ error: err.message || 'Failed to create account' });
     }
   });
 
@@ -1125,7 +1155,22 @@ async function startServer() {
       res.json(row);
     } catch (err) {
       console.error('[Finance] updateAccount error:', err?.message || err);
-      res.status(500).json({ error: err?.message || 'Failed to update account' });
+      const status = err.message.includes('not found') ? 404 : 500;
+      res.status(status).json({ error: err.message || 'Failed to update account' });
+    }
+  });
+
+  app.patch('/api/accounts/:id/status', requireRole('Admin', 'Accountant', 'Manager'), async (req, res) => {
+    try {
+      const { is_active } = req.body;
+      if (typeof is_active !== 'boolean') {
+        return res.status(400).json({ error: 'is_active must be a boolean' });
+      }
+      const row = await finance.updateAccountStatus(req.params.id, is_active);
+      res.json(row);
+    } catch (err) {
+      console.error('[Finance] updateAccountStatus error:', err?.message || err);
+      res.status(500).json({ error: err.message || 'Failed to update account status' });
     }
   });
 
@@ -1135,7 +1180,19 @@ async function startServer() {
       res.json({ success: true });
     } catch (err) {
       console.error('[Finance] deleteAccount error:', err?.message || err);
-      res.status(500).json({ error: err?.message || 'Failed to delete account' });
+      const status = err.message.includes('not found') ? 404 : 400;
+      res.status(status).json({ error: err.message || 'Failed to delete account' });
+    }
+  });
+
+  app.post('/api/accounts/standard-chart', requireRole('Admin', 'Accountant', 'Manager'), async (req, res) => {
+    try {
+      const companyId = req.headers['x-company-id'] || req.body.company_id || null;
+      const result = await finance.createStandardChart(companyId);
+      res.status(201).json(result);
+    } catch (err) {
+      console.error('[Finance] createStandardChart error:', err?.message || err);
+      res.status(500).json({ error: err.message || 'Failed to create standard chart' });
     }
   });
 

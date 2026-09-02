@@ -1,17 +1,20 @@
 const repo = require('./supabaseRepository.cjs');
 const crypto = require('crypto');
 
+function round2(v) {
+  return Math.round((Number(v) || 0) * 100) / 100;
+}
+
 class VATManagementService {
   calculateVAT(amount, vatRate, vatCategory = 'standard') {
     const rate = Number(vatRate) || 0;
     const netAmount = Number(amount) || 0;
-    const vatAmount = netAmount * (rate / 100);
-    const grossAmount = netAmount + vatAmount;
+    const vatAmount = round2(netAmount * (rate / 100));
     return {
-      netAmount: Number(netAmount.toFixed(2)),
+      netAmount: round2(netAmount),
       vatRate: rate,
-      vatAmount: Number(vatAmount.toFixed(2)),
-      grossAmount: Number(grossAmount.toFixed(2)),
+      vatAmount,
+      grossAmount: round2(netAmount + vatAmount),
       vatCategory,
     };
   }
@@ -95,9 +98,9 @@ class VATManagementService {
       summary.byCategory[categoryKey].total_vat += vatAmount;
       summary.byCategory[categoryKey].total_gross += grossAmount;
     }
-    summary.outputVAT = Number(summary.outputVAT.toFixed(2));
-    summary.inputVAT = Number(summary.inputVAT.toFixed(2));
-    summary.netVAT = Number((summary.outputVAT - summary.inputVAT).toFixed(2));
+    summary.outputVAT = round2(summary.outputVAT);
+    summary.inputVAT = round2(summary.inputVAT);
+    summary.netVAT = round2(summary.outputVAT - summary.inputVAT);
     return summary;
   }
 
@@ -150,22 +153,27 @@ class VATManagementService {
     const invoices = await repo.getAll('invoices', { 'data->>period': `eq.${period}` });
     const results = [];
     for (const invoice of invoices) {
-      const vatAmount = Number(invoice.total_amount || 0) * 0.16;
+      const invData = invoice.data || invoice;
+      const totalAmount = Number(invData.total_amount || 0);
+      const vatRate = Number(invData.vat_rate || invData.tax_rate || 0);
+      const vatAmount = Math.round(totalAmount * vatRate) / 100;
       const result = await this.recordVATTransaction({
         transaction_type: 'sale',
         reference_id: invoice.id,
         reference_type: 'invoice',
-        vat_rate: 16,
-        vat_amount: vatAmount,
-        net_amount: Number(invoice.total_amount || 0) - vatAmount,
-        gross_amount: Number(invoice.total_amount || 0),
-        vat_category: 'standard',
+        vat_rate: vatRate,
+        vat_amount: round2(vatAmount),
+        net_amount: round2(totalAmount - vatAmount),
+        gross_amount: round2(totalAmount),
+        vat_category: invData.vat_category || invData.tax_category || 'standard',
         is_recoverable: 0,
         period,
         status: 'posted',
       });
       results.push(result);
     }
+    return { imported: results.length, results };
+  }
     return { imported: results.length, results };
   }
 }

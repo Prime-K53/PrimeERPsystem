@@ -1,7 +1,12 @@
 const repo = require('./supabaseRepository.cjs');
 const crypto = require('crypto');
+const BaseService = require('./baseService.cjs');
 
-class BankingService {
+function round2(v) {
+  return Math.round((Number(v) || 0) * 100) / 100;
+}
+
+class BankingService extends BaseService {
   async getAccounts() {
     return repo.getAll('bank_accounts');
   }
@@ -77,7 +82,7 @@ class BankingService {
       account_id: data.accountId || data.account_id,
       date: data.date || new Date().toISOString().split('T')[0],
       type: data.type,
-      amount: data.amount,
+      amount: round2(data.amount),
       currency: data.currency || 'USD',
       description: data.description,
       reference_type: data.referenceType || data.reference_type || null,
@@ -93,7 +98,7 @@ class BankingService {
       if (account) {
         await repo.upsert('bank_accounts', {
           ...account,
-          current_balance: Number(account.current_balance || 0) + Number(data.amount || 0),
+          current_balance: round2(Number(account.current_balance || 0) + Number(data.amount || 0)),
         });
       }
     } else if (data.type === 'withdrawal' || data.type === 'transfer_out') {
@@ -101,7 +106,7 @@ class BankingService {
       if (account) {
         await repo.upsert('bank_accounts', {
           ...account,
-          current_balance: Number(account.current_balance || 0) - Number(data.amount || 0),
+          current_balance: round2(Number(account.current_balance || 0) - Number(data.amount || 0)),
         });
       }
     }
@@ -110,44 +115,52 @@ class BankingService {
   }
 
   async transferFunds(data) {
-    const fromId = data.fromAccountId || data.from_account_id;
-    const toId = data.toAccountId || data.to_account_id;
-    const amount = Number(data.amount || 0);
-    const date = data.date || new Date().toISOString().split('T')[0];
+    return await this._transaction(async () => {
+      const fromId = data.fromAccountId || data.from_account_id;
+      const toId = data.toAccountId || data.to_account_id;
+      const amount = round2(data.amount || 0);
+      const date = data.date || new Date().toISOString().split('T')[0];
+      const currency = data.currency || 'USD';
 
-    const fromAccount = await repo.getById('bank_accounts', fromId);
-    const toAccount = await repo.getById('bank_accounts', toId);
-    if (!fromAccount || !toAccount) throw new Error('Invalid account(s)');
+      const fromAccount = await repo.getById('bank_accounts', fromId);
+      const toAccount = await repo.getById('bank_accounts', toId);
+      if (!fromAccount || !toAccount) throw new Error('Invalid account(s)');
 
-    const outId = `BT-${Date.now()}-out-${crypto.randomBytes(4).toString('hex')}`;
-    const inId = `BT-${Date.now()}-in-${crypto.randomBytes(4).toString('hex')}`;
+      const outId = `BT-${Date.now()}-out-${crypto.randomBytes(4).toString('hex')}`;
+      const inId = `BT-${Date.now()}-in-${crypto.randomBytes(4).toString('hex')}`;
 
-    await repo.upsert('bank_transactions', {
-      id: outId, account_id: fromId, date, type: 'transfer_out',
-      amount, currency: data.currency || 'USD',
-      description: `Transfer to ${toAccount.account_name || toId}`,
-      reference_type: 'transfer', reference_id: data.referenceId || null,
-      status: 'completed', reconciled: 0, created_by: data.createdBy || null,
+      this._txCheckpoint('bank_accounts', fromId, { ...fromAccount });
+      this._txCheckpoint('bank_accounts', toId, { ...toAccount });
+
+      await repo.upsert('bank_transactions', {
+        id: outId, account_id: fromId, date, type: 'transfer_out',
+        amount, currency,
+        description: `Transfer to ${toAccount.account_name || toId}`,
+        reference_type: 'transfer', reference_id: data.referenceId || null,
+        status: 'completed', reconciled: 0, created_by: data.createdBy || null,
+      });
+      this._txCheckpoint('bank_transactions', outId, null);
+
+      await repo.upsert('bank_transactions', {
+        id: inId, account_id: toId, date, type: 'transfer_in',
+        amount, currency,
+        description: `Transfer from ${fromAccount.account_name || fromId}`,
+        reference_type: 'transfer', reference_id: data.referenceId || null,
+        status: 'completed', reconciled: 0, created_by: data.createdBy || null,
+      });
+      this._txCheckpoint('bank_transactions', inId, null);
+
+      await repo.upsert('bank_accounts', {
+        ...fromAccount,
+        current_balance: round2(Number(fromAccount.current_balance || 0) - amount),
+      });
+      await repo.upsert('bank_accounts', {
+        ...toAccount,
+        current_balance: round2(Number(toAccount.current_balance || 0) + amount),
+      });
+
+      return { outId, inId, amount, date };
     });
-
-    await repo.upsert('bank_transactions', {
-      id: inId, account_id: toId, date, type: 'transfer_in',
-      amount, currency: data.currency || 'USD',
-      description: `Transfer from ${fromAccount.account_name || fromId}`,
-      reference_type: 'transfer', reference_id: data.referenceId || null,
-      status: 'completed', reconciled: 0, created_by: data.createdBy || null,
-    });
-
-    await repo.upsert('bank_accounts', {
-      ...fromAccount,
-      current_balance: Number(fromAccount.current_balance || 0) - amount,
-    });
-    await repo.upsert('bank_accounts', {
-      ...toAccount,
-      current_balance: Number(toAccount.current_balance || 0) + amount,
-    });
-
-    return { outId, inId, amount, date };
   }
 
   async getAccountBalance(id, asOfDate) {
