@@ -1,7 +1,25 @@
 import { dbService } from './db';
+import { resolveAccountForPosting, UnresolvedAccountError } from './transactions/_internal';
 
-const ROUNDING_CLEARING_ACCOUNT = '4998';
-const ROUNDING_ACCRUAL_ACCOUNT = '2290';
+interface RoundingGLConfig {
+    roundingClearingAccount: string;
+    roundingAccrualAccount: string;
+}
+
+const getRoundingGLConfig = (): RoundingGLConfig => {
+  const saved = localStorage.getItem('nexus_company_config');
+  const defaultConfig: RoundingGLConfig = {
+    roundingClearingAccount: '4998',
+    roundingAccrualAccount: '2290',
+  };
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      return { ...defaultConfig, ...(parsed.glMapping || {}) };
+    } catch { }
+  }
+  return defaultConfig;
+};
 
 export interface RoundingClearanceSummary {
   periodStart: string;
@@ -25,6 +43,14 @@ export async function getUnclearedRoundingTotal(): Promise<number> {
   return logs.reduce((sum: number, l: any) => sum + (l.rounding_difference || 0), 0);
 }
 
+const resolveGLAccountRef = (ref: string, accounts: any[], companyId?: string): string => {
+    const resolved = resolveAccountForPosting(ref, accounts, { allowNonPosting: false, companyId });
+    if (!resolved) {
+        throw new UnresolvedAccountError(ref);
+    }
+    return resolved;
+};
+
 export async function clearRoundingForPeriod(
   periodStart: string,
   periodEnd: string,
@@ -47,6 +73,14 @@ export async function clearRoundingForPeriod(
   const journalEntryId = `LG-RNDCLR-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const absAmount = Math.abs(Math.round(netAmount * 100) / 100);
 
+  const glConfig = getRoundingGLConfig();
+  const accounts = (await dbService.getAll<any>('accounts')) || [];
+  const companyConfig = JSON.parse(localStorage.getItem('nexus_company_config') || '{}');
+  const companyId = companyConfig?.companyId;
+
+  const roundingClearingAccount = resolveGLAccountRef(glConfig.roundingClearingAccount, accounts, companyId);
+  const roundingAccrualAccount = resolveGLAccountRef(glConfig.roundingAccrualAccount, accounts, companyId);
+
   const entry: any = {
     id: journalEntryId,
     date: clearedAt,
@@ -58,12 +92,12 @@ export async function clearRoundingForPeriod(
   };
 
   if (netAmount > 0) {
-    entry.debitAccountId = ROUNDING_ACCRUAL_ACCOUNT;
-    entry.creditAccountId = ROUNDING_CLEARING_ACCOUNT;
+    entry.debitAccountId = roundingAccrualAccount;
+    entry.creditAccountId = roundingClearingAccount;
     entry.amount = absAmount;
   } else if (netAmount < 0) {
-    entry.debitAccountId = ROUNDING_CLEARING_ACCOUNT;
-    entry.creditAccountId = ROUNDING_ACCRUAL_ACCOUNT;
+    entry.debitAccountId = roundingClearingAccount;
+    entry.creditAccountId = roundingAccrualAccount;
     entry.amount = absAmount;
   } else {
     throw new Error('Net rounding amount is zero — nothing to clear');
@@ -85,12 +119,17 @@ export async function clearRoundingForPeriod(
 
 export async function getRoundingClearanceHistory(): Promise<RoundingClearanceSummary[]> {
   const allLedger = await dbService.getAll<any>('ledger');
+  const glConfig = getRoundingGLConfig();
+  
+  const clearingAccountId = glConfig.roundingClearingAccount;
+  const accrualAccountId = glConfig.roundingAccrualAccount;
+  
   return allLedger
     .filter((l: any) => l.description?.startsWith('Rounding clearance'))
     .map((l: any) => ({
       periodStart: l.description?.match(/Rounding clearance (.+?) to/)?.[1] || '',
       periodEnd: l.description?.match(/to (.+?)$/)?.[1] || '',
-      netRoundingAmount: l.amount * (l.debitAccountId === ROUNDING_ACCRUAL_ACCOUNT ? 1 : -1),
+      netRoundingAmount: l.amount * (l.debitAccountId === accrualAccountId ? 1 : -1),
       positiveRoundingCount: 0,
       negativeRoundingCount: 0,
       transactionCount: 0,

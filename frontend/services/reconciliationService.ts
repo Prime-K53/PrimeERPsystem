@@ -6,6 +6,8 @@
 
 import { dbService } from './db';
 import { financialIntegrityService } from './financialIntegrityService';
+import { accountResolutionService } from './accountResolutionService';
+import { getGLConfig } from './transactions/_internal';
 
 import {
   Discrepancy,
@@ -15,6 +17,79 @@ import {
 } from '../types';
 
 class ReconciliationService {
+  
+  /**
+   * Resolve AR account ID for reconciliation.
+   * Supports both legacy codes and canonical account.id.
+   */
+  private async resolveARAccountId(): Promise<string[]> {
+    const accounts = await dbService.getAll<any>('accounts');
+    const arIds: string[] = ['1100']; // Default legacy fallback
+    const gl = getGLConfig();
+    
+    // Try to resolve via account resolution service
+    try {
+      const arAccount = await accountResolutionService.resolveByRole('AR');
+      if (arAccount) {
+        arIds.push(arAccount.id);
+      }
+    } catch {
+      // Fall back to legacy
+    }
+    
+    // Also include the configured AR account if different
+    if (gl.accountsReceivable && gl.accountsReceivable !== '1100') {
+      arIds.push(gl.accountsReceivable);
+      // Resolve to actual account.id
+      const configured = accounts.find(a => 
+        a.id === gl.accountsReceivable || 
+        a.code === gl.accountsReceivable || 
+        a.account_number === gl.accountsReceivable
+      );
+      if (configured) {
+        arIds.push(configured.id);
+      }
+    }
+    
+    return [...new Set(arIds)];
+  }
+  
+  /**
+   * Resolve AP account ID for reconciliation.
+   * Supports both legacy codes and canonical account.id.
+   */
+  private async resolveAPAccountId(): Promise<string[]> {
+    const accounts = await dbService.getAll<any>('accounts');
+    const apIds: string[] = ['2000']; // Default legacy fallback
+    const gl = getGLConfig();
+    
+    // Try to resolve via account resolution service
+    try {
+      const apAccount = await accountResolutionService.resolveByRole('AP');
+      if (apAccount) {
+        apIds.push(apAccount.id);
+      }
+    } catch {
+      // Fall back to legacy
+    }
+    
+    // Also include the configured AP account if different
+    if (gl.accountsPayable && gl.accountsPayable !== '2000') {
+      apIds.push(gl.accountsPayable);
+      // Resolve to actual account.id
+      const configured = accounts.find(a => 
+        a.id === gl.accountsPayable || 
+        a.code === gl.accountsPayable || 
+        a.account_number === gl.accountsPayable
+      );
+      if (configured) {
+        apIds.push(configured.id);
+      }
+    }
+    
+    return [...new Set(apIds)];
+  }
+  
   async runFullReconciliation(): Promise<ReconciliationResult> {
     const discrepancies: Discrepancy[] = [];
 
@@ -60,15 +135,15 @@ class ReconciliationService {
       dbService.getAll<any>('ledger')
     ]);
 
-    const arAccountId = '1100';
+    const arAccountIds = await this.resolveARAccountId();
 
     for (const customer of customers) {
       const customerEntries = ledger.filter(e => e.customerId === customer.id);
       let expectedBalance = 0;
 
       for (const entry of customerEntries) {
-        if (entry.debitAccountId === arAccountId) expectedBalance += entry.amount;
-        if (entry.creditAccountId === arAccountId) expectedBalance -= entry.amount;
+        if (arAccountIds.includes(entry.debitAccountId)) expectedBalance += entry.amount;
+        if (arAccountIds.includes(entry.creditAccountId)) expectedBalance -= entry.amount;
       }
 
       const actualBalance = customer.balance || 0;
@@ -98,15 +173,15 @@ class ReconciliationService {
       dbService.getAll<any>('ledger')
     ]);
 
-    const apAccountId = '2000';
+    const apAccountIds = await this.resolveAPAccountId();
 
     for (const supplier of suppliers) {
       const supplierEntries = ledger.filter(e => e.supplierId === supplier.id);
       let expectedBalance = 0;
 
       for (const entry of supplierEntries) {
-        if (entry.creditAccountId === apAccountId) expectedBalance += entry.amount;
-        if (entry.debitAccountId === apAccountId) expectedBalance -= entry.amount;
+        if (apAccountIds.includes(entry.creditAccountId)) expectedBalance += entry.amount;
+        if (apAccountIds.includes(entry.debitAccountId)) expectedBalance -= entry.amount;
       }
 
       const actualBalance = supplier.balance || 0;

@@ -175,3 +175,94 @@ describe('Normal balance verification (Phase 1 regression)', () => {
     expect(cogsAccount!.account_type).toBe('EXPENSE');
   });
 });
+
+describe('requireResolvedAccount (strict mode)', () => {
+  let requireResolvedAccount: any;
+  let UnresolvedAccountError: any;
+
+  beforeEach(async () => {
+    const module = await import('../../services/transactions/_internal');
+    requireResolvedAccount = module.requireResolvedAccount;
+    UnresolvedAccountError = module.UnresolvedAccountError;
+  });
+
+  it('returns canonical ID for valid legacy code', () => {
+    const result = requireResolvedAccount('1000', MOCK_ACCOUNTS, {});
+    expect(result).toBe('acc-uuid-1000');
+  });
+
+  it('returns canonical ID for valid UUID', () => {
+    const result = requireResolvedAccount('acc-uuid-1000', MOCK_ACCOUNTS, {});
+    expect(result).toBe('acc-uuid-1000');
+  });
+
+  it('returns canonical ID for valid account_number', () => {
+    const result = requireResolvedAccount('1111', MOCK_ACCOUNTS, {});
+    expect(result).toBe('acc-uuid-1000');
+  });
+
+  it('throws UnresolvedAccountError for nonexistent account', () => {
+    expect(() => {
+      requireResolvedAccount('DOES-NOT-EXIST', MOCK_ACCOUNTS, {});
+    }).toThrow(UnresolvedAccountError);
+  });
+
+  it('throws UnresolvedAccountError for undefined', () => {
+    expect(() => {
+      requireResolvedAccount(undefined as any, MOCK_ACCOUNTS, {});
+    }).toThrow(UnresolvedAccountError);
+  });
+
+  it('throws UnresolvedAccountError for inactive account by default', () => {
+    expect(() => {
+      requireResolvedAccount('6100', MOCK_ACCOUNTS, {});
+    }).toThrow(UnresolvedAccountError);
+  });
+
+  it('allows inactive account when allowInactive=true', () => {
+    const result = requireResolvedAccount('6100', MOCK_ACCOUNTS, { allowInactive: true });
+    expect(result).toBe('acc-uuid-6100');
+  });
+
+  it('throws UnresolvedAccountError for non-posting account by default', () => {
+    expect(() => {
+      requireResolvedAccount('6000', MOCK_ACCOUNTS, {});
+    }).toThrow(UnresolvedAccountError);
+  });
+
+  it('allows non-posting account when allowNonPosting=true', () => {
+    const result = requireResolvedAccount('6000', MOCK_ACCOUNTS, { allowNonPosting: true });
+    expect(result).toBe('acc-uuid-parent');
+  });
+
+  it('throws UnresolvedAccountError for cross-company account by default', () => {
+    expect(() => {
+      requireResolvedAccount('9999', MOCK_ACCOUNTS, { companyId: 'my-company' });
+    }).toThrow(UnresolvedAccountError);
+  });
+
+  it('allows account when company matches', () => {
+    const result = requireResolvedAccount('9999', MOCK_ACCOUNTS, { companyId: 'other-company-id' });
+    expect(result).toBe('acc-uuid-other-company');
+  });
+});
+
+describe('UnresolvedAccountError', () => {
+  let UnresolvedAccountError: any;
+
+  beforeEach(async () => {
+    const module = await import('../../services/transactions/_internal');
+    UnresolvedAccountError = module.UnresolvedAccountError;
+  });
+
+  it('has correct name', () => {
+    const error = new UnresolvedAccountError('1000');
+    expect(error.name).toBe('UnresolvedAccountError');
+  });
+
+  it('contains the account reference', () => {
+    const error = new UnresolvedAccountError('1000');
+    expect(error.message).toBe('Unable to resolve posting account: 1000');
+    expect(error.accountRef).toBe('1000');
+  });
+});

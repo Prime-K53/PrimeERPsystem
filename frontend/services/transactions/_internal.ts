@@ -107,22 +107,39 @@ export interface ResolveAccountOptions {
     allowInactive?: boolean;
     allowNonPosting?: boolean;
     companyId?: string;
+    strict?: boolean;
+}
+
+export class UnresolvedAccountError extends Error {
+    constructor(public readonly accountRef: string) {
+        super(`Unable to resolve posting account: ${accountRef}`);
+        this.name = 'UnresolvedAccountError';
+    }
 }
 
 export function resolveAccountForPosting(identifier: string, accounts: any[], options: ResolveAccountOptions = {}): string | null {
-    if (!identifier) return null;
+    if (!identifier) {
+        if (options.strict) throw new UnresolvedAccountError(identifier || 'undefined');
+        return null;
+    }
     
     if (identifier.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
         const account = accounts.find(a => a.id === identifier);
-        if (!account) return null;
+        if (!account) {
+            if (options.strict) throw new UnresolvedAccountError(identifier);
+            return null;
+        }
         
         if (!options.allowInactive && (account.is_active === false || account.is_active === 0)) {
+            if (options.strict) throw new UnresolvedAccountError(identifier);
             return null;
         }
         if (!options.allowNonPosting && (account.allow_posting === false || account.allow_posting === 0)) {
+            if (options.strict) throw new UnresolvedAccountError(identifier);
             return null;
         }
         if (options.companyId && account.company_id && account.company_id !== options.companyId) {
+            if (options.strict) throw new UnresolvedAccountError(identifier);
             return null;
         }
         return identifier;
@@ -134,19 +151,33 @@ export function resolveAccountForPosting(identifier: string, accounts: any[], op
         a.account_number === identifier
     );
     
-    if (!found) return null;
+    if (!found) {
+        if (options.strict) throw new UnresolvedAccountError(identifier);
+        return null;
+    }
     
     if (!options.allowInactive && (found.is_active === false || found.is_active === 0)) {
+        if (options.strict) throw new UnresolvedAccountError(identifier);
         return null;
     }
     if (!options.allowNonPosting && (found.allow_posting === false || found.allow_posting === 0)) {
+        if (options.strict) throw new UnresolvedAccountError(identifier);
         return null;
     }
     if (options.companyId && found.company_id && found.company_id !== options.companyId) {
+        if (options.strict) throw new UnresolvedAccountError(identifier);
         return null;
     }
     
     return found.id;
+}
+
+export function requireResolvedAccount(identifier: string, accounts: any[], options: Omit<ResolveAccountOptions, 'strict'> = {}): string {
+    const resolved = resolveAccountForPosting(identifier, accounts, { ...options, strict: true });
+    if (!resolved) {
+        throw new UnresolvedAccountError(identifier);
+    }
+    return resolved;
 }
 
 /**
@@ -282,23 +313,27 @@ export const resolveBankAccountForPayment = (
     }
 
     const method = (payment.paymentMethod || '').toLowerCase();
-    const accountId = payment.accountId || '';
 
     const matches = (acc: BankAccount, tokens: string[]) => {
         const name = (acc.name || '').toLowerCase();
         const number = (acc.accountNumber || '').toLowerCase();
-        return tokens.some(token => name.includes(token) || number.includes(token));
+        const bankName = (acc.bankName || '').toLowerCase();
+        return tokens.some(token => 
+            name.includes(token) || 
+            number.includes(token) ||
+            bankName.includes(token)
+        );
     };
 
-    if (accountId === '1000' || method.includes('cash')) {
+    if (method.includes('cash')) {
         return bankAccounts.find(acc => matches(acc, ['cash']));
     }
 
-    if (accountId === '1060' || method.includes('mobile') || method.includes('momo')) {
+    if (method.includes('mobile') || method.includes('momo')) {
         return bankAccounts.find(acc => matches(acc, ['mobile', 'momo']));
     }
 
-    if (accountId === '1050' || method.includes('bank') || method.includes('card')) {
+    if (method.includes('bank') || method.includes('card')) {
         return bankAccounts.find(acc => matches(acc, ['bank']));
     }
 

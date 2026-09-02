@@ -1,19 +1,28 @@
 import { ReferralReward } from '../types/referral'
 import { ReversalRequest } from '../types/referral-extended'
 import { dbService } from './db'
-import { generateId } from './transactions/_internal'
+import { generateId, resolveAccountForPosting, UnresolvedAccountError } from './transactions/_internal'
 import { referralEventBus } from './referralEventBus'
 import { referralAuditService } from './referralAuditService'
 import { logger } from './logger'
 
-const getGLConfig = () => {
+interface GLConfig {
+    defaultSalesAccount: string;
+    defaultInventoryAccount: string;
+    defaultCOGSAccount: string;
+    cashDrawerAccount: string;
+    customerDepositAccount: string;
+    marketingExpenseAccount: string;
+}
+
+const getGLConfig = (): GLConfig => {
   const saved = localStorage.getItem('nexus_company_config')
-  const defaultConfig = {
+  const defaultConfig: GLConfig = {
     defaultSalesAccount: '4000',
     defaultInventoryAccount: '1200',
     defaultCOGSAccount: '5000',
     cashDrawerAccount: '1000',
-    customerDepositAccount: '2100',
+    customerDepositAccount: '2200',
     marketingExpenseAccount: '6100',
   }
   if (saved) {
@@ -26,6 +35,14 @@ const getGLConfig = () => {
 }
 
 const toMoney = (v: number): number => Math.round(v * 100) / 100
+
+const resolveGLAccountRef = (ref: string, accounts: any[], companyId?: string): string => {
+    const resolved = resolveAccountForPosting(ref, accounts, { allowNonPosting: false, companyId });
+    if (!resolved) {
+        throw new UnresolvedAccountError(ref);
+    }
+    return resolved;
+};
 
 export const referralReversalService = {
   async requestReversal(params: {
@@ -110,12 +127,23 @@ export const referralReversalService = {
       }
     }
 
+    const accounts = (await dbService.getAll<any>('accounts')) || [];
+    const companyConfig = JSON.parse(localStorage.getItem('nexus_company_config') || '{}');
+    const companyId = companyConfig?.companyId;
+
+    const debitAccountId = resolveGLAccountRef(gl.customerDepositAccount, accounts, companyId);
+    const creditAccountId = resolveGLAccountRef(
+      gl.marketingExpenseAccount || gl.cashDrawerAccount,
+      accounts,
+      companyId
+    );
+
     const ledgerEntry = {
       id: ledgerEntryId,
       date: new Date().toISOString(),
       description: `Reversal of referral reward - ${reversal.reason}`,
-      debitAccountId: gl.customerDepositAccount,
-      creditAccountId: gl.marketingExpenseAccount || gl.cashDrawerAccount,
+      debitAccountId,
+      creditAccountId,
       amount: reward.amount,
       referenceId: reward.invoiceId,
       customerId: referrerCustomerId,

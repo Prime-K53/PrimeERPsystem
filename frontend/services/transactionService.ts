@@ -32,7 +32,8 @@ import {
     createMultiCurrencyJournalEntry, calculatePaymentGainLoss,
     resolveItemUnitCost, resolveInventoryRecord, calculateItemsCost,
     validateLedgerBalance, distributePosRetainedAmounts, resolveToAccountId,
-    resolveAccountForPosting, buildResolvedJournalLine, loadAccountsFromStore,
+    resolveAccountForPosting, requireResolvedAccount, buildResolvedJournalLine, 
+    loadAccountsFromStore, UnresolvedAccountError,
     JournalLineInput
 } from './transactions/_internal';
 
@@ -516,9 +517,16 @@ export const transactionService = {
                 const accountOptions = { allowNonPosting: false, companyId };
                 
                 // Helper to resolve GL account references to canonical account.id
+                // STRICT MODE: throws UnresolvedAccountError if account cannot be resolved
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 // 1. Validation & Snapshot Generation
@@ -805,13 +813,12 @@ export const transactionService = {
                 if (profitMarginTotal > 0) {
                     const paidMargin = roundToCurrency(profitMarginTotal * paymentRatio);
                     if (paidMargin > 0) {
-                        const marginAccount = gl.marginIncomeAccount || gl.otherIncomeAccount || '4900';
                         const marginEntry: LedgerEntry = {
                                 id: generateId('LG-MARGIN'),
                             date: sale.date,
                             description: `Profit Margin - Sale #${sale.id}`,
                             debitAccountId: resolveAcct(gl.cashDrawerAccount),
-                            creditAccountId: resolveAcct(marginAccount),
+                            creditAccountId: resolveAcct(gl.marginIncomeAccount || gl.otherIncomeAccount),
                             amount: Number(paidMargin.toFixed(2)),
                             referenceId: sale.id,
                             reconciled: false,
@@ -831,7 +838,6 @@ export const transactionService = {
                     // If rounding is positive (gain), Credit Income/Rounding account. Debit Cash/AR.
                     // If rounding is negative (loss), Debit Expense/Rounding account. Credit Cash/AR (effectively reducing revenue receipt).
                     // For simplicity, we treat positive rounding as Other Income.
-                    const roundingAccount = gl.roundingAccount || gl.otherIncomeAccount || '4900'; 
                     
                     if (paidRounding !== 0) {
                          const roundingEntry: LedgerEntry = {
@@ -839,7 +845,7 @@ export const transactionService = {
                             date: sale.date,
                             description: `Rounding Difference - Sale #${sale.id}`,
                             debitAccountId: resolveAcct(gl.cashDrawerAccount),
-                            creditAccountId: resolveAcct(roundingAccount),
+                            creditAccountId: resolveAcct(gl.roundingAccount || gl.otherIncomeAccount),
                             amount: Number(paidRounding.toFixed(2)),
                             referenceId: sale.id,
                             reconciled: false,
@@ -1295,8 +1301,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 // 1. Save refund record (using sales store for now)
@@ -1527,8 +1539,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 // Pre-fetch data for adjustment processing
@@ -1933,6 +1951,12 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 
                 for (const entry of entries) {
+                    if (!entry.debitAccountId || !entry.creditAccountId) {
+                        throw new UnresolvedAccountError(
+                            `Journal entry missing account reference: debit=${entry.debitAccountId}, credit=${entry.creditAccountId}`
+                        );
+                    }
+                    
                     const resolvedDebitId = resolveAccountForPosting(
                         entry.debitAccountId, 
                         accounts, 
@@ -1944,14 +1968,21 @@ export const transactionService = {
                         { allowNonPosting: false, companyId }
                     );
                     
+                    if (!resolvedDebitId) {
+                        throw new UnresolvedAccountError(entry.debitAccountId);
+                    }
+                    if (!resolvedCreditId) {
+                        throw new UnresolvedAccountError(entry.creditAccountId);
+                    }
+                    
                     const newEntry: LedgerEntry = {
                         ...entry,
                         id: generateId('LG'),
                         date,
                         reconciled: entry.reconciled || false,
                         amount: entry.amount || 0,
-                        debitAccountId: resolvedDebitId || entry.debitAccountId,
-                        creditAccountId: resolvedCreditId || entry.creditAccountId,
+                        debitAccountId: resolvedDebitId,
+                        creditAccountId: resolvedCreditId,
                     };
                     await store.put(newEntry);
                 }
@@ -1985,8 +2016,14 @@ export const transactionService = {
                 const accountOptions = { allowNonPosting: false, companyId };
 
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 // Pre-fetch data for adjustment processing
@@ -2305,8 +2342,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 // Pre-fetch data for adjustment processing
@@ -2574,8 +2617,8 @@ export const transactionService = {
                     id: generateId('LG-JO-INV-AR'),
                     date: invoiceData.date,
                     description: `Invoice #${invoiceData.id} (from Job Order #${jobOrderId})`,
-                    debitAccountId: gl.accountsReceivable,
-                    creditAccountId: invoiceData.salesAccountId || gl.defaultSalesAccount,
+                    debitAccountId: resolveAcct(gl.accountsReceivable),
+                    creditAccountId: resolveAcct(invoiceData.salesAccountId) || resolveAcct(gl.defaultSalesAccount),
                     amount: totalAmount,
                     referenceId: invoiceData.id,
                     reconciled: false,
@@ -2611,8 +2654,14 @@ export const transactionService = {
                 const accountOptions = { allowNonPosting: false, companyId };
 
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const customerId = payment.customerId || '';
@@ -2891,8 +2940,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const payment = await paymentStore.get(paymentId);
@@ -2983,7 +3038,7 @@ export const transactionService = {
                 }
                 const originalCreditAccount = payment.receiptSnapshot?.paymentPurpose === 'WALLET_TOPUP'
                     ? gl.customerDepositAccount
-                    : (gl.accountsReceivable || '1100');
+                    : gl.accountsReceivable;
                 const reversal: LedgerEntry = {
                     id: generateId('LG-REV'),
                     date: new Date().toISOString(),
@@ -3131,8 +3186,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const invoice = await invoiceStore.get(id);
@@ -3211,7 +3272,7 @@ export const transactionService = {
                     }
                     const originalCreditAccount = payment.receiptSnapshot?.paymentPurpose === 'WALLET_TOPUP'
                         ? gl.customerDepositAccount
-                        : (gl.accountsReceivable || '1100');
+                        : gl.accountsReceivable;
 
                     if (retainedAmount > 0) {
                         const reversal: LedgerEntry = {
@@ -3330,8 +3391,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const sale = await salesStore.get(id);
@@ -3540,9 +3607,25 @@ export const transactionService = {
 
     async syncInventoryValuation(accountId: string, physicalValue: number, currentLedgerBalance: number) {
         return dbService.executeAtomicOperation(
-            ['ledger'],
+            ['ledger', 'accounts'],
             async (tx) => {
                 const ledgerStore = tx.objectStore('ledger');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
+
                 const diff = physicalValue - currentLedgerBalance;
 
                 if (Math.abs(diff) > 0.01) {
@@ -3551,8 +3634,8 @@ export const transactionService = {
                         id: generateId('LG-SYNC'),
                         date: new Date().toISOString(),
                         description: `Inventory Valuation Sync: Physical(${physicalValue}) vs Ledger(${currentLedgerBalance})`,
-                        debitAccountId: diff > 0 ? accountId : (gl.defaultCOGSAccount || '5000'),
-                        creditAccountId: diff > 0 ? (gl.defaultCOGSAccount || '5000') : accountId,
+                        debitAccountId: diff > 0 ? accountId : resolveAcct(gl.defaultCOGSAccount),
+                        creditAccountId: diff > 0 ? resolveAcct(gl.defaultCOGSAccount) : accountId,
                         amount: Math.abs(diff),
                         referenceId: 'SYNC-INV',
                         reconciled: true
@@ -3580,8 +3663,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const normalizedExpense: Expense = {
@@ -3596,8 +3685,8 @@ export const transactionService = {
                     id: generateId('LG-EXP-MAIN'),
                     date: new Date().toISOString(),
                     description: `Expense: ${normalizedExpense.description}`,
-                    debitAccountId: resolveAcct(gl.defaultExpenseAccount || '5000'),
-                    creditAccountId: resolveAcct(normalizedExpense.accountId || gl.bankAccount || '1050'),
+                    debitAccountId: resolveAcct(gl.defaultExpenseAccount),
+                    creditAccountId: resolveAcct(normalizedExpense.accountId || gl.bankAccount),
                     amount: totalAmount,
                     referenceId: normalizedExpense.id,
                     reconciled: false
@@ -3645,8 +3734,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const expense = await expenseStore.get(id);
@@ -3673,8 +3768,8 @@ export const transactionService = {
                     id: generateId('LG-EXP-MAIN'),
                     date: new Date().toISOString(),
                     description: `Expense: ${expense.description}`,
-                    debitAccountId: resolveAcct(gl.defaultExpenseAccount || '5000'),
-                    creditAccountId: resolveAcct(expense.accountId || gl.bankAccount || '1050'),
+                    debitAccountId: resolveAcct(gl.defaultExpenseAccount),
+                    creditAccountId: resolveAcct(expense.accountId || gl.bankAccount),
                     amount: totalAmount,
                     referenceId: expense.id,
                     reconciled: false
@@ -3708,7 +3803,7 @@ export const transactionService = {
 
     async addIncome(income: Income) {
         return dbService.executeAtomicOperation(
-            ['income', 'ledger', 'bankAccounts', 'bankTransactions', 'idempotencyKeys'],
+            ['income', 'ledger', 'bankAccounts', 'bankTransactions', 'idempotencyKeys', 'accounts'],
             async (tx) => {
                 await reserveIdempotencyKey(tx, 'income', income.id, income.idempotencyKey);
 
@@ -3716,6 +3811,21 @@ export const transactionService = {
                 const ledgerStore = tx.objectStore('ledger');
                 const bankAccountsStore = tx.objectStore('bankAccounts');
                 const bankTransactionsStore = tx.objectStore('bankTransactions');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
 
                 await incomeStore.put(income);
 
@@ -3725,8 +3835,8 @@ export const transactionService = {
                     id: generateId('LG-INC'),
                     date: income.date,
                     description: `Income: ${income.description}`,
-                    debitAccountId: income.accountId || gl.bankAccount || '1050',
-                    creditAccountId: gl.otherIncomeAccount || '4900',
+                    debitAccountId: resolveAcct(income.accountId || gl.bankAccount),
+                    creditAccountId: resolveAcct(gl.otherIncomeAccount),
                     amount: income.amount,
                     referenceId: income.id,
                     reconciled: false
@@ -3760,7 +3870,7 @@ export const transactionService = {
 
     async executeTransfer(transfer: Transfer) {
         return dbService.executeAtomicOperation(
-            ['transfers', 'ledger', 'bankAccounts', 'bankTransactions', 'idempotencyKeys'],
+            ['transfers', 'ledger', 'bankAccounts', 'bankTransactions', 'accounts', 'idempotencyKeys'],
             async (tx) => {
                 await reserveIdempotencyKey(tx, 'transfer', transfer.id, transfer.idempotencyKey);
 
@@ -3768,16 +3878,34 @@ export const transactionService = {
                 const ledgerStore = tx.objectStore('ledger');
                 const bankAccountsStore = tx.objectStore('bankAccounts');
                 const bankTransactionsStore = tx.objectStore('bankTransactions');
+                const accountsStore = tx.objectStore('accounts');
+
+                const accounts = await loadAccountsFromStore(accountsStore);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
 
                 await transferStore.put(transfer);
 
-                // Create Ledger Entry
+                const fromAccountId = resolveAcct(transfer.fromAccountId);
+                const toAccountId = resolveAcct(transfer.toAccountId);
+
                 const entry: LedgerEntry = {
                     id: generateId('LG-TRF'),
                     date: transfer.date,
                     description: `Internal Transfer: ${transfer.description || ''}`,
-                    debitAccountId: transfer.toAccountId,
-                    creditAccountId: transfer.fromAccountId,
+                    debitAccountId: toAccountId,
+                    creditAccountId: fromAccountId,
                     amount: transfer.amount,
                     referenceId: transfer.id,
                     reconciled: true
@@ -3792,8 +3920,8 @@ export const transactionService = {
                     type: 'Withdrawal',
                     description: `Transfer out: ${transfer.description || transfer.id}`,
                     reference: `TRF-OUT-${transfer.id}`,
-                    accountId: transfer.fromAccountId,
-                    paymentMethod: transfer.fromAccountId === '1000' ? 'Cash' : 'Bank Transfer',
+                    accountId: fromAccountId,
+                    paymentMethod: 'Bank Transfer',
                     category: 'Transfer'
                 });
 
@@ -3805,8 +3933,8 @@ export const transactionService = {
                     type: 'Deposit',
                     description: `Transfer in: ${transfer.description || transfer.id}`,
                     reference: `TRF-IN-${transfer.id}`,
-                    accountId: transfer.toAccountId,
-                    paymentMethod: transfer.toAccountId === '1000' ? 'Cash' : 'Bank Transfer',
+                    accountId: toAccountId,
+                    paymentMethod: 'Bank Transfer',
                     category: 'Transfer'
                 });
 
@@ -3827,8 +3955,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const invoice = await invoiceStore.get(invoiceId);
@@ -3842,8 +3976,8 @@ export const transactionService = {
                     id: generateId('LG-FEE'),
                     date: new Date().toISOString(),
                     description: `Late Fee for Invoice #${invoice.id}`,
-                    debitAccountId: resolveAcct(gl.accountsReceivable || '1100'),
-                    creditAccountId: resolveAcct(gl.otherIncomeAccount || '4900'),
+                    debitAccountId: resolveAcct(gl.accountsReceivable),
+                    creditAccountId: resolveAcct(gl.otherIncomeAccount),
                     amount: fee,
                     referenceId: invoice.id,
                     reconciled: false,
@@ -3876,8 +4010,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const gl = getGLConfig();
@@ -3978,8 +4118,8 @@ export const transactionService = {
                                 id: generateId('LG-GRN-POREV'),
                                 date: grn.date,
                                 description: `PO Reversal on GRN - ${po.id}`,
-                                debitAccountId: resolveAcct(gl.accountsPayable) || '2000',
-                                creditAccountId: resolveAcct(gl.defaultInventoryAccount) || '1200',
+                                debitAccountId: resolveAcct(gl.accountsPayable),
+                                creditAccountId: resolveAcct(gl.defaultInventoryAccount),
                                 amount: poAmount,
                                 referenceId: grn.id,
                                 reconciled: false,
@@ -4017,8 +4157,8 @@ export const transactionService = {
                     id: generateId('LG-GRN-INV'),
                     date: grn.date,
                     description: `Goods Receipt #${grn.id}${relatedPurchase ? ` (PO: ${relatedPurchase.id})` : ''}`,
-                    debitAccountId: resolveAcct(gl.defaultInventoryAccount) || '1200',
-                    creditAccountId: resolveAcct(gl.accountsPayable) || '2000',
+                    debitAccountId: resolveAcct(gl.defaultInventoryAccount),
+                    creditAccountId: resolveAcct(gl.accountsPayable),
                     amount: totalAmount,
                     referenceId: grn.id,
                     reconciled: false,
@@ -4043,8 +4183,8 @@ export const transactionService = {
                         id: generateId('LG-GRN-VAR'),
                         date: grn.date,
                         description: `GRN Variance - ${grn.id} (Actual: ${totalAmount.toFixed(2)} vs PO: ${poAmount.toFixed(2)})`,
-                        debitAccountId: variance > 0 ? (resolveAcct(gl.defaultCOGSAccount) || '5000') : resolveAcct(gl.accountsPayable),
-                        creditAccountId: variance > 0 ? resolveAcct(gl.accountsPayable) : (resolveAcct(gl.defaultCOGSAccount) || '5000'),
+                        debitAccountId: variance > 0 ? resolveAcct(gl.defaultCOGSAccount) : resolveAcct(gl.accountsPayable),
+                        creditAccountId: variance > 0 ? resolveAcct(gl.accountsPayable) : resolveAcct(gl.defaultCOGSAccount),
                         amount: Math.abs(variance),
                         referenceId: grn.id,
                         reconciled: false,
@@ -4066,12 +4206,27 @@ export const transactionService = {
             let adjustmentCost = item.cost || 0;
 
             return dbService.executeAtomicOperation(
-                ['inventory', 'ledger', 'warehouseInventory', 'inventoryTransactions'],
+                ['inventory', 'ledger', 'warehouseInventory', 'inventoryTransactions', 'accounts'],
                 async (tx) => {
                     const inventoryStore = tx.objectStore('inventory');
                     const ledgerStore = tx.objectStore('ledger');
                     const whStore = tx.objectStore('warehouseInventory');
                     const auditStore = tx.objectStore('inventoryTransactions');
+
+                    const accounts = await loadAccountsFromStore(tx);
+                    const companyConfig = getCompanyConfig();
+                    const companyId = companyConfig?.companyId;
+                    const accountOptions = { allowNonPosting: false, companyId };
+                    const resolveAcct = (ref: string | undefined) => {
+                        if (!ref) {
+                            throw new UnresolvedAccountError(ref || 'undefined');
+                        }
+                        const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                        if (!resolved) {
+                            throw new UnresolvedAccountError(ref);
+                        }
+                        return resolved;
+                    };
 
                     const item = await inventoryStore.get(params.itemId);
                     if (!item) throw new Error("Item not found");
@@ -4114,8 +4269,8 @@ export const transactionService = {
                             id: generateId('LG-ADJ'),
                             date: new Date().toISOString(),
                             description: `Stock Adjustment: ${params.reason} (${params.notes || ''})`,
-                            debitAccountId: params.qtyChange > 0 ? (gl.defaultInventoryAccount || '1200') : (gl.defaultCOGSAccount || '5000'),
-                            creditAccountId: params.qtyChange > 0 ? (gl.defaultCOGSAccount || '5000') : (gl.defaultInventoryAccount || '1200'),
+                            debitAccountId: params.qtyChange > 0 ? resolveAcct(gl.defaultInventoryAccount) : resolveAcct(gl.defaultCOGSAccount),
+                            creditAccountId: params.qtyChange > 0 ? resolveAcct(gl.defaultCOGSAccount) : resolveAcct(gl.defaultInventoryAccount),
                             amount: Math.abs(params.qtyChange * adjustmentCost),
                             referenceId: params.itemId,
                             reconciled: false
@@ -4232,13 +4387,28 @@ export const transactionService = {
 
     async approvePurchaseOrder(id: string) {
         return dbService.executeAtomicOperation(
-            ['purchases', 'ledger', 'suppliers', 'idempotencyKeys'],
+            ['purchases', 'ledger', 'suppliers', 'idempotencyKeys', 'accounts'],
             async (tx) => {
                 await reserveIdempotencyKey(tx, 'purchase_order_approval', id);
 
                 const purchaseStore = tx.objectStore('purchases');
                 const ledgerStore = tx.objectStore('ledger');
                 const supplierStore = tx.objectStore('suppliers');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
 
                 const purchase = await purchaseStore.get(id);
                 if (!purchase) throw new Error("Purchase order not found");
@@ -4255,8 +4425,8 @@ export const transactionService = {
                     id: generateId('LG-PO-AP'),
                     date: new Date().toISOString(),
                     description: `PO Commitment - ${purchase.id}`,
-                    debitAccountId: gl.defaultInventoryAccount || '1200',
-                    creditAccountId: gl.accountsPayable || '2000',
+                    debitAccountId: resolveAcct(gl.defaultInventoryAccount),
+                    creditAccountId: resolveAcct(gl.accountsPayable),
                     amount: totalAmount,
                     referenceId: purchase.id,
                     reconciled: false,
@@ -4299,8 +4469,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const purchase = await purchaseStore.get(id);
@@ -4317,8 +4493,8 @@ export const transactionService = {
                         id: generateId('LG-PO-REV'),
                         date: new Date().toISOString(),
                         description: `PO Cancellation - ${purchase.id} - ${reason}`,
-                        debitAccountId: resolveAcct(gl.accountsPayable || '2000'),
-                        creditAccountId: resolveAcct(gl.defaultInventoryAccount || '1200'),
+                        debitAccountId: resolveAcct(gl.accountsPayable),
+                        creditAccountId: resolveAcct(gl.defaultInventoryAccount),
                         amount: totalAmount,
                         referenceId: purchase.id,
                         reconciled: false,
@@ -4387,10 +4563,25 @@ export const transactionService = {
 
     async reconcileInventory(results: { itemId: string; variance: number; warehouseId: string }[], totalVarianceCost: number) {
         return dbService.executeAtomicOperation(
-            ['inventory', 'ledger'],
+            ['inventory', 'ledger', 'accounts'],
             async (tx) => {
                 const inventoryStore = tx.objectStore('inventory');
                 const ledgerStore = tx.objectStore('ledger');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
 
                 for (const res of results) {
                     const item = await inventoryStore.get(res.itemId);
@@ -4401,12 +4592,13 @@ export const transactionService = {
                 }
 
                 if (Math.abs(totalVarianceCost) > 0.01) {
+                    const gl = getGLConfig();
                     const entry: LedgerEntry = {
                         id: generateId('LG-REC'),
                         date: new Date().toISOString(),
                         description: `Inventory Reconciliation Variance`,
-                        debitAccountId: totalVarianceCost < 0 ? '5000' : '1200',
-                        creditAccountId: totalVarianceCost < 0 ? '1200' : '5000',
+                        debitAccountId: totalVarianceCost < 0 ? resolveAcct(gl.defaultCOGSAccount) : resolveAcct(gl.defaultInventoryAccount),
+                        creditAccountId: totalVarianceCost < 0 ? resolveAcct(gl.defaultInventoryAccount) : resolveAcct(gl.defaultCOGSAccount),
                         amount: Math.abs(totalVarianceCost),
                         referenceId: 'RECONCILE',
                         reconciled: true
@@ -4447,8 +4639,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const wo = await woStore.get(orderId);
@@ -4476,8 +4674,8 @@ export const transactionService = {
                             id: generateId('LG-CONS'),
                             date: new Date().toISOString(),
                             description: `Material Consumption: ${item.name} (WO: ${wo.id})`,
-                            debitAccountId: resolveAcct(gl.defaultCOGSAccount || '5000'),
-                            creditAccountId: resolveAcct(gl.defaultInventoryAccount || '1200'),
+                            debitAccountId: resolveAcct(gl.defaultCOGSAccount),
+                            creditAccountId: resolveAcct(gl.defaultInventoryAccount),
                             amount: mat.cost,
                             referenceId: wo.id,
                             reconciled: false
@@ -4549,8 +4747,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const wo = await store.get(orderId);
@@ -4576,10 +4780,25 @@ export const transactionService = {
 
     async processProductionWaste(materialId: string, quantity: number, cost: number, referenceId: string, description: string) {
         return dbService.executeAtomicOperation(
-            ['inventory', 'ledger'],
+            ['inventory', 'ledger', 'accounts'],
             async (tx) => {
                 const inventoryStore = tx.objectStore('inventory');
                 const ledgerStore = tx.objectStore('ledger');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
 
                 // 1. Update Inventory
                 const item = await inventoryStore.get(materialId);
@@ -4594,8 +4813,8 @@ export const transactionService = {
                     id: generateId('LG-WST'),
                     date: new Date().toISOString(),
                     description: description,
-                    debitAccountId: gl.defaultCOGSAccount || '5000',
-                    creditAccountId: gl.defaultInventoryAccount || '1200',
+                    debitAccountId: resolveAcct(gl.defaultCOGSAccount),
+                    creditAccountId: resolveAcct(gl.defaultInventoryAccount),
                     amount: cost,
                     referenceId: referenceId,
                     reconciled: false
@@ -4610,7 +4829,7 @@ export const transactionService = {
     async createOrder(order: Order) {
         const canonical = salesOrderService.canonicalizeOrder(order);
         const result = await dbService.executeAtomicOperation(
-            ['salesOrders', 'inventory', 'ledger', 'customers', 'walletTransactions', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'bankAccounts', 'bankTransactions', 'idempotencyKeys'],
+            ['salesOrders', 'inventory', 'ledger', 'customers', 'walletTransactions', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'bankAccounts', 'bankTransactions', 'idempotencyKeys', 'accounts'],
             async (tx) => {
                 const order = canonical;
                 await reserveIdempotencyKey(tx, 'order', order.id, order.idempotencyKey);
@@ -4625,6 +4844,21 @@ export const transactionService = {
                 const marketAdjustmentTransactionsStore = tx.objectStore('marketAdjustmentTransactions');
                 const bankAccountsStore = tx.objectStore('bankAccounts');
                 const bankTransactionsStore = tx.objectStore('bankTransactions');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
 
                 // Pre-fetch data for adjustment processing
                 const inventory = await inventoryStore.getAll();
@@ -4736,12 +4970,13 @@ export const transactionService = {
                     await orderStore.put(order);
 
                     // Recognize Revenue immediately
+                    const gl = getGLConfig();
                     const revenueEntry: LedgerEntry = {
                         id: generateId('LG-ORD-REV-NEW'),
                         date: order.orderDate,
                         description: `Immediate Revenue recognition for Order #${order.orderNumber}`,
-                        debitAccountId: '2100', // Customer Deposits (Liability decreases)
-                        creditAccountId: '4000', // Sales Revenue (Equity/Revenue increases)
+                        debitAccountId: resolveAcct(gl.customerDeposits),
+                        creditAccountId: resolveAcct(gl.salesRevenueAccount || gl.incomeAccount),
                         amount: order.totalAmount,
                         referenceId: order.id,
                         reconciled: true,
@@ -4778,8 +5013,8 @@ export const transactionService = {
                         id: generateId('LG-ORD-INIT'),
                         date: order.orderDate,
                         description: `Initial payment for Order #${order.orderNumber} via ${lastPayment.paymentMethod}`,
-                        debitAccountId: isWallet ? '1210' : '1001', // Wallet or Cash/Bank
-                        creditAccountId: '2100', // Customer Deposits
+                        debitAccountId: isWallet ? resolveAcct(gl.walletAccount || gl.bankAccount) : resolveAcct(gl.cashDrawerAccount || gl.bankAccount),
+                        creditAccountId: resolveAcct(gl.customerDeposits),
                         amount: order.paidAmount,
                         referenceId: order.id,
                         reconciled: false,
@@ -4829,8 +5064,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const order = await orderStore.get(orderId);
@@ -4893,7 +5134,7 @@ export const transactionService = {
                     date: payment.paymentDate,
                     description: `Payment for Order #${order.orderNumber} via ${payment.paymentMethod}`,
                     debitAccountId: resolveAcct(targetDebitAccount),
-                    creditAccountId: resolveAcct(gl.customerDeposits || '2100'),
+                    creditAccountId: resolveAcct(gl.customerDeposits),
                     amount: payment.amountPaid,
                     referenceId: order.id,
                     reconciled: false,
@@ -5059,12 +5300,13 @@ export const transactionService = {
                     }
 
                     // 4. Recognize Revenue
+                    const gl = getGLConfig();
                     const revenueEntry: LedgerEntry = {
                         id: generateId('LG-ORD-REV'),
                         date: new Date().toISOString(),
                         description: `Revenue recognition for Order #${order.orderNumber}`,
-                        debitAccountId: '2100', // Customer Deposits
-                        creditAccountId: '4000', // Sales Revenue
+                        debitAccountId: resolveAcct(gl.customerDeposits),
+                        creditAccountId: resolveAcct(gl.salesRevenueAccount || gl.incomeAccount),
                         amount: order.totalAmount,
                         referenceId: order.id,
                         reconciled: true,
@@ -5140,8 +5382,8 @@ export const transactionService = {
                         id: generateId('LG-ORD-CAN'),
                         date: new Date().toISOString(),
                         description: `Order #${order.orderNumber} Cancelled - Payment refunded to Wallet`,
-                        debitAccountId: '2100', // Customer Deposits
-                        creditAccountId: '1210', // Wallet
+                        debitAccountId: resolveAcct(gl.customerDeposits),
+                        creditAccountId: resolveAcct(gl.walletAccount || gl.bankAccount),
                         amount: order.paidAmount,
                         referenceId: order.id,
                         reconciled: false,
@@ -5203,13 +5445,28 @@ export const transactionService = {
 
     async approveSalesExchange(id: string, comments: string) {
         return dbService.executeAtomicOperation(
-            ['salesExchanges', 'reprintJobs', 'salesExchangeApprovals', 'ledger', 'inventory'],
+            ['salesExchanges', 'reprintJobs', 'salesExchangeApprovals', 'ledger', 'inventory', 'accounts'],
             async (tx) => {
                 const exchangeStore = tx.objectStore('salesExchanges');
                 const reprintStore = tx.objectStore('reprintJobs');
                 const approvalStore = tx.objectStore('salesExchangeApprovals');
                 const ledgerStore = tx.objectStore('ledger');
                 const inventoryStore = tx.objectStore('inventory');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
 
                 const exchange = await exchangeStore.get(id);
                 if (!exchange) throw new Error("Exchange not found");
@@ -5279,12 +5536,13 @@ export const transactionService = {
 
                 // 4. Financial adjustment (if price difference exists)
                 if (exchange.total_price_difference !== 0) {
+                    const gl = getGLConfig();
                     const entry: LedgerEntry = {
                         id: generateId('LG-EX'),
                         date: new Date().toISOString(),
                         description: `Exchange Adjustment for SE #${exchange.exchange_number}`,
-                        debitAccountId: exchange.total_price_difference > 0 ? '1001' : '4001',
-                        creditAccountId: exchange.total_price_difference > 0 ? '4001' : '1001',
+                        debitAccountId: exchange.total_price_difference > 0 ? resolveAcct(gl.cashDrawerAccount || gl.bankAccount) : resolveAcct(gl.otherIncomeAccount || gl.salesRevenueAccount),
+                        creditAccountId: exchange.total_price_difference > 0 ? resolveAcct(gl.otherIncomeAccount || gl.salesRevenueAccount) : resolveAcct(gl.cashDrawerAccount || gl.bankAccount),
                         amount: Math.abs(exchange.total_price_difference),
                         referenceId: id,
                         reconciled: false,
@@ -5317,8 +5575,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 // 1. Save the payment
@@ -5421,8 +5685,14 @@ export const transactionService = {
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
                 const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) return ref;
-                    return resolveAccountForPosting(ref, accounts, accountOptions) || ref;
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
                 };
 
                 const payment = await paymentStore.get(paymentId);
