@@ -13,75 +13,88 @@ const ACCOUNT_TYPE_NORMAL_BALANCE = {
 
 const STANDARD_CHART_OF_ACCOUNTS = [
   // ASSETS (10000-19999)
-  { account_number: '10000', name: 'Assets', account_type: 'ASSET', account_group: null, allow_posting: false, is_system_account: true },
-  { account_number: '11000', name: 'Current Assets', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '10000', allow_posting: false },
-  { account_number: '11100', name: 'Cash in Hand', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', allow_posting: false, subtype: 'CASH' },
-  { account_number: '11101', name: 'Main Cash', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11100', is_system_account: true, subtype: 'CASH' },
-  { account_number: '11102', name: 'Petty Cash', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11100', subtype: 'CASH' },
-  { account_number: '11200', name: 'Bank Accounts', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', allow_posting: false, subtype: 'BANK' },
-  { account_number: '11201', name: 'FDH Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11200', subtype: 'BANK' },
-  { account_number: '11202', name: 'NBS Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11200', subtype: 'BANK' },
-  { account_number: '11203', name: 'National Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11200', subtype: 'BANK' },
-  { account_number: '12000', name: 'Accounts Receivable', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', is_system_account: true, subtype: 'RECEIVABLE' },
-  { account_number: '13000', name: 'Inventory', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', is_system_account: true, subtype: 'INVENTORY' },
-  { account_number: '14000', name: 'Other Current Assets', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', allow_posting: false },
-  { account_number: '15000', name: 'Fixed Assets', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '10000', allow_posting: false },
-  { account_number: '15100', name: 'Motor Vehicles', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '15000' },
-  { account_number: '15200', name: 'Furniture & Fixtures', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '15000' },
-  { account_number: '15300', name: 'Computers & Equipment', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '15000' },
-  { account_number: '15400', name: 'Buildings', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '15000' },
-  { account_number: '16000', name: 'Accumulated Depreciation', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '15000', normal_balance: 'CREDIT' },
+  { account_number: '10000', name: 'Assets', account_type: 'ASSET', account_group: null, parent_account_number: null, subtype: null, is_system_account: true, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '11000', name: 'Current Assets', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '10000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'DEBIT' },
+  // Cash in Hand
+  { account_number: '11100', name: 'Cash in Hand', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', subtype: 'CASH', is_system_account: false, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '11110', name: 'Cash Drawer', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11100', subtype: 'CASH', is_system_account: true, allow_posting: true, normal_balance: 'DEBIT', role: 'cash_drawer' },
+  { account_number: '11120', name: 'Petty Cash', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11100', subtype: 'CASH', is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  // Bank Accounts
+  { account_number: '11200', name: 'Bank Accounts', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', subtype: 'BANK', is_system_account: false, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '11210', name: 'National Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11200', subtype: 'BANK', is_system_account: false, allow_posting: true, normal_balance: 'DEBIT', role: 'bank_national' },
+  { account_number: '11220', name: 'FDH Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11200', subtype: 'BANK', is_system_account: false, allow_posting: true, normal_balance: 'DEBIT', role: 'bank_fdh' },
+  { account_number: '11230', name: 'NBS Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11200', subtype: 'BANK', is_system_account: false, allow_posting: true, normal_balance: 'DEBIT', role: 'bank_nbs' },
+  // Accounts Receivable
+  { account_number: '11300', name: 'Accounts Receivable', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', subtype: 'RECEIVABLE', is_system_account: true, allow_posting: false, normal_balance: 'DEBIT', role: 'accounts_receivable' },
+  { account_number: '11310', name: 'Trade Debtors', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11300', subtype: 'RECEIVABLE', is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  // Inventory
+  { account_number: '11400', name: 'Inventory', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', subtype: 'INVENTORY', is_system_account: true, allow_posting: false, normal_balance: 'DEBIT', role: 'inventory' },
+  { account_number: '11410', name: 'Merchandise Inventory', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11400', subtype: 'INVENTORY', is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '11420', name: 'Raw Materials', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11400', subtype: 'INVENTORY', is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '11430', name: 'Finished Goods', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11400', subtype: 'INVENTORY', is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  // Other Current Assets
+  { account_number: '11500', name: 'Other Current Assets', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '11510', name: 'Prepayments', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11500', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '11520', name: 'Staff Advances', account_type: 'ASSET', account_group: 'CURRENT_ASSET', parent_account_number: '11500', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  // Fixed Assets
+  { account_number: '12000', name: 'Fixed Assets', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '10000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '12100', name: 'Motor Vehicles', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '12000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '12200', name: 'Furniture & Fixtures', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '12000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '12300', name: 'Computers & Equipment', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '12000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '12400', name: 'Buildings', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '12000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '12500', name: 'Accumulated Depreciation', account_type: 'ASSET', account_group: 'FIXED_ASSET', parent_account_number: '12000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'CREDIT', role: 'accumulated_depreciation' },
 
   // LIABILITIES (20000-29999)
-  { account_number: '20000', name: 'Liabilities', account_type: 'LIABILITY', account_group: null, allow_posting: false, is_system_account: true },
-  { account_number: '21000', name: 'Current Liabilities', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '20000', allow_posting: false },
-  { account_number: '21100', name: 'Accounts Payable', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21000', is_system_account: true, subtype: 'PAYABLE' },
-  { account_number: '21200', name: 'Tax Payable', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21000', allow_posting: false, subtype: 'TAX' },
-  { account_number: '21201', name: 'VAT Payable', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21200', subtype: 'TAX' },
-  { account_number: '21202', name: 'PAYE Payable', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21200', subtype: 'TAX' },
-  { account_number: '21300', name: 'Accrued Expenses', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21000' },
-  { account_number: '21400', name: 'Other Current Liabilities', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21000' },
-  { account_number: '22000', name: 'Long-Term Liabilities', account_type: 'LIABILITY', account_group: 'LONG_TERM_LIABILITY', parent_account_number: '20000', allow_posting: false },
-  { account_number: '22100', name: 'Bank Loans', account_type: 'LIABILITY', account_group: 'LONG_TERM_LIABILITY', parent_account_number: '22000' },
-  { account_number: '22200', name: 'Other Loans', account_type: 'LIABILITY', account_group: 'LONG_TERM_LIABILITY', parent_account_number: '22000' },
+  { account_number: '20000', name: 'Liabilities', account_type: 'LIABILITY', account_group: null, parent_account_number: null, subtype: null, is_system_account: true, allow_posting: false, normal_balance: 'CREDIT' },
+  { account_number: '21000', name: 'Current Liabilities', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '20000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'CREDIT' },
+  // Accounts Payable
+  { account_number: '21100', name: 'Accounts Payable', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21000', subtype: 'PAYABLE', is_system_account: true, allow_posting: false, normal_balance: 'CREDIT', role: 'accounts_payable' },
+  { account_number: '21110', name: 'Trade Creditors', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21100', subtype: 'PAYABLE', is_system_account: false, allow_posting: true, normal_balance: 'CREDIT' },
+  // Tax Payable
+  { account_number: '21200', name: 'Tax Payable', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21000', subtype: 'TAX', is_system_account: false, allow_posting: false, normal_balance: 'CREDIT' },
+  { account_number: '21210', name: 'VAT Payable', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21200', subtype: 'TAX', is_system_account: false, allow_posting: true, normal_balance: 'CREDIT', role: 'vat_payable' },
+  { account_number: '21220', name: 'PAYE Payable', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21200', subtype: 'TAX', is_system_account: false, allow_posting: true, normal_balance: 'CREDIT', role: 'paye_payable' },
+  { account_number: '21300', name: 'Accrued Expenses', account_type: 'LIABILITY', account_group: 'CURRENT_LIABILITY', parent_account_number: '21000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'CREDIT' },
+  // Long-Term Liabilities
+  { account_number: '22000', name: 'Long-Term Liabilities', account_type: 'LIABILITY', account_group: 'LONG_TERM_LIABILITY', parent_account_number: '20000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'CREDIT' },
+  { account_number: '22100', name: 'Bank Loans', account_type: 'LIABILITY', account_group: 'LONG_TERM_LIABILITY', parent_account_number: '22000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'CREDIT' },
+  { account_number: '22200', name: 'Other Loans', account_type: 'LIABILITY', account_group: 'LONG_TERM_LIABILITY', parent_account_number: '22000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'CREDIT' },
 
   // EQUITY (30000-39999)
-  { account_number: '30000', name: 'Equity', account_type: 'EQUITY', account_group: 'EQUITY', allow_posting: false, is_system_account: true },
-  { account_number: '31000', name: "Owner's Capital", account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: '30000' },
-  { account_number: '32000', name: 'Retained Earnings', account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: '30000', is_system_account: true },
-  { account_number: '33000', name: 'Current Year Earnings', account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: '30000', is_system_account: true },
-  { account_number: '34000', name: 'Drawings', account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: '30000', normal_balance: 'DEBIT' },
+  { account_number: '30000', name: 'Equity', account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: null, subtype: null, is_system_account: true, allow_posting: false, normal_balance: 'CREDIT' },
+  { account_number: '31000', name: "Owner's Capital", account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: '30000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'CREDIT' },
+  { account_number: '32000', name: 'Retained Earnings', account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: '30000', subtype: null, is_system_account: true, allow_posting: true, normal_balance: 'CREDIT', role: 'retained_earnings' },
+  { account_number: '33000', name: 'Current Year Earnings', account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: '30000', subtype: null, is_system_account: true, allow_posting: true, normal_balance: 'CREDIT' },
+  { account_number: '34000', name: 'Drawings', account_type: 'EQUITY', account_group: 'EQUITY', parent_account_number: '30000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
 
   // INCOME (40000-49999)
-  { account_number: '40000', name: 'Income', account_type: 'INCOME', account_group: null, allow_posting: false, is_system_account: true },
-  { account_number: '41000', name: 'Sales / Revenue', account_type: 'INCOME', account_group: 'REVENUE', parent_account_number: '40000', allow_posting: false },
-  { account_number: '41100', name: 'Product Sales', account_type: 'INCOME', account_group: 'REVENUE', parent_account_number: '41000', is_system_account: true },
-  { account_number: '41200', name: 'Service Income', account_type: 'INCOME', account_group: 'REVENUE', parent_account_number: '41000' },
-  { account_number: '42000', name: 'Other Income', account_type: 'INCOME', account_group: 'OTHER_INCOME', parent_account_number: '40000', allow_posting: false },
-  { account_number: '42100', name: 'Interest Income', account_type: 'INCOME', account_group: 'OTHER_INCOME', parent_account_number: '42000' },
-  { account_number: '42200', name: 'Discount Received', account_type: 'INCOME', account_group: 'OTHER_INCOME', parent_account_number: '42000' },
-  { account_number: '42300', name: 'Other Income', account_type: 'INCOME', account_group: 'OTHER_INCOME', parent_account_number: '42000' },
+  { account_number: '40000', name: 'Income', account_type: 'INCOME', account_group: null, parent_account_number: null, subtype: null, is_system_account: true, allow_posting: false, normal_balance: 'CREDIT' },
+  { account_number: '41000', name: 'Sales', account_type: 'INCOME', account_group: 'REVENUE', parent_account_number: '40000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'CREDIT' },
+  { account_number: '41100', name: 'Product Sales', account_type: 'INCOME', account_group: 'REVENUE', parent_account_number: '41000', subtype: null, is_system_account: true, allow_posting: true, normal_balance: 'CREDIT', role: 'sales' },
+  { account_number: '41200', name: 'Service Income', account_type: 'INCOME', account_group: 'REVENUE', parent_account_number: '41000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'CREDIT' },
+  { account_number: '42000', name: 'Other Income', account_type: 'INCOME', account_group: 'OTHER_INCOME', parent_account_number: '40000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'CREDIT' },
+  { account_number: '42100', name: 'Interest Income', account_type: 'INCOME', account_group: 'OTHER_INCOME', parent_account_number: '42000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'CREDIT' },
+  { account_number: '42200', name: 'Discount Received', account_type: 'INCOME', account_group: 'OTHER_INCOME', parent_account_number: '42000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'CREDIT' },
 
   // EXPENSES (50000-59999)
-  { account_number: '50000', name: 'Expenses', account_type: 'EXPENSE', account_group: null, allow_posting: false, is_system_account: true },
-  { account_number: '51000', name: 'Cost of Sales', account_type: 'EXPENSE', account_group: 'COST_OF_SALES', parent_account_number: '50000', allow_posting: false },
-  { account_number: '51100', name: 'Purchases', account_type: 'EXPENSE', account_group: 'COST_OF_SALES', parent_account_number: '51000' },
-  { account_number: '51200', name: 'Cost of Goods Sold', account_type: 'EXPENSE', account_group: 'COST_OF_SALES', parent_account_number: '51000', is_system_account: true },
-  { account_number: '51300', name: 'Freight & Carriage', account_type: 'EXPENSE', account_group: 'COST_OF_SALES', parent_account_number: '51000' },
-  { account_number: '52000', name: 'Operating Expenses', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '50000', allow_posting: false },
-  { account_number: '52100', name: 'Salaries & Wages', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '52200', name: 'Rent', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '52300', name: 'Utilities', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '52400', name: 'Internet & Telephone', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '52500', name: 'Advertising', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '52600', name: 'Transport', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '52700', name: 'Repairs & Maintenance', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '52800', name: 'Office Expenses', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '52900', name: 'Bank Charges', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '53000', name: 'Depreciation', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000' },
-  { account_number: '54000', name: 'Other Expenses', account_type: 'EXPENSE', account_group: 'OTHER_EXPENSE', parent_account_number: '50000', allow_posting: false },
-  { account_number: '54100', name: 'Interest Expense', account_type: 'EXPENSE', account_group: 'OTHER_EXPENSE', parent_account_number: '54000' },
-  { account_number: '54200', name: 'Other Expenses', account_type: 'EXPENSE', account_group: 'OTHER_EXPENSE', parent_account_number: '54000' }
+  { account_number: '50000', name: 'Expenses', account_type: 'EXPENSE', account_group: null, parent_account_number: null, subtype: null, is_system_account: true, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '51000', name: 'Cost of Sales', account_type: 'EXPENSE', account_group: 'COST_OF_SALES', parent_account_number: '50000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '51100', name: 'Purchases', account_type: 'EXPENSE', account_group: 'COST_OF_SALES', parent_account_number: '51000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT', role: 'purchases' },
+  { account_number: '51200', name: 'Cost of Goods Sold', account_type: 'EXPENSE', account_group: 'COST_OF_SALES', parent_account_number: '51000', subtype: null, is_system_account: true, allow_posting: true, normal_balance: 'DEBIT', role: 'cogs' },
+  { account_number: '51300', name: 'Freight & Carriage', account_type: 'EXPENSE', account_group: 'COST_OF_SALES', parent_account_number: '51000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '52000', name: 'Operating Expenses', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '50000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '52100', name: 'Salaries & Wages', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT', role: 'salaries' },
+  { account_number: '52200', name: 'Rent', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT', role: 'rent' },
+  { account_number: '52300', name: 'Utilities', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT', role: 'utilities' },
+  { account_number: '52400', name: 'Internet & Telephone', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '52500', name: 'Advertising', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '52600', name: 'Transport', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '52700', name: 'Repairs & Maintenance', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '52800', name: 'Office Expenses', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '52900', name: 'Bank Charges', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
+  { account_number: '53000', name: 'Depreciation', account_type: 'EXPENSE', account_group: 'OPERATING_EXPENSE', parent_account_number: '52000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT', role: 'depreciation' },
+  { account_number: '54000', name: 'Other Expenses', account_type: 'EXPENSE', account_group: 'OTHER_EXPENSE', parent_account_number: '50000', subtype: null, is_system_account: false, allow_posting: false, normal_balance: 'DEBIT' },
+  { account_number: '54100', name: 'Interest Expense', account_type: 'EXPENSE', account_group: 'OTHER_EXPENSE', parent_account_number: '54000', subtype: null, is_system_account: false, allow_posting: true, normal_balance: 'DEBIT' },
 ];
 
 class FinanceService {
@@ -115,13 +128,13 @@ class FinanceService {
    * explicit account_id. Returns null on failure so the caller can decide
    * whether to fall back gracefully.
    *
-   * kind: 'expense'  → first expense-type account (or fallback 50000)
-   * kind: 'income'   → first revenue/income-type account (or fallback 40000)
-   * kind: 'cash'     → first cash/bank asset account (or fallback 11101)
+   * kind: 'expense'  ÔåÆ first expense-type account (or fallback 50000)
+   * kind: 'income'   ÔåÆ first revenue/income-type account (or fallback 40000)
+   * kind: 'cash'     ÔåÆ first cash/bank asset account (or fallback 11101)
    */
-  async _resolveDefaultAccountId(kind, hint) {
+  async _resolveDefaultAccountId(kind, hint, companyId = null) {
     try {
-      const accounts = await this.getAccounts();
+      const accounts = await this.getAccounts({ company_id: companyId });
       const wantedType = kind === 'income' ? 'INCOME'
         : kind === 'cash' ? 'ASSET'
         : 'EXPENSE';
@@ -129,15 +142,15 @@ class FinanceService {
         && (a.subtype === kind || !a.subtype)
         && a.allow_posting !== false);
       if (match && match.id) return match.id;
-      // Fall back to a known system code.
-      if (kind === 'cash') return '11101';
-      if (kind === 'income') return '40000';
-      return '50000';
+      // Fall back to a known system code from the 5-digit template
+      if (kind === 'cash') return '11110';   // Cash Drawer
+      if (kind === 'income') return '41100'; // Product Sales
+      return '51200';                         // Cost of Goods Sold
     } catch (err) {
       // Hard fallback when the chart of accounts is unreadable.
-      if (kind === 'cash') return '11101';
-      if (kind === 'income') return '40000';
-      return '50000';
+      if (kind === 'cash') return '11110';   // Cash Drawer
+      if (kind === 'income') return '41100'; // Product Sales
+      return '51200';                         // Cost of Goods Sold
     }
   }
 
@@ -212,7 +225,7 @@ class FinanceService {
     return null;
   }
 
-  // ── Chart of Accounts ──────────────────────────────────────────────
+  // ÔöÇÔöÇ Chart of Accounts ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   async getAccounts(options = {}) {
     let accounts = await repo.getAll('chart_of_accounts');
 
@@ -568,7 +581,7 @@ class FinanceService {
     return { success: true };
   }
 
-  // ── Standard Chart of Accounts ────────────────────────────────────
+  // ÔöÇÔöÇ Standard Chart of Accounts ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   async createStandardChart(companyId = null) {
     const results = [];
     const accountMap = {}; // Map account_number to created account
@@ -601,7 +614,8 @@ class FinanceService {
         opening_balance: 0,
         opening_balance_date: null,
         description: `Standard ${template.account_type} account: ${template.name}`,
-        company_id: companyId
+        company_id: companyId,
+        normal_balance: template.normal_balance,
       };
 
       try {
@@ -639,7 +653,7 @@ class FinanceService {
     };
   }
 
-  // ── Account Balance Calculation ────────────────────────────────────
+  // ÔöÇÔöÇ Account Balance Calculation ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   async calculateAccountBalance(accountId) {
     const account = await this.getAccountById(accountId);
     if (!account) throw new Error('Account not found');
@@ -685,7 +699,7 @@ class FinanceService {
     return totalBalance;
   }
 
-  // ── Ledger ─────────────────────────────────────────────────────────
+  // ÔöÇÔöÇ Ledger ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   async getLedger(accountId) {
     let rows = await repo.getAll('ledger_entries');
     if (accountId) {
@@ -750,7 +764,7 @@ class FinanceService {
     return this.reverseLedgerEntriesByReference('income', id);
   }
 
-  // ── Expenses ───────────────────────────────────────────────────────
+  // ÔöÇÔöÇ Expenses ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   async getExpenses() {
     const rows = await repo.getAll('expenses');
     return rows.sort((a, b) => String(b.expense_date || '').localeCompare(String(a.expense_date || '')));
@@ -758,6 +772,17 @@ class FinanceService {
 
   async createExpense(data) {
     this._validateCurrency(data.currency);
+
+    // Validate accounts BEFORE persisting
+    if (data.account_id) {
+      const exists = await repo.getById('chart_of_accounts', data.account_id);
+      if (!exists) throw new Error('Invalid expense account');
+    }
+    if (data.offset_account_id) {
+      const exists = await repo.getById('chart_of_accounts', data.offset_account_id);
+      if (!exists) throw new Error('Invalid offset account');
+    }
+
     const id = data.id || crypto.randomUUID();
     const record = {
       id,
@@ -782,8 +807,19 @@ class FinanceService {
     // *expense* account and is the debit side. Operators can override
     // `data.offset_account_id` for accruals.
     try {
-      const expenseAcctId = data.account_id || await this._resolveDefaultAccountId('expense', data.category);
-      const offsetAcctId = data.offset_account_id || await this._resolveDefaultAccountId('cash', null);
+      const expenseAcctId = data.account_id || await this._resolveDefaultAccountId('expense', data.category, data.company_id);
+      const offsetAcctId = data.offset_account_id || await this._resolveDefaultAccountId('cash', null, data.company_id);
+
+      // Validate resolved accounts before posting
+      if (data.account_id) {
+        const exists = await repo.getById('chart_of_accounts', data.account_id);
+        if (!exists) throw new Error('Invalid expense account');
+      }
+      if (data.offset_account_id) {
+        const exists = await repo.getById('chart_of_accounts', data.offset_account_id);
+        if (!exists) throw new Error('Invalid offset account');
+      }
+
       if (expenseAcctId && offsetAcctId) {
         const journalId = randomUUID();
         await this.saveLedgerEntry({
@@ -812,7 +848,7 @@ class FinanceService {
         });
       }
     } catch (err) {
-      // Never fail the expense creation because the ledger post failed —
+      // Never fail the expense creation because the ledger post failed ÔÇö
       // the expense record itself is the source of truth for the UI. A
       // background reconciliation job can re-post the missing ledger rows.
       console.warn(`[financeService] expense ${id} ledger post skipped: ${err && err.message}`);
@@ -845,7 +881,7 @@ class FinanceService {
     return { success: true };
   }
 
-  // ── Income ───────────────────────────────────────────────────────
+  // ÔöÇÔöÇ Income ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   async getIncome() {
     const rows = await repo.getAll('income');
     return rows.sort((a, b) => String(b.income_date || '').localeCompare(String(a.income_date || '')));
@@ -871,8 +907,8 @@ class FinanceService {
     // F-03: post a paired ledger entry. Income is a credit to a revenue
     // account and a debit to the offsetting account (cash / bank / AR).
     try {
-      const incomeAcctId = data.account_id || await this._resolveDefaultAccountId('income', data.source);
-      const offsetAcctId = data.offset_account_id || await this._resolveDefaultAccountId('cash', null);
+      const incomeAcctId = data.account_id || await this._resolveDefaultAccountId('income', data.source, data.company_id);
+      const offsetAcctId = data.offset_account_id || await this._resolveDefaultAccountId('cash', null, data.company_id);
       if (incomeAcctId && offsetAcctId) {
         const journalId = randomUUID();
         await this.saveLedgerEntry({
@@ -913,7 +949,7 @@ class FinanceService {
     return { success: true };
   }
 
-  // ── Budgets ────────────────────────────────────────────────────────
+  // ÔöÇÔöÇ Budgets ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   async getBudgets() {
     const rows = await repo.getAll('budgets');
     return rows.sort((a, b) => String(b.fiscal_year || '').localeCompare(String(a.fiscal_year || '')));
@@ -954,6 +990,76 @@ class FinanceService {
   async deleteBudget(id) {
     await this._softDelete('budgets', id);
     return { success: true };
+  }
+
+  // ── Transfers ──────────────────────────────────────────────────────
+  async getTransfers() {
+    const rows = await repo.getAll('transfers');
+    return rows.sort((a, b) => String(b.transfer_date || b.created_at || '').localeCompare(String(a.transfer_date || a.created_at || '')));
+  }
+
+  async createTransfer(data, userId = null) {
+    this._validateCurrency(data.currency);
+    const id = data.id || crypto.randomUUID();
+    const fromId = data.from_account_id;
+    const toId = data.to_account_id;
+
+    if (fromId === toId) {
+      throw new Error('Source and destination accounts cannot be the same');
+    }
+
+    const fromAccount = await this.getAccountById(fromId);
+    const toAccount = await this.getAccountById(toId);
+    if (!fromAccount) throw new Error('Source account not found');
+    if (!toAccount) throw new Error('Destination account not found');
+
+    if (!fromAccount.allow_posting) throw new Error('Source account does not allow posting');
+    if (!toAccount.allow_posting) throw new Error('Destination account does not allow posting');
+    if (fromAccount.is_active === false) throw new Error('Source account is inactive');
+    if (toAccount.is_active === false) throw new Error('Destination account is inactive');
+
+    const transferDate = data.transfer_date || new Date().toISOString();
+    const record = {
+      id,
+      from_account_id: fromId,
+      to_account_id: toId,
+      amount: data.amount,
+      currency: data.currency || 'USD',
+      description: data.description || null,
+      reference: data.reference || null,
+      transfer_date: transferDate,
+      status: 'completed',
+      created_by: userId,
+    };
+    await repo.upsert('transfers', record);
+
+    const journalId = randomUUID();
+    await this.saveLedgerEntry({
+      account_id: toId,
+      entry_type: 'debit',
+      amount: data.amount,
+      currency: data.currency || 'USD',
+      description: data.description || `Transfer to ${toAccount.name}`,
+      reference_type: 'transfer',
+      reference_id: id,
+      journal_id: journalId,
+      entry_date: transferDate,
+      created_by: userId,
+    });
+    await this.saveLedgerEntry({
+      account_id: fromId,
+      entry_type: 'credit',
+      amount: data.amount,
+      currency: data.currency || 'USD',
+      description: data.description || `Transfer from ${fromAccount.name}`,
+      reference_type: 'transfer',
+      reference_id: id,
+      journal_id: journalId,
+      entry_date: transferDate,
+      created_by: userId,
+    });
+
+    return repo.getById('transfers', id);
   }
 }
 

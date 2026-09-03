@@ -1,0 +1,102 @@
+◇ injected env (14) from .env // tip: ⌘ suppress logs { quiet: true }
+--- SERVER SCRIPT STARTING ---
+Requiring express...
+Requiring cors...
+Requiring body-parser...
+[cloudSyncStore] STARTUP: Cloud sync configured OK. URL=https://rdtuzuzehfbwvfdzqliw.supabase.co
+Requiring bootstrap...
+Imports done.
+--- STARTING SERVER ---
+[ENV] All required secrets present.
+--- PRIME ERP BOOTSTRAP START ---
+Machine Fingerprint: e82f5aafec53088bd16d87b8a351208f9e61e47af6056dcab5a1321c01009f3d
+[LICENSE STATUS] FULL (Valid)
+Verifying Supabase connection...
+Supabase connection verified.
+Initializing auth schema...
+Initializing portal auth schema...
+Initializing referral tables...
+[Database] Opening database at: D:\Application\PrimeERPsystem\backend\storage\database.db
+[Migration] Referral tables and indexes applied.
+Schema verification passed.
+[BackupService] Skipping SQLite backup - using Supabase cloud backup.
+[Migration] customer_referrals table ready.
+[Migration] referral_rewards table ready.
+--- PRIME ERP BOOTSTRAP COMPLETE ---
+Bootstrap finished
+[System] Pre-initializing Document Engine services...
+[BACKEND] Serving static frontend from: D:\Application\PrimeERPsystem\frontend\dist
+[BACKEND] Attempting to start server on port 3000 (Attempt 1/10)...
+[BACKEND] Server successfully bound to port 3000
+{"ts":"2026-09-03T06:22:42.875Z","level":"info","event":"http_request","correlationId":"1ca81a88-7771-4fb1-a1ba-af1446ac3bce","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T06:23:26.142Z","level":"info","event":"http_request","correlationId":"108b4fb1-06f2-4341-95e2-007343333acd","method":"GET","path":"/api/accounts?company_id=COMP-PRIME-ERP"}
+[REQ] {
+  method: 'GET',
+  url: '/api/accounts?company_id=COMP-PRIME-ERP',
+  origin: undefined
+}
+{"ts":"2026-09-03T06:23:28.029Z","level":"info","event":"http_request","correlationId":"aac8e5c9-a2b9-4de6-ada5-e733164b27eb","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T06:23:34.750Z","level":"info","event":"http_request","correlationId":"2fc4120f-fab7-47f4-ad8b-dc167c04a3c4","method":"POST","path":"/api/income"}
+[REQ] { method: 'POST', url: '/api/income', origin: undefined }
+{"ts":"2026-09-03T06:23:40.348Z","level":"info","event":"http_request","correlationId":"553ea81d-ed2a-4182-ab57-4500694eb85e","method":"POST","path":"/api/transfers"}
+[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
+{"ts":"2026-09-03T06:23:46.354Z","level":"info","event":"http_request","correlationId":"e9e5765a-0358-4f47-accc-60f5c1acedd2","method":"POST","path":"/api/transfers"}
+[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
+{"ts":"2026-09-03T06:23:52.417Z","level":"info","event":"http_request","correlationId":"dab6bb87-a74f-407f-a005-7dc1607a6afb","method":"POST","path":"/api/ledger"}
+[REQ] { method: 'POST', url: '/api/ledger', origin: undefined }
+{"ts":"2026-09-03T06:23:59.826Z","level":"info","event":"http_request","correlationId":"7dbc4131-91b7-4a9b-955f-c8cf799f12a6","method":"POST","path":"/api/purchases"}
+[REQ] { method: 'POST', url: '/api/purchases', origin: undefined }
+{"ts":"2026-09-03T06:24:01.762Z","level":"info","event":"http_request","correlationId":"4b2fff9f-3ca2-4b16-b117-bc9abe083376","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T06:27:03.780Z","level":"info","event":"http_request","correlationId":"fccbd629-b939-4e44-9fa0-e16e5fd4d372","method":"OPTIONS","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T06:27:03.784Z","level":"info","event":"http_request","correlationId":"039b4ff4-3b26-4da4-beec-4b51a151240c","method":"POST","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T06:52:06.800Z","level":"info","event":"http_request","correlationId":"ec150510-33d8-453e-92c8-74cabdb9e1f2","method":"OPTIONS","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T06:52:06.803Z","level":"info","event":"http_request","correlationId":"2120344d-7e07-48d7-b838-bc3014b75d05","method":"POST","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T07:01:28.602Z","level":"info","event":"http_request","correlationId":"1f9fccc6-cec3-4656-982c-a3279488531b","method":"GET","path":"/api/accounts?company_id=COMP-PRIME-ERP"}
+[REQ] {
+  method: 'GET',
+  url: '/api/accounts?company_id=COMP-PRIME-ERP',
+  origin: undefined
+}
+{"ts":"2026-09-03T07:01:30.027Z","level":"info","event":"http_request","correlationId":"97421a5a-4ffc-4563-89b5-fc0e16b15cdb","method":"POST","path":"/api/income"}
+[REQ] { method: 'POST', url: '/api/income', origin: undefined }
+{"ts":"2026-09-03T07:01:38.321Z","level":"info","event":"http_request","correlationId":"45ad7da6-850d-45de-b675-730dc9f5b281","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T07:01:47.522Z","level":"info","event":"http_request","correlationId":"6683bca9-7de0-418e-9e05-56fcfd82d548","method":"POST","path":"/api/transfers"}
+[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
+{"ts":"2026-09-03T07:01:55.992Z","level":"info","event":"http_request","correlationId":"11941361-9208-4781-9fc2-2bfeda0b8e58","method":"POST","path":"/api/ledger"}
+[REQ] { method: 'POST', url: '/api/ledger', origin: undefined }
+{"ts":"2026-09-03T07:02:03.797Z","level":"info","event":"http_request","correlationId":"5f6eeb16-5f13-4094-9300-57903e2bf4fe","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T07:02:05.420Z","level":"info","event":"http_request","correlationId":"fca6eccd-a4c4-4974-95b1-7962c802fbd5","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T07:17:10.794Z","level":"info","event":"http_request","correlationId":"a0e20c50-b7f5-469e-bce4-2a512a6383c9","method":"OPTIONS","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T07:17:10.798Z","level":"info","event":"http_request","correlationId":"7648ec22-425f-4a24-a891-8a6999428e6b","method":"POST","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T07:42:14.807Z","level":"info","event":"http_request","correlationId":"b3da8e2e-aad4-4c9d-96bd-64ae53f382f3","method":"OPTIONS","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T07:42:14.824Z","level":"info","event":"http_request","correlationId":"19aef776-1d65-458c-983b-11c87c15cd17","method":"POST","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T07:47:24.711Z","level":"info","event":"http_request","correlationId":"bf4fc0c7-db4d-4a37-88fd-9a31481bf756","method":"GET","path":"/api/accounts?company_id=COMP-PRIME-ERP"}
+[REQ] {
+  method: 'GET',
+  url: '/api/accounts?company_id=COMP-PRIME-ERP',
+  origin: undefined
+}
+{"ts":"2026-09-03T07:47:27.360Z","level":"info","event":"http_request","correlationId":"1cd65e83-aed7-417b-8f10-8f034dd680be","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T07:47:38.977Z","level":"info","event":"http_request","correlationId":"9153c679-119d-41b2-9537-b2cd45714688","method":"POST","path":"/api/income"}
+[REQ] { method: 'POST', url: '/api/income', origin: undefined }
+{"ts":"2026-09-03T07:47:47.610Z","level":"info","event":"http_request","correlationId":"48d49c20-9552-428e-ae5c-511d7bf84f60","method":"POST","path":"/api/ledger"}
+[REQ] { method: 'POST', url: '/api/ledger', origin: undefined }
+{"ts":"2026-09-03T07:47:59.264Z","level":"info","event":"http_request","correlationId":"1c243835-6be0-4fcc-9e33-796ad8c494e5","method":"POST","path":"/api/transfers"}
+[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
+{"ts":"2026-09-03T07:48:08.574Z","level":"info","event":"http_request","correlationId":"de5b9ed7-78f5-41db-b6dd-1726d2428ef1","method":"POST","path":"/api/transfers"}
+[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
+{"ts":"2026-09-03T07:48:17.826Z","level":"info","event":"http_request","correlationId":"a0b905ee-1183-4533-a029-b3d04965f397","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T07:48:18.847Z","level":"info","event":"http_request","correlationId":"b48ee301-10d5-4630-a7e1-4d7b40528b7a","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T07:48:19.871Z","level":"info","event":"http_request","correlationId":"dc97892e-2afa-46bc-af0b-2fbbf7f9e85d","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T07:48:26.082Z","level":"info","event":"http_request","correlationId":"2e6143de-3cdf-4d8b-9206-5152979c1a94","method":"POST","path":"/api/expenses"}
+[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }

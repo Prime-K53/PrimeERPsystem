@@ -1,0 +1,137 @@
+-- ============================================================================
+-- INSPECTION FINDINGS: chart_of_accounts Pre-Migration State
+-- ============================================================================
+--
+-- CURRENT TABLE STRUCTURE (from PostgREST introspection):
+--   id          : string (UUID, primary key)
+--   data        : jsonb (all accounting fields stored here)
+--   created_at  : string (timestamp)
+--   updated_at  : string (timestamp)
+--   version     : integer
+--
+-- NO top-level accounting columns exist (confirmed via REST API error
+-- "column chart_of_accounts.company_id does not exist").
+--
+-- ============================================================================
+-- JSONB FIELD NAMING CONVENTIONS
+-- ============================================================================
+--
+-- TWO formats coexist in the `data` JSONB column:
+--
+-- FORMAT A — NEW CANONICAL (65 accounts in COMP-PRIME-ERP):
+--   Created by createAccount() and createStandardChart() in
+--   backend/services/financeService.cjs:
+--
+--   data.account_number     TEXT   e.g. "11110"
+--   data.name              TEXT   e.g. "Cash Drawer"
+--   data.account_type      TEXT   e.g. "ASSET" (UPPERCASE)
+--   data.account_group     TEXT   e.g. "CURRENT_ASSET" or null
+--   data.subtype           TEXT   e.g. "CASH", "BANK", null
+--   data.parent_account_id TEXT   e.g. "ccc70826-..." (canonical UUID)
+--   data.normal_balance    TEXT   e.g. "DEBIT" or "CREDIT"
+--   data.is_system_account 0 or 1  (integer, 1=true)
+--   data.allow_posting     0 or 1  (integer, 1=true)
+--   data.is_active         0 or 1  (integer, 1=true)
+--   data.opening_balance   number
+--   data.opening_balance_date text or null
+--   data.company_id        TEXT   e.g. "COMP-PRIME-ERP" or null
+--   data.code              TEXT   duplicate of account_number (legacy compat)
+--   data.type              TEXT   lowercase e.g. "asset" (legacy compat)
+--   data.category          TEXT   e.g. "Current Asset" (legacy compat)
+--   data.description       TEXT
+--
+-- FORMAT B — LEGACY (old accounts without company_id):
+--   Created by pre-migration application code:
+--
+--   data.code              TEXT   e.g. "1000" (THE ONLY NUMBER FIELD)
+--   data.name              TEXT   e.g. "Cash"
+--   data.type              TEXT   lowercase e.g. "asset"
+--   data.subtype           TEXT   null
+--   data.category          TEXT   e.g. "Current Asset"
+--   data.is_active         0 or 1
+--   data.parent_id         TEXT   null (always null for legacy)
+--   data.description       TEXT
+--   --- MISSING FIELDS ---
+--   NO data.account_number
+--   NO data.account_type
+--   NO data.account_group
+--   NO data.parent_account_id
+--   NO data.normal_balance
+--   NO data.is_system_account
+--   NO data.allow_posting
+--   NO data.opening_balance
+--   NO data.opening_balance_date
+--   NO data.company_id
+--
+-- ============================================================================
+-- FIELD MAPPING (for backfill)
+-- ============================================================================
+--
+-- For FORMAT A accounts:
+--   account_number     ← data.account_number
+--   account_type       ← data.account_type
+--   account_group      ← data.account_group
+--   parent_account_id  ← data.parent_account_id
+--   normal_balance     ← data.normal_balance
+--   is_system_account  ← (data.is_system_account = 1)
+--   allow_posting      ← (data.allow_posting = 1)
+--   opening_balance    ← data.opening_balance
+--   opening_balance_date ← data.opening_balance_date
+--   subtype            ← data.subtype
+--   company_id         ← COALESCE(data.company_id, NULL)
+--
+-- For FORMAT B (legacy) accounts:
+--   account_number     ← data.code
+--   account_type       ← UPPER(data.type)  -- 'asset' → 'ASSET'
+--   account_group      ← data.category     -- 'Current Asset' (not normalized)
+--   parent_account_id  ← NULL
+--   normal_balance     ← derived from account_type (ASSET→DEBIT, etc.)
+--   is_system_account  ← FALSE
+--   allow_posting      ← TRUE
+--   opening_balance    ← 0
+--   opening_balance_date ← NULL
+--   subtype            ← NULL
+--   company_id         ← NULL  -- preserved as NULL (legacy/undetermined)
+--
+-- ============================================================================
+-- CONFIRMED EXISTING DATA
+-- ============================================================================
+--
+-- COMP-PRIME-ERP has 65 canonical accounts (verified).
+-- Legacy accounts with company_id=NULL exist (referenced by historical
+-- ledger entries). These MUST be preserved.
+-- parent_account_id uses canonical account UUIDs (not account numbers).
+-- Accumulated Depreciation (12500) has normal_balance=CREDIT.
+-- Drawings (34000) has normal_balance=DEBIT.
+--
+-- ============================================================================
+-- LEDGER ENTRIES ARE UNTOUCHED
+-- ============================================================================
+--
+-- This migration only modifies chart_of_accounts.
+-- ledger_entries, invoices, expenses, etc. are not affected.
+-- Historical ledger references to legacy account IDs remain valid.
+--
+-- ============================================================================
+-- WHAT CANNOT SAFELY BE BACKFILLED FOR LEGACY ACCOUNTS
+-- ============================================================================
+--
+-- 1. parent_account_id: Legacy accounts have data.parent_id=NULL.
+--    We cannot infer parent from account_number because legacy codes
+--    (1000, 2000) don't have a clear parent in the new hierarchy.
+--    Leave parent_account_id=NULL for legacy accounts.
+--
+-- 2. company_id: Legacy accounts have data.company_id=NULL.
+--    Per the single-company architecture and the requirement to NOT
+--    guess, leave company_id=NULL. Legacy accounts are available for
+--    historical reporting but excluded from new postings.
+--
+-- 3. account_group: Legacy accounts have data.category (e.g. "Current Asset")
+--    but the new account_group uses UPPER_SNAKE_CASE (e.g. "CURRENT_ASSET").
+--    Cannot safely normalize. Leave NULL for legacy accounts.
+--
+-- 4. subtype: Legacy accounts have data.subtype=NULL. Leave NULL.
+--
+-- 5. normal_balance: CAN be safely derived from account_type using
+--    standard rules: ASSET/EXPENSE→DEBIT, LIABILITY/EQUITY/INCOME→CREDIT.
+-- ============================================================================

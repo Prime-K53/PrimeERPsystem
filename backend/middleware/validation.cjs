@@ -545,7 +545,7 @@ const accountSchemas = {
 };
 
 const expenseSchemas = {
-  create: z.object({
+   create: z.object({
     category: z.string().min(1, 'Category is required'),
     vendor_name: z.string().optional(),
     amount: z.number().positive('Amount must be positive'),
@@ -553,9 +553,11 @@ const expenseSchemas = {
     description: z.string().max(1000).optional(),
     expense_date: z.string().datetime('Invalid datetime format'),
     account_id: z.string().optional(),
+    offset_account_id: z.string().optional(),
     payment_method: z.string().optional(),
     status: z.enum(['pending', 'paid', 'cancelled']).default('pending'),
-    receipt_url: z.string().optional()
+    receipt_url: z.string().optional(),
+    company_id: z.string().optional()
   }),
   update: z.object({
     category: z.string().min(1).optional(),
@@ -579,8 +581,10 @@ const incomeSchemas = {
     description: z.string().max(1000).optional(),
     income_date: z.string().datetime('Invalid datetime format'),
     account_id: z.string().optional(),
+    offset_account_id: z.string().optional(),
     payment_method: z.string().optional(),
-    reference: z.string().optional()
+    reference: z.string().optional(),
+    company_id: z.string().optional()
   })
 };
 
@@ -610,7 +614,9 @@ const transferSchemas = {
     amount: z.number().positive('Amount must be positive'),
     currency: z.string().length(3, 'Currency must be 3-letter ISO code').default('USD'),
     description: z.string().max(500).optional(),
-    reference: z.string().optional()
+    reference: z.string().optional(),
+    company_id: z.string().optional(),
+    transfer_date: z.string().datetime().optional()
   }).refine(data => data.from_account_id !== data.to_account_id, {
     message: 'Source and destination accounts cannot be the same',
     path: ['to_account_id']
