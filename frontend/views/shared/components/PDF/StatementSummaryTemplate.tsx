@@ -39,24 +39,12 @@ const buildFooterLine1 = (config?: CompanyConfig | null) => {
     config?.footer,
     config?.receiptFooter,
     config?.transactionSettings?.pos?.receiptFooter,
-    'This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.'
+    'This is a computer-generated document. No signature required. For enquiries contact'
   );
 };
 
 const buildFooterLine2 = (config?: CompanyConfig | null) => {
-  const companyName = pickFirstText(config?.companyName, 'Prime ERP');
-  const address = buildCompanyAddress(config);
-  const phone = pickFirstText(config?.phone);
-  const email = pickFirstText(config?.email);
-  const website = pickFirstText((config as any)?.website, (config as any)?.companyWebsite);
-
-  return [
-    companyName,
-    address,
-    phone ? `Phone ${phone}` : '',
-    email,
-    website,
-  ].filter(Boolean).join(', ');
+  return 'Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,';
 };
 
 export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOverride?: CompanyConfig | null; channel?: 'erp' | 'portal' }> = ({ data, configOverride = null, channel = 'erp' }) => {

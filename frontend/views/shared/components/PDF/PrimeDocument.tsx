@@ -187,20 +187,11 @@ const resolveFooterText = (config: CompanyConfig | null | undefined, paymentTerm
   if (configuredFooter) {
     return configuredFooter;
   }
-  return showPaymentTerms
-    ? `This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222. Payment terms: ${paymentTermsLabel}.`
-    : 'This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.';
+  return 'This is a computer-generated document. No signature required. For enquiries contact';
 };
 
-const buildFooterContactLine = (config?: CompanyConfig | null) => {
-  const { companyName, companyAddress, companyPhone, companyEmail, website } = normalizeCompanyIdentity(config);
-  return [
-    companyName,
-    companyAddress,
-    companyPhone ? `Phone ${companyPhone}` : '',
-    companyEmail,
-    website,
-  ].filter(Boolean).join(', ');
+const buildFooterContactLine = (_config?: CompanyConfig | null) => {
+  return 'Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,';
 };
 
 const isCancelledStatus = (status?: string | boolean, data?: any): boolean => {

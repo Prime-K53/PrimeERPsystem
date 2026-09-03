@@ -56,7 +56,7 @@ class ProductionService {
     const cogsAccount = accounts.find((a) => {
       const d = a.data || a;
       const name = String(d.name || '').toLowerCase();
-      return name.includes('cogs') || name.includes('cost of goods') || d.code === '5000';
+      return name.includes('cogs') || name.includes('cost of goods') || d.code === '51200';
     });
     const assetAccounts = await repo.accounts.getAll({ 'data->>type': 'eq.asset' });
     const wipAccount = assetAccounts.find((a) => {

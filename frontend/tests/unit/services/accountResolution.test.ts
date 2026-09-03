@@ -18,7 +18,7 @@ describe('resolveAccountForPosting', () => {
   let resolveAccountForPosting: any;
 
   beforeEach(async () => {
-    const module = await import('../../services/transactions/_internal');
+    const module = await import('../../../services/transactions/_internal');
     resolveAccountForPosting = module.resolveAccountForPosting;
   });
 
@@ -51,7 +51,7 @@ describe('resolveAccountForPosting', () => {
     });
 
     it('returns null for non-existent code', () => {
-      const result = resolveAccountForPosting('9999', MOCK_ACCOUNTS, {});
+      const result = resolveAccountForPosting('8888', MOCK_ACCOUNTS, {});
       expect(result).toBeNull();
     });
   });
@@ -119,7 +119,7 @@ describe('resolveToAccountId (backward compatibility)', () => {
   let resolveToAccountId: any;
 
   beforeEach(async () => {
-    const module = await import('../../services/transactions/_internal');
+    const module = await import('../../../services/transactions/_internal');
     resolveToAccountId = module.resolveToAccountId;
   });
 
@@ -181,7 +181,7 @@ describe('requireResolvedAccount (strict mode)', () => {
   let UnresolvedAccountError: any;
 
   beforeEach(async () => {
-    const module = await import('../../services/transactions/_internal');
+    const module = await import('../../../services/transactions/_internal');
     requireResolvedAccount = module.requireResolvedAccount;
     UnresolvedAccountError = module.UnresolvedAccountError;
   });
@@ -251,7 +251,7 @@ describe('UnresolvedAccountError', () => {
   let UnresolvedAccountError: any;
 
   beforeEach(async () => {
-    const module = await import('../../services/transactions/_internal');
+    const module = await import('../../../services/transactions/_internal');
     UnresolvedAccountError = module.UnresolvedAccountError;
   });
 

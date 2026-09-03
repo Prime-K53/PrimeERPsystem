@@ -30,12 +30,12 @@ class ProcurementService {
     const inventoryAccount = allAccounts.find((a) => {
       const d = a.data || a;
       const name = String(d.name || '').toLowerCase();
-      return name.includes('inventory') || d.code === '1200' || /^12\d{3}$/.test(d.code || '');
+      return name.includes('inventory') || d.code === '11410' || /^114\d{2}$/.test(d.code || '');
     });
     const apAccount = allAccounts.find((a) => {
       const d = a.data || a;
       const name = String(d.name || '').toLowerCase();
-      return name.includes('payable') || d.code === '2000' || /^21\d{3}$/.test(d.code || '');
+      return name.includes('payable') || d.code === '21110' || /^211\d{2}$/.test(d.code || '');
     });
     if (inventoryAccount && apAccount) {
       const po = await repo.purchaseOrders.getById(grn.purchase_order_id);

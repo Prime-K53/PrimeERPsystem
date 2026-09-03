@@ -233,8 +233,8 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
         ))}
 
         <View style={styles.footer}>
-          <Text>{String(config?.footer || '').trim() || 'This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.'}</Text>
-          <Text>Please contact {config?.email || 'info@primeerp.com'} for any discrepancies.</Text>
+          <Text>This is a computer-generated document. No signature required. For enquiries contact</Text>
+          <Text>Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,</Text>
         </View>
       </Page>
     </Document>

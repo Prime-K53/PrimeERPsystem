@@ -498,9 +498,9 @@ async function postSaleLedgerEntries(saleId, totalAmount, materialTotal, custome
     const finance = new FinanceService();
     
     // Find AR and Revenue accounts
-    const arAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '1200' || a.name.toLowerCase().includes('accounts receivable')));
-    const revenueAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '4000' || a.name.toLowerCase().includes('sales')));
-    const cogsAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '5000' || a.name.toLowerCase().includes('cost of goods')));
+    const arAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '11310' || a.name.toLowerCase().includes('accounts receivable')));
+    const revenueAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '41100' || a.name.toLowerCase().includes('sales')));
+    const cogsAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '51200' || a.name.toLowerCase().includes('cost of goods')));
     
     if (!arAccount || !revenueAccount) {
       console.warn('[Ledger] AR or Revenue account not found, skipping ledger posting for sale', saleId);

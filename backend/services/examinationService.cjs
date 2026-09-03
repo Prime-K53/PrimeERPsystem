@@ -585,13 +585,13 @@ const postInvoiceLedger = async (invoiceId, invoiceData) => {
   const allAccounts = await repo.getAll('chart_of_accounts');
   const arAccount = allAccounts.find(
     (a) => /receivable/i.test(String(a.data?.name || a.name || ''))
-      || String(a.data?.code || a.code || '') === '1100'
-      || /^11\d{3}$/.test(String(a.data?.code || a.code || ''))
+      || String(a.data?.code || a.code || '') === '11310'
+      || /^113\d{2}$/.test(String(a.data?.code || a.code || ''))
   );
   const revenueAccount = allAccounts.find(
     (a) => /revenue/i.test(String(a.data?.name || a.name || ''))
-      || String(a.data?.code || a.code || '') === '4000'
-      || /^41\d{3}$/.test(String(a.data?.code || a.code || ''))
+      || String(a.data?.code || a.code || '') === '41100'
+      || /^411\d{2}$/.test(String(a.data?.code || a.code || ''))
       || /revenue|sales/i.test(String(a.data?.type || a.type || ''))
   );
   if (!arAccount || !revenueAccount) return;

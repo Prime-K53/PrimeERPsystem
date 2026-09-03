@@ -232574,11 +232574,8 @@ var docStyles = StyleSheet.create({
     fontSize: 52,
     fontWeight: "bold",
     color: "#334155",
-    borderWidth: 3,
-    borderColor: "#334155",
     paddingHorizontal: 20,
     paddingVertical: 8,
-    borderRadius: 10,
     textTransform: "uppercase",
     letterSpacing: 4,
     textAlign: "center"
@@ -233003,22 +233000,11 @@ var buildFooterLine1 = (config2) => {
     config2?.footer,
     config2?.receiptFooter,
     config2?.transactionSettings?.pos?.receiptFooter,
-    "This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
+    "This is a computer-generated document. No signature required. For enquiries contact"
   );
 };
 var buildFooterLine2 = (config2) => {
-  const companyName = pickFirstText(config2?.companyName, "Prime ERP");
-  const address = buildCompanyAddress(config2);
-  const phone = pickFirstText(config2?.phone);
-  const email3 = pickFirstText(config2?.email);
-  const website = pickFirstText(config2?.website, config2?.companyWebsite);
-  return [
-    companyName,
-    address,
-    phone ? `Phone ${phone}` : "",
-    email3,
-    website
-  ].filter(Boolean).join(", ");
+  return "Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,";
 };
 var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = "erp" }) => {
   const currency = data2.currency || "MWK";
@@ -233277,17 +233263,10 @@ var resolveFooterText = (config2, paymentTermsLabel, showPaymentTerms) => {
   if (configuredFooter) {
     return configuredFooter;
   }
-  return showPaymentTerms ? `This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222. Payment terms: ${paymentTermsLabel}.` : "This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.";
+  return "This is a computer-generated document. No signature required. For enquiries contact";
 };
-var buildFooterContactLine = (config2) => {
-  const { companyName, companyAddress, companyPhone, companyEmail, website } = normalizeCompanyIdentity(config2);
-  return [
-    companyName,
-    companyAddress,
-    companyPhone ? `Phone ${companyPhone}` : "",
-    companyEmail,
-    website
-  ].filter(Boolean).join(", ");
+var buildFooterContactLine = (_config) => {
+  return "Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,";
 };
 var isCancelledStatus = (status, data2) => {
   if (data2?.isCancelled === true || data2?.cancelled === true) return true;
