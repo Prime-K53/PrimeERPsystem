@@ -21,7 +21,7 @@ import { BannerCropModal } from '../../components/ui/BannerCropModal'
 import {
   Plus, Search, Pencil, Trash2, X, Play, Pause, Megaphone, Sparkles, Clock,
   CheckCircle2, CheckCircle, AlertTriangle, Calendar, Wand2, Eye, Layers, Loader2,
-  ImagePlus, UploadCloud, Link2, Scissors, ShieldCheck, FileWarning,
+  ImagePlus, UploadCloud, Link2, Scissors, ShieldCheck, FileWarning, FileText,
 } from 'lucide-react'
 
 const teal = {
@@ -158,6 +158,11 @@ const modalTabs = [
   { id: 'Preview' as const, label: 'Live Preview', icon: Eye },
 ]
 
+const adTypeTabs = [
+  { id: 'image' as const, label: 'Image Ad', icon: ImagePlus },
+  { id: 'text' as const, label: 'Text Ad', icon: FileText },
+]
+
 const labelStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 6,
   fontSize: 12, fontWeight: 600, color: teal[800],
@@ -193,6 +198,7 @@ export const AdsManager: React.FC = () => {
   const [form, setForm] = useState<Partial<PortalAd>>(emptyForm())
   const [activeTab, setActiveTab] = useState<typeof modalTabs[number]['id']>('Details')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [adType, setAdType] = useState<'image' | 'text'>('text')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [deleteTarget, setDeleteTarget] = useState<PortalAd | null>(null)
@@ -224,7 +230,7 @@ export const AdsManager: React.FC = () => {
   // ad id → banner is 3:1 conformant (checked lazily for legacy banners)
   const [conformance, setConformance] = useState<Record<string, boolean>>({})
 
-  const openNew = () => { setEditingId(null); setForm(emptyForm()); setActiveTab('Details'); setShowNew(true) }
+  const openNew = () => { setEditingId(null); setForm(emptyForm()); setActiveTab('Details'); setAdType('text'); setShowNew(true) }
 
   const load = useCallback(async () => {
     try {
@@ -274,7 +280,11 @@ export const AdsManager: React.FC = () => {
   const saveNew = async () => {
     const hasTitle = Boolean(form.title && String(form.title).trim())
     const hasImage = Boolean(form.imageUrl && String(form.imageUrl).trim())
-    if (!hasTitle && !hasImage) {
+    if (adType === 'text' && !hasTitle) {
+      setNotify({ kind: 'error', text: 'Text ads require a title. Please add a headline.' })
+      return
+    }
+    if (adType === 'image' && !hasTitle && !hasImage) {
       setNotify({ kind: 'error', text: 'Add a title, or upload an image for this ad.' })
       return
     }
@@ -302,6 +312,7 @@ export const AdsManager: React.FC = () => {
     })
     setAiBrief(ad.aiPrompt || '')
     setActiveTab('Details')
+    setAdType(ad.imageUrl ? 'image' : 'text')
     setShowNew(true)
   }
 
@@ -889,7 +900,7 @@ export const AdsManager: React.FC = () => {
           }}>
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: `linear-gradient(90deg, ${teal[600]}, ${teal[400]} 40%, ${amber[500]} 100%)` }} />
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}`, background: paper }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 14px', borderBottom: `1px solid ${hairline}`, background: paper }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 10, background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 10px -3px rgba(15,84,76,.6)`, flexShrink: 0 }}>
                   <Megaphone size={19} color="#fff" />
@@ -909,6 +920,32 @@ export const AdsManager: React.FC = () => {
               >
                 <X size={15} />
               </button>
+            </div>
+
+            {/* Ad Type Selector */}
+            <div style={{ display: 'flex', gap: 8, padding: '12px 28px', borderBottom: `1px solid ${hairline}`, background: '#fafaf8', flexShrink: 0 }}>
+              {adTypeTabs.map((tab) => {
+                const isActive = adType === tab.id;
+                const Icon = tab.icon;
+                return (
+                  <button key={tab.id} type="button" onClick={() => { setAdType(tab.id); if (tab.id === 'text') { setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined })) } }} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 7,
+                    padding: '8px 16px', border: `1.4px solid ${isActive ? teal[500] : hairline}`,
+                    borderRadius: 10, cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                    fontSize: 12.5, fontWeight: isActive ? 700 : 500,
+                    color: isActive ? '#fff' : inkSoft,
+                    background: isActive ? `linear-gradient(135deg, ${teal[500]}, ${teal[700]})` : paper,
+                    transition: 'all .15s ease',
+                    boxShadow: isActive ? '0 4px 10px -3px rgba(15,84,76,.4)' : 'none',
+                  }}>
+                    <Icon size={14} style={{ flexShrink: 0 }} />
+                    {tab.label}
+                  </button>
+                );
+              })}
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: inkSoft }}>
+                {adType === 'image' ? 'Banner with hero image + optional text overlay' : 'Gradient banner with text only — no image'}
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -1060,241 +1097,249 @@ export const AdsManager: React.FC = () => {
                         </div>
                       </div>
 
-                      <div style={{ marginBottom: 18 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <label style={{ ...labelStyle, marginBottom: 0 }}>Banner Image (optional)</label>
-                          <div style={{ display: 'flex', gap: 4, padding: 3, background: '#f1f2f4', borderRadius: 8 }}>
-                            <button type="button" onClick={() => { setImageMode('upload'); setUrlPreviewStatus('idle'); setUrlPreviewDims(null) }} style={{
-                              padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
-                              display: 'flex', alignItems: 'center', gap: 5,
-                              background: imageMode === 'upload' ? '#fff' : 'transparent', color: imageMode === 'upload' ? teal[700] : inkSoft,
-                              boxShadow: imageMode === 'upload' ? '0 1px 4px rgba(0,0,0,.12)' : 'none',
-                            }}>
-                              <UploadCloud size={12} /> Upload
-                            </button>
-                            <button type="button" onClick={() => { setImageMode('url'); setUrlPreviewStatus('idle'); setUrlPreviewDims(null) }} style={{
-                              padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
-                              display: 'flex', alignItems: 'center', gap: 5,
-                              background: imageMode === 'url' ? '#fff' : 'transparent', color: imageMode === 'url' ? teal[700] : inkSoft,
-                              boxShadow: imageMode === 'url' ? '0 1px 4px rgba(0,0,0,.12)' : 'none',
-                            }}>
-                              <Link2 size={12} /> Paste URL
-                            </button>
+                      {adType === 'image' && (
+                        <div style={{ marginBottom: 18 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <label style={{ ...labelStyle, marginBottom: 0 }}>Banner Image</label>
+                            <div style={{ display: 'flex', gap: 4, padding: 3, background: '#f1f2f4', borderRadius: 8 }}>
+                              <button type="button" onClick={() => { setImageMode('upload'); setUrlPreviewStatus('idle'); setUrlPreviewDims(null) }} style={{
+                                padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                background: imageMode === 'upload' ? '#fff' : 'transparent', color: imageMode === 'upload' ? teal[700] : inkSoft,
+                                boxShadow: imageMode === 'upload' ? '0 1px 4px rgba(0,0,0,.12)' : 'none',
+                              }}>
+                                <UploadCloud size={12} /> Upload
+                              </button>
+                              <button type="button" onClick={() => { setImageMode('url'); setUrlPreviewStatus('idle'); setUrlPreviewDims(null) }} style={{
+                                padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                background: imageMode === 'url' ? '#fff' : 'transparent', color: imageMode === 'url' ? teal[700] : inkSoft,
+                                boxShadow: imageMode === 'url' ? '0 1px 4px rgba(0,0,0,.12)' : 'none',
+                              }}>
+                                <Link2 size={12} /> Paste URL
+                              </button>
+                            </div>
                           </div>
-                        </div>
 
-                        {imageMode === 'upload' ? (
-                          form.imageUrl ? (
-                            <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `1.4px solid ${hairline}`, background: '#f8fafc' }}>
-                              <img src={form.imageUrl} alt="Banner preview" style={{ width: '100%', aspectRatio: '4 / 1', minHeight: 96, objectFit: 'cover', display: 'block' }} />
-                              <div style={{ position: 'absolute', right: 8, top: 8, display: 'flex', gap: 6 }}>
-                                <button type="button" onClick={() => setImageMode('url')} title="Replace image"
-                                  style={{ width: 30, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(15,23,42,.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <ImagePlus size={14} />
-                                </button>
-                                <button type="button" onClick={() => setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined }))} title="Remove image"
-                                  style={{ width: 30, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(181,73,63,.85)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                              {form.imageMeta && (
-                                <div style={{ position: 'absolute', left: 8, bottom: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(15,23,42,.72)', color: '#fff' }}>
-                                    <ShieldCheck size={11} color={teal[300]} /> 3:1 prepared &middot; {form.imageMeta.width} × {form.imageMeta.height} &middot; {form.imageMeta.format.toUpperCase()} &middot; {formatBannerBytes(form.imageMeta.fileSize)}
-                                  </span>
+                          {imageMode === 'upload' ? (
+                            form.imageUrl ? (
+                              <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `1.4px solid ${hairline}`, background: '#f8fafc' }}>
+                                <img src={form.imageUrl} alt="Banner preview" style={{ width: '100%', aspectRatio: '3 / 1', minHeight: 96, objectFit: 'cover', display: 'block' }} />
+                                <div style={{ position: 'absolute', right: 8, top: 8, display: 'flex', gap: 6 }}>
+                                  <button type="button" onClick={() => setImageMode('url')} title="Replace image"
+                                    style={{ width: 30, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(15,23,42,.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <ImagePlus size={14} />
+                                  </button>
+                                  <button type="button" onClick={() => setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined }))} title="Remove image"
+                                    style={{ width: 30, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(181,73,63,.85)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Trash2 size={13} />
+                                  </button>
                                 </div>
-                              )}
-                            </div>
-                          ) : (
-                            <>
-                              <div style={{ marginBottom: 8, padding: '9px 12px', borderRadius: 9, background: teal[50], border: `1px solid ${teal[200]}`, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-                                <ShieldCheck size={15} style={{ color: teal[600], flexShrink: 0, marginTop: 1 }} />
-                                <div style={{ fontSize: 11.5, color: teal[800], lineHeight: 1.55 }}>
-                                  <b>Recommended size: {BANNER_SPEC.recommendedWidth} × {BANNER_SPEC.recommendedHeight} px</b> &nbsp;&middot;&nbsp; <b>Aspect ratio: 3:1</b>
-                                  <br />
-                                  Minimum {BANNER_SPEC.minWidth} × {BANNER_SPEC.minHeight} px &middot; WebP preferred (JPG/PNG accepted) &middot; up to 2 MB.
-                                  Images that aren&apos;t 3:1 open a crop tool — banners are never stretched.
-                                </div>
-                              </div>
-                              <label
-                                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                                onDragLeave={() => setDragOver(false)}
-                                onDrop={(e) => { e.preventDefault(); setDragOver(false); handleImageUpload(e.dataTransfer.files?.[0]) }}
-                                style={{
-                                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
-                                  minHeight: 120, borderRadius: 10, cursor: uploadingImage ? 'default' : 'pointer',
-                                  border: `1.6px dashed ${dragOver ? teal[500] : hairline}`,
-                                  background: dragOver ? teal[50] : '#faf9f6',
-                                  transition: 'all .15s ease', textAlign: 'center', padding: 16,
-                                }}
-                              >
-                                {uploadingImage ? (
-                                  <>
-                                    <Loader2 size={22} className="animate-spin" style={{ color: teal[600] }} />
-                                    <span style={{ fontSize: 12, color: inkSoft, fontWeight: 600 }}>Preparing banner…</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div style={{ width: 40, height: 40, borderRadius: 10, background: teal[100], color: teal[600], display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                      <ImagePlus size={19} />
-                                    </div>
-                                    <span style={{ fontSize: 12.5, color: ink, fontWeight: 600 }}>Click to choose an image, or drag &amp; drop here</span>
-                                    <span style={{ fontSize: 10.5, color: inkSoft }}>WebP, JPG or PNG — up to 2 MB</span>
-                                  </>
-                                )}
-                                <input
-                                  type="file"
-                                  accept="image/png,image/jpeg,image/webp"
-                                  disabled={uploadingImage}
-                                  onChange={(e) => { handleImageUpload(e.target.files?.[0]); e.target.value = '' }}
-                                  style={{ display: 'none' }}
-                                />
-                              </label>
-                            </>
-                          )
-                        ) : (
-                          <>
-                            {/* URL input row */}
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              <input
-                                type="text"
-                                value={form.imageUrl || ''}
-                                onChange={(e) => {
-                                  const url = e.target.value
-                                  setForm(p => ({ ...p, imageUrl: url, imageMeta: undefined }))
-                                  if (!url.trim()) { setUrlPreviewStatus('idle'); setUrlPreviewDims(null); return }
-                                  setUrlPreviewStatus('loading')
-                                  setUrlPreviewDims(null)
-                                  const img = new Image()
-                                  img.onload = () => {
-                                    setUrlPreviewStatus('ok')
-                                    setUrlPreviewDims({ w: img.naturalWidth, h: img.naturalHeight })
-                                  }
-                                  img.onerror = () => { setUrlPreviewStatus('error'); setUrlPreviewDims(null) }
-                                  img.src = url
-                                }}
-                                placeholder="https://… (leave empty to use the gradient)"
-                                style={{ ...modalInputStyle, flex: 1 }}
-                              />
-                              {form.imageUrl && (
-                                <button
-                                  type="button"
-                                  title="Remove image URL"
-                                  onClick={() => {
-                                    setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined }))
-                                    setUrlPreviewStatus('idle')
-                                    setUrlPreviewDims(null)
-                                  }}
-                                  style={{
-                                    width: 34, height: 34, borderRadius: 8, border: 'none', flexShrink: 0,
-                                    cursor: 'pointer', background: 'rgba(181,73,63,.1)', color: danger,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}
-                                >
-                                  <X size={14} />
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Live preview panel */}
-                            {urlPreviewStatus === 'loading' && (
-                              <div style={{
-                                marginTop: 10, borderRadius: 10, border: `1.4px dashed ${hairline}`,
-                                background: '#faf9f6', display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', gap: 8, padding: '18px 0',
-                                color: inkSoft, fontSize: 12,
-                              }}>
-                                <Loader2 size={16} className="animate-spin" style={{ color: teal[500] }} />
-                                Loading preview…
-                              </div>
-                            )}
-
-                            {urlPreviewStatus === 'error' && (
-                              <div style={{
-                                marginTop: 10, borderRadius: 10, border: `1.4px solid #f3c1bd`,
-                                background: '#fef0ee', display: 'flex', alignItems: 'center',
-                                gap: 8, padding: '10px 14px', color: danger, fontSize: 12, fontWeight: 600,
-                              }}>
-                                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-                                Could not load image — check the URL or use the Upload tab instead.
-                              </div>
-                            )}
-
-                            {urlPreviewStatus === 'ok' && form.imageUrl && (
-                              <div style={{
-                                marginTop: 10, borderRadius: 10, overflow: 'hidden',
-                                border: `1.4px solid ${teal[200]}`, position: 'relative', background: '#0d1420',
-                              }}>
-                                <img
-                                  src={form.imageUrl}
-                                  alt="Banner preview"
-                                  style={{
-                                    width: '100%', aspectRatio: '4 / 1', minHeight: 80,
-                                    objectFit: 'cover', display: 'block',
-                                  }}
-                                />
-                                {/* Overlay badges */}
-                                <div style={{
-                                  position: 'absolute', inset: 0, pointerEvents: 'none',
-                                  background: 'linear-gradient(to top, rgba(0,0,0,.45) 0%, transparent 55%)',
-                                }} />
-                                {urlPreviewDims && (
-                                  <div style={{
-                                    position: 'absolute', bottom: 8, left: 8,
-                                    display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
-                                  }}>
-                                    <span style={{
-                                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                                      fontSize: 10, fontWeight: 700, padding: '3px 9px',
-                                      borderRadius: 20, background: 'rgba(15,23,42,.72)', color: '#fff',
-                                    }}>
-                                      {urlPreviewDims.w} × {urlPreviewDims.h} px
+                                {form.imageMeta && (
+                                  <div style={{ position: 'absolute', left: 8, bottom: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(15,23,42,.72)', color: '#fff' }}>
+                                      <ShieldCheck size={11} color={teal[300]} /> 3:1 prepared &middot; {form.imageMeta.width} × {form.imageMeta.height} &middot; {form.imageMeta.format.toUpperCase()} &middot; {formatBannerBytes(form.imageMeta.fileSize)}
                                     </span>
-                                    {aspectConformance(urlPreviewDims.w, urlPreviewDims.h) ? (
-                                      <span style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                                        fontSize: 10, fontWeight: 700, padding: '3px 9px',
-                                        borderRadius: 20, background: teal[600], color: '#fff',
-                                      }}>
-                                        <ShieldCheck size={10} /> 3:1 ✓
-                                      </span>
-                                    ) : (
-                                      <span style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                                        fontSize: 10, fontWeight: 700, padding: '3px 9px',
-                                        borderRadius: 20, background: amber[500], color: '#fff',
-                                      }}>
-                                        <AlertTriangle size={10} /> Not 3:1 — may appear cropped
-                                      </span>
-                                    )}
                                   </div>
                                 )}
-                                <button
-                                  type="button"
-                                  title="Remove image"
-                                  onClick={() => {
-                                    setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined }))
-                                    setUrlPreviewStatus('idle')
-                                    setUrlPreviewDims(null)
-                                  }}
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ marginBottom: 8, padding: '9px 12px', borderRadius: 9, background: teal[50], border: `1px solid ${teal[200]}`, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                                  <ShieldCheck size={15} style={{ color: teal[600], flexShrink: 0, marginTop: 1 }} />
+                                  <div style={{ fontSize: 11.5, color: teal[800], lineHeight: 1.55 }}>
+                                    <b>Recommended size: {BANNER_SPEC.recommendedWidth} × {BANNER_SPEC.recommendedHeight} px</b> &nbsp;&middot;&nbsp; <b>Aspect ratio: 3:1</b>
+                                    <br />
+                                    Minimum {BANNER_SPEC.minWidth} × {BANNER_SPEC.minHeight} px &middot; WebP preferred (JPG/PNG accepted) &middot; up to 2 MB.
+                                    Images that aren&apos;t 3:1 open a crop tool — banners are never stretched.
+                                  </div>
+                                </div>
+                                <label
+                                  onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                                  onDragLeave={() => setDragOver(false)}
+                                  onDrop={(e) => { e.preventDefault(); setDragOver(false); handleImageUpload(e.dataTransfer.files?.[0]) }}
                                   style={{
-                                    position: 'absolute', top: 8, right: 8,
-                                    width: 28, height: 28, borderRadius: 7, border: 'none',
-                                    cursor: 'pointer', background: 'rgba(181,73,63,.85)', color: '#fff',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                    minHeight: 120, borderRadius: 10, cursor: uploadingImage ? 'default' : 'pointer',
+                                    border: `1.6px dashed ${dragOver ? teal[500] : hairline}`,
+                                    background: dragOver ? teal[50] : '#faf9f6',
+                                    transition: 'all .15s ease', textAlign: 'center', padding: 16,
                                   }}
                                 >
-                                  <Trash2 size={12} />
-                                </button>
+                                  {uploadingImage ? (
+                                    <>
+                                      <Loader2 size={22} className="animate-spin" style={{ color: teal[600] }} />
+                                      <span style={{ fontSize: 12, color: inkSoft, fontWeight: 600 }}>Preparing banner…</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div style={{ width: 40, height: 40, borderRadius: 10, background: teal[100], color: teal[600], display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <ImagePlus size={19} />
+                                      </div>
+                                      <span style={{ fontSize: 12.5, color: ink, fontWeight: 600 }}>Click to choose an image, or drag &amp; drop here</span>
+                                      <span style={{ fontSize: 10.5, color: inkSoft }}>WebP, JPG or PNG — up to 2 MB</span>
+                                    </>
+                                  )}
+                                  <input
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp"
+                                    disabled={uploadingImage}
+                                    onChange={(e) => { handleImageUpload(e.target.files?.[0]); e.target.value = '' }}
+                                    style={{ display: 'none' }}
+                                  />
+                                </label>
+                              </>
+                            )
+                          ) : (
+                            <>
+                              {/* URL input row */}
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <input
+                                  type="text"
+                                  value={form.imageUrl || ''}
+                                  onChange={(e) => {
+                                    const url = e.target.value
+                                    setForm(p => ({ ...p, imageUrl: url, imageMeta: undefined }))
+                                    if (!url.trim()) { setUrlPreviewStatus('idle'); setUrlPreviewDims(null); return }
+                                    setUrlPreviewStatus('loading')
+                                    setUrlPreviewDims(null)
+                                    const img = new Image()
+                                    img.onload = () => {
+                                      setUrlPreviewStatus('ok')
+                                      setUrlPreviewDims({ w: img.naturalWidth, h: img.naturalHeight })
+                                    }
+                                    img.onerror = () => { setUrlPreviewStatus('error'); setUrlPreviewDims(null) }
+                                    img.src = url
+                                  }}
+                                  placeholder="https://… (leave empty to use the gradient)"
+                                  style={{ ...modalInputStyle, flex: 1 }}
+                                />
+                                {form.imageUrl && (
+                                  <button
+                                    type="button"
+                                    title="Remove image URL"
+                                    onClick={() => {
+                                      setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined }))
+                                      setUrlPreviewStatus('idle')
+                                      setUrlPreviewDims(null)
+                                    }}
+                                    style={{
+                                      width: 34, height: 34, borderRadius: 8, border: 'none', flexShrink: 0,
+                                      cursor: 'pointer', background: 'rgba(181,73,63,.1)', color: danger,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                )}
                               </div>
-                            )}
-                          </>
-                        )}
 
-                        <div style={{ marginTop: 8, fontSize: 11, color: inkSoft, lineHeight: 1.5 }}>
-                          <b style={{ color: ink }}>Text only</b> — no image. &nbsp;<b style={{ color: ink }}>Image only</b> — leave the title and subtitle empty. &nbsp;<b style={{ color: ink }}>Image + text</b> — your text appears over the image with a legibility scrim.
+                              {/* Live preview panel */}
+                              {urlPreviewStatus === 'loading' && (
+                                <div style={{
+                                  marginTop: 10, borderRadius: 10, border: `1.4px dashed ${hairline}`,
+                                  background: '#faf9f6', display: 'flex', alignItems: 'center',
+                                  justifyContent: 'center', gap: 8, padding: '18px 0',
+                                  color: inkSoft, fontSize: 12,
+                                }}>
+                                  <Loader2 size={16} className="animate-spin" style={{ color: teal[500] }} />
+                                  Loading preview…
+                                </div>
+                              )}
+
+                              {urlPreviewStatus === 'error' && (
+                                <div style={{
+                                  marginTop: 10, borderRadius: 10, border: `1.4px solid #f3c1bd`,
+                                  background: '#fef0ee', display: 'flex', alignItems: 'center',
+                                  gap: 8, padding: '10px 14px', color: danger, fontSize: 12, fontWeight: 600,
+                                }}>
+                                  <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                                  Could not load image — check the URL or use the Upload tab instead.
+                                </div>
+                              )}
+
+                              {urlPreviewStatus === 'ok' && form.imageUrl && (
+                                <div style={{
+                                  marginTop: 10, borderRadius: 10, overflow: 'hidden',
+                                  border: `1.4px solid ${teal[200]}`, position: 'relative', background: '#0d1420',
+                                }}>
+                                  <img
+                                    src={form.imageUrl}
+                                    alt="Banner preview"
+                                    style={{
+                                      width: '100%', aspectRatio: '3 / 1', minHeight: 80,
+                                      objectFit: 'cover', display: 'block',
+                                    }}
+                                  />
+                                  {/* Overlay badges */}
+                                  <div style={{
+                                    position: 'absolute', inset: 0, pointerEvents: 'none',
+                                    background: 'linear-gradient(to top, rgba(0,0,0,.45) 0%, transparent 55%)',
+                                  }} />
+                                  {urlPreviewDims && (
+                                    <div style={{
+                                      position: 'absolute', bottom: 8, left: 8,
+                                      display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
+                                    }}>
+                                      <span style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                                        fontSize: 10, fontWeight: 700, padding: '3px 9px',
+                                        borderRadius: 20, background: 'rgba(15,23,42,.72)', color: '#fff',
+                                      }}>
+                                        {urlPreviewDims.w} × {urlPreviewDims.h} px
+                                      </span>
+                                      {aspectConformance(urlPreviewDims.w, urlPreviewDims.h) ? (
+                                        <span style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                                          fontSize: 10, fontWeight: 700, padding: '3px 9px',
+                                          borderRadius: 20, background: teal[600], color: '#fff',
+                                        }}>
+                                          <ShieldCheck size={10} /> 3:1 ✓
+                                        </span>
+                                      ) : (
+                                        <span style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                                          fontSize: 10, fontWeight: 700, padding: '3px 9px',
+                                          borderRadius: 20, background: amber[500], color: '#fff',
+                                        }}>
+                                          <AlertTriangle size={10} /> Not 3:1 — may appear cropped
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  <button
+                                    type="button"
+                                    title="Remove image"
+                                    onClick={() => {
+                                      setForm(p => ({ ...p, imageUrl: '', imageMeta: undefined }))
+                                      setUrlPreviewStatus('idle')
+                                      setUrlPreviewDims(null)
+                                    }}
+                                    style={{
+                                      position: 'absolute', top: 8, right: 8,
+                                      width: 28, height: 28, borderRadius: 7, border: 'none',
+                                      cursor: 'pointer', background: 'rgba(181,73,63,.85)', color: '#fff',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
-                      </div>
+                      )}
+
+                      {adType === 'text' && (
+                        <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 10, background: teal[50], border: `1px solid ${teal[200]}`, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                          <ShieldCheck size={16} style={{ color: teal[600], flexShrink: 0, marginTop: 1 }} />
+                          <div style={{ fontSize: 11.5, color: teal[800], lineHeight: 1.55 }}>
+                            <b>Text-only ad</b> — no image upload. The banner will display your gradient background with text overlay.
+                            You can always switch to an Image Ad later by editing this campaign.
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
 

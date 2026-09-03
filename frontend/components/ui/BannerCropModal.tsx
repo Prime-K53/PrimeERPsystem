@@ -54,15 +54,19 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
 
   // ── Crop window size ──────────────────────────────────────────────────────
   // A 3:1 rectangle that fits inside the stage with 20 px padding each side.
+  // Guard against small viewports (tablets in portrait, etc.)
   const windowSize = useMemo(() => {
     if (win.w <= 0 || win.h <= 0) return { w: 0, h: 0 };
-    let w = win.w - 40;
+    const availW = Math.max(0, win.w - 40);
+    const availH = Math.max(0, win.h - 40);
+    if (availW <= 0 || availH <= 0) return { w: 0, h: 0 };
+    let w = availW;
     let h = w / BANNER_SPEC.targetRatio;
-    if (h > win.h - 40) {
-      h = win.h - 40;
+    if (h > availH) {
+      h = availH;
       w = h * BANNER_SPEC.targetRatio;
     }
-    return { w: Math.round(w), h: Math.round(h) };
+    return { w: Math.round(Math.max(60, w)), h: Math.round(Math.max(20, h)) };
   }, [win]);
 
   const minScale = useMemo(
@@ -277,9 +281,10 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
             touchAction: 'none',
             background: '#080d1a',
             userSelect: 'none',
+            minHeight: 80,     // ensure minimum height on small viewports
           }}
         >
-          {win.w > 0 && windowSize.w > 0 && (
+          {win.w > 20 && win.h > 20 && windowSize.w >= 60 && windowSize.h >= 20 && (
             <>
               {/* The image, positioned by the current transform */}
               <img
@@ -404,8 +409,9 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
               borderRadius: 6, overflow: 'hidden',
               position: 'relative', background: '#080d1a',
               boxShadow: '0 4px 14px -4px rgba(0,0,0,.4)',
+              minWidth: 140,   // ensure usable on small viewports
             }}>
-              {win.w > 0 && windowSize.w > 0 && (
+              {win.w > 20 && win.h > 20 && windowSize.w >= 60 && windowSize.h >= 20 && (
                 <img
                   src={blobUrl}
                   alt="Crop preview"
