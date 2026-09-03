@@ -283,6 +283,33 @@ export const docStyles = StyleSheet.create({
     color: '#64748b',
     textTransform: 'uppercase',
   },
+  // --- Portal Copy Watermark (rendered natively, repeated on every page) ---
+  // Diagonal, subtle, semi-transparent. Positioned in the middle band so it
+  // never covers the header, totals, QR code, or signature areas.
+  portalWatermarkContainer: {
+    position: 'absolute',
+    top: '36%',
+    left: '4%',
+    width: '92%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: 'rotate(-30deg)',
+    opacity: 0.1,
+    zIndex: 100,
+  },
+  portalWatermarkText: {
+    fontSize: 52,
+    fontWeight: 'bold',
+    color: '#334155',
+    borderWidth: 3,
+    borderColor: '#334155',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 4,
+    textAlign: 'center',
+  },
   conversionBox: {
     borderWidth: 1,
     borderColor: '#000',

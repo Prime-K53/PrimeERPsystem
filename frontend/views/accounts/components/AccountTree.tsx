@@ -273,7 +273,7 @@ export const AccountTree: React.FC<AccountTreeProps> = ({
   const buildTree = useCallback((parentId: string | null = null, depth: number = 0): AccountTreeNode[] => {
     return accounts
       .filter(a => {
-        const pid = a.parent_account_id || a.parent_id;
+        const pid = a.parent_account_id ?? a.parent_id ?? null;
         return pid === parentId;
       })
       .filter(a => {

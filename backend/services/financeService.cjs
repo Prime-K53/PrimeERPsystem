@@ -279,8 +279,8 @@ class FinanceService {
 
     // Ensure boolean fields
     normalized.is_active = normalized.is_active !== false && normalized.is_active !== 0;
-    normalized.is_system_account = normalized.is_system_account === true;
-    normalized.allow_posting = normalized.allow_posting !== false;
+    normalized.is_system_account = normalized.is_system_account === true || normalized.is_system_account === 1;
+    normalized.allow_posting = normalized.allow_posting === true || normalized.allow_posting === 1;
 
     return normalized;
   }
@@ -365,7 +365,7 @@ class FinanceService {
       parent_account_id: parentAccountId,
       normal_balance: data.normal_balance || this._getNormalBalance(accountType),
       is_system_account: data.is_system_account ? 1 : 0,
-      allow_posting: data.allow_posting !== false ? 1 : 0,
+      allow_posting: data.allow_posting === true ? 1 : 0,
       is_active: data.is_active !== false && data.is_active !== 0 ? 1 : 0,
       opening_balance: data.opening_balance || 0,
       opening_balance_date: data.opening_balance_date || null,
@@ -609,8 +609,8 @@ class FinanceService {
         account_number: template.account_number,
         parent_account_id: null, // Will be set in second pass
         subtype: template.subtype || null,
-        is_system_account: template.is_system_account || false,
-        allow_posting: template.allow_posting !== false,
+        is_system_account: template.is_system_account === true,
+        allow_posting: template.allow_posting === true,
         opening_balance: 0,
         opening_balance_date: null,
         description: `Standard ${template.account_type} account: ${template.name}`,
@@ -774,14 +774,18 @@ class FinanceService {
     this._validateCurrency(data.currency);
 
     // Validate accounts BEFORE persisting
-    if (data.account_id) {
-      const exists = await repo.getById('chart_of_accounts', data.account_id);
-      if (!exists) throw new Error('Invalid expense account');
-    }
-    if (data.offset_account_id) {
-      const exists = await repo.getById('chart_of_accounts', data.offset_account_id);
-      if (!exists) throw new Error('Invalid offset account');
-    }
+      if (data.account_id) {
+        const exists = await repo.getById('chart_of_accounts', data.account_id);
+        if (!exists) throw new Error('Invalid expense account');
+        if (exists.allow_posting === false || exists.allow_posting === 0) throw new Error('Expense account does not allow posting');
+        if (exists.is_active === false || exists.is_active === 0) throw new Error('Expense account is inactive');
+      }
+      if (data.offset_account_id) {
+        const exists = await repo.getById('chart_of_accounts', data.offset_account_id);
+        if (!exists) throw new Error('Invalid offset account');
+        if (exists.allow_posting === false || exists.allow_posting === 0) throw new Error('Offset account does not allow posting');
+        if (exists.is_active === false || exists.is_active === 0) throw new Error('Offset account is inactive');
+      }
 
     const id = data.id || crypto.randomUUID();
     const record = {
@@ -809,19 +813,25 @@ class FinanceService {
     try {
       const expenseAcctId = data.account_id || await this._resolveDefaultAccountId('expense', data.category, data.company_id);
       const offsetAcctId = data.offset_account_id || await this._resolveDefaultAccountId('cash', null, data.company_id);
+      console.log(`[Finance] createExpense ${id}: expenseAcctId=${expenseAcctId}, offsetAcctId=${offsetAcctId}, data.account_id=${data.account_id}, data.offset_account_id=${data.offset_account_id}`);
 
       // Validate resolved accounts before posting
       if (data.account_id) {
         const exists = await repo.getById('chart_of_accounts', data.account_id);
         if (!exists) throw new Error('Invalid expense account');
+        if (exists.allow_posting === false || exists.allow_posting === 0) throw new Error('Expense account does not allow posting');
+        if (exists.is_active === false || exists.is_active === 0) throw new Error('Expense account is inactive');
       }
       if (data.offset_account_id) {
         const exists = await repo.getById('chart_of_accounts', data.offset_account_id);
         if (!exists) throw new Error('Invalid offset account');
+        if (exists.allow_posting === false || exists.allow_posting === 0) throw new Error('Offset account does not allow posting');
+        if (exists.is_active === false || exists.is_active === 0) throw new Error('Offset account is inactive');
       }
 
       if (expenseAcctId && offsetAcctId) {
         const journalId = randomUUID();
+        console.log(`[Finance] createExpense ${id}: About to save debit ledger entry for ${expenseAcctId}`);
         await this.saveLedgerEntry({
           account_id: expenseAcctId,
           entry_type: 'debit',
@@ -834,6 +844,7 @@ class FinanceService {
           entry_date: data.expense_date || new Date().toISOString(),
           created_by: data.created_by || null,
         });
+        console.log(`[Finance] createExpense ${id}: Debit saved. About to save credit.`);
         await this.saveLedgerEntry({
           account_id: offsetAcctId,
           entry_type: 'credit',
@@ -846,12 +857,13 @@ class FinanceService {
           entry_date: data.expense_date || new Date().toISOString(),
           created_by: data.created_by || null,
         });
+        console.log(`[Finance] createExpense ${id}: Credit saved.`);
       }
     } catch (err) {
-      // Never fail the expense creation because the ledger post failed ÔÇö
+      // Never fail the expense creation because the ledger post failed —
       // the expense record itself is the source of truth for the UI. A
       // background reconciliation job can re-post the missing ledger rows.
-      console.warn(`[financeService] expense ${id} ledger post skipped: ${err && err.message}`);
+      console.warn(`[financeService] expense ${id} ledger post skipped: ${err && err.message}`, err && err.stack);
     }
 
     return repo.getById('expenses', id);
@@ -889,6 +901,21 @@ class FinanceService {
 
   async createIncome(data) {
     this._validateCurrency(data.currency);
+
+    // Validate accounts BEFORE persisting
+    if (data.account_id) {
+      const exists = await repo.getById('chart_of_accounts', data.account_id);
+      if (!exists) throw new Error('Invalid income account');
+      if (exists.allow_posting === false || exists.allow_posting === 0) throw new Error('Income account does not allow posting');
+      if (exists.is_active === false || exists.is_active === 0) throw new Error('Income account is inactive');
+    }
+    if (data.offset_account_id) {
+      const exists = await repo.getById('chart_of_accounts', data.offset_account_id);
+      if (!exists) throw new Error('Invalid offset account');
+      if (exists.allow_posting === false || exists.allow_posting === 0) throw new Error('Offset account does not allow posting');
+      if (exists.is_active === false || exists.is_active === 0) throw new Error('Offset account is inactive');
+    }
+
     const id = data.id || crypto.randomUUID();
     const record = {
       id,

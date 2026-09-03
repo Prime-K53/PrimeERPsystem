@@ -1200,7 +1200,7 @@ export const bankingService = {
     html += `
         <div class="footer">
           <p>Prime ERP System - Banking Report</p>
-          <p>This is a computer-generated document. No signature required.</p>
+          <p>This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.</p>
         </div>
       </body>
       </html>

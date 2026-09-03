@@ -1,4 +1,4 @@
-◇ injected env (14) from .env // tip: ⌘ suppress logs { quiet: true }
+◇ injected env (14) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
 --- SERVER SCRIPT STARTING ---
 Requiring express...
 Requiring cors...
@@ -28,75 +28,111 @@ Bootstrap finished
 [BACKEND] Serving static frontend from: D:\Application\PrimeERPsystem\frontend\dist
 [BACKEND] Attempting to start server on port 3000 (Attempt 1/10)...
 [BACKEND] Server successfully bound to port 3000
-{"ts":"2026-09-03T06:22:42.875Z","level":"info","event":"http_request","correlationId":"1ca81a88-7771-4fb1-a1ba-af1446ac3bce","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T06:23:26.142Z","level":"info","event":"http_request","correlationId":"108b4fb1-06f2-4341-95e2-007343333acd","method":"GET","path":"/api/accounts?company_id=COMP-PRIME-ERP"}
-[REQ] {
-  method: 'GET',
-  url: '/api/accounts?company_id=COMP-PRIME-ERP',
-  origin: undefined
-}
-{"ts":"2026-09-03T06:23:28.029Z","level":"info","event":"http_request","correlationId":"aac8e5c9-a2b9-4de6-ada5-e733164b27eb","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T06:23:34.750Z","level":"info","event":"http_request","correlationId":"2fc4120f-fab7-47f4-ad8b-dc167c04a3c4","method":"POST","path":"/api/income"}
-[REQ] { method: 'POST', url: '/api/income', origin: undefined }
-{"ts":"2026-09-03T06:23:40.348Z","level":"info","event":"http_request","correlationId":"553ea81d-ed2a-4182-ab57-4500694eb85e","method":"POST","path":"/api/transfers"}
-[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
-{"ts":"2026-09-03T06:23:46.354Z","level":"info","event":"http_request","correlationId":"e9e5765a-0358-4f47-accc-60f5c1acedd2","method":"POST","path":"/api/transfers"}
-[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
-{"ts":"2026-09-03T06:23:52.417Z","level":"info","event":"http_request","correlationId":"dab6bb87-a74f-407f-a005-7dc1607a6afb","method":"POST","path":"/api/ledger"}
-[REQ] { method: 'POST', url: '/api/ledger', origin: undefined }
-{"ts":"2026-09-03T06:23:59.826Z","level":"info","event":"http_request","correlationId":"7dbc4131-91b7-4a9b-955f-c8cf799f12a6","method":"POST","path":"/api/purchases"}
-[REQ] { method: 'POST', url: '/api/purchases', origin: undefined }
-{"ts":"2026-09-03T06:24:01.762Z","level":"info","event":"http_request","correlationId":"4b2fff9f-3ca2-4b16-b117-bc9abe083376","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T06:27:03.780Z","level":"info","event":"http_request","correlationId":"fccbd629-b939-4e44-9fa0-e16e5fd4d372","method":"OPTIONS","path":"/api/portal/auth/refresh"}
-{"ts":"2026-09-03T06:27:03.784Z","level":"info","event":"http_request","correlationId":"039b4ff4-3b26-4da4-beec-4b51a151240c","method":"POST","path":"/api/portal/auth/refresh"}
-{"ts":"2026-09-03T06:52:06.800Z","level":"info","event":"http_request","correlationId":"ec150510-33d8-453e-92c8-74cabdb9e1f2","method":"OPTIONS","path":"/api/portal/auth/refresh"}
-{"ts":"2026-09-03T06:52:06.803Z","level":"info","event":"http_request","correlationId":"2120344d-7e07-48d7-b838-bc3014b75d05","method":"POST","path":"/api/portal/auth/refresh"}
-{"ts":"2026-09-03T07:01:28.602Z","level":"info","event":"http_request","correlationId":"1f9fccc6-cec3-4656-982c-a3279488531b","method":"GET","path":"/api/accounts?company_id=COMP-PRIME-ERP"}
-[REQ] {
-  method: 'GET',
-  url: '/api/accounts?company_id=COMP-PRIME-ERP',
-  origin: undefined
-}
-{"ts":"2026-09-03T07:01:30.027Z","level":"info","event":"http_request","correlationId":"97421a5a-4ffc-4563-89b5-fc0e16b15cdb","method":"POST","path":"/api/income"}
-[REQ] { method: 'POST', url: '/api/income', origin: undefined }
-{"ts":"2026-09-03T07:01:38.321Z","level":"info","event":"http_request","correlationId":"45ad7da6-850d-45de-b675-730dc9f5b281","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T07:01:47.522Z","level":"info","event":"http_request","correlationId":"6683bca9-7de0-418e-9e05-56fcfd82d548","method":"POST","path":"/api/transfers"}
-[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
-{"ts":"2026-09-03T07:01:55.992Z","level":"info","event":"http_request","correlationId":"11941361-9208-4781-9fc2-2bfeda0b8e58","method":"POST","path":"/api/ledger"}
-[REQ] { method: 'POST', url: '/api/ledger', origin: undefined }
-{"ts":"2026-09-03T07:02:03.797Z","level":"info","event":"http_request","correlationId":"5f6eeb16-5f13-4094-9300-57903e2bf4fe","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T07:02:05.420Z","level":"info","event":"http_request","correlationId":"fca6eccd-a4c4-4974-95b1-7962c802fbd5","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T07:17:10.794Z","level":"info","event":"http_request","correlationId":"a0e20c50-b7f5-469e-bce4-2a512a6383c9","method":"OPTIONS","path":"/api/portal/auth/refresh"}
-{"ts":"2026-09-03T07:17:10.798Z","level":"info","event":"http_request","correlationId":"7648ec22-425f-4a24-a891-8a6999428e6b","method":"POST","path":"/api/portal/auth/refresh"}
-{"ts":"2026-09-03T07:42:14.807Z","level":"info","event":"http_request","correlationId":"b3da8e2e-aad4-4c9d-96bd-64ae53f382f3","method":"OPTIONS","path":"/api/portal/auth/refresh"}
-{"ts":"2026-09-03T07:42:14.824Z","level":"info","event":"http_request","correlationId":"19aef776-1d65-458c-983b-11c87c15cd17","method":"POST","path":"/api/portal/auth/refresh"}
-{"ts":"2026-09-03T07:47:24.711Z","level":"info","event":"http_request","correlationId":"bf4fc0c7-db4d-4a37-88fd-9a31481bf756","method":"GET","path":"/api/accounts?company_id=COMP-PRIME-ERP"}
-[REQ] {
-  method: 'GET',
-  url: '/api/accounts?company_id=COMP-PRIME-ERP',
-  origin: undefined
-}
-{"ts":"2026-09-03T07:47:27.360Z","level":"info","event":"http_request","correlationId":"1cd65e83-aed7-417b-8f10-8f034dd680be","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T07:47:38.977Z","level":"info","event":"http_request","correlationId":"9153c679-119d-41b2-9537-b2cd45714688","method":"POST","path":"/api/income"}
-[REQ] { method: 'POST', url: '/api/income', origin: undefined }
-{"ts":"2026-09-03T07:47:47.610Z","level":"info","event":"http_request","correlationId":"48d49c20-9552-428e-ae5c-511d7bf84f60","method":"POST","path":"/api/ledger"}
-[REQ] { method: 'POST', url: '/api/ledger', origin: undefined }
-{"ts":"2026-09-03T07:47:59.264Z","level":"info","event":"http_request","correlationId":"1c243835-6be0-4fcc-9e33-796ad8c494e5","method":"POST","path":"/api/transfers"}
-[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
-{"ts":"2026-09-03T07:48:08.574Z","level":"info","event":"http_request","correlationId":"de5b9ed7-78f5-41db-b6dd-1726d2428ef1","method":"POST","path":"/api/transfers"}
-[REQ] { method: 'POST', url: '/api/transfers', origin: undefined }
-{"ts":"2026-09-03T07:48:17.826Z","level":"info","event":"http_request","correlationId":"a0b905ee-1183-4533-a029-b3d04965f397","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T07:48:18.847Z","level":"info","event":"http_request","correlationId":"b48ee301-10d5-4630-a7e1-4d7b40528b7a","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T07:48:19.871Z","level":"info","event":"http_request","correlationId":"dc97892e-2afa-46bc-af0b-2fbbf7f9e85d","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
-{"ts":"2026-09-03T07:48:26.082Z","level":"info","event":"http_request","correlationId":"2e6143de-3cdf-4d8b-9206-5152979c1a94","method":"POST","path":"/api/expenses"}
-[REQ] { method: 'POST', url: '/api/expenses', origin: undefined }
+{"ts":"2026-09-03T12:51:17.385Z","level":"info","event":"http_request","correlationId":"be8e9e78-7c01-4590-8c90-89559d97a9e7","method":"OPTIONS","path":"/api/portal/events-ticket"}
+{"ts":"2026-09-03T12:51:17.392Z","level":"info","event":"http_request","correlationId":"a1e3e057-7b00-485c-b890-e20347292b40","method":"POST","path":"/api/portal/events-ticket"}
+{"ts":"2026-09-03T12:51:17.449Z","level":"info","event":"http_request","correlationId":"dd0827f7-aa59-4bd3-8522-054c444716ce","method":"GET","path":"/api/portal/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InB1c3JfMTc4NjE2MzIxNTUxOV80MjY0M2Q2ZjNiZTEiLCJjdXN0b21lcl9pZCI6IkNVU1QtMDAwMSIsImVtYWlsIjoiYWNtZS5sdGRAcHJpbWUubXciLCJyb2xlIjoicG9ydGFsX2N1c3RvbWVyIiwicHVycG9zZSI6InBvcnRhbCIsInNzZSI6dHJ1ZSwiaWF0IjoxNzg4NDM5ODc3LCJleHAiOjE3ODg0NDAxNzd9.K-mYue3UDeBXto2jUbgsCeI3MLA-Nkwmu2_8WncLylM"}
+{"ts":"2026-09-03T12:52:32.808Z","level":"info","event":"http_request","correlationId":"ff3daf23-b9be-4a5e-a744-d4d6e3a4a7e2","method":"OPTIONS","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T12:52:32.812Z","level":"info","event":"http_request","correlationId":"5a2e1b02-746e-4101-ad38-6ee6e99e3d9e","method":"POST","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T12:54:46.280Z","level":"info","event":"http_request","correlationId":"e35b51c6-84e9-4b5b-baad-a6ac9e7b23c3","method":"OPTIONS","path":"/api/portal/events-ticket"}
+{"ts":"2026-09-03T12:54:46.282Z","level":"info","event":"http_request","correlationId":"fb8a28d7-3981-4c71-b20e-cd5a5c80c161","method":"OPTIONS","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T12:54:46.284Z","level":"info","event":"http_request","correlationId":"065d504e-4df1-43ca-afbd-6d39ca2e52e5","method":"OPTIONS","path":"/api/portal/profile"}
+{"ts":"2026-09-03T12:54:46.286Z","level":"info","event":"http_request","correlationId":"e47a7bee-960e-4d1e-9a70-475ba07980ca","method":"OPTIONS","path":"/api/portal/invoices"}
+{"ts":"2026-09-03T12:54:46.288Z","level":"info","event":"http_request","correlationId":"19d777c4-5461-4e1f-93c0-2155beeb405e","method":"OPTIONS","path":"/api/portal/shipments"}
+{"ts":"2026-09-03T12:54:46.290Z","level":"info","event":"http_request","correlationId":"d439664c-b84b-4745-9270-2cdfab3253dc","method":"OPTIONS","path":"/api/portal/orders"}
+{"ts":"2026-09-03T12:54:46.293Z","level":"info","event":"http_request","correlationId":"4a0c4b21-aa32-4b2b-849c-f30764699116","method":"OPTIONS","path":"/api/portal/requests"}
+{"ts":"2026-09-03T12:54:46.295Z","level":"info","event":"http_request","correlationId":"7f4cc6e3-909f-44a0-8f77-5ae24cda9a35","method":"OPTIONS","path":"/api/portal/quotations"}
+{"ts":"2026-09-03T12:54:46.297Z","level":"info","event":"http_request","correlationId":"7a94fe89-5178-444a-8929-365e285f6951","method":"OPTIONS","path":"/api/portal/requests"}
+{"ts":"2026-09-03T12:54:46.300Z","level":"info","event":"http_request","correlationId":"979e2165-b5f3-4a14-9bc8-5f605b205baf","method":"OPTIONS","path":"/api/portal/statements"}
+{"ts":"2026-09-03T12:54:46.302Z","level":"info","event":"http_request","correlationId":"47958f17-5732-4ab9-8d20-31177d89de59","method":"OPTIONS","path":"/api/portal/payments"}
+{"ts":"2026-09-03T12:54:46.303Z","level":"info","event":"http_request","correlationId":"8b3c0f00-4717-4bcc-98ab-b4c603abb572","method":"OPTIONS","path":"/api/portal/referrals"}
+{"ts":"2026-09-03T12:54:46.305Z","level":"info","event":"http_request","correlationId":"32af2a57-5987-4ee3-96ac-577f4e2fd9a8","method":"OPTIONS","path":"/api/portal/referrals/stats"}
+{"ts":"2026-09-03T12:54:46.306Z","level":"info","event":"http_request","correlationId":"e180302e-6d69-4974-b091-d4737cc2573f","method":"OPTIONS","path":"/api/portal/referrals/rewards"}
+{"ts":"2026-09-03T12:54:46.307Z","level":"info","event":"http_request","correlationId":"14e7604a-abc3-446a-a93a-14d8d1d403e5","method":"OPTIONS","path":"/api/portal/wallet"}
+{"ts":"2026-09-03T12:54:46.309Z","level":"info","event":"http_request","correlationId":"373906e9-1344-49fa-abdd-bd78cce2acf0","method":"OPTIONS","path":"/api/portal/catalog"}
+{"ts":"2026-09-03T12:54:46.313Z","level":"info","event":"http_request","correlationId":"65f1115e-2dca-421d-ad32-efc028bdf03c","method":"OPTIONS","path":"/api/portal/notifications"}
+{"ts":"2026-09-03T12:54:46.315Z","level":"info","event":"http_request","correlationId":"bed19da4-4b6f-450e-b694-31c821454259","method":"OPTIONS","path":"/api/portal/notifications/unread-count"}
+{"ts":"2026-09-03T12:54:46.319Z","level":"info","event":"http_request","correlationId":"2f7f67de-9cc8-445d-89a3-19f9b16ac762","method":"OPTIONS","path":"/api/portal/ads"}
+{"ts":"2026-09-03T12:54:46.321Z","level":"info","event":"http_request","correlationId":"49e959f9-a474-4d98-b457-a86ae33bbc70","method":"OPTIONS","path":"/api/portal/support/tickets"}
+{"ts":"2026-09-03T12:54:46.324Z","level":"info","event":"http_request","correlationId":"a36f9537-d7ec-4b27-abe1-cca791fdfb30","method":"OPTIONS","path":"/api/portal/support/articles"}
+{"ts":"2026-09-03T12:54:46.327Z","level":"info","event":"http_request","correlationId":"3a2e16db-2919-4cde-9023-7f8131703560","method":"OPTIONS","path":"/api/portal/support/company-info"}
+{"ts":"2026-09-03T12:54:46.332Z","level":"info","event":"http_request","correlationId":"fe1b9833-696f-4a5a-99f1-823be1077c7a","method":"POST","path":"/api/portal/events-ticket"}
+{"ts":"2026-09-03T12:54:46.348Z","level":"info","event":"http_request","correlationId":"ec77890f-c6bb-46b4-9581-3b16ed4026e9","method":"POST","path":"/api/portal/auth/refresh"}
+{"ts":"2026-09-03T12:54:46.359Z","level":"info","event":"http_request","correlationId":"ecd9b94d-293e-4fe7-9159-e311bcb1ac2c","method":"GET","path":"/api/portal/profile"}
+{"ts":"2026-09-03T12:54:46.373Z","level":"info","event":"http_request","correlationId":"917539ec-59fa-47a3-9525-9b28e2d5855c","method":"GET","path":"/api/portal/invoices"}
+{"ts":"2026-09-03T12:54:46.387Z","level":"info","event":"http_request","correlationId":"db978c0d-7043-49a6-af56-a8c3c1946aad","method":"GET","path":"/api/portal/payments"}
+{"ts":"2026-09-03T12:54:46.399Z","level":"info","event":"http_request","correlationId":"5e91d4dc-5687-4105-8dc1-0023ce624ee8","method":"GET","path":"/api/portal/orders"}
+{"ts":"2026-09-03T12:54:46.418Z","level":"info","event":"http_request","correlationId":"8bdd2fb5-c6ba-4b88-88ad-159c05d73ec8","method":"GET","path":"/api/portal/referrals"}
+{"ts":"2026-09-03T12:54:47.298Z","level":"info","event":"http_request","correlationId":"459000ed-772d-4319-98fb-321da1ccfae8","method":"GET","path":"/api/portal/quotations"}
+{"ts":"2026-09-03T12:54:47.430Z","level":"info","event":"http_request","correlationId":"90f5fbb0-4013-446b-ae3a-8152cdc207ce","method":"GET","path":"/api/portal/statements"}
+{"ts":"2026-09-03T12:54:47.454Z","level":"info","event":"http_request","correlationId":"c3536d4e-e2de-4022-85ae-d7417c3eb32e","method":"GET","path":"/api/portal/shipments"}
+{"ts":"2026-09-03T12:54:47.493Z","level":"info","event":"http_request","correlationId":"66b07d22-5868-4b07-8ca3-8e1d208ffe3e","method":"GET","path":"/api/portal/referrals/stats"}
+{"ts":"2026-09-03T12:54:47.900Z","level":"info","event":"http_request","correlationId":"91802a27-9c73-4194-89fa-957731fea416","method":"GET","path":"/api/portal/requests"}
+{"ts":"2026-09-03T12:54:48.078Z","level":"info","event":"http_request","correlationId":"82f45aa1-2c80-4f0e-baf4-7e58ffefb4f9","method":"GET","path":"/api/portal/referrals/rewards"}
+{"ts":"2026-09-03T12:54:48.258Z","level":"info","event":"http_request","correlationId":"8f898fa2-d2cb-4b2d-80dc-8e82923148bd","method":"GET","path":"/api/portal/catalog"}
+{"ts":"2026-09-03T12:54:48.596Z","level":"info","event":"http_request","correlationId":"b4f3df11-1d94-4fdc-abe0-335dd31fc5f7","method":"GET","path":"/api/portal/notifications"}
+{"ts":"2026-09-03T12:54:48.608Z","level":"info","event":"http_request","correlationId":"3521e443-5523-4757-a619-e5228020dd77","method":"GET","path":"/api/portal/notifications/unread-count"}
+{"ts":"2026-09-03T12:54:48.658Z","level":"info","event":"http_request","correlationId":"f3bd8793-22c9-409e-b818-4fefc5502b75","method":"GET","path":"/api/portal/ads"}
+{"ts":"2026-09-03T12:54:48.927Z","level":"info","event":"http_request","correlationId":"9deb27af-0c7c-4b05-b8a9-c02b0d6d27fd","method":"GET","path":"/api/portal/support/tickets"}
+{"ts":"2026-09-03T12:54:48.949Z","level":"info","event":"http_request","correlationId":"0ca9e62d-ddf0-4d71-9d8c-917b7e08c5d8","method":"GET","path":"/api/portal/support/articles"}
+{"ts":"2026-09-03T12:54:48.964Z","level":"info","event":"http_request","correlationId":"0587399e-4383-4617-b15e-efe0adf9cd7e","method":"GET","path":"/api/portal/support/company-info"}
+{"ts":"2026-09-03T12:54:49.239Z","level":"info","event":"http_request","correlationId":"32dc8a19-9a90-4647-90ed-829c976ccdb6","method":"GET","path":"/api/portal/wallet"}
+{"ts":"2026-09-03T12:54:49.277Z","level":"info","event":"http_request","correlationId":"9a85494a-7e1c-4678-a810-9f69b07c4b08","method":"GET","path":"/api/portal/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InB1c3JfMTc4NjE2MzIxNTUxOV80MjY0M2Q2ZjNiZTEiLCJjdXN0b21lcl9pZCI6IkNVU1QtMDAwMSIsImVtYWlsIjoiYWNtZS5sdGRAcHJpbWUubXciLCJyb2xlIjoicG9ydGFsX2N1c3RvbWVyIiwicHVycG9zZSI6InBvcnRhbCIsInNzZSI6dHJ1ZSwiaWF0IjoxNzg4NDQwMDg2LCJleHAiOjE3ODg0NDAzODZ9.YmETbZnb6ZvltGR-IfcB1UwvdKkJyEzjBGnXhCYWMeI"}
+{"ts":"2026-09-03T12:54:49.318Z","level":"info","event":"http_request","correlationId":"9333e976-d46b-4a52-8902-a059a0791d3d","method":"GET","path":"/api/portal/requests"}
+[SupabaseRepo] upsert(customers, CUST-0001): calling cloudSyncStore
+{"ts":"2026-09-03T12:54:50.389Z","level":"info","event":"http_request","correlationId":"bdaa6eff-ba24-4c66-8d90-fcbb3f216093","method":"OPTIONS","path":"/api/portal/loyalty"}
+{"ts":"2026-09-03T12:54:50.392Z","level":"info","event":"http_request","correlationId":"bef0bb8b-03a1-47b5-a230-c6adc4f91abf","method":"GET","path":"/api/portal/loyalty"}
+{"ts":"2026-09-03T12:55:12.088Z","level":"info","event":"http_request","correlationId":"2d61debf-74b4-4a31-a4a5-e488148eb0ae","method":"OPTIONS","path":"/api/portal/auth/logout"}
+{"ts":"2026-09-03T12:55:12.092Z","level":"info","event":"http_request","correlationId":"ff358621-5791-4727-a84d-05032ee664aa","method":"POST","path":"/api/portal/auth/logout"}
+{"ts":"2026-09-03T12:55:15.914Z","level":"info","event":"http_request","correlationId":"2a93ad17-a125-4ef4-a3ee-830181ed8fbf","method":"OPTIONS","path":"/api/portal/auth/login-password"}
+{"ts":"2026-09-03T12:55:15.938Z","level":"info","event":"http_request","correlationId":"b9321d1d-0464-4e2e-8162-363cac73c986","method":"POST","path":"/api/portal/auth/login-password"}
+{"ts":"2026-09-03T12:55:17.298Z","level":"info","event":"http_request","correlationId":"dfb1fd38-5386-498c-87b4-aecfc620912d","method":"OPTIONS","path":"/api/portal/profile"}
+{"ts":"2026-09-03T12:55:17.316Z","level":"info","event":"http_request","correlationId":"90ed0417-36c1-4866-be0e-40dc39159d45","method":"OPTIONS","path":"/api/portal/invoices"}
+{"ts":"2026-09-03T12:55:17.358Z","level":"info","event":"http_request","correlationId":"2cb67bfa-3c3f-4508-940b-26d3f528d546","method":"OPTIONS","path":"/api/portal/shipments"}
+{"ts":"2026-09-03T12:55:17.401Z","level":"info","event":"http_request","correlationId":"dca1b5cb-f983-489b-b6af-96e75ae79951","method":"OPTIONS","path":"/api/portal/orders"}
+{"ts":"2026-09-03T12:55:17.403Z","level":"info","event":"http_request","correlationId":"ee541842-f690-407e-a683-5d3865c28164","method":"OPTIONS","path":"/api/portal/requests"}
+{"ts":"2026-09-03T12:55:17.405Z","level":"info","event":"http_request","correlationId":"d8b0eb3d-891b-49df-8dd4-0cf11cd64154","method":"OPTIONS","path":"/api/portal/quotations"}
+{"ts":"2026-09-03T12:55:17.407Z","level":"info","event":"http_request","correlationId":"9ce9b83b-58e8-4e35-a6bb-d6b268d64002","method":"OPTIONS","path":"/api/portal/requests"}
+{"ts":"2026-09-03T12:55:17.412Z","level":"info","event":"http_request","correlationId":"25612764-0990-4edb-8972-4ce8329fb0ab","method":"OPTIONS","path":"/api/portal/statements"}
+{"ts":"2026-09-03T12:55:17.415Z","level":"info","event":"http_request","correlationId":"d8e5f810-5f0d-4016-ac53-789963240f85","method":"OPTIONS","path":"/api/portal/payments"}
+{"ts":"2026-09-03T12:55:17.418Z","level":"info","event":"http_request","correlationId":"858aa764-fdd7-43a8-8c46-0f867e7aceae","method":"OPTIONS","path":"/api/portal/referrals"}
+{"ts":"2026-09-03T12:55:17.420Z","level":"info","event":"http_request","correlationId":"71f040d4-dd54-48f5-9ba0-b75b8345eadc","method":"OPTIONS","path":"/api/portal/referrals/stats"}
+{"ts":"2026-09-03T12:55:17.423Z","level":"info","event":"http_request","correlationId":"102b7681-9a04-45bb-95f5-5d8bdefc9805","method":"OPTIONS","path":"/api/portal/referrals/rewards"}
+{"ts":"2026-09-03T12:55:17.427Z","level":"info","event":"http_request","correlationId":"235fc480-8424-4437-b2ad-1065706c520e","method":"OPTIONS","path":"/api/portal/wallet"}
+{"ts":"2026-09-03T12:55:17.430Z","level":"info","event":"http_request","correlationId":"0ec7b848-4cb8-4909-944a-5c69b43b81f6","method":"OPTIONS","path":"/api/portal/catalog"}
+{"ts":"2026-09-03T12:55:17.432Z","level":"info","event":"http_request","correlationId":"ab48455d-59a4-41ef-b142-1887b70dbe33","method":"OPTIONS","path":"/api/portal/notifications"}
+{"ts":"2026-09-03T12:55:17.434Z","level":"info","event":"http_request","correlationId":"b7d3834d-869b-44e1-a075-96ad3db8f965","method":"OPTIONS","path":"/api/portal/notifications/unread-count"}
+{"ts":"2026-09-03T12:55:17.437Z","level":"info","event":"http_request","correlationId":"d0ed6fdc-5fff-478f-b809-5b1efb9e045c","method":"OPTIONS","path":"/api/portal/ads"}
+{"ts":"2026-09-03T12:55:17.439Z","level":"info","event":"http_request","correlationId":"249a4bc3-4747-4057-9659-5dd74783c725","method":"OPTIONS","path":"/api/portal/support/tickets"}
+{"ts":"2026-09-03T12:55:17.443Z","level":"info","event":"http_request","correlationId":"6bc7edc7-46b3-44d2-8d34-d31093eec3c0","method":"OPTIONS","path":"/api/portal/support/articles"}
+{"ts":"2026-09-03T12:55:17.448Z","level":"info","event":"http_request","correlationId":"5596d790-f5d3-43a8-bdc8-ebb8d74f63e8","method":"OPTIONS","path":"/api/portal/support/company-info"}
+{"ts":"2026-09-03T12:55:17.451Z","level":"info","event":"http_request","correlationId":"32841241-4fca-4250-b4c6-4b99d479fe9c","method":"GET","path":"/api/portal/profile"}
+{"ts":"2026-09-03T12:55:17.610Z","level":"info","event":"http_request","correlationId":"1b281001-0254-4fb6-91be-cb6624204a72","method":"GET","path":"/api/portal/invoices"}
+{"ts":"2026-09-03T12:55:17.616Z","level":"info","event":"http_request","correlationId":"b1448964-1883-4978-a297-ce5a3e6c00fb","method":"GET","path":"/api/portal/shipments"}
+{"ts":"2026-09-03T12:55:17.630Z","level":"info","event":"http_request","correlationId":"a23b16b6-078a-44ec-84f2-a1c8b5f398f9","method":"GET","path":"/api/portal/orders"}
+{"ts":"2026-09-03T12:55:17.642Z","level":"info","event":"http_request","correlationId":"693a6a07-a3a2-4fc4-a374-dbe6187afe62","method":"GET","path":"/api/portal/requests"}
+{"ts":"2026-09-03T12:55:17.652Z","level":"info","event":"http_request","correlationId":"5c1e31aa-a4ff-4439-a240-2793ac4b9d64","method":"GET","path":"/api/portal/quotations"}
+{"ts":"2026-09-03T12:55:17.976Z","level":"info","event":"http_request","correlationId":"eb8d3536-e506-4ef3-9db5-a34f61661df3","method":"GET","path":"/api/portal/statements"}
+{"ts":"2026-09-03T12:55:18.355Z","level":"info","event":"http_request","correlationId":"6d0bb92c-f93e-4052-9279-683e1ba5276f","method":"GET","path":"/api/portal/payments"}
+{"ts":"2026-09-03T12:55:18.382Z","level":"info","event":"http_request","correlationId":"e7bc40f1-df58-40bc-a1bd-4db941f08901","method":"GET","path":"/api/portal/referrals"}
+{"ts":"2026-09-03T12:55:18.522Z","level":"info","event":"http_request","correlationId":"54d0776f-3a66-4c8d-9642-1fb4916d0138","method":"GET","path":"/api/portal/referrals/stats"}
+{"ts":"2026-09-03T12:55:18.535Z","level":"info","event":"http_request","correlationId":"faa8f0f8-39a4-4135-904d-67858d1272a3","method":"GET","path":"/api/portal/referrals/rewards"}
+{"ts":"2026-09-03T12:55:18.702Z","level":"info","event":"http_request","correlationId":"b5419efb-4e22-40aa-b349-021ee46e7927","method":"GET","path":"/api/portal/wallet"}
+{"ts":"2026-09-03T12:55:18.718Z","level":"info","event":"http_request","correlationId":"7aafd4f7-9061-469c-a877-10f669e5adaf","method":"GET","path":"/api/portal/catalog"}
+{"ts":"2026-09-03T12:55:18.912Z","level":"info","event":"http_request","correlationId":"2d71d61b-b29f-44b6-a267-402650d25d69","method":"GET","path":"/api/portal/notifications"}
+{"ts":"2026-09-03T12:55:19.295Z","level":"info","event":"http_request","correlationId":"d6a020b4-f1c1-4c28-891a-4a33f1294e40","method":"GET","path":"/api/portal/notifications/unread-count"}
+{"ts":"2026-09-03T12:55:19.302Z","level":"info","event":"http_request","correlationId":"d48fc25c-c0e4-4444-9f67-f2390b40b2c9","method":"GET","path":"/api/portal/ads"}
+{"ts":"2026-09-03T12:55:19.580Z","level":"info","event":"http_request","correlationId":"7f89aebf-04ea-4b55-826b-9e42e0d3e47e","method":"GET","path":"/api/portal/support/tickets"}
+{"ts":"2026-09-03T12:55:19.666Z","level":"info","event":"http_request","correlationId":"809293b4-bf6b-4b24-baf6-ed315e26d211","method":"GET","path":"/api/portal/support/articles"}
+{"ts":"2026-09-03T12:55:19.701Z","level":"info","event":"http_request","correlationId":"a5c86bb3-fc71-4cc1-87a5-63db6e6aa11e","method":"GET","path":"/api/portal/support/company-info"}
+{"ts":"2026-09-03T12:55:19.924Z","level":"info","event":"http_request","correlationId":"89398c9e-fe9b-41b5-9fb4-29b1aa758949","method":"GET","path":"/api/portal/requests"}
+[SupabaseRepo] upsert(customers, CUST-0001): calling cloudSyncStore
+{"ts":"2026-09-03T12:55:20.624Z","level":"info","event":"http_request","correlationId":"388619ea-1402-44c9-9e60-ca403256a569","method":"OPTIONS","path":"/api/portal/loyalty"}
+{"ts":"2026-09-03T12:55:20.626Z","level":"info","event":"http_request","correlationId":"cdbee7fb-13f9-4d35-8430-6ecfc431d9ae","method":"GET","path":"/api/portal/loyalty"}
+{"ts":"2026-09-03T12:55:43.590Z","level":"info","event":"http_request","correlationId":"ccb1fa73-e1e5-4c83-97a9-72d93456d322","method":"OPTIONS","path":"/api/portal/invoices/INV-P726%2F027/document"}
+{"ts":"2026-09-03T12:55:43.595Z","level":"info","event":"http_request","correlationId":"889cdadf-4920-4aa3-a8ff-6a53df2a9194","method":"GET","path":"/api/portal/invoices/INV-P726%2F027/document"}
+[OfficialDocumentService] Official document renderer: READY
+[OfficialDocumentService] Renderer bundle: D:\Application\PrimeERPsystem\backend\services\officialDocument\primeRenderer.cjs
+{"ts":"2026-09-03T12:55:51.554Z","level":"info","event":"http_request","correlationId":"49c2645b-1729-4391-a79a-e838611d21d3","method":"GET","path":"/api/portal/invoices/INV-P726%2F027/document"}
+{"ts":"2026-09-03T12:55:54.277Z","level":"info","event":"http_request","correlationId":"913cce2c-2b9a-4eca-b1f1-3d6eabf045cd","method":"GET","path":"/api/portal/invoices/INV-P726%2F027/document"}
+{"ts":"2026-09-03T12:55:54.285Z","level":"info","event":"http_request","correlationId":"8e1efa2f-f292-4dc4-813e-5b77b21f4aff","method":"GET","path":"/api/portal/invoices/INV-P726%2F027/document"}
+{"ts":"2026-09-03T12:55:54.292Z","level":"info","event":"http_request","correlationId":"520ee181-4282-4c4d-9bc5-722c88121e12","method":"GET","path":"/api/portal/invoices/INV-P726%2F027/document"}

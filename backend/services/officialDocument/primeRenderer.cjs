@@ -207688,7 +207688,7 @@ true ? a.exports = (l || (l = 1, (s = o).exports = function(n5) {
       if (!ot(e4, t5) && 0 == (128 & n6.flags)) return lu = false, function(e5, n7, t6) {
         switch (n7.tag) {
           case 3:
-            P(n7, n7.stateNode.containerInfo), st2(0, pu, e5.memoizedState.cache);
+            P(n7, n7.stateNode.containerInfo), st(0, pu, e5.memoizedState.cache);
             break;
           case 27:
           case 5:
@@ -207698,7 +207698,7 @@ true ? a.exports = (l || (l = 1, (s = o).exports = function(n5) {
             P(n7, n7.stateNode.containerInfo);
             break;
           case 10:
-            st2(0, n7.type, n7.memoizedProps.value);
+            st(0, n7.type, n7.memoizedProps.value);
             break;
           case 13:
             var r5 = n7.memoizedState;
@@ -207717,7 +207717,7 @@ true ? a.exports = (l || (l = 1, (s = o).exports = function(n5) {
           case 23:
             return n7.lanes = 0, Bn(e5, n7, t6);
           case 24:
-            st2(0, pu, e5.memoizedState.cache);
+            st(0, pu, e5.memoizedState.cache);
         }
         return at(e5, n7, t6);
       }(e4, n6, t5);
@@ -207754,7 +207754,7 @@ true ? a.exports = (l || (l = 1, (s = o).exports = function(n5) {
         var u4 = n6.pendingProps;
         l5 = (o5 = n6.memoizedState).element, $(e4, n6), X(n6, u4, null, t5);
         var i3 = n6.memoizedState;
-        return u4 = i3.cache, st2(0, pu, u4), u4 !== o5.cache && dt(n6, [pu], t5, true), K(), (u4 = i3.element) !== l5 ? (jn(e4, n6, u4, t5), n6 = n6.child) : n6 = at(e4, n6, t5), n6;
+        return u4 = i3.cache, st(0, pu, u4), u4 !== o5.cache && dt(n6, [pu], t5, true), K(), (u4 = i3.element) !== l5 ? (jn(e4, n6, u4, t5), n6 = n6.child) : n6 = at(e4, n6, t5), n6;
       case 26:
       case 27:
       case 5:
@@ -207773,7 +207773,7 @@ true ? a.exports = (l || (l = 1, (s = o).exports = function(n5) {
       case 12:
         return jn(e4, n6, n6.pendingProps.children, t5), n6.child;
       case 10:
-        return l5 = n6.pendingProps, st2(0, n6.type, l5.value), jn(e4, n6, l5.children, t5), n6.child;
+        return l5 = n6.pendingProps, st(0, n6.type, l5.value), jn(e4, n6, l5.children, t5), n6.child;
       case 9:
         return o5 = n6.type._context, l5 = n6.pendingProps.children, ht(n6), l5 = l5(o5 = gt(o5)), n6.flags |= 1, jn(e4, n6, l5, t5), n6.child;
       case 14:
@@ -207785,7 +207785,7 @@ true ? a.exports = (l || (l = 1, (s = o).exports = function(n5) {
       case 22:
         return Bn(e4, n6, t5);
       case 24:
-        return ht(n6), l5 = gt(pu), null === e4 ? (null === (o5 = kt()) && (o5 = Tu, u4 = vt(), o5.pooledCache = u4, u4.refCount++, null !== u4 && (o5.pooledCacheLanes |= t5), o5 = u4), n6.memoizedState = { parent: l5, cache: o5 }, V(n6), st2(0, pu, o5)) : (0 != (e4.lanes & t5) && ($(e4, n6), X(n6, null, null, t5), K()), o5 = e4.memoizedState, u4 = n6.memoizedState, o5.parent !== l5 ? (o5 = { parent: l5, cache: l5 }, n6.memoizedState = o5, 0 === n6.lanes && (n6.memoizedState = n6.updateQueue.baseState = o5), st2(0, pu, l5)) : (l5 = u4.cache, st2(0, pu, l5), l5 !== o5.cache && dt(n6, [pu], t5, true))), jn(e4, n6, n6.pendingProps.children, t5), n6.child;
+        return ht(n6), l5 = gt(pu), null === e4 ? (null === (o5 = kt()) && (o5 = Tu, u4 = vt(), o5.pooledCache = u4, u4.refCount++, null !== u4 && (o5.pooledCacheLanes |= t5), o5 = u4), n6.memoizedState = { parent: l5, cache: o5 }, V(n6), st(0, pu, o5)) : (0 != (e4.lanes & t5) && ($(e4, n6), X(n6, null, null, t5), K()), o5 = e4.memoizedState, u4 = n6.memoizedState, o5.parent !== l5 ? (o5 = { parent: l5, cache: l5 }, n6.memoizedState = o5, 0 === n6.lanes && (n6.memoizedState = n6.updateQueue.baseState = o5), st(0, pu, l5)) : (l5 = u4.cache, st(0, pu, l5), l5 !== o5.cache && dt(n6, [pu], t5, true))), jn(e4, n6, n6.pendingProps.children, t5), n6.child;
       case 29:
         throw n6.pendingProps;
     }
@@ -207794,7 +207794,7 @@ true ? a.exports = (l || (l = 1, (s = o).exports = function(n5) {
   function it() {
     su = iu = uu = null;
   }
-  function st2(e4, n6, t5) {
+  function st(e4, n6, t5) {
     p3(ou, n6._currentValue2), n6._currentValue2 = t5;
   }
   function ct(e4) {
@@ -211195,7 +211195,7 @@ true ? a2.exports = (l2 || (l2 = 1, (s2 = o2).exports = function(n5) {
   function it(e4, n6, t5, r5, l5) {
     if (null === e4) {
       var a5 = t5.type;
-      return "function" != typeof a5 || rl(a5) || void 0 !== a5.defaultProps || null !== t5.compare ? ((e4 = ol(t5.type, null, r5, n6, n6.mode, l5)).ref = n6.ref, e4.return = n6, n6.child = e4) : (n6.tag = 15, n6.type = a5, st2(e4, n6, a5, r5, l5));
+      return "function" != typeof a5 || rl(a5) || void 0 !== a5.defaultProps || null !== t5.compare ? ((e4 = ol(t5.type, null, r5, n6, n6.mode, l5)).ref = n6.ref, e4.return = n6, n6.child = e4) : (n6.tag = 15, n6.type = a5, st(e4, n6, a5, r5, l5));
     }
     if (a5 = e4.child, !Tt(e4, l5)) {
       var o5 = a5.memoizedProps;
@@ -211203,7 +211203,7 @@ true ? a2.exports = (l2 || (l2 = 1, (s2 = o2).exports = function(n5) {
     }
     return n6.flags |= 1, (e4 = ll(a5, r5)).ref = n6.ref, e4.return = n6, n6.child = e4;
   }
-  function st2(e4, n6, t5, r5, l5) {
+  function st(e4, n6, t5, r5, l5) {
     if (null !== e4) {
       var a5 = e4.memoizedProps;
       if (re(a5, r5) && e4.ref === n6.ref) {
@@ -211474,7 +211474,7 @@ true ? a2.exports = (l2 || (l2 = 1, (s2 = o2).exports = function(n5) {
       case 14:
         return it(e4, n6, n6.type, n6.pendingProps, t5);
       case 15:
-        return st2(e4, n6, n6.type, n6.pendingProps, t5);
+        return st(e4, n6, n6.type, n6.pendingProps, t5);
       case 19:
         return Pt(e4, n6, t5);
       case 31:
@@ -213627,7 +213627,7 @@ var u3 = l3(n3);
   function ct() {
     ft = ot = ut = null;
   }
-  function st2(e4, t4) {
+  function st(e4, t4) {
     var n5 = e4.type._context;
     he(at, n5._currentValue2), n5._currentValue2 = t4;
   }
@@ -215364,7 +215364,7 @@ var u3 = l3(n3);
               Vt(t4, t4.stateNode.containerInfo);
               break;
             case 10:
-              st2(t4, t4.memoizedProps.value);
+              st(t4, t4.memoizedProps.value);
               break;
             case 13:
               if (null !== t4.memoizedState) return 0 !== (r5 = t4.child.childExpirationTime) && r5 >= n5 ? tr(e4, t4, n5) : (he(Jt, 1 & Jt.current), null !== (t4 = ir(e4, t4, n5)) ? t4.sibling : null);
@@ -215460,7 +215460,7 @@ var u3 = l3(n3);
         return Bn(e4, t4, t4.pendingProps.children, n5), t4.child;
       case 10:
         e: {
-          if (r5 = t4.type._context, l5 = t4.pendingProps, a5 = t4.memoizedProps, st2(t4, i2 = l5.value), null !== a5) {
+          if (r5 = t4.type._context, l5 = t4.pendingProps, a5 = t4.memoizedProps, st(t4, i2 = l5.value), null !== a5) {
             var u4 = a5.value;
             if (0 == (i2 = nt(u4, i2) ? 0 : 0 | ("function" == typeof r5._calculateChangedBits ? r5._calculateChangedBits(u4, i2) : 1073741823))) {
               if (a5.children === l5.children && !ye.current) {
@@ -232556,6 +232556,33 @@ var docStyles = StyleSheet.create({
     color: "#64748b",
     textTransform: "uppercase"
   },
+  // --- Portal Copy Watermark (rendered natively, repeated on every page) ---
+  // Diagonal, subtle, semi-transparent. Positioned in the middle band so it
+  // never covers the header, totals, QR code, or signature areas.
+  portalWatermarkContainer: {
+    position: "absolute",
+    top: "36%",
+    left: "4%",
+    width: "92%",
+    alignItems: "center",
+    justifyContent: "center",
+    transform: "rotate(-30deg)",
+    opacity: 0.1,
+    zIndex: 100
+  },
+  portalWatermarkText: {
+    fontSize: 52,
+    fontWeight: "bold",
+    color: "#334155",
+    borderWidth: 3,
+    borderColor: "#334155",
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 10,
+    textTransform: "uppercase",
+    letterSpacing: 4,
+    textAlign: "center"
+  },
   conversionBox: {
     borderWidth: 1,
     borderColor: "#000",
@@ -232949,8 +232976,12 @@ var getDefaultPaymentTermsLabel = (companyConfig) => {
   return termsDays === 0 ? "Due on receipt" : `Net ${termsDays}`;
 };
 
-// views/shared/components/PDF/StatementSummaryTemplate.tsx
+// views/shared/components/PDF/PortalCopyWatermark.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+var PortalCopyWatermark = () => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(View, { style: docStyles.portalWatermarkContainer, fixed: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: docStyles.portalWatermarkText, children: "PORTAL COPY" }) });
+
+// views/shared/components/PDF/StatementSummaryTemplate.tsx
+var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
 var formatAmount = (amount) => {
   return (amount || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -232972,7 +233003,7 @@ var buildFooterLine1 = (config2) => {
     config2?.footer,
     config2?.receiptFooter,
     config2?.transactionSettings?.pos?.receiptFooter,
-    "This is a computer-generated document. No signature required."
+    "This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
   );
 };
 var buildFooterLine2 = (config2) => {
@@ -232989,7 +233020,7 @@ var buildFooterLine2 = (config2) => {
     website
   ].filter(Boolean).join(", ");
 };
-var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
+var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = "erp" }) => {
   const currency = data2.currency || "MWK";
   const config2 = configOverride || getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config2);
@@ -233005,83 +233036,84 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
   const fontScale = templateSettings.bodyFontSize / 12;
   const isCancelled = String(data2.status || data2.transactionStatus || "").toLowerCase() === "cancelled" || String(data2.status || data2.transactionStatus || "").toLowerCase() === "canceled" || data2.isCancelled === true || data2.cancelled === true;
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
     Document,
     {
       title: `Statement - ${data2.customerName}`,
       author: companyName,
       subject: "Account Statement Summary",
       creator: "Prime ERP System",
-      children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
-        isCancelled && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(View, { style: docStyles.watermarkContainer, fixed: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: docStyles.watermarkText, children: "CANCELLED" }) }),
-        templateSettings.showConversionHistory !== false && "isConverted" in data2 && !!data2.isConverted && !!data2.conversionDetails && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: [docStyles.conversionBox, { position: "absolute", top: 40, right: 40, zIndex: 10 }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: docStyles.conversionTitle, children: "Conversion History" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
+      children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
+        channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(PortalCopyWatermark, {}),
+        isCancelled && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.watermarkContainer, fixed: true, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.watermarkText, children: "CANCELLED" }) }),
+        templateSettings.showConversionHistory !== false && "isConverted" in data2 && !!data2.isConverted && !!data2.conversionDetails && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.conversionBox, { position: "absolute", top: 40, right: 40, zIndex: 10 }], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.conversionTitle, children: "Conversion History" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
             "Converted from ",
             data2.conversionDetails.sourceType,
             " ",
             data2.conversionDetails.sourceNumber
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
             "on ",
             data2.conversionDetails.date
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.headerContainer, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.companySide, children: [
-            logo ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Image, { src: logo, style: { marginBottom: 6, width: templateSettings.logoWidth } }) : null,
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: "#1e293b", marginBottom: 2 }, children: companyName }),
-            companyAddress ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyAddress }) : null,
-            companyPhone ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerContainer, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.companySide, children: [
+            logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { marginBottom: 6, width: templateSettings.logoWidth } }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: "#1e293b", marginBottom: 2 }, children: companyName }),
+            companyAddress ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyAddress }) : null,
+            companyPhone ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: [
               "Phone ",
               companyPhone
             ] }) : null,
-            companyEmail ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyEmail }) : null,
-            companyWebsite ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyWebsite }) : null,
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(View, { style: { marginTop: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", fontStyle: "italic", marginTop: 2 }, children: [
+            companyEmail ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyEmail }) : null,
+            companyWebsite ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: companyWebsite }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { marginTop: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", fontStyle: "italic", marginTop: 2 }, children: [
               "Generated on: ",
               (/* @__PURE__ */ new Date()).toLocaleString("en-GB")
             ] }) })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.statementSide, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: [docStyles.title, { fontSize: 24, marginBottom: 2 }], children: "Account Statement" }),
-            Boolean(data2.statementNumber || data2.number) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontSize: 10, color: "#64748b", marginBottom: 2 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.statementSide, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.title, { fontSize: 24, marginBottom: 2 }], children: "Account Statement" }),
+            Boolean(data2.statementNumber || data2.number) && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 10, color: "#64748b", marginBottom: 2 }, children: [
               "Statement Number: ",
               String(data2.statementNumber || data2.number)
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontSize: 10, color: "#64748b", marginBottom: 5 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 10, color: "#64748b", marginBottom: 5 }, children: [
               data2.startDate,
               " \u2014 ",
               data2.endDate
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.summaryTable, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontWeight: "bold", color: "#475569" }, children: "Opening Balance" }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryTable, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", color: "#475569" }, children: "Opening Balance" }),
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
                   currency,
                   " ",
                   formatAmount(data2.openingBalance)
                 ] })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { color: "#475569" }, children: "Invoiced Amount" }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#475569" }, children: "Invoiced Amount" }),
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
                   currency,
                   " ",
                   formatAmount(data2.totalInvoiced)
                 ] })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { color: "#475569" }, children: "Amount Received" }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#475569" }, children: "Amount Received" }),
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
                   currency,
                   " ",
                   formatAmount(data2.totalReceived)
                 ] })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: [docStyles.summaryRow, { borderBottomWidth: 0, marginTop: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#e2e8f0" }], children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontWeight: "bold", color: "#1e293b" }, children: "Balance Due" }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { style: { fontWeight: "bold", fontSize: 13, color: "#2563eb" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.summaryRow, { borderBottomWidth: 0, marginTop: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#e2e8f0" }], children: [
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", color: "#1e293b" }, children: "Balance Due" }),
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold", fontSize: 13, color: "#2563eb" }, children: [
                   currency,
                   " ",
                   formatAmount(data2.finalBalance)
@@ -233090,36 +233122,36 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
             ] })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: { marginTop: 1.5, paddingLeft: 5, borderLeftWidth: 3, borderLeftColor: "#2563eb", paddingVertical: 2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 9, fontWeight: "bold", color: "#64748b", textTransform: "uppercase", marginBottom: 4 }, children: "Statement For" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 14, fontWeight: "bold", color: "#1e293b" }, children: data2.customerName }),
-          "address" in data2 && !!data2.address && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 10, color: "#475569", marginTop: 4 }, children: data2.address })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 1.5, paddingLeft: 5, borderLeftWidth: 3, borderLeftColor: "#2563eb", paddingVertical: 2 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9, fontWeight: "bold", color: "#64748b", textTransform: "uppercase", marginBottom: 4 }, children: "Statement For" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 14, fontWeight: "bold", color: "#1e293b" }, children: data2.customerName }),
+          "address" in data2 && !!data2.address && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#475569", marginTop: 4 }, children: data2.address })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold", marginTop: 15, marginBottom: 8, color: "#1e293b", textTransform: "uppercase", letterSpacing: 1 }, children: "Transaction History" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: [docStyles.tableHeader, { backgroundColor: "#f8fafc", paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: "#cbd5e1" }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1.2, fontSize: 10, fontWeight: "bold" }, children: "Date" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1.5, fontSize: 10, fontWeight: "bold" }, children: "Reference" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 2.5, fontSize: 10, fontWeight: "bold" }, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1, fontSize: 10, fontWeight: "bold", textAlign: "right" }, children: "Debit" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1, fontSize: 10, fontWeight: "bold", textAlign: "right" }, children: "Credit" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1.3, fontSize: 10, fontWeight: "bold", textAlign: "right" }, children: "Balance" })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold", marginTop: 15, marginBottom: 8, color: "#1e293b", textTransform: "uppercase", letterSpacing: 1 }, children: "Transaction History" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.tableHeader, { backgroundColor: "#f8fafc", paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: "#cbd5e1" }], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.2, fontSize: 10, fontWeight: "bold" }, children: "Date" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.5, fontSize: 10, fontWeight: "bold" }, children: "Reference" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.5, fontSize: 10, fontWeight: "bold" }, children: "Description" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10, fontWeight: "bold", textAlign: "right" }, children: "Debit" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10, fontWeight: "bold", textAlign: "right" }, children: "Credit" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.3, fontSize: 10, fontWeight: "bold", textAlign: "right" }, children: "Balance" })
         ] }),
-        data2.transactions.map((txn, i2) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: [docStyles.row, { paddingHorizontal: 8, borderBottomColor: "#f1f5f9" }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1.2, fontSize: 9 }, children: txn.date }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1.5, fontSize: 9, fontWeight: "bold" }, children: txn.reference }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 2.5, fontSize: 9, color: "#475569" }, children: txn.memo || "-" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.debit > 0 ? "#e11d48" : "#64748b" }, children: txn.debit > 0 ? formatAmount(txn.debit) : "-" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.credit > 0 ? "#059669" : "#64748b" }, children: txn.credit > 0 ? formatAmount(txn.credit) : "-" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { flex: 1.3, fontSize: 9, textAlign: "right", fontWeight: "bold" }, children: formatAmount(txn.runningBalance) })
+        data2.transactions.map((txn, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.row, { paddingHorizontal: 8, borderBottomColor: "#f1f5f9" }], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.2, fontSize: 9 }, children: txn.date }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.5, fontSize: 9, fontWeight: "bold" }, children: txn.reference }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.5, fontSize: 9, color: "#475569" }, children: txn.memo || "-" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.debit > 0 ? "#e11d48" : "#64748b" }, children: txn.debit > 0 ? formatAmount(txn.debit) : "-" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.credit > 0 ? "#059669" : "#64748b" }, children: txn.credit > 0 ? formatAmount(txn.credit) : "-" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.3, fontSize: 9, textAlign: "right", fontWeight: "bold" }, children: formatAmount(txn.runningBalance) })
         ] }, i2)),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.securityFooter, fixed: true, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(View, { style: docStyles.securityFooterText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: [docStyles.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: buildFooterLine1(config2) }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: [docStyles.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: buildFooterLine2(config2) })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.securityFooter, fixed: true, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.securityFooterText, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: buildFooterLine1(config2) }),
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: buildFooterLine2(config2) })
           ] }),
           (() => {
             const qrUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
-            return qrUrl ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(View, { style: [docStyles.securityQrPanel, { width: 58, alignItems: "center", borderWidth: 0, backgroundColor: "transparent", paddingVertical: 0, paddingHorizontal: 0 }], children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Image, { src: qrUrl, style: { width: 50, height: 50 } }) }) : null;
+            return qrUrl ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: [docStyles.securityQrPanel, { width: 58, alignItems: "center", borderWidth: 0, backgroundColor: "transparent", paddingVertical: 0, paddingHorizontal: 0 }], children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: qrUrl, style: { width: 50, height: 50 } }) }) : null;
           })()
         ] })
       ] })
@@ -233128,7 +233160,7 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null }) => {
 };
 
 // views/shared/components/PDF/PrimeDocument.tsx
-var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
 var formatPhone = (phone) => {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 12 && digits.startsWith("265")) {
@@ -233146,22 +233178,22 @@ var InvoiceInfoPanel = ({
 }) => {
   if (type === "account_summary") {
     const summary = generateAccountSummary(data2, config2, customers);
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "ACCOUNT SUMMARY" }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#475569", lineHeight: 1.4 }, children: summary.statement })
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 15 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "ACCOUNT SUMMARY" }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#475569", lineHeight: 1.4 }, children: summary.statement })
     ] });
   }
   const paymentTermsLabel = String(data2?.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 15 }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Payment Terms" }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#475569", lineHeight: 1.4 }, children: paymentTermsLabel })
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 15 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Payment Terms" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#475569", lineHeight: 1.4 }, children: paymentTermsLabel })
   ] });
 };
 Font.registerHyphenationCallback((word) => [word]);
 var renderQrImage = (qrCodeDataUrl, size = 52) => {
   const resolvedQrCode = resolvePdfQrCodeSource(qrCodeDataUrl);
   if (!resolvedQrCode) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: resolvedQrCode, style: { width: size, height: size } });
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: resolvedQrCode, style: { width: size, height: size } });
 };
 var formatAmount2 = (amount) => {
   return (amount || 0).toLocaleString("en-US", {
@@ -233245,7 +233277,7 @@ var resolveFooterText = (config2, paymentTermsLabel, showPaymentTerms) => {
   if (configuredFooter) {
     return configuredFooter;
   }
-  return showPaymentTerms ? `This is a computer-generated document. No signature required. Payment terms: ${paymentTermsLabel}.` : "This is a computer-generated document. No signature required.";
+  return showPaymentTerms ? `This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222. Payment terms: ${paymentTermsLabel}.` : "This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.";
 };
 var buildFooterContactLine = (config2) => {
   const { companyName, companyAddress, companyPhone, companyEmail, website } = normalizeCompanyIdentity(config2);
@@ -233262,7 +233294,7 @@ var isCancelledStatus = (status, data2) => {
   const str = String(status || data2?.status || data2?.transactionStatus || data2?.paymentStatus || data2?.orderStatus || "").trim().toLowerCase();
   return str === "cancelled" || str === "canceled" || str === "void" || str === "voided";
 };
-var CancelledWatermark = () => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.watermarkContainer, fixed: true, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.watermarkText, children: "CANCELLED" }) });
+var CancelledWatermark = () => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.watermarkContainer, fixed: true, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.watermarkText, children: "CANCELLED" }) });
 var SecurityFooter = ({
   data: data2,
   companyName,
@@ -233282,12 +233314,12 @@ var SecurityFooter = ({
     String(data2?.createdAtIso || data2?.createdAt || data2?.created_at || data2?.date || "")
   );
   const qrCodeDataUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.securityFooter, fixed: true, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.securityFooterText, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: legalFooterLine1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: legalFooterLine2 })
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.securityFooter, fixed: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.securityFooterText, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: legalFooterLine1 }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: legalFooterLine2 })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       View,
       {
         style: [
@@ -233301,7 +233333,7 @@ var SecurityFooter = ({
             paddingHorizontal: 0
           }
         ],
-        children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }) : null
+        children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }) : null
       }
     )
   ] });
@@ -233310,7 +233342,8 @@ var CleanInvoiceTemplate = ({
   type,
   data: data2,
   config: config2,
-  templateSettings
+  templateSettings,
+  channel
 }) => {
   const dataAny = data2;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -233350,6 +233383,7 @@ var CleanInvoiceTemplate = ({
   const resolvedWalletBalance = Number(dataAny.walletBalance || 0);
   const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
   const showPaymentTerms = templateSettings.showPaymentTerms;
+  const showAccountSummary = templateSettings.showAccountSummary;
   const paymentTermsLabel = String(dataAny.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
   const legalFooterLine1 = resolveFooterText(config2, paymentTermsLabel, showPaymentTerms);
   const legalFooterLine2 = buildFooterContactLine(config2);
@@ -233376,15 +233410,15 @@ var CleanInvoiceTemplate = ({
         formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
       }
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#e0e0e0", minHeight: 24, alignItems: "center", paddingVertical: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155" }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: qty }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#e0e0e0", minHeight: 24, alignItems: "center", paddingVertical: 4 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155" }, children: formattedDesc }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: qty }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
         currency,
         " ",
         unitPrice.toFixed(2)
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
         currency,
         " ",
         total.toFixed(2)
@@ -233392,160 +233426,161 @@ var CleanInvoiceTemplate = ({
     ] }, i2);
   };
   const isCancelled = isCancelledStatus(dataAny.status, dataAny);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: { padding: 40, fontFamily: templateSettings.fontFamily }, children: [
-    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CancelledWatermark, {}),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 40 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-        !!logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth, marginBottom: 10 } }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: accentColor, marginBottom: 8 }, children: companyName }),
-        !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", lineHeight: 1.4 }, children: companyAddress }),
-        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", marginTop: 2 }, children: companyPhone }),
-        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", marginTop: 2 }, children: companyEmail })
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: { padding: 40, fontFamily: templateSettings.fontFamily }, children: [
+    channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
+    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 40 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+        !!logo ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth, marginBottom: 10 } }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: accentColor, marginBottom: 8 }, children: companyName }),
+        !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", lineHeight: 1.4 }, children: companyAddress }),
+        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", marginTop: 2 }, children: companyPhone }),
+        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", marginTop: 2 }, children: companyEmail })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 26 * fontScale, fontWeight: "300", color: "#1e293b", letterSpacing: 1.5 }, children: docTitle }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#475569", marginTop: 8, fontWeight: "bold" }, children: invoiceNumber })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 26 * fontScale, fontWeight: "300", color: "#1e293b", letterSpacing: 1.5 }, children: docTitle }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#475569", marginTop: 8, fontWeight: "bold" }, children: invoiceNumber })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", marginBottom: 30, gap: 30 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 6, letterSpacing: 1 }, children: "Bill To" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: "#1e293b", marginBottom: 4 }, children: resolvedRecipientName || "N/A" }),
-        !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#334155", marginBottom: 3, lineHeight: 1.4 }, children: resolvedRecipientAddress }),
-        !!resolvedRecipientPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#334155" }, children: resolvedRecipientPhone })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", marginBottom: 30, gap: 30 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 6, letterSpacing: 1 }, children: "Bill To" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: "#1e293b", marginBottom: 4 }, children: resolvedRecipientName || "N/A" }),
+        !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#334155", marginBottom: 3, lineHeight: 1.4 }, children: resolvedRecipientAddress }),
+        !!resolvedRecipientPhone && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#334155" }, children: resolvedRecipientPhone })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 3, letterSpacing: 1 }, children: "Date" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold" }, children: invoiceDate })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 12 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 3, letterSpacing: 1 }, children: "Date" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold" }, children: invoiceDate })
         ] }),
-        Boolean(templateSettings.showDueDate) && !!dueDate && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 3, letterSpacing: 1 }, children: "Due Date" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold" }, children: dueDate })
+        Boolean(templateSettings.showDueDate) && !!dueDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 12 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 3, letterSpacing: 1 }, children: "Due Date" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold" }, children: dueDate })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { flex: 1, alignItems: "center", justifyContent: "center" }, children: !!dataAny.status && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 4, borderWidth: 1, borderColor: getStatusTone(String(dataAny.status)).border, backgroundColor: getStatusTone(String(dataAny.status)).border + "15" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12 * fontScale, color: getStatusTone(String(dataAny.status)).text, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: String(dataAny.status).toUpperCase() }) }) })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { flex: 1, alignItems: "center", justifyContent: "center" }, children: !!dataAny.status && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 4, borderWidth: 1, borderColor: getStatusTone(String(dataAny.status)).border, backgroundColor: getStatusTone(String(dataAny.status)).border + "15" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12 * fontScale, color: getStatusTone(String(dataAny.status)).text, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: String(dataAny.status).toUpperCase() }) }) })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 20 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Qty" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Unit Price" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Amount" })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 20 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: "center" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Qty" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Unit Price" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Amount" })
       ] }),
       items.map(renderRow2)
     ] }),
-    type === "PO" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { flexDirection: "row", justifyContent: "flex-end", marginTop: 15 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { minWidth: 220 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Subtotal" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
+    type === "PO" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { flexDirection: "row", justifyContent: "flex-end", marginTop: 15 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { minWidth: 220 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Subtotal" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
           currency,
           " ",
           subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }),
-      discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: discountLabel }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: discountAmountText })
+      discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: discountLabel }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: discountAmountText })
       ] }),
-      tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Tax" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
+      tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Tax" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
           currency,
           " ",
           tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }),
-      dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: [
+      dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: [
           "Rounding",
           dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
           currency,
           " ",
           Number(dataAny.roundingDifference).toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }) : null,
-      type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4, marginTop: 4, borderTopWidth: 1, borderColor: "#e2e8f0", paddingTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Amount Paid" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
+      type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4, marginTop: 4, borderTopWidth: 1, borderColor: "#e2e8f0", paddingTop: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Amount Paid" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
           currency,
           " ",
           amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }),
-      type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: accentColor + "15", marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor }, children: "Balance Due" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor, textAlign: "right" }, children: [
+      type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: accentColor + "15", marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor }, children: "Balance Due" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor, textAlign: "right" }, children: [
           currency,
           " ",
           (totalAmount - amountPaid).toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] })
-    ] }) }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { flex: 1.5, paddingRight: 40 }, children: !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Notes" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#475569", lineHeight: 1.4 }, children: String(dataAny.notes) })
+    ] }) }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { flex: 1.5, paddingRight: 40 }, children: !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Notes" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#475569", lineHeight: 1.4 }, children: String(dataAny.notes) })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, minWidth: 220 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Subtotal" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, minWidth: 220 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Subtotal" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
             currency,
             " ",
             subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }),
-        discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: discountLabel }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: discountAmountText })
+        discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: discountLabel }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: discountAmountText })
         ] }),
-        tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Tax" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
+        tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Tax" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
             currency,
             " ",
             tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }),
-        dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: [
+        dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: [
             "Rounding",
             dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
             currency,
             " ",
             Number(dataAny.roundingDifference).toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }) : null,
-        type !== "INVOICE" && type !== "ORDER" && type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { alignSelf: "flex-end", width: 220, flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderTopWidth: 1, borderColor: "#e2e8f0", marginTop: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: "#1e293b" }, children: "Total Amount" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: "#1e293b", textAlign: "right" }, children: [
+        type !== "INVOICE" && type !== "ORDER" && type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { alignSelf: "flex-end", width: 220, flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderTopWidth: 1, borderColor: "#e2e8f0", marginTop: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: "#1e293b" }, children: "Total Amount" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: "#1e293b", textAlign: "right" }, children: [
             currency,
             " ",
             totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }),
-        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4, marginTop: type === "INVOICE" || type === "ORDER" ? 4 : 0, borderTopWidth: type === "INVOICE" || type === "ORDER" ? 1 : 0, borderColor: "#e2e8f0", paddingTop: type === "INVOICE" || type === "ORDER" ? 8 : 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Amount Paid" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
+        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4, marginTop: type === "INVOICE" || type === "ORDER" ? 4 : 0, borderTopWidth: type === "INVOICE" || type === "ORDER" ? 1 : 0, borderColor: "#e2e8f0", paddingTop: type === "INVOICE" || type === "ORDER" ? 8 : 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#475569" }, children: "Amount Paid" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: "#1e293b", fontWeight: "bold", textAlign: "right" }, children: [
             currency,
             " ",
             amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }),
-        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: accentColor + "15", marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor }, children: "Balance Due" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor, textAlign: "right" }, children: [
+        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: accentColor + "15", marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor }, children: "Balance Due" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor, textAlign: "right" }, children: [
             currency,
             " ",
             (totalAmount - amountPaid).toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }),
-        type === "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: accentColor + "15", marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor }, children: "Recurring Total" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor, textAlign: "right" }, children: [
+        type === "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: accentColor + "15", marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor }, children: "Recurring Total" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: accentColor, textAlign: "right" }, children: [
             currency,
             " ",
             totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })
@@ -233556,9 +233591,9 @@ var CleanInvoiceTemplate = ({
     type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
       const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
       const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { marginTop: 15, padding: 8, backgroundColor: "#f0f9ff", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#0ea5e9" }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 10 * fontScale, color: "#0369a1", lineHeight: 1.4 }, children: [
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 15, padding: 8, backgroundColor: "#f0f9ff", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#0ea5e9" }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 10 * fontScale, color: "#0369a1", lineHeight: 1.4 }, children: [
         "Your overall outstanding balance is ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
           currency,
           " ",
           totalOutstanding.toLocaleString("en-US", { minimumFractionDigits: 2 })
@@ -233566,7 +233601,7 @@ var CleanInvoiceTemplate = ({
         ` as of ${todayStr}`
       ] }) });
     })(),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { wrap: false, style: { marginTop: 15, flex: 1 }, children: showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { wrap: false, style: { marginTop: 15, flex: 1 }, children: showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       InvoiceInfoPanel,
       {
         type: "account_summary",
@@ -233575,7 +233610,7 @@ var CleanInvoiceTemplate = ({
         config: config2,
         fontScale
       }
-    ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       InvoiceInfoPanel,
       {
         type: "payment_terms",
@@ -233585,7 +233620,7 @@ var CleanInvoiceTemplate = ({
         fontScale
       }
     ) : null }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       SecurityFooter,
       {
         data: dataAny,
@@ -233601,7 +233636,8 @@ var ModernInvoiceTemplate = ({
   type,
   data: data2,
   config: config2,
-  templateSettings
+  templateSettings,
+  channel
 }) => {
   const dataAny = data2;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -233647,6 +233683,7 @@ var ModernInvoiceTemplate = ({
   const discountAmountText = discount > 0 ? `-${currency} ${discount.toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "";
   const showDueDate = templateSettings.showDueDate;
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
+  const showAccountSummary = templateSettings.showAccountSummary;
   const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
   const outstandingDisplay = showInvoiceBalances && type === "INVOICE" ? resolvedOutstandingBalance : totalAmount - amountPaid;
   const paymentTermsLabel = String(dataAny.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
@@ -233675,125 +233712,126 @@ var ModernInvoiceTemplate = ({
       }
     }
     const bgColor = i2 % 2 !== 0 ? "#F5F5F5" : "transparent";
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", backgroundColor: bgColor, minHeight: 28, alignItems: "center", paddingVertical: 6, paddingHorizontal: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: qty }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", backgroundColor: bgColor, minHeight: 28, alignItems: "center", paddingVertical: 6, paddingHorizontal: 4 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: qty }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: [
         currency,
         " ",
         unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
         total.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] })
     ] }, i2);
   };
-  const isCancelled = isCancelledStatus(rc.paymentStatus || dataAny.status, dataAny);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: { paddingVertical: 45, paddingHorizontal: 40, fontFamily: templateSettings.fontFamily, backgroundColor: "#FFFFFF" }, children: [
-    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CancelledWatermark, {}),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { alignItems: "center", marginBottom: 1.5 }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#222222", fontSize: templateSettings.logoWidth * 0.4, fontWeight: "bold" }, children: companyName.charAt(0) }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { alignItems: "center", marginBottom: 2 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 48 * fontScale, color: "#111111" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "heavy" }, children: titleFirst }),
-      !!titleRest && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontStyle: "italic", fontWeight: "normal", color: "#333333" }, children: [
+  const isCancelled = isCancelledStatus(dataAny.paymentStatus || dataAny.status, dataAny);
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: { paddingVertical: 45, paddingHorizontal: 40, fontFamily: templateSettings.fontFamily, backgroundColor: "#FFFFFF" }, children: [
+    channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
+    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { alignItems: "center", marginBottom: 1.5 }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#222222", fontSize: templateSettings.logoWidth * 0.4, fontWeight: "bold" }, children: companyName.charAt(0) }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { alignItems: "center", marginBottom: 2 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 48 * fontScale, color: "#111111" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "heavy" }, children: titleFirst }),
+      !!titleRest && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontStyle: "italic", fontWeight: "normal", color: "#333333" }, children: [
         " ",
         titleRest
       ] })
     ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 30, marginBottom: 40 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 12 * fontScale, color: "#222222" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Number:" : "Reference Number:" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 30, marginBottom: 40 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 12 * fontScale, color: "#222222" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Number:" : "Reference Number:" }),
         " ",
         invoiceNumber
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 12 * fontScale, color: "#222222" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Date:" : "Date:" }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 12 * fontScale, color: "#222222" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Date:" : "Date:" }),
         " ",
         invoiceDate
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 30 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, paddingRight: 20 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: "flex-start", marginBottom: 12, minWidth: 150 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#ffffff", fontSize: 10 * fontScale, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: "COMPANY INFO" }) }),
-        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#333333", marginBottom: 3 }, children: companyPhone }),
-        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#333333", marginBottom: 3 }, children: companyEmail })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 30 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, paddingRight: 20 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: "flex-start", marginBottom: 12, minWidth: 150 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#ffffff", fontSize: 10 * fontScale, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: "COMPANY INFO" }) }),
+        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#333333", marginBottom: 3 }, children: companyPhone }),
+        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#333333", marginBottom: 3 }, children: companyEmail })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: "flex-end", marginBottom: 12, minWidth: 150 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#ffffff", fontSize: 10 * fontScale, fontWeight: "bold", textAlign: "right", textTransform: "uppercase", letterSpacing: 1 }, children: "BILL TO" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 4 }, children: resolvedRecipientName }),
-          !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", textAlign: "right", lineHeight: 1.4 }, children: resolvedRecipientAddress }),
-          !!resolvedRecipientPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", textAlign: "right", marginTop: 2 }, children: resolvedRecipientPhone })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: "flex-end", marginBottom: 12, minWidth: 150 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#ffffff", fontSize: 10 * fontScale, fontWeight: "bold", textAlign: "right", textTransform: "uppercase", letterSpacing: 1 }, children: "BILL TO" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 4 }, children: resolvedRecipientName }),
+          !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", textAlign: "right", lineHeight: 1.4 }, children: resolvedRecipientAddress }),
+          !!resolvedRecipientPhone && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", textAlign: "right", marginTop: 2 }, children: resolvedRecipientPhone })
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Qty." }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Unit Price" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Amount" })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 15 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: "center" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Qty." }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Unit Price" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Amount" })
       ] }),
       items.map(renderRow2),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", backgroundColor: "#D9DEDE", paddingVertical: 8, paddingHorizontal: 4, alignItems: "center", marginTop: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#111111" }, children: "Total Payment" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111" }, children: "-" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111" }, children: "-" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#111111", textAlign: "right" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", backgroundColor: "#D9DEDE", paddingVertical: 8, paddingHorizontal: 4, alignItems: "center", marginTop: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#111111" }, children: "Total Payment" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111" }, children: "-" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111" }, children: "-" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#111111", textAlign: "right" }, children: [
           currency,
           " ",
           subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: 200 }, children: !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 6 }, children: "Notes:" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", lineHeight: 1.5 }, children: String(dataAny.notes) }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: "100%", height: 1, backgroundColor: "#111111", marginTop: 15 } })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 200 }, children: !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 10 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 6 }, children: "Notes:" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", lineHeight: 1.5 }, children: String(dataAny.notes) }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: "100%", height: 1, backgroundColor: "#111111", marginTop: 15 } })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { width: 220 }, children: [
-        tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: "Tax" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { width: 220 }, children: [
+        tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: "Tax" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
             currency,
             " ",
             tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }),
-        discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: discountLabel }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
+        discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: discountLabel }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
             "-",
             currency,
             " ",
             discount.toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }),
-        dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
+        dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
             "Rounding",
             dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
             currency,
             " ",
             Number(dataAny.roundingDifference).toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }) : null,
-        amountPaid > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: "Amount Paid" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
+        amountPaid > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: "Amount Paid" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#333333", fontSize: 11 * fontScale }, children: [
             "-",
             currency,
             " ",
             amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#Dce1e1", paddingVertical: 8, paddingHorizontal: 6, marginTop: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#111111", fontWeight: "bold", fontSize: 12 * fontScale }, children: "Balance Due" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#111111", fontWeight: "bold", fontSize: 12 * fontScale }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#Dce1e1", paddingVertical: 8, paddingHorizontal: 6, marginTop: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#111111", fontWeight: "bold", fontSize: 12 * fontScale }, children: "Balance Due" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#111111", fontWeight: "bold", fontSize: 12 * fontScale }, children: [
             currency,
             " ",
             (totalAmount - amountPaid).toLocaleString("en-US", { minimumFractionDigits: 2 })
@@ -233804,9 +233842,9 @@ var ModernInvoiceTemplate = ({
     type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
       const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
       const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { marginTop: 15, padding: 8, backgroundColor: "#f0f9ff", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#0ea5e9" }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 10 * fontScale, color: "#0369a1", lineHeight: 1.4 }, children: [
+      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 15, padding: 8, backgroundColor: "#f0f9ff", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#0ea5e9" }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 10 * fontScale, color: "#0369a1", lineHeight: 1.4 }, children: [
         "Your overall outstanding balance is ",
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
           currency,
           " ",
           totalOutstanding.toLocaleString("en-US", { minimumFractionDigits: 2 })
@@ -233814,9 +233852,9 @@ var ModernInvoiceTemplate = ({
         ` as of ${todayStr}`
       ] }) });
     })(),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { wrap: false, style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 15, flex: 1, gap: 20 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "column", flex: 1 }, children: [
-        showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 15, flex: 1, gap: 20 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "column", flex: 1 }, children: [
+        showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
           InvoiceInfoPanel,
           {
             type: "account_summary",
@@ -233825,7 +233863,7 @@ var ModernInvoiceTemplate = ({
             config: config2,
             fontScale
           }
-        ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
           InvoiceInfoPanel,
           {
             type: "payment_terms",
@@ -233835,20 +233873,20 @@ var ModernInvoiceTemplate = ({
             fontScale
           }
         ) : null,
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-start", marginTop: 10, gap: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { children: renderQrImage(qrCodeDataUrl, 56) || /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: 56, height: 56, backgroundColor: "#eeeeee" } }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { justifyContent: "center", flex: 1 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: 11 * fontScale, color: "#111111", marginBottom: 4 }, children: "More Info:" }),
-            !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", marginBottom: 2 }, children: companyPhone }),
-            !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333" }, children: companyEmail })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-start", marginTop: 10, gap: 12 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { children: renderQrImage(qrCodeDataUrl, 56) || /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 56, height: 56, backgroundColor: "#eeeeee" } }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { justifyContent: "center", flex: 1 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", fontSize: 11 * fontScale, color: "#111111", marginBottom: 4 }, children: "More Info:" }),
+            !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", marginBottom: 2 }, children: companyPhone }),
+            !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333" }, children: companyEmail })
           ] })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { alignItems: "center", minWidth: 160 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#222222", marginBottom: 8 }, children: showDueDate && dueDate ? `Due Date: ${formatDateOnly(dueDate)}` : `Date: ${invoiceDate}` }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: "100%", height: 30, alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontFamily: templateSettings.fontFamily, fontStyle: "italic", fontSize: 22, color: "#111111" }, children: companyName.split(" ")[0] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: "100%", height: 1.5, backgroundColor: "#444444", marginTop: 8, marginBottom: 4 } }),
-        dataAny.createdAtIso || dataAny.createdAt ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 8 * fontScale, color: "#666666" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { alignItems: "center", minWidth: 160 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 11 * fontScale, color: "#222222", marginBottom: 8 }, children: showDueDate && dueDate ? `Due Date: ${formatDateOnly(dueDate)}` : `Date: ${invoiceDate}` }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: "100%", height: 30, alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontFamily: templateSettings.fontFamily, fontStyle: "italic", fontSize: 22, color: "#111111" }, children: companyName.split(" ")[0] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: "100%", height: 1.5, backgroundColor: "#444444", marginTop: 8, marginBottom: 4 } }),
+        dataAny.createdAtIso || dataAny.createdAt ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 8 * fontScale, color: "#666666" }, children: [
           "Ref: ",
           String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || "N/A")
         ] }) : null
@@ -233860,7 +233898,8 @@ var ProfessionalInvoiceTemplate = ({
   type,
   data: data2,
   config: config2,
-  templateSettings
+  templateSettings,
+  channel
 }) => {
   const dataAny = data2;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -233922,188 +233961,189 @@ var ProfessionalInvoiceTemplate = ({
         formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
       }
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#eeeeee", minHeight: 24, alignItems: "center", paddingVertical: 5 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: qty }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#eeeeee", minHeight: 24, alignItems: "center", paddingVertical: 5 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: qty }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
         unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
         total.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] })
     ] }, i2);
   };
-  const isCancelled = isCancelledStatus(st.status || dataAny.status, dataAny);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: { padding: 40, fontFamily: templateSettings.fontFamily, backgroundColor: "#ffffff" }, children: [
-    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CancelledWatermark, {}),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 30 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { alignItems: "center", justifyContent: "center" }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#222222", fontSize: templateSettings.logoWidth * 0.4, fontWeight: "bold" }, children: companyName.charAt(0) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { textAlign: "right", alignItems: "flex-end" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 13 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 2 }, children: companyName }),
-        !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyAddress }),
-        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyPhone }),
-        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyEmail })
+  const isCancelled = isCancelledStatus(dataAny.status, dataAny);
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: { padding: 40, fontFamily: templateSettings.fontFamily, backgroundColor: "#ffffff" }, children: [
+    channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
+    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 30 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { alignItems: "center", justifyContent: "center" }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#222222", fontSize: templateSettings.logoWidth * 0.4, fontWeight: "bold" }, children: companyName.charAt(0) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { textAlign: "right", alignItems: "flex-end" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 13 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 2 }, children: companyName }),
+        !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyAddress }),
+        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyPhone }),
+        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: companyEmail })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 25 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#999999", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 }, children: "Client" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 14 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 2 }, children: resolvedRecipientName }),
-        !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: resolvedRecipientAddress })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 25 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#999999", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 }, children: "Client" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 14 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 2 }, children: resolvedRecipientName }),
+        !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: resolvedRecipientAddress })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 32 * fontScale, fontWeight: "bold", color: "#cccccc", letterSpacing: 2 }, children: docTitle }) })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 32 * fontScale, fontWeight: "bold", color: "#cccccc", letterSpacing: 2 }, children: docTitle }) })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", alignItems: "stretch", marginBottom: 25 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { backgroundColor: accentColor, paddingVertical: 12, paddingHorizontal: 16, flex: 1, justifyContent: "center" }, children: type !== "QUOTATION" && type !== "SUBSCRIPTION" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 16 * fontScale, fontWeight: "bold", color: "#ffffff", letterSpacing: 1 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", alignItems: "stretch", marginBottom: 25 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { backgroundColor: accentColor, paddingVertical: 12, paddingHorizontal: 16, flex: 1, justifyContent: "center" }, children: type !== "QUOTATION" && type !== "SUBSCRIPTION" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 16 * fontScale, fontWeight: "bold", color: "#ffffff", letterSpacing: 1 }, children: [
         type === "INVOICE" && showInvoiceBalances ? "OUTSTANDING" : "DUE",
         " \u2014 ",
         currency,
         " ",
         outstandingDisplay.toLocaleString("en-US", { minimumFractionDigits: 2 })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 16 * fontScale, fontWeight: "bold", color: "#ffffff", letterSpacing: 1 }, children: [
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 16 * fontScale, fontWeight: "bold", color: "#ffffff", letterSpacing: 1 }, children: [
         "TOTAL \u2014 ",
         currency,
         " ",
         totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { backgroundColor: "#ffffff", borderWidth: 1, borderColor: accentColor, paddingVertical: 10, paddingHorizontal: 14, minWidth: 160, justifyContent: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Date" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444" }, children: invoiceDate })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { backgroundColor: "#ffffff", borderWidth: 1, borderColor: accentColor, paddingVertical: 10, paddingHorizontal: 14, minWidth: 160, justifyContent: "center" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Date" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444" }, children: invoiceDate })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Ref #" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444" }, children: invoiceNumber })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Ref #" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444" }, children: invoiceNumber })
         ] }),
-        Boolean(showDueDate) && !!dueDate && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Due" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444" }, children: formatDateOnly(dueDate) })
+        Boolean(showDueDate) && !!dueDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Due" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444" }, children: formatDateOnly(dueDate) })
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: "#222222", paddingBottom: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase" }, children: "Description" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Qty" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Unit" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Price" })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 15 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: "#222222", paddingBottom: 6 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase" }, children: "Description" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Qty" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Unit" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Price" })
       ] }),
       items.map(renderRow2)
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { alignSelf: "flex-end", width: 220, marginBottom: 25 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Sub Total \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { alignSelf: "flex-end", width: 220, marginBottom: 25 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Sub Total \u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
           currency,
           " ",
           subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }),
-      tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Tax \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
+      tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Tax \u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
           currency,
           " ",
           tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }),
-      discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: [
+      discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: [
           discountLabel,
           " \u2014"
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
           "-",
           currency,
           " ",
           discount.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }),
-      dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: [
+      dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: [
           "Rounding",
           dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : "",
           " \u2014"
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
           currency,
           " ",
           Number(dataAny.roundingDifference).toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }) : null,
-      amountPaid > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Amount Paid \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
+      amountPaid > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#999999", fontSize: 10 * fontScale }, children: "Amount Paid \u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#555555", fontSize: 10 * fontScale }, children: [
           "-",
           currency,
           " ",
           amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] }),
-      type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: "#dddddd" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: accentColor, fontWeight: "bold", fontSize: 12 * fontScale }, children: "Due Balance \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: accentColor, fontWeight: "bold", fontSize: 12 * fontScale }, children: [
+      type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: "#dddddd" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: accentColor, fontWeight: "bold", fontSize: 12 * fontScale }, children: "Due Balance \u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: accentColor, fontWeight: "bold", fontSize: 12 * fontScale }, children: [
           currency,
           " ",
           (totalAmount - amountPaid).toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: "#dddddd" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: accentColor, fontWeight: "bold", fontSize: 12 * fontScale }, children: "Total Grand \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: accentColor, fontWeight: "bold", fontSize: 12 * fontScale }, children: [
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: "#dddddd" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: accentColor, fontWeight: "bold", fontSize: 12 * fontScale }, children: "Total Grand \u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: accentColor, fontWeight: "bold", fontSize: 12 * fontScale }, children: [
           currency,
           " ",
           totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { wrap: false, style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 10, paddingTop: 15, borderTopWidth: 0.5, borderTopColor: "#eeeeee", flex: 1, gap: 20 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-        !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { wrap: false, style: { marginBottom: 15 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, fontWeight: "bold", color: "#999999", textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Notes" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: String(dataAny.notes) })
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 10, paddingTop: 15, borderTopWidth: 0.5, borderTopColor: "#eeeeee", flex: 1, gap: 20 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+        !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: { marginBottom: 15 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 * fontScale, fontWeight: "bold", color: "#999999", textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Notes" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#444444", lineHeight: 1.4 }, children: String(dataAny.notes) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 10 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontStyle: "italic", fontSize: 15 * fontScale, color: "#555555", marginBottom: 4, fontFamily: templateSettings.fontFamily }, children: companyName }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: 10 * fontScale, color: "#111111" }, children: companyName }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: accentColor, letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }, children: "Authorized Signatory" })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 10 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontStyle: "italic", fontSize: 15 * fontScale, color: "#555555", marginBottom: 4, fontFamily: templateSettings.fontFamily }, children: companyName }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", fontSize: 10 * fontScale, color: "#111111" }, children: companyName }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 * fontScale, color: accentColor, letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }, children: "Authorized Signatory" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
-        templateSettings.showPaymentTerms && config2?.transactionSettings?.defaultPaymentTermsDays !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { wrap: false, style: { marginBottom: 10 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, fontWeight: "bold", color: "#999999", letterSpacing: 1, textTransform: "uppercase", marginBottom: 3 }, children: "Payment Method / Terms" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#666666", lineHeight: 1.6 }, children: getDefaultPaymentTermsLabel(config2) })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
+        templateSettings.showPaymentTerms && config2?.transactionSettings?.defaultPaymentTermsDays !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: { marginBottom: 10 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 * fontScale, fontWeight: "bold", color: "#999999", letterSpacing: 1, textTransform: "uppercase", marginBottom: 3 }, children: "Payment Method / Terms" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#666666", lineHeight: 1.6 }, children: getDefaultPaymentTermsLabel(config2) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { alignItems: "flex-start", width: "100%" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, color: "#aaaaaa", lineHeight: 1.4, textAlign: "left", marginTop: 4 }, children: resolveFooterText(config2, getDefaultPaymentTermsLabel(config2), templateSettings.showPaymentTerms) }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8 * fontScale, color: "#aaaaaa", lineHeight: 1.4, textAlign: "left", marginTop: 1 }, children: buildFooterContactLine(config2) })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { alignItems: "flex-start", width: "100%" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8 * fontScale, color: "#aaaaaa", lineHeight: 1.4, textAlign: "left", marginTop: 4 }, children: resolveFooterText(config2, getDefaultPaymentTermsLabel(config2), templateSettings.showPaymentTerms) }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8 * fontScale, color: "#aaaaaa", lineHeight: 1.4, textAlign: "left", marginTop: 1 }, children: buildFooterContactLine(config2) })
         ] })
       ] })
     ] })
   ] }) });
 };
-var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] }) => {
+var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [], channel = "erp" }) => {
   const isFinancial = type === "INVOICE" || type === "PO" || type === "QUOTATION" || type === "ORDER" || type === "SALES_ORDER" || type === "SUBSCRIPTION";
   const dataAny = data2;
   const pod = dataAny.proofOfDelivery;
   const config2 = configOverride || getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config2);
   if (isFinancial && templateSettings.engine === "Clean") {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CleanInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CleanInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings, channel });
   }
   if (isFinancial && templateSettings.engine === "Professional") {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ProfessionalInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ProfessionalInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings, channel });
   }
   if (isFinancial && templateSettings.engine === "Modern") {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(ModernInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ModernInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings, channel });
   }
   const fontScale = templateSettings.bodyFontSize / 12;
   const showDueDate = templateSettings.showDueDate;
   const showPaymentTerms = templateSettings.showPaymentTerms;
-  const showAccountSummary2 = templateSettings.showAccountSummary;
+  const showAccountSummary = templateSettings.showAccountSummary;
   const showConversionHistory = templateSettings.showConversionHistory !== false;
   const paymentTermsLabel = String(dataAny?.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
   const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
@@ -234131,7 +234171,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
     fontSize: 27.75 * fontScale
   };
   const scaledFont = (size) => Number((size * fontScale).toFixed(2));
-  const renderBrandMark = (alignment = "right") => !!logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+  const renderBrandMark = (alignment = "right") => !!logo ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
     Image,
     {
       src: logo,
@@ -234140,7 +234180,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
         marginBottom: alignment === "right" ? 0 : 10
       }
     }
-  ) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+  ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
     Text,
     {
       style: [
@@ -234176,92 +234216,93 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
     const items = d3.items || [];
     const cd = d3.conversionDetails;
     const isCancelled2 = isCancelledStatus(d3.status, d3);
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Document, { title: `Sales Exchange - ${String(d3.exchangeNumber)}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
-      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CancelledWatermark, {}),
-      showConversionHistory && Boolean(d3.isConverted) && !!cd && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.conversionBox, { position: "absolute", top: 40, right: 40, zIndex: 10 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.conversionTitle, children: "Conversion History" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: `Sales Exchange - ${String(d3.exchangeNumber)}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
+      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
+      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
+      showConversionHistory && Boolean(d3.isConverted) && !!cd && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.conversionBox, { position: "absolute", top: 40, right: 40, zIndex: 10 }], children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.conversionTitle, children: "Conversion History" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
           "Converted from ",
           String(cd.sourceType),
           " ",
           String(cd.sourceNumber)
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
           "on ",
           String(cd.date)
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerSection, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.title, titleStyle], children: "Exchange Note" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerSection, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerLeft, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.title, titleStyle], children: "Exchange Note" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.infoText, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Exchange # : ",
               String(d3.exchangeNumber)
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Date : ",
               String(d3.date)
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Ref Invoice : ",
               String(d3.invoiceNumber)
             ] })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 20 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Customer" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(d3.customerName) }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#475569", marginTop: 4 }, children: resolvedRecipientAddress || "N/A" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#475569", marginTop: 2 }, children: resolvedRecipientPhone || "N/A" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 20 }], children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Customer" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(d3.customerName) }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#475569", marginTop: 4 }, children: resolvedRecipientAddress || "N/A" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#475569", marginTop: 2 }, children: resolvedRecipientPhone || "N/A" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Reason for Exchange" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11 }, children: String(d3.reason) })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Reason for Exchange" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 11 }, children: String(d3.reason) })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Returned" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Replaced" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 20 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Returned" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Replaced" })
         ] }),
-        items.map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.colDesc, { fontSize: 10 }], children: String(item.desc || "N/A") }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReturned) }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReplaced) }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: [docStyles.colTotal, { fontSize: 10, fontWeight: "bold" }], children: [
+        items.map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.colDesc, { fontSize: 10 }], children: String(item.desc || "N/A") }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReturned) }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReplaced) }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: [docStyles.colTotal, { fontSize: 10, fontWeight: "bold" }], children: [
             currency,
             " ",
             formatAmount2(Number(item.priceDiff))
           ] })
         ] }, i2))
       ] }),
-      !!d3.remarks && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20, padding: 12, backgroundColor: "#f8fafc", borderRadius: 6, borderLeftWidth: 3, borderLeftColor: "#3b82f6" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5, textTransform: "uppercase", color: "#475569" }, children: "Remarks / Special Instructions:" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#1e293b", lineHeight: 1.5 }, children: String(d3.remarks) })
+      !!d3.remarks && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 20, padding: 12, backgroundColor: "#f8fafc", borderRadius: 6, borderLeftWidth: 3, borderLeftColor: "#3b82f6" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5, textTransform: "uppercase", color: "#475569" }, children: "Remarks / Special Instructions:" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#1e293b", lineHeight: 1.5 }, children: String(d3.remarks) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { marginTop: 60 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { width: 180, alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: "100%", borderTopWidth: 1, borderColor: "#000", marginBottom: 5 } }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 }, children: "Customer Signature" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8, color: "#666" }, children: "I accept the replacement items" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 60 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { width: 180, alignItems: "center" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: "100%", borderTopWidth: 1, borderColor: "#000", marginBottom: 5 } }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 }, children: "Customer Signature" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8, color: "#666" }, children: "I accept the replacement items" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { width: 180, alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: "100%", borderTopWidth: 1, borderColor: "#000", marginBottom: 5 } }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10 }, children: "Authorized Officer" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8, color: "#666" }, children: "Exchange approved & processed" })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { width: 180, alignItems: "center" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: "100%", borderTopWidth: 1, borderColor: "#000", marginBottom: 5 } }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10 }, children: "Authorized Officer" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8, color: "#666" }, children: "Exchange approved & processed" })
         ] })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         SecurityFooter,
         {
           data: d3,
           companyName,
-          legalFooterLine1: "This is a computer-generated Sales Exchange Note. No signature is required if authorized digitally.",
+          legalFooterLine1: "This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.",
           legalFooterLine2: `All exchanges are subject to ${companyName} Return & Exchange Policy.`,
           fontScale
         }
@@ -234269,104 +234310,105 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
     ] }) });
   }
   if (type === "RECEIPT") {
-    const rc2 = data2;
-    const isPartial = rc2.paymentStatus === "PARTIALLY PAID" || rc2.balanceDue && rc2.balanceDue > 0;
-    const isOverpaid = rc2.paymentStatus === "OVERPAID";
-    const overpaymentAmount = rc2.overpaymentAmount || rc2.walletDeposit || 0;
-    const isCancelled2 = isCancelledStatus(rc2.paymentStatus || rc2.status, rc2);
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Document, { title: `Payment Receipt - ${rc2.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
-      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CancelledWatermark, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerSection, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.title, titleStyle], children: "Payment Receipt" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+    const rc = data2;
+    const isPartial = rc.paymentStatus === "PARTIALLY PAID" || rc.balanceDue && rc.balanceDue > 0;
+    const isOverpaid = rc.paymentStatus === "OVERPAID";
+    const overpaymentAmount = rc.overpaymentAmount || rc.walletDeposit || 0;
+    const isCancelled2 = isCancelledStatus(rc.paymentStatus || rc.status, rc);
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: `Payment Receipt - ${rc.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
+      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
+      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerSection, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerLeft, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.title, titleStyle], children: "Payment Receipt" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.infoText, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Receipt # : ",
-              rc2.receiptNumber
+              rc.receiptNumber
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Date : ",
-              rc2.date
+              rc.date
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Method : ",
-              rc2.paymentMethod
+              rc.paymentMethod
             ] })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
       ] }),
-      isOverpaid && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { backgroundColor: "#fef2f2", padding: 10, borderRadius: 4, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: "#ef4444" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#991b1b", fontSize: 12, fontWeight: "bold", lineHeight: 1.4 }, children: "OVERPAYMENT NOTICE" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#b91c1c", fontSize: 12, lineHeight: 1.4 }, children: "This payment exceeds the invoice total. The excess has been credited to your wallet." })
+      isOverpaid && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { backgroundColor: "#fef2f2", padding: 10, borderRadius: 4, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: "#ef4444" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#991b1b", fontSize: 12, fontWeight: "bold", lineHeight: 1.4 }, children: "OVERPAYMENT NOTICE" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#b91c1c", fontSize: 12, lineHeight: 1.4 }, children: "This payment exceeds the invoice total. The excess has been credited to your wallet." })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 0, marginBottom: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Received From" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.recipientInfoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.recipientName, children: rc2.customerName || "N/A" }),
-            resolvedRecipientAddress ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.recipientDetail, children: resolvedRecipientAddress }) : null,
-            resolvedRecipientPhone ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.recipientPhone, children: resolvedRecipientPhone }) : null
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 0, marginBottom: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }], children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Received From" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.recipientInfoText, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.recipientName, children: rc.customerName || "N/A" }),
+            resolvedRecipientAddress ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.recipientDetail, children: resolvedRecipientAddress }) : null,
+            resolvedRecipientPhone ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.recipientPhone, children: resolvedRecipientPhone }) : null
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: [docStyles.statusBox, { borderLeftColor: "#10b981" }], children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: "#059669" }, children: "PAID" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.statusBox, { borderLeftColor: "#10b981" }], children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: "#059669" }, children: "PAID" }) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { marginTop: 5, padding: 15, backgroundColor: "#f8fafc", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12, lineHeight: 1.6, color: "#334155" }, children: rc2.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount2(rc2.amountReceived)} received from ${rc2.customerName}.` }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 30 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount Paid" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 5, padding: 15, backgroundColor: "#f8fafc", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12, lineHeight: 1.6, color: "#334155" }, children: rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount2(rc.amountReceived)} received from ${rc.customerName}.` }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 30 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount Paid" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 3 }, children: (rc2.appliedOrders || []).length > 0 ? `Payment for Orders: ${(rc2.appliedOrders || []).join(", ")}` : `Payment for Invoices: ${(rc2.appliedInvoices || []).join(", ")}` }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3 }, children: (rc.appliedOrders || []).length > 0 ? `Payment for Orders: ${(rc.appliedOrders || []).join(", ")}` : `Payment for Invoices: ${(rc.appliedInvoices || []).join(", ")}` }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
             currency,
             " ",
-            formatAmount2(rc2.amountReceived)
+            formatAmount2(rc.amountReceived)
           ] })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: [docStyles.summaryContainer, { justifyContent: "flex-end" }], children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { width: 260 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Amount Received" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold", textAlign: "right" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.summaryContainer, { justifyContent: "flex-end" }], children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { width: 260 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.totalRow], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Amount Received" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontWeight: "bold", textAlign: "right" }, children: [
             currency,
             " ",
-            formatAmount2(rc2.amountReceived)
+            formatAmount2(rc.amountReceived)
           ] })
         ] }),
-        isPartial && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, color: "#ef4444" }, children: "Outstanding Balance" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#ef4444", textAlign: "right" }, children: [
+        isPartial && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.totalRow], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, color: "#ef4444" }, children: "Outstanding Balance" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#ef4444", textAlign: "right" }, children: [
             currency,
             " ",
-            formatAmount2(rc2.balanceDue)
+            formatAmount2(rc.balanceDue)
           ] })
         ] }),
-        isOverpaid && overpaymentAmount > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, color: "#10b981", fontWeight: "bold" }, children: "Wallet Credit" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#10b981", fontWeight: "bold", textAlign: "right" }, children: [
+        isOverpaid && overpaymentAmount > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.totalRow], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, color: "#10b981", fontWeight: "bold" }, children: "Wallet Credit" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#10b981", fontWeight: "bold", textAlign: "right" }, children: [
             currency,
             " ",
             formatAmount2(overpaymentAmount)
           ] })
         ] })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.footerContainer, wrap: false, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: [docStyles.thankYouText, { fontSize: scaledFont(12) }], children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.footerContainer, wrap: false, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: [docStyles.thankYouText, { fontSize: scaledFont(12) }], children: [
           "Thank you for choosing ",
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: scaledFont(14) }, children: companyName })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", fontSize: scaledFont(14) }, children: companyName })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.footerLine }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyAddress }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyContact })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.footerLine }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyAddress }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyContact })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         SecurityFooter,
         {
-          data: rc2,
+          data: rc,
           companyName,
-          legalFooterLine1: "This is a computer-generated payment receipt. No signature required if digitally authorized.",
+          legalFooterLine1: "This is a computer-generated payment receipt. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.",
           legalFooterLine2: buildFooterContactLine(config2),
           fontScale
         }
@@ -234376,84 +234418,85 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
   if (type === "SUPPLIER_PAYMENT") {
     const sp = data2;
     const isCancelled2 = isCancelledStatus(sp.status, sp);
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Document, { title: `Payment Voucher - ${sp.paymentId}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
-      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CancelledWatermark, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerSection, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.headerLeft, children: renderBrandMark("left") }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.title, titleStyle], children: "Payment Voucher" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: `Payment Voucher - ${sp.paymentId}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
+      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
+      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerSection, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.headerLeft, children: renderBrandMark("left") }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerLeft, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.title, titleStyle], children: "Payment Voucher" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.infoText, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Voucher # : ",
               sp.paymentId
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Date : ",
               sp.date
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Method : ",
               sp.paymentMethod
             ] })
           ] })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: [docStyles.billingSection, { marginTop: 0, marginBottom: 0 }], children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Paid To" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: sp.supplierName })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.billingSection, { marginTop: 0, marginBottom: 0 }], children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Paid To" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: sp.supplierName })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { marginTop: 5, padding: 15, backgroundColor: "#f8fafc", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12, lineHeight: 1.6, color: "#334155" }, children: sp.narrative || `This voucher confirms payment of ${currency} ${formatAmount2(sp.amountPaid)} to ${sp.supplierName}.` }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 30 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount Paid" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 5, padding: 15, backgroundColor: "#f8fafc", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12, lineHeight: 1.6, color: "#334155" }, children: sp.narrative || `This voucher confirms payment of ${currency} ${formatAmount2(sp.amountPaid)} to ${sp.supplierName}.` }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 30 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount Paid" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 3 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 3 }, children: [
             "Payment against Invoices: ",
             (sp.appliedInvoices || []).join(", ")
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
             currency,
             " ",
             formatAmount2(sp.amountPaid)
           ] })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.summaryContainer, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.summaryBox, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.totalRow, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Total Paid" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.summaryContainer, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.summaryBox, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.totalRow, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Total Paid" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
           currency,
           " ",
           formatAmount2(sp.amountPaid)
         ] })
       ] }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.footerContainer, wrap: false, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: [docStyles.thankYouText, { fontSize: scaledFont(12) }], children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.footerContainer, wrap: false, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: [docStyles.thankYouText, { fontSize: scaledFont(12) }], children: [
           "Authorized by ",
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: scaledFont(14) }, children: companyName })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", fontSize: scaledFont(14) }, children: companyName })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.footerLine }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.companyName, { fontSize: scaledFont(12) }], children: companyName }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyAddress }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyContact })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.footerLine }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.companyName, { fontSize: scaledFont(12) }], children: companyName }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyAddress }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyContact })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.signatureBlock, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.sigLine }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Authorized Signatory" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.signatureBlock, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.sigLine }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Authorized Signatory" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.sigLine }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Received By" })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.sigLine }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Received By" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         SecurityFooter,
         {
           data: sp,
           companyName,
-          legalFooterLine1: "This is a computer-generated payment voucher.",
+          legalFooterLine1: "This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.",
           legalFooterLine2: `Issued securely by ${companyName}.`,
           fontScale
         }
@@ -234468,98 +234511,99 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
     const largeFontSize = 10 * scale2;
     const smallFontSize = 6.4 * scale2;
     const mediumFontSize = 8.4 * scale2;
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Document, { title: `Receipt - ${r4.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle, { padding: 0, backgroundColor: "#f9fafb", fontFamily: templateSettings.fontFamily }], children: [
-      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CancelledWatermark, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.posA4Wrapper, { width: 250 * scale2, paddingVertical: 24 * scale2, paddingHorizontal: 8 * scale2 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { alignItems: "center", marginBottom: 12 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: 14 * scale2, textAlign: "center", marginBottom: 3 * scale2 }, children: companyName }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center", marginBottom: 2 * scale2 }, children: companyAddress }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center" }, children: companyContact })
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: `Receipt - ${r4.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle, { padding: 0, backgroundColor: "#f9fafb", fontFamily: templateSettings.fontFamily }], children: [
+      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
+      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.posA4Wrapper, { width: 250 * scale2, paddingVertical: 24 * scale2, paddingHorizontal: 8 * scale2 }], children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { alignItems: "center", marginBottom: 12 * scale2 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", fontSize: 14 * scale2, textAlign: "center", marginBottom: 3 * scale2 }, children: companyName }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center", marginBottom: 2 * scale2 }, children: companyAddress }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center" }, children: companyContact })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 12 * scale2, borderBottomWidth: 1, borderBottomColor: "#000", borderBottomStyle: "dashed", paddingBottom: 8 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Date:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize }, children: r4.date })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 12 * scale2, borderBottomWidth: 1, borderBottomColor: "#000", borderBottomStyle: "dashed", paddingBottom: 8 * scale2 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Date:" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize }, children: r4.date })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Receipt #:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: baseFontSize }, children: r4.receiptNumber })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Receipt #:" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", fontSize: baseFontSize }, children: r4.receiptNumber })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Cashier:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize }, children: (() => {
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Cashier:" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize }, children: (() => {
               const cashier = String(r4.cashierName || "").trim();
               const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cashier);
               return cashier && !isUuid ? cashier : "System User";
             })() })
           ] }),
-          !!r4.customerName && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Customer:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize }, children: r4.customerName })
+          !!r4.customerName && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Customer:" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize }, children: r4.customerName })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { flexDirection: "row", justifyContent: "center", marginTop: 6 * scale2 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { paddingVertical: 3 * scale2, paddingHorizontal: 8 * scale2, borderRadius: 3 * scale2, borderWidth: 1, borderColor: getStatusTone("paid").border, backgroundColor: getStatusTone("paid").border + "15" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, color: getStatusTone("paid").text, fontWeight: "bold", letterSpacing: 1 * scale2 }, children: "PAID" }) }) })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { flexDirection: "row", justifyContent: "center", marginTop: 6 * scale2 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { paddingVertical: 3 * scale2, paddingHorizontal: 8 * scale2, borderRadius: 3 * scale2, borderWidth: 1, borderColor: getStatusTone("paid").border, backgroundColor: getStatusTone("paid").border + "15" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, color: getStatusTone("paid").text, fontWeight: "bold", letterSpacing: 1 * scale2 }, children: "PAID" }) }) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 15 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#ccc", paddingBottom: 3 * scale2, marginBottom: 5 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 3, fontWeight: "bold", fontSize: baseFontSize }, children: "Description" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontWeight: "bold", fontSize: baseFontSize, textAlign: "right" }, children: "Total" })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 15 * scale2 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#ccc", paddingBottom: 3 * scale2, marginBottom: 5 * scale2 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3, fontWeight: "bold", fontSize: baseFontSize }, children: "Description" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontWeight: "bold", fontSize: baseFontSize, textAlign: "right" }, children: "Total" })
           ] }),
-          r4.items.map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 6 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: mediumFontSize, fontWeight: "normal" }, children: item.desc }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 1 * scale2 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: baseFontSize, color: "#444" }, children: [
+          r4.items.map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 6 * scale2 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: mediumFontSize, fontWeight: "normal" }, children: item.desc }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 1 * scale2 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: baseFontSize, color: "#444" }, children: [
                 item.qty,
                 " x ",
                 formatAmount2(item.price)
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: mediumFontSize }, children: formatAmount2(item.total) })
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: mediumFontSize }, children: formatAmount2(item.total) })
             ] })
           ] }, i2))
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 8 * scale2, gap: 3 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: mediumFontSize }, children: "Subtotal" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: mediumFontSize }, children: formatAmount2(r4.subtotal) })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 8 * scale2, gap: 3 * scale2 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: mediumFontSize }, children: "Subtotal" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: mediumFontSize }, children: formatAmount2(r4.subtotal) })
           ] }),
-          r4.discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: mediumFontSize }, children: "Discount" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: mediumFontSize }, children: [
+          r4.discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: mediumFontSize }, children: "Discount" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: mediumFontSize }, children: [
               "-",
               formatAmount2(r4.discount)
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 * scale2, paddingTop: 4 * scale2, borderTopWidth: 0.5, borderTopColor: "#eee" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: largeFontSize }, children: "TOTAL" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold", fontSize: largeFontSize }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 * scale2, paddingTop: 4 * scale2, borderTopWidth: 0.5, borderTopColor: "#eee" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", fontSize: largeFontSize }, children: "TOTAL" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontWeight: "bold", fontSize: largeFontSize }, children: [
               currency,
               " ",
               formatAmount2(r4.totalAmount)
             ] })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 12 * scale2, borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 8 * scale2, gap: 3 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Method" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize }, children: r4.paymentMethod })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 12 * scale2, borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 8 * scale2, gap: 3 * scale2 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Method" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize }, children: r4.paymentMethod })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Cash Tendered" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize }, children: formatAmount2(r4.amountTendered) })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Cash Tendered" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize }, children: formatAmount2(r4.amountTendered) })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Change Given" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", fontSize: baseFontSize }, children: formatAmount2(r4.changeGiven) })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: baseFontSize, color: "#666" }, children: "Change Given" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", fontSize: baseFontSize }, children: formatAmount2(r4.changeGiven) })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 18 * scale2, alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold", textAlign: "center", fontSize: mediumFontSize }, children: "Thank you for your business!" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { textAlign: "center", fontSize: smallFontSize, marginTop: 6 * scale2, color: "#999", textTransform: "uppercase", letterSpacing: 0.6 * scale2 }, children: "Powered by Prime ERP" })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 18 * scale2, alignItems: "center" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold", textAlign: "center", fontSize: mediumFontSize }, children: "Thank you for your business!" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { textAlign: "center", fontSize: smallFontSize, marginTop: 6 * scale2, color: "#999", textTransform: "uppercase", letterSpacing: 0.6 * scale2 }, children: "Powered by Prime ERP" })
         ] })
       ] })
     ] }) });
   }
   if ((type === "ACCOUNT_STATEMENT_SUMMARY" || type === "ACCOUNT_STATEMENT") && "finalBalance" in data2) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(StatementSummaryTemplate, { data: data2, configOverride: config2 });
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(StatementSummaryTemplate, { data: data2, configOverride: config2, channel });
   }
   const isConverted = "isConverted" in data2 && data2.isConverted;
   const conversionDetails = isConverted && "conversionDetails" in data2 ? dataAny.conversionDetails || null : null;
@@ -234597,7 +234641,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
     }
   }
   const isCancelled = isCancelledStatus(dataAny.status, dataAny);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
     Document,
     {
       title: `${title} - ${"number" in data2 ? data2.number : "receiptNumber" in data2 ? data2.receiptNumber : "clientName" in data2 ? data2.clientName : "DOC"}`,
@@ -234605,152 +234649,153 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
       subject: "ERP Generated Document",
       creator: "Prime ERP System",
       keywords: `${type}, ERP, Business Document`,
-      children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
-        isCancelled && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(CancelledWatermark, {}),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.headerSection, children: isRightAligned ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerLeft, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.title, titleStyle], children: title }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.infoText, children: type === "INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+      children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
+        channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
+        isCancelled && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.headerSection, children: isRightAligned ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerLeft, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.title, titleStyle], children: title }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.infoText, children: type === "INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Invoice No. ",
                 String("invoiceNumber" in data2 && dataAny.invoiceNumber || ("number" in data2 ? dataAny.number : "INV"))
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Invoice Date: ",
                 String("date" in data2 ? dataAny.date : "N/A")
               ] }),
-              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Due Date: ",
                 formatDateOnly(String(data2.dueDate))
               ] }),
-              isFromQuotation && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
+              isFromQuotation && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
                 "Order Ref: ",
                 String(conversionDetails?.sourceNumber || "N/A")
               ] }),
-              isFromOrder && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
+              isFromOrder && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
                 "Original Order: ",
                 String(conversionDetails?.sourceNumber || "N/A")
               ] })
-            ] }) : type === "ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            ] }) : type === "ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Order No. ",
                 String("orderNumber" in data2 && dataAny.orderNumber || ("number" in data2 ? dataAny.number : "ORD"))
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Order Date: ",
                 String("date" in data2 ? dataAny.date : "N/A")
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
                 "Order Ref: ",
                 String(isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : "orderNumber" in data2 && dataAny.orderNumber || "N/A")
               ] }),
-              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Due Date: ",
                 formatDateOnly(String(data2.dueDate))
               ] })
-            ] }) : type === "SALES_ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            ] }) : type === "SALES_ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Sales Order No. ",
                 String("orderNumber" in data2 && dataAny.orderNumber || ("number" in data2 ? dataAny.number : "SO"))
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Sales Order Date: ",
                 String("date" in data2 ? dataAny.date : "N/A")
               ] }),
-              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Due Date: ",
                 formatDateOnly(String(data2.dueDate))
               ] })
-            ] }) : type === "EXAMINATION_INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            ] }) : type === "EXAMINATION_INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Exam Invoice No. ",
                 String("number" in data2 ? dataAny.number : "INV")
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Exam Invoice Date: ",
                 String("date" in data2 ? dataAny.date : "N/A")
               ] }),
-              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Due Date: ",
                 formatDateOnly(String(data2.dueDate))
               ] })
-            ] }) : type === "SUBSCRIPTION" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            ] }) : type === "SUBSCRIPTION" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Recurring Inv. No. ",
                 String("number" in data2 ? dataAny.number : "SUB")
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Issue Date: ",
                 String("date" in data2 ? dataAny.date : "N/A")
               ] }),
-              "billingPeriodStart" in data2 && "billingPeriodEnd" in data2 && !!dataAny.billingPeriodStart && !!dataAny.billingPeriodEnd && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { marginTop: 2 }, children: [
+              "billingPeriodStart" in data2 && "billingPeriodEnd" in data2 && !!dataAny.billingPeriodStart && !!dataAny.billingPeriodEnd && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { marginTop: 2 }, children: [
                 "Period: ",
                 String(dataAny.billingPeriodStart),
                 " to ",
                 String(dataAny.billingPeriodEnd)
               ] }),
-              "frequency" in data2 && !!dataAny.frequency && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              "frequency" in data2 && !!dataAny.frequency && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Frequency: ",
                 toTitleCase(String(dataAny.frequency))
               ] }),
-              "nextRunDate" in data2 && !!dataAny.nextRunDate && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { marginTop: 2, fontWeight: "bold" }, children: [
+              "nextRunDate" in data2 && !!dataAny.nextRunDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { marginTop: 2, fontWeight: "bold" }, children: [
                 "Next Run: ",
                 String(dataAny.nextRunDate)
               ] })
-            ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 toTitleCase(type),
                 " No. ",
                 String("number" in data2 ? dataAny.number : "receiptNumber" in data2 ? dataAny.receiptNumber : "STATEMENT")
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 toTitleCase(type),
                 " Date: ",
                 String("date" in data2 ? dataAny.date : "N/A")
               ] }),
-              type === "QUOTATION" && Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              type === "QUOTATION" && Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 "Valid Until: ",
                 formatDateOnly(String(data2.dueDate))
               ] })
             ] }) })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerLeft, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerLeft, children: [
             renderBrandMark("left"),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.title, titleStyle], children: title }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.infoText, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.title, titleStyle], children: title }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.infoText, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 toTitleCase(type),
                 " No. ",
                 String("number" in data2 ? dataAny.number : "receiptNumber" in data2 ? dataAny.receiptNumber : "STATEMENT")
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 toTitleCase(type),
                 " Date: ",
                 String("date" in data2 ? dataAny.date : "N/A")
               ] })
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.headerRight })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.headerRight })
         ] }) }),
-        shouldRenderRecipientSection && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.billingSection, docStyles.recipientSectionTight, { alignItems: "flex-start", justifyContent: "space-between" }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, flexDirection: "row" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { width: 80, fontWeight: "bold" }, children: recipientLabel }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.recipientInfoText, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.recipientName, children: resolvedRecipientName || "N/A" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.recipientDetail, children: resolvedRecipientAddress || "N/A" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.recipientPhone, children: resolvedRecipientPhone || "N/A" })
+        shouldRenderRecipientSection && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.billingSection, docStyles.recipientSectionTight, { alignItems: "flex-start", justifyContent: "space-between" }], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, flexDirection: "row" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 80, fontWeight: "bold" }, children: recipientLabel }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.recipientInfoText, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.recipientName, children: resolvedRecipientName || "N/A" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.recipientDetail, children: resolvedRecipientAddress || "N/A" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.recipientPhone, children: resolvedRecipientPhone || "N/A" })
             ] })
           ] }),
-          showConversionHistory && ("isConverted" in data2 && !!data2.isConverted) && (!!conversionDetails || type === "QUOTATION") && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { wrap: false, style: [docStyles.conversionBox, { marginLeft: 20 }], children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.conversionTitle, children: type === "QUOTATION" ? "Acceptance Details" : "Conversion History" }),
-            type === "QUOTATION" && "date" in data2 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_jsx_runtime2.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+          showConversionHistory && ("isConverted" in data2 && !!data2.isConverted) && (!!conversionDetails || type === "QUOTATION") && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: [docStyles.conversionBox, { marginLeft: 20 }], children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.conversionTitle, children: type === "QUOTATION" ? "Acceptance Details" : "Conversion History" }),
+            type === "QUOTATION" && "date" in data2 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_jsx_runtime3.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Accepted on ",
               formatDateOnly(String(dataAny.date || "")),
               " by ",
               resolvedRecipientName || "N/A"
-            ] }) }) : conversionDetails ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_jsx_runtime2.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            ] }) }) : conversionDetails ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_jsx_runtime3.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
               "Converted from ",
               resolveConversionSourceNumber(dataAny),
               " on ",
@@ -234760,13 +234805,13 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
             ] }) }) : null
           ] })
         ] }),
-        type !== "DELIVERY_NOTE" && type !== "WORK_ORDER" && type !== "ACCOUNT_STATEMENT" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-          isFinancial && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableSectionTight, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: "Qty" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colPrice, children: "Price" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colTotal, children: "Total" })
+        type !== "DELIVERY_NOTE" && type !== "WORK_ORDER" && type !== "ACCOUNT_STATEMENT" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+          isFinancial && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableSectionTight, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colQty, children: "Qty" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colPrice, children: "Price" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colTotal, children: "Total" })
             ] }),
             ("items" in data2 ? dataAny.items : []).map((item, i2) => {
               const isService = item.category === "service" || item.type === "service" || item.isService === true;
@@ -234778,22 +234823,22 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
                 const itemName = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "Service");
                 formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
               }
-              return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: Number(item.qty) }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: formattedDesc }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: docStyles.colPrice, children: [
+              return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colQty, children: Number(item.qty) }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: formattedDesc }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: docStyles.colPrice, children: [
                   currency,
                   " ",
                   formatAmount2(Number(item.price))
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: docStyles.colTotal, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: docStyles.colTotal, children: [
                   currency,
                   " ",
                   formatAmount2(Number(item.total))
                 ] })
               ] }, i2);
             }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
               View,
               {
                 style: [
@@ -234802,8 +234847,8 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
                   type === "PO" ? { justifyContent: "flex-end" } : null
                 ],
                 children: [
-                  (type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" || type === "SUBSCRIPTION") && "status" in data2 && !!data2.status && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.summaryLeft, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: [docStyles.statusBox, { borderLeftColor: getStatusTone(data2.status).border }], children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: getStatusTone(data2.status).text }, children: data2.status.toUpperCase() }) }) }),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.summaryRight, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryBox, children: [
+                  (type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" || type === "SUBSCRIPTION") && "status" in data2 && !!data2.status && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.summaryLeft, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.statusBox, { borderLeftColor: getStatusTone(data2.status).border }], children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: getStatusTone(data2.status).text }, children: data2.status.toUpperCase() }) }) }),
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.summaryRight, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryBox, children: [
                     (() => {
                       const itemsArr = "items" in data2 ? data2.items : [];
                       const itemsSum = itemsArr.length > 0 ? itemsArr.reduce((s4, i2) => s4 + Number(i2.total || 0), 0) : null;
@@ -234813,44 +234858,44 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
                       const displayAmountPaid = "amountPaid" in data2 ? Number(data2.amountPaid) : 0;
                       const displayDiscountPct = displaySubtotal > 0 ? Number((displayDiscount / displaySubtotal * 100).toFixed(2)) : 0;
                       const displayDiscountLabel = displayDiscountPct > 0 ? `Discount (${displayDiscountPct}%)` : "Discount";
-                      return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-                        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Subtotal" }),
-                          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                      return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryRow, children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Subtotal" }),
+                          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { textAlign: "right" }, children: [
                             currency,
                             " ",
                             formatAmount2(displaySubtotal)
                           ] })
                         ] }),
-                        displayDiscount > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1 }, children: displayDiscountLabel }),
-                          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                        displayDiscount > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryRow, children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1 }, children: displayDiscountLabel }),
+                          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { textAlign: "right" }, children: [
                             "-",
                             currency,
                             " ",
                             formatAmount2(displayDiscount)
                           ] })
                         ] }),
-                        type === "QUOTATION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.totalRow, children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Quoted Amount:" }),
-                          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { textAlign: "right", paddingLeft: 8 }, children: [
+                        type === "QUOTATION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.totalRow, children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Quoted Amount:" }),
+                          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { textAlign: "right", paddingLeft: 8 }, children: [
                             currency,
                             " ",
                             formatAmount2(displayTotal)
                           ] })
                         ] }),
-                        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
-                            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Amount Paid" }),
-                            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryRow, children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Amount Paid" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { textAlign: "right" }, children: [
                               currency,
                               " ",
                               formatAmount2(displayAmountPaid)
                             ] })
                           ] }),
-                          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.totalRow, children: [
-                            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1 }, children: "Due Balance" }),
-                            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.totalRow, children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1 }, children: "Due Balance" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { textAlign: "right" }, children: [
                               currency,
                               " ",
                               formatAmount2(("totalAmount" in data2 ? Number(data2.totalAmount) : 0) - displayAmountPaid)
@@ -234859,17 +234904,17 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
                         ] })
                       ] });
                     })(),
-                    type !== "INVOICE" && type !== "ORDER" && type !== "QUOTATION" && type !== "SUBSCRIPTION" && type !== "PO" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
-                      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: "Total Amount" }),
-                      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                    type !== "INVOICE" && type !== "ORDER" && type !== "QUOTATION" && type !== "SUBSCRIPTION" && type !== "PO" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryRow, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: "Total Amount" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { textAlign: "right" }, children: [
                         currency,
                         " ",
                         formatAmount2("totalAmount" in data2 ? data2.totalAmount : 0)
                       ] })
                     ] }),
-                    type === "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.totalRow, children: [
-                      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Recurring Total" }),
-                      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                    type === "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.totalRow, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Recurring Total" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { textAlign: "right" }, children: [
                         currency,
                         " ",
                         formatAmount2("totalAmount" in data2 ? data2.totalAmount : 0)
@@ -234882,9 +234927,9 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
             type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
               const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
               const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-              return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { marginTop: 15, padding: 8, backgroundColor: "#f0f9ff", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#0ea5e9" }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: scaledFont(10), color: "#0369a1", lineHeight: 1.4 }, children: [
+              return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 15, padding: 8, backgroundColor: "#f0f9ff", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#0ea5e9" }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: scaledFont(10), color: "#0369a1", lineHeight: 1.4 }, children: [
                 "Your overall outstanding balance is ",
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
                   currency,
                   " ",
                   totalOutstanding.toLocaleString("en-US", { minimumFractionDigits: 2 })
@@ -234892,12 +234937,12 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
                 ` as of ${todayStr}`
               ] }) });
             })(),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { wrap: false, style: { marginTop: 15, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: scaledFont(12), color: "#334155" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { wrap: false, style: { marginTop: 15, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: scaledFont(12), color: "#334155" }, children: [
               "Thank you for choosing ",
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
             ] }) }),
-            type === "QUOTATION" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { wrap: false, style: { marginTop: 15, padding: 8, backgroundColor: "#f0f9ff", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#0ea5e9" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: scaledFont(9), color: "#0369a1", lineHeight: 1.4 }, children: "Note: Acceptance of this quotation converts it into a formal Sales Order subject to our standard terms and conditions." }) }),
-            Boolean(showPaymentTerms) && !!paymentTermsLabel && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+            type === "QUOTATION" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { wrap: false, style: { marginTop: 15, padding: 8, backgroundColor: "#f0f9ff", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: "#0ea5e9" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: scaledFont(9), color: "#0369a1", lineHeight: 1.4 }, children: "Note: Acceptance of this quotation converts it into a formal Sales Order subject to our standard terms and conditions." }) }),
+            Boolean(showPaymentTerms) && !!paymentTermsLabel && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
               View,
               {
                 wrap: false,
@@ -234910,8 +234955,8 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
                   borderLeftColor: templateSettings.accentColor
                 },
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: scaledFont(9), fontWeight: "bold", color: "#475569", textTransform: "uppercase" }, children: "Payment Terms" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: scaledFont(10), color: "#334155", marginTop: 4, lineHeight: 1.45 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: scaledFont(9), fontWeight: "bold", color: "#475569", textTransform: "uppercase" }, children: "Payment Terms" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: scaledFont(10), color: "#334155", marginTop: 4, lineHeight: 1.45 }, children: [
                     paymentTermsLabel,
                     showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ""
                   ] })
@@ -234919,129 +234964,129 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
               }
             )
           ] }),
-          !isFinancial && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Description / Instructions" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: "Qty" })
+          !isFinancial && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: "Description / Instructions" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colQty, children: "Qty" })
             ] }),
-            ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: item.qty })
+            ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colQty, children: item.qty })
             ] }, i2))
           ] })
         ] }),
-        type === "WORK_ORDER" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: "#f8fafc", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: dataAny.priority === "Critical" ? "#e11d48" : dataAny.priority === "High" ? "#f59e0b" : "#3b82f6" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#64748b", fontWeight: "bold", textTransform: "uppercase" }, children: "Priority Level" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 14, fontWeight: "bold", color: dataAny.priority === "Critical" ? "#e11d48" : "#0f172a" }, children: String(dataAny.priority || "Normal") })
+        type === "WORK_ORDER" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 20 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: "#f8fafc", borderRadius: 4, borderLeftWidth: 3, borderLeftColor: dataAny.priority === "Critical" ? "#e11d48" : dataAny.priority === "High" ? "#f59e0b" : "#3b82f6" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#64748b", fontWeight: "bold", textTransform: "uppercase" }, children: "Priority Level" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 14, fontWeight: "bold", color: dataAny.priority === "Critical" ? "#e11d48" : "#0f172a" }, children: String(dataAny.priority || "Normal") })
             ] }),
-            "technician" in data2 && !!data2.technician && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { textAlign: "right" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#64748b", fontWeight: "bold", textTransform: "uppercase" }, children: "Technician" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(data2.technician) })
+            "technician" in data2 && !!data2.technician && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { textAlign: "right" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#64748b", fontWeight: "bold", textTransform: "uppercase" }, children: "Technician" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(data2.technician) })
             ] })
           ] }),
-          "technicalSpecs" in data2 && !!data2.technicalSpecs && Object.keys(data2.technicalSpecs).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 20 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1 }, children: "Technical Specifications" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, children: Object.entries(data2.technicalSpecs).map(([key, value2], i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { width: "30%", padding: 8, backgroundColor: "#fff", borderWidth: 0.5, borderColor: "#e2e8f0", borderRadius: 4 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 8, color: "#94a3b8", fontWeight: "bold", textTransform: "uppercase", marginBottom: 2 }, children: key }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: "#1e293b" }, children: String(value2) })
+          "technicalSpecs" in data2 && !!data2.technicalSpecs && Object.keys(data2.technicalSpecs).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 20 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1 }, children: "Technical Specifications" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, children: Object.entries(data2.technicalSpecs).map(([key, value2], i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { width: "30%", padding: 8, backgroundColor: "#fff", borderWidth: 0.5, borderColor: "#e2e8f0", borderRadius: 4 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8, color: "#94a3b8", fontWeight: "bold", textTransform: "uppercase", marginBottom: 2 }, children: key }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: "#1e293b" }, children: String(value2) })
             ] }, i2)) })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { backgroundColor: "#f1f5f9", padding: 12, marginBottom: 20, borderRadius: 4 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5, color: "#475569", textTransform: "uppercase" }, children: "Manufacturing Instructions:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 11, color: "#334155", lineHeight: 1.4 }, children: ("instructions" in data2 ? data2.instructions : null) || "Standard operating procedure required. Ensure quality check before release." })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { backgroundColor: "#f1f5f9", padding: 12, marginBottom: 20, borderRadius: 4 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5, color: "#475569", textTransform: "uppercase" }, children: "Manufacturing Instructions:" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 11, color: "#334155", lineHeight: 1.4 }, children: ("instructions" in data2 ? data2.instructions : null) || "Standard operating procedure required. Ensure quality check before release." })
           ] }),
-          "materialChecklist" in data2 && Array.isArray(data2.materialChecklist) && data2.materialChecklist.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 20 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1 }, children: "Materials Checklist" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { borderTopWidth: 1, borderColor: "#e2e8f0" }, children: data2.materialChecklist.map((m3, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", paddingVertical: 6, borderBottomWidth: 0.5, borderColor: "#f1f5f9" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: 12, height: 12, borderWidth: 1, borderColor: "#cbd5e1", marginRight: 10, borderRadius: 2 } }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#334155" }, children: m3 })
+          "materialChecklist" in data2 && Array.isArray(data2.materialChecklist) && data2.materialChecklist.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 20 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1 }, children: "Materials Checklist" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { borderTopWidth: 1, borderColor: "#e2e8f0" }, children: data2.materialChecklist.map((m3, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", paddingVertical: 6, borderBottomWidth: 0.5, borderColor: "#f1f5f9" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 12, height: 12, borderWidth: 1, borderColor: "#cbd5e1", marginRight: 10, borderRadius: 2 } }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#334155" }, children: m3 })
             ] }, i2)) })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1 }, children: "Production Checklist" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Service / Process Details" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: "Completion" })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1 }, children: "Production Checklist" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: "Service / Process Details" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colQty, children: "Completion" })
           ] }),
-          ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { width: 12, height: 12, borderWidth: 1, borderColor: "#000", marginRight: 5 } }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9 }, children: "Initial" })
+          ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 12, height: 12, borderWidth: 1, borderColor: "#000", marginRight: 5 } }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9 }, children: "Initial" })
             ] })
           ] }, i2))
         ] }),
-        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold", marginBottom: 10 }, children: "DELIVERY ITEMS CHECKLIST" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: "Qty Shipped" })
+        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 20 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold", marginBottom: 10 }, children: "DELIVERY ITEMS CHECKLIST" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colQty, children: "Qty Shipped" })
           ] }),
-          ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.colQty, children: item.qty })
+          ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.colQty, children: item.qty })
           ] }, i2)),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.remarksBox, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.remarksTitle, children: "Receiver's Remarks" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 9, color: "#666" }, children: String(dataAny.notes || pod?.remarks || pod?.notes || "Please note any discrepancies or comments regarding the delivery here...") })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.remarksBox, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: docStyles.remarksTitle, children: "Receiver's Remarks" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9, color: "#666" }, children: String(dataAny.notes || pod?.remarks || pod?.notes || "Please note any discrepancies or comments regarding the delivery here...") })
           ] })
         ] }),
-        type === "ACCOUNT_STATEMENT" && "transactions" in data2 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 20, padding: 10, backgroundColor: "#f8fafc", borderRadius: 4 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#64748b" }, children: "Statement Period:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: [
+        type === "ACCOUNT_STATEMENT" && "transactions" in data2 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 20 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 20, padding: 10, backgroundColor: "#f8fafc", borderRadius: 4 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#64748b" }, children: "Statement Period:" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: [
               data2.startDate,
               " \u2014 ",
               data2.endDate
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.5 }, children: "Date" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2 }, children: "Reference" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.5 }, children: "Date" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2 }, children: "Reference" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
               "Debit (",
               currency,
               ")"
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
               "Credit (",
               currency,
               ")"
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { flex: 1.5, textAlign: "right" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1.5, textAlign: "right" }, children: [
               "Balance (",
               currency,
               ")"
             ] })
           ] }),
-          data2.transactions.map((txn, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.5 }, children: txn.date }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 2 }, children: txn.reference }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: txn.debit > 0 ? formatAmount2(txn.debit) : "-" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: txn.credit > 0 ? formatAmount2(txn.credit) : "-" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.5, textAlign: "right", fontWeight: "bold" }, children: formatAmount2(txn.runningBalance) })
+          data2.transactions.map((txn, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.5 }, children: txn.date }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2 }, children: txn.reference }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: txn.debit > 0 ? formatAmount2(txn.debit) : "-" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: txn.credit > 0 ? formatAmount2(txn.credit) : "-" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.5, textAlign: "right", fontWeight: "bold" }, children: formatAmount2(txn.runningBalance) })
           ] }, i2)),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 30, borderTopWidth: 2, borderColor: "#000", paddingTop: 10 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Total Debits:" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 30, borderTopWidth: 2, borderColor: "#000", paddingTop: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Total Debits:" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 currency,
                 " ",
                 formatAmount2(Number("totalInvoiced" in data2 ? dataAny.totalInvoiced : 0))
               ] })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Total Credits:" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Total Credits:" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 currency,
                 " ",
                 formatAmount2(Number("totalReceived" in data2 ? dataAny.totalReceived : 0))
               ] })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 5, padding: 8, backgroundColor: "#000", color: "#fff" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: "TOTAL OUTSTANDING:" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 5, padding: 8, backgroundColor: "#000", color: "#fff" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: "TOTAL OUTSTANDING:" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
                 currency,
                 " ",
                 formatAmount2(Number("finalBalance" in data2 ? data2.finalBalance : 0))
@@ -235049,14 +235094,14 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
             ] })
           ] })
         ] }),
-        type === "FISCAL_REPORT" && "sections" in data2 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 20, padding: 12, backgroundColor: "#f8fafc", borderRadius: 8, borderLeftWidth: 4, borderLeftColor: "#2563eb" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, color: "#64748b", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: "Report Period" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 14, fontWeight: "bold", color: "#0f172a" }, children: data2.period })
+        type === "FISCAL_REPORT" && "sections" in data2 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 20 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 20, padding: 12, backgroundColor: "#f8fafc", borderRadius: 8, borderLeftWidth: 4, borderLeftColor: "#2563eb" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#64748b", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: "Report Period" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 14, fontWeight: "bold", color: "#0f172a" }, children: data2.period })
           ] }),
-          data2.sections.map((section, idx) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginBottom: 20 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: "#1e293b", textTransform: "uppercase", borderBottomWidth: 1, borderBottomColor: "#e2e8f0", paddingBottom: 4, marginBottom: 8 }, children: section.title }),
-            section.rows.map((row, rowIdx) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: {
+          data2.sections.map((section, idx) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 20 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: "#1e293b", textTransform: "uppercase", borderBottomWidth: 1, borderBottomColor: "#e2e8f0", paddingBottom: 4, marginBottom: 8 }, children: section.title }),
+            section.rows.map((row, rowIdx) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: {
               flexDirection: "row",
               justifyContent: "space-between",
               paddingVertical: 6,
@@ -235065,90 +235110,90 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
               borderTopWidth: row.isTotal ? 1 : 0,
               borderColor: "#cbd5e1"
             }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginLeft: row.indent ? 15 : 0 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: row.isTotal ? 10 : 9, fontWeight: row.isTotal ? "bold" : "normal" }, children: row.label }),
-                !!row.subText && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 7, color: "#64748b", marginTop: 1 }, children: row.subText })
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginLeft: row.indent ? 15 : 0 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: row.isTotal ? 10 : 9, fontWeight: row.isTotal ? "bold" : "normal" }, children: row.label }),
+                !!row.subText && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7, color: "#64748b", marginTop: 1 }, children: row.subText })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", gap: 20 }, children: [
-                row.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 8, color: "#94a3b8", width: 60, textAlign: "right" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", gap: 20 }, children: [
+                row.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 8, color: "#94a3b8", width: 60, textAlign: "right" }, children: [
                   data2.currency,
                   formatAmount2(row.prevAmount)
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: row.isTotal ? 10 : 9, fontWeight: row.isTotal ? "bold" : "normal", width: 80, textAlign: "right" }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: row.isTotal ? 10 : 9, fontWeight: row.isTotal ? "bold" : "normal", width: 80, textAlign: "right" }, children: [
                   data2.currency,
                   formatAmount2(row.amount)
                 ] })
               ] })
             ] }, rowIdx))
           ] }, idx)),
-          !!data2.netPerformance && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { marginTop: 20, padding: 12, backgroundColor: "#0f172a", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { color: "#fff", fontSize: 12, fontWeight: "bold" }, children: data2.netPerformance.label }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flexDirection: "row", gap: 20 }, children: [
-              data2.netPerformance.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: "#94a3b8", fontSize: 10, textAlign: "right", width: 60 }, children: [
+          !!data2.netPerformance && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 20, padding: 12, backgroundColor: "#0f172a", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#fff", fontSize: 12, fontWeight: "bold" }, children: data2.netPerformance.label }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", gap: 20 }, children: [
+              data2.netPerformance.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#94a3b8", fontSize: 10, textAlign: "right", width: 60 }, children: [
                 data2.currency,
                 formatAmount2(data2.netPerformance.prevAmount)
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { color: data2.netPerformance.amount >= 0 ? "#4ade80" : "#f87171", fontSize: 14, fontWeight: "bold", textAlign: "right", width: 80 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: data2.netPerformance.amount >= 0 ? "#4ade80" : "#f87171", fontSize: 14, fontWeight: "bold", textAlign: "right", width: 80 }, children: [
                 data2.currency,
                 formatAmount2(data2.netPerformance.amount)
               ] })
             ] })
           ] }) })
         ] }),
-        type === "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "center" }, children: "Qty" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 3 }, children: "Class" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.5, textAlign: "right" }, children: "Total" })
+        type === "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 20 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.tableHeader, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, textAlign: "center" }, children: "Qty" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3 }, children: "Class" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.5, textAlign: "right" }, children: "Total" })
           ] }),
-          ("items" in data2 ? dataAny.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "center", fontSize: 12 }, children: Number(item.qty) }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { flex: 3 }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "normal", fontSize: 12 }, children: String(item.desc) }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.price)) }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { flex: 1.5, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.total)) })
+          ("items" in data2 ? dataAny.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.row, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, textAlign: "center", fontSize: 12 }, children: Number(item.qty) }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { flex: 3 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "normal", fontSize: 12 }, children: String(item.desc) }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.price)) }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.5, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.total)) })
           ] }, i2)),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryContainer, children: [
-            "status" in data2 && !!data2.status && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.summaryLeft, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: [docStyles.statusBox, { borderLeftColor: getStatusTone(data2.status).border }], children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: getStatusTone(data2.status).text }, children: data2.status.toUpperCase() }) }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.summaryRight, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryBox, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: "Subtotal" }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryContainer, children: [
+            "status" in data2 && !!data2.status && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.summaryLeft, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.statusBox, { borderLeftColor: getStatusTone(data2.status).border }], children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: getStatusTone(data2.status).text }, children: data2.status.toUpperCase() }) }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.summaryRight, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryBox, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryRow, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: "Subtotal" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                   currency,
                   " ",
                   formatAmount2(Number(dataAny.preRoundingTotalAmount || dataAny.subtotal || 0))
                 ] })
               ] }),
-              dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+              dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryRow, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
                   "Rounding",
                   String(dataAny.roundingMethod ? ` (${String(dataAny.roundingMethod)})` : "")
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                   currency,
                   " ",
                   formatAmount2(Number(dataAny.roundingDifference))
                 ] })
               ] }) : null,
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.summaryRow, { borderTopWidth: 1, borderTopColor: "#e2e8f0", paddingTop: 4, marginTop: 4 }], children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: "Grand Total" }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.summaryRow, { borderTopWidth: 1, borderTopColor: "#e2e8f0", paddingTop: 4, marginTop: 4 }], children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: "Grand Total" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                   currency,
                   " ",
                   formatAmount2(Number("totalAmount" in data2 ? dataAny.totalAmount : 0))
                 ] })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: "Amount Paid" }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.summaryRow, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: "Amount Paid" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                   currency,
                   " ",
                   formatAmount2(Number("amountPaid" in data2 ? dataAny.amountPaid : 0))
                 ] })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.totalRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Balance Due" }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.totalRow, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Balance Due" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                   currency,
                   " ",
                   formatAmount2(Number("totalAmount" in data2 ? dataAny.totalAmount : 0) - Number("amountPaid" in data2 ? dataAny.amountPaid : 0))
@@ -235156,11 +235201,11 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
               ] })
             ] }) })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { wrap: false, style: { marginTop: 12, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: scaledFont(12), color: "#334155" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { wrap: false, style: { marginTop: 12, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: scaledFont(12), color: "#334155" }, children: [
             "Thank you for choosing ",
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
           ] }) }),
-          Boolean(showPaymentTerms) && !!paymentTermsLabel && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+          Boolean(showPaymentTerms) && !!paymentTermsLabel && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
             View,
             {
               wrap: false,
@@ -235173,8 +235218,8 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
                 borderLeftColor: templateSettings.accentColor
               },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: scaledFont(9), fontWeight: "bold", color: "#475569", textTransform: "uppercase" }, children: "Payment Terms" }),
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: scaledFont(10), color: "#334155", marginTop: 4, lineHeight: 1.45 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: scaledFont(9), fontWeight: "bold", color: "#475569", textTransform: "uppercase" }, children: "Payment Terms" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: scaledFont(10), color: "#334155", marginTop: 4, lineHeight: 1.45 }, children: [
                   paymentTermsLabel,
                   showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ""
                 ] })
@@ -235182,42 +235227,42 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
             }
           )
         ] }),
-        !isFinancial && type !== "DELIVERY_NOTE" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.signatureBlock, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.sigLine }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Issued By (Prime)" })
+        !isFinancial && type !== "DELIVERY_NOTE" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.signatureBlock, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.sigLine }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Issued By (Prime)" })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.sigLine }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { children: "Received By (Client)" })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.sigLine }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: "Received By (Client)" })
           ] })
         ] }),
-        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.signatureBlock, { marginTop: 40 }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5 }, children: "Logistics Details" }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
+        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.signatureBlock, { marginTop: 40 }], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5 }, children: "Logistics Details" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
               "Driver Name: ",
               "driverName" in data2 ? data2.driverName : "____________________"
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 9 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 9 }, children: [
               "Vehicle No: ",
               "vehicleNo" in data2 ? data2.vehicleNo : "____________________"
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
-            Boolean(dataAny.signatureDataUrl || pod?.signatureDataUrl) ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { height: 40, width: 100, marginBottom: 5 } }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: { height: 45 } }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: [docStyles.sigLine, { width: 180 }] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 9 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
+            Boolean(dataAny.signatureDataUrl || pod?.signatureDataUrl) ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { height: 40, width: 100, marginBottom: 5 } }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { height: 45 } }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.sigLine, { width: 180 }] }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 9 }, children: [
               "Received By: ",
               String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || "____________________")
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: { fontSize: 7, color: "#666" }, children: "Stamp & Signature" }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7, color: "#666" }, children: "Stamp & Signature" }),
             (() => {
               const locStamp = conversionDetails?.locationStamp || pod?.locationStamp;
               const lat = Number(locStamp?.lat);
               const lng = Number(locStamp?.lng);
               if (lat || lng) {
-                return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 7, color: "#666", marginTop: 5 }, children: [
+                return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 7, color: "#666", marginTop: 5 }, children: [
                   "GPS: ",
                   lat.toFixed(4),
                   ", ",
@@ -235228,8 +235273,8 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [] 
             })()
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.footerContainer, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.footerLine }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.footerContainer, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.footerLine }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
           SecurityFooter,
           {
             data: dataAny,
@@ -235442,7 +235487,8 @@ async function renderOfficialDocumentPdf(input) {
       type,
       data: securedData,
       configOverride: input.companyConfig || null,
-      customers: input.customers || []
+      customers: input.customers || [],
+      channel: input.channel || "erp"
     })
   ).toBlob();
   const buffer = Buffer.from(await blob.arrayBuffer());

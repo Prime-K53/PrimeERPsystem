@@ -107,9 +107,16 @@ async function getById(table, id) {
 }
 
 async function upsert(table, domainObject) {
-  if (!isConfigured()) return null;
-  if (!domainObject || !domainObject.id) return null;
+  if (!isConfigured()) {
+    console.warn(`[SupabaseRepo] upsert(${table}): not configured`);
+    return null;
+  }
+  if (!domainObject || !domainObject.id) {
+    console.warn(`[SupabaseRepo] upsert(${table}): no id`);
+    return null;
+  }
 
+  console.log(`[SupabaseRepo] upsert(${table}, ${domainObject.id}): calling cloudSyncStore`);
   try {
     // Pass the RAW domain object to cloudSyncStore.upsertRow, exactly like the
     // sync gateway's applyOp() does. upsertRow treats the payload as the domain
@@ -1060,6 +1067,18 @@ module.exports = {
   upsert,
   softDelete,
   count,
+  ...entityQueries,
+  // camelCase aliases for services that use them
+  financialYears: entityQueries.financial_years,
+  purchaseOrderItems: entityQueries.purchase_order_items,
+  paymentAllocations: entityQueries.payment_allocations,
+  profitMarginSettings: entityQueries.profit_margin_settings,
+  purchaseOrders: entityQueries.purchase_orders,
+  goodsReceipts: entityQueries.goods_receipts,
+  workCenters: entityQueries.work_centers,
+  productionResources: entityQueries.production_resources,
+  customerPayments: entityQueries.customer_payments,
+  supplierPayments: entityQueries.supplier_payments,
   entities: entityQueries,
   getAllFlat,
   getByIdFlat,

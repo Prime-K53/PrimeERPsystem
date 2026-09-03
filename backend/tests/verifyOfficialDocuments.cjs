@@ -6,9 +6,10 @@
  *   2. Runtime dependencies: react, react-dom, @react-pdf/renderer, qrcode, pdf-lib
  *   3. All 6 document types: INVOICE, QUOTATION, ORDER, RECEIPT, DELIVERY_NOTE, ACCOUNT_STATEMENT
  *   4. Output validity: Buffer > 0 bytes, starts with %PDF-
- *   5. Portal metadata & Security:
- *        - source: 'portal' -> portal metadata/permissions present, but no visual watermark overlay
- *        - source: 'erp' -> no portal metadata
+ *   5. Portal watermark & Security:
+ *        - channel: 'portal' -> the SAME authoritative PDF rendered with a
+ *          native PORTAL COPY watermark (verified via pdf.js text extraction)
+ *        - channel: 'erp' -> clean PDF, no PORTAL COPY text
  *   6. Slash-containing IDs: INV-P726%2F027 decoded correctly
  *   7. Accounting firewall: zero database writes during PDF rendering
  */
@@ -16,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { pathToFileURL } = require('url');
 
 async function runVerification() {
   console.log('=== OFFICIAL DOCUMENT RENDERER VERIFICATION ===\n');
@@ -130,8 +132,26 @@ async function runVerification() {
     });
   }
 
-  // 4. Portal metadata verification
-  await test('Portal document (source: "portal") keeps authoritative PDF content and adds only portal metadata', async () => {
+  // pdf.js text extraction — the watermark is real PDF text; the raw latin1
+  // bytes may be FlateDecode-compressed, so decode via pdf.js like the ERP's
+  // other verification tooling does.
+  const pdfjsModulePath = path.join(__dirname, '..', '..', 'frontend', 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs');
+  async function extractPdfText(buffer) {
+    const pdfjsLib = await import(pathToFileURL(pdfjsModulePath).href);
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
+    const pdf = await loadingTask.promise;
+    const pages = [];
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      pages.push(textContent.items.map((item) => (typeof item?.str === 'string' ? item.str : '')).filter(Boolean).join(' '));
+    }
+    await pdf.destroy();
+    return pages;
+  }
+
+  // 4. Portal watermark verification — the watermark is PART of the PDF.
+  await test('Portal document (channel: "portal") contains the native PORTAL COPY watermark', async () => {
     const { buffer } = await officialDocumentService.renderOfficialPdf({
       type: 'INVOICE',
       rawData: {
@@ -139,37 +159,35 @@ async function runVerification() {
         customerName: 'Portal Test Customer', status: 'posted',
         items: [{ description: 'Portal Item', quantity: 1, price: 50, total: 50 }], subtotal: 50, total: 50,
       },
-      source: 'portal',
+      channel: 'portal',
     });
 
     assert.ok(Buffer.isBuffer(buffer), 'Portal output must be a Buffer');
     assert.ok(buffer.length > 0, 'Portal PDF must have non-zero length');
     assert.strictEqual(buffer.slice(0, 5).toString('ascii'), '%PDF-');
 
-    // Parse with pdf-lib to inspect metadata
-    // Note: pdf-lib overwrites Producer on save() — check Creator and Subject instead
-    const { PDFDocument } = require('pdf-lib');
-    const pdfDoc = await PDFDocument.load(buffer);
-    assert.strictEqual(pdfDoc.getCreator(), 'Prime ERP Official Document Service',
-      'Creator must be set to Prime ERP Official Document Service');
-    assert.strictEqual(pdfDoc.getSubject(), 'Customer Portal Download',
-      'Subject must be set to Customer Portal Download');
-
-    const pdfString = buffer.toString('latin1');
-    assert.strictEqual(
-      pdfString.includes('PORTAL COPY'),
-      false,
-      'Portal PDF must not contain a visual PORTAL COPY watermark'
+    const pages = await extractPdfText(buffer);
+    const combined = pages.join('\n');
+    assert.ok(
+      combined.includes('PORTAL COPY'),
+      'Portal PDF must contain the native PORTAL COPY watermark text (extracted: ' + combined.slice(0, 200) + ')'
     );
+    // every page carries the watermark
+    for (let i = 0; i < pages.length; i++) {
+      assert.ok(
+        pages[i].includes('PORTAL COPY'),
+        `Portal PDF page ${i + 1} must contain PORTAL COPY`
+      );
+    }
     assert.strictEqual(
-      pdfString.includes('DOWNLOADED FROM CUSTOMER PORTAL'),
+      combined.includes('DOWNLOADED FROM CUSTOMER PORTAL'),
       false,
       'Portal PDF must not contain a portal-only footer overlay'
     );
   });
 
   // 5. ERP/Shop rendering — NO portal watermark
-  await test('Shop/ERP document (source: "erp") does NOT contain PORTAL COPY watermark', async () => {
+  await test('Shop/ERP document (channel: "erp") does NOT contain PORTAL COPY watermark', async () => {
     const { buffer } = await officialDocumentService.renderOfficialPdf({
       type: 'INVOICE',
       rawData: {
@@ -177,17 +195,12 @@ async function runVerification() {
         customerName: 'ERP Test Customer', status: 'posted',
         items: [{ description: 'ERP Item', quantity: 1, price: 50, total: 50 }], subtotal: 50, total: 50,
       },
-      source: 'erp',
+      channel: 'erp',
     });
 
-    const { PDFDocument } = require('pdf-lib');
-    const pdfDoc = await PDFDocument.load(buffer);
-    // ERP docs must NOT have portal security metadata
-    assert.notStrictEqual(pdfDoc.getSubject(), 'Customer Portal Download',
-      'ERP PDF must NOT have Customer Portal Download subject');
-
-    const pdfString = buffer.toString('latin1');
-    assert.strictEqual(pdfString.includes('PORTAL COPY'), false, 'ERP PDF must NOT contain PORTAL COPY watermark text');
+    const pages = await extractPdfText(buffer);
+    const combined = pages.join('\n');
+    assert.strictEqual(combined.includes('PORTAL COPY'), false, 'ERP PDF must NOT contain PORTAL COPY watermark text');
   });
 
   // 6. Slash-containing ID resolution

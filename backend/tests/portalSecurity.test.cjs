@@ -1,12 +1,21 @@
 /**
  * Portal PDF Security tests.
  *
+ * The PORTAL COPY watermark is now rendered NATIVELY by the authoritative ERP
+ * renderer when the server-side channel is 'portal'. There is NO post-generation
+ * PDF byte manipulation anywhere in the pipeline (the old portalPdfPostProcess
+ * byte-rewrite layer was removed).
+ *
  * Verifies:
- *   1. Shop vs Portal distinction: source parameter flows correctly
- *   2. Portal watermark: PORTAL COPY text present in portal PDFs, absent in shop PDFs
- *   3. PDF permissions: editing restricted, printing allowed for portal PDFs
- *   4. PDF metadata: portal-specific metadata tags
- *   5. Graceful degradation: post-processing failure doesn't break the pipeline
+ *   1. channel flow: renderOfficialPdf forwards channel 'portal' / 'erp' to
+ *      the authoritative renderer — established server-side, never from the
+ *      browser
+ *   2. default channel is 'erp' (clean, unwatermarked)
+ *   3. legacy `source` alias maps to the channel contract
+ *   4. no byte post-processing step is invoked (the renderer output is the
+ *      final PDF)
+ *   5. failure behavior: when the renderer fails for a portal request, the
+ *      error propagates — the Portal never receives a silently clean PDF
  */
 
 process.env.JWT_SECRET = 'test-jwt-secret';
@@ -30,122 +39,89 @@ jest.mock('../services/supabaseRepository.cjs', () => ({
 
 const { renderOfficialDocumentPdf } = require('../services/officialDocument/primeRenderer.cjs');
 const officialDocumentService = require('../services/officialDocumentService.cjs');
-const { applyPortalPermissions } = require('../services/portalPdfPostProcess.cjs');
-const { PDFDocument } = require('pdf-lib');
 
 beforeEach(() => {
   jest.clearAllMocks();
   global.__lastRenderInput = undefined;
 });
 
-describe('Portal PDF Security — source parameter flow', () => {
-  it('officialDocumentService passes source=portal to renderer', async () => {
+describe('Portal PDF Security — channel flow', () => {
+  it('officialDocumentService passes channel=portal to the authoritative renderer', async () => {
+    await officialDocumentService.renderOfficialPdf({
+      type: 'INVOICE',
+      rawData: { items: [], status: 'posted' },
+      channel: 'portal',
+    });
+    expect(renderOfficialDocumentPdf).toHaveBeenCalledTimes(1);
+    const calledWith = renderOfficialDocumentPdf.mock.calls[0][0];
+    expect(calledWith.channel).toBe('portal');
+  });
+
+  it('officialDocumentService passes channel=erp by default', async () => {
+    await officialDocumentService.renderOfficialPdf({
+      type: 'INVOICE',
+      rawData: { items: [], status: 'posted' },
+    });
+    expect(renderOfficialDocumentPdf).toHaveBeenCalledTimes(1);
+    const calledWith = renderOfficialDocumentPdf.mock.calls[0][0];
+    expect(calledWith.channel).toBe('erp');
+  });
+
+  it('officialDocumentService passes channel=erp when explicitly set', async () => {
+    await officialDocumentService.renderOfficialPdf({
+      type: 'INVOICE',
+      rawData: { items: [], status: 'posted' },
+      channel: 'erp',
+    });
+    expect(renderOfficialDocumentPdf).toHaveBeenCalledTimes(1);
+    const calledWith = renderOfficialDocumentPdf.mock.calls[0][0];
+    expect(calledWith.channel).toBe('erp');
+  });
+
+  it('legacy source alias maps to the channel contract', async () => {
     await officialDocumentService.renderOfficialPdf({
       type: 'INVOICE',
       rawData: { items: [], status: 'posted' },
       source: 'portal',
     });
-    expect(renderOfficialDocumentPdf).toHaveBeenCalledTimes(1);
     const calledWith = renderOfficialDocumentPdf.mock.calls[0][0];
-    expect(calledWith.source).toBe('portal');
-  });
-
-  it('officialDocumentService passes source=erp by default', async () => {
-    await officialDocumentService.renderOfficialPdf({
-      type: 'INVOICE',
-      rawData: { items: [], status: 'posted' },
-    });
-    expect(renderOfficialDocumentPdf).toHaveBeenCalledTimes(1);
-    const calledWith = renderOfficialDocumentPdf.mock.calls[0][0];
-    expect(calledWith.source).toBe('erp');
-  });
-
-  it('officialDocumentService passes source=erp when explicitly set', async () => {
-    await officialDocumentService.renderOfficialPdf({
-      type: 'INVOICE',
-      rawData: { items: [], status: 'posted' },
-      source: 'erp',
-    });
-    expect(renderOfficialDocumentPdf).toHaveBeenCalledTimes(1);
-    const calledWith = renderOfficialDocumentPdf.mock.calls[0][0];
-    expect(calledWith.source).toBe('erp');
+    expect(calledWith.channel).toBe('portal');
   });
 });
 
-describe('Portal PDF Security — permissions post-processing', () => {
-  it('applyPortalPermissions produces a valid PDF', async () => {
-    const doc = await PDFDocument.create();
-    const page = doc.addPage();
-    page.drawText('Test document');
-    const pdfBuffer = Buffer.from(await doc.save());
-
-    const result = await applyPortalPermissions(pdfBuffer, { companyName: 'Test Co' });
-    expect(result).toBeInstanceOf(Buffer);
-    expect(result.length).toBeGreaterThan(0);
-
-    // Should be loadable as a valid PDF
-    const loaded = await PDFDocument.load(result);
-    expect(loaded).toBeDefined();
-  });
-
-  it('applyPortalPermissions sets creator metadata', async () => {
-    const doc = await PDFDocument.create();
-    const page = doc.addPage();
-    page.drawText('Test');
-    const pdfBuffer = Buffer.from(await doc.save());
-
-    const result = await applyPortalPermissions(pdfBuffer, { companyName: 'Acme Corp' });
-    const loaded = await PDFDocument.load(result);
-    expect(loaded.getCreator()).toBe('Prime ERP Official Document Service');
-  });
-
-  it('applyPortalPermissions sets author to company name', async () => {
-    const doc = await PDFDocument.create();
-    const page = doc.addPage();
-    page.drawText('Test');
-    const pdfBuffer = Buffer.from(await doc.save());
-
-    const result = await applyPortalPermissions(pdfBuffer, { companyName: 'Acme Corp' });
-    const loaded = await PDFDocument.load(result);
-    expect(loaded.getAuthor()).toBe('Acme Corp');
-  });
-
-  it('applyPortalPermissions sets subject', async () => {
-    const doc = await PDFDocument.create();
-    const page = doc.addPage();
-    page.drawText('Test');
-    const pdfBuffer = Buffer.from(await doc.save());
-
-    const result = await applyPortalPermissions(pdfBuffer);
-    const loaded = await PDFDocument.load(result);
-    expect(loaded.getSubject()).toBe('Customer Portal Download');
-  });
-
-  it('post-processed PDF is larger than original (permissions overhead)', async () => {
-    const doc = await PDFDocument.create();
-    const page = doc.addPage();
-    page.drawText('Test document with some content');
-    const pdfBuffer = Buffer.from(await doc.save());
-
-    const result = await applyPortalPermissions(pdfBuffer, { companyName: 'Test Co' });
-    expect(result.length).toBeGreaterThan(pdfBuffer.length);
-  });
-
-  it('throws on empty buffer', async () => {
-    await expect(applyPortalPermissions(Buffer.alloc(0))).rejects.toThrow('empty PDF buffer');
-  });
-
-  it('throws on null input', async () => {
-    await expect(applyPortalPermissions(null)).rejects.toThrow();
+describe('Portal PDF Security — no byte post-processing', () => {
+  it('renderer output IS the final PDF (buffer identity preserved)', async () => {
+    const { buffer } = await officialDocumentService.renderOfficialPdf({
+      type: 'INVOICE',
+      rawData: { items: [], status: 'posted' },
+      channel: 'portal',
+    });
+    // The service must return the renderer's bytes untouched — no
+    // post-generation PDF parsing/rewriting step may run.
+    expect(buffer).toBe(RENDERED_PDF);
   });
 });
 
-describe('Portal PDF Security — graceful degradation', () => {
-  it('returns original PDF when post-processing fails on corrupted input', async () => {
-    // Corrupt buffer that will fail pdf-lib parsing but still is non-empty
-    const corruptBuffer = Buffer.from('not-a-valid-pdf-but-non-empty');
-    const result = await applyPortalPermissions(corruptBuffer);
-    // Should return the original buffer as fallback
-    expect(result).toBe(corruptBuffer);
+describe('Portal PDF Security — failure behavior', () => {
+  it('portal render failure propagates (Portal receives an error, never a clean PDF)', async () => {
+    renderOfficialDocumentPdf.mockRejectedValueOnce(new Error('watermark render failed'));
+    await expect(
+      officialDocumentService.renderOfficialPdf({
+        type: 'INVOICE',
+        rawData: { items: [], status: 'posted' },
+        channel: 'portal',
+      })
+    ).rejects.toThrow('watermark render failed');
+  });
+
+  it('erp render failure also propagates (no silent fallback)', async () => {
+    renderOfficialDocumentPdf.mockRejectedValueOnce(new Error('renderer exploded'));
+    await expect(
+      officialDocumentService.renderOfficialPdf({
+        type: 'INVOICE',
+        rawData: { items: [], status: 'posted' },
+        channel: 'erp',
+      })
+    ).rejects.toThrow('renderer exploded');
   });
 });

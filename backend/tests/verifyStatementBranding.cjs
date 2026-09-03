@@ -6,7 +6,7 @@
  *   - Prime Printing Service / phone / email are present
  *   - Prime Printing & Stationery / Phone N/A are NOT present
  *   - Statement number metadata is present
- *   - Portal watermark text is NOT present in the rendered bytes
+ *   - Portal copy carries the native PORTAL COPY watermark; ERP copy is clean
  *
  * Uses an in-memory repo stub so it runs without Supabase.
  */
@@ -163,25 +163,36 @@ function normalizeExtractedText(text) {
       else fail(`PDF missing required text: ${text}`);
     }
 
-    const forbidden = ['Prime Printing & Stationery', 'PRIME PRINTING INC', 'Phone N/A', 'PORTAL COPY', 'DOWNLOADED FROM CUSTOMER PORTAL'];
+    const forbidden = ['Prime Printing & Stationery', 'PRIME PRINTING INC', 'Phone N/A', 'DOWNLOADED FROM CUSTOMER PORTAL'];
     for (const text of forbidden) {
       if (searchablePdfText.includes(text)) fail(`PDF unexpectedly contains: ${text}`);
       else pass(`PDF does NOT contain stale/prohibited text: ${text}`);
     }
 
+    // Portal copy MUST carry the native PORTAL COPY watermark; ERP copy must not.
+    if (searchablePdfText.includes('PORTAL COPY')) pass('portal statement PDF contains native PORTAL COPY watermark');
+    else fail('portal statement PDF is missing the native PORTAL COPY watermark');
+    if (erpExtractedPdfText.includes('PORTAL COPY')) fail('ERP statement PDF unexpectedly contains PORTAL COPY');
+    else pass('ERP statement PDF is clean (no PORTAL COPY)');
+
     const statementNumberInBody = searchablePdfText.includes('STMT-2026-0001');
     if (statementNumberInBody) pass('PDF embeds the statement number');
     else fail('PDF missing the statement number');
 
-    const normalizedPortalText = normalizeExtractedText(extractedPdfText);
+    const normalizedPortalText = normalizeExtractedText(extractedPdfText.replace(/PORTAL COPY/g, ''));
     const normalizedErpText = normalizeExtractedText(erpExtractedPdfText);
-    if (normalizedPortalText === normalizedErpText) pass('portal and ERP statement PDFs have matching extracted text content');
+    if (normalizedPortalText === normalizedErpText) pass('portal and ERP statement PDFs have matching extracted text content (watermark excluded)');
     else fail('portal and ERP statement PDFs differ in extracted text content');
 
+    // The old byte post-processing layer (which stamped 'Customer Portal Download'
+    // into PDF metadata) has been REMOVED — the portal copy is now identified by
+    // the native PORTAL COPY watermark inside the PDF itself. Both copies are
+    // produced by the SAME authoritative renderer, so neither should carry a
+    // portal-only metadata subject.
     const pdfDoc = await PDFDocument.load(buffer);
     const subject = pdfDoc.getSubject();
-    if (subject === 'Customer Portal Download') pass('portal-source PDF retains portal metadata subject');
-    else fail(`portal metadata subject missing, got: ${subject}`);
+    if (subject !== 'Customer Portal Download') pass('portal-source PDF has no portal-only metadata subject (byte layer removed)');
+    else fail(`portal-source PDF unexpectedly retains legacy portal metadata subject: ${subject}`);
 
     const erpPdfDoc = await PDFDocument.load(erpBuffer);
     if (erpPdfDoc.getSubject() !== 'Customer Portal Download') pass('erp-source PDF does not carry portal metadata subject');

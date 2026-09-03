@@ -108,7 +108,7 @@ async function sendOfficialDocument(req, res, { docType, fetchRecord, resolveFil
       type: renderType,
       rawData: record,
       customers: ownerCustomer ? [ownerCustomer] : [],
-      source: 'portal',
+      channel: 'portal',
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -198,7 +198,7 @@ router.get('/payments/:id/document', async (req, res) => {
       type: 'RECEIPT',
       rawData: receiptData,
       customers: ownerCustomer ? [ownerCustomer] : [],
-      source: 'portal',
+      channel: 'portal',
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -250,7 +250,7 @@ router.get('/deliveries/:id/document', async (req, res) => {
       type: 'DELIVERY_NOTE',
       rawData: note,
       customers: ownerCustomer ? [ownerCustomer] : [],
-      source: 'portal',
+      channel: 'portal',
     });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -321,7 +321,7 @@ router.get('/customers/statement/document', async (req, res) => {
       type: 'ACCOUNT_STATEMENT',
       rawData: statementData,
       customers: ownerCustomer ? [ownerCustomer] : [],
-      source: 'portal',
+      channel: 'portal',
     });
 
     res.setHeader('Content-Type', 'application/pdf');

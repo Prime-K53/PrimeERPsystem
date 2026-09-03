@@ -174,8 +174,6 @@ class VATManagementService {
     }
     return { imported: results.length, results };
   }
-    return { imported: results.length, results };
-  }
 }
 
 module.exports = VATManagementService;

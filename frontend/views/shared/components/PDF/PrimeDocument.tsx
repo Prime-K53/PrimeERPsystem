@@ -188,8 +188,8 @@ const resolveFooterText = (config: CompanyConfig | null | undefined, paymentTerm
     return configuredFooter;
   }
   return showPaymentTerms
-    ? `This is a computer-generated document. No signature required. Payment terms: ${paymentTermsLabel}.`
-    : 'This is a computer-generated document. No signature required.';
+    ? `This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222. Payment terms: ${paymentTermsLabel}.`
+    : 'This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.';
 };
 
 const buildFooterContactLine = (config?: CompanyConfig | null) => {
@@ -216,11 +216,18 @@ const CancelledWatermark = () => (
 );
 
 import { StatementSummaryTemplate } from './StatementSummaryTemplate.tsx';
+import { PortalCopyWatermark } from './PortalCopyWatermark.tsx';
 
 interface DocProps {
   type: 'INVOICE' | 'WORK_ORDER' | 'PO' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'EXAMINATION_INVOICE' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'ORDER' | 'SALES_ORDER' | 'SUBSCRIPTION';
   data: PrimeDocData;
   configOverride?: CompanyConfig | null;
+  /**
+   * Rendering channel. 'erp' (default) renders a clean official document;
+   * 'portal' renders the same document WITH the native PORTAL COPY watermark.
+   * Established server-side by the backend — never inferred from the browser.
+   */
+  channel?: 'erp' | 'portal';
 }
 
 const SecurityFooter = ({
@@ -291,12 +298,14 @@ const CleanInvoiceTemplate = ({
   type,
   data,
   config,
-  templateSettings
+  templateSettings,
+  channel
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
+  channel?: 'erp' | 'portal';
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -350,6 +359,7 @@ const CleanInvoiceTemplate = ({
   const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
 
   const showPaymentTerms = templateSettings.showPaymentTerms;
+  const showAccountSummary = templateSettings.showAccountSummary;
   const paymentTermsLabel = String(dataAny.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
   const legalFooterLine1 = resolveFooterText(config, paymentTermsLabel, showPaymentTerms);
   const legalFooterLine2 = buildFooterContactLine(config);
@@ -394,6 +404,7 @@ const CleanInvoiceTemplate = ({
   return (
     <Document title={docTitleForMeta} author={companyName}>
       <Page size="A4" style={{ padding: 40, fontFamily: templateSettings.fontFamily }}>
+        {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
         {/* Header */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 40 }}>
@@ -621,12 +632,14 @@ const ModernInvoiceTemplate = ({
   type,
   data,
   config,
-  templateSettings
+  templateSettings,
+  channel
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
+  channel?: 'erp' | 'portal';
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -686,6 +699,7 @@ const ModernInvoiceTemplate = ({
   
   const showDueDate = templateSettings.showDueDate;
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
+  const showAccountSummary = templateSettings.showAccountSummary;
   const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
   const outstandingDisplay = showInvoiceBalances && type === 'INVOICE' ? resolvedOutstandingBalance : (totalAmount - amountPaid);
   const paymentTermsLabel = String(dataAny.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
@@ -733,11 +747,12 @@ const ModernInvoiceTemplate = ({
     );
   };
 
-  const isCancelled = isCancelledStatus(rc.paymentStatus || dataAny.status, dataAny);
+  const isCancelled = isCancelledStatus(dataAny.paymentStatus || dataAny.status, dataAny);
 
   return (
     <Document title={docTitleForMeta} author={companyName}>
       <Page size="A4" style={{ paddingVertical: 45, paddingHorizontal: 40, fontFamily: templateSettings.fontFamily, backgroundColor: '#FFFFFF' }}>
+        {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
         
 {/* Centered Logo & Company Header */}
@@ -929,12 +944,14 @@ const ProfessionalInvoiceTemplate = ({
   type,
   data,
   config,
-  templateSettings
+  templateSettings,
+  channel
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
+  channel?: 'erp' | 'portal';
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -1022,11 +1039,12 @@ const ProfessionalInvoiceTemplate = ({
     );
   };
 
-  const isCancelled = isCancelledStatus(st.status || dataAny.status, dataAny);
+  const isCancelled = isCancelledStatus(dataAny.status, dataAny);
 
   return (
     <Document title={docTitleForMeta} author={companyName}>
       <Page size="A4" style={{ padding: 40, fontFamily: templateSettings.fontFamily, backgroundColor: '#ffffff' }}>
+        {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
         {/* Top Row */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 30 }}>
@@ -1182,7 +1200,7 @@ const ProfessionalInvoiceTemplate = ({
   );
 };
 
-export const PrimeDocument = ({ type, data, configOverride = null, customers = [] }: DocProps & { customers?: any[] }) => {
+export const PrimeDocument = ({ type, data, configOverride = null, customers = [], channel = 'erp' }: DocProps & { customers?: any[] }) => {
   const isFinancial = type === 'INVOICE' || type === 'PO' || type === 'QUOTATION' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'SUBSCRIPTION';
   const dataAny = data as Record<string, unknown>;
   const pod = dataAny.proofOfDelivery as Record<string, unknown> | undefined;
@@ -1190,15 +1208,15 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   const templateSettings = resolvePrimeTemplateSettings(config);
 
   if (isFinancial && templateSettings.engine === 'Clean') {
-    return <CleanInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} />;
+    return <CleanInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} />;
   }
 
   if (isFinancial && templateSettings.engine === 'Professional') {
-    return <ProfessionalInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} />;
+    return <ProfessionalInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} />;
   }
 
   if (isFinancial && templateSettings.engine === 'Modern') {
-    return <ModernInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} />;
+    return <ModernInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} />;
   }
 
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -1334,6 +1352,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     return (
       <Document title={`Sales Exchange - ${String(d.exchangeNumber)}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
+          {channel === 'portal' && <PortalCopyWatermark />}
           {isCancelled && <CancelledWatermark />}
           {showConversionHistory && Boolean(d.isConverted) && !!cd && (
             <View style={[s.conversionBox, { position: 'absolute', top: 40, right: 40, zIndex: 10 }]}>
@@ -1413,7 +1432,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           <SecurityFooter
             data={d}
             companyName={companyName}
-            legalFooterLine1="This is a computer-generated Sales Exchange Note. No signature is required if authorized digitally."
+            legalFooterLine1="This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
             legalFooterLine2={`All exchanges are subject to ${companyName} Return & Exchange Policy.`}
             fontScale={fontScale}
           />
@@ -1433,6 +1452,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     return (
       <Document title={`Payment Receipt - ${rc.receiptNumber}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
+          {channel === 'portal' && <PortalCopyWatermark />}
           {isCancelled && <CancelledWatermark />}
 
           <View style={s.headerSection}>
@@ -1533,7 +1553,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           <SecurityFooter
             data={rc}
             companyName={companyName}
-            legalFooterLine1="This is a computer-generated payment receipt. No signature required if digitally authorized."
+            legalFooterLine1="This is a computer-generated payment receipt. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
             legalFooterLine2={buildFooterContactLine(config)}
             fontScale={fontScale}
           />
@@ -1548,6 +1568,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     return (
       <Document title={`Payment Voucher - ${sp.paymentId}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
+          {channel === 'portal' && <PortalCopyWatermark />}
           {isCancelled && <CancelledWatermark />}
           <View style={s.headerSection}>
             <View style={s.headerLeft}>
@@ -1618,7 +1639,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           <SecurityFooter
             data={sp}
             companyName={companyName}
-            legalFooterLine1="This is a computer-generated payment voucher."
+            legalFooterLine1="This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
             legalFooterLine2={`Issued securely by ${companyName}.`}
             fontScale={fontScale}
           />
@@ -1639,6 +1660,7 @@ if (type === 'POS_RECEIPT') {
   return (
     <Document title={`Receipt - ${r.receiptNumber}`} author={companyName}>
       <Page size="A4" style={[s.page, pageStyle, { padding: 0, backgroundColor: '#f9fafb', fontFamily: templateSettings.fontFamily }]}>
+        {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
         <View style={[s.posA4Wrapper, { width: 250 * scale, paddingVertical: 24 * scale, paddingHorizontal: 8 * scale }]}>
             <View style={{ alignItems: 'center', marginBottom: 12 * scale }}>
@@ -1736,7 +1758,7 @@ if (type === 'POS_RECEIPT') {
   }
 
   if ((type === 'ACCOUNT_STATEMENT_SUMMARY' || type === 'ACCOUNT_STATEMENT') && 'finalBalance' in data) {
-    return <StatementSummaryTemplate data={data as StatementDoc} configOverride={config} />;
+    return <StatementSummaryTemplate data={data as StatementDoc} configOverride={config} channel={channel} />;
   }
 
   const isConverted = 'isConverted' in data && data.isConverted;
@@ -1787,6 +1809,7 @@ if (type === 'POS_RECEIPT') {
       keywords={`${type}, ERP, Business Document`}
     >
       <Page size="A4" style={[s.page, pageStyle]}>
+        {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
         <View style={s.headerSection}>
           {isRightAligned ? (

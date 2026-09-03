@@ -11,7 +11,12 @@ const {
   initializePrimePdfFontsSpy,
 } = vi.hoisted(() => {
   const createElementSpy = vi.fn((component: any, props: any) => ({ component, props }));
-  const toBlobSpy = vi.fn(async () => new Blob([Buffer.from('%PDF-1.7 test')], { type: 'application/pdf' }));
+  // Return a Blob-like that always exposes arrayBuffer(): the jsdom Blob in
+  // this environment lacks it, which made Buffer.from(await blob.arrayBuffer())
+  // throw before the assertions ever ran.
+  const toBlobSpy = vi.fn(async () => ({
+    arrayBuffer: async () => Buffer.from('%PDF-1.7 test'),
+  }));
   const pdfSpy = vi.fn(() => ({ toBlob: toBlobSpy }));
   const mapToInvoiceDataSpy = vi.fn((rawData: any) => ({ ...rawData }));
   const attachDocumentSecuritySpy = vi.fn(async (data: any) => data);
@@ -84,6 +89,27 @@ describe('renderOfficialDocumentPdf', () => {
     expect(createElementSpy).toHaveBeenCalledWith('PrimeDocument', expect.objectContaining({
       type: 'ACCOUNT_STATEMENT',
       configOverride: companyConfig,
+    }));
+  });
+
+  it('defaults channel to erp (clean document)', async () => {
+    await renderOfficialDocumentPdf({
+      type: 'INVOICE',
+      rawData: { invoiceNumber: 'INV-1', customerName: 'C', items: [] },
+    });
+    expect(createElementSpy).toHaveBeenCalledWith('PrimeDocument', expect.objectContaining({
+      channel: 'erp',
+    }));
+  });
+
+  it('forwards channel portal so PrimeDocument renders the native PORTAL COPY watermark', async () => {
+    await renderOfficialDocumentPdf({
+      type: 'INVOICE',
+      rawData: { invoiceNumber: 'INV-2', customerName: 'C', items: [] },
+      channel: 'portal',
+    });
+    expect(createElementSpy).toHaveBeenCalledWith('PrimeDocument', expect.objectContaining({
+      channel: 'portal',
     }));
   });
 });

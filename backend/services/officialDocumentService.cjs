@@ -16,8 +16,6 @@
 const path = require('path');
 const { getCompanyConfig } = require('./companyConfigService.cjs');
 
-const portalPdfPostProcess = require('./portalPdfPostProcess.cjs');
-
 let rendererPromise = null;
 
 function loadRenderer() {
@@ -139,27 +137,33 @@ function normalizeRecordForRenderer(raw) {
 }
 
 /**
- * Render the OFFICIAL pdf for a record already proven to belong to the
- * requesting customer.
+ * OfficialDocumentChannel — the ONLY thing that changes between an ERP copy
+ * and a Portal copy is the native PORTAL COPY watermark inside the PDF.
  *
- * @returns {Promise<{buffer: Buffer, contentType: string}>}
+ *   - 'erp'    → clean official document (no watermark)
+ *   - 'portal' → the SAME authoritative document rendered with PORTAL COPY
+ *                drawn into the PDF by the renderer itself (no byte
+ *                post-processing anywhere in this pipeline).
+ *
+ * The channel is established by the CALLER (routes/portal.cjs) server-side;
+ * it is never derived from browser-supplied input. 'source' is accepted as a
+ * legacy alias so older callers keep working during the migration.
+ *
+ * Security: for channel === 'portal' the watermark is part of the rendered
+ * PDF. If rendering fails, this throws — the Portal receives an error, never
+ * a silently clean/unwatermarked PDF.
  */
-async function renderOfficialPdf({ type, rawData, customers = [], source = 'erp' }) {
+async function renderOfficialPdf({ type, rawData, customers = [], channel, source } = {}) {
+  const effectiveChannel = channel || (source === 'portal' ? 'portal' : 'erp');
   const render = await loadRenderer();
   const companyConfig = await getCompanyConfig();
-  let buffer = await render({
+  const buffer = await render({
     type,
     rawData: normalizeRecordForRenderer(rawData),
     companyConfig,
     customers,
-    source,
+    channel: effectiveChannel,
   });
-
-  if (source === 'portal') {
-    buffer = await portalPdfPostProcess.applyPortalPermissions(buffer, {
-      companyName: companyConfig?.companyName,
-    });
-  }
 
   return { buffer, contentType: 'application/pdf' };
 }

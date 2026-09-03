@@ -31,6 +31,13 @@ export interface RenderOfficialDocumentInput {
   companyConfig?: unknown;
   /** Customer records used for enrichment; pass at least the owning customer. */
   customers?: unknown[];
+  /**
+   * Rendering channel, established SERVER-SIDE by the backend:
+   *   - 'erp'    → clean official document (default)
+   *   - 'portal' → the SAME authoritative document with the native
+   *                PORTAL COPY watermark rendered into the PDF itself.
+   */
+  channel?: 'erp' | 'portal';
 }
 
 export async function renderOfficialDocumentPdf(
@@ -56,7 +63,9 @@ export async function renderOfficialDocumentPdf(
   // 4. Security layer (QR/fingerprint), identical to staff-generated copies.
   const securedData = await attachDocumentSecurity(mappedData as any, (input.companyConfig as any)?.companyName);
 
-  // 5. Render with the SAME React-PDF template.
+  // 5. Render with the SAME React-PDF template. The channel ('erp' | 'portal')
+  // is passed straight through — the watermark is native PDF content drawn by
+  // PrimeDocument when channel === 'portal'.
   await initializePrimePdfFonts();
   const blob = await pdf(
     createElement(PrimeDocument as any, {
@@ -64,6 +73,7 @@ export async function renderOfficialDocumentPdf(
       data: securedData,
       configOverride: (input.companyConfig as any) || null,
       customers: (input.customers || []) as any,
+      channel: input.channel || 'erp',
     }) as any
   ).toBlob();
 

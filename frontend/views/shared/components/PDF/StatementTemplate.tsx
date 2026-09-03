@@ -233,7 +233,7 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
         ))}
 
         <View style={styles.footer}>
-          <Text>{String(config?.footer || '').trim() || 'This is a computer-generated statement and does not require a signature.'}</Text>
+          <Text>{String(config?.footer || '').trim() || 'This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.'}</Text>
           <Text>Please contact {config?.email || 'info@primeerp.com'} for any discrepancies.</Text>
         </View>
       </Page>

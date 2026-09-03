@@ -1,9 +1,12 @@
 const axios = require('axios');
-const { execSync } = require('child_process');
+// Read Supabase credentials from backend/.env instead of hardcoding them.
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 const BASE = 'http://localhost:3000';
 const COMPANY_ID = 'COMP-PRIME-ERP';
 const TEST_DATE = '2026-07-15T10:00:00.000Z';
+const SUPABASE_URL = 'https://rdtuzuzehfbwvfdzqliw.supabase.co/rest/v1';
+const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || '';
 
 const authHeaders = {
   'Content-Type': 'application/json',
@@ -13,14 +16,17 @@ const authHeaders = {
   'x-company-id': COMPANY_ID
 };
 
-function supabaseGet(path) {
-  return new Promise((resolve) => {
-    const result = execSync(
-      `node -e "const https=require('https');https.get('https://rdtuzuzehfbwvfdzqliw.supabase.co/rest/v1/${path}',{headers:{apikey: process.env.SUPABASE_SERVICE_KEY,Authorization:'Bearer ' + process.env.SUPABASE_SERVICE_KEY}},(r)=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log(d))})"`,
-      { encoding: 'utf8', cwd: __dirname }
-    );
-    try { resolve(JSON.parse(result)); } catch { resolve([]); }
-  });
+async function supabaseGet(path) {
+  try {
+    const res = await axios.get(`${SUPABASE_URL}/${path}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      timeout: 15000
+    });
+    return Array.isArray(res.data) ? res.data : [];
+  } catch (e) {
+    console.error('  Supabase query error:', e.message);
+    return [];
+  }
 }
 
 async function post(path, body) {
@@ -44,23 +50,28 @@ async function get(path) {
 const results = {};
 const ledgerEntries = []; // {ref, type, accountId, accountNum, amount}
 
-async function captureLedger(refId, label) {
-  await new Promise(r => setTimeout(r, 3000));
-  const entries = await supabaseGet(`ledger_entries?data->>reference_id=eq.${refId}&select=*`);
-  for (const e of entries) {
-    const d = e.data || {};
-    const acct = results.accounts?.find(a => a.id === d.account_id);
-    ledgerEntries.push({
-      ref: refId,
-      label,
-      type: d.entry_type,
-      accountId: d.account_id,
-      accountNum: acct?.account_number || 'UNKNOWN',
-      accountName: acct?.name || 'UNKNOWN',
-      amount: d.amount
-    });
+async function captureLedger(refId, label, maxRetries = 10) {
+  for (let i = 0; i < maxRetries; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const entries = await supabaseGet(`ledger_entries?data->>reference_id=eq.${refId}&select=*`);
+    if (entries.length > 0) {
+      for (const e of entries) {
+        const d = e.data || {};
+        const acct = results.accounts?.find(a => a.id === d.account_id);
+        ledgerEntries.push({
+          ref: refId,
+          label,
+          type: d.entry_type,
+          accountId: d.account_id,
+          accountNum: acct?.account_number || 'UNKNOWN',
+          accountName: acct?.name || 'UNKNOWN',
+          amount: d.amount
+        });
+      }
+      return entries.length;
+    }
   }
-  return entries.length;
+  return 0;
 }
 
 async function main() {

@@ -25,6 +25,7 @@ Thumbs.db
 *_REPORT.md
 .kilocode
 backend/storage/
+backend/tests/output/
 tsc_*.txt
 temp_*.js
 scripts/inspect_*.js

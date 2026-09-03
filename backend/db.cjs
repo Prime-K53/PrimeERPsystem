@@ -1757,20 +1757,20 @@ const initDb = () => {
       db.run(`CREATE INDEX IF NOT EXISTS idx_chart_of_accounts_type ON chart_of_accounts(account_type)`);
       db.run(`CREATE INDEX IF NOT EXISTS idx_chart_of_accounts_number ON chart_of_accounts(account_number)`);
 
-      -- Migrate existing data: set account_number from code if not set
+      // Migrate existing data: set account_number from code if not set
       db.run(`UPDATE chart_of_accounts SET account_number = code WHERE account_number IS NULL AND code IS NOT NULL`);
 
-      -- Migrate existing data: set account_type from type (lowercase to uppercase)
+      // Migrate existing data: set account_type from type (lowercase to uppercase)
       db.run(`UPDATE chart_of_accounts SET account_type = UPPER(type) WHERE account_type IS NULL AND type IS NOT NULL`);
 
-      -- Migrate existing data: set normal_balance based on account_type
+      // Migrate existing data: set normal_balance based on account_type
       db.run(`UPDATE chart_of_accounts SET normal_balance = CASE
         WHEN account_type IN ('ASSET', 'EXPENSE') THEN 'DEBIT'
         WHEN account_type IN ('LIABILITY', 'EQUITY', 'INCOME') THEN 'CREDIT'
         ELSE 'DEBIT'
       END WHERE normal_balance IS NULL AND account_type IS NOT NULL`);
 
-      -- Migrate existing data: set parent_account_id from parent_id
+      // Migrate existing data: set parent_account_id from parent_id
       db.run(`UPDATE chart_of_accounts SET parent_account_id = parent_id WHERE parent_account_id IS NULL AND parent_id IS NOT NULL`);
 
       db.run(`CREATE TABLE IF NOT EXISTS ledger_entries (

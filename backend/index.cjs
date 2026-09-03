@@ -1225,13 +1225,19 @@ async function startServer() {
         return res.status(400).json({ error: 'Unbalanced journal entry', totalDebit, totalCredit });
       }
       const results = [];
+      const journalId = meta.id || randomUUID();
+      console.log(`[Finance] /api/ledger: journalId=${journalId}, meta.id=${meta.id}, lines=${lines.length}`);
       for (const line of lines) {
         const entry = await finance.saveLedgerEntry({
           ...meta,
+          id: undefined,  // Don't pass the journal ID as entry ID - generate fresh
           account_id: line.accountId,
           entry_type: line.debit > 0 ? 'debit' : 'credit',
           amount: line.debit > 0 ? line.debit : line.credit,
-          entry_date: meta.date || new Date().toISOString()
+          entry_date: meta.date || new Date().toISOString(),
+          reference_type: 'journal',
+          reference_id: journalId,
+          journal_id: journalId
         });
         results.push(entry);
       }

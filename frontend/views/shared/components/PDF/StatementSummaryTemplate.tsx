@@ -9,6 +9,7 @@ import {
   resolvePrimeTemplateSettings,
 } from './templateSettings.ts';
 import { resolvePdfQrCodeSource } from '../../../../utils/companyAssetUtils.ts';
+import { PortalCopyWatermark } from './PortalCopyWatermark.tsx';
 
 // Format amount helper
 const formatAmount = (amount: number) => {
@@ -38,7 +39,7 @@ const buildFooterLine1 = (config?: CompanyConfig | null) => {
     config?.footer,
     config?.receiptFooter,
     config?.transactionSettings?.pos?.receiptFooter,
-    'This is a computer-generated document. No signature required.'
+    'This is a computer-generated document. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.'
   );
 };
 
@@ -58,7 +59,7 @@ const buildFooterLine2 = (config?: CompanyConfig | null) => {
   ].filter(Boolean).join(', ');
 };
 
-export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOverride?: CompanyConfig | null }> = ({ data, configOverride = null }) => {
+export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOverride?: CompanyConfig | null; channel?: 'erp' | 'portal' }> = ({ data, configOverride = null, channel = 'erp' }) => {
   const currency = data.currency || 'MWK';
   const config = configOverride || getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config);
@@ -88,6 +89,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
       creator="Prime ERP System"
     >
       <Page size="A4" style={[s.page, pageStyle]}>
+        {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && (
           <View style={s.watermarkContainer} fixed>
             <Text style={s.watermarkText}>CANCELLED</Text>
