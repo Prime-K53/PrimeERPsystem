@@ -383,4 +383,52 @@ router.post('/tombstones/purge', async (req, res) => {
 
 router.validatePortalAdPayload = validatePortalAdPayload;
 
+// ─── sync generation ──────────────────────────────────────────────────────────
+
+router.get('/generation', async (req, res) => {
+  try {
+    if (!cloudSyncStore.isConfigured()) {
+      return res.status(503).json({ error: 'Cloud database not configured' });
+    }
+    const generation = await cloudSyncStore.getSyncGeneration();
+    res.json({ ok: true, generation });
+  } catch (err) {
+    console.error('[sync] GET /generation error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to read sync generation' });
+  }
+});
+
+// ─── company reset (admin only) ───────────────────────────────────────────────
+
+router.post('/reset', async (req, res) => {
+  try {
+    const hasUser = Boolean(req.user);
+    const callerRole = resolveAuthRole(req.user);
+    if (!hasUser || callerRole === 'anonymous' || callerRole === '') {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (!roleIsAdmin(callerRole)) {
+      return res.status(403).json({ error: 'Admin role required to reset company data' });
+    }
+    if (!cloudSyncStore.isConfigured()) {
+      return res.status(503).json({ error: 'Cloud database not configured' });
+    }
+
+    const previousGeneration = await cloudSyncStore.getSyncGeneration();
+    const newGeneration = await cloudSyncStore.incrementSyncGeneration();
+
+    console.log(`[sync] Company reset: generation ${previousGeneration} → ${newGeneration} by user ${req.user?.id}`);
+
+    res.json({
+      ok: true,
+      previousGeneration,
+      generation: newGeneration,
+      message: `Company sync generation incremented from ${previousGeneration} to ${newGeneration}. All queued operations from generation ${previousGeneration} and earlier are now permanently invalid.`,
+    });
+  } catch (err) {
+    console.error('[sync] POST /reset error:', err?.message || err);
+    res.status(500).json({ error: 'Company reset failed', detail: err?.message || String(err) });
+  }
+});
+
 module.exports = router;

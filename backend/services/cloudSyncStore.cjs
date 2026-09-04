@@ -584,6 +584,87 @@ async function purgeTombstones(table, retentionDays, archiveFn = null) {
   return { purged, archived, skipped };
 }
 
+// ─── sync generation ──────────────────────────────────────────────────────────
+
+const SYNC_GENERATION_SETTING_ID = 'sync_generation';
+
+async function getSyncGeneration() {
+  try {
+    const res = await cloudHttp.get(`${SUPABASE_URL}/rest/v1/settings`, {
+      headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
+      params: { id: `eq.${SYNC_GENERATION_SETTING_ID}`, select: 'data', limit: 1 },
+      timeout: 8000,
+    });
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (rows.length === 0) return 1;
+    const val = rows[0]?.data?.value;
+    return Number.isFinite(val) && val > 0 ? val : 1;
+  } catch {
+    return 1;
+  }
+}
+
+async function setSyncGeneration(value) {
+  const serverNow = new Date().toISOString();
+  const payload = {
+    id: SYNC_GENERATION_SETTING_ID,
+    data: { value: Number(value) },
+    updated_at: serverNow,
+    version: 1,
+  };
+  await cloudHttp.post(`${SUPABASE_URL}/rest/v1/settings`, payload, {
+    headers: { ...adminHeaders(), Prefer: 'resolution=merge-duplicates,return=representation' },
+    params: { on_conflict: 'id' },
+    timeout: 10000,
+  });
+}
+
+async function incrementSyncGeneration() {
+  const current = await getSyncGeneration();
+  const next = current + 1;
+  await setSyncGeneration(next);
+  return next;
+}
+
+// ─── stale-operation guard ───────────────────────────────────────────────────
+
+/**
+ * Reject operations whose syncGeneration is behind the server's current value.
+ * This is the server-side enforcement of the company-reset contract: an old
+ * browser whose local queue contains operations from generation N cannot
+ * resurrect deleted records after a reset to generation N+1.
+ *
+ * Returns null if the operation is valid (current or future generation).
+ * Returns a rejection result object if the operation is stale.
+ */
+async function checkStaleOperation(op) {
+  const opGeneration = Number(op?.syncGeneration);
+  if (!Number.isFinite(opGeneration) || opGeneration < 1) {
+    return {
+      operationId: op?.operationId,
+      ok: false,
+      stale: true,
+      reason: 'SYNC_GENERATION_MISSING',
+      error: 'Operation has no sync generation; cannot be safely replayed after a company reset',
+      retryable: false,
+    };
+  }
+  const currentGeneration = await getSyncGeneration();
+  if (opGeneration < currentGeneration) {
+    return {
+      operationId: op?.operationId,
+      ok: false,
+      stale: true,
+      reason: 'SYNC_GENERATION_STALE',
+      error: `Operation belongs to sync generation ${opGeneration} which is older than the current generation ${currentGeneration}. The company has been reset.`,
+      retryable: false,
+    };
+  }
+  return null;
+}
+
+// ─── applyOp ─────────────────────────────────────────────────────────────────
+
 /**
  * Apply an operation. Returns a normalized result object used by the route:
  *   { operationId, ok, id, updatedAt, error, retryable }
@@ -599,6 +680,11 @@ async function applyOp(op) {
   }
   if (!['upsert', 'delete'].includes(operation)) {
     return { operationId, ok: false, error: `unsupported operation: ${operation}`, retryable: false };
+  }
+
+  const staleResult = await checkStaleOperation(op);
+  if (staleResult) {
+    return staleResult;
   }
 
   // Idempotency guard — if the same operation id already succeeded, replay is a no-op.
@@ -714,4 +800,6 @@ module.exports = {
   purgeTombstones,
   pickSalesOrderNumber,
   nextSalesOrderNumber,
+  getSyncGeneration,
+  incrementSyncGeneration,
 };

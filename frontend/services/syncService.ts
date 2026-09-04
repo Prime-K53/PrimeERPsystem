@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient';
 import { dbService } from './db';
 import { mergeRecords, fieldLevelMerge } from './syncConflictResolver';
-import { durableSyncQueue } from './durableSyncQueue';
+import { durableSyncQueue, getLocalGeneration, setLocalGeneration } from './durableSyncQueue';
 import { logger } from './logger';
 import { initAudit, audit } from './syncAudit';
 
@@ -546,7 +546,60 @@ function unsubscribeFromRemoteChanges() {
   }
 }
 
-export function startPeriodicSync(
+const API_BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '';
+
+export async function fetchServerGeneration(): Promise<number | null> {
+  if (!API_BASE_URL) return null;
+  try {
+    const { getSyncAccessToken } = await import('./syncApiClient');
+    const token = await getSyncAccessToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch(`${API_BASE_URL}/sync/generation`, { headers, signal: controller.signal });
+      if (!res.ok) return null;
+      const data = await res.json() as { ok?: boolean; generation?: number };
+      return (data?.ok && Number.isFinite(data?.generation)) ? data.generation : null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch {
+    return null;
+  }
+}
+
+export async function handleGenerationMismatch(serverGeneration: number): Promise<void> {
+  const localGen = getLocalGeneration();
+  if (localGen >= serverGeneration) return;
+  logger.warn(`[Sync] Generation mismatch: local=${localGen} server=${serverGeneration} — invalidating queue and clearing local data`);
+  audit('sync', 'generation_mismatch', { localGen, serverGeneration });
+
+  try {
+    const { backgroundSyncService } = await import('./backgroundSyncService');
+    backgroundSyncService.stopPeriodicSync();
+  } catch {}
+
+  await durableSyncQueue.destroy();
+
+  try {
+    const { deleteDB } = await import('idb');
+    await deleteDB('PrimeERP_Final_v3_Clean').catch(() => {});
+    for (const name of ['PrimeERP_Production_v1', 'PrimeERP_Legacy_v1', 'PrimeERP_v2']) {
+      await deleteDB(name).catch(() => {});
+    }
+  } catch {}
+
+  const syncKeys = ['nexus_last_sync_pull', 'nexus_initialized'];
+  for (const key of syncKeys) {
+    try { localStorage.removeItem(key); } catch {}
+  }
+
+  setLocalGeneration(serverGeneration);
+}
+
+export async function startPeriodicSync(
   intervalMs = PUSH_INTERVAL_MS,
   onSyncComplete?: (result: { pulled: number; pushed: number; errors: string[] }) => void
 ) {
@@ -561,18 +614,22 @@ export function startPeriodicSync(
 
   /* SYNC-FORENSIC suppressed: startPeriodicSync() START */
   audit('sync', 'startPeriodicSync', { intervalMs });
+
+  if (navigator.onLine) {
+    const serverGen = await fetchServerGeneration();
+    if (serverGen !== null) {
+      await handleGenerationMismatch(serverGen);
+    }
+  }
+
   syncLifecycleActive = true;
 
-  // subscribeToRemoteChanges is now async (fetches session for company_id filter)
   subscribeToRemoteChanges().catch((err) => {
     logger.warn('[Sync] subscribeToRemoteChanges failed, falling back to polling:', err);
   });
 
-  // Start the durable background sync engine (processes the durable queue,
-  // handles realtime recovery, incremental pulls, and retries forever)
-  import('./backgroundSyncService').then(({ backgroundSyncService }) => {
-    backgroundSyncService.start();
-  });
+  const { backgroundSyncService } = await import('./backgroundSyncService');
+  backgroundSyncService.start();
 
   // Periodic pull (incremental sync) - 30 second interval for catching missed realtime events
   pushTimer = setInterval(async () => {

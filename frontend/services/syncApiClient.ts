@@ -20,6 +20,7 @@ export interface SyncOp {
   recordId: string | null;
   operation: SyncOpOperation;
   payload: unknown;
+  syncGeneration?: number;
 }
 
 export interface SyncOpResultServer {
@@ -44,6 +45,10 @@ export interface SyncOpResult {
   server?: SyncOpResultServer;
   error?: string;
   retryable?: boolean;
+  /** True when the server rejected the operation because its syncGeneration is older than the current company generation. */
+  stale?: boolean;
+  /** Rejection reason code: SYNC_GENERATION_STALE or SYNC_GENERATION_MISSING. */
+  reason?: string;
 }
 
 export interface SyncOpsResponse {

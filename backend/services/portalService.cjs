@@ -816,7 +816,13 @@ const portalService = {
   async getInvoiceById(invoiceId, customerId) {
     try {
       const cloud = await withCloudTimeout(supabaseStore.getInvoice(invoiceId, customerId), 5000, 'Cloud invoice');
-      if (cloud) return cloud;
+      if (cloud) {
+        if (!cloud.items || cloud.items.length === 0) {
+          cloud.items = cloud.line_items || [];
+          cloud.line_items = cloud.items;
+        }
+        return cloud;
+      }
     } catch (err) {
       console.warn('[PortalService] Cloud invoice unavailable, using local:', err.message);
     }

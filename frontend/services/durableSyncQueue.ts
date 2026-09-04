@@ -22,6 +22,8 @@ export interface QueuedOperation {
   payloadSizeBytes?: number;
   /** Number of optimistic-concurrency conflicts this op survived before convergence (auto-merge cap). */
   conflictCount?: number;
+  /** Sync generation at the time this operation was created. Used to detect stale operations after a company reset. */
+  syncGeneration?: number;
 }
 
 export interface QueueMetrics {
@@ -172,6 +174,25 @@ function detectCycle(dependsOn: string[], allItems: QueuedOperation[], visited: 
   return false;
 }
 
+const LOCAL_GENERATION_KEY = 'nexus_sync_generation';
+
+export function getLocalGeneration(): number {
+  try {
+    const raw = localStorage.getItem(LOCAL_GENERATION_KEY);
+    if (raw !== null) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 1) return n;
+    }
+  } catch { /* ignore */ }
+  return 1;
+}
+
+export function setLocalGeneration(generation: number): void {
+  try {
+    localStorage.setItem(LOCAL_GENERATION_KEY, String(Math.max(1, Number(generation) || 1)));
+  } catch { /* ignore */ }
+}
+
 export const durableSyncQueue = {
   async enqueue<T>(input: {
     table: string;
@@ -181,10 +202,16 @@ export const durableSyncQueue = {
     userId?: string | null;
     dependsOn?: string[];
     fileRef?: string | null;
-}): Promise<QueuedOperation> {
+    syncGeneration?: number;
+  }): Promise<QueuedOperation> {
     const now = new Date().toISOString();
     const db = await getDb();
     const payloadStr = JSON.stringify(input.payload);
+
+    // Default to the local generation from localStorage if not explicitly supplied.
+    // This ensures all operations automatically carry the generation without
+    // requiring callers to explicitly thread it through.
+    const effectiveGeneration = input.syncGeneration ?? getLocalGeneration();
 
     // Only active operations (pending/syncing/failed) participate in
     // duplicate detection and dependency resolution. Scanning the full store
@@ -280,6 +307,7 @@ export const durableSyncQueue = {
       fileRef: input.fileRef || null,
       payloadSizeBytes: payloadStr.length,
       conflictCount: 0,
+      syncGeneration: effectiveGeneration,
     };
     await db.put('operations', item);
     /* SYNC-FORENSIC suppressed: STAGE-3 durableSyncQueue.enqueue() persisted */
@@ -294,6 +322,7 @@ export const durableSyncQueue = {
     userId?: string | null;
     dependsOn?: string[];
     fileRef?: string | null;
+    syncGeneration?: number;
   }, cacheWrite: () => Promise<void>): Promise<QueuedOperation> {
     const item = await this.enqueue(input);
     try {
@@ -743,6 +772,40 @@ export const durableSyncQueue = {
       }
     }
     return recovered;
+  },
+
+  /**
+   * Invalidate all pending/syncing/failed operations in the queue because the
+   * server rejected them as stale (sync generation mismatch). Moves them to
+   * dead_letter status so they are never retried.
+   */
+  async invalidateStaleOperations(): Promise<number> {
+    const db = await getDb();
+    const staleStatuses: QueueStatus[] = ['pending', 'syncing', 'failed'];
+    let count = 0;
+    for (const status of staleStatuses) {
+      const ops = await db.getAllFromIndex('operations', 'by-status', IDBKeyRange.only(status));
+      for (const op of ops) {
+        op.status = 'dead_letter';
+        op.lastError = 'Invalidated: server rejected as stale sync generation';
+        op.errorType = 'permanent';
+        await db.put('operations', op);
+        count++;
+      }
+    }
+    return count;
+  },
+
+  /**
+   * Remove all operations from the queue (all statuses). Used when the local
+   * generation is known to be behind the server and the entire queue is stale.
+   */
+  async clearAllOperations(): Promise<void> {
+    const db = await getDb();
+    const all = await db.getAll('operations');
+    for (const op of all) {
+      await db.delete('operations', op.id);
+    }
   },
 
   async destroy(): Promise<void> {

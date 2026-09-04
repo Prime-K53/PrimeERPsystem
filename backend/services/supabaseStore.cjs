@@ -160,9 +160,22 @@ function mapInvoiceLineItems(items) {
   });
 }
 
+function mapInvoiceLineItemsWithFallback(d) {
+  const rawItems = d.items || d.line_items;
+  if (Array.isArray(rawItems)) return mapInvoiceLineItems(rawItems);
+  if (typeof rawItems === 'string') {
+    try { return mapInvoiceLineItems(JSON.parse(rawItems)); } catch { return []; }
+  }
+  if (d.line_items_json) {
+    try { return mapInvoiceLineItems(JSON.parse(d.line_items_json)); } catch { return []; }
+  }
+  return [];
+}
+
 function mapInvoice(row) {
   const d = (row && typeof row.data === 'object' && row.data) ? row.data : {};
   const status = d.status || (num(d.paidAmount) > 0 ? 'partial' : 'unpaid');
+  const lineItems = mapInvoiceLineItemsWithFallback(d);
   return {
     id: row.id,
     invoice_number: d.invoice_number || d.invoiceNumber || row.id,
@@ -177,8 +190,8 @@ function mapInvoice(row) {
     other_charges: num(d.otherCharges ?? d.other_charges),
     notes: d.notes || null,
     document_title: d.documentTitle || null,
-    line_items: mapInvoiceLineItems(d.items || d.line_items),
-    items: mapInvoiceLineItems(d.items || d.line_items),
+    line_items: lineItems,
+    items: lineItems,
     paymentTerms: d.paymentTerms || d.payment_terms || null,
     payment_terms: d.paymentTerms || d.payment_terms || null,
     _customerId: d.customerId || null,

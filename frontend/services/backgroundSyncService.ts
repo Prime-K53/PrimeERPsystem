@@ -116,6 +116,7 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
           recordId: item.recordId,
           operation: item.operation === 'delete' ? 'delete' : 'upsert',
           payload: item.payload,
+          syncGeneration: item.syncGeneration,
         },
       });
     }

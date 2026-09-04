@@ -46,9 +46,20 @@ function normalizeRoleForDisplay(role: string): string {
  */
 async function resumeSyncAfterAuth(): Promise<void> {
   try {
-    const { durableSyncQueue } = await import('../services/durableSyncQueue');
+    const { durableSyncQueue, getLocalGeneration } = await import('../services/durableSyncQueue');
     await durableSyncQueue.clearAuthBlocked();
     await durableSyncQueue.resumeAfterAuth();
+
+    if (navigator.onLine) {
+      try {
+        const { fetchServerGeneration, handleGenerationMismatch } = await import('../services/syncService');
+        const serverGen = await fetchServerGeneration();
+        if (serverGen !== null && getLocalGeneration() < serverGen) {
+          await handleGenerationMismatch(serverGen);
+          return;
+        }
+      } catch {}
+    }
   } catch {
     // non-fatal; queue state will self-heal on the next interaction
   }
