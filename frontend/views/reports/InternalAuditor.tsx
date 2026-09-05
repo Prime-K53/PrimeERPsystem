@@ -99,8 +99,8 @@ const InternalAuditor: React.FC = () => {
         const ledgerCashChange = ledger
             .filter((e: any) => filterByDateRange(e.date))
             .reduce((sum: number, e: any) => {
-                if (e.debitAccountId === cashAccountId || e.debitAccountId === '1000') return sum + (e.amount || 0);
-                if (e.creditAccountId === cashAccountId || e.creditAccountId === '1000') return sum - (e.amount || 0);
+                 if (e.debitAccountId === cashAccountId || e.debitAccountId === '11110') return sum + (e.amount || 0);
+                 if (e.creditAccountId === cashAccountId || e.creditAccountId === '11110') return sum - (e.amount || 0);
                 return sum;
             }, 0);
         const cashVariance = totalPaymentsCollected - ledgerCashChange;
