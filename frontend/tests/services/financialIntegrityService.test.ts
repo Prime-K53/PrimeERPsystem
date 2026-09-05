@@ -5,18 +5,18 @@ describe('financialIntegrityService', () => {
   it('builds dashboard metrics from verified ledger and persisted balances only', () => {
     const metrics = financialIntegrityService.buildVerifiedDashboardMetrics(
       {
-        accounts: [
-          { id: '1000', code: '1000', name: 'Cash', type: 'Asset' },
-          { id: '1100', code: '1100', name: 'Accounts Receivable', type: 'Asset' },
-          { id: '2000', code: '2000', name: 'Accounts Payable', type: 'Liability' },
-          { id: '4000', code: '4000', name: 'Sales Revenue', type: 'Revenue' },
-          { id: '5000', code: '5000', name: 'COGS', type: 'Expense' }
-        ],
-        ledger: [
-          { id: 'LED-1', date: '2026-03-10T09:00:00.000Z', debitAccountId: '1000', creditAccountId: '4000', amount: 100, referenceId: 'INV-1' },
-          { id: 'LED-2', date: '2026-03-12T09:00:00.000Z', debitAccountId: '5000', creditAccountId: '1200', amount: 40, referenceId: 'INV-1' },
-          { id: 'LED-3', date: '2026-02-08T09:00:00.000Z', debitAccountId: '1000', creditAccountId: '4000', amount: 50, referenceId: 'INV-OLD' }
-        ],
+         accounts: [
+           { id: '11110', code: '11110', name: 'Cash Drawer', type: 'Asset' },
+           { id: '11310', code: '11310', name: 'Trade Debtors', type: 'Asset' },
+           { id: '21110', code: '21110', name: 'Trade Creditors', type: 'Liability' },
+           { id: '41100', code: '41100', name: 'Product Sales', type: 'Revenue' },
+           { id: '51200', code: '51200', name: 'Cost of Goods Sold', type: 'Expense' }
+         ],
+         ledger: [
+           { id: 'LED-1', date: '2026-03-10T09:00:00.000Z', debitAccountId: '11110', creditAccountId: '41100', amount: 100, referenceId: 'INV-1' },
+           { id: 'LED-2', date: '2026-03-12T09:00:00.000Z', debitAccountId: '51200', creditAccountId: '11400', amount: 40, referenceId: 'INV-1' },
+           { id: 'LED-3', date: '2026-02-08T09:00:00.000Z', debitAccountId: '11110', creditAccountId: '41100', amount: 50, referenceId: 'INV-OLD' }
+         ],
         invoices: [
           { id: 'INV-1', status: 'Partial', totalAmount: 100, paidAmount: 75 },
           { id: 'INV-2', status: 'Unpaid', totalAmount: 25, paidAmount: 0 }
@@ -67,13 +67,13 @@ describe('financialIntegrityService', () => {
 
   it('flags missing bank mirrors and broken examination links', () => {
     const audit = financialIntegrityService.runAuditFromDataset({
-      ledger: [
-        { id: 'LED-EXP', date: '2026-03-10T09:00:00.000Z', debitAccountId: '6100', creditAccountId: '1050', amount: 75, referenceId: 'EXP-1' },
-        { id: 'LED-SPAY', date: '2026-03-11T09:00:00.000Z', debitAccountId: '2000', creditAccountId: '1050', amount: 40, referenceId: 'SPAY-1' }
-      ],
-      expenses: [
-        { id: 'EXP-1', status: 'Approved', amount: 75, accountId: '1050', description: 'Paper purchase' }
-      ],
+         ledger: [
+           { id: 'LED-EXP', date: '2026-03-10T09:00:00.000Z', debitAccountId: '52000', creditAccountId: '11210', amount: 75, referenceId: 'EXP-1' },
+           { id: 'LED-SPAY', date: '2026-03-11T09:00:00.000Z', debitAccountId: '21110', creditAccountId: '11210', amount: 40, referenceId: 'SPAY-1' }
+         ],
+         expenses: [
+           { id: 'EXP-1', status: 'Approved', amount: 75, accountId: '11210', description: 'Paper purchase' }
+         ],
       supplierPayments: [
         { id: 'SPAY-1', status: 'Posted', amount: 40, supplierId: 'SUP-1' }
       ],
@@ -91,15 +91,15 @@ describe('financialIntegrityService', () => {
   it('uses live sales and expense records when ledger postings have not refreshed yet', () => {
     const metrics = financialIntegrityService.buildVerifiedDashboardMetrics(
       {
-        accounts: [
-          { id: '1000', code: '1000', name: 'Cash', type: 'Asset' },
-          { id: '4000', code: '4000', name: 'Sales Revenue', type: 'Revenue' },
-          { id: '6100', code: '6100', name: 'Operating Expense', type: 'Expense' }
-        ],
-        ledger: [
-          { id: 'LED-SALE-1', date: '2026-03-08T09:00:00.000Z', debitAccountId: '1000', creditAccountId: '4000', amount: 120, referenceId: 'SALE-1' },
-          { id: 'LED-EXP-OLD', date: '2026-02-08T09:00:00.000Z', debitAccountId: '6100', creditAccountId: '1000', amount: 10, referenceId: 'EXP-OLD' }
-        ],
+         accounts: [
+           { id: '11110', code: '11110', name: 'Cash Drawer', type: 'Asset' },
+           { id: '41100', code: '41100', name: 'Product Sales', type: 'Revenue' },
+           { id: '52000', code: '52000', name: 'Operating Expenses', type: 'Expense' }
+         ],
+         ledger: [
+           { id: 'LED-SALE-1', date: '2026-03-08T09:00:00.000Z', debitAccountId: '11110', creditAccountId: '41100', amount: 120, referenceId: 'SALE-1' },
+           { id: 'LED-EXP-OLD', date: '2026-02-08T09:00:00.000Z', debitAccountId: '52000', creditAccountId: '11110', amount: 10, referenceId: 'EXP-OLD' }
+         ],
         sales: [
           { id: 'SALE-1', date: '2026-03-08T09:00:00.000Z', totalAmount: 120, status: 'Completed' },
           { id: 'SALE-2', date: '2026-03-12T09:00:00.000Z', totalAmount: 80, status: 'Completed' },

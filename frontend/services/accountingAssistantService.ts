@@ -264,7 +264,7 @@ export function detectAccountingInconsistencies(
     }
   }
 
-  const requiredAccounts = ['1000', '1050', '2000', '4000', '5000'];
+   const requiredAccounts = ['11110', '11210', '21110', '41100', '51200'];
   const existingCodes = new Set(accounts.map(a => a.code).filter(Boolean));
   const existingIds = new Set(accounts.map(a => a.id));
   for (const code of requiredAccounts) {
@@ -324,7 +324,7 @@ export function suggestCorrection(
 
     case 'unusual_balance_sign': {
       const match = inconsistency.detail.match(/account (\S+)/);
-      const accountId = match ? match[1] : '5000';
+      const accountId = match ? match[1] : '52000';
       return {
         description: 'Reverse the incorrectly signed posting to the asset account.',
         journalEntry: {
@@ -338,7 +338,7 @@ export function suggestCorrection(
 
     case 'missing_required_account': {
       const match = inconsistency.detail.match(/code (\d+)/);
-      const code = match ? match[1] : '5000';
+      const code = match ? match[1] : '52000';
       return {
         description: `Create a new account with code ${code} in the chart of accounts.`,
         journalEntry: null,

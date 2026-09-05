@@ -393,16 +393,16 @@ const buildBalanceMismatchIssues = (
   suppliers: MinimalSupplier[]
 ): FinancialIntegrityIssue[] => {
   const issues: FinancialIntegrityIssue[] = [];
-  const arIds = new Set(
-    accounts
-      .filter(account => String(account.code || account.id || '') === '1100')
-      .flatMap(account => [account.id, account.code || ''])
-  );
-  const apIds = new Set(
-    accounts
-      .filter(account => String(account.code || account.id || '') === '2000')
-      .flatMap(account => [account.id, account.code || ''])
-  );
+   const arIds = new Set(
+     accounts
+       .filter(account => String(account.code || account.id || '') === '11310')
+       .flatMap(account => [account.id, account.code || ''])
+   );
+   const apIds = new Set(
+     accounts
+       .filter(account => String(account.code || account.id || '') === '21110')
+       .flatMap(account => [account.id, account.code || ''])
+   );
 
   for (const customer of customers) {
     const expected = round2(

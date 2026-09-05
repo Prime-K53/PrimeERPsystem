@@ -24,21 +24,21 @@ class ReconciliationService {
    */
   private async resolveARAccountId(): Promise<string[]> {
     const accounts = await dbService.getAll<any>('accounts');
-    const arIds: string[] = ['1100']; // Default legacy fallback
-    const gl = getGLConfig();
-    
-    // Try to resolve via account resolution service
-    try {
-      const arAccount = await accountResolutionService.resolveByRole('AR');
-      if (arAccount) {
-        arIds.push(arAccount.id);
-      }
-    } catch {
-      // Fall back to legacy
-    }
-    
-    // Also include the configured AR account if different
-    if (gl.accountsReceivable && gl.accountsReceivable !== '1100') {
+     const arIds: string[] = ['11310', '11300']; // Default canonical AR posting accounts
+     const gl = getGLConfig();
+     
+     // Try to resolve via account resolution service
+     try {
+       const arAccount = await accountResolutionService.resolveByRole('AR');
+       if (arAccount) {
+         arIds.push(arAccount.id);
+       }
+     } catch {
+       // Fall back to canonical defaults
+     }
+     
+     // Also include the configured AR account if different
+     if (gl.accountsReceivable && gl.accountsReceivable !== '11310') {
       arIds.push(gl.accountsReceivable);
       // Resolve to actual account.id
       const configured = accounts.find(a => 
@@ -60,21 +60,21 @@ class ReconciliationService {
    */
   private async resolveAPAccountId(): Promise<string[]> {
     const accounts = await dbService.getAll<any>('accounts');
-    const apIds: string[] = ['2000']; // Default legacy fallback
-    const gl = getGLConfig();
-    
-    // Try to resolve via account resolution service
-    try {
-      const apAccount = await accountResolutionService.resolveByRole('AP');
-      if (apAccount) {
-        apIds.push(apAccount.id);
-      }
-    } catch {
-      // Fall back to legacy
-    }
-    
-    // Also include the configured AP account if different
-    if (gl.accountsPayable && gl.accountsPayable !== '2000') {
+     const apIds: string[] = ['21110', '21100']; // Default canonical AP posting accounts
+     const gl = getGLConfig();
+     
+     // Try to resolve via account resolution service
+     try {
+       const apAccount = await accountResolutionService.resolveByRole('AP');
+       if (apAccount) {
+         apIds.push(apAccount.id);
+       }
+     } catch {
+       // Fall back to canonical defaults
+     }
+     
+     // Also include the configured AP account if different
+     if (gl.accountsPayable && gl.accountsPayable !== '21110') {
       apIds.push(gl.accountsPayable);
       // Resolve to actual account.id
       const configured = accounts.find(a => 

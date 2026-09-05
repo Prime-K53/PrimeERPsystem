@@ -188,8 +188,8 @@ describe('Transaction Service - Financial Calculations', () => {
     it('should validate balanced journal entries', () => {
       const journalEntry = {
         lines: [
-          { accountId: '1000', debit: 100, credit: 0 },
-          { accountId: '4000', debit: 0, credit: 100 },
+           { accountId: '11110', debit: 100, credit: 0 },
+           { accountId: '41100', debit: 0, credit: 100 },
         ],
       };
 
@@ -208,8 +208,8 @@ describe('Transaction Service - Financial Calculations', () => {
     it('should detect unbalanced journal entries', () => {
       const journalEntry = {
         lines: [
-          { accountId: '1000', debit: 100, credit: 0 },
-          { accountId: '4000', debit: 0, credit: 50 }, // Not balanced!
+           { accountId: '11110', debit: 100, credit: 0 },
+           { accountId: '41100', debit: 0, credit: 50 }, // Not balanced!
         ],
       };
 

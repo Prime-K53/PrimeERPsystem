@@ -117,7 +117,7 @@ describe('receiptCalculationService.buildPosReceiptDoc', () => {
           paymentMethod: 'Split',
           payments: [
             { method: 'Cash', amount: 70 },
-            { method: 'Card', amount: 30, accountId: '1050' }
+{ method: 'Card', amount: 30, accountId: '11210' }
           ],
           cashierId: 'U-1',
           customerName: 'Acme',
@@ -177,7 +177,7 @@ describe('receipt schemas', () => {
       changeGiven: 0,
       payments: [
         { method: 'Cash', amount: 70 },
-        { method: 'Card', amount: 30, accountId: '1050' }
+        { method: 'Card', amount: 30, accountId: '11210' }
       ],
       footerMessage: 'POS Footer'
     });

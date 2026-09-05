@@ -13,18 +13,18 @@ describe('reportService', () => {
 
   it('classifies P&L vs Balance Sheet balances per debit and credit account type', () => {
     const accounts = [
-      { id: 'A-100', code: '1000', name: 'Cash', type: 'Asset' },
-      { id: 'L-200', code: '2000', name: 'AP', type: 'Liability' },
-      { id: 'R-400', code: '4000', name: 'Sales', type: 'Revenue' },
-      { id: 'E-500', code: '5000', name: 'Supplies Expense', type: 'Expense' }
+      { id: 'A-11110', code: '11110', name: 'Cash Drawer', type: 'Asset' },
+      { id: 'L-21110', code: '21110', name: 'Trade Creditors', type: 'Liability' },
+      { id: 'R-41100', code: '41100', name: 'Product Sales', type: 'Revenue' },
+      { id: 'E-52000', code: '52000', name: 'Office Expenses', type: 'Expense' }
     ];
 
     const ledger = [
       // Prior period: should affect Liability (BS) but not Expense (P&L in current period).
-      { id: 'L1', date: '2026-01-15T10:00:00.000Z', debitAccountId: 'E-500', creditAccountId: 'L-200', amount: 100 },
+      { id: 'L1', date: '2026-01-15T10:00:00.000Z', debitAccountId: 'E-52000', creditAccountId: 'L-21110', amount: 100 },
       // Current period.
-      { id: 'L2', date: '2026-02-10T10:00:00.000Z', debitAccountId: 'E-500', creditAccountId: 'L-200', amount: 50 },
-      { id: 'L3', date: '2026-02-12T10:00:00.000Z', debitAccountId: 'A-100', creditAccountId: 'R-400', amount: 80 }
+      { id: 'L2', date: '2026-02-10T10:00:00.000Z', debitAccountId: 'E-52000', creditAccountId: 'L-21110', amount: 50 },
+      { id: 'L3', date: '2026-02-12T10:00:00.000Z', debitAccountId: 'A-11110', creditAccountId: 'R-41100', amount: 80 }
     ];
 
     const balances = calculateAccountBalances(accounts, ledger, { start: '2026-02-01', end: '2026-02-28' });

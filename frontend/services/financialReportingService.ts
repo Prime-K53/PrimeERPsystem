@@ -570,25 +570,25 @@ class FinancialReportingService {
       }
 
       // Changes in working capital
-      const arChange = await this.calculateWorkingCapitalChange('1100', periodStart, periodEnd);
-      if (arChange !== 0) {
-        operatingItems.push({
-          description: 'Changes in Accounts Receivable',
-          amount: -arChange, // Negative because increase in AR is cash outflow
-          category: 'operating'
-        });
-      }
+       const arChange = await this.calculateWorkingCapitalChange('113', periodStart, periodEnd);
+       if (arChange !== 0) {
+         operatingItems.push({
+           description: 'Changes in Accounts Receivable',
+           amount: -arChange,
+           category: 'operating'
+         });
+       }
 
-      const apChange = await this.calculateWorkingCapitalChange('2000', periodStart, periodEnd);
-      if (apChange !== 0) {
-        operatingItems.push({
-          description: 'Changes in Accounts Payable',
-          amount: apChange, // Positive because increase in AP is cash inflow
-          category: 'operating'
-        });
-      }
+       const apChange = await this.calculateWorkingCapitalChange('211', periodStart, periodEnd);
+       if (apChange !== 0) {
+         operatingItems.push({
+           description: 'Changes in Accounts Payable',
+           amount: apChange,
+           category: 'operating'
+         });
+       }
 
-      const inventoryChange = await this.calculateWorkingCapitalChange('1200', periodStart, periodEnd);
+       const inventoryChange = await this.calculateWorkingCapitalChange('114', periodStart, periodEnd);
       if (inventoryChange !== 0) {
         operatingItems.push({
           description: 'Changes in Inventory',
