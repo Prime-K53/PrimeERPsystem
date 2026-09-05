@@ -469,17 +469,26 @@ class AccountResolutionService {
   async getSystemAccounts(): Promise<ResolvedAccount[]> {
     const accounts = await this.getAccounts();
     const systemAccounts = accounts.filter(a => a.is_system_account);
-    return systemAccounts.map(a => ({
-      id: a.id,
-      code: a.code || a.account_number || a.id,
-      account_number: a.account_number || a.code || a.id,
-      name: a.name,
-      account_type: a.account_type || a.type || 'ASSET',
-      account_group: a.account_group,
-      subtype: a.subtype,
-      normal_balance: a.normal_balance || 'DEBIT',
-      role: 'EXPENSE' as AccountRole,
-    }));
+     return systemAccounts.map(a => {
+       const upperType = (a.account_type || a.type || 'ASSET').toUpperCase();
+       let role: AccountRole = 'EXPENSE';
+       if (upperType === 'ASSET') role = 'CASH';
+       else if (upperType === 'LIABILITY') role = 'AP';
+       else if (upperType === 'EQUITY') role = 'EQUITY';
+       else if (upperType === 'INCOME') role = 'SALES';
+       else if (upperType === 'EXPENSE') role = 'EXPENSE';
+       return {
+         id: a.id,
+         code: a.code || a.account_number || a.id,
+         account_number: a.account_number || a.code || a.id,
+         name: a.name,
+         account_type: a.account_type || a.type || 'ASSET',
+         account_group: a.account_group,
+         subtype: a.subtype,
+         normal_balance: a.normal_balance || 'DEBIT',
+         role,
+       };
+     });
   }
 
   /**
