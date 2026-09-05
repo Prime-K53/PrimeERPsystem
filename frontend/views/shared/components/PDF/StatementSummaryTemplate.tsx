@@ -3,7 +3,6 @@ import { Document, Page, Text, View, Image } from '@react-pdf/renderer';
 import { StatementDoc } from './schemas.ts';
 import { docStyles as s } from './styles.ts';
 import { CompanyConfig } from '../../../../types.ts';
-import { resolvePdfLogoSource } from '../../../../utils/companyAssetUtils.ts';
 import {
   getStoredCompanyConfig,
   resolvePrimeTemplateSettings,
@@ -25,13 +24,6 @@ const pickFirstText = (...values: Array<unknown>) => {
     if (normalized) return normalized;
   }
   return '';
-};
-
-const buildCompanyAddress = (config?: CompanyConfig | null) => {
-  return [config?.addressLine1, config?.city, config?.country]
-    .map((value) => String(value ?? '').trim())
-    .filter(Boolean)
-    .join(', ');
 };
 
 const buildFooterLine1 = (config?: CompanyConfig | null) => {
@@ -56,11 +48,6 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
     fontSize: templateSettings.bodyFontSize,
   };
   const companyName = pickFirstText(config?.companyName, 'Prime ERP');
-  const companyAddress = buildCompanyAddress(config);
-  const companyPhone = pickFirstText(config?.phone);
-  const companyEmail = pickFirstText(config?.email);
-  const companyWebsite = pickFirstText((config as any)?.website, (config as any)?.companyWebsite);
-  const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
   const fontScale = templateSettings.bodyFontSize / 12;
 
   const isCancelled =
@@ -93,29 +80,6 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
         )}
         {/* Header Section */}
         <View style={s.headerContainer}>
-          {/* Left: Company logo/address aligned from the left */}
-          <View style={s.companySide}>
-            {logo ? (
-              <Image src={logo} style={{ marginBottom: 6, width: templateSettings.logoWidth }} />
-            ) : null}
-            <Text style={{ fontSize: templateSettings.companyNameFontSize, fontWeight: 'bold', color: '#1e293b', marginBottom: 2 }}>{companyName}</Text>
-            {companyAddress ? (
-              <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{companyAddress}</Text>
-            ) : null}
-            {companyPhone ? (
-              <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>Phone {companyPhone}</Text>
-            ) : null}
-            {companyEmail ? (
-              <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{companyEmail}</Text>
-            ) : null}
-            {companyWebsite ? (
-              <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{companyWebsite}</Text>
-            ) : null}
-            <View style={{ marginTop: 4 }}>
-              <Text style={{ fontSize: 8, color: '#64748b', fontStyle: 'italic', marginTop: 2 }}>Generated on: {new Date().toLocaleString('en-GB')}</Text>
-            </View>
-          </View>
-
           {/* Right: Statement Title and Balance Summary Table */}
           <View style={s.statementSide}>
             <Text style={[s.title, { fontSize: 24, marginBottom: 2 }]}>Account Statement</Text>
@@ -182,14 +146,14 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
 
          {/* Security Footer */}
          <View style={s.securityFooter} fixed>
-           <View style={s.securityFooterText}>
-             <Text style={[s.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
-               {buildFooterLine1(config)}
-             </Text>
-             <Text style={[s.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
-               {buildFooterLine2(config)}
-             </Text>
-           </View>
+            <View style={s.securityFooterText}>
+              <Text style={[s.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
+                {buildFooterLine1(config)}
+              </Text>
+              <Text style={[s.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
+                {buildFooterLine2(config)}
+              </Text>
+            </View>
            {(() => {
              const qrUrl = resolvePdfQrCodeSource(String((data as any)?.securityQrCodeDataUrl || '').trim());
              return qrUrl ? (

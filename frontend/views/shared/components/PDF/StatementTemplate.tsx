@@ -156,8 +156,6 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
   const config = getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config);
   const companyName = String(config?.companyName || '').trim() || 'Prime ERP';
-  const companyAddress = [config?.addressLine1, config?.city, config?.country].filter(Boolean).join(', ');
-  const companyContact = [config?.phone || '', config?.email || ''].filter(Boolean).join(' | ');
   const logo = resolvePdfLogoSource(config, true);
 
   return (
@@ -172,16 +170,9 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
           <View>
             {logo ? (
               <Image src={logo} style={styles.logo} />
-            ) : (
-              <Text style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 10 }}>{companyName}</Text>
-            )}
+            ) : null}
             <Text style={styles.title}>Customer Statement</Text>
             <Text>Generated on: {new Date().toLocaleDateString()}</Text>
-          </View>
-          <View style={styles.companyInfo}>
-            <Text style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 2 }}>{companyName}</Text>
-            <Text>{companyAddress}</Text>
-            <Text>{companyContact}</Text>
           </View>
         </View>
 
@@ -233,8 +224,7 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
         ))}
 
         <View style={styles.footer}>
-          <Text>This is a computer-generated document. No signature required. For enquiries contact</Text>
-          <Text>Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,</Text>
+          <Text>This is a computer-generated document. No signature required.</Text>
         </View>
       </Page>
     </Document>
