@@ -12,7 +12,7 @@
 
 const axios = require('axios');
 const crypto = require('crypto');
-const repo = require('./supabaseRepository.cjs');
+const repo = require('./supabaseCanonicalRepository.cjs');
 const engine = require('./promotionEngine.cjs');
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');

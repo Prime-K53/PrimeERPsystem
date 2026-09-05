@@ -1,57 +1,152 @@
 /**
  * Unit Tests: getEffectiveMargin precedence logic
  * Tests the three-level override hierarchy: line_item > category > global
+ * 
+ * Migrated to mock supabaseCanonicalRepository.cjs (Phase 1A.2)
  */
 
 const { describe, it, beforeEach, expect } = require('@jest/globals');
 
-// ─── In-memory mock of the DB for isolated unit testing ───────────────────────
+// Module-level state for the mock
+const mockState = {
+  rows: [],
+};
 
-let mockRows = [];
+// Mock the canonical repository (inline function required by Jest)
+// Set up test environment before requiring the service
+process.env.SUPABASE_URL = 'https://test.supabase.co';
+process.env.SUPABASE_SECRET_KEY = 'test-secret-key';
 
-jest.mock('../db.cjs', () => {
-  const rowsRef = { current: [] };
-  const mockDb = {
-    get: (query, params, cb) => {
-      // Simulate SQLite row lookup
-      const scope = query.includes("scope = 'line_item'")
-        ? 'line_item'
-        : query.includes("scope = 'category'")
-        ? 'category'
-        : 'global';
-
-      const match = rowsRef.current.find(r => {
-        if (r.scope !== scope) return false;
-        if (scope === 'global') return true;
-        return r.scope_ref_id === params[0];
-      });
-      cb(null, match || null);
+jest.mock('../services/supabaseCanonicalRepository.cjs', () => {
+  // Helper to apply PostgREST-style filters
+  function applyFilters(rows, filters) {
+    if (!filters) return rows;
+    
+    let result = [...rows];
+    for (const [key, value] of Object.entries(filters)) {
+      if (value == null) continue;
+      
+      if (key.startsWith('data->>')) {
+        // JSONB filter: data->>field = eq.value
+        const fieldName = key.replace('data->>', '');
+        const filterParts = String(value).split('.');
+        const op = filterParts[0];
+        const target = filterParts[1] || '';
+        
+        result = result.filter(row => {
+          const actual = row[fieldName];
+          switch (op) {
+            // PostgREST compares JSONB fields as text: true -> 'true', 1 -> '1', null matches nothing on eq
+            case 'eq': return actual != null && String(actual) === target;
+            case 'neq': return actual == null ? false : String(actual) !== target;
+            case 'gt': return actual != null && Number(actual) > Number(target);
+            case 'gte': return actual != null && Number(actual) >= Number(target);
+            case 'lt': return actual != null && Number(actual) < Number(target);
+            case 'lte': return actual != null && Number(actual) <= Number(target);
+            case 'is': return target === 'null' ? actual == null : true;
+            default: return true;
+          }
+        });
+      } else if (key === 'id') {
+        const filterParts = String(value).split('.');
+        if (filterParts[0] === 'eq') {
+          result = result.filter(row => row.id === filterParts[1]);
+        }
+      }
     }
-  };
+    return result;
+  }
+
+  // Convert row to the domain shape the real repository returns:
+  // envelope data fields are spread to the top level (not nested under `data`)
+  function toEnvelope(row) {
+    return {
+      ...row,
+      id: row.id,
+      company_id: row.company_id || null,
+      version: row.version || 0,
+      updated_at: row.updated_at || new Date().toISOString(),
+      created_at: row.created_at || new Date().toISOString(),
+    };
+  }
+
   return {
-    db: mockDb,
-    getDatabase: () => mockDb,
-    initDb: () => Promise.resolve(),
-    reinitializeDatabase: () => {},
-    __setMockRows: (rows) => { rowsRef.current = rows.map(r => ({ ...r, is_active: 1, deleted_at: null })); },
-    __getMockRows: () => rowsRef.current,
+    isConfigured: () => true,
+    
+    getAll: async (table, filters) => {
+      const filtered = applyFilters(mockState.rows, filters);
+      return filtered.map(toEnvelope);
+    },
+    
+    getById: async (table, id) => {
+      const filtered = applyFilters(mockState.rows, { id: `eq.${id}` });
+      return filtered.length > 0 ? toEnvelope(filtered[0]) : null;
+    },
+    
+    upsert: async (table, record) => {
+      const domain = record.data ? { ...record.data } : { ...record };
+      const existingIdx = mockState.rows.findIndex(r => r.id === record.id);
+      
+      if (existingIdx >= 0) {
+        mockState.rows[existingIdx] = {
+          ...mockState.rows[existingIdx],
+          ...domain,
+          updated_at: new Date().toISOString(),
+        };
+      } else {
+        mockState.rows.push({
+          ...domain,
+          id: record.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          version: 1,
+          company_id: domain.company_id || null,
+        });
+      }
+      
+      const updated = mockState.rows.find(r => r.id === record.id);
+      return updated ? toEnvelope(updated) : null;
+    },
+    
+    softDelete: async (table, id) => {
+      const row = mockState.rows.find(r => r.id === id);
+      if (row) {
+        row.deleted_at = new Date().toISOString();
+        row.is_active = false;
+      }
+      return row ? { id, deleted: true } : null;
+    },
+    
+    count: async () => mockState.rows.length,
+    
+    // These are exported but not used by profitMarginService
+    fromSupabaseRow: (r) => r && r.data ? { ...r.data, id: r.id } : (r || null),
+    toSupabaseRow: (d) => ({ id: d && d.id, data: d && d.data ? d.data : d }),
   };
 });
 
+// Now we can require the service (it will use our mock)
 const profitMarginService = require('../services/profitMarginService.cjs');
 
-// ─── Helper to seed mock DB rows ──────────────────────────────────────────────
-
+// Helper to seed mock rows (is_active is a JSONB boolean in the envelope tables)
 function seedRows(rows) {
-  const mockedModule = require('../db.cjs');
-  mockedModule.__setMockRows(rows);
+  mockState.rows = rows.map(row => ({
+    ...row,
+    is_active: row.is_active !== undefined ? row.is_active : true,
+    deleted_at: row.deleted_at || null,
+    company_id: row.company_id || null,
+    version: row.version || 0,
+    created_at: row.created_at || new Date().toISOString(),
+    updated_at: row.updated_at || new Date().toISOString(),
+  }));
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('getEffectiveMargin — precedence hierarchy', () => {
-
-  beforeEach(() => { const m = require('../db.cjs'); m.__setMockRows([]); });
+  beforeEach(() => {
+    mockState.rows = [];
+  });
 
   // 1. Falls through all levels → returns system default
   it('returns system default when no overrides exist', async () => {
@@ -148,17 +243,13 @@ describe('getEffectiveMargin — precedence hierarchy', () => {
     expect(li.margin_value).toBe(30);
 
     // Remove line-item → category wins
-    const m1 = require('../db.cjs');
-    const filtered1 = m1.__getMockRows().filter(r => r.scope !== 'line_item');
-    m1.__setMockRows(filtered1);
+    mockState.rows = mockState.rows.filter(r => r.scope !== 'line_item');
     const cat = await profitMarginService.getEffectiveMargin('SKU-A', 'CAT-A');
     expect(cat.source).toBe('category');
     expect(cat.margin_value).toBe(20);
 
     // Remove category → global wins
-    const m2 = require('../db.cjs');
-    const filtered2 = m2.__getMockRows().filter(r => r.scope !== 'category');
-    m2.__setMockRows(filtered2);
+    mockState.rows = mockState.rows.filter(r => r.scope !== 'category');
     const global = await profitMarginService.getEffectiveMargin('SKU-A', 'CAT-A');
     expect(global.source).toBe('global');
     expect(global.margin_value).toBe(10);
@@ -166,8 +257,9 @@ describe('getEffectiveMargin — precedence hierarchy', () => {
 });
 
 describe('createSetting — validation', () => {
-
-  beforeEach(() => { const m = require('../db.cjs'); m.__setMockRows([]); });
+  beforeEach(() => {
+    mockState.rows = [];
+  });
 
   it('rejects percentage > 100', async () => {
     await expect(
@@ -188,18 +280,19 @@ describe('createSetting — validation', () => {
   });
 
   it('accepts boundary value 0%', async () => {
-    // Should not throw validation — will fail on DB (in-memory mock), that's fine
-    const promise = profitMarginService.createSetting({
+    // Should not throw validation — will succeed in mock
+    const result = await profitMarginService.createSetting({
       scope: 'global', scope_ref_id: null, margin_type: 'percentage', margin_value: 0
     }, 'user1');
-    // Expect either success or DB error, NOT a validation error
-    await expect(promise).rejects.not.toThrow('between 0 and 100');
+    expect(result).toBeDefined();
+    expect(result.margin_value).toBe(0);
   });
 
   it('accepts boundary value 100%', async () => {
-    const promise = profitMarginService.createSetting({
+    const result = await profitMarginService.createSetting({
       scope: 'global', scope_ref_id: null, margin_type: 'percentage', margin_value: 100
     }, 'user1');
-    await expect(promise).rejects.not.toThrow('between 0 and 100');
+    expect(result).toBeDefined();
+    expect(result.margin_value).toBe(100);
   });
 });

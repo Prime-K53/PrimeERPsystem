@@ -1,4 +1,4 @@
-const repo = require('./supabaseRepository.cjs');
+const repo = require('./supabaseCanonicalRepository.cjs');
 const auditService = require('../auditService.cjs');
 const { randomUUID } = require('crypto');
 
