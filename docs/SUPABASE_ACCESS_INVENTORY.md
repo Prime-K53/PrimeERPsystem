@@ -10,9 +10,10 @@
 
 | Layer | File | LOC | Purpose | Callers |
 |---|---|---|---|---|
-| **SQL shim** | `supabaseQuery.cjs` | 163 | Regex SQL parser → PostgREST filters | 9 direct importers |
+| **SQL shim** | `supabaseQuery.cjs` | 163 | Regex SQL parser → PostgREST filters | 7 direct importers (9 before migration) |
 | **Envelope CRUD** | `supabaseRepository.cjs` | 1088 | Generic `{id, data:<jsonb>, company_id, version, updated_at}` CRUD | 30+ services, 10+ routes, 10+ tests |
-| **Sync gateway** | `cloudSyncStore.cjs` | 805 | Authoritative writes for `/api/sync/ops`; UUID5 idempotency, tombstones, atomic versioned PATCH | `supabaseRepository.cjs`, `routes/sync.cjs`, 5 test files |
+| **Canonical CRUD** | `supabaseCanonicalRepository.cjs` | ~260 | Table-registry pattern, auto-generated CRUD, same API as `supabaseRepository.cjs` | `auditService.cjs`, `bootstrap.cjs` (migrated) |
+| **Sync gateway** | `cloudSyncStore.cjs` | 805 | Authoritative writes for `/api/sync/ops`; UUID5 idempotency, tombstones, atomic versioned PATCH | `supabaseRepository.cjs`, `supabaseCanonicalRepository.cjs`, `routes/sync.cjs`, 5 test files |
 | **Read mirror** | `supabaseStore.cjs` | 237 | Portal-specific reads (catalog, invoices, sales, customers) with 15s in-process cache | `portalService.cjs` only |
 
 ---
@@ -73,42 +74,41 @@
 ### 2.5 `backend/auditService.cjs`
 | Field | Value |
 |---|---|
-| **Import** | `const sq = require('./services/supabaseQuery.cjs')` (line 11) |
-| **Usage** | `sq.run()` for audit log inserts |
+| **Import** | ~~`const sq = require('./services/supabaseQuery.cjs')`~~ **MIGRATED** |
+| **Usage** | ~~`sq.getAll()`, `sq.getOne()`~~ → `repo.getAll('audit_logs')`, `repo.getById('audit_logs', id)` |
 | **Tables accessed** | `audit_logs` |
-| **Read/Write** | Write |
+| **Read/Write** | Both |
 | **Business-critical** | Medium — audit trail |
 | **Sync-related** | No |
-| **Transactions** | N/A |
 | **Company isolation** | No |
 | **JSONB filtering** | No |
-| **Proposed replacement** | `supabaseRepository.cjs` `entityQueries.audit_logs.upsert()` |
+| **Proposed replacement** | ✅ **DONE** — migrated to canonical repo in commit `c3ba2fc` |
 
 ### 2.6 `backend/auditMiddleware.cjs`
 | Field | Value |
 |---|---|
 | **Import** | `const sq = require('./services/supabaseQuery.cjs')` (line 12) |
-| **Usage** | `sq.run()` for audit CRUD |
+| **Usage** | `sq.getOne()` for audit CRUD with complex WHERE clauses (`OR` conditions) |
 | **Tables accessed** | `audit_logs` |
 | **Read/Write** | Both |
 | **Business-critical** | Medium |
 | **Sync-related** | No |
 | **Company isolation** | No |
 | **JSONB filtering** | No |
-| **Proposed replacement** | `supabaseRepository.cjs` `entityQueries.audit_logs.*` |
+| **Proposed replacement** | Defer to Phase 1B — uses complex SQL with `OR` conditions not easily expressed via canonical repo filters |
 
 ### 2.7 `backend/bootstrap.cjs`
 | Field | Value |
 |---|---|
-| **Import** | `const sq = require('./services/supabaseQuery.cjs')` (line 4) |
-| **Usage** | `sq.getAll()`, `sq.run()` for initial schema setup |
-| **Tables accessed** | `settings`, `users`, `customers`, `products`, `inventory` |
+| **Import** | ~~`const sq = require('./services/supabaseQuery.cjs')`~~ **MIGRATED** |
+| **Usage** | ~~`sq.getOne('SELECT 1 AS alive')`, `sq.getOne('SELECT COUNT(*)...')`~~ → `repo.getAll('settings')`, `repo.count('schools')` |
+| **Tables accessed** | `settings`, `schools` |
 | **Read/Write** | Both |
 | **Business-critical** | Low — one-time bootstrap |
 | **Sync-related** | No |
 | **Company isolation** | No |
-| **JSONB filtering** | Yes |
-| **Proposed replacement** | `supabaseRepository.cjs` `entityQueries.*` |
+| **JSONB filtering** | No |
+| **Proposed replacement** | ✅ **DONE** — migrated to canonical repo in commit `c3ba2fc` |
 
 ### 2.8 `backend/services/ai/baseService.cjs`
 | Field | Value |
@@ -121,7 +121,7 @@
 | **Sync-related** | No |
 | **Company isolation** | No |
 | **JSONB filtering** | Yes |
-| **Proposed replacement** | `supabaseRepository.cjs` `entityQueries.*` |
+| **Proposed replacement** | Defer to Phase 2 — AI features, low priority |
 
 ### 2.9 `backend/middleware/validation.cjs`
 | Field | Value |
