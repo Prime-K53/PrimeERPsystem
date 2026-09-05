@@ -1,34 +1,16 @@
 const express = require('express')
 const router = express.Router()
-const sq = require('../services/supabaseQuery.cjs')
-const repo = require('../services/supabaseRepository.cjs')
+const repoCanonical = require('../services/supabaseCanonicalRepository.cjs')
 
 function parseJson(value) {
   if (!value || value === 'null' || value === 'undefined') return null
   try { return JSON.parse(value) } catch { return value }
 }
 
-async function withDb(query, params = []) {
-  return sq.getAll(query, params)
-}
-
-async function getOne(query, params = []) {
-  return sq.getOne(query, params)
-}
-
-async function runQuery(query, params = []) {
-  return new Promise((resolve, reject) => {
-    sq.run(query, params, (err, result) => {
-      if (err) reject(err)
-      else resolve(result || { id: null, changes: 0 })
-    })
-  })
-}
-
 // ─── Membership Tiers ───
 router.get('/tiers', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_membership_tiers', [])
+    const rows = await repoCanonical.getAll('engagement_membership_tiers')
     res.json(rows.map(r => ({ ...r, benefits: parseJson(r.benefits_json) })))
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -61,7 +43,7 @@ router.post('/tiers', async (req, res) => {
       benefits_json: body.benefits ? JSON.stringify(body.benefits) : null,
       status: body.status || 'active',
     }
-    await repo.upsert('engagement_membership_tiers', record)
+    await repoCanonical.upsert('engagement_membership_tiers', record)
     res.status(201).json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -71,7 +53,7 @@ router.post('/tiers', async (req, res) => {
 router.put('/tiers/:id', async (req, res) => {
   try {
     const body = req.body
-    const old = await repo.getById('engagement_membership_tiers', req.params.id)
+    const old = await repoCanonical.getById('engagement_membership_tiers', req.params.id)
     if (!old) return res.status(404).json({ error: 'Not found' })
     const updates = { ...old }
     const fieldMap = {
@@ -90,7 +72,7 @@ router.put('/tiers/:id', async (req, res) => {
       }
     }
     updates.updated_at = new Date().toISOString()
-    await repo.upsert('engagement_membership_tiers', updates)
+    await repoCanonical.upsert('engagement_membership_tiers', updates)
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -99,7 +81,7 @@ router.put('/tiers/:id', async (req, res) => {
 
 router.delete('/tiers/:id', async (req, res) => {
   try {
-    await repo.softDelete('engagement_membership_tiers', req.params.id)
+    await repoCanonical.softDelete('engagement_membership_tiers', req.params.id)
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -109,7 +91,7 @@ router.delete('/tiers/:id', async (req, res) => {
 // ─── Gift Cards ───
 router.get('/gift-cards', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_gift_cards', [])
+    const rows = await repoCanonical.getAll('engagement_gift_cards')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -136,7 +118,7 @@ router.post('/gift-cards', async (req, res) => {
       gift_message: body.giftMessage || null,
       purchased_with: body.purchasedWith || null,
     }
-    await repo.upsert('engagement_gift_cards', record)
+    await repoCanonical.upsert('engagement_gift_cards', record)
     res.status(201).json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -146,11 +128,11 @@ router.post('/gift-cards', async (req, res) => {
 router.put('/gift-cards/:id', async (req, res) => {
   try {
     const body = req.body
-    const old = await repo.getById('engagement_gift_cards', req.params.id)
+    const old = await repoCanonical.getById('engagement_gift_cards', req.params.id)
     if (!old) return res.status(404).json({ error: 'Not found' })
     const updates = { ...old, ...body }
     updates.updated_at = new Date().toISOString()
-    await repo.upsert('engagement_gift_cards', updates)
+    await repoCanonical.upsert('engagement_gift_cards', updates)
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -160,7 +142,7 @@ router.put('/gift-cards/:id', async (req, res) => {
 // ─── Promotions ───
 router.get('/promotions', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_promotions', [])
+    const rows = await repoCanonical.getAll('engagement_promotions')
     res.json(rows.map(r => ({ ...r, bundleItems: parseJson(r.bundle_items_json), customerIds: parseJson(r.customer_ids_json), tierIds: parseJson(r.tier_ids_json) })))
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -196,7 +178,7 @@ router.post('/promotions', async (req, res) => {
       status: body.status || 'active',
       created_by: body.createdBy || req.user?.id || 'system',
     }
-    await repo.upsert('engagement_promotions', record)
+    await repoCanonical.upsert('engagement_promotions', record)
     res.status(201).json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -206,11 +188,11 @@ router.post('/promotions', async (req, res) => {
 router.put('/promotions/:id', async (req, res) => {
   try {
     const body = req.body
-    const old = await repo.getById('engagement_promotions', req.params.id)
+    const old = await repoCanonical.getById('engagement_promotions', req.params.id)
     if (!old) return res.status(404).json({ error: 'Not found' })
     const updates = { ...old, ...body }
     updates.updated_at = new Date().toISOString()
-    await repo.upsert('engagement_promotions', updates)
+    await repoCanonical.upsert('engagement_promotions', updates)
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -219,7 +201,7 @@ router.put('/promotions/:id', async (req, res) => {
 
 router.delete('/promotions/:id', async (req, res) => {
   try {
-    await repo.softDelete('engagement_promotions', req.params.id)
+    await repoCanonical.softDelete('engagement_promotions', req.params.id)
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -229,7 +211,7 @@ router.delete('/promotions/:id', async (req, res) => {
 // ─── Cashback ───
 router.get('/cashback', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_cashback', [])
+    const rows = await repoCanonical.getAll('engagement_cashback')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -238,11 +220,11 @@ router.get('/cashback', async (req, res) => {
 
 router.patch('/cashback/:id/approve', async (req, res) => {
   try {
-    const entry = await getOne('SELECT * FROM engagement_cashback WHERE id=?', [req.params.id])
+    const entry = await repoCanonical.getById('engagement_cashback', req.params.id)
     if (!entry) return res.status(404).json({ error: 'Cashback entry not found' })
-    const old = await repo.getById('engagement_cashback', req.params.id)
+    const old = await repoCanonical.getById('engagement_cashback', req.params.id)
     if (old) {
-      await repo.upsert('engagement_cashback', { ...old, status: 'approved', approved_at: new Date().toISOString(), approved_by: req.user?.id || 'system', updated_at: new Date().toISOString() })
+      await repoCanonical.upsert('engagement_cashback', { ...old, status: 'approved', approved_at: new Date().toISOString(), approved_by: req.user?.id || 'system', updated_at: new Date().toISOString() })
     }
     res.json({ success: true })
   } catch (err) {
@@ -253,9 +235,9 @@ router.patch('/cashback/:id/approve', async (req, res) => {
 router.patch('/cashback/:id/pay', async (req, res) => {
   try {
     const body = req.body
-    const old = await repo.getById('engagement_cashback', req.params.id)
+    const old = await repoCanonical.getById('engagement_cashback', req.params.id)
     if (!old) return res.status(404).json({ error: 'Not found' })
-    await repo.upsert('engagement_cashback', { ...old, status: 'paid', wallet_tx_id: body.walletTxId || null, updated_at: new Date().toISOString() })
+    await repoCanonical.upsert('engagement_cashback', { ...old, status: 'paid', wallet_tx_id: body.walletTxId || null, updated_at: new Date().toISOString() })
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -265,7 +247,7 @@ router.patch('/cashback/:id/pay', async (req, res) => {
 // ─── Points ───
 router.get('/points', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_points ORDER BY created_at DESC', [])
+    const rows = await repoCanonical.getAll('engagement_points')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -286,7 +268,7 @@ router.post('/points', async (req, res) => {
       reference_type: body.referenceType || null,
       expires_at: body.expiresAt || null,
     }
-    await repo.upsert('engagement_points', record)
+    await repoCanonical.upsert('engagement_points', record)
     res.status(201).json({ success: true, id })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -296,7 +278,7 @@ router.post('/points', async (req, res) => {
 // ─── Point Balances ───
 router.get('/point-balances', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_point_balances', [])
+    const rows = await repoCanonical.getAll('engagement_point_balances')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -306,7 +288,7 @@ router.get('/point-balances', async (req, res) => {
 // ─── Customer Tiers ───
 router.get('/customer-tiers', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_customer_tiers', [])
+    const rows = await repoCanonical.getAll('engagement_customer_tiers')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -316,7 +298,7 @@ router.get('/customer-tiers', async (req, res) => {
 // ─── Affiliates ───
 router.get('/affiliates', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_affiliates ORDER BY created_at DESC', [])
+    const rows = await repoCanonical.getAll('engagement_affiliates')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -328,7 +310,7 @@ router.post('/affiliates', async (req, res) => {
     const body = req.body
     const id = body.id || `AFF-${Date.now()}`
     const record = { id, ...body }
-    await repo.upsert('engagement_affiliates', record)
+    await repoCanonical.upsert('engagement_affiliates', record)
     res.status(201).json({ success: true, id })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -337,9 +319,9 @@ router.post('/affiliates', async (req, res) => {
 
 router.put('/affiliates/:id', async (req, res) => {
   try {
-    const old = await repo.getById('engagement_affiliates', req.params.id)
+    const old = await repoCanonical.getById('engagement_affiliates', req.params.id)
     if (!old) return res.status(404).json({ error: 'Not found' })
-    await repo.upsert('engagement_affiliates', { ...old, ...req.body, updated_at: new Date().toISOString() })
+    await repoCanonical.upsert('engagement_affiliates', { ...old, ...req.body, updated_at: new Date().toISOString() })
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -348,7 +330,7 @@ router.put('/affiliates/:id', async (req, res) => {
 
 router.delete('/affiliates/:id', async (req, res) => {
   try {
-    await repo.softDelete('engagement_affiliates', req.params.id)
+    await repoCanonical.softDelete('engagement_affiliates', req.params.id)
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -358,7 +340,7 @@ router.delete('/affiliates/:id', async (req, res) => {
 // ─── Affiliate Commissions ───
 router.get('/affiliate-commissions', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_affiliate_commissions ORDER BY created_at DESC', [])
+    const rows = await repoCanonical.getAll('engagement_affiliate_commissions')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -368,7 +350,7 @@ router.get('/affiliate-commissions', async (req, res) => {
 // ─── Rewards ───
 router.get('/rewards', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_rewards ORDER BY created_at DESC', [])
+    const rows = await repoCanonical.getAll('engagement_rewards')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -379,7 +361,7 @@ router.get('/rewards', async (req, res) => {
 router.get('/timeline', async (req, res) => {
   try {
     const { customerId } = req.query
-    let rows = await withDb('SELECT * FROM engagement_timeline', [])
+    let rows = await repoCanonical.getAll('engagement_timeline')
     if (customerId) rows = rows.filter(r => r.customer_id === customerId)
     rows.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
     res.json(rows)
@@ -391,7 +373,7 @@ router.get('/timeline', async (req, res) => {
 // ─── Audit ───
 router.get('/audit', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_audit ORDER BY created_at DESC', [])
+    const rows = await repoCanonical.getAll('engagement_audit')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -401,7 +383,7 @@ router.get('/audit', async (req, res) => {
 // ─── Analytics ───
 router.get('/analytics', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_analytics ORDER BY period DESC', [])
+    const rows = await repoCanonical.getAll('engagement_analytics')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -411,7 +393,7 @@ router.get('/analytics', async (req, res) => {
 // ─── Settings ───
 router.get('/settings', async (req, res) => {
   try {
-    const rows = await withDb('SELECT * FROM engagement_settings', [])
+    const rows = await repoCanonical.getAll('engagement_settings')
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -421,9 +403,9 @@ router.get('/settings', async (req, res) => {
 router.put('/settings', async (req, res) => {
   try {
     const body = req.body
-    const old = await withDb('SELECT * FROM engagement_settings WHERE id = ?', [body.id])
+    const old = await repoCanonical.getById('engagement_settings', body.id)
     const record = old.length > 0 ? { ...old[0], ...body } : { id: body.id, ...body }
-    await repo.upsert('engagement_settings', record)
+    await repoCanonical.upsert('engagement_settings', record)
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })

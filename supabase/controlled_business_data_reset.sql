@@ -116,7 +116,6 @@ SELECT 'PRE-FLIGHT' AS phase, 'ledger_entries'       AS table_name, count(*)::bi
 SELECT 'PRE-FLIGHT' AS phase, 'maintenance_logs'     AS table_name, count(*)::bigint AS row_count FROM public.maintenance_logs;
 SELECT 'PRE-FLIGHT' AS phase, 'market_adjustment_transactions' AS table_name, count(*)::bigint AS row_count FROM public.market_adjustment_transactions;
 SELECT 'PRE-FLIGHT' AS phase, 'market_adjustments'   AS table_name, count(*)::bigint AS row_count FROM public.market_adjustments;
-SELECT 'PRE-FLIGHT' AS phase, 'material_batches'     AS table_name, count(*)::bigint AS row_count FROM public.material_batches;
 SELECT 'PRE-FLIGHT' AS phase, 'material_categories'  AS table_name, count(*)::bigint AS row_count FROM public.material_categories;
 SELECT 'PRE-FLIGHT' AS phase, 'material_reservations' AS table_name, count(*)::bigint AS row_count FROM public.material_reservations;
 SELECT 'PRE-FLIGHT' AS phase, 'orders'               AS table_name, count(*)::bigint AS row_count FROM public.orders;
@@ -219,6 +218,10 @@ SELECT 'PRE-FLIGHT' AS phase, 'engagement_analytics'         AS table_name, coun
 SELECT 'PRE-FLIGHT' AS phase, 'reprint_jobs'                 AS table_name, count(*)::bigint AS row_count FROM public.reprint_jobs;
 SELECT 'PRE-FLIGHT' AS phase, 'payroll_runs'                 AS table_name, count(*)::bigint AS row_count FROM public.payroll_runs;
 SELECT 'PRE-FLIGHT' AS phase, 'payslips'                    AS table_name, count(*)::bigint AS row_count FROM public.payslips;
+SELECT 'PRE-FLIGHT' AS phase, 'payment_allocation_lines'  AS table_name, count(*)::bigint AS row_count FROM public.payment_allocation_lines;
+SELECT 'PRE-FLIGHT' AS phase, 'payment_allocations'     AS table_name, count(*)::bigint AS row_count FROM public.payment_allocations;
+SELECT 'PRE-FLIGHT' AS phase, 'invoices'                AS table_name, count(*)::bigint AS row_count FROM public.invoices;
+SELECT 'PRE-FLIGHT' AS phase, 'material_batches'        AS table_name, count(*)::bigint AS row_count FROM public.material_batches;
 
 -- Also show PRESERVE table counts for verification baseline
 SELECT 'PRE-FLIGHT-PRESERVE' AS phase, 'companies'            AS table_name, count(*)::bigint AS row_count FROM public.companies;
@@ -278,6 +281,7 @@ DELETE FROM public.supplier_payments;
 DELETE FROM public.sales;
 DELETE FROM public.sale_items;
 DELETE FROM public.purchases;
+DELETE FROM public.purchase_orders;
 DELETE FROM public.orders;
 DELETE FROM public.sales_orders;
 DELETE FROM public.quotations;
@@ -297,6 +301,10 @@ DELETE FROM public.recurring_invoices;
 DELETE FROM public.wallet_transactions;
 DELETE FROM public.vat_transactions;
 DELETE FROM public.vat_returns;
+DELETE FROM public.financial_years;
+DELETE FROM public.market_adjustment_transactions;
+DELETE FROM public.market_adjustments;
+DELETE FROM public.profit_margin_audit_logs;
 DELETE FROM public.rounding_logs;
 DELETE FROM public.tax_rates;
 DELETE FROM public.bank_accounts;
@@ -498,7 +506,6 @@ SELECT 'POST-FLIGHT-CLEAR' AS phase, 'ledger_entries'       AS table_name, count
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'maintenance_logs'     AS table_name, count(*)::bigint AS row_count FROM public.maintenance_logs;
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'market_adjustment_transactions' AS table_name, count(*)::bigint AS row_count FROM public.market_adjustment_transactions;
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'market_adjustments'   AS table_name, count(*)::bigint AS row_count FROM public.market_adjustments;
-SELECT 'POST-FLIGHT-CLEAR' AS phase, 'material_batches'     AS table_name, count(*)::bigint AS row_count FROM public.material_batches;
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'material_categories'  AS table_name, count(*)::bigint AS row_count FROM public.material_categories;
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'material_reservations' AS table_name, count(*)::bigint AS row_count FROM public.material_reservations;
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'orders'               AS table_name, count(*)::bigint AS row_count FROM public.orders;
@@ -601,6 +608,10 @@ SELECT 'POST-FLIGHT-CLEAR' AS phase, 'engagement_analytics'         AS table_nam
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'reprint_jobs'                 AS table_name, count(*)::bigint AS row_count FROM public.reprint_jobs;
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'payroll_runs'                 AS table_name, count(*)::bigint AS row_count FROM public.payroll_runs;
 SELECT 'POST-FLIGHT-CLEAR' AS phase, 'payslips'                    AS table_name, count(*)::bigint AS row_count FROM public.payslips;
+SELECT 'POST-FLIGHT-CLEAR' AS phase, 'payment_allocation_lines'  AS table_name, count(*)::bigint AS row_count FROM public.payment_allocation_lines;
+SELECT 'POST-FLIGHT-CLEAR' AS phase, 'payment_allocations'     AS table_name, count(*)::bigint AS row_count FROM public.payment_allocations;
+SELECT 'POST-FLIGHT-CLEAR' AS phase, 'invoices'                AS table_name, count(*)::bigint AS row_count FROM public.invoices;
+SELECT 'POST-FLIGHT-CLEAR' AS phase, 'material_batches'        AS table_name, count(*)::bigint AS row_count FROM public.material_batches;
 
 -- 2. Confirm PRESERVE tables still exist and have their original row counts
 SELECT 'POST-FLIGHT-PRESERVE' AS phase, 'companies'            AS table_name, count(*)::bigint AS row_count FROM public.companies;

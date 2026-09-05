@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const repo = require('../services/supabaseRepository.cjs');
+const repoCanonical = require('../services/supabaseCanonicalRepository.cjs');
 const { sendSafeError } = require('../utils/errors.cjs');
 const { validateBody, taskSchemas } = require('../middleware/validation.cjs');
 
 router.get('/', async (req, res) => {
   try {
-    const rows = await repo.getAll('tasks');
+    const rows = await repoCanonical.getAll('tasks');
     rows.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     res.json(rows.map(r => ({
       ...r,
@@ -44,9 +44,9 @@ router.post('/', validateBody(taskSchemas.create), async (req, res) => {
       created_at: now,
       updated_at: now,
     };
-    await repo.upsert('tasks', record);
+    await repoCanonical.upsert('tasks', record);
     res.status(201).json({
-      id, title, description: body.description || '', notes: body.notes || '',
+      id, title: body.title, description: body.description || '', notes: body.notes || '',
       assignedTo: body.assignedTo || '', dueDate: body.dueDate || '',
       status: body.status || 'Pending', priority: body.priority || 'Medium',
       hasAlarm: !!body.hasAlarm, reminderDate: body.reminderDate || null,
@@ -64,7 +64,7 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const body = req.body;
-    const old = await repo.getById('tasks', id);
+    const old = await repoCanonical.getById('tasks', id);
     if (!old) return res.status(404).json({ error: 'Task not found' });
     const updates = { ...old };
     const fieldMap = {
@@ -78,7 +78,7 @@ router.put('/:id', async (req, res) => {
       if (body[key] !== undefined) updates[dbField] = body[key];
     }
     updates.updated_at = new Date().toISOString();
-    await repo.upsert('tasks', updates);
+    await repoCanonical.upsert('tasks', updates);
     res.json({ success: true, updatedAt: updates.updated_at });
   } catch (err) {
     console.error('[Tasks] Failed to update task:', err);
@@ -89,9 +89,9 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const old = await repo.getById('tasks', id);
+    const old = await repoCanonical.getById('tasks', id);
     if (!old) return res.status(404).json({ error: 'Task not found' });
-    await repo.softDelete('tasks', id);
+    await repoCanonical.softDelete('tasks', id);
     res.json({ success: true });
   } catch (err) {
     console.error('[Tasks] Failed to delete task:', err);

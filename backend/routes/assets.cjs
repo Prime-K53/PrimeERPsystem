@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const repo = require('../services/supabaseRepository.cjs');
+const repoCanonical = require('../services/supabaseCanonicalRepository.cjs');
 const { sendSafeError } = require('../utils/errors.cjs');
 
 router.get('/', async (req, res) => {
   try {
-    const assets = await repo.getAll('assets');
+    const assets = await repoCanonical.getAll('assets');
     assets.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     res.json(assets);
   } catch (err) {
@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const asset = await repo.getById('assets', req.params.id);
+    const asset = await repoCanonical.getById('assets', req.params.id);
     if (!asset) return res.status(404).json({ error: 'Asset not found' });
     res.json(asset);
   } catch (err) {
@@ -50,8 +50,8 @@ router.post('/', async (req, res) => {
       created_at: now,
       updated_at: now,
     };
-    await repo.upsert('assets', record);
-    const asset = await repo.getById('assets', id);
+    await repoCanonical.upsert('assets', record);
+    const asset = await repoCanonical.getById('assets', id);
     res.status(201).json(asset);
   } catch (err) {
     console.error('[Assets] Create error:', err);
@@ -61,7 +61,7 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const existing = await repo.getById('assets', req.params.id);
+    const existing = await repoCanonical.getById('assets', req.params.id);
     if (!existing) return res.status(404).json({ error: 'Asset not found' });
     const fields = ['name', 'asset_type', 'serial_number', 'model', 'manufacturer', 'purchase_date', 'purchase_cost', 'current_value', 'useful_life_years', 'status', 'location', 'assigned_to', 'notes', 'warranty_expiry', 'last_maintenance', 'next_maintenance'];
     const updates = { ...existing };
@@ -69,8 +69,8 @@ router.put('/:id', async (req, res) => {
       if (req.body[f] !== undefined) updates[f] = req.body[f];
     }
     updates.updated_at = new Date().toISOString();
-    await repo.upsert('assets', updates);
-    const asset = await repo.getById('assets', req.params.id);
+    await repoCanonical.upsert('assets', updates);
+    const asset = await repoCanonical.getById('assets', req.params.id);
     res.json(asset);
   } catch (err) {
     console.error('[Assets] Update error:', err);
@@ -80,9 +80,9 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const existing = await repo.getById('assets', req.params.id);
+    const existing = await repoCanonical.getById('assets', req.params.id);
     if (!existing) return res.status(404).json({ error: 'Asset not found' });
-    await repo.softDelete('assets', req.params.id);
+    await repoCanonical.softDelete('assets', req.params.id);
     res.json({ success: true });
   } catch (err) {
     console.error('[Assets] Delete error:', err);

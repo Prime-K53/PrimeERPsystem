@@ -8,7 +8,7 @@
  * - Full request context capture
  */
 
-const repo = require('./services/supabaseRepository.cjs');
+const repo = require('./services/supabaseCanonicalRepository.cjs');
 const { randomUUID } = require('crypto');
 
 // Enhanced audit event schema aligned with compliance requirements

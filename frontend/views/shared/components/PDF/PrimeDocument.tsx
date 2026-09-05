@@ -1544,7 +1544,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           <SecurityFooter
             data={rc}
             companyName={companyName}
-            legalFooterLine1="This is a computer-generated payment receipt. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
+            legalFooterLine1={resolveFooterText(config, '', false)}
             legalFooterLine2={buildFooterContactLine(config)}
             fontScale={fontScale}
           />

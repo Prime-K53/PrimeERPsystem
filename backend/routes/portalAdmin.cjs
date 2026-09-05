@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const multer = require('multer');
 const router = express.Router();
-const repo = require('../services/supabaseRepository.cjs');
+const repoCanonical = require('../services/supabaseCanonicalRepository.cjs');
 const portalAuthService = require('../services/portalAuthService.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
 const jwt = require('jsonwebtoken');
@@ -446,8 +446,8 @@ router.post('/requests/:id/complete-order', async (req, res) => {
 router.get('/orders', async (req, res) => {
   try {
     const [orders, customers] = await Promise.all([
-      repo.getAll('sales_orders'),
-      repo.getAll('customers'),
+      repoCanonical.getAll('sales_orders'),
+      repoCanonical.getAll('customers'),
     ]);
     const customerMap = new Map(customers.map(c => [c.id, c.name]));
     const rows = orders
@@ -750,9 +750,9 @@ router.put('/users/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid status' });
     }
     if (status) {
-      const old = await repo.getById('portal_users', req.params.id);
+      const old = await repoCanonical.getById('portal_users', req.params.id);
       if (old) {
-        await repo.upsert('portal_users', { ...old, status, updated_at: new Date().toISOString() });
+        await repoCanonical.upsert('portal_users', { ...old, status, updated_at: new Date().toISOString() });
       }
     }
     const updateFields = {};
@@ -774,9 +774,9 @@ router.delete('/users/:id', async (req, res) => {
     const user = await portalAuthService.getPortalUserById(req.params.id);
     if (!user) return res.status(404).json({ error: 'Portal user not found' });
 
-    const old = await repo.getById('portal_users', req.params.id);
+    const old = await repoCanonical.getById('portal_users', req.params.id);
     if (old) {
-      await repo.upsert('portal_users', { ...old, status: 'disabled', updated_at: new Date().toISOString() });
+      await repoCanonical.upsert('portal_users', { ...old, status: 'disabled', updated_at: new Date().toISOString() });
     }
     await portalAuthService.revokeAllSessions(req.params.id);
     res.json({ message: 'Portal user disabled' });
@@ -818,16 +818,16 @@ router.post('/users/auto-create', async (req, res) => {
 
     // Upsert the customer into the backend customers table so the portal admin
     // user list and customer login resolution work for local-first customers.
-    const existingCustomer = await repo.getById('customers', customer_id);
+    const existingCustomer = await repoCanonical.getById('customers', customer_id);
     if (existingCustomer) {
-      await repo.upsert('customers', {
+      await repoCanonical.upsert('customers', {
         ...existingCustomer,
         name: name || existingCustomer.name || '',
         email: email || existingCustomer.email || '',
         phone: phone || existingCustomer.phone || '',
       });
     } else {
-      await repo.upsert('customers', {
+      await repoCanonical.upsert('customers', {
         id: customer_id,
         name: name || '',
         email: email || '',
@@ -1048,7 +1048,7 @@ router.post('/customers/:customerId/regenerate-credentials', async (req, res) =>
   try {
     const { customerId } = req.params;
     const { name } = req.body || {};
-    const customer = (await repo.getAll('customers'))?.find((c) => c.id === customerId);
+    const customer = (await repoCanonical.getAll('customers'))?.find((c) => c.id === customerId);
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
     const customerName = name || customer.name || '';
@@ -1062,7 +1062,7 @@ router.post('/customers/:customerId/regenerate-credentials', async (req, res) =>
     await portalAuthService.updatePortalUser(portalUser.id, { email });
 
     try {
-      await repo.upsert('customers', { ...customer, email, updated_at: new Date().toISOString() });
+      await repoCanonical.upsert('customers', { ...customer, email, updated_at: new Date().toISOString() });
     } catch (upsertErr) {
       console.warn(`[PortalAdmin] Per-customer regenerate: customers upsert failed for ${customerId}:`, upsertErr.message);
     }
@@ -1187,7 +1187,7 @@ router.post('/ads/upload', (req, res, next) => {
 
 router.get('/support/articles', async (req, res) => {
   try {
-    const rows = await repo.getAll('support_articles');
+    const rows = await repoCanonical.getAll('support_articles');
     rows.sort((a, b) => String(a.category || '').localeCompare(String(b.category || '')));
     res.json(rows.map(a => ({
       id: a.id,
@@ -1230,7 +1230,7 @@ router.post('/support/articles', async (req, res) => {
       updated_at: now,
       version: 1,
     };
-    await repo.upsert('support_articles', article);
+    await repoCanonical.upsert('support_articles', article);
     res.status(201).json({
       id: article.id,
       slug: article.slug,
@@ -1253,7 +1253,7 @@ router.put('/support/articles/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { title, summary, body, category, tags } = req.body || {};
-    const existing = await repo.getById('support_articles', id);
+    const existing = await repoCanonical.getById('support_articles', id);
     if (!existing) {
       return res.status(404).json({ error: 'Article not found' });
     }
@@ -1269,7 +1269,7 @@ router.put('/support/articles/:id', async (req, res) => {
       updated_at: now,
       version: Number(existing.version || 0) + 1,
     };
-    await repo.upsert('support_articles', updated);
+    await repoCanonical.upsert('support_articles', updated);
     res.json({
       id: updated.id,
       slug: updated.slug,

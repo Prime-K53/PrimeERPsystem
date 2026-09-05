@@ -242,6 +242,12 @@ const CustomerStatement: React.FC = () => {
     return `${currency}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }, [currency]);
 
+  const safeFormatDate = useCallback((dateStr: string | null | undefined) => {
+    if (!dateStr) return '—';
+    try { return format(parseISO(dateStr), 'dd/MM/yyyy'); }
+    catch { return dateStr; }
+  }, []);
+
   const handleGenerate = () => {
     if (!filters.customerId) return;
   };
@@ -811,7 +817,7 @@ const CustomerStatement: React.FC = () => {
                           <>
                             <tr key={`${tx.id}-${idx}-bill`} className="bg-slate-25 hover:bg-slate-50/30 transition-colors">
                               <td className="px-3 py-0.5 pl-6 text-[10px] text-slate-400" colSpan={2}>
-                                <span className="text-slate-400 italic">Original date: {tx.originalDate ? format(parseISO(tx.originalDate), 'dd/MM/yyyy') : '—'}</span>
+                                <span className="text-slate-400 italic">Original date: {safeFormatDate(tx.originalDate)}</span>
                               </td>
                               <td className="px-3 py-0.5 text-[10px] text-slate-400" colSpan={3}>
                                 <span className="text-slate-400 italic">Status: {tx.status || '—'}</span>

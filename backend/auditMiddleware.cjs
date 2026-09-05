@@ -9,7 +9,7 @@
  */
 
 const { auditService } = require('./auditService.cjs');
-const sq = require('./services/supabaseQuery.cjs');
+const repo = require('./services/supabaseCanonicalRepository.cjs');
 
 // Generate a new correlation ID
 const generateCorrelationId = () => {
@@ -64,7 +64,8 @@ const auditCrudMiddleware = (entityType) => {
         const tableName = TABLE_WHITELIST[entityType] || null;
         if (!tableName) return next();
 
-        oldValue = await sq.getOne(`SELECT * FROM ${tableName} WHERE id = ? OR logical_number = ?`, [entityId, entityId]);
+        const preImageRows = await repo.getAll(tableName, { 'or': `(id.eq.${entityId},logical_number.eq.${entityId})`, limit: 1 });
+        oldValue = preImageRows[0] || null;
       } catch (error) {
         console.warn(`[AuditMiddleware] Could not fetch old state for ${entityType}:${entityId}`, error.message);
       }

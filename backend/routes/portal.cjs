@@ -5,7 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { verifyPortalToken } = require('../middleware/portalAuth.cjs');
-const repo = require('../services/supabaseRepository.cjs');
+const repoCanonical = require('../services/supabaseCanonicalRepository.cjs');
 const portalService = require('../services/portalService.cjs');
 const portalAuthService = require('../services/portalAuthService.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
@@ -103,7 +103,7 @@ async function sendOfficialDocument(req, res, { docType, fetchRecord, resolveFil
       });
     } catch (_) { /* audit is best-effort; never blocks an authorized download */ }
 
-    const ownerCustomer = await repo.getById('customers', customer_id).catch(() => null);
+    const ownerCustomer = await repoCanonical.getById('customers', customer_id).catch(() => null);
     const { buffer } = await officialDocumentService.renderOfficialPdf({
       type: renderType,
       rawData: record,
@@ -132,7 +132,7 @@ router.get('/invoices/:id/document', async (req, res) => {
     fetchRecord: async (_userId, customerId) => {
       const invoice = await portalService.getInvoiceById(req.params.id, customerId);
       if (!invoice) return null;
-      const ownerCustomer = await repo.getById('customers', customerId).catch(() => null);
+      const ownerCustomer = await repoCanonical.getById('customers', customerId).catch(() => null);
       if (ownerCustomer) {
         invoice.totalCustomerOutstanding = Number(ownerCustomer.outstandingBalance ?? ownerCustomer.balance ?? 0);
         invoice.walletBalance = Number(ownerCustomer.walletBalance ?? ownerCustomer.wallet_balance ?? 0);
@@ -191,7 +191,7 @@ router.get('/payments/:id/document', async (req, res) => {
       });
     } catch (_) { /* audit is best-effort; never blocks an authorized download */ }
 
-    const ownerCustomer = await repo.getById('customers', customer_id).catch(() => null);
+    const ownerCustomer = await repoCanonical.getById('customers', customer_id).catch(() => null);
     const receiptData = portalService.mapPaymentToReceiptData(payment, ownerCustomer);
 
     const { buffer } = await officialDocumentService.renderOfficialPdf({
@@ -245,7 +245,7 @@ router.get('/deliveries/:id/document', async (req, res) => {
       });
     } catch (_) { /* audit is best-effort; never blocks an authorized download */ }
 
-    const ownerCustomer = await repo.getById('customers', customer_id).catch(() => null);
+    const ownerCustomer = await repoCanonical.getById('customers', customer_id).catch(() => null);
     const { buffer } = await officialDocumentService.renderOfficialPdf({
       type: 'DELIVERY_NOTE',
       rawData: note,
@@ -314,7 +314,7 @@ router.get('/customers/statement/document', async (req, res) => {
       });
     } catch (_) { /* audit is best-effort; never blocks an authorized download */ }
 
-    const ownerCustomer = await repo.getById('customers', customer_id).catch(() => null);
+    const ownerCustomer = await repoCanonical.getById('customers', customer_id).catch(() => null);
     const statementData = portalService.buildStatementData(customer_id, ownerCustomer, statementsData);
 
     const { buffer } = await officialDocumentService.renderOfficialPdf({
@@ -441,7 +441,7 @@ router.post('/requests', idempotencyMiddleware(), async (req, res) => {
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'At least one line item is required' });
     }
-    const customerRecord = customer_id ? await repo.getById('customers', customer_id).catch(() => null) : null;
+    const customerRecord = customer_id ? await repoCanonical.getById('customers', customer_id).catch(() => null) : null;
     const customerName = (customerRecord && customerRecord.name) || full_name || email || 'Customer';
     const result = await portalLifecycleService.createQuotationRequest({
       portalUserId: id,

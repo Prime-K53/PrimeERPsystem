@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getDbPath, backupDir, ensureRuntimeDirs } = require('./runtimePaths.cjs');
-const repo = require('./services/supabaseRepository.cjs');
+const repo = require('./services/supabaseCanonicalRepository.cjs');
 const BackupService = require('./services/backupService.cjs');
 const licenseService = require('./services/licenseService.cjs');
 
