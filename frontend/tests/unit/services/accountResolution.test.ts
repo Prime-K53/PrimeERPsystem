@@ -1,17 +1,17 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
 const MOCK_ACCOUNTS = [
-  { id: 'acc-uuid-1000', code: '1000', account_number: '1111', name: 'Main Cash', account_type: 'ASSET', is_active: true, allow_posting: true, is_system_account: true },
-  { id: 'acc-uuid-1050', code: '1050', account_number: '1121', name: 'FDH Bank', account_type: 'ASSET', is_active: true, allow_posting: true },
-  { id: 'acc-uuid-1100', code: '1100', account_number: '1211', name: 'Accounts Receivable', account_type: 'ASSET', is_active: true, allow_posting: true },
-  { id: 'acc-uuid-1200', code: '1200', account_number: '1300', name: 'Inventory', account_type: 'ASSET', is_active: true, allow_posting: true },
-  { id: 'acc-uuid-2000', code: '2000', account_number: '2110', name: 'Accounts Payable', account_type: 'LIABILITY', is_active: true, allow_posting: true },
-  { id: 'acc-uuid-3000', code: '3000', account_number: '3000', name: 'Capital', account_type: 'EQUITY', is_active: true, allow_posting: true },
-  { id: 'acc-uuid-4000', code: '4000', account_number: '4110', name: 'Sales', account_type: 'INCOME', is_active: true, allow_posting: true },
-  { id: 'acc-uuid-5000', code: '5000', account_number: '5000', name: 'COGS', account_type: 'EXPENSE', is_active: true, allow_posting: true },
-  { id: 'acc-uuid-6100', code: '6100', account_number: '6100', name: 'Operating Expenses', account_type: 'EXPENSE', is_active: false, allow_posting: true },
-  { id: 'acc-uuid-parent', code: '6000', account_number: '6000', name: 'Expenses Group', account_type: 'EXPENSE', is_active: true, allow_posting: false },
-  { id: 'acc-uuid-other-company', code: '9999', account_number: '9999', name: 'Other Company Account', account_type: 'ASSET', is_active: true, allow_posting: true, company_id: 'other-company-id' },
+  { id: 'acc-uuid-11110', code: '11110', account_number: '11110', name: 'Cash Drawer', account_type: 'ASSET', is_active: true, allow_posting: true, is_system_account: true },
+  { id: 'acc-uuid-11220', code: '11220', account_number: '11220', name: 'FDH Bank', account_type: 'ASSET', is_active: true, allow_posting: true },
+  { id: 'acc-uuid-11310', code: '11310', account_number: '11310', name: 'Trade Debtors', account_type: 'ASSET', is_active: true, allow_posting: true },
+  { id: 'acc-uuid-11400', code: '11400', account_number: '11400', name: 'Inventory', account_type: 'ASSET', is_active: true, allow_posting: true },
+  { id: 'acc-uuid-21110', code: '21110', account_number: '21110', name: 'Trade Creditors', account_type: 'LIABILITY', is_active: true, allow_posting: true },
+  { id: 'acc-uuid-31000', code: '31000', account_number: '31000', name: "Owner's Capital", account_type: 'EQUITY', is_active: true, allow_posting: true },
+  { id: 'acc-uuid-41100', code: '41100', account_number: '41100', name: 'Product Sales', account_type: 'INCOME', is_active: true, allow_posting: true },
+  { id: 'acc-uuid-51200', code: '51200', account_number: '51200', name: 'Cost of Goods Sold', account_type: 'EXPENSE', is_active: true, allow_posting: true },
+  { id: 'acc-uuid-52000', code: '52000', account_number: '52000', name: 'Operating Expenses', account_type: 'EXPENSE', is_active: false, allow_posting: true },
+  { id: 'acc-uuid-parent', code: '50000', account_number: '50000', name: 'Expenses Group', account_type: 'EXPENSE', is_active: true, allow_posting: false },
+  { id: 'acc-uuid-other-company', code: '9999', account_number: '9999', name: 'Other Company Account', account_type: 'ASSET', is_active: true, allow_posting: true },
 ];
 
 describe('resolveAccountForPosting', () => {
@@ -145,33 +145,33 @@ describe('resolveToAccountId (backward compatibility)', () => {
 });
 
 describe('Normal balance verification (Phase 1 regression)', () => {
-  it('Main Cash has DEBIT normal balance', () => {
-    const cashAccount = MOCK_ACCOUNTS.find(a => a.code === '1000');
-    expect(cashAccount).toBeDefined();
-    expect(cashAccount!.account_type).toBe('ASSET');
-  });
+   it('Main Cash has DEBIT normal balance', () => {
+     const cashAccount = MOCK_ACCOUNTS.find(a => a.code === '11110');
+     expect(cashAccount).toBeDefined();
+     expect(cashAccount!.account_type).toBe('ASSET');
+   });
 
-  it('Accounts Receivable has DEBIT normal balance', () => {
-    const arAccount = MOCK_ACCOUNTS.find(a => a.code === '1100');
-    expect(arAccount).toBeDefined();
-    expect(arAccount!.account_type).toBe('ASSET');
-  });
+   it('Accounts Receivable has DEBIT normal balance', () => {
+     const arAccount = MOCK_ACCOUNTS.find(a => a.code === '11310');
+     expect(arAccount).toBeDefined();
+     expect(arAccount!.account_type).toBe('ASSET');
+   });
 
-  it('Accounts Payable has CREDIT normal balance', () => {
-    const apAccount = MOCK_ACCOUNTS.find(a => a.code === '2000');
-    expect(apAccount).toBeDefined();
-    expect(apAccount!.account_type).toBe('LIABILITY');
-  });
+   it('Accounts Payable has CREDIT normal balance', () => {
+     const apAccount = MOCK_ACCOUNTS.find(a => a.code === '21110');
+     expect(apAccount).toBeDefined();
+     expect(apAccount!.account_type).toBe('LIABILITY');
+   });
 
-  it('Sales has CREDIT normal balance', () => {
-    const salesAccount = MOCK_ACCOUNTS.find(a => a.code === '4000');
-    expect(salesAccount).toBeDefined();
-    expect(salesAccount!.account_type).toBe('INCOME');
-  });
+   it('Sales has CREDIT normal balance', () => {
+     const salesAccount = MOCK_ACCOUNTS.find(a => a.code === '41100');
+     expect(salesAccount).toBeDefined();
+     expect(salesAccount!.account_type).toBe('INCOME');
+   });
 
-  it('COGS has DEBIT normal balance', () => {
-    const cogsAccount = MOCK_ACCOUNTS.find(a => a.code === '5000');
-    expect(cogsAccount).toBeDefined();
+   it('COGS has DEBIT normal balance', () => {
+     const cogsAccount = MOCK_ACCOUNTS.find(a => a.code === '51200');
+     expect(cogsAccount).toBeDefined();
     expect(cogsAccount!.account_type).toBe('EXPENSE');
   });
 });
