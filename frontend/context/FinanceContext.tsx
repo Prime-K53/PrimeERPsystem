@@ -102,24 +102,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const inventoryStore = useInventoryStore(); 
   const { companyConfig, notify, addAuditLog, auditLogs, user, isInitialized } = useAuth();
 
-  const gl = companyConfig?.glMapping || {
-    defaultSalesAccount: '41100',
-    defaultInventoryAccount: '11400',
-    defaultCOGSAccount: '51200',
+   const gl = companyConfig?.glMapping || {
+     defaultSalesAccount: '41100',
+     defaultInventoryAccount: '11400',
+     defaultCOGSAccount: '51200',
      accountsReceivable: '11310',
-    accountsPayable: '21100',
-    cashDrawerAccount: '11110',
-    bankAccount: '11210',
-    mobileMoneyAccount: '11230',
-    salesReturnAccount: '41000',
+     accountsPayable: '21110',
+     cashDrawerAccount: '11110',
+     bankAccount: '11210',
+     salesReturnAccount: '41100',
      customerDepositAccount: '21300',
-    otherIncomeAccount: '42000',
-    defaultExpenseAccount: '52000',
-    defaultLaborWagesAccount: '52100',
-    retainedEarningsAccount: '32000',
-    defaultWasteAccount: '52000',
-    roundingAccount: '54000'
-  };
+     otherIncomeAccount: '42000',
+     defaultExpenseAccount: '52000',
+     defaultLaborWagesAccount: '52100',
+     retainedEarningsAccount: '32000',
+     roundingAccount: '54000'
+   };
 
   useEffect(() => {
     if (!isInitialized) return;
