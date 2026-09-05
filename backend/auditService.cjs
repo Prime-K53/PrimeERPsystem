@@ -8,7 +8,6 @@
  * - Full request context capture
  */
 
-const sq = require('./services/supabaseQuery.cjs');
 const repo = require('./services/supabaseRepository.cjs');
 const { randomUUID } = require('crypto');
 
@@ -191,7 +190,7 @@ class AuditService {
       endDate,
       correlationId } = options;
 
-    let rows = await sq.getAll(`SELECT * FROM audit_logs`, []);
+    let rows = await repo.getAll('audit_logs');
     if (entityType) rows = rows.filter(r => r.entity_type === entityType);
     if (entityId) rows = rows.filter(r => r.entity_id === entityId);
     if (userId) rows = rows.filter(r => r.user_id === userId);
@@ -212,7 +211,7 @@ class AuditService {
   }
 
   async verifyIntegrity(eventId) {
-    const row = await sq.getOne('SELECT * FROM audit_logs WHERE id = ?', [eventId]);
+    const row = await repo.getById('audit_logs', eventId);
     if (!row) return { valid: false, error: 'Event not found' };
 
     const storedHash = row.integrity_hash;
@@ -236,7 +235,7 @@ class AuditService {
   }
 
   async getStats(startDate = null, endDate = null) {
-    let rows = await sq.getAll(`SELECT * FROM audit_logs`, []);
+    let rows = await repo.getAll('audit_logs');
     if (startDate) rows = rows.filter(r => r.timestamp >= startDate);
     if (endDate) rows = rows.filter(r => r.timestamp <= endDate);
     const totalEvents = rows.length;

@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const { getDbPath, backupDir, ensureRuntimeDirs } = require('./runtimePaths.cjs');
-const sq = require('./services/supabaseQuery.cjs');
 const repo = require('./services/supabaseRepository.cjs');
 const BackupService = require('./services/backupService.cjs');
 const licenseService = require('./services/licenseService.cjs');
@@ -23,7 +22,7 @@ async function bootstrap() {
 
   try {
     console.log('Verifying Supabase connection...');
-    const alive = await sq.getOne('SELECT 1 AS alive');
+    const alive = await repo.getAll('settings', { select: 'id', limit: 1 });
     if (!alive) {
       console.warn('[Bootstrap] Supabase connection check returned no data.');
     }
@@ -56,8 +55,8 @@ async function bootstrap() {
   // never resolved and the server never finished booting (every /api request
   // then surfaced as a 500 from the dev proxy).
   try {
-    const row = await sq.getOne('SELECT COUNT(*) as count FROM schools');
-    if (row && Number(row.count) === 0) {
+    const count = await repo.count('schools');
+    if (count === 0) {
       console.log('First run detected. Seeding default data...');
       try {
         await seedDefaultData();
