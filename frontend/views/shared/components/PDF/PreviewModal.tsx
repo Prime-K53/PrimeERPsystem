@@ -15,8 +15,6 @@ import {
   Download,
   Printer,
   Share2,
-  ZoomIn,
-  ZoomOut,
   ChevronLeft,
   ChevronRight,
   Maximize2,
@@ -41,14 +39,10 @@ import {
 import { validateDocumentData } from './documentValidation';
 import { getDeviceProfile } from '../../../../utils/documentPreview';
 import { Z_LAYERS } from '../../../../constants/layers';
+import { OfficialDocumentPreview } from './Official/OfficialDocumentPreview';
 
 /* ─────────────────────────── constants ─────────────────────────── */
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 4;
-const ZOOM_STEP = 0.15;
-const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
-const A4_W = 794;
-const A4_H = 1123;
+// Zoom / fit handled by OfficialDocumentPreview.
 
 /* ─────────────────────────── types ─────────────────────────── */
 interface PreviewModalProps {
@@ -100,8 +94,6 @@ export const PreviewModal = ({
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [genInfo, setGenInfo] = useState('');
-  const [zoom, setZoom] = useState(1);
-  const [fitMode, setFitMode] = useState<'width' | 'page' | 'free'>('width');
   const [panelOpen, setPanelOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
@@ -249,8 +241,6 @@ export const PreviewModal = ({
       setError(null);
       setGenInfo('');
       setBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
-      setZoom(1);
-      setFitMode('width');
       setPanelOpen(false);
       setFullscreen(false);
       stopProgress(false);
@@ -265,8 +255,6 @@ export const PreviewModal = ({
     setPdfSource(null);
     setGenInfo('');
     setBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
-    setZoom(1);
-    setFitMode('width');
     startProgress();
     const t = setTimeout(() => generate(id), 80);
     return () => {
@@ -301,8 +289,6 @@ export const PreviewModal = ({
       if (e.key === 'Escape') { e.preventDefault(); onClose(); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') { e.preventDefault(); handlePrint(); }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleDownload(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === '=') { e.preventDefault(); handleZoomIn(); }
-      if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); handleZoomOut(); }
       if (e.key === 'i') { setPanelOpen((p) => !p); }
       if (e.key === 'f') { handleFullscreen(); }
     };
@@ -311,71 +297,14 @@ export const PreviewModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, onClose, blobUrl]);
 
-  /* ── ctrl+wheel zoom ───────────────────────────────────────── */
-  useEffect(() => {
-    if (!isOpen || !previewRef.current) return;
-    const el = previewRef.current;
-    const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z + (e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP))));
-        setFitMode('free');
-      }
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [isOpen]);
-
-  /* ── touch pinch-to-zoom ───────────────────────────────────── */
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      touchRef.current.dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-    }
+  /* ── touch pinch-to-zoom (kept for touch swipe / no-op — OfficialDocumentPreview handles gestures) ── */
+  const handleTouchStart = useCallback((_e: React.TouchEvent) => {
+    // Touch gestures are handled by OfficialDocumentPreview.
   }, []);
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && touchRef.current.dist != null) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      const delta = (dist - touchRef.current.dist) * 0.012;
-      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z + delta)));
-      setFitMode('free');
-      touchRef.current.dist = dist;
-    }
+  const handleTouchMove = useCallback((_e: React.TouchEvent) => {
+    // Touch gestures are handled by OfficialDocumentPreview.
   }, []);
-
-  /* ── zoom helpers ──────────────────────────────────────────── */
-  const handleZoomIn = useCallback(() => {
-    setZoom((z) => Math.min(MAX_ZOOM, parseFloat((z + ZOOM_STEP).toFixed(2))));
-    setFitMode('free');
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setZoom((z) => Math.max(MIN_ZOOM, parseFloat((z - ZOOM_STEP).toFixed(2))));
-    setFitMode('free');
-  }, []);
-
-  const handleFitWidth = useCallback(() => {
-    if (containerRef.current) {
-      const cw = containerRef.current.clientWidth - (panelOpen ? 288 : 0) - 48;
-      setZoom(parseFloat(Math.max(MIN_ZOOM, cw / A4_W).toFixed(2)));
-      setFitMode('width');
-    }
-  }, [panelOpen]);
-
-  const handleFitPage = useCallback(() => {
-    if (containerRef.current) {
-      const cw = containerRef.current.clientWidth - (panelOpen ? 288 : 0) - 48;
-      const ch = containerRef.current.clientHeight - 48;
-      setZoom(parseFloat(Math.max(MIN_ZOOM, Math.min(cw / A4_W, ch / A4_H)).toFixed(2)));
-      setFitMode('page');
-    }
-  }, [panelOpen]);
 
   /* ── actions ───────────────────────────────────────────────── */
   const handleDownload = useCallback(() => {
@@ -393,18 +322,39 @@ export const PreviewModal = ({
       toast('Opened in browser – use browser Print', 'info');
       return;
     }
-    const w = window.open(blobUrl, '_blank');
-    if (w) {
-      w.onload = () => { try { w.print(); } catch { /* ignored */ } };
-    } else {
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `${previewTitle.replace(/[^a-z0-9]+/gi, '_')}.pdf`;
-      a.target = '_blank';
-      a.click();
-    }
+    // Use hidden iframe to invoke the browser's built-in PDF print pipeline.
+    // This avoids popup blockers and is the most reliable cross-browser path.
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.src = blobUrl;
+    document.body.appendChild(iframe);
+
+    let removed = false;
+    const cleanupPrint = () => {
+      if (removed) return;
+      removed = true;
+      try { document.body.removeChild(iframe); } catch { /* already removed */ }
+    };
+
+    iframe.addEventListener('load', () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch {
+        window.open(blobUrl, '_blank');
+      } finally {
+        setTimeout(cleanupPrint, 60_000);
+      }
+    });
+
+    setTimeout(cleanupPrint, 60_000);
     toast('Print dialog opened', 'success');
-  }, [blobUrl, previewTitle, isAndroid, toast]);
+  }, [blobUrl, isAndroid, toast]);
 
   const handleShare = useCallback(async () => {
     if (!pdfSource) return;
@@ -450,8 +400,6 @@ export const PreviewModal = ({
       document.exitFullscreen?.().then(() => setFullscreen(false)).catch(() => {});
     }
   }, []);
-
-  const zoomPercent = Math.round(zoom * 100);
 
   /* ── early return ──────────────────────────────────────────── */
   if (!isOpen) return null;
@@ -754,218 +702,32 @@ export const PreviewModal = ({
             </div>
 
           ) : blobUrl ? (
-            /* ── PDF viewport ── */
+            /* ── PDF viewport (OfficialDocumentPreview: pdfjs canvas) ── */
             <div className="flex flex-1 flex-col overflow-hidden">
               <div
                 ref={previewRef}
-                className="flex flex-1 items-start justify-center overflow-auto"
-                style={{ padding: isTouch ? '12px' : '32px' }}
+                className="flex flex-1 items-stretch justify-center overflow-hidden"
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
               >
-                <div
-                  className="rounded-xl overflow-hidden transition-transform duration-75 ease-out"
-                  style={{
-                    transform: `scale(${zoom})`,
-                    transformOrigin: 'top center',
-                    width: A4_W,
-                    maxWidth: '100%',
-                    boxShadow: '0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06)',
-                  }}
-                >
-                  {/*
-                    Android Chrome can't reliably render PDFs in iframes. We use
-                    <object> as the primary element there, falling back to a direct
-                    link if even that fails.
-                  */}
-                  {isAndroid ? (
-                    <object
-                      data={`${blobUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                      type="application/pdf"
-                      style={{ width: A4_W, height: A4_H, maxWidth: '100%', border: 'none', display: 'block', background: '#fff' }}
-                      title={previewTitle}
-                    >
-                      {/* Fallback for Android WebView / devices without inline PDF viewer */}
-                      <div
-                        className="flex flex-col items-center justify-center gap-4"
-                        style={{ width: A4_W, height: 400, maxWidth: '100%', background: '#1e293b' }}
-                      >
-                        <FileText className="h-12 w-12" style={{ color: '#818cf8' }} />
-                        <p className="text-sm text-center px-8" style={{ color: '#94a3b8' }}>
-                          Your browser cannot preview this PDF inline.
-                        </p>
-                        <button
-                          onClick={handleDownload}
-                          className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold"
-                          style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff' }}
-                        >
-                          <Download className="h-4 w-4" /> Download PDF
-                        </button>
-                      </div>
-                    </object>
-                  ) : (
-                    <iframe
-                      src={`${blobUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                      title={previewTitle}
-                      style={{
-                        width: A4_W,
-                        height: A4_H,
-                        maxWidth: '100%',
-                        border: 'none',
-                        display: 'block',
-                        background: '#fff',
-                      }}
-                    />
-                  )}
-                </div>
+                <OfficialDocumentPreview
+                  source={pdfSource instanceof Blob ? pdfSource : (pdfSource instanceof Uint8Array ? pdfSource : (pdfSource instanceof ArrayBuffer ? pdfSource : null))}
+                  title={previewTitle}
+                  showHeader={false}
+                  className="w-full"
+                />
               </div>
 
-              {/* ── zoom / fit toolbar ── */}
-              <div
-                className="flex shrink-0 items-center justify-between gap-2 px-4 py-2 border-t"
-                style={{
-                  background: 'rgba(15,23,42,0.85)',
-                  borderColor: 'rgba(255,255,255,0.07)',
-                  backdropFilter: 'blur(16px)',
-                }}
-              >
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleZoomOut}
-                    disabled={zoom <= MIN_ZOOM}
-                    className="rounded-lg p-1.5 transition-all disabled:opacity-30"
-                    style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.06)' }}
-                    title="Zoom Out  (Ctrl+-)"
-                  >
-                    <ZoomOut className="h-4 w-4" />
-                  </button>
-
-                  {/* Preset pills */}
-                  <div
-                    className="flex items-center rounded-lg overflow-hidden"
-                    style={{ border: '1px solid rgba(255,255,255,0.1)' }}
-                  >
-                    {ZOOM_PRESETS.map((p) => (
-                      <button
-                        key={p}
-                        onClick={() => { setZoom(p); setFitMode('free'); }}
-                        className="px-2 py-1 text-[10px] font-semibold transition-all"
-                        style={{
-                          background: zoom === p && fitMode === 'free'
-                            ? 'rgba(99,102,241,0.3)'
-                            : 'rgba(255,255,255,0.04)',
-                          color: zoom === p && fitMode === 'free' ? '#a5b4fc' : '#64748b',
-                        }}
-                      >
-                        {Math.round(p * 100)}%
-                      </button>
-                    ))}
-                  </div>
-
-                  <span className="min-w-[2.5rem] text-center text-[11px] font-semibold" style={{ color: '#94a3b8' }}>
-                    {zoomPercent}%
-                  </span>
-
-                  <button
-                    onClick={handleZoomIn}
-                    disabled={zoom >= MAX_ZOOM}
-                    className="rounded-lg p-1.5 transition-all disabled:opacity-30"
-                    style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.06)' }}
-                    title="Zoom In  (Ctrl+=)"
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </button>
-
-                  <div className="w-px h-4 mx-1 hidden sm:block" style={{ background: 'rgba(255,255,255,0.1)' }} />
-
-                  {/* Fit-width */}
-                  <button
-                    onClick={handleFitWidth}
-                    className="rounded-lg px-2 py-1 text-[10px] font-semibold transition-all hidden sm:block"
-                    style={{
-                      background: fitMode === 'width' ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)',
-                      color: fitMode === 'width' ? '#a5b4fc' : '#64748b',
-                    }}
-                    title="Fit Width"
-                  >
-                    Fit W
-                  </button>
-
-                  {/* Fit-page */}
-                  <button
-                    onClick={handleFitPage}
-                    className="rounded-lg px-2 py-1 text-[10px] font-semibold transition-all hidden sm:block"
-                    style={{
-                      background: fitMode === 'page' ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)',
-                      color: fitMode === 'page' ? '#a5b4fc' : '#64748b',
-                    }}
-                    title="Fit Page"
-                  >
-                    Fit P
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {genInfo && (
-                    <span className="hidden sm:inline text-[10px]" style={{ color: '#334155' }}>
-                      {genInfo}
-                    </span>
-                  )}
-                  {isTouch ? (
-                    <span className="text-[10px]" style={{ color: '#334155' }}>Pinch to zoom</span>
-                  ) : (
-                    <span className="hidden sm:inline text-[10px]" style={{ color: '#334155' }}>
-                      Ctrl+Scroll · i = Info · f = Fullscreen
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Android floating action buttons (bottom sheet) ── */}
-              {isAndroid && hasContent && (
+              {/* ── status bar ── */}
+              {genInfo && (
                 <div
-                  className="flex items-center justify-around px-4 py-3 border-t shrink-0"
+                  className="flex shrink-0 items-center justify-end gap-2 px-4 py-1.5 border-t"
                   style={{
-                    background: 'rgba(15,23,42,0.9)',
-                    borderColor: 'rgba(255,255,255,0.08)',
-                    backdropFilter: 'blur(20px)',
+                    background: 'rgba(15,23,42,0.85)',
+                    borderColor: 'rgba(255,255,255,0.07)',
                   }}
                 >
-                  <button
-                    onClick={handleDownload}
-                    className="flex flex-col items-center gap-1 rounded-xl px-4 py-2 transition-all active:scale-95"
-                    style={{ color: '#a5b4fc', background: 'rgba(99,102,241,0.12)' }}
-                  >
-                    <Download className="h-5 w-5" />
-                    <span className="text-[10px] font-semibold">Download</span>
-                  </button>
-                  <button
-                    onClick={handlePrint}
-                    className="flex flex-col items-center gap-1 rounded-xl px-4 py-2 transition-all active:scale-95"
-                    style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.06)' }}
-                  >
-                    <Printer className="h-5 w-5" />
-                    <span className="text-[10px] font-semibold">Print</span>
-                  </button>
-                  <button
-                    onClick={handleShare}
-                    className="flex flex-col items-center gap-1 rounded-xl px-4 py-2 transition-all active:scale-95"
-                    style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.06)' }}
-                  >
-                    <Share2 className="h-5 w-5" />
-                    <span className="text-[10px] font-semibold">Share</span>
-                  </button>
-                  <button
-                    onClick={() => setPanelOpen((p) => !p)}
-                    className="flex flex-col items-center gap-1 rounded-xl px-4 py-2 transition-all active:scale-95"
-                    style={{
-                      color: panelOpen ? '#a5b4fc' : '#94a3b8',
-                      background: panelOpen ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.06)',
-                    }}
-                  >
-                    <Info className="h-5 w-5" />
-                    <span className="text-[10px] font-semibold">Details</span>
-                  </button>
+                  <span className="text-[10px]" style={{ color: '#475569' }}>{genInfo}</span>
                 </div>
               )}
             </div>
