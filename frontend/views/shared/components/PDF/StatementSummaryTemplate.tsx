@@ -3,6 +3,7 @@ import { Document, Page, Text, View, Image } from '@react-pdf/renderer';
 import { StatementDoc } from './schemas.ts';
 import { docStyles as s } from './styles.ts';
 import { CompanyConfig } from '../../../../types.ts';
+import { resolvePdfLogoSource } from '../../../../utils/companyAssetUtils.ts';
 import {
   getStoredCompanyConfig,
   resolvePrimeTemplateSettings,
@@ -48,6 +49,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
     fontSize: templateSettings.bodyFontSize,
   };
   const companyName = pickFirstText(config?.companyName, 'Prime ERP');
+  const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
   const fontScale = templateSettings.bodyFontSize / 12;
 
   const isCancelled =
@@ -80,6 +82,13 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
         )}
         {/* Header Section */}
         <View style={s.headerContainer}>
+          {/* Left: Company logo only */}
+          <View style={s.companySide}>
+            {logo ? (
+              <Image src={logo} style={{ marginBottom: 6, width: templateSettings.logoWidth }} />
+            ) : null}
+          </View>
+
           {/* Right: Statement Title and Balance Summary Table */}
           <View style={s.statementSide}>
             <Text style={[s.title, { fontSize: 24, marginBottom: 2 }]}>Account Statement</Text>
