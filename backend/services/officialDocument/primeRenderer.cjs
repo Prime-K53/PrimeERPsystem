@@ -233043,7 +233043,13 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
           ] })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerContainer, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.companySide, children: logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { marginBottom: 6, width: templateSettings.logoWidth } }) : null }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.companySide, children: [
+            logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { marginBottom: 6, width: templateSettings.logoWidth } }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", fontStyle: "italic", marginTop: 2 }, children: [
+              "Generated on: ",
+              (/* @__PURE__ */ new Date()).toLocaleString("en-GB")
+            ] })
+          ] }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.statementSide, children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: [docStyles.title, { fontSize: 24, marginBottom: 2 }], children: "Account Statement" }),
             Boolean(data2.statementNumber || data2.number) && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 10, color: "#64748b", marginBottom: 2 }, children: [
@@ -234370,7 +234376,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         {
           data: rc,
           companyName,
-          legalFooterLine1: "This is a computer-generated payment receipt. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.",
+          legalFooterLine1: resolveFooterText(config2, "", false),
           legalFooterLine2: buildFooterContactLine(config2),
           fontScale
         }
