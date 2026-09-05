@@ -545,9 +545,9 @@ const Expenses: React.FC = () => {
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Payment Account</label>
               <select style={inputStyle} value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
-                <option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (1000)</option>
-                <option value={ACCOUNT_IDS.BANK}>Main Bank Account (1050)</option>
-                <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money (1060)</option>
+<option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (11110)</option>
+                                <option value={ACCOUNT_IDS.BANK}>Main Bank Account (11210)</option>
+                                <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money (11230)</option>
               </select>
             </div>
 

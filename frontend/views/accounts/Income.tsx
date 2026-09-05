@@ -147,13 +147,13 @@ const IncomeView: React.FC = () => {
                                     onChange={e => setFormData({...formData, accountId: e.target.value})}
                                 >
                                     <optgroup label="Default Accounts">
-                                        <option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (1000)</option>
-                                        <option value={ACCOUNT_IDS.BANK}>Main Bank Account (1050)</option>
-                                        <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money (1060)</option>
+                                        <option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (11110)</option>
+                                        <option value={ACCOUNT_IDS.BANK}>Main Bank Account (11210)</option>
+                                        <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money (11230)</option>
                                     </optgroup>
                                     {(bankAccounts || []).length > 0 && (
                                         <optgroup label="Specific Bank Accounts">
-                                            {bankAccounts.filter(a => a.status === 'Active' && !['1000', '1050', '1060'].includes(a.id)).map(acc => (
+                                            {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11210', '11230'].includes(a.id)).map(acc => (
                                                 <option key={acc.id} value={acc.id}>{acc.name} ({acc.bankName})</option>
                                             ))}
                                         </optgroup>

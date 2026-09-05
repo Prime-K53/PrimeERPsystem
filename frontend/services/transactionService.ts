@@ -856,34 +856,34 @@ export const transactionService = {
                         // Usually Ledger expects positive amounts and swaps debit/credit.
                         // But here we rely on the generic structure. 
                         // Better to normalize:
-                        if (paidRounding < 0) {
-                             roundingEntry.debitAccountId = resolveAcct(roundingAccount);
-                             roundingEntry.creditAccountId = resolveAcct(gl.cashDrawerAccount);
-                             roundingEntry.amount = Math.abs(roundingEntry.amount);
-                        }
-                        await ledgerStore.put(roundingEntry);
-                    }
+if (paidRounding < 0) {
+                              roundingEntry.debitAccountId = resolveAcct(gl.roundingAccount);
+                              roundingEntry.creditAccountId = resolveAcct(gl.cashDrawerAccount);
+                              roundingEntry.amount = Math.abs(roundingEntry.amount);
+                          }
+                          await ledgerStore.put(roundingEntry);
+                      }
 
-                    if (unpaidRounding !== 0) {
-                         const roundingEntry: LedgerEntry = {
-                             id: generateId('LG-RND-AR'),
-                            date: sale.date,
-                            description: `Rounding Difference (AR) - Sale #${sale.id}`,
-                            debitAccountId: resolveAcct(gl.accountsReceivable),
-                            creditAccountId: resolveAcct(roundingAccount),
-                            amount: Number(unpaidRounding.toFixed(2)),
-                            referenceId: sale.id,
-                            reconciled: false,
-                            customerId: sale.customerId,
-                            customerName: sale.customerName
-                        };
-                         if (unpaidRounding < 0) {
-                             roundingEntry.debitAccountId = resolveAcct(roundingAccount);
-                             roundingEntry.creditAccountId = resolveAcct(gl.accountsReceivable);
-                             roundingEntry.amount = Math.abs(roundingEntry.amount);
-                         }
-                         await ledgerStore.put(roundingEntry);
-                    }
+                      if (unpaidRounding !== 0) {
+                           const roundingEntry: LedgerEntry = {
+                               id: generateId('LG-RND-AR'),
+                              date: sale.date,
+                              description: `Rounding Difference (AR) - Sale #${sale.id}`,
+                              debitAccountId: resolveAcct(gl.accountsReceivable),
+                              creditAccountId: resolveAcct(gl.roundingAccount),
+                              amount: Number(unpaidRounding.toFixed(2)),
+                              referenceId: sale.id,
+                              reconciled: false,
+                              customerId: sale.customerId,
+                              customerName: sale.customerName
+                          };
+                           if (unpaidRounding < 0) {
+                              roundingEntry.debitAccountId = resolveAcct(gl.roundingAccount);
+                              roundingEntry.creditAccountId = resolveAcct(gl.accountsReceivable);
+                              roundingEntry.amount = Math.abs(roundingEntry.amount);
+                          }
+                          await ledgerStore.put(roundingEntry);
+                      }
                 }
 
                 const paidRevenue = roundToCurrency(revenueAmount * paymentRatio);
@@ -3693,7 +3693,7 @@ export const transactionService = {
                 };
                 await ledgerStore.put(expenseEntry);
 
-                const settlementAccountId = normalizedExpense.accountId || gl.bankAccount || '1050';
+                const settlementAccountId = normalizedExpense.accountId || gl.bankAccount || '11210';
                 const settlementMethod = settlementAccountId === gl.cashDrawerAccount
                     ? 'Cash'
                     : settlementAccountId === gl.mobileMoneyAccount
@@ -3776,7 +3776,7 @@ export const transactionService = {
                 };
                 await ledgerStore.put(expenseEntry);
 
-                const settlementAccountId = expense.accountId || gl.bankAccount || '1050';
+                const settlementAccountId = expense.accountId || gl.bankAccount || '11210';
                 const settlementMethod = settlementAccountId === gl.cashDrawerAccount
                     ? 'Cash'
                     : settlementAccountId === gl.mobileMoneyAccount
@@ -3843,7 +3843,7 @@ export const transactionService = {
                 };
                 await ledgerStore.put(entry);
 
-                const settlementAccountId = income.accountId || gl.bankAccount || '1050';
+                const settlementAccountId = income.accountId || gl.bankAccount || '11210';
                 const settlementMethod = settlementAccountId === gl.cashDrawerAccount
                     ? 'Cash'
                     : settlementAccountId === gl.mobileMoneyAccount

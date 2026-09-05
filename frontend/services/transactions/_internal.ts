@@ -24,20 +24,21 @@ export const getCompanyConfig = () => {
 export const getGLConfig = () => {
     const saved = localStorage.getItem('nexus_company_config');
     const defaultConfig = {
-        defaultSalesAccount: '4000',
-        defaultInventoryAccount: '1200',
-        defaultCOGSAccount: '5000',
-        accountsReceivable: '1100',
-        accountsPayable: '2000',
-        cashDrawerAccount: '1000',
-        bankAccount: '1050',
-        mobileMoneyAccount: '1060',
-        salesReturnAccount: '4100',
-        customerDepositAccount: '2200',
-        otherIncomeAccount: '4900',
-        defaultExpenseAccount: '6100',
-        defaultLaborWagesAccount: '6300',
-        retainedEarningsAccount: '3000'
+        defaultSalesAccount: '41100',
+        defaultInventoryAccount: '11400',
+        defaultCOGSAccount: '51200',
+        accountsReceivable: '11300',
+        accountsPayable: '21100',
+        cashDrawerAccount: '11110',
+        bankAccount: '11210',
+        mobileMoneyAccount: '11230',
+        salesReturnAccount: '41000',
+        customerDepositAccount: '22000',
+        otherIncomeAccount: '42000',
+        defaultExpenseAccount: '52000',
+        defaultLaborWagesAccount: '52100',
+        retainedEarningsAccount: '32000',
+        roundingAccount: '54000'
     };
 
     if (saved) {
