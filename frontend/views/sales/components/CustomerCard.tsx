@@ -59,7 +59,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
     try {
       const result = await adminLifecycle.users.autoCreate({
         customer_id: customer.id,
-        name: customer.name,
+        name: customer.companyName || customer.name,
         email: customer.email,
         phone: customer.phone,
       });
@@ -85,7 +85,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
     try {
       const result = await adminLifecycle.users.regeneratePassword(customer.portalUserId as string, {
         customer_id: customer.id,
-        name: customer.name,
+        name: customer.companyName || customer.name,
         email: customer.email,
         phone: customer.phone,
       });
@@ -109,7 +109,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
   const outstanding = (balance ?? Number(customer.balance || 0)) || 0;
   const wallet = Number(customer.walletBalance || 0);
   const owing = outstanding > 0.5;
-  const initials = (customer.name?.charAt(0)?.toUpperCase() || '?') + (customer.name?.split(' ')[1]?.charAt(0)?.toUpperCase() || '');
+  const initials = ((customer.companyName || customer.name || '?')?.charAt(0)?.toUpperCase() || '?') + (((customer.companyName || customer.name || '?')?.split(' ')[1])?.charAt(0)?.toUpperCase() || '');
 
   return (
     <div style={{
@@ -149,7 +149,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
               {initials}
             </div>
             <div style={{ flex: 1, minWidth: 0, paddingRight: 36 }}>
-              <div style={{ fontSize: 17, fontWeight: 600, color: ink, lineHeight: 1.2, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer.name}</div>
+              <div style={{ fontSize: 17, fontWeight: 600, color: ink, lineHeight: 1.2, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer.companyName || customer.name}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, color: inkSoft, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.04 }}>
                   {customer.id}

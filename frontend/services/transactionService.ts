@@ -27,11 +27,11 @@ import { salesOrderService } from './salesOrderService';
 
 import {
     getCompanyConfig, getGLConfig, generateId, calculateBankBalance,
-    ensureBankAccounts, resolveBankAccountForPayment, reserveIdempotencyKey,
+    ensureBankAccounts, resolveBankAccountForPayment, reserveIdempotencyKey, clearIdempotencyKey,
     ensureMirroredBankTransaction, getVatConfig, toMoney,
     createMultiCurrencyJournalEntry, calculatePaymentGainLoss,
     resolveItemUnitCost, resolveInventoryRecord, calculateItemsCost,
-    validateLedgerBalance, distributePosRetainedAmounts, resolveToAccountId,
+    validateLedgerBalance, distributePosRetainedAmounts, getIdempotencyKeys, resolveToAccountId,
     resolveAccountForPosting, requireResolvedAccount, buildResolvedJournalLine, 
     loadAccountsFromStore, UnresolvedAccountError,
     JournalLineInput
@@ -828,62 +828,6 @@ export const transactionService = {
                         };
                         await ledgerStore.put(marginEntry);
                     }
-                }
-
-                // Handle Rounding Difference Ledger Entry
-                if (Math.abs(roundingDiff) > 0.001) {
-                    const paidRounding = roundToCurrency(roundingDiff * paymentRatio);
-                    const unpaidRounding = roundToCurrency(roundingDiff - paidRounding);
-                    
-                    // If rounding is positive (gain), Credit Income/Rounding account. Debit Cash/AR.
-                    // If rounding is negative (loss), Debit Expense/Rounding account. Credit Cash/AR (effectively reducing revenue receipt).
-                    // For simplicity, we treat positive rounding as Other Income.
-                    
-                    if (paidRounding !== 0) {
-                         const roundingEntry: LedgerEntry = {
-                             id: generateId('LG-RND'),
-                            date: sale.date,
-                            description: `Rounding Difference - Sale #${sale.id}`,
-                            debitAccountId: resolveAcct(gl.cashDrawerAccount),
-                            creditAccountId: resolveAcct(gl.roundingAccount || gl.otherIncomeAccount),
-                            amount: Number(paidRounding.toFixed(2)),
-                            referenceId: sale.id,
-                            reconciled: false,
-                            customerId: sale.customerId,
-                            customerName: sale.customerName
-                        };
-                        // If amount is negative, it means a loss. The ledger logic handles negative amounts? 
-                        // Usually Ledger expects positive amounts and swaps debit/credit.
-                        // But here we rely on the generic structure. 
-                        // Better to normalize:
-if (paidRounding < 0) {
-                              roundingEntry.debitAccountId = resolveAcct(gl.roundingAccount);
-                              roundingEntry.creditAccountId = resolveAcct(gl.cashDrawerAccount);
-                              roundingEntry.amount = Math.abs(roundingEntry.amount);
-                          }
-                          await ledgerStore.put(roundingEntry);
-                      }
-
-                      if (unpaidRounding !== 0) {
-                           const roundingEntry: LedgerEntry = {
-                               id: generateId('LG-RND-AR'),
-                              date: sale.date,
-                              description: `Rounding Difference (AR) - Sale #${sale.id}`,
-                              debitAccountId: resolveAcct(gl.accountsReceivable),
-                              creditAccountId: resolveAcct(gl.roundingAccount),
-                              amount: Number(unpaidRounding.toFixed(2)),
-                              referenceId: sale.id,
-                              reconciled: false,
-                              customerId: sale.customerId,
-                              customerName: sale.customerName
-                          };
-                           if (unpaidRounding < 0) {
-                              roundingEntry.debitAccountId = resolveAcct(gl.roundingAccount);
-                              roundingEntry.creditAccountId = resolveAcct(gl.accountsReceivable);
-                              roundingEntry.amount = Math.abs(roundingEntry.amount);
-                          }
-                          await ledgerStore.put(roundingEntry);
-                      }
                 }
 
                 const paidRevenue = roundToCurrency(revenueAmount * paymentRatio);
@@ -5781,5 +5725,24 @@ if (paidRounding < 0) {
             await dbService.put('customers', customer);
         }
         return walletTx;
+    },
+
+    async clearStaleIdempotencyKeys(scope?: string, maxAgeMinutes = 60) {
+        const allKeys = await dbService.getAll('idempotencyKeys');
+        const cutoff = new Date(Date.now() - maxAgeMinutes * 60000);
+        let cleared = 0;
+        for (const key of allKeys) {
+            if (scope && key.scope !== scope) continue;
+            if (new Date(key.createdAt) < cutoff) {
+                await dbService.executeAtomicOperation(
+                    ['idempotencyKeys'],
+                    async (tx: any) => {
+                        await tx.objectStore('idempotencyKeys').delete(key.id);
+                    }
+                );
+                cleared++;
+            }
+        }
+        return { cleared, scope: scope || 'all', maxAgeMinutes };
     }
 };

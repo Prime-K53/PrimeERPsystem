@@ -36,7 +36,11 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 function normalizeRoleForDisplay(role: string): string {
-  return role === 'Company Admin' ? 'Admin' : role;
+  if (!role) return role;
+  const lower = role.toLowerCase();
+  if (lower === 'admin' || lower === 'company admin') return 'Admin';
+  if (lower === 'super admin') return 'Super Admin';
+  return role;
 }
 
 /**
@@ -1019,7 +1023,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const passwordProtectionEnabled = isPasswordProtectionEnabled(companyConfig);
 
         if (!passwordProtectionEnabled) {
-            const fakeUser = dbUsers.find(u => u.isSuperAdmin || u.role === 'Admin') || {
+            const fakeUser = dbUsers.find(u => u.isSuperAdmin || u.role?.toLowerCase() === 'admin') || {
               id: 'USR-LOCAL',
               username: username,
               fullName: username.includes('@') ? username.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : username,
@@ -1189,7 +1193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkPermission = useCallback((permissionId: string) => {
     if (!user) return false;
-    if (user.role === 'Admin' || user.isSuperAdmin) return true;
+    if (user.role?.toLowerCase() === 'admin' || user.isSuperAdmin) return true;
     const groups = userGroups.filter(g => user.groupIds?.includes(g.id));
     return groups.some(g => g.permissions.includes(permissionId));
   }, [user, userGroups]);

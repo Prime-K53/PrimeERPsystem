@@ -453,7 +453,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           ...expense,
           id: expense.id || generateNextId('EXP', financeStore.expenses, companyConfig)
         };
-        const isAdmin = user?.role === 'Admin';
+        const isAdmin = user?.role?.toLowerCase() === 'admin';
         const isAlreadyApproved = expenseWithId.status === 'Approved' || expenseWithId.status === 'Paid';
         
         // Admin users or already approved expenses post directly to ledger

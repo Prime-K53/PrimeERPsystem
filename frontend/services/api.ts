@@ -33,9 +33,10 @@ const getAuthSession = () => {
 
 const checkAuth = (requiredRoles: UserRole[], context: string) => {
   const user = getAuthSession();
-  if (!user) return; // Allow when no session (offline/local-first mode)
-  if (user.role === 'Admin') return; // Master access
-  if (!requiredRoles.includes(user.role)) {
+  if (!user) return;
+  const normalizedRole = user.role?.toLowerCase() ?? '';
+  if (normalizedRole === 'admin') return;
+  if (!requiredRoles.some(r => r?.toLowerCase() === normalizedRole)) {
     throw new Error(`[FORBIDDEN] Role ${user.role} does not have access to ${context}`);
   }
 };
@@ -1438,5 +1439,33 @@ export const api = {
       await financialYearRepository.remove(id);
       return { success: true };
     }, 'FinancialYear.Delete'),
+
+    getIdempotencyKeys: () => handle(async () => {
+      checkAuth(['Admin'], 'System.DebugIdempotency');
+      return dbService.getAll('idempotencyKeys');
+    }, 'System.GetIdempotencyKeys'),
+
+    clearIdempotencyKey: (scope: string, sourceId: string) => handle(async () => {
+      checkAuth(['Admin'], 'System.ClearIdempotencyKey');
+      const stores: any[] = ['idempotencyKeys'];
+      await dbService.executeAtomicOperation(
+        stores,
+        async (tx: any) => {
+          const store = tx.objectStore('idempotencyKeys');
+          const key = `${scope}:${sourceId}`;
+          await store.delete(key);
+        }
+      );
+      return { success: true };
+    }, 'System.ClearIdempotencyKey'),
+
+    clearStaleIdempotencyKeys: (scope?: string) => handle(async () => {
+      checkAuth(['Admin'], 'System.ClearStaleIdempotencyKeys');
+      return transactionService.clearStaleIdempotencyKeys(scope);
+    }, 'System.ClearStaleIdempotencyKeys'),
   }
 };
+
+if (typeof window !== 'undefined') {
+  (window as any).api = api;
+}

@@ -321,7 +321,7 @@ const Profile: React.FC = () => {
               ) : (
                 <div className="pf-name-row">
                   <h2 className="pf-hero-name">{displayName}</h2>
-                  {(user?.isSuperAdmin || user?.role === 'Admin') && (
+                  {(user?.isSuperAdmin || user?.role?.toLowerCase() === 'admin') && (
                     <button onClick={() => setIsEditingName(true)} className="pf-name-edit-btn" title="Edit name">
                       <Edit2 size={13} />
                     </button>

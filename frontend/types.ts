@@ -685,7 +685,9 @@ export interface ExaminationInvoiceGroupJobLine {
 }
 export interface Customer {
   id: string;
-  name: string;
+  name?: string;
+  companyName?: string;
+  contactName?: string;
   email?: string;
   phone?: string;
   address?: string;
@@ -715,6 +717,7 @@ export interface Customer {
   avgPaymentDays?: number;
   taxId?: string;
   companyName?: string;
+  contactName?: string;
   currency?: string;
   [key: string]: any;
 }

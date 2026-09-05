@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { logger } from '@/services/logger';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -8,8 +8,6 @@ import {
   X,
   CheckCircle,
   AlertCircle,
-  ChevronDown,
-  ChevronRight,
   FolderTree,
   RefreshCw,
   FileSpreadsheet
@@ -59,7 +57,7 @@ const ChartOfAccounts: React.FC = () => {
   const [filterType, setFilterType] = useState<AccountType | 'All'>('All');
   const [filterGroup, setFilterGroup] = useState<AccountGroup | 'All'>('All');
   const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Inactive'>('All');
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
 
   // Modal State
@@ -163,43 +161,6 @@ const ChartOfAccounts: React.FC = () => {
       return true;
     });
   }, [accounts, filterType, filterGroup, filterStatus, searchTerm]);
-
-  // Auto-expand when searching
-  useEffect(() => {
-    if (searchTerm && filteredAccounts.length > 0) {
-      const newExpanded = new Set(expandedIds);
-      filteredAccounts.forEach(acc => {
-        let parentId = acc.parent_account_id;
-        while (parentId) {
-          newExpanded.add(parentId);
-          const parent = accounts.find(a => a.id === parentId);
-          parentId = parent?.parent_account_id;
-        }
-      });
-      setExpandedIds(newExpanded);
-    }
-  }, [searchTerm]);
-
-  const handleToggleExpand = useCallback((id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleExpandAll = useCallback(() => {
-    const allIds = new Set(accounts.map(a => a.id));
-    setExpandedIds(allIds);
-  }, [accounts]);
-
-  const handleCollapseAll = useCallback(() => {
-    setExpandedIds(new Set());
-  }, []);
 
   const handleOpenModal = (account?: Account, parent?: Account | null) => {
     if (!canEdit) return;
@@ -475,24 +436,6 @@ const ChartOfAccounts: React.FC = () => {
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
               </select>
-
-              {/* Expand/Collapse */}
-              <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
-                <button
-                  onClick={handleExpandAll}
-                  className="px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors border-r border-slate-200"
-                  title="Expand All"
-                >
-                  <ChevronDown size={14} />
-                </button>
-                <button
-                  onClick={handleCollapseAll}
-                  className="px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
-                  title="Collapse All"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
             </div>
 
             {/* Search */}
@@ -517,26 +460,18 @@ const ChartOfAccounts: React.FC = () => {
           </div>
 
           {/* Table Header */}
-          <div className="flex items-center px-4 py-3 bg-slate-50/80 backdrop-blur text-slate-500 font-bold border-b border-slate-200/60 text-[9px] uppercase tracking-widest">
-            <div className="flex-1 flex items-center gap-2 pl-10">
-              <span className="w-16">Code</span>
-              <span className="w-48">Account Name</span>
-            </div>
-            <div className="flex items-center gap-4 px-4">
-              <span className="w-24 text-center">Type</span>
-              <span className="w-28 text-center">Group</span>
-              <span className="w-28 text-right">Balance</span>
-              <span className="w-16 text-center">Status</span>
-              <span className="w-32 text-center">Actions</span>
-            </div>
+          <div className="grid items-center py-3 bg-slate-50/80 backdrop-blur text-slate-500 font-bold border-b border-slate-200/60 text-[9px] uppercase tracking-widest" style={{ gridTemplateColumns: '180px 1fr 140px 140px 36px' }}>
+            <div className="text-left px-4">Account Type</div>
+            <div className="text-left">Account Name</div>
+            <div className="text-right">Account Balance</div>
+            <div className="text-right">Total Balance</div>
+            <div className="text-center"></div>
           </div>
 
           {/* Account Tree */}
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             <AccountTree
               accounts={filteredAccounts}
-              expandedIds={expandedIds}
-              onToggleExpand={handleToggleExpand}
               onSelectAccount={setSelectedAccount}
               onEditAccount={(acc) => handleOpenModal(acc)}
               onDeleteAccount={handleDelete}

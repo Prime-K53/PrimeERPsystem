@@ -496,8 +496,8 @@ const Settings: React.FC = () => {
 
     const [backupStatus, setBackupStatus] = useState(readBackupStatus);
     const primaryAdminUser = React.useMemo(
-        () => allUsers.find((candidate: any) => candidate?.isSuperAdmin || candidate?.role === 'Admin')
-            || ((currentUser as any)?.isSuperAdmin || (currentUser as any)?.role === 'Admin' ? currentUser : null),
+        () => allUsers.find((candidate: any) => candidate?.isSuperAdmin || candidate?.role?.toLowerCase() === 'admin')
+            || ((currentUser as any)?.isSuperAdmin || (currentUser as any)?.role?.toLowerCase() === 'admin' ? currentUser : null),
         [allUsers, currentUser]
     );
     const normalizedSecuritySettings = React.useMemo(

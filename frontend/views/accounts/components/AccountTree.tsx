@@ -1,13 +1,7 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  ChevronRight,
-  ChevronDown,
-  FolderClosed,
-  FolderOpen,
-  FileText,
-  Lock,
-  Search,
   MoreHorizontal,
+  Lock,
   Edit2,
   Trash2,
   Plus,
@@ -16,12 +10,10 @@ import {
   PowerOff,
   Power
 } from 'lucide-react';
-import { Account, AccountTreeNode, AccountType, AccountGroup } from '../../types';
+import { Account } from '../../types';
 
 interface AccountTreeProps {
   accounts: Account[];
-  expandedIds: Set<string>;
-  onToggleExpand: (id: string) => void;
   onSelectAccount: (account: Account) => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
@@ -35,41 +27,9 @@ interface AccountTreeProps {
   canEdit?: boolean;
 }
 
-const getTypeColor = (type: AccountType | string): string => {
-  switch (type) {
-    case 'ASSET': return 'text-blue-600 bg-blue-50 border-blue-200';
-    case 'LIABILITY': return 'text-red-600 bg-red-50 border-red-200';
-    case 'EQUITY': return 'text-purple-600 bg-purple-50 border-purple-200';
-    case 'INCOME': return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-    case 'EXPENSE': return 'text-amber-600 bg-amber-50 border-amber-200';
-    default: return 'text-slate-600 bg-slate-50 border-slate-200';
-  }
-};
-
-const getGroupLabel = (group: AccountGroup | string | undefined): string => {
-  if (!group) return '';
-  const labels: Record<string, string> = {
-    CURRENT_ASSET: 'Current Asset',
-    FIXED_ASSET: 'Fixed Asset',
-    CURRENT_LIABILITY: 'Current Liability',
-    LONG_TERM_LIABILITY: 'Long-Term Liability',
-    EQUITY: 'Equity',
-    REVENUE: 'Revenue',
-    OTHER_INCOME: 'Other Income',
-    COST_OF_SALES: 'Cost of Sales',
-    OPERATING_EXPENSE: 'Operating Expense',
-    OTHER_EXPENSE: 'Other Expense'
-  };
-  return labels[group] || group;
-};
-
 interface AccountRowProps {
   account: Account;
-  depth: number;
-  isExpanded: boolean;
-  hasChildren: boolean;
   isSelected: boolean;
-  onToggleExpand: () => void;
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -79,16 +39,35 @@ interface AccountRowProps {
   balance?: number;
   currencySymbol: string;
   canEdit: boolean;
-  searchTerm?: string;
 }
+
+const formatBalance = (value: number | undefined, currencySymbol: string) => {
+  if (value === undefined || value === null) return <span className="text-slate-300">—</span>;
+  const isNegative = value < 0;
+  const absValue = Math.abs(value);
+  return (
+    <span className={value === 0 ? 'text-slate-300' : isNegative ? 'text-red-600' : 'text-slate-900'}>
+      {isNegative ? '-' : ''}{currencySymbol}{absValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+    </span>
+  );
+};
+
+const getSubtypeLabel = (subtype?: string): string => {
+  if (!subtype) return 'Uncategorized';
+  const labels: Record<string, string> = {
+    BANK: 'Bank Accounts',
+    RECEIVABLE: 'Accounts Receivable',
+    PAYABLE: 'Accounts Payable',
+    INVENTORY: 'Inventory',
+    TAX: 'Tax Accounts',
+    CASH: 'Cash & Cash Equivalents'
+  };
+  return labels[subtype] || subtype;
+};
 
 const AccountRow: React.FC<AccountRowProps> = ({
   account,
-  depth,
-  isExpanded,
-  hasChildren,
   isSelected,
-  onToggleExpand,
   onSelect,
   onEdit,
   onDelete,
@@ -97,167 +76,148 @@ const AccountRow: React.FC<AccountRowProps> = ({
   onToggleActive,
   balance,
   currencySymbol,
-  canEdit,
-  searchTerm
+  canEdit
 }) => {
-  const [showActions, setShowActions] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const highlightText = (text: string) => {
-    if (!searchTerm) return text;
-    const parts = text.split(new RegExp(`(${searchTerm})`, 'gi'));
-    return parts.map((part, i) =>
-      part.toLowerCase() === searchTerm.toLowerCase() ? (
-        <mark key={i} className="bg-yellow-200 px-0.5 rounded">{part}</mark>
-      ) : part
-    );
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleDropdownClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowDropdown(prev => !prev);
   };
 
-  const formatBalance = (value: number | undefined) => {
-    if (value === undefined || value === null) return '—';
-    const isNegative = value < 0;
-    const absValue = Math.abs(value);
-    return (
-      <span className={value === 0 ? 'text-slate-300' : isNegative ? 'text-red-600' : 'text-slate-900'}>
-        {isNegative ? '-' : ''}{currencySymbol}{absValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </span>
-    );
-  };
+  const isSystem = account.is_system_account;
 
   return (
     <div
-      className={`group flex items-center hover:bg-blue-50/50 transition-colors border-b border-slate-100 ${
+      className={`group grid items-center hover:bg-blue-50/50 transition-colors border-b border-slate-100 cursor-pointer ${
         isSelected ? 'bg-blue-50' : ''
       } ${!account.is_active ? 'opacity-50' : ''}`}
-      style={{ paddingLeft: `${depth * 24 + 16}px` }}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
+      style={{ gridTemplateColumns: '180px 1fr 140px 140px 36px' }}
+      onClick={onSelect}
     >
-      <div className="flex items-center gap-2 py-3 flex-1 min-w-0">
-        {hasChildren ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-            className="p-0.5 hover:bg-slate-200 rounded transition-colors flex-shrink-0"
-          >
-            {isExpanded ? (
-              <ChevronDown size={16} className="text-slate-500" />
-            ) : (
-              <ChevronRight size={16} className="text-slate-500" />
-            )}
-          </button>
-        ) : (
-          <div className="w-6 flex-shrink-0" />
-        )}
+      <div className="px-4 py-3"></div>
 
-        <div className="flex-shrink-0">
-          {hasChildren ? (
-            isExpanded ? (
-              <FolderOpen size={18} className="text-amber-500" />
-            ) : (
-              <FolderClosed size={18} className="text-amber-500" />
-            )
-          ) : (
-            <FileText size={18} className="text-slate-400" />
-          )}
-        </div>
-
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <span className="font-mono text-xs font-bold text-slate-500 w-16 flex-shrink-0">
-            {highlightText(account.account_number || account.code || '')}
-          </span>
-          <span className="font-semibold text-sm text-slate-900 truncate flex-shrink-0 w-48">
-            {highlightText(account.name)}
-          </span>
-        </div>
+      <div className="px-4 py-3 text-left">
+        <span className="font-semibold text-sm text-slate-900">
+          {account.name}
+        </span>
       </div>
 
-      <div className="flex items-center gap-4 px-4">
-        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${getTypeColor(account.account_type || account.type)}`}>
-          {account.account_type || account.type}
-        </span>
+      <div className="px-4 py-3 text-right font-semibold text-sm tabular-nums">
+        {formatBalance(balance, currencySymbol)}
+      </div>
 
-        {account.account_group && (
-          <span className="text-[10px] text-slate-400 font-medium w-28 truncate">
-            {getGroupLabel(account.account_group)}
-          </span>
-        )}
+      <div className="px-4 py-3"></div>
 
-        <span className="w-28 text-right font-semibold text-sm tabular-nums">
-          {formatBalance(balance)}
-        </span>
-
-        {account.is_system_account && (
-          <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-            <Lock size={10} />
-            System
-          </span>
-        )}
-
-        <span className={`w-16 text-center text-[10px] font-bold uppercase ${
-          account.is_active ? 'text-emerald-600' : 'text-slate-400'
-        }`}>
-          {account.is_active ? 'Active' : 'Inactive'}
-        </span>
-
-        <div className={`flex items-center gap-1 transition-opacity ${showActions ? 'opacity-100' : 'opacity-0'}`}>
-          <button
-            onClick={(e) => { e.stopPropagation(); onViewLedger(); }}
-            className="p-1.5 text-slate-400 hover:text-emerald-600 bg-white border border-slate-200 rounded-lg transition-colors"
-            title="View Ledger"
-          >
-            <History size={14} />
-          </button>
-
-          {canEdit && (
-            <>
-              <button
-                onClick={(e) => { e.stopPropagation(); onAddSubAccount(); }}
-                className="p-1.5 text-slate-400 hover:text-blue-600 bg-white border border-slate-200 rounded-lg transition-colors"
-                title="Add Sub-account"
-              >
-                <Plus size={14} />
-              </button>
-
-              <button
-                onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="p-1.5 text-slate-400 hover:text-blue-600 bg-white border border-slate-200 rounded-lg transition-colors"
-                title="Edit Account"
-              >
-                <Edit2 size={14} />
-              </button>
-
-              <button
-                onClick={(e) => { e.stopPropagation(); onToggleActive(); }}
-                className={`p-1.5 bg-white border border-slate-200 rounded-lg transition-colors ${
-                  account.is_active
-                    ? 'text-slate-400 hover:text-amber-600'
-                    : 'text-slate-400 hover:text-emerald-600'
-                }`}
-                title={account.is_active ? 'Deactivate' : 'Activate'}
-              >
-                {account.is_active ? <PowerOff size={14} /> : <Power size={14} />}
-              </button>
-
-              {!account.is_system_account && (
+      <div className="px-1 py-3 flex items-center justify-end relative" ref={dropdownRef}>
+        <button
+          onClick={handleDropdownClick}
+          className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          title="Actions"
+        >
+          <MoreHorizontal size={16} />
+        </button>
+        {showDropdown && (
+          <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50 min-w-[160px]">
+            <button
+              onClick={(e) => { e.stopPropagation(); onViewLedger(); setShowDropdown(false); }}
+              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Eye size={14} />
+              View Account
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onViewLedger(); setShowDropdown(false); }}
+              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <History size={14} />
+              View Ledger
+            </button>
+            {canEdit && !isSystem && (
+              <>
                 <button
-                  onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                  className="p-1.5 text-slate-400 hover:text-red-600 bg-white border border-slate-200 rounded-lg transition-colors"
-                  title="Delete Account"
+                  onClick={(e) => { e.stopPropagation(); onAddSubAccount(); setShowDropdown(false); }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <Plus size={14} />
+                  Add Child Account
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onEdit(); setShowDropdown(false); }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <Edit2 size={14} />
+                  Edit Account
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleActive(); setShowDropdown(false); }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  {account.is_active ? <PowerOff size={14} /> : <Power size={14} />}
+                  {account.is_active ? 'Deactivate' : 'Activate'}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(); setShowDropdown(false); }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
                 >
                   <Trash2 size={14} />
+                  Delete Account
                 </button>
-              )}
-            </>
-          )}
-        </div>
+              </>
+            )}
+            {isSystem && (
+              <div className="flex items-center gap-2 px-4 py-2 text-xs text-amber-600">
+                <Lock size={12} />
+                System Account
+              </div>
+            )}
+          </div>
+        )}
       </div>
+    </div>
+  );
+};
+
+interface GroupHeaderRowProps {
+  typeLabel: string;
+  typeTotal: number;
+  currencySymbol: string;
+}
+
+const GroupHeaderRow: React.FC<GroupHeaderRowProps> = ({ typeLabel, typeTotal, currencySymbol }) => {
+  return (
+    <div
+      className="grid items-center bg-slate-100/80 border-b border-slate-200"
+      style={{ gridTemplateColumns: '180px 1fr 140px 140px 36px' }}
+    >
+      <div className="px-4 py-3 text-left">
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
+          {typeLabel}
+        </span>
+      </div>
+      <div className="px-4 py-3"></div>
+      <div className="px-4 py-3"></div>
+      <div className="px-4 py-3 text-right font-bold text-sm tabular-nums text-slate-900">
+        {formatBalance(typeTotal, currencySymbol)}
+      </div>
+      <div className="px-1 py-3"></div>
     </div>
   );
 };
 
 export const AccountTree: React.FC<AccountTreeProps> = ({
   accounts,
-  expandedIds,
-  onToggleExpand,
   onSelectAccount,
   onEditAccount,
   onDeleteAccount,
@@ -270,54 +230,45 @@ export const AccountTree: React.FC<AccountTreeProps> = ({
   currencySymbol = '$',
   canEdit = false
 }) => {
-  const buildTree = useCallback((parentId: string | null = null, depth: number = 0): AccountTreeNode[] => {
-    return accounts
-      .filter(a => {
-        const pid = a.parent_account_id ?? a.parent_id ?? null;
-        return pid === parentId;
-      })
-      .filter(a => {
-        if (!searchTerm) return true;
-        const term = searchTerm.toLowerCase();
-        return (
-          (a.name || '').toLowerCase().includes(term) ||
-          (a.account_number || a.code || '').toLowerCase().includes(term) ||
-          (a.description || '').toLowerCase().includes(term)
-        );
-      })
-      .sort((a, b) => {
-        const numA = a.account_number || a.code || '';
-        const numB = b.account_number || b.code || '';
-        return numA.localeCompare(numB, undefined, { numeric: true });
-      })
-      .map(account => ({
-        ...account,
-        depth,
-        children: buildTree(account.id, depth + 1)
-      }));
+  const filteredAccounts = useMemo(() => {
+    if (!searchTerm) return accounts;
+    const term = searchTerm.toLowerCase();
+    return accounts.filter(a =>
+      (a.name || '').toLowerCase().includes(term) ||
+      (a.account_number || a.code || '').toLowerCase().includes(term) ||
+      (a.description || '').toLowerCase().includes(term)
+    );
   }, [accounts, searchTerm]);
 
-  const tree = useMemo(() => buildTree(), [buildTree]);
+  const sortedAccounts = useMemo(() => {
+    return [...filteredAccounts].sort((a, b) => {
+      const numA = a.account_number || a.code || '';
+      const numB = b.account_number || b.code || '';
+      return numA.localeCompare(numB, undefined, { numeric: true });
+    });
+  }, [filteredAccounts]);
 
-  const flattenTree = useCallback((nodes: AccountTreeNode[], result: AccountTreeNode[] = []): AccountTreeNode[] => {
-    for (const node of nodes) {
-      result.push(node);
-      if (expandedIds.has(node.id) && node.children?.length) {
-        flattenTree(node.children, result);
+  const groupedByType = useMemo(() => {
+    const groups: { type: string; typeLabel: string; accounts: Account[]; total: number }[] = [];
+    let currentType: string | undefined;
+    let currentGroup: { type: string; typeLabel: string; accounts: Account[]; total: number } | undefined;
+
+    sortedAccounts.forEach(acc => {
+      const type = acc.subtype || acc.account_type || acc.type || 'OTHER';
+      const typeLabel = getSubtypeLabel(acc.subtype || acc.account_type);
+      const balance = balances[acc.id] || 0;
+
+      if (type !== currentType) {
+        currentType = type;
+        currentGroup = { type, typeLabel, accounts: [], total: 0 };
+        groups.push(currentGroup);
       }
-    }
-    return result;
-  }, [expandedIds]);
+      currentGroup!.accounts.push(acc);
+      currentGroup!.total += balance;
+    });
 
-  const flattenedNodes = useMemo(() => flattenTree(tree), [flattenTree, tree]);
-
-  const autoExpandParents = useCallback((accountId: string) => {
-    const account = accounts.find(a => a.id === accountId);
-    if (account?.parent_account_id) {
-      onToggleExpand(account.parent_account_id);
-      autoExpandParents(account.parent_account_id);
-    }
-  }, [accounts, onToggleExpand]);
+    return groups;
+  }, [sortedAccounts, balances]);
 
   if (accounts.length === 0) {
     return null;
@@ -325,38 +276,35 @@ export const AccountTree: React.FC<AccountTreeProps> = ({
 
   return (
     <div className="flex flex-col">
-      {flattenedNodes.map(account => {
-        const hasChildren = (account.children?.length ?? 0) > 0;
-        const isExpanded = expandedIds.has(account.id);
-        const balance = balances[account.id];
-
-        return (
-          <div
-            key={account.id}
-            onClick={() => onSelectAccount(account)}
-            className="cursor-pointer"
-          >
-            <AccountRow
-              account={account}
-              depth={account.depth || 0}
-              isExpanded={isExpanded}
-              hasChildren={hasChildren}
-              isSelected={selectedAccountId === account.id}
-              onToggleExpand={() => onToggleExpand(account.id)}
-              onSelect={() => onSelectAccount(account)}
-              onEdit={() => onEditAccount(account)}
-              onDelete={() => onDeleteAccount(account)}
-              onAddSubAccount={() => onAddSubAccount(account)}
-              onViewLedger={() => onViewLedger(account)}
-              onToggleActive={() => onToggleActive(account)}
-              balance={balance}
-              currencySymbol={currencySymbol}
-              canEdit={canEdit}
-              searchTerm={searchTerm}
-            />
-          </div>
-        );
-      })}
+      {groupedByType.map((group) => (
+        <React.Fragment key={group.type}>
+          <GroupHeaderRow
+            typeLabel={group.typeLabel}
+            typeTotal={group.total}
+            currencySymbol={currencySymbol}
+          />
+          {group.accounts.map(account => {
+            const balance = balances[account.id];
+            const isSelected = selectedAccountId === account.id;
+            return (
+              <AccountRow
+                key={account.id}
+                account={account}
+                isSelected={isSelected}
+                onSelect={() => onSelectAccount(account)}
+                onEdit={() => onEditAccount(account)}
+                onDelete={() => onDeleteAccount(account)}
+                onAddSubAccount={() => onAddSubAccount(account)}
+                onViewLedger={() => onViewLedger(account)}
+                onToggleActive={() => onToggleActive(account)}
+                balance={balance}
+                currencySymbol={currencySymbol}
+                canEdit={canEdit}
+              />
+            );
+          })}
+        </React.Fragment>
+      ))}
     </div>
   );
 };

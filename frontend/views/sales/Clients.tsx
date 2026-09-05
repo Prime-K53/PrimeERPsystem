@@ -219,7 +219,8 @@ export const Clients: React.FC = () => {
     // delete "did nothing".
     return customers.filter(c => {
       if ((c as Customer & Record<string, unknown>).deletedAt) return false;
-      const matchesSearch = (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      const matchesSearch = ((c.companyName || c.name) || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ((c.companyName || c.name) || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (c.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (c.phone && c.phone.includes(searchQuery));
       const matchesStatus = filterStatus === 'All' || c.status === filterStatus;
@@ -420,7 +421,7 @@ export const Clients: React.FC = () => {
           <button onClick={() => navigate('/sales-flow/leads')} style={btnGhost}>
             <Target size={15} /> Lead Board
           </button>
-          <button onClick={() => exportToCSV(customers.map(c => ({ 'Customer ID': c.id, 'Full name': c.name, 'Billing Address': c.billingAddress || c.address || '', 'Phone number': c.phone, 'Segment': c.segment, 'Shipping Address': c.shippingAddress || '', 'Opening Balance': c.balance || 0, 'Wallet Balance': c.walletBalance || 0, 'Branch Account': c.accountNumber || '' })), 'Clients')} style={btnGhost}>
+          <button onClick={() => exportToCSV(customers.map(c => ({ 'Customer ID': c.id, 'Business Name': c.companyName || '', 'Contact Name': c.name || '', 'Billing Address': c.billingAddress || c.address || '', 'Phone number': c.phone, 'Segment': c.segment, 'Shipping Address': c.shippingAddress || '', 'Opening Balance': c.balance || 0, 'Wallet Balance': c.walletBalance || 0, 'Branch Account': c.accountNumber || '' })), 'Clients')} style={btnGhost}>
             <Download size={15} /> Export
           </button>
           <button onClick={handleAddNew} style={btnPrimary}>
@@ -554,7 +555,7 @@ export const Clients: React.FC = () => {
                 gap: 12
               }}>
                 {currentItems.map(customer => {
-                  const pal = avatarPaletteFor(customer.name || customer.id);
+                  const pal = avatarPaletteFor((customer.companyName || customer.name) || customer.id);
                   const openBalance = runningBalanceByCustomer.get(customer.id) ?? Number(customer.balance || 0);
                   const owing = openBalance > 0.5;
                   const lastTx = getLastTransaction(customer.id);
@@ -598,13 +599,13 @@ export const Clients: React.FC = () => {
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             flexShrink: 0, fontSize: 16, fontWeight: 600, color: '#fff'
                           }}>
-                            {customer.name?.charAt(0)?.toUpperCase() || '?'}{customer.name?.split(' ')[1]?.charAt(0)?.toUpperCase() || ''}
+                            {customer.companyName?.charAt(0)?.toUpperCase() || customer.name?.charAt(0)?.toUpperCase() || '?'}{((customer.companyName || customer.name)?.split(' ')[1])?.charAt(0)?.toUpperCase() || ''}
                           </div>
 
                           {/* Name + meta */}
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.25, marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {customer.name}
+                              {customer.companyName || customer.name}
                             </div>
                             <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase', letterSpacing: 0.06 }}>
                               {customer.id} · {customer.segment || 'Individual'}
@@ -755,7 +756,7 @@ export const Clients: React.FC = () => {
                 ) : (
                   currentItems.map(customer => {
                     const isChecked = selectedIds.includes(customer.id);
-                    const pal = avatarPaletteFor(customer.name || customer.id);
+                    const pal = avatarPaletteFor((customer.companyName || customer.name) || customer.id);
                     const lastTx = getLastTransaction(customer.id);
                     const openBalance = runningBalanceByCustomer.get(customer.id) ?? Number(customer.balance || 0);
                     const owing = openBalance > 0.5;
@@ -775,11 +776,11 @@ export const Clients: React.FC = () => {
                           <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 36, height: 36, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: pal.bg, color: pal.text, fontWeight: 700, fontSize: 12, letterSpacing: 0.3, flexShrink: 0, border: `1px solid ${teal[100]}` }}>
-                                {getInitials(customer.name)}
+                                {getInitials(customer.companyName || customer.name)}
                               </div>
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                                  <span style={{ fontWeight: 600, color: ink }}>{customer.name}</span>
+                                  <span style={{ fontWeight: 600, color: ink }}>{customer.companyName || customer.name}</span>
                                   {statusBadge(customer.status)}
                                   {overdue && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, fontSize: 9, fontWeight: 700, background: '#fef2f2', color: danger, border: `1px solid ${danger}40` }}><AlertIcon size={8} /> Overdue</span>}
                                 </div>

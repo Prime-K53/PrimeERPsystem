@@ -53,7 +53,7 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
     const { handlePreview } = useDocumentPreview();
     const navigate = useNavigate();
 
-    const canEdit = useMemo(() => user?.role === 'Admin' || user?.role === 'Company Admin' || user?.isSuperAdmin || user?.role === 'Manager', [user]);
+    const canEdit = useMemo(() => user?.role?.toLowerCase() === 'admin' || user?.role === 'Company Admin' || user?.isSuperAdmin || user?.role === 'Manager', [user]);
 
     const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
     const [editingItemId, setEditingItemId] = useState<string | null>(null);

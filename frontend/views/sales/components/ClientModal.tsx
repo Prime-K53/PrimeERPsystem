@@ -39,7 +39,7 @@ const tabs = [
 
 export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSave, customer, initialSegment }) => {
   const [formData, setFormData] = useState({
-    name: '', phone: '', address: '', city: '', billingAddress: '', shippingAddress: '',
+    name: '', contactName: '', companyName: '', phone: '', address: '', city: '', billingAddress: '', shippingAddress: '',
     balance: 0, walletBalance: 0, creditLimit: 0, notes: '', subAccounts: [] as any[],
     segment: initialSegment || 'Individual',
     paymentTerms: getDefaultPaymentTermsForSegment(initialSegment || 'Individual'),
@@ -75,7 +75,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
     if (customer) {
       setFormData({
         ...customer,
-        name: customer.name || '', phone: customer.phone || '', address: customer.address || '',
+        name: customer.name || '', contactName: (customer as any).contactName || '', companyName: customer.companyName || '',
+        phone: customer.phone || '', address: customer.address || '',
         city: customer.city || '', billingAddress: customer.billingAddress || '',
         shippingAddress: customer.shippingAddress || '', balance: customer.balance ?? 0,
         walletBalance: customer.walletBalance ?? 0, creditLimit: customer.creditLimit ?? 0,
@@ -92,7 +93,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
       setUseBillingForShipping(customer.billingAddress === customer.shippingAddress);
     } else {
       setFormData({
-        name: '', phone: '', address: '', city: '', billingAddress: '', shippingAddress: '',
+        name: '', contactName: '', companyName: '', phone: '', address: '', city: '', billingAddress: '', shippingAddress: '',
         balance: 0, walletBalance: 0, creditLimit: 0, notes: '', subAccounts: [],
         paymentTerms: getDefaultPaymentTermsForSegment('Individual'), segment: 'Individual',
         assignedSalesperson: '', creditHold: false, tags: [], avgPaymentDays: 0,
@@ -248,7 +249,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                 fontFamily: "'DM Serif Display', 'Georgia', serif", fontWeight: 400,
                 fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
               }}>
-                {customer ? `Edit Customer: ${customer.name}` : 'Add New Customer'}
+                {customer ? `Edit Customer: ${customer.companyName || customer.name || 'Unknown'}` : 'Add New Customer'}
               </h1>
               <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>
                 New client record &mdash; Clients ledger #0148
@@ -339,15 +340,29 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
             <form id="client-form" onSubmit={handleSubmit}>
 
               {/* Basic Info (always visible) */}
-              <div style={{ marginBottom: 18 }}>
-                <label style={labelStyle}>
-                  Customer Name / Company <span style={{ color: danger, fontWeight: 700 }}>*</span>
-                </label>
-                <input
-                  required type="text" name="name" value={formData.name} onChange={handleChange}
-                  placeholder={getPlaceholder.company()}
-                  style={inputStyle}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                <div>
+                  <label style={labelStyle}>
+                    Business Name <span style={{ color: danger, fontWeight: 700 }}>*</span>
+                  </label>
+                  <input
+                    required type="text" name="companyName" value={formData.companyName || ''} onChange={handleChange}
+                    placeholder="Company / Business Name"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>
+                    Contact Name
+                  </label>
+                  <input
+                    type="text" name="name" value={formData.name || ''} onChange={handleChange}
+                    placeholder="Contact Person Name"
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>

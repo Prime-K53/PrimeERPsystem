@@ -26,7 +26,7 @@ const Login: React.FC = () => {
       const result = await loginWithApi({ email: email.trim(), password, portal: 'admin' });
 
       const staff = result.user as StaffUserInfo;
-      const isAdmin = staff.role === 'Admin' || staff.role === 'Company Admin' || staff.role === 'Super Admin';
+      const isAdmin = staff.role?.toLowerCase() === 'admin' || staff.role === 'Company Admin' || staff.role === 'Super Admin';
       const user = {
         id: staff.id,
         username: staff.username,

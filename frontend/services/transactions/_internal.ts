@@ -361,6 +361,17 @@ export const reserveIdempotencyKey = async (
     });
 };
 
+export const clearIdempotencyKey = async (tx: any, scope: string, sourceId: string, explicitKey?: string) => {
+    const store = tx.objectStore('idempotencyKeys');
+    const key = String(explicitKey || `${scope}:${sourceId}`).trim();
+    await store.delete(key);
+};
+
+export const getIdempotencyKeys = async (tx: any): Promise<any[]> => {
+    const store = tx.objectStore('idempotencyKeys');
+    return store.getAll();
+};
+
 export const ensureMirroredBankTransaction = async ({
     bankAccountsStore,
     bankTransactionsStore,

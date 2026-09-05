@@ -257,7 +257,7 @@ const CustomerStatement: React.FC = () => {
 
     const statementData = {
       date: format(new Date(), 'yyyy-MM-dd'),
-      customerName: selectedCustomer.name || 'Customer',
+      customerName: selectedCustomer.companyName || selectedCustomer.name || 'Customer',
       customerCode: selectedCustomer.id || '',
       address: selectedCustomer.address || '',
       phone: selectedCustomer.phone || '',
@@ -320,7 +320,7 @@ const CustomerStatement: React.FC = () => {
 
     const csvData = [
       { Date: 'STATEMENT PERIOD:', Particulars: `${filters.startDate} to ${filters.endDate}`, 'Voucher No.': '', 'Reference No.': '', 'Voucher Type': '', Debit: '', Credit: '', 'Running Balance': '' },
-      { Date: 'CUSTOMER:', Particulars: selectedCustomer?.name || '', 'Voucher No.': '', 'Reference No.': '', 'Voucher Type': '', Debit: '', Credit: '', 'Running Balance': '' },
+      { Date: 'CUSTOMER:', Particulars: selectedCustomer?.companyName || selectedCustomer?.name || '', 'Voucher No.': '', 'Reference No.': '', 'Voucher Type': '', Debit: '', Credit: '', 'Running Balance': '' },
       openingRow,
       ...rows,
       totalRow,
@@ -343,7 +343,7 @@ const CustomerStatement: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Customer_Statement_${selectedCustomer?.name || 'customer'}_${filters.startDate}_to_${filters.endDate}.csv`;
+    link.download = `Customer_Statement_${selectedCustomer?.companyName || selectedCustomer?.name || 'customer'}_${filters.startDate}_to_${filters.endDate}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -362,7 +362,7 @@ const CustomerStatement: React.FC = () => {
     try {
       const statementData = {
         date: format(new Date(), 'yyyy-MM-dd'),
-        customerName: selectedCustomer.name || 'Customer',
+        customerName: selectedCustomer.companyName || selectedCustomer.name || 'Customer',
         customerCode: selectedCustomer.id || '',
         address: selectedCustomer.address || '',
         phone: selectedCustomer.phone || '',
@@ -638,7 +638,7 @@ const CustomerStatement: React.FC = () => {
                 <Building2 size={20} className="text-white/80" />
               </div>
               <div>
-                <p className="text-sm font-bold">{selectedCustomer.name}</p>
+                <p className="text-sm font-bold">{selectedCustomer.companyName || selectedCustomer.name}</p>
                 <p className="text-[10px] text-white/60 font-mono mt-0.5">{selectedCustomer.id}</p>
               </div>
             </div>

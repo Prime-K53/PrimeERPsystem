@@ -171,9 +171,9 @@ router.post('/company/reset', async (req, res) => {
     const cleared = [];
     for (const table of PORTAL_RESET_TABLES) {
       try {
-        const rows = await repo.getAll(table);
+        const rows = await repoCanonical.getAll(table);
         for (const row of rows) {
-          await repo.softDelete(table, row.id);
+          await repoCanonical.softDelete(table, row.id);
         }
         cleared.push(table);
       } catch {
@@ -681,8 +681,8 @@ router.get('/analytics', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const [portalUsers, customers] = await Promise.all([
-      repo.getAllFlat('portal_users'),
-      repo.getAll('customers'),
+      repoCanonical.getAllFlat('portal_users'),
+      repoCanonical.getAll('customers'),
     ]);
     const customerMap = new Map(customers.map(c => [c.id, c]));
     const rows = (portalUsers || []).map(pu => {
@@ -976,7 +976,7 @@ router.post('/customers/bulk-regenerate', async (req, res) => {
     if (!req.body || req.body.confirm !== true) {
       return res.status(400).json({ error: 'Confirmation required. Send { confirm: true } to run this bulk action.' });
     }
-    const customers = (await repo.getAll('customers')) || [];
+    const customers = (await repoCanonical.getAll('customers')) || [];
     const results = [];
     const errors = [];
     const usedEmails = new Set();
@@ -1003,7 +1003,7 @@ router.post('/customers/bulk-regenerate', async (req, res) => {
           email = await derivePortalEmail(name, customerId, portalUser.id, usedEmails);
           await portalAuthService.updatePortalUser(portalUser.id, { email });
           try {
-            await repo.upsert('customers', { ...c, email, updated_at: new Date().toISOString() });
+            await repoCanonical.upsert('customers', { ...c, email, updated_at: new Date().toISOString() });
           } catch (upsertErr) {
             console.warn(`[PortalAdmin] Bulk regenerate: customers upsert failed for ${customerId}:`, upsertErr.message);
           }
@@ -1291,7 +1291,7 @@ router.put('/support/articles/:id', async (req, res) => {
 router.delete('/support/articles/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await repo.delete('support_articles', id);
+    await repoCanonical.softDelete('support_articles', id);
     res.json({ success: true });
   } catch (err) {
     console.error('[PortalAdmin] Delete support article error:', err);
@@ -1302,7 +1302,7 @@ router.delete('/support/articles/:id', async (req, res) => {
 // Staff (sales users) available for request assignment
 router.get('/staff', async (req, res) => {
   try {
-    const rows = await repo.getAll('users', { 'data->>is_active': 'eq.1' });
+    const rows = await repoCanonical.getAll('users', { 'data->>is_active': 'eq.1' });
     rows.sort((a, b) => String(a.username || '').localeCompare(String(b.username || '')));
     res.json(rows.map(u => ({
       id: u.id,

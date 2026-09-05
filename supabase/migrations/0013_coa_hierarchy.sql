@@ -1,582 +1,1713 @@
--- ============================================================================
--- 0013_coa_hierarchy.sql
+-- =============================================================================
+-- 0013_financial_integrity.sql
+-- Prime ERP
 --
--- Prime ERP — Chart of Accounts Hierarchical Structure
+-- FINAL LIVE-SCHEMA-COMPATIBLE VERSION
 --
--- Phase 1: Redesign Chart of Accounts to follow proper hierarchical
--- accounting structure with 5 primary account types, account groups,
--- parent/child relationships, and structured account numbering.
+-- Purpose:
+--   Financial integrity hardening for:
+--     F-12  Financial balance / ledger reconciliation
+--     F-21  Banking integrity support
+--     F-25  Document-number uniqueness
+--     F-26  Currency / amount validation
+--     F-30  Financial lookup indexes
 --
--- This migration is ADDITIVE - it only adds new fields and does not
--- remove or modify existing columns to preserve backward compatibility.
--- ============================================================================
+-- LIVE ARCHITECTURE CONFIRMED:
+--
+--   public.accounts
+--       id: text
+--       data: jsonb
+--
+--   public.ledger_entries
+--       id: text
+--       data: jsonb
+--
+-- ledger_entries account references:
+--       data->>'account_id'
+--       data->>'entry_type'
+--       data->>'entry_date'
+--       data->>'reference_type'
+--       data->'amount'
+--
+-- accounts fields:
+--       data->>'id'
+--       data->>'code'
+--       data->>'account_number'
+--       data->>'name'
+--       data->>'type'
+--       data->>'account_type'
+--       data->>'subtype'
+--       data->>'parent_account_id'
+--       data->>'allow_posting'
+--       data->>'is_system_account'
+--       data->>'is_active'
+--
+-- IMPORTANT:
+--   This migration does NOT:
+--     * create accounting entries
+--     * create rounding entries
+--     * delete ledger entries
+--     * rewrite historical ledger entries
+--     * migrate ledger schema
+--     * reference debit_account_id / credit_account_id
+--     * reference chart_of_accounts
+--
+-- =============================================================================
 
--- ============================================================================
--- Helper function to check if chart_of_accounts has legacy flat columns
--- (SQLite local DB uses flat columns; Supabase uses JSONB data field)
--- ============================================================================
-CREATE OR REPLACE FUNCTION public.coa_has_flat_columns()
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'code'
-    AND table_schema = 'public'
-  );
-END;
-$$ LANGUAGE plpgsql;
+BEGIN;
 
--- ============================================================================
--- STEP 1: Add new top-level columns for hierarchical COA structure
--- These columns are additive and preserve existing data.
--- ============================================================================
 
--- Add company_id if it doesn't exist (for multi-tenant isolation)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'company_id'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN company_id TEXT;
-  END IF;
-END $$;
+-- =============================================================================
+-- 1. NUMERIC HELPERS
+-- =============================================================================
 
--- Add account_number (5-digit structured numbering, supersedes code)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'account_number'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN account_number TEXT;
-  END IF;
-END $$;
-
--- Add account_type (primary financial statement classification)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'account_type'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN account_type TEXT
-    CHECK (account_type IN ('ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'));
-  END IF;
-END $$;
-
--- Add account_group (sub-classification for reporting)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'account_group'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN account_group TEXT;
-  END IF;
-END $$;
-
--- Add parent_account_id (for hierarchical structure)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'parent_account_id'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN parent_account_id TEXT
-    REFERENCES public.chart_of_accounts(id);
-
-    -- Add index for faster hierarchical queries
-    CREATE INDEX IF NOT EXISTS idx_chart_of_accounts_parent
-    ON public.chart_of_accounts(parent_account_id);
-  END IF;
-END $$;
-
--- Add normal_balance (DEBIT or CREDIT - defines how balances increase)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'normal_balance'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN normal_balance TEXT
-    CHECK (normal_balance IN ('DEBIT', 'CREDIT'));
-  END IF;
-END $$;
-
--- Add is_system_account (prevents deletion of system-critical accounts)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'is_system_account'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN is_system_account BOOLEAN DEFAULT FALSE;
-  END IF;
-END $$;
-
--- Add allow_posting (group accounts cannot receive postings)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'allow_posting'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN allow_posting BOOLEAN DEFAULT TRUE;
-  END IF;
-END $$;
-
--- Add opening_balance (initial balance before transactions)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'opening_balance'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN opening_balance NUMERIC(20,4) DEFAULT 0;
-  END IF;
-END $$;
-
--- Add opening_balance_date (when opening balance was set)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'opening_balance_date'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN opening_balance_date TIMESTAMPTZ;
-  END IF;
-END $$;
-
--- Add subtype (for specialized classification: BANK, RECEIVABLE, PAYABLE, INVENTORY, TAX)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'chart_of_accounts'
-    AND column_name = 'subtype'
-    AND table_schema = 'public'
-  ) THEN
-    ALTER TABLE public.chart_of_accounts ADD COLUMN subtype TEXT;
-  END IF;
-END $$;
-
--- ============================================================================
--- STEP 2: Create constraint for unique account numbers per company
--- ============================================================================
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'chart_of_accounts'
-    AND constraint_name = 'chk_coa_account_number_unique'
-    AND table_schema = 'public'
-  ) THEN
-    -- Note: This is a check constraint since we can't have partial unique indexes easily
-    -- The actual uniqueness enforcement is done at the application/service layer
-    -- But we add a check to ensure account_number format is correct (5 digits)
-    ALTER TABLE public.chart_of_accounts
-    ADD CONSTRAINT chk_coa_account_number_format
-    CHECK (account_number IS NULL OR account_number ~ '^\d{5}$');
-  END IF;
-END $$;
-
--- ============================================================================
--- STEP 3: Update existing records with default account_type from legacy type
--- This preserves existing data while migrating to new structure
--- ============================================================================
-
--- Function to map legacy type to new account_type
-CREATE OR REPLACE FUNCTION public.map_legacy_account_type(legacy_type TEXT)
-RETURNS TEXT AS $$
-BEGIN
-  RETURN CASE LOWER(legacy_type)
-    WHEN 'asset' THEN 'ASSET'
-    WHEN 'liability' THEN 'LIABILITY'
-    WHEN 'equity' THEN 'EQUITY'
-    WHEN 'revenue' THEN 'INCOME'
-    WHEN 'expense' THEN 'EXPENSE'
-    ELSE NULL
-  END;
-END;
-$$ LANGUAGE plpgsql;
-
--- Function to determine normal_balance from account_type
-CREATE OR REPLACE FUNCTION public.get_normal_balance(p_account_type TEXT)
-RETURNS TEXT AS $$
-BEGIN
-  RETURN CASE p_account_type
-    WHEN 'ASSET' THEN 'DEBIT'
-    WHEN 'EXPENSE' THEN 'DEBIT'
-    WHEN 'LIABILITY' THEN 'CREDIT'
-    WHEN 'EQUITY' THEN 'CREDIT'
-    WHEN 'INCOME' THEN 'CREDIT'
-    ELSE 'DEBIT'
-  END;
-END;
-$$ LANGUAGE plpgsql;
-
--- ============================================================================
--- STEP 4: Create view for hierarchical account tree
--- This provides a convenient way to query accounts with their hierarchy
--- ============================================================================
-CREATE OR REPLACE VIEW public.v_chart_of_accounts_tree AS
-WITH RECURSIVE account_tree AS (
-  -- Base case: root accounts (no parent)
-  SELECT
-    coa.id,
-    coa.company_id,
-    coa.account_number,
-    coa.name,
-    coa.account_type,
-    coa.account_group,
-    coa.parent_account_id,
-    coa.normal_balance,
-    coa.is_system_account,
-    coa.allow_posting,
-    coa.opening_balance,
-    coa.is_active,
-    coa.subtype,
-    coa.description,
-    coa.depth,
-    coa.path
-  FROM (
+-- JSONB numeric helper.
+CREATE OR REPLACE FUNCTION public.fn_num(v jsonb)
+RETURNS numeric
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
     SELECT
-      *,
-      0 AS depth,
-      account_number AS path
-    FROM public.chart_of_accounts
-    WHERE parent_account_id IS NULL
-  ) coa
+        CASE
+            WHEN v IS NULL OR v = 'null'::jsonb THEN 0
 
-  UNION ALL
+            WHEN jsonb_typeof(v) = 'number'
+                THEN (v::text)::numeric
 
-  -- Recursive case: child accounts
-  SELECT
-    coa.id,
-    coa.company_id,
-    coa.account_number,
-    coa.name,
-    coa.account_type,
-    coa.account_group,
-    coa.parent_account_id,
-    coa.normal_balance,
-    coa.is_system_account,
-    coa.allow_posting,
-    coa.opening_balance,
-    coa.is_active,
-    coa.subtype,
-    coa.description,
-    at.depth + 1,
-    at.path || ' > ' || coa.account_number
-  FROM public.chart_of_accounts coa
-  INNER JOIN account_tree at ON coa.parent_account_id = at.id
-)
-SELECT * FROM account_tree;
+            WHEN jsonb_typeof(v) = 'string'
+                 AND v #>> '{}' ~ '^-?[0-9]+(\.[0-9]+)?$'
+                THEN (v #>> '{}')::numeric
 
--- ============================================================================
--- STEP 5: Create function to get account subtree
--- ============================================================================
-CREATE OR REPLACE FUNCTION public.get_account_subtree(p_account_id TEXT)
-RETURNS TABLE (
-  id TEXT,
-  company_id TEXT,
-  account_number TEXT,
-  name TEXT,
-  account_type TEXT,
-  account_group TEXT,
-  parent_account_id TEXT,
-  normal_balance TEXT,
-  is_system_account BOOLEAN,
-  allow_posting BOOLEAN,
-  opening_balance NUMERIC,
-  is_active BOOLEAN,
-  subtype TEXT,
-  description TEXT,
-  depth INTEGER,
-  path TEXT
-) AS $$
-BEGIN
-  RETURN QUERY
-  WITH RECURSIVE account_tree AS (
+            ELSE 0
+        END;
+$$;
+
+
+-- Text numeric helper.
+--
+-- Required because PostgreSQL's ->> operator returns text.
+CREATE OR REPLACE FUNCTION public.fn_num(v text)
+RETURNS numeric
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
     SELECT
-      coa.*,
-      0 AS depth,
-      coa.account_number AS path
-    FROM public.chart_of_accounts coa
-    WHERE coa.id = p_account_id
+        CASE
+            WHEN v IS NULL OR btrim(v) = '' THEN 0
 
-    UNION ALL
+            WHEN btrim(v) ~ '^-?[0-9]+(\.[0-9]+)?$'
+                THEN btrim(v)::numeric
 
+            ELSE 0
+        END;
+$$;
+
+
+-- =============================================================================
+-- 2. CURRENCY VALIDATION
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION public.fn_is_iso_currency(code text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
     SELECT
-      coa.*,
-      at.depth + 1,
-      at.path || ' > ' || coa.account_number
-    FROM public.chart_of_accounts coa
-    INNER JOIN account_tree at ON coa.parent_account_id = at.id
-  )
-  SELECT * FROM account_tree;
-END;
-$$ LANGUAGE plpgsql;
+        code IS NULL
+        OR code ~ '^[A-Z]{3}$';
+$$;
 
--- ============================================================================
--- STEP 6: Create function to calculate account balance including children
--- ============================================================================
-CREATE OR REPLACE FUNCTION public.calculate_account_balance(p_account_id TEXT)
-RETURNS NUMERIC AS $$
+
+-- =============================================================================
+-- 3. NON-NEGATIVE MONEY VALIDATION
+-- =============================================================================
+--
+-- This helper accepts:
+--   NULL
+--   integer strings
+--   decimal strings
+--
+-- It rejects:
+--   negative values
+--   malformed numeric strings
+--
+-- NOTE:
+-- Signed accounting fields such as balance/debit/credit are deliberately
+-- NOT included in the non-negative constraint below.
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION public.fn_is_nonneg_money(s text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+    SELECT
+        s IS NULL
+        OR (
+            btrim(s) ~ '^[0-9]+(\.[0-9]+)?$'
+            AND btrim(s)::numeric >= 0
+        );
+$$;
+
+
+-- =============================================================================
+-- 4. JSONB FINANCIAL FIELD CHECKS
+-- =============================================================================
+--
+-- The previous migration attempted to create one constraint repeatedly for
+-- every amount path. That meant each iteration dropped the previous constraint.
+--
+-- This version creates:
+--     one currency constraint
+--     one money constraint
+--
+-- per table.
+--
+-- Only tables that actually exist are processed.
+--
+-- IMPORTANT:
+-- We intentionally exclude:
+--     balance
+--     openingBalance
+--     currentBalance
+--     debit
+--     credit
+--     debit_amount
+--     credit_amount
+--
+-- because those can legitimately be signed accounting values.
+-- =============================================================================
+
+DO $$
 DECLARE
-  v_opening_balance NUMERIC;
-  v ledger_total NUMERIC;
-  v_normal_balance TEXT;
+    tbl text;
+    constraint_name text;
 BEGIN
-  -- Get opening balance
-  SELECT opening_balance INTO v_opening_balance
-  FROM public.chart_of_accounts
-  WHERE id = p_account_id;
 
-  -- Get normal balance
-  SELECT normal_balance INTO v_normal_balance
-  FROM public.chart_of_accounts
-  WHERE id = p_account_id;
+    FOREACH tbl IN ARRAY ARRAY[
+        'invoices',
+        'customer_payments',
+        'supplier_payments',
+        'payment_allocations',
+        'payment_allocation_lines',
+        'purchases',
+        'sales',
+        'sales_orders',
+        'quotations',
+        'accounts',
+        'ledger_entries',
+        'expenses',
+        'income',
+        'bank_accounts',
+        'bank_transactions',
+        'transfers',
+        'cheques',
+        'reminders',
+        'recurring_invoices',
+        'bank_scheduled_payments',
+        'scheduled_payments',
+        'wallet_transactions',
+        'bank_reconciliations',
+        'bank_adjustments',
+        'rounding_logs',
+        'vat_transactions',
+        'tax_rates',
+        'bank_exchange_rates',
+        'financial_years',
+        'payroll_runs',
+        'payslips',
+        'assets',
+        'goods_receipts',
+        'delivery_notes',
+        'purchase_orders',
+        'inventory_movements'
+    ]
+    LOOP
 
-  -- Calculate from ledger entries
-  SELECT COALESCE(SUM(
-    CASE
-      WHEN le.entry_type = 'debit' THEN le.amount
-      WHEN le.entry_type = 'credit' THEN -le.amount
-      ELSE 0
-    END
-  ), 0) INTO v_ledger_total
-  FROM public.ledger_entries le
-  WHERE le.account_id = p_account_id;
+        -- ---------------------------------------------------------------
+        -- Skip tables that do not exist.
+        -- ---------------------------------------------------------------
 
-  -- Adjust based on normal balance
-  IF v_normal_balance = 'CREDIT' THEN
-    RETURN COALESCE(v_opening_balance, 0) - v_ledger_total;
-  ELSE
-    RETURN COALESCE(v_opening_balance, 0) + v_ledger_total;
-  END IF;
-END;
-$$ LANGUAGE plpgsql;
+        IF to_regclass('public.' || tbl) IS NULL THEN
+            CONTINUE;
+        END IF;
 
--- ============================================================================
--- STEP 7: Add RLS policies for chart_of_accounts
--- ============================================================================
 
--- Enable RLS if not already enabled
-ALTER TABLE public.chart_of_accounts ENABLE ROW LEVEL SECURITY;
+        -- ---------------------------------------------------------------
+        -- Currency
+        -- ---------------------------------------------------------------
 
--- Policy: Users can only see accounts for their company
-DROP POLICY IF EXISTS "Users can view their company's accounts" ON public.chart_of_accounts;
-CREATE POLICY "Users can view their company's accounts"
-  ON public.chart_of_accounts FOR SELECT
-  USING (
-    company_id IS NULL OR
-    company_id = public.get_current_company_id() OR
-    NOT EXISTS (SELECT 1 FROM public.chart_of_accounts WHERE company_id IS NOT NULL)
-  );
+        constraint_name := 'chk_' || tbl || '_currency_iso';
 
--- Policy: Users can only insert accounts for their company
-DROP POLICY IF EXISTS "Users can insert their company's accounts" ON public.chart_of_accounts;
-CREATE POLICY "Users can insert their company's accounts"
-  ON public.chart_of_accounts FOR INSERT
-  WITH CHECK (
-    company_id IS NULL OR
-    company_id = public.get_current_company_id()
-  );
+        EXECUTE format(
+            'ALTER TABLE public.%I
+             DROP CONSTRAINT IF EXISTS %I',
+            tbl,
+            constraint_name
+        );
 
--- Policy: Users can only update their company's accounts
-DROP POLICY IF EXISTS "Users can update their company's accounts" ON public.chart_of_accounts;
-CREATE POLICY "Users can update their company's accounts"
-  ON public.chart_of_accounts FOR UPDATE
-  USING (
-    company_id IS NULL OR
-    company_id = public.get_current_company_id()
-  );
+        EXECUTE format(
+            'ALTER TABLE public.%I
+             ADD CONSTRAINT %I
+             CHECK (
+                 public.fn_is_iso_currency(data->>''currency'')
+             ) NOT VALID',
+            tbl,
+            constraint_name
+        );
 
--- Policy: System accounts cannot be deleted via policy (application-level enforced)
-DROP POLICY IF EXISTS "System accounts cannot be deleted" ON public.chart_of_accounts;
-CREATE POLICY "System accounts cannot be deleted"
-  ON public.chart_of_accounts FOR DELETE
-  USING (is_system_account = FALSE OR is_system_account IS NULL);
 
--- ============================================================================
--- STEP 8: Create function to validate no circular hierarchy
--- ============================================================================
-CREATE OR REPLACE FUNCTION public.validate_no_circular_hierarchy(
-  p_account_id TEXT,
-  p_parent_account_id TEXT
-)
-RETURNS BOOLEAN AS $$
-DECLARE
-  v_ancestor_id TEXT;
-BEGIN
-  -- If setting parent to NULL, no circular possibility
-  IF p_parent_account_id IS NULL THEN
-    RETURN TRUE;
-  END IF;
+        -- ---------------------------------------------------------------
+        -- Non-negative financial amounts
+        --
+        -- All fields are checked together.
+        -- Missing JSON fields evaluate to NULL and therefore pass.
+        -- ---------------------------------------------------------------
 
-  -- Cannot be your own parent
-  IF p_account_id = p_parent_account_id THEN
-    RETURN FALSE;
-  END IF;
+        constraint_name := 'chk_' || tbl || '_money_nonneg';
 
-  -- Check if proposed parent is a descendant of the account
-  -- This prevents A -> B -> C -> A cycles
-  FOR v_ancestor_id IN
-    WITH RECURSIVE ancestors AS (
-      SELECT id, parent_account_id
-      FROM public.chart_of_accounts
-      WHERE id = p_parent_account_id
+        EXECUTE format(
+            'ALTER TABLE public.%I
+             DROP CONSTRAINT IF EXISTS %I',
+            tbl,
+            constraint_name
+        );
 
-      UNION ALL
+        EXECUTE format(
+            'ALTER TABLE public.%I
+             ADD CONSTRAINT %I
+             CHECK (
+                 public.fn_is_nonneg_money(data->>''totalAmount'')
+                 AND public.fn_is_nonneg_money(data->>''subtotal'')
+                 AND public.fn_is_nonneg_money(data->>''paidAmount'')
+                 AND public.fn_is_nonneg_money(data->>''balanceDue'')
+                 AND public.fn_is_nonneg_money(data->>''amount'')
+                 AND public.fn_is_nonneg_money(data->>''unitPrice'')
+                 AND public.fn_is_nonneg_money(data->>''unit_price'')
+                 AND public.fn_is_nonneg_money(data->>''total'')
+                 AND public.fn_is_nonneg_money(data->>''taxAmount'')
+                 AND public.fn_is_nonneg_money(data->>''tax_amount'')
+                 AND public.fn_is_nonneg_money(data->>''discount'')
+                 AND public.fn_is_nonneg_money(data->>''discountAmount'')
+                 AND public.fn_is_nonneg_money(data->>''discount_amount'')
+                 AND public.fn_is_nonneg_money(data->>''otherCharges'')
+                 AND public.fn_is_nonneg_money(data->>''shipping'')
+                 AND public.fn_is_nonneg_money(data->>''fee'')
+                 AND public.fn_is_nonneg_money(data->>''fees'')
+                 AND public.fn_is_nonneg_money(data->>''commission'')
+                 AND public.fn_is_nonneg_money(data->>''applied'')
+                 AND public.fn_is_nonneg_money(data->>''allocated'')
+                 AND public.fn_is_nonneg_money(data->>''unallocatedAmount'')
+                 AND public.fn_is_nonneg_money(data->>''walletDeposit'')
+             ) NOT VALID',
+            tbl,
+            constraint_name
+        );
 
-      SELECT coa.id, coa.parent_account_id
-      FROM public.chart_of_accounts coa
-      INNER JOIN ancestors a ON coa.id = a.parent_account_id
+    END LOOP;
+END $$;
+
+
+-- =============================================================================
+-- 5. DOCUMENT NUMBER UNIQUENESS
+-- =============================================================================
+--
+-- NULL and empty numbers are excluded so legacy/incomplete rows do not collide.
+-- =============================================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_invoices_invoice_number_unique
+ON public.invoices ((data->>'invoiceNumber'))
+WHERE data->>'invoiceNumber' IS NOT NULL
+  AND data->>'invoiceNumber' <> '';
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_customer_payments_payment_number_unique
+ON public.customer_payments ((data->>'paymentNumber'))
+WHERE data->>'paymentNumber' IS NOT NULL
+  AND data->>'paymentNumber' <> '';
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_supplier_payments_payment_number_unique
+ON public.supplier_payments ((data->>'paymentNumber'))
+WHERE data->>'paymentNumber' IS NOT NULL
+  AND data->>'paymentNumber' <> '';
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_purchases_purchase_number_unique
+ON public.purchases ((data->>'purchaseNumber'))
+WHERE data->>'purchaseNumber' IS NOT NULL
+  AND data->>'purchaseNumber' <> '';
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_quotations_quotation_number_unique
+ON public.quotations ((data->>'quotationNumber'))
+WHERE data->>'quotationNumber' IS NOT NULL
+  AND data->>'quotationNumber' <> '';
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_cheques_cheque_number_unique
+ON public.cheques ((data->>'chequeNumber'))
+WHERE data->>'chequeNumber' IS NOT NULL
+  AND data->>'chequeNumber' <> '';
+
+
+-- sales_orders.order_number is intentionally not duplicated here.
+-- Migration 0009 owns that numbering uniqueness.
+
+
+-- =============================================================================
+-- 6. HOT LOOKUP INDEXES
+-- =============================================================================
+
+CREATE INDEX IF NOT EXISTS
+    idx_invoices_customer_id_lookup
+ON public.invoices ((data->>'customerId'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_invoices_status_lookup
+ON public.invoices ((data->>'status'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_invoices_date_lookup
+ON public.invoices ((data->>'date'));
+
+
+CREATE INDEX IF NOT EXISTS
+    idx_customer_payments_customer_id_lookup
+ON public.customer_payments ((data->>'customerId'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_customer_payments_invoice_id_lookup
+ON public.customer_payments ((data->>'invoiceId'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_customer_payments_date_lookup
+ON public.customer_payments ((data->>'date'));
+
+
+CREATE INDEX IF NOT EXISTS
+    idx_supplier_payments_supplier_id_lookup
+ON public.supplier_payments ((data->>'supplierId'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_purchases_supplier_id_lookup
+ON public.purchases ((data->>'supplierId'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_purchases_date_lookup
+ON public.purchases ((data->>'date'));
+
+
+-- LIVE ledger architecture:
+-- account_id / entry_type / entry_date / reference_type
+
+CREATE INDEX IF NOT EXISTS
+    idx_ledger_entries_account_id_lookup
+ON public.ledger_entries ((data->>'account_id'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_ledger_entries_entry_type_lookup
+ON public.ledger_entries ((data->>'entry_type'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_ledger_entries_entry_date_lookup
+ON public.ledger_entries ((data->>'entry_date'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_ledger_entries_reference_type_lookup
+ON public.ledger_entries ((data->>'reference_type'));
+
+
+CREATE INDEX IF NOT EXISTS
+    idx_expenses_expense_date_lookup
+ON public.expenses ((data->>'expenseDate'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_income_income_date_lookup
+ON public.income ((data->>'incomeDate'));
+
+
+CREATE INDEX IF NOT EXISTS
+    idx_bank_transactions_bank_account_id_lookup
+ON public.bank_transactions ((data->>'bankAccountId'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_bank_transactions_date_lookup
+ON public.bank_transactions ((data->>'transactionDate'));
+
+
+-- =============================================================================
+-- 7. CANONICAL COA INDEXES
+-- =============================================================================
+--
+-- public.accounts is the canonical Chart of Accounts table.
+--
+-- PostgreSQL cannot use:
+--
+--   UNIQUE (data->>'account_number')
+--
+-- as a normal table constraint.
+--
+-- Use a unique expression index instead.
+-- =============================================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    accounts_account_number_unique
+ON public.accounts ((data->>'account_number'))
+WHERE data->>'account_number' IS NOT NULL
+  AND data->>'account_number' <> '';
+
+
+CREATE INDEX IF NOT EXISTS
+    idx_accounts_account_number
+ON public.accounts ((data->>'account_number'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_accounts_code
+ON public.accounts ((data->>'code'));
+
+CREATE INDEX IF NOT EXISTS
+    idx_accounts_parent_account_id
+ON public.accounts ((data->>'parent_account_id'));
+
+
+-- =============================================================================
+-- 8. INVOICE PAYMENT INTEGRITY VIEW
+-- =============================================================================
+--
+-- This is read-only.
+--
+-- It compares stored invoice payment values with allocation data.
+--
+-- The existing Prime ERP financial migration established:
+--
+--   payment_allocation_lines.data->>'invoiceId'
+--   payment_allocation_lines.data->>'allocationId'
+--   payment_allocation_lines.data->'amount'
+--
+-- and:
+--
+--   payment_allocations.data->>'status'
+--
+-- so we retain that existing contract here.
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_invoice_payment_integrity AS
+SELECT
+    i.id AS invoice_id,
+    i.data->>'invoiceNumber' AS invoice_number,
+    i.data->>'customerId' AS customer_id,
+    i.data->>'currency' AS currency,
+
+    COALESCE(
+        public.fn_num(i.data->'totalAmount'),
+        0
+    ) AS total_amount,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(l.data->'amount')
+            )
+            FROM public.payment_allocation_lines l
+            JOIN public.payment_allocations a
+              ON a.id = l.data->>'allocationId'
+            WHERE l.data->>'invoiceId' = i.id
+              AND LOWER(
+                    COALESCE(
+                        a.data->>'status',
+                        ''
+                    )
+                  ) NOT IN ('voided', 'cancelled')
+        ),
+        0
+    ) AS calculated_paid_amount,
+
+    COALESCE(
+        public.fn_num(i.data->'paidAmount'),
+        0
+    ) AS stored_paid_amount,
+
+    COALESCE(
+        public.fn_num(i.data->'totalAmount'),
+        0
     )
-    SELECT id FROM ancestors
-  LOOP
-    IF v_ancestor_id = p_account_id THEN
-      RETURN FALSE;
-    END IF;
-  END LOOP;
+    -
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(l.data->'amount')
+            )
+            FROM public.payment_allocation_lines l
+            JOIN public.payment_allocations a
+              ON a.id = l.data->>'allocationId'
+            WHERE l.data->>'invoiceId' = i.id
+              AND LOWER(
+                    COALESCE(
+                        a.data->>'status',
+                        ''
+                    )
+                  ) NOT IN ('voided', 'cancelled')
+        ),
+        0
+    ) AS calculated_balance_due
 
-  RETURN TRUE;
-END;
-$$ LANGUAGE plpgsql;
+FROM public.invoices i;
 
--- ============================================================================
--- STEP 9: Create function to get next account number in range
--- ============================================================================
-CREATE OR REPLACE FUNCTION public.get_next_account_number(
-  p_account_type TEXT,
-  p_company_id TEXT DEFAULT NULL
+
+-- =============================================================================
+-- 9. TRIAL BALANCE
+-- =============================================================================
+--
+-- LIVE ledger:
+--
+--   account_id
+--   entry_type
+--   amount
+--   reference_type
+--
+-- LIVE COA:
+--
+--   public.accounts
+--
+-- Account matching supports both:
+--
+--   ledger account_id = accounts.id
+--   ledger account_id = accounts.data->>'id'
+--
+-- This is intentional because the migration history contains both forms.
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_trial_balance AS
+SELECT
+    a.id AS account_id,
+
+    a.data->>'code' AS account_code,
+
+    a.data->>'account_number' AS account_number,
+
+    a.data->>'name' AS account_name,
+
+    LOWER(
+        COALESCE(
+            a.data->>'account_type',
+            a.data->>'type',
+            ''
+        )
+    ) AS account_type,
+
+    COALESCE(
+        public.fn_num(a.data->'balance'),
+        0
+    ) AS balance,
+
+    COALESCE(
+        public.fn_num(a.data->'openingBalance'),
+        0
+    ) AS opening_balance,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(e.data->'amount')
+            )
+            FROM public.ledger_entries e
+            WHERE (
+                    e.data->>'account_id' = a.id
+                    OR e.data->>'account_id' = a.data->>'id'
+                  )
+              AND LOWER(
+                    COALESCE(
+                        e.data->>'entry_type',
+                        ''
+                    )
+                  ) = 'debit'
+              AND LOWER(
+                    COALESCE(
+                        e.data->>'reference_type',
+                        ''
+                    )
+                  ) <> 'reversal'
+        ),
+        0
+    ) AS sum_debits,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(e.data->'amount')
+            )
+            FROM public.ledger_entries e
+            WHERE (
+                    e.data->>'account_id' = a.id
+                    OR e.data->>'account_id' = a.data->>'id'
+                  )
+              AND LOWER(
+                    COALESCE(
+                        e.data->>'entry_type',
+                        ''
+                    )
+                  ) = 'credit'
+              AND LOWER(
+                    COALESCE(
+                        e.data->>'reference_type',
+                        ''
+                    )
+                  ) <> 'reversal'
+        ),
+        0
+    ) AS sum_credits
+
+FROM public.accounts a
+
+WHERE COALESCE(
+          (a.data->>'is_active')::boolean,
+          true
+      ) = true
+
+  AND COALESCE(
+          (a.data->>'deleted')::boolean,
+          false
+      ) = false;
+
+
+-- =============================================================================
+-- 10. TRIAL BALANCE SUMMARY
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_trial_balance_balanced AS
+SELECT
+    COALESCE(
+        SUM(sum_debits),
+        0
+    ) AS total_debits,
+
+    COALESCE(
+        SUM(sum_credits),
+        0
+    ) AS total_credits,
+
+    COALESCE(
+        SUM(sum_debits),
+        0
+    )
+    -
+    COALESCE(
+        SUM(sum_credits),
+        0
+    ) AS difference,
+
+    (
+        ABS(
+            COALESCE(
+                SUM(sum_debits),
+                0
+            )
+            -
+            COALESCE(
+                SUM(sum_credits),
+                0
+            )
+        ) < 0.01
+    ) AS is_balanced
+
+FROM public.v_trial_balance;
+
+
+-- =============================================================================
+-- 11. ACCOUNT BALANCE RECONCILIATION
+-- =============================================================================
+--
+-- READ ONLY.
+--
+-- This does NOT overwrite accounts.data.balance.
+-- It exposes the calculation so existing balances can be audited safely.
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_account_balance_integrity AS
+SELECT
+    a.id AS account_id,
+
+    a.data->>'account_number' AS account_number,
+
+    a.data->>'code' AS account_code,
+
+    a.data->>'name' AS account_name,
+
+    LOWER(
+        COALESCE(
+            a.data->>'account_type',
+            a.data->>'type',
+            ''
+        )
+    ) AS account_type,
+
+    COALESCE(
+        public.fn_num(a.data->'balance'),
+        0
+    ) AS stored_balance,
+
+    COALESCE(
+        public.fn_num(a.data->'openingBalance'),
+        0
+    ) AS opening_balance,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(e.data->'amount')
+            )
+            FROM public.ledger_entries e
+            WHERE (
+                    e.data->>'account_id' = a.id
+                    OR e.data->>'account_id' = a.data->>'id'
+                  )
+              AND LOWER(
+                    COALESCE(
+                        e.data->>'entry_type',
+                        ''
+                    )
+                  ) = 'debit'
+              AND LOWER(
+                    COALESCE(
+                        e.data->>'reference_type',
+                        ''
+                    )
+                  ) <> 'reversal'
+        ),
+        0
+    ) AS debits,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(e.data->'amount')
+            )
+            FROM public.ledger_entries e
+            WHERE (
+                    e.data->>'account_id' = a.id
+                    OR e.data->>'account_id' = a.data->>'id'
+                  )
+              AND LOWER(
+                    COALESCE(
+                        e.data->>'entry_type',
+                        ''
+                    )
+                  ) = 'credit'
+              AND LOWER(
+                    COALESCE(
+                        e.data->>'reference_type',
+                        ''
+                    )
+                  ) <> 'reversal'
+        ),
+        0
+    ) AS credits
+
+FROM public.accounts a;
+
+
+-- =============================================================================
+-- 12. CUSTOMER BALANCE RECONCILIATION
+-- =============================================================================
+--
+-- READ ONLY.
+-- Does not rewrite customer balances.
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_customer_balances AS
+SELECT
+    c.id AS customer_id,
+
+    c.data->>'name' AS customer_name,
+
+    COALESCE(
+        public.fn_num(c.data->'balance'),
+        0
+    ) AS opening_balance,
+
+    COALESCE(
+        public.fn_num(c.data->'outstandingBalance'),
+        0
+    ) AS stored_outstanding_balance,
+
+    COALESCE(
+        public.fn_num(c.data->'walletBalance'),
+        0
+    ) AS stored_wallet_balance,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(i.data->'totalAmount')
+            )
+            FROM public.invoices i
+            WHERE i.data->>'customerId' = c.id
+              AND LOWER(
+                    COALESCE(
+                        i.data->>'status',
+                        ''
+                    )
+                  ) NOT IN (
+                      'draft',
+                      'cancelled',
+                      'voided',
+                      'credit_note'
+                  )
+        ),
+        0
+    ) AS total_invoiced,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                COALESCE(
+                    public.fn_num(p.data->'amountApplied'),
+                    public.fn_num(p.data->'amount'),
+                    0
+                )
+            )
+            FROM public.customer_payments p
+            WHERE p.data->>'customerId' = c.id
+              AND LOWER(
+                    COALESCE(
+                        p.data->>'status',
+                        ''
+                    )
+                  ) NOT IN (
+                      'cancelled',
+                      'voided'
+                  )
+        ),
+        0
+    ) AS total_paid,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(i.data->'totalAmount')
+            )
+            FROM public.invoices i
+            WHERE i.data->>'customerId' = c.id
+              AND LOWER(
+                    COALESCE(
+                        i.data->>'status',
+                        ''
+                    )
+                  ) = 'credit_note'
+        ),
+        0
+    ) AS total_credit_notes
+
+FROM public.customers c
+
+WHERE COALESCE(
+          (c.data->>'deleted')::boolean,
+          false
+      ) = false;
+
+
+-- =============================================================================
+-- 13. SUPPLIER BALANCE RECONCILIATION
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_supplier_balances AS
+SELECT
+    s.id AS supplier_id,
+
+    s.data->>'name' AS supplier_name,
+
+    COALESCE(
+        public.fn_num(s.data->'balance'),
+        0
+    ) AS opening_balance,
+
+    COALESCE(
+        public.fn_num(s.data->'outstandingBalance'),
+        0
+    ) AS stored_outstanding_balance,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(p.data->'totalAmount')
+            )
+            FROM public.purchases p
+            WHERE p.data->>'supplierId' = s.id
+              AND LOWER(
+                    COALESCE(
+                        p.data->>'status',
+                        ''
+                    )
+                  ) NOT IN (
+                      'draft',
+                      'cancelled',
+                      'voided'
+                  )
+        ),
+        0
+    ) AS total_billed,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                COALESCE(
+                    public.fn_num(sp.data->'amountApplied'),
+                    public.fn_num(sp.data->'amount'),
+                    0
+                )
+            )
+            FROM public.supplier_payments sp
+            WHERE sp.data->>'supplierId' = s.id
+              AND LOWER(
+                    COALESCE(
+                        sp.data->>'status',
+                        ''
+                    )
+                  ) NOT IN (
+                      'cancelled',
+                      'voided'
+                  )
+        ),
+        0
+    ) AS total_paid
+
+FROM public.suppliers s
+
+WHERE COALESCE(
+          (s.data->>'deleted')::boolean,
+          false
+      ) = false;
+
+
+-- =============================================================================
+-- 14. AR AGING
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_ar_aging AS
+SELECT
+    i.data->>'customerId' AS customer_id,
+
+    i.id AS invoice_id,
+
+    i.data->>'invoiceNumber' AS invoice_number,
+
+    COALESCE(
+        public.fn_num(i.data->'totalAmount'),
+        0
+    ) AS total,
+
+    COALESCE(
+        public.fn_num(i.data->'paidAmount'),
+        0
+    ) AS paid,
+
+    COALESCE(
+        public.fn_num(i.data->'totalAmount'),
+        0
+    )
+    -
+    COALESCE(
+        public.fn_num(i.data->'paidAmount'),
+        0
+    ) AS outstanding,
+
+    i.data->>'date' AS invoice_date,
+
+    i.data->>'dueDate' AS due_date,
+
+    CASE
+        WHEN COALESCE(
+            public.fn_num(i.data->'paidAmount'),
+            0
+        )
+        >= COALESCE(
+            public.fn_num(i.data->'totalAmount'),
+            0
+        )
+        THEN 'paid'
+
+        ELSE 'open'
+    END AS status_bucket,
+
+    CASE
+
+        WHEN i.data->>'dueDate' IS NULL
+            THEN 'current'
+
+        WHEN i.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND LEFT(
+                    i.data->>'dueDate',
+                    10
+                 )::date >= CURRENT_DATE
+            THEN 'current'
+
+        WHEN i.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND LEFT(
+                    i.data->>'dueDate',
+                    10
+                 )::date >= CURRENT_DATE - 30
+            THEN 'days_1_30'
+
+        WHEN i.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND LEFT(
+                    i.data->>'dueDate',
+                    10
+                 )::date >= CURRENT_DATE - 60
+            THEN 'days_31_60'
+
+        WHEN i.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND LEFT(
+                    i.data->>'dueDate',
+                    10
+                 )::date >= CURRENT_DATE - 90
+            THEN 'days_61_90'
+
+        WHEN i.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+            THEN 'over_90'
+
+        ELSE 'current'
+
+    END AS aging_bucket,
+
+    i.data->>'currency' AS currency
+
+FROM public.invoices i
+
+WHERE LOWER(
+          COALESCE(
+              i.data->>'status',
+              ''
+          )
+      ) NOT IN (
+          'draft',
+          'cancelled',
+          'voided',
+          'paid',
+          'credit_note'
+      )
+
+  AND COALESCE(
+        public.fn_num(i.data->'paidAmount'),
+        0
+      )
+      <
+      COALESCE(
+        public.fn_num(i.data->'totalAmount'),
+        0
+      );
+
+
+-- =============================================================================
+-- 15. AP AGING
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_ap_aging AS
+SELECT
+    p.data->>'supplierId' AS supplier_id,
+
+    p.id AS purchase_id,
+
+    p.data->>'purchaseNumber' AS purchase_number,
+
+    COALESCE(
+        public.fn_num(p.data->'totalAmount'),
+        0
+    ) AS total,
+
+    COALESCE(
+        public.fn_num(p.data->'paidAmount'),
+        0
+    ) AS paid,
+
+    COALESCE(
+        public.fn_num(p.data->'totalAmount'),
+        0
+    )
+    -
+    COALESCE(
+        public.fn_num(p.data->'paidAmount'),
+        0
+    ) AS outstanding,
+
+    p.data->>'date' AS bill_date,
+
+    p.data->>'dueDate' AS due_date,
+
+    CASE
+
+        WHEN p.data->>'dueDate' IS NULL
+            THEN 'current'
+
+        WHEN p.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND LEFT(
+                    p.data->>'dueDate',
+                    10
+                 )::date >= CURRENT_DATE
+            THEN 'current'
+
+        WHEN p.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND LEFT(
+                    p.data->>'dueDate',
+                    10
+                 )::date >= CURRENT_DATE - 30
+            THEN 'days_1_30'
+
+        WHEN p.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND LEFT(
+                    p.data->>'dueDate',
+                    10
+                 )::date >= CURRENT_DATE - 60
+            THEN 'days_31_60'
+
+        WHEN p.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND LEFT(
+                    p.data->>'dueDate',
+                    10
+                 )::date >= CURRENT_DATE - 90
+            THEN 'days_61_90'
+
+        WHEN p.data->>'dueDate'
+             ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+            THEN 'over_90'
+
+        ELSE 'current'
+
+    END AS aging_bucket,
+
+    p.data->>'currency' AS currency
+
+FROM public.purchases p
+
+WHERE LOWER(
+          COALESCE(
+              p.data->>'status',
+              ''
+          )
+      ) NOT IN (
+          'draft',
+          'cancelled',
+          'voided',
+          'paid'
+      )
+
+  AND COALESCE(
+        public.fn_num(p.data->'paidAmount'),
+        0
+      )
+      <
+      COALESCE(
+        public.fn_num(p.data->'totalAmount'),
+        0
+      );
+
+
+-- =============================================================================
+-- 16. PROFIT & LOSS
+-- =============================================================================
+--
+-- LIVE ledger fields are used.
+-- LIVE COA is public.accounts.
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_profit_and_loss AS
+
+WITH period_entries AS (
+
+    SELECT
+
+        CASE
+            WHEN e.data->>'entry_date'
+                 ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+            THEN LEFT(
+                    e.data->>'entry_date',
+                    10
+                 )::date
+            ELSE NULL
+        END AS entry_date,
+
+        LOWER(
+            COALESCE(
+                e.data->>'entry_type',
+                ''
+            )
+        ) AS entry_type,
+
+        COALESCE(
+            public.fn_num(e.data->'amount'),
+            0
+        ) AS amount,
+
+        e.data->>'account_id' AS account_id,
+
+        e.data->>'currency' AS currency,
+
+        LOWER(
+            COALESCE(
+                a.data->>'account_type',
+                a.data->>'type',
+                ''
+            )
+        ) AS account_type,
+
+        LOWER(
+            COALESCE(
+                a.data->>'subtype',
+                ''
+            )
+        ) AS account_subtype
+
+    FROM public.ledger_entries e
+
+    LEFT JOIN public.accounts a
+      ON (
+          a.id = e.data->>'account_id'
+          OR a.data->>'id' = e.data->>'account_id'
+      )
+
+    WHERE LOWER(
+              COALESCE(
+                  e.data->>'reference_type',
+                  ''
+              )
+          ) <> 'reversal'
 )
-RETURNS TEXT AS $$
-DECLARE
-  v_min_number TEXT;
-  v_max_number TEXT;
-  v_next_number INTEGER;
+
+SELECT
+
+    account_type,
+
+    account_subtype,
+
+    currency,
+
+    entry_date AS day,
+
+    SUM(
+        CASE
+            WHEN entry_type = 'credit'
+                THEN amount
+            ELSE 0
+        END
+    ) AS credits,
+
+    SUM(
+        CASE
+            WHEN entry_type = 'debit'
+                THEN amount
+            ELSE 0
+        END
+    ) AS debits
+
+FROM period_entries
+
+WHERE account_type IN (
+    'revenue',
+    'expense',
+    'cogs',
+    'income',
+    'cost_of_goods_sold'
+)
+
+GROUP BY
+    account_type,
+    account_subtype,
+    currency,
+    entry_date;
+
+
+-- =============================================================================
+-- 17. INVOICE LINE INTEGRITY
+-- =============================================================================
+--
+-- Invoice line items live in invoices.data->'items'.
+--
+-- IMPORTANT:
+-- jsonb_array_elements() returns JSONB.
+-- Therefore item->'amount', item->'quantity', item->'unitPrice' are passed
+-- to fn_num(jsonb).
+--
+-- The text overload also exists for any future ->> callers.
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_invoice_integrity AS
+
+SELECT
+
+    i.id AS invoice_id,
+
+    i.data->>'invoiceNumber' AS invoice_number,
+
+    i.data->>'customerId' AS customer_id,
+
+    i.data->>'currency' AS currency,
+
+    COALESCE(
+        public.fn_num(i.data->'totalAmount'),
+        0
+    ) AS header_total,
+
+    COALESCE(
+        public.fn_num(i.data->'subtotal'),
+        0
+    ) AS header_subtotal,
+
+    COALESCE(
+        public.fn_num(i.data->'taxAmount'),
+        0
+    ) AS header_tax,
+
+    COALESCE(
+        public.fn_num(i.data->'paidAmount'),
+        0
+    ) AS paid_amount,
+
+    COALESCE(
+        public.fn_num(i.data->'totalAmount'),
+        0
+    )
+    -
+    COALESCE(
+        public.fn_num(i.data->'paidAmount'),
+        0
+    ) AS balance_due,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(
+                    item->'amount'
+                )
+            )
+
+            FROM jsonb_array_elements(
+                CASE
+                    WHEN jsonb_typeof(
+                        COALESCE(
+                            i.data->'items',
+                            '[]'::jsonb
+                        )
+                    ) = 'array'
+                    THEN COALESCE(
+                        i.data->'items',
+                        '[]'::jsonb
+                    )
+                    ELSE '[]'::jsonb
+                END
+            ) AS item
+        ),
+        0
+    ) AS sum_line_amounts,
+
+    COALESCE(
+        (
+            SELECT SUM(
+                public.fn_num(
+                    item->'quantity'
+                )
+                *
+                public.fn_num(
+                    item->'unitPrice'
+                )
+            )
+
+            FROM jsonb_array_elements(
+                CASE
+                    WHEN jsonb_typeof(
+                        COALESCE(
+                            i.data->'items',
+                            '[]'::jsonb
+                        )
+                    ) = 'array'
+                    THEN COALESCE(
+                        i.data->'items',
+                        '[]'::jsonb
+                    )
+                    ELSE '[]'::jsonb
+                END
+            ) AS item
+        ),
+        0
+    ) AS sum_qty_x_price,
+
+    LOWER(
+        COALESCE(
+            i.data->>'status',
+            ''
+        )
+    ) AS status
+
+FROM public.invoices i;
+
+
+-- =============================================================================
+-- 18. ORPHAN LEDGER ACCOUNT REFERENCES
+-- =============================================================================
+--
+-- READ ONLY.
+--
+-- Identifies ledger entries whose account_id cannot be resolved against
+-- public.accounts.
+--
+-- This is particularly important after the COA migration.
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_orphan_ledger_account_references AS
+
+SELECT
+
+    e.id AS ledger_entry_id,
+
+    e.data->>'account_id' AS account_id,
+
+    e.data->>'account_code' AS account_code,
+
+    e.data->>'account_name' AS account_name,
+
+    e.data->>'entry_type' AS entry_type,
+
+    e.data->>'amount' AS amount,
+
+    e.data->>'entry_date' AS entry_date,
+
+    e.data->>'reference_id' AS reference_id,
+
+    e.data->>'description' AS description
+
+FROM public.ledger_entries e
+
+LEFT JOIN public.accounts a
+  ON (
+      a.id = e.data->>'account_id'
+      OR a.data->>'id' = e.data->>'account_id'
+  )
+
+WHERE e.data->>'account_id' IS NOT NULL
+
+  AND a.id IS NULL;
+
+
+-- =============================================================================
+-- 19. DUPLICATE ACCOUNT NUMBER DIAGNOSTIC VIEW
+-- =============================================================================
+
+CREATE OR REPLACE VIEW public.v_duplicate_account_numbers AS
+
+SELECT
+
+    data->>'account_number' AS account_number,
+
+    COUNT(*) AS row_count,
+
+    STRING_AGG(
+        id
+        || ' = '
+        || COALESCE(
+            data->>'name',
+            ''
+        ),
+        ' | '
+        ORDER BY id
+    ) AS accounts
+
+FROM public.accounts
+
+WHERE data->>'account_number' IS NOT NULL
+
+GROUP BY data->>'account_number'
+
+HAVING COUNT(*) > 1;
+
+
+-- =============================================================================
+-- 20. IDEMPOTENCY CONTRACT
+-- =============================================================================
+--
+-- Only modify the table if it exists.
+-- This avoids inventing a schema in installations where it is absent.
+-- =============================================================================
+
+DO $$
 BEGIN
-  -- Set ranges based on account type
-  v_min_number := CASE p_account_type
-    WHEN 'ASSET' THEN '10000'
-    WHEN 'LIABILITY' THEN '20000'
-    WHEN 'EQUITY' THEN '30000'
-    WHEN 'INCOME' THEN '40000'
-    WHEN 'EXPENSE' THEN '50000'
-    ELSE '90000'
-  END;
 
-  v_max_number := CASE p_account_type
-    WHEN 'ASSET' THEN '19999'
-    WHEN 'LIABILITY' THEN '29999'
-    WHEN 'EQUITY' THEN '39999'
-    WHEN 'INCOME' THEN '49999'
-    WHEN 'EXPENSE' THEN '59999'
-    ELSE '99999'
-  END;
+    IF to_regclass('public.idempotency_keys') IS NOT NULL THEN
 
-  -- Find the highest existing number in range for this company
-  SELECT MAX(CAST(account_number AS INTEGER)) + 1
-  INTO v_next_number
-  FROM public.chart_of_accounts
-  WHERE account_number ~ '^\d{5}$'
-    AND CAST(account_number AS INTEGER) >= CAST(v_min_number AS INTEGER)
-    AND CAST(account_number AS INTEGER) <= CAST(v_max_number AS INTEGER)
-    AND (p_company_id IS NULL OR company_id = p_company_id);
+        ALTER TABLE public.idempotency_keys
+            ADD COLUMN IF NOT EXISTS endpoint text;
 
-  -- If no existing account, start at minimum
-  IF v_next_number IS NULL THEN
-    v_next_number := CAST(v_min_number AS INTEGER);
-  END IF;
+        ALTER TABLE public.idempotency_keys
+            ADD COLUMN IF NOT EXISTS request_key text;
 
-  -- Ensure we don't exceed max
-  IF v_next_number > CAST(v_max_number AS INTEGER) THEN
-    RAISE EXCEPTION 'Account number range exhausted for type %', p_account_type;
-  END IF;
+        ALTER TABLE public.idempotency_keys
+            ADD COLUMN IF NOT EXISTS user_id text;
 
-  RETURN LPAD(v_next_number::TEXT, 5, '0');
-END;
-$$ LANGUAGE plpgsql;
+        ALTER TABLE public.idempotency_keys
+            ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 
--- ============================================================================
--- STEP 10: Create trigger to auto-set normal_balance from account_type
--- ============================================================================
-CREATE OR REPLACE FUNCTION public.set_normal_balance_from_type()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF NEW.normal_balance IS NULL AND NEW.account_type IS NOT NULL THEN
-    NEW.normal_balance := public.get_normal_balance(NEW.account_type);
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            idx_idempotency_keys_endpoint_key
+        ON public.idempotency_keys (
+            endpoint,
+            request_key
+        )
+        WHERE endpoint IS NOT NULL
+          AND request_key IS NOT NULL;
 
-DROP TRIGGER IF EXISTS trg_set_normal_balance ON public.chart_of_accounts;
-CREATE TRIGGER trg_set_normal_balance
-  BEFORE INSERT OR UPDATE ON public.chart_of_accounts
-  FOR EACH ROW
-  EXECUTE FUNCTION public.set_normal_balance_from_type();
+    END IF;
 
--- ============================================================================
--- STEP 11: Grant necessary permissions
--- ============================================================================
-GRANT USAGE ON SCHEMA public TO authenticated, anon, service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.chart_of_accounts TO authenticated;
-GRANT SELECT ON public.v_chart_of_accounts_tree TO authenticated, anon, service_role;
-GRANT EXECUTE ON FUNCTION public.get_account_subtree TO authenticated;
-GRANT EXECUTE ON FUNCTION public.calculate_account_balance TO authenticated;
-GRANT EXECUTE ON FUNCTION public.validate_no_circular_hierarchy TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_next_account_number TO authenticated;
-GRANT EXECUTE ON FUNCTION public.map_legacy_account_type TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_normal_balance TO authenticated;
+END $$;
 
--- ============================================================================
--- SUMMARY
--- ============================================================================
--- This migration adds the following new capabilities:
+
+-- =============================================================================
+-- 21. MIGRATION COMPLETE
+-- =============================================================================
+
+COMMIT;
+
+
+-- =============================================================================
+-- POST-MIGRATION RECONCILIATION
 --
--- 1. New columns: company_id, account_number, account_type, account_group,
---    parent_account_id, normal_balance, is_system_account, allow_posting,
---    opening_balance, opening_balance_date, subtype
+-- Run these AFTER the migration succeeds.
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- A. Trial balance
+-- -----------------------------------------------------------------------------
 --
--- 2. Constraints: account_number format (5 digits), check constraints
+-- SELECT *
+-- FROM public.v_trial_balance_balanced;
+
+
+-- -----------------------------------------------------------------------------
+-- B. Account balance discrepancies
+-- -----------------------------------------------------------------------------
 --
--- 3. Views: v_chart_of_accounts_tree (hierarchical view)
+-- SELECT
+--     account_number,
+--     account_name,
+--     account_type,
+--     stored_balance,
+--     opening_balance,
+--     debits,
+--     credits,
+--     (
+--         opening_balance
+--         +
+--         CASE
+--             WHEN account_type IN ('asset','expense')
+--                 THEN debits - credits
+--             ELSE credits - debits
+--         END
+--     ) AS calculated_balance
+-- FROM public.v_account_balance_integrity
+-- WHERE ABS(
+--     stored_balance -
+--     (
+--         opening_balance
+--         +
+--         CASE
+--             WHEN account_type IN ('asset','expense')
+--                 THEN debits - credits
+--             ELSE credits - debits
+--         END
+--     )
+-- ) > 0.01
+-- ORDER BY account_number;
+
+
+-- -----------------------------------------------------------------------------
+-- C. Orphan ledger references
+-- -----------------------------------------------------------------------------
 --
--- 4. Functions:
---    - get_account_subtree(p_account_id) - get account and all descendants
---    - calculate_account_balance(p_account_id) - calculate balance with normal balance
---    - validate_no_circular_hierarchy(p_account_id, p_parent_id) - prevent cycles
---    - get_next_account_number(p_account_type, p_company_id) - suggest next number
---    - map_legacy_account_type(legacy_type) - convert old types to new
---    - get_normal_balance(account_type) - get normal balance for type
---    - set_normal_balance_from_type() - auto-set normal balance trigger
+-- SELECT *
+-- FROM public.v_orphan_ledger_account_references;
+
+
+-- -----------------------------------------------------------------------------
+-- D. Duplicate account numbers
+-- -----------------------------------------------------------------------------
 --
--- 5. RLS: Company-scoped access policies
+-- SELECT *
+-- FROM public.v_duplicate_account_numbers;
+
+
+-- -----------------------------------------------------------------------------
+-- E. Invoice payment discrepancies
+-- -----------------------------------------------------------------------------
 --
--- NEXT: Run the backfill script to populate new fields from existing data
--- ============================================================================
+-- SELECT
+--     invoice_number,
+--     total_amount,
+--     stored_paid_amount,
+--     calculated_paid_amount,
+--     calculated_balance_due
+-- FROM public.v_invoice_payment_integrity
+-- WHERE ABS(
+--     stored_paid_amount
+--     -
+--     calculated_paid_amount
+-- ) > 0.01;
+
+
+-- -----------------------------------------------------------------------------
+-- F. Invoice line discrepancies
+-- -----------------------------------------------------------------------------
+--
+-- SELECT
+--     invoice_number,
+--     header_total,
+--     sum_line_amounts,
+--     sum_qty_x_price
+-- FROM public.v_invoice_integrity
+-- WHERE ABS(
+--     header_total
+--     -
+--     sum_line_amounts
+-- ) > 0.01;
+
+
+-- -----------------------------------------------------------------------------
+-- G. AR aging
+-- -----------------------------------------------------------------------------
+--
+-- SELECT
+--     aging_bucket,
+--     COUNT(*) AS invoice_count,
+--     SUM(outstanding) AS outstanding
+-- FROM public.v_ar_aging
+-- GROUP BY aging_bucket
+-- ORDER BY aging_bucket;
+
+
+-- -----------------------------------------------------------------------------
+-- H. AP aging
+-- -----------------------------------------------------------------------------
+--
+-- SELECT
+--     aging_bucket,
+--     COUNT(*) AS bill_count,
+--     SUM(outstanding) AS outstanding
+-- FROM public.v_ap_aging
+-- GROUP BY aging_bucket
+-- ORDER BY aging_bucket;

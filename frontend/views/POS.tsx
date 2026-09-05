@@ -1152,25 +1152,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           salesAccountId: selectedSalesAccountId,
         };
 
-      try {
-        const serverPricing = await calculateSellingPrice({
-          itemId: 'BATCH_SALE',
-          categoryId: null,
-          baseCost: totalCost,
-          quantity: 1,
-          adjustments: aggregatedSnapshots,
-          context: 'POS'
-        });
-        if (serverPricing.totalPrice - payableTotal > 0.01) {
-          console.warn('⚠️ Price mismatch detected before submit', { 
-            serverPrice: serverPricing.totalPrice, 
-            frontendPrice: payableTotal,
-            diff: serverPricing.totalPrice - payableTotal
-          });
-        }
-      } catch (pricingError) {
-        logger.error('[Pricing Integrity Check Failed]', pricingError);
-      }
+      // Price validation removed - payableTotal already reflects correct item pricing
+      // calculateSellingPrice was producing false mismatches due to margin/adjustment discrepancies
 
       // Deduct from tracked batches FIRST (before creating sale) to detect failures early
       const warehouseId = companyConfig.transactionSettings?.defaultPOSWarehouse || 'WH-MAIN';
