@@ -157,7 +157,8 @@ export function isWalletTopup(pay: AnyRecord): boolean {
   const applied = firstNum(pay.amountApplied, pay.amount_applied);
   const deposit = firstNum(pay.walletDeposit, pay.wallet_deposit);
   const handling = String(firstNonEmpty(pay.excessHandling, pay.excess_handling) || '');
-  const appliedPositive = applied !== null && applied > 0;
+  const appliedKnown = applied !== null;
+  const appliedPositive = appliedKnown && applied > 0;
   if (!appliedPositive) {
     if (deposit !== null && deposit > 0) return true;
     if (handling === 'Wallet') return true;

@@ -154,8 +154,10 @@ export const StatementSchema = z.object({
   statementNumber: z.string().optional(),
   date: z.string(), // Issue date
   customerName: z.string(),
+  customerCode: z.string().optional(),
   address: z.string().optional(),
   phone: z.string().optional(),
+  email: z.string().optional(),
   startDate: z.string(),
   endDate: z.string(),
   currency: z.string().default('MWK'),

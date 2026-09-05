@@ -2230,46 +2230,114 @@ if (type === 'POS_RECEIPT') {
 
         {/* Case: ACCOUNT_STATEMENT */}
         {type === 'ACCOUNT_STATEMENT' && 'transactions' in data && (
-          <View style={{ marginTop: 20 }}>
-            {/* Period Summary */}
-            <View style={{ marginBottom: 20, padding: 10, backgroundColor: '#f8fafc', borderRadius: 4 }}>
-              <Text style={{ fontSize: 10, color: '#64748b' }}>Statement Period:</Text>
-              <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{data.startDate} — {data.endDate}</Text>
+          <View style={{ marginTop: 16 }}>
+            {/* Statement Title */}
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a', letterSpacing: 1, textTransform: 'uppercase' }}>
+                Customer Statement
+              </Text>
+              {data.statementNumber && (
+                <Text style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>Statement No. {data.statementNumber}</Text>
+              )}
+            </View>
+
+            {/* Company & Customer Info Grid */}
+            <View style={{ flexDirection: 'row', marginBottom: 16, gap: 12 }}>
+              <View style={{ flex: 1, padding: 10, backgroundColor: '#f8fafc', borderRadius: 6, borderLeftWidth: 3, borderLeftColor: '#1f8577' }}>
+                <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Statement To</Text>
+                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#0f172a' }}>{data.customerName}</Text>
+                {data.customerCode && <Text style={{ fontSize: 9, color: '#64748b', marginTop: 1 }}>Code: {data.customerCode}</Text>}
+                {data.address && <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{data.address}</Text>}
+                {data.phone && <Text style={{ fontSize: 9, color: '#475569', marginTop: 1 }}>Tel: {data.phone}</Text>}
+                {data.email && <Text style={{ fontSize: 9, color: '#475569', marginTop: 1 }}>Email: {data.email}</Text>}
+              </View>
+              <View style={{ flex: 1, padding: 10, backgroundColor: '#f8fafc', borderRadius: 6, borderLeftWidth: 3, borderLeftColor: '#64748b' }}>
+                <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Statement Details</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <Text style={{ fontSize: 9, color: '#64748b' }}>Statement Date:</Text>
+                  <Text style={{ fontSize: 9, fontWeight: '600', color: '#0f172a' }}>{data.date}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <Text style={{ fontSize: 9, color: '#64748b' }}>Period:</Text>
+                  <Text style={{ fontSize: 9, fontWeight: '600', color: '#0f172a' }}>{data.startDate} to {data.endDate}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <Text style={{ fontSize: 9, color: '#64748b' }}>Opening Balance:</Text>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#0f172a' }}>{currency}{formatAmount(data.openingBalance)}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 9, color: '#64748b' }}>Currency:</Text>
+                  <Text style={{ fontSize: 9, fontWeight: '600', color: '#0f172a' }}>{currency}</Text>
+                </View>
+              </View>
             </View>
 
             {/* Ledger Table */}
-            <View style={s.tableHeader}>
-              <Text style={{ flex: 1.5 }}>Date</Text>
-              <Text style={{ flex: 2 }}>Reference</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Debit ({currency})</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Credit ({currency})</Text>
-              <Text style={{ flex: 1.5, textAlign: 'right' }}>Balance ({currency})</Text>
+            <View style={{ borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 6, overflow: 'hidden' }}>
+              {/* Header */}
+              <View style={{ flexDirection: 'row', backgroundColor: '#0f172a', paddingVertical: 8, paddingHorizontal: 10 }}>
+                <Text style={{ flex: 1.2, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Date</Text>
+                <Text style={{ flex: 2.5, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Particulars</Text>
+                <Text style={{ flex: 1.2, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Voucher No.</Text>
+                <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Ref No.</Text>
+                <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Type</Text>
+                <Text style={{ flex: 1.1, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Debit</Text>
+                <Text style={{ flex: 1.1, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Credit</Text>
+                <Text style={{ flex: 1.3, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Balance</Text>
+              </View>
+
+              {/* Opening Balance Row */}
+              <View style={{ flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 10, backgroundColor: '#f1f5f9', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
+                <Text style={{ flex: 1.2, fontSize: 9, fontWeight: '600', color: '#475569' }}>{data.startDate}</Text>
+                <Text style={{ flex: 2.5, fontSize: 9, fontWeight: 'bold', color: '#1e293b' }}>Opening Balance</Text>
+                <Text style={{ flex: 1.2, fontSize: 9, color: '#94a3b8' }}>—</Text>
+                <Text style={{ flex: 1, fontSize: 9, color: '#94a3b8' }}>—</Text>
+                <Text style={{ flex: 1, fontSize: 9, color: '#94a3b8' }}>—</Text>
+                <Text style={{ flex: 1.1, fontSize: 9, color: '#94a3b8', textAlign: 'right' }}>—</Text>
+                <Text style={{ flex: 1.1, fontSize: 9, color: '#94a3b8', textAlign: 'right' }}>—</Text>
+                <Text style={{ flex: 1.3, fontSize: 9, fontWeight: 'bold', color: '#1e293b', textAlign: 'right' }}>{currency}{formatAmount(data.openingBalance)}</Text>
+              </View>
+
+              {/* Transaction Rows */}
+              {data.transactions.map((txn, i) => (
+                <View key={i} style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 10, borderBottomWidth: i < data.transactions.length - 1 ? 1 : 0, borderBottomColor: '#f1f5f9', backgroundColor: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                  <Text style={{ flex: 1.2, fontSize: 9, color: '#334155' }}>{txn.date}</Text>
+                  <Text style={{ flex: 2.5, fontSize: 9, color: '#1e293b' }}>{txn.memo || txn.reference || '—'}</Text>
+                  <Text style={{ flex: 1.2, fontSize: 8, fontFamily: 'Courier', color: '#334155' }}>{txn.reference || '—'}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, fontFamily: 'Courier', color: '#94a3b8' }}>{'—'}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, color: '#64748b' }}>{'—'}</Text>
+                  <Text style={{ flex: 1.1, fontSize: 9, color: '#dc2626', textAlign: 'right', fontWeight: '600' }}>{txn.debit > 0 ? currency + formatAmount(txn.debit) : '—'}</Text>
+                  <Text style={{ flex: 1.1, fontSize: 9, color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>{txn.credit > 0 ? currency + formatAmount(txn.credit) : '—'}</Text>
+                  <Text style={{ flex: 1.3, fontSize: 9, fontWeight: 'bold', color: '#0f172a', textAlign: 'right' }}>{currency}{formatAmount(txn.runningBalance)}</Text>
+                </View>
+              ))}
+
+              {/* Totals Row */}
+              <View style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 10, backgroundColor: '#0f172a', borderTopWidth: 2, borderTopColor: '#334155' }}>
+                <View style={{ flex: 5.7, flexDirection: 'row', justifyContent: 'space-between', paddingRight: 8 }}>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Totals</Text>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#f87171' }}>DR: {currency}{formatAmount(Number('totalInvoiced' in data ? dataAny.totalInvoiced : 0))}</Text>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#4ade80' }}>CR: {currency}{formatAmount(Number('totalReceived' in data ? dataAny.totalReceived : 0))}</Text>
+                </View>
+                <View style={{ flex: 1.3, alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 10, fontWeight: 'black', color: Number('finalBalance' in data ? data.finalBalance : 0) > 0 ? '#f87171' : '#4ade80' }}>
+                    {currency}{formatAmount(Number('finalBalance' in data ? data.finalBalance : 0))}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Closing Balance Row */}
+              <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: '#fef08a', borderTopWidth: 2, borderTopColor: '#ca8a04' }}>
+                <Text style={{ flex: 7.7, fontSize: 10, fontWeight: 'black', color: '#1e293b', textTransform: 'uppercase', letterSpacing: 0.5 }}>Closing Balance</Text>
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: 'black', color: '#1e293b', textAlign: 'right' }}>
+                  {currency}{formatAmount(Number('finalBalance' in data ? data.finalBalance : 0))}
+                </Text>
+              </View>
             </View>
 
-            {data.transactions.map((txn, i) => (
-              <View key={i} style={s.row}>
-                <Text style={{ flex: 1.5 }}>{txn.date}</Text>
-                <Text style={{ flex: 2 }}>{txn.reference}</Text>
-                <Text style={{ flex: 1, textAlign: 'right' }}>{txn.debit > 0 ? formatAmount(txn.debit) : '-'}</Text>
-                <Text style={{ flex: 1, textAlign: 'right' }}>{txn.credit > 0 ? formatAmount(txn.credit) : '-'}</Text>
-                <Text style={{ flex: 1.5, textAlign: 'right', fontWeight: 'bold' }}>{formatAmount(txn.runningBalance)}</Text>
-              </View>
-            ))}
-
-            {/* Summary Totals */}
-            <View style={{ marginTop: 30, borderTopWidth: 2, borderColor: '#000', paddingTop: 10 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
-                <Text>Total Debits:</Text>
-                <Text>{currency} {formatAmount(Number('totalInvoiced' in data ? dataAny.totalInvoiced : 0))}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
-                <Text>Total Credits:</Text>
-                <Text>{currency} {formatAmount(Number('totalReceived' in data ? dataAny.totalReceived : 0))}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 5, padding: 8, backgroundColor: '#000', color: '#fff' }}>
-                <Text style={{ fontWeight: 'bold' }}>TOTAL OUTSTANDING:</Text>
-                <Text style={{ fontWeight: 'bold' }}>{currency} {formatAmount(Number('finalBalance' in data ? data.finalBalance : 0))}</Text>
-              </View>
+            {/* Footer Note */}
+            <View style={{ marginTop: 12, alignItems: 'center' }}>
+              <Text style={{ fontSize: 8, color: '#94a3b8' }}>Generated by Prime ERP — {companyName}</Text>
             </View>
           </View>
         )}

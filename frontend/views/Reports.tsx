@@ -68,7 +68,7 @@ const Reports: React.FC = () => {
     if (location.pathname.includes('margin-performance')) return 'Margin Performance';
     if (location.pathname.includes('rounding-analytics')) return 'Rounding Analytics';
     if (location.pathname.includes('financials')) return 'Financials';
-    if (location.pathname.includes('contacts')) return 'Client Ledger';
+    if (location.pathname.includes('contacts')) return 'Customer Statement';
     if (location.pathname.includes('wallet-statement')) return 'Wallet Statement';
     if (location.pathname.includes('customer-statement')) return 'Customer Statement';
     if (location.pathname.includes('auditor')) return 'Auditor';
@@ -86,7 +86,7 @@ const Reports: React.FC = () => {
     else if (location.pathname.includes('margin-performance')) setActiveCategory('Margin Performance');
     else if (location.pathname.includes('rounding-analytics')) setActiveCategory('Rounding Analytics');
     else if (location.pathname.includes('financials')) setActiveCategory('Financials');
-    else if (location.pathname.includes('contacts')) setActiveCategory('Client Ledger');
+    else if (location.pathname.includes('contacts')) setActiveCategory('Customer Statement');
     else if (location.pathname.includes('wallet-statement')) setActiveCategory('Wallet Statement');
     else if (location.pathname.includes('customer-statement')) setActiveCategory('Customer Statement');
     else if (location.pathname.includes('auditor')) setActiveCategory('Auditor');

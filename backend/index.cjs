@@ -1755,6 +1755,57 @@ async function startServer() {
     }
   });
 
+  // --- Customer Statement Email ---
+  app.post('/api/reports/customer-statement/email', requireRole('Admin', 'Accountant', 'Manager'), async (req, res) => {
+    try {
+      const { customerId, startDate, endDate, customerEmail, statementData } = req.body || {};
+      if (!customerId || !customerEmail || !statementData) {
+        return res.status(400).json({ error: 'customerId, customerEmail and statementData are required' });
+      }
+      const officialDocumentService = require('./services/officialDocumentService.cjs');
+      const emailService = require('./services/emailService.cjs');
+      const companyConfigService = require('./services/companyConfigService.cjs');
+
+      const customer = await repo.getById('customers', customerId).catch(() => null);
+      const companyConfig = await companyConfigService.getCompanyConfig().catch(() => ({}));
+
+      const mappedData = {
+        ...statementData,
+        customerName: customer?.name || statementData.customerName || 'Customer',
+        customerCode: customerId,
+        address: customer?.address || statementData.address || '',
+        phone: customer?.phone || statementData.phone || '',
+        email: customerEmail,
+      };
+
+      const { buffer } = await officialDocumentService.renderOfficialPdf({
+        type: 'ACCOUNT_STATEMENT',
+        rawData: mappedData,
+        customers: customer ? [customer] : [],
+        channel: 'erp',
+      });
+
+      const companyName = companyConfig?.companyName || 'Prime ERP';
+      const subject = `Customer Statement — ${mappedData.customerName} (${startDate} to ${endDate})`;
+      const bodyText = `Dear ${mappedData.customerName},\n\nPlease find attached your Customer Statement for the period ${startDate} to ${endDate}.\n\nClosing Balance: ${mappedData.currency || 'K'}${Number(mappedData.finalBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\nFor any queries, please contact us.\n\nRegards,\n${companyName}`;
+
+      const result = await emailService.sendEmailWithAttachment({
+        to: customerEmail,
+        subject,
+        body: bodyText,
+        filename: `Customer_Statement_${mappedData.customerName}_${startDate}_to_${endDate}.pdf`,
+        content: buffer,
+        contentType: 'application/pdf',
+        senderName: companyName,
+      });
+
+      res.json({ success: true, messageId: result.messageId });
+    } catch (err) {
+      console.error('[Reports] Customer statement email error:', err?.message || err);
+      res.status(500).json({ error: err?.message || 'Failed to send statement email' });
+    }
+  });
+
   // --- VAT Management Endpoints ---
   app.get('/api/vat/transactions', requireRole('Admin', 'Accountant', 'Manager'), injectFinancialYear, async (req, res) => {
     try {

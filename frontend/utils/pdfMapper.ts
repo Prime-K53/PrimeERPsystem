@@ -372,11 +372,13 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
         const statementTransactions = Array.isArray(item.transactions) ? item.transactions : [];
         const statementData = {
             number: resolvedNumber || undefined,
-            statementNumber: resolvedNumber || undefined,
+            statementNumber: resolvedNumber || item.statementNumber || undefined,
             date: String(item.date || new Date().toLocaleDateString()),
             customerName: resolveFirstText(item.customerName, item.customer_name, item.clientName, item.client_name) || 'Customer',
+            customerCode: resolveFirstText(item.customerCode, item.customer_code, item.code) || undefined,
             address: resolveFirstText(item.address, item.customerAddress, item.customer_address, item.billingAddress, item.billing_address),
             phone: resolveFirstText(item.phone, item.customerPhone, item.customer_phone),
+            email: resolveFirstText(item.email, item.customerEmail, item.customer_email) || undefined,
             startDate: String(item.startDate || item.start_date || 'N/A'),
             endDate: String(item.endDate || item.end_date || 'N/A'),
             currency,

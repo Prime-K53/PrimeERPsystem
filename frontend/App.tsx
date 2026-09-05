@@ -807,7 +807,7 @@ const AppLayout: React.FC = () => {
                 <Route path="/sales-flow/orders/new" element={<Navigate to="/sales-flow/orders" replace />} />
                 <Route path="/sales-flow/payments/new" element={<Navigate to="/sales-flow/payments" replace />} />
                 <Route path="/sales-flow/sms" element={<Navigate to="/internal-tools/chat" replace />} />
-                <Route path="/reports/statements" element={<Navigate to="/revenue/contacts" replace />} />
+                <Route path="/reports/statements" element={<Navigate to="/revenue/contacts?type=customer-statement" replace />} />
                 <Route path="/accounts/chart" element={<Navigate to="/accounts/chart-of-accounts" replace />} />
                 <Route path="/production/work-orders" element={<Navigate to="/industrial/work-orders" replace />} />
                 <Route path="/production/scheduler" element={<Navigate to="/industrial/scheduler" replace />} />
