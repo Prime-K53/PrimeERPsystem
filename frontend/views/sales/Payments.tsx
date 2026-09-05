@@ -1572,13 +1572,13 @@ const Payments: React.FC = () => {
                                                     }}
                                                 >
                                                     <optgroup label="Default Accounts">
-                                                        {DEFAULT_ACCOUNTS.filter(a => ['1000', '1050', '1060'].includes(a.id)).map(acc => (
+                                                         {DEFAULT_ACCOUNTS.filter(a => ['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(acc => (
                                                             <option key={acc.id} value={acc.id}>{acc.name} ({acc.code})</option>
                                                         ))}
                                                     </optgroup>
                                                     {bankAccounts.length > 0 && (
                                                         <optgroup label="Specific Bank Accounts">
-                                                            {bankAccounts.filter(a => a.status === 'Active' && !['1000', '1050', '1060'].includes(a.id)).map(acc => (
+                                                             {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(acc => (
                                                                 <option key={acc.id} value={acc.id}>{acc.name} - {acc.bankName}</option>
                                                             ))}
                                                         </optgroup>
@@ -2112,13 +2112,13 @@ const Payments: React.FC = () => {
                                         }}
                                     >
                                         <optgroup label="Default Accounts">
-                                            {DEFAULT_ACCOUNTS.filter(a => ['1000', '1050', '1060'].includes(a.id)).map(acc => (
+                                             {DEFAULT_ACCOUNTS.filter(a => ['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(acc => (
                                                 <option key={acc.id} value={acc.id}>{acc.name} ({acc.code})</option>
                                             ))}
                                         </optgroup>
                                         {bankAccounts.length > 0 && (
                                             <optgroup label="Specific Bank Accounts">
-                                                {bankAccounts.filter(a => a.status === 'Active' && !['1000', '1050', '1060'].includes(a.id)).map(acc => (
+                                                 {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(acc => (
                                                     <option key={acc.id} value={acc.id}>{acc.name} - {acc.bankName}</option>
                                                 ))}
                                             </optgroup>

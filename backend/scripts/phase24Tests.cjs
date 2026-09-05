@@ -269,7 +269,7 @@ async function main() {
   };
 
   // 12. Check no legacy codes in new transactions
-  const legacyCodes = ['1000', '1050', '1100', '1200', '2000', '4000', '5000', '6100'];
+   const legacyCodes = ['1000', '1050', '1060', '1100', '1200', '2000', '4000', '5000', '6100'];
   results.legacyPersistence = [];
   for (const entry of ledgerEntries) {
     if (legacyCodes.includes(entry.accountNum)) {

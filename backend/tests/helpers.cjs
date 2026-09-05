@@ -35,7 +35,7 @@ function createTestInvoiceData(overrides = {}) {
 
 function createTestAccountData(overrides = {}) {
   return {
-    code: '1000',
+     code: '11110',
     name: 'Test Account',
     type: 'asset',
     ...overrides

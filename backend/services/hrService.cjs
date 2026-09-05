@@ -26,7 +26,7 @@ class HRService {
     const expenseAccount = accounts.find((a) => {
       const d = a.data || a;
       const name = String(d.name || '').toLowerCase();
-      return name.includes('wage') || name.includes('salary') || name.includes('payroll') || d.code === '6300';
+       return name.includes('wage') || name.includes('salary') || name.includes('payroll') || d.code === '52100';
     });
     const liabilityAccounts = await repo.accounts.getAll({ 'data->>type': 'eq.liability' });
     const liabilityAccount = liabilityAccounts.find((a) => {

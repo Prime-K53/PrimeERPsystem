@@ -17,14 +17,14 @@ interface GLConfig {
 
 const getGLConfig = (): GLConfig => {
   const saved = localStorage.getItem('nexus_company_config')
-  const defaultConfig: GLConfig = {
-    defaultSalesAccount: '4000',
-    defaultInventoryAccount: '1200',
-    defaultCOGSAccount: '5000',
-    cashDrawerAccount: '1000',
-    customerDepositAccount: '2200',
-    marketingExpenseAccount: '6100',
-  }
+ const defaultConfig: GLConfig = {
+     defaultSalesAccount: '41100',
+     defaultInventoryAccount: '11400',
+     defaultCOGSAccount: '51200',
+     cashDrawerAccount: '11110',
+     customerDepositAccount: '21300',
+     marketingExpenseAccount: '52100',
+   }
   if (saved) {
     try {
       const parsed = JSON.parse(saved)

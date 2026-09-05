@@ -58,7 +58,7 @@ const Architect: React.FC = () => {
       const physicalValue = calculateInventoryValuation(inventory);
       
       // Calculate Ledger Value from Account 1200 (Inventory Asset)
-      const invAcc = accounts.find((a: any) => a.code === '1200' || a.id === '1200');
+       const invAcc = accounts.find((a: any) => a.code === '11400' || a.id === '11400');
       let ledgerValue = 0;
       if (invAcc) {
           ledgerValue = ledger.reduce((sum: number, entry: any) => {

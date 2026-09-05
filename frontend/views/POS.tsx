@@ -1327,7 +1327,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
   const handleCloseRegister = async () => {
     if (!zReportData) return;
     setIsClosingDrawer(true);
-    const bankAccId = accounts.find((a: any) => a.code === '1050')?.id || '1050';
+     const bankAccId = accounts.find((a: any) => a.code === '11210')?.id || '11210';
     await postZReportToLedger(zReportData, bankAccId);
     setIsClosingDrawer(false);
     setShowZReport(false);

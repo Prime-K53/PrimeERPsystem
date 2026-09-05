@@ -25,16 +25,18 @@ const HEADERS = {
 };
 
 const LEGACY_TO_CANONICAL = {
-  '1000': '11110',
-  '1050': '11210',
-  '1060': '11210',
-  '1100': '11310',
-  '1200': '11410',
-  '2200': '21110',
-  '3000': '34000',
-  '4000': '41100',
-  '4900': '42100',
-  '5000': '51200',
+  // Safe mappings
+  '1000': '11110',   // Cash → Cash Drawer
+  '1100': '11310',   // Accounts Receivable → Trade Debtors
+  '1200': '11410',   // Inventory → Merchandise Inventory
+  '2200': '21110',   // Supplier AP → Trade Creditors
+  '3000': '34000',   // Owner Equity/Drawings → Drawings
+  '4900': '42100',   // Other Income → Interest Income
+  '5000': '51200',   // COGS → Cost of Goods Sold
+  // WARNING: Potentially unsafe mappings (requires manual verification)
+  // '1050': '11210', // Bank Account → National Bank: UNSAFE without historical evidence
+  // '4000': '41100', // Sales → Product Sales: UNSAFE without classifying product vs service
+  // '1060': undefined, // Mobile Money: No canonical equivalent, preserved as archive
 };
 
 const ACCOUNT_UUIDS = {

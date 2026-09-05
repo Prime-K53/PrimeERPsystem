@@ -14,17 +14,17 @@ describe('Finance API Integration', () => {
 
   describe('Chart of Accounts', () => {
     test('create and retrieve an account', async () => {
-      const data = {
-        code: '1000',
-        name: 'Cash',
-        type: 'asset',
-        category: 'Current Asset'
-      };
-      const acct = await finance.createAccount(data);
-      expect(acct).toBeDefined();
-      expect(acct.code).toBe('1000');
-      expect(acct.name).toBe('Cash');
-      expect(acct.type).toBe('asset');
+       const data = {
+         code: '11110',
+         name: 'Cash Drawer',
+         type: 'asset',
+         category: 'Current Asset'
+       };
+       const acct = await finance.createAccount(data);
+       expect(acct).toBeDefined();
+       expect(acct.code).toBe('11110');
+       expect(acct.name).toBe('Cash Drawer');
+       expect(acct.type).toBe('asset');
 
       const fetched = await finance.getAccountById(acct.id);
       expect(fetched).toBeDefined();
@@ -32,18 +32,18 @@ describe('Finance API Integration', () => {
     });
 
     test('update an account', async () => {
-      const acct = await finance.createAccount({
-        code: '2000', name: 'Old Name', type: 'liability'
-      });
+       const acct = await finance.createAccount({
+         code: '21110', name: 'Trade Creditors', type: 'liability'
+       });
 
       const updated = await finance.updateAccount(acct.id, { name: 'New Name' });
       expect(updated.name).toBe('New Name');
     });
 
     test('delete an account', async () => {
-      const acct = await finance.createAccount({
-        code: '3000', name: 'To Delete', type: 'equity'
-      });
+       const acct = await finance.createAccount({
+         code: '31000', name: "Owner's Capital", type: 'equity'
+       });
 
       await finance.deleteAccount(acct.id);
       const fetched = await finance.getAccountById(acct.id);

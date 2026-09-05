@@ -141,7 +141,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           }
       } else {
           // Ensure core banking accounts exist and have correct names/ids
-          const coreAccountCodes = ['1000', '1050', '1060'];
+           const coreAccountCodes = ['11110', '11100', '11120', '11210', '11220', '11230'];
           for (const code of coreAccountCodes) {
               const defaultAcc = DEFAULT_ACCOUNTS.find(a => a.code === code);
               const existingAcc = finalAccounts.find(a => a.code === code);

@@ -68,10 +68,10 @@ async function main() {
   const incCreditAcct = accounts.find(a => a.id === incCredit?.data?.account_id);
   results.income = {
     debit: incDebitAcct ? `${incDebitAcct.account_number} ${incDebitAcct.name}` : 'NOT FOUND',
-    debitIs1000: incDebitAcct?.account_number === '1000',
-    credit: incCreditAcct ? `${incCreditAcct.account_number} ${incCreditAcct.name}` : 'NOT FOUND',
-    creditIs41100: incCreditAcct?.account_number === '41100',
-    pass: incDebitAcct?.account_number === '11110' && incCreditAcct?.account_number === '41100'
+     debitIs1000: incDebitAcct?.account_number === '11110',
+     credit: incCreditAcct ? `${incCreditAcct.account_number} ${incCreditAcct.name}` : 'NOT FOUND',
+     creditIs41100: incCreditAcct?.account_number === '41100',
+     pass: incDebitAcct?.account_number === '11110' && incCreditAcct?.account_number === '41100'
   };
   console.log('  Debit:', results.income.debit, '(should be 11110 Cash Drawer)');
   console.log('  Credit:', results.income.credit, '(should be 41100 Product Sales)');

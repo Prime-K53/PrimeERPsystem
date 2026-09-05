@@ -363,7 +363,7 @@ class FinancialReportingService {
     if (retainedEarnings !== 0) {
       equity.push({
         accountId: 'retained-earnings',
-        accountCode: '3001',
+        accountCode: '32000',
         accountName: 'Retained Earnings',
         amount: retainedEarnings
       });
@@ -619,54 +619,46 @@ class FinancialReportingService {
 
   // Helper methods
   private isCurrentAsset(accountCode: string): boolean {
-    // Old 4-digit: 10xx, 11xx, 12xx (Cash, Bank, Receivable, Inventory)
-    // New 5-digit: 110xx, 120xx, 130xx (Current asset ranges)
-    return accountCode.startsWith('11') ||
-           accountCode.startsWith('12') ||
-           accountCode.startsWith('13') ||
-           accountCode.startsWith('110') ||
-           accountCode.startsWith('120') ||
-           accountCode.startsWith('130') ||
-           accountCode.startsWith('140');
+    return accountCode.startsWith('110') ||
+           accountCode.startsWith('111') ||
+           accountCode.startsWith('112') ||
+           accountCode.startsWith('113') ||
+           accountCode.startsWith('114') ||
+           accountCode.startsWith('115');
   }
 
   private isFixedAsset(accountCode: string): boolean {
-    // Old 4-digit: 15xx, 16xx
-    // New 5-digit: 150xx, 160xx
-    return accountCode.startsWith('15') ||
-           accountCode.startsWith('16') ||
-           accountCode.startsWith('150') ||
-           accountCode.startsWith('160');
+    return accountCode.startsWith('120') ||
+           accountCode.startsWith('121') ||
+           accountCode.startsWith('122') ||
+           accountCode.startsWith('123') ||
+           accountCode.startsWith('124') ||
+           accountCode.startsWith('125');
   }
 
   private isCurrentLiability(accountCode: string): boolean {
-    // Old 4-digit: 20xx, 21xx
-    // New 5-digit: 210xx, 220xx (Current liability ranges)
-    return accountCode.startsWith('20') ||
-           accountCode.startsWith('21') ||
-           accountCode.startsWith('210') ||
-           accountCode.startsWith('220') ||
-           accountCode.startsWith('230');
+    return accountCode.startsWith('210') ||
+           accountCode.startsWith('211') ||
+           accountCode.startsWith('212') ||
+           accountCode.startsWith('213');
   }
 
   private isLongTermLiability(accountCode: string): boolean {
-    // New 5-digit: 221xx, 222xx (Long-term liability ranges)
-    return accountCode.startsWith('221') ||
+    return accountCode.startsWith('220') ||
+           accountCode.startsWith('221') ||
            accountCode.startsWith('222');
   }
 
   private classifyPLAccount(accountCode: string, accountType: AccountType): ProfitLossItem['category'] {
     if (accountType === 'Revenue') {
       // Old: 49xx, New: 42xxx (Other income)
-      if (accountCode.startsWith('49') || accountCode.startsWith('420')) return 'otherIncome';
+      if (accountCode.startsWith('49') || accountCode.startsWith('420') || accountCode.startsWith('421') || accountCode.startsWith('422')) return 'otherIncome';
       return 'revenue';
     }
 
     if (accountType === 'Expense') {
-      // Old: 50xx (COGS), 61xx-68xx (Expenses), 69xx (Other)
-      // New: 51xxx (COGS), 52xxx-53xxx (Operating), 54xxx (Other)
-      if (accountCode.startsWith('50') || accountCode.startsWith('510')) return 'cogs';
-      if (accountCode.startsWith('69') || accountCode.startsWith('540')) return 'otherExpense';
+      if (accountCode.startsWith('50') || accountCode.startsWith('510') || accountCode.startsWith('511') || accountCode.startsWith('512') || accountCode.startsWith('513')) return 'cogs';
+      if (accountCode.startsWith('540') || accountCode.startsWith('541')) return 'otherExpense';
       return 'expense';
     }
 

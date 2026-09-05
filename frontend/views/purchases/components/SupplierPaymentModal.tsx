@@ -135,7 +135,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
                     <div>
                         <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 8 }}>Payment Account</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {DEFAULT_ACCOUNTS.filter(a => ['1000', '1050', '1060'].includes(a.id)).map(account => {
+                             {DEFAULT_ACCOUNTS.filter(a => ['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(account => {
                                 const isActive = selectedAccountId === account.id;
                                 const Icon = getIcon(account.id);
                                 return (

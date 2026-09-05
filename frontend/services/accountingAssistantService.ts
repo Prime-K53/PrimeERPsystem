@@ -21,15 +21,15 @@ const findMatchingKeyword = (
 };
 
 const EXPENSE_MAPPINGS: [string[], string, string][] = [
-  [['rent', 'lease'], 'Rent', '6100'],
-  [['electric', 'water', 'utility'], 'Utilities', '6200'],
-  [['salary', 'wage', 'payroll'], 'Salaries', '6300'],
-  [['print', 'paper', 'ink', 'toner'], 'Cost of Goods', '5000'],
-  [['market', 'advert', 'promo'], 'Marketing', '6100'],
-  [['meal', 'food', 'lunch'], 'Meals & Entertainment', '6100'],
-  [['fuel', 'petrol', 'diesel'], 'Transport', '6100'],
-  [['software', 'hosting', 'domain'], 'Software Subscriptions', '6100'],
-  [['insurance'], 'Insurance', '6100'],
+  [['rent', 'lease'], 'Rent', '52200'],
+  [['electric', 'water', 'utility'], 'Utilities', '52300'],
+  [['salary', 'wage', 'payroll'], 'Salaries', '52100'],
+  [['print', 'paper', 'ink', 'toner'], 'Cost of Goods', '51200'],
+  [['market', 'advert', 'promo'], 'Marketing', '52500'],
+  [['meal', 'food', 'lunch'], 'Meals & Entertainment', '52800'],
+  [['fuel', 'petrol', 'diesel'], 'Transport', '52600'],
+  [['software', 'hosting', 'domain'], 'Software Subscriptions', '52300'],
+  [['insurance'], 'Insurance', '52800'],
 ];
 
 export function autoCategorizeExpense(expense: {
@@ -52,7 +52,7 @@ export function autoCategorizeExpense(expense: {
   return {
     category: 'General',
     confidence: 0.3,
-    suggestedAccountId: '6100',
+    suggestedAccountId: '52000',
   };
 }
 
@@ -125,8 +125,8 @@ export function suggestJournalEntry(
 
   if (lower.includes('purchase equipment') || lower.includes('buy equipment') || lower.includes('acquire equipment')) {
     return [{
-      debitAccountId: '1500',
-      creditAccountId: '1050',
+      debitAccountId: '12300',
+      creditAccountId: '11210',
       description: `Purchase of equipment: ${description}`,
       confidence: 0.85,
     }];
@@ -134,8 +134,8 @@ export function suggestJournalEntry(
 
   if (lower.includes('salary') || lower.includes('payroll') || lower.includes('paid salary')) {
     return [{
-      debitAccountId: '6300',
-      creditAccountId: '1050',
+      debitAccountId: '52100',
+      creditAccountId: '11210',
       description: `Salary payment: ${description}`,
       confidence: 0.9,
     }];
@@ -143,8 +143,8 @@ export function suggestJournalEntry(
 
   if (lower.includes('cash sale') || lower.includes('cash sales')) {
     return [{
-      debitAccountId: '1000',
-      creditAccountId: '4000',
+      debitAccountId: '11110',
+      creditAccountId: '41100',
       description: `Cash sale: ${description}`,
       confidence: 0.9,
     }];
@@ -152,8 +152,8 @@ export function suggestJournalEntry(
 
   if (lower.includes('credit sale') || lower.includes('credit sales')) {
     return [{
-      debitAccountId: '1100',
-      creditAccountId: '4000',
+      debitAccountId: '11310',
+      creditAccountId: '41100',
       description: `Credit sale: ${description}`,
       confidence: 0.9,
     }];
@@ -161,8 +161,8 @@ export function suggestJournalEntry(
 
   if (lower.includes('paid supplier') || lower.includes('supplier payment')) {
     return [{
-      debitAccountId: '2000',
-      creditAccountId: '1050',
+      debitAccountId: '21110',
+      creditAccountId: '11210',
       description: `Supplier payment: ${description}`,
       confidence: 0.85,
     }];
@@ -170,8 +170,8 @@ export function suggestJournalEntry(
 
   if (lower.includes('owner investment') || lower.includes('capital injection')) {
     return [{
-      debitAccountId: '1000',
-      creditAccountId: '3000',
+      debitAccountId: '11110',
+      creditAccountId: '31000',
       description: `Owner investment: ${description}`,
       confidence: 0.9,
     }];
@@ -179,16 +179,16 @@ export function suggestJournalEntry(
 
   if (lower.includes('withdrawal') || lower.includes('owner draw') || lower.includes('drawing')) {
     return [{
-      debitAccountId: '3000',
-      creditAccountId: '1000',
+      debitAccountId: '34000',
+      creditAccountId: '11110',
       description: `Owner withdrawal: ${description}`,
       confidence: 0.9,
     }];
   }
 
   return [{
-    debitAccountId: '5000',
-    creditAccountId: '1000',
+    debitAccountId: '52000',
+    creditAccountId: '11110',
     description: 'General entry',
     confidence: 0.3,
   }];

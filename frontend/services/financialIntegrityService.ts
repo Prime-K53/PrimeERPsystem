@@ -227,9 +227,12 @@ const isCashLikeAccount = (account?: MinimalAccount): boolean => {
   const code = String(account?.code || account?.id || '');
   const name = String(account?.name || '').toLowerCase();
   return (
-    code === '1000' ||
-    code === '1050' ||
-    code === '1060' ||
+    code === '11110' ||
+    code === '11100' ||
+    code === '11120' ||
+    code === '11210' ||
+    code === '11220' ||
+    code === '11230' ||
     name.includes('cash') ||
     name.includes('bank') ||
     name.includes('mobile money')

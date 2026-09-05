@@ -14,16 +14,16 @@ describe('FinanceService (unit)', () => {
 
   describe('chart of accounts', () => {
     it('creates an account with all fields', async () => {
-      const acct = await finance.createAccount({
-        code: '1100', name: 'Petty Cash', type: 'asset', category: 'Current Asset', description: 'Office petty cash fund'
-      });
-      expect(acct.code).toBe('1100');
+       const acct = await finance.createAccount({
+         code: '11310', name: 'Trade Debtors', type: 'asset', category: 'Current Asset', description: 'Trade debtors account'
+       });
+       expect(acct.code).toBe('11310');
       expect(acct.is_active).toBe(1);
     });
 
     it('rejects duplicate inserts - same id', async () => {
-      const acct = await finance.createAccount({ code: '1200', name: 'Dupe Test', type: 'liability', id: 'dup-1' });
-      await expect(finance.createAccount({ code: '1300', name: 'Should Fail', type: 'equity', id: 'dup-1' }))
+       const acct = await finance.createAccount({ code: '12100', name: 'Dupe Test', type: 'liability', id: 'dup-1' });
+       await expect(finance.createAccount({ code: '12200', name: 'Should Fail', type: 'equity', id: 'dup-1' }))
         .rejects.toThrow();
     });
 

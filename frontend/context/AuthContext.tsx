@@ -259,21 +259,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           crm: true,
           multiWarehouse: true
       },
-      glMapping: {
-          defaultSalesAccount: '4000',
-          defaultInventoryAccount: '1200',
-          defaultCOGSAccount: '5000',
-          accountsReceivable: '1100',
-          accountsPayable: '2000',
-          cashDrawerAccount: '1000',
-          bankAccount: '1050',
-          salesReturnAccount: '4100',
-          customerDepositAccount: '2200',
-          otherIncomeAccount: '4900',
-           defaultExpenseAccount: '6100',
-           defaultLaborWagesAccount: '6300',
-           retainedEarningsAccount: '3000'
-      },
+       glMapping: {
+           defaultSalesAccount: '41100',
+           defaultInventoryAccount: '11400',
+           defaultCOGSAccount: '51200',
+           accountsReceivable: '11310',
+           accountsPayable: '21110',
+           cashDrawerAccount: '11110',
+           bankAccount: '11210',
+           salesReturnAccount: '41100',
+           customerDepositAccount: '21300',
+           otherIncomeAccount: '42000',
+           defaultExpenseAccount: '52000',
+           defaultLaborWagesAccount: '52100',
+           retainedEarningsAccount: '32000'
+       },
       transactionSettings: {
           allowBackdating: true,
           backdatingLimitDays: 30,
