@@ -85,7 +85,7 @@ const POS: React.FC = () => {
     open: false,
     type: 'photocopy'
   });
-  const [selectedSalesAccountId, setSelectedSalesAccountId] = useState('4000');
+   const [selectedSalesAccountId, setSelectedSalesAccountId] = useState('41100');
   const [bomTemplates, setBomTemplates] = useState<BOMTemplate[]>([]);
 
   const [lastSale, setLastSale] = useState<Sale | null>(null);

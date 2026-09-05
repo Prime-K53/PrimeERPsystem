@@ -38,7 +38,7 @@ const ClientLedger: React.FC = () => {
   const location = useLocation();
   const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
   const gl = companyConfig?.glMapping || {};
-  const arAccId = gl.accountsReceivable || '1100';
+   const arAccId = gl.accountsReceivable || '11310';
   const companyName = companyConfig?.companyName || 'Prime ERP';
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
@@ -103,10 +103,10 @@ const ClientLedger: React.FC = () => {
     let openingBalance = Number(selectedCustomer?.balance || 0);
     if (dateCutoff) {
       const allBefore = ledger.filter((entry: any) => { const mc = entry.customerId === selectedCustomerId; const ms = selectedSubAccountNames.length === 0 || selectedSubAccountNames.includes(entry.subAccountName || 'Main'); return mc && ms && new Date(entry.date) < dateCutoff; }).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      allBefore.forEach((entry: any) => { const d = entry.debitAccountId === arAccId || entry.debitAccountId === '1100'; const c = entry.creditAccountId === arAccId || entry.creditAccountId === '1100'; if (d) openingBalance += entry.amount; if (c) openingBalance -= entry.amount; });
+       allBefore.forEach((entry: any) => { const d = entry.debitAccountId === arAccId || entry.debitAccountId === '11310'; const c = entry.creditAccountId === arAccId || entry.creditAccountId === '11310'; if (d) openingBalance += entry.amount; if (c) openingBalance -= entry.amount; });
     }
     let runningB = openingBalance;
-    const entriesWithBalance = customerLedgerEntries.map((entry: any) => { const d = entry.debitAccountId === arAccId || entry.debitAccountId === '1100'; const c = entry.creditAccountId === arAccId || entry.creditAccountId === '1100'; if (d) runningB += entry.amount; if (c) runningB -= entry.amount; return { ...entry, balance: runningB, isDebit: d, isCredit: c }; });
+     const entriesWithBalance = customerLedgerEntries.map((entry: any) => { const d = entry.debitAccountId === arAccId || entry.debitAccountId === '11310'; const c = entry.creditAccountId === arAccId || entry.creditAccountId === '11310'; if (d) runningB += entry.amount; if (c) runningB -= entry.amount; return { ...entry, balance: runningB, isDebit: d, isCredit: c }; });
 
     // F-10: Only invoice + payment entries contribute to the customer
     // balance. POS sales (even when filtered to the same customer) are

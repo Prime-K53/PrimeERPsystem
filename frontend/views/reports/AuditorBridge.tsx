@@ -18,10 +18,10 @@ export const AuditorBridge: React.FC<{ drift: number, physical: number, ledger: 
 
         // Use system mapping for Inventory Asset and Other Income/Loss
         const gl = companyConfig?.glMapping || {};
-        const invAssetAcc = gl.defaultInventoryAccount || '1200';
-        const correctionAcc = isLedgerHigh
-            ? '6100' // Generic Maintenance/Expense if ledger too high
-            : gl.otherIncomeAccount || '4900'; // Other Income if ledger too low (found stock)
+         const invAssetAcc = gl.defaultInventoryAccount || '11400';
+         const correctionAcc = isLedgerHigh
+             ? '52000' // Generic Maintenance/Expense if ledger too high
+             : gl.otherIncomeAccount || '42100'; // Other Income if ledger too low (found stock)
 
         const entries = [{
             description: `Logical drift correction: Inventory vs Ledger audit`,

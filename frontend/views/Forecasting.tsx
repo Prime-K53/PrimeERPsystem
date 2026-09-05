@@ -85,7 +85,7 @@ const Forecasting: React.FC = () => {
 
     // 1. Starting Cash Balance
     const gl = companyConfig?.glMapping;
-    const cashAccCodes = [gl?.cashDrawerAccount || '1000', gl?.bankAccount || '1050'];
+     const cashAccCodes = [gl?.cashDrawerAccount || '11110', gl?.bankAccount || '11210'];
     const cashAccs = (accounts || []).filter(a => cashAccCodes.includes(a.code) || cashAccCodes.includes(a.id));
     const cashAccIds = cashAccs.map(a => a.id);
     

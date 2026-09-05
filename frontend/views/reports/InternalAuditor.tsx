@@ -86,16 +86,16 @@ const InternalAuditor: React.FC = () => {
             .filter((i: any) => !isPosMirrorInv(i))
             .reduce((sum: number, i: any) => sum + (i.totalAmount || 0), 0);
         const totalSalesAmount = posSalesTotal + invoiceSalesTotal;
-        const salesAccountId = gl.defaultSalesAccount || '4000';
-        const ledgerSalesAmount = ledger
-            .filter((e: any) => filterByDateRange(e.date) && (e.creditAccountId === salesAccountId || e.creditAccountId === '4000'))
+         const salesAccountId = gl.defaultSalesAccount || '41100';
+         const ledgerSalesAmount = ledger
+             .filter((e: any) => filterByDateRange(e.date) && (e.creditAccountId === salesAccountId || e.creditAccountId === '41100'))
             .reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
         const salesVariance = totalSalesAmount - ledgerSalesAmount;
 
         // 2. Cash Reconciliation
         // Payments collected vs ledger cash account balance
         const totalPaymentsCollected = filteredPayments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
-        const cashAccountId = gl.cashDrawerAccount || gl.defaultCashAccount || '1000';
+         const cashAccountId = gl.cashDrawerAccount || gl.defaultCashAccount || '11110';
         const ledgerCashChange = ledger
             .filter((e: any) => filterByDateRange(e.date))
             .reduce((sum: number, e: any) => {
@@ -108,13 +108,13 @@ const InternalAuditor: React.FC = () => {
         // 3. Inventory Reconciliation
         // Physical stock value vs ledger inventory account
         const physicalInventoryValue = inventory.reduce((sum: number, item: any) => sum + ((item.stock || 0) * (item.cost || 0)), 0);
-        const inventoryAccountId = gl.defaultInventoryAccount || '1200';
-        const ledgerInventoryValue = ledger
-            .filter((e: any) => e.debitAccountId === inventoryAccountId || e.debitAccountId === '1200' ||
-                             e.creditAccountId === inventoryAccountId || e.creditAccountId === '1200')
-            .reduce((sum: number, e: any) => {
-                if (e.debitAccountId === inventoryAccountId || e.debitAccountId === '1200') return sum + (e.amount || 0);
-                if (e.creditAccountId === inventoryAccountId || e.creditAccountId === '1200') return sum - (e.amount || 0);
+         const inventoryAccountId = gl.defaultInventoryAccount || '11400';
+         const ledgerInventoryValue = ledger
+             .filter((e: any) => e.debitAccountId === inventoryAccountId || e.debitAccountId === '11400' ||
+                              e.creditAccountId === inventoryAccountId || e.creditAccountId === '11400')
+             .reduce((sum: number, e: any) => {
+                 if (e.debitAccountId === inventoryAccountId || e.debitAccountId === '11400') return sum + (e.amount || 0);
+                 if (e.creditAccountId === inventoryAccountId || e.creditAccountId === '11400') return sum - (e.amount || 0);
                 return sum;
             }, 0);
         const inventoryVariance = physicalInventoryValue - ledgerInventoryValue;
@@ -124,11 +124,11 @@ const InternalAuditor: React.FC = () => {
         const outstandingAR = invoices
             .filter((i: any) => i.status !== 'Paid' && i.status !== 'Cancelled')
             .reduce((sum: number, i: any) => sum + ((i.totalAmount || 0) - (i.paidAmount || 0)), 0);
-        const arAccountId = gl.accountsReceivable || '1100';
-        const ledgerARBalance = ledger
-            .reduce((sum: number, e: any) => {
-                if (e.debitAccountId === arAccountId || e.debitAccountId === '1100') return sum + (e.amount || 0);
-                if (e.creditAccountId === arAccountId || e.creditAccountId === '1100') return sum - (e.amount || 0);
+         const arAccountId = gl.accountsReceivable || '11310';
+         const ledgerARBalance = ledger
+             .reduce((sum: number, e: any) => {
+                 if (e.debitAccountId === arAccountId || e.debitAccountId === '11310') return sum + (e.amount || 0);
+                 if (e.creditAccountId === arAccountId || e.creditAccountId === '11310') return sum - (e.amount || 0);
                 return sum;
             }, 0);
         const arVariance = outstandingAR - ledgerARBalance;
@@ -138,11 +138,11 @@ const InternalAuditor: React.FC = () => {
         const outstandingAP = purchases
             .filter((p: any) => p.paymentStatus !== 'Paid' && p.status !== 'Cancelled')
             .reduce((sum: number, p: any) => sum + ((p.total || p.totalAmount || 0) - (p.paidAmount || 0)), 0);
-        const apAccountId = gl.accountsPayable || '2000';
-        const ledgerAPBalance = ledger
-            .reduce((sum: number, e: any) => {
-                if (e.creditAccountId === apAccountId || e.creditAccountId === '2000') return sum + (e.amount || 0);
-                if (e.debitAccountId === apAccountId || e.debitAccountId === '2000') return sum - (e.amount || 0);
+         const apAccountId = gl.accountsPayable || '21110';
+         const ledgerAPBalance = ledger
+             .reduce((sum: number, e: any) => {
+                 if (e.creditAccountId === apAccountId || e.creditAccountId === '21110') return sum + (e.amount || 0);
+                 if (e.debitAccountId === apAccountId || e.debitAccountId === '21110') return sum - (e.amount || 0);
                 return sum;
             }, 0);
         const apVariance = outstandingAP - ledgerAPBalance;

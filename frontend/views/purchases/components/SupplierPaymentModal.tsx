@@ -44,12 +44,12 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
         onRecord(payment);
     };
 
-    const getIcon = (accountId: string) => {
-        if (accountId === '1000') return <Banknote size={18} />;
-        if (accountId === '1050') return <CreditCard size={18} />;
-        if (accountId === '1060') return <Smartphone size={18} />;
-        return null;
-    };
+     const getIcon = (accountId: string) => {
+         if (accountId === '11110') return <Banknote size={18} />;
+         if (accountId === '11210') return <CreditCard size={18} />;
+         if (accountId === '11230') return <Smartphone size={18} />;
+         return null;
+     };
 
     return (
         <div style={{

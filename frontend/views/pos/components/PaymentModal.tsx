@@ -181,11 +181,11 @@ const canCompleteSale = useMemo(() => {
     useEffect(() => {
         const handleGlobalKeys = (e: KeyboardEvent) => {
             if (e.key === 'Enter' && canCompleteSale) handleComplete();
-            if (e.altKey) {
-                if (e.key === '1') addPaymentMethod('1000');
-                if (e.key === '2') addPaymentMethod('1050');
-                if (e.key === '3') addPaymentMethod('1060');
-            }
+             if (e.altKey) {
+                 if (e.key === '1') addPaymentMethod('11110');
+                 if (e.key === '2') addPaymentMethod('11210');
+                 if (e.key === '3') addPaymentMethod('11230');
+             }
         };
         window.addEventListener('keydown', handleGlobalKeys);
         return () => window.removeEventListener('keydown', handleGlobalKeys);
@@ -369,11 +369,11 @@ const canCompleteSale = useMemo(() => {
 
                         <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Payment method</div>
                         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                            {[
-                                { id: '1000', icon: Banknote, label: 'Cash' },
-                                { id: '1050', icon: CreditCard, label: 'Bank' },
-                                { id: '1060', icon: Smartphone, label: 'Mobile' },
-                            ].map(btn => {
+                             {[
+                                 { id: '11110', icon: Banknote, label: 'Cash' },
+                                 { id: '11210', icon: CreditCard, label: 'Bank' },
+                                 { id: '11230', icon: Smartphone, label: 'Mobile' },
+                             ].map(btn => {
                                 const isActive = activePaymentMethod === btn.id;
                                 const Icon = btn.icon;
                                 return (

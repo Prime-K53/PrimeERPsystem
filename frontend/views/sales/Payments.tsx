@@ -246,8 +246,8 @@ const SupplierDetailPanel: React.FC<SupplierDetailPanelProps> = ({ payment, onCl
                     <div>
                         <label className="block text-[10px] font-bold text-[#5c6567] uppercase tracking-tight mb-1.5">Payment Account</label>
                         <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${payment.accountId === '1000' ? 'bg-[#1f8577]' : (payment.accountId === '1060' ? 'bg-[#3fa294]' : 'bg-[#d99a3f]')}`}></div>
-                            <p className="font-semibold text-[#23282A] text-[13px]">
+                             <div className={`w-2 h-2 rounded-full ${payment.accountId === '11110' ? 'bg-[#1f8577]' : (payment.accountId === '11230' ? 'bg-[#3fa294]' : 'bg-[#d99a3f]')}`}></div>
+                                     <p className="font-semibold text-[#23282A] text-[13px]">
                                 {DEFAULT_ACCOUNTS.find(a => a.id === payment.accountId)?.name || payment.paymentMethod}
                             </p>
                         </div>
@@ -417,8 +417,8 @@ const CustomerPaymentDetailPanel: React.FC<{
                             <div>
                                 <label className="block text-[10px] font-bold text-[#5c6567] uppercase tracking-tight mb-1.5">Payment Account</label>
                                 <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${payment.accountId === '1000' ? 'bg-[#1f8577]' : (payment.accountId === '1060' ? 'bg-[#3fa294]' : 'bg-[#d99a3f]')}`}></div>
-                                    <p className="font-semibold text-[#23282A] text-[13px]">
+                             <div className={`w-2 h-2 rounded-full ${payment.accountId === '11110' ? 'bg-[#1f8577]' : (payment.accountId === '11230' ? 'bg-[#3fa294]' : 'bg-[#d99a3f]')}`}></div>
+                                     <p className="font-semibold text-[#23282A] text-[13px]">
                                         {DEFAULT_ACCOUNTS.find(a => a.id === payment.accountId)?.name || payment.paymentMethod}
                                     </p>
                                 </div>
@@ -2269,7 +2269,7 @@ const Payments: React.FC = () => {
                         subAccountName: p.subAccountName || 'Main',
                         amount: p.amount,
                         paymentMethod: p.paymentMethod,
-                        accountId: p.accountId || (p.paymentMethod === 'Cash' ? '1000' : (p.paymentMethod === 'Mobile Money' ? '1060' : '1050')),
+                         accountId: p.accountId || (p.paymentMethod === 'Cash' ? '11110' : (p.paymentMethod === 'Mobile Money' ? '11230' : '11210')),
                         reference: p.reference || '',
                         notes: p.notes || '',
                         bankCharges: p.bankCharges || 0,

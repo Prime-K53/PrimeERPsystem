@@ -457,7 +457,7 @@ const FinancialReports: React.FC = () => {
             .filter(a => types.includes(a.type))
             .map(a => {
                 const gl = companyConfig?.glMapping || {};
-                const invAccId = gl.defaultInventoryAccount || '1200';
+                 const invAccId = gl.defaultInventoryAccount || '11400';
                 const isInventory = a.id === invAccId || a.code === invAccId;
 
                 return {
@@ -485,10 +485,10 @@ const FinancialReports: React.FC = () => {
     // Cash Flow Logic (Direct Method Simulation)
     const cashFlowStats = useMemo(() => {
         const gl = companyConfig?.glMapping;
-        const cashAccCodes = [
-            gl?.cashDrawerAccount || '1000',
-            gl?.bankAccount || '1050'
-        ];
+         const cashAccCodes = [
+             gl?.cashDrawerAccount || '11110',
+             gl?.bankAccount || '11210'
+         ];
         // Find account IDs for the cash codes to handle both ID and Code based ledger entries
         const cashAccs = (accounts || []).filter(a => cashAccCodes.includes(a.code) || cashAccCodes.includes(a.id));
         const cashAccIds = cashAccs.map(a => a.id);
@@ -546,9 +546,9 @@ const FinancialReports: React.FC = () => {
             const acc = (accounts || []).find(a => a.name === name);
             if (!acc) return;
 
-            const arId = gl?.accountsReceivable || '1100';
-            const apId = gl?.accountsPayable || '2000';
-            const invId = gl?.defaultInventoryAccount || '1200';
+             const arId = gl?.accountsReceivable || '11310';
+             const apId = gl?.accountsPayable || '21110';
+             const invId = gl?.defaultInventoryAccount || '11400';
 
             const isOperating = acc.type === 'Revenue' || acc.type === 'Expense' ||
                 acc.id === arId || acc.code === arId ||
