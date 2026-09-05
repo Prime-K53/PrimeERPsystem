@@ -87,6 +87,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
             {logo ? (
               <Image src={logo} style={{ marginBottom: 6, width: templateSettings.logoWidth }} />
             ) : null}
+            <Text style={{ fontSize: 8, color: '#64748b', fontStyle: 'italic', marginTop: 2 }}>Generated on: {new Date().toLocaleString('en-GB')}</Text>
           </View>
 
           {/* Right: Statement Title and Balance Summary Table */}
