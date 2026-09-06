@@ -1273,7 +1273,7 @@ const DashboardContent: React.FC = () => {
         maxWidth: 1520, width: '100%', overflow: 'hidden', flex: 1,
       }}>
         <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: isMobile ? '10px 16px 0' : isTablet ? '12px 24px 0' : '14px 32px 0', flexWrap: 'wrap', gap: isMobile ? 16 : 24, marginBottom: isMobile ? 8 : 12, position: 'sticky', top: 0, zIndex: 20, background: 'rgba(243, 237, 227, 0.85)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', marginLeft: isMobile ? -8 : isTablet ? -16 : -32, marginRight: isMobile ? -8 : isTablet ? -16 : -32, paddingLeft: isMobile ? 8 : isTablet ? 16 : 32, paddingRight: isMobile ? 8 : isTablet ? 16 : 32, paddingBottom: 8, borderBottom: '1px solid rgba(228, 221, 209, 0.6)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingTop: isMobile ? 10 : isTablet ? 12 : 14, paddingLeft: isMobile ? 8 : isTablet ? 16 : 32, paddingRight: isMobile ? 8 : isTablet ? 16 : 32, paddingBottom: 8, flexWrap: 'wrap', gap: isMobile ? 16 : 24, marginBottom: isMobile ? 8 : 12, position: 'sticky', top: 0, zIndex: 20, background: 'rgba(243, 237, 227, 0.85)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', marginLeft: isMobile ? -8 : isTablet ? -16 : -32, marginRight: isMobile ? -8 : isTablet ? -16 : -32, borderBottom: '1px solid rgba(228, 221, 209, 0.6)',
         }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
