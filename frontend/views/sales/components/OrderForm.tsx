@@ -132,7 +132,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const { invoices, recurringInvoices, accounts, ledger } = useFinance();
     const { quotations, customerPayments, customers, addCustomer } = useSales();
     const { inventory, marketAdjustments, updateReservedStock, addItem } = useInventory();
-    const { createOrder } = useOrders();
+    const { createOrder, orders } = useOrders();
     const { handlePreview } = useDocumentPreview();
     const navigate = useNavigate();
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
@@ -823,7 +823,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 collection = recurringInvoices;
             } else if (type === 'Order') {
                 key = 'order';
-                collection = [];
+                collection = orders || [];
             }
 
             setFormData((prev: any) => ({ ...prev, id: generateNextId(key, collection, companyConfig) }));
@@ -836,7 +836,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             const resolvedRecurringStatus = normalizeRecurringStatus(initialData.status);
             const fallbackId = initialData.id || generateNextId(
                 type === 'Quotation' ? 'quotation' : type === 'Recurring' ? 'REC' : type === 'Order' ? 'order' : 'invoice',
-                type === 'Quotation' ? quotations : type === 'Recurring' ? recurringInvoices : type === 'Order' ? [] : invoices,
+                type === 'Quotation' ? quotations : type === 'Recurring' ? recurringInvoices : type === 'Order' ? (orders || []) : invoices,
                 companyConfig
             );
 
@@ -967,10 +967,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
     const handleSubmission = async (asDraft: boolean, andPay: boolean = false) => {
         if (saving) return;
-        if (!formData.customerName || analysis.processedItems.length === 0) {
-            notify("Selection of customer and items is required.", "error");
-            return;
-        }
+        try {
+            if (!formData.customerName || analysis.processedItems.length === 0) {
+                notify("Selection of customer and items is required.", "error");
+                return;
+            }
 
         if (isRecurring && !formData.nextRunDate) {
             notify("Next billing date is required for a subscription.", "error");
@@ -1236,7 +1237,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             await incrementDiscountUsage(d.ruleId || d.id).catch(() => {});
         }
 
-        onSave(finalData, asDraft, auditReason, andPay);
+            await Promise.resolve(onSave(finalData, asDraft, auditReason, andPay));
+        } catch (error: any) {
+            logger.error('[ORDER FORM] Failed to finalise order:', error);
+            notify(error?.message || 'Failed to finalise order', 'error');
+        }
     };
 
     const handleQuickService = (serviceName: string) => {

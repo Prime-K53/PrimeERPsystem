@@ -7,6 +7,7 @@ import {
     MultiCurrencyJournalEntry, MultiCurrencyTransactionLine, CurrencyGainLoss,
     Invoice
 } from '../../types';
+import { DEFAULT_ACCOUNTS } from '../../constants';
 import { generateNextId, roundToCurrency } from '../../utils/helpers';
 
 export const getCompanyConfig = () => {
@@ -25,14 +26,19 @@ export const getGLConfig = () => {
     const saved = localStorage.getItem('nexus_company_config');
     const defaultConfig = {
         defaultSalesAccount: '41100',
+        salesRevenueAccount: '41100',
+        incomeAccount: '41100',
         defaultInventoryAccount: '11400',
         defaultCOGSAccount: '51200',
         accountsReceivable: '11310',
         accountsPayable: '21110',
         cashDrawerAccount: '11110',
         bankAccount: '11210',
+        mobileMoneyAccount: '11230',
         salesReturnAccount: '41100',
         customerDepositAccount: '21300',
+        customerDeposits: '21300',
+        walletAccount: '21300',
         otherIncomeAccount: '42000',
         defaultExpenseAccount: '52000',
         defaultLaborWagesAccount: '52100',
@@ -83,14 +89,33 @@ export const resolveToAccountId = (identifier: string, accounts?: any[]): string
 
 export async function loadAccountsFromStore(tx: any): Promise<any[]> {
     try {
-        const accountsStore = tx.objectStore('accounts');
-        return await new Promise((resolve, reject) => {
-            const request = accountsStore.getAll();
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
+        if (!tx) {
+            const fromDb = await dbService.getAll<any>('accounts');
+            return fromDb && fromDb.length > 0 ? fromDb : DEFAULT_ACCOUNTS;
+        }
+        const accountsStore = typeof tx.objectStore === 'function' ? tx.objectStore('accounts') : tx;
+        if (!accountsStore || typeof accountsStore.getAll !== 'function') {
+            const fromDb = await dbService.getAll<any>('accounts');
+            return fromDb && fromDb.length > 0 ? fromDb : DEFAULT_ACCOUNTS;
+        }
+        const res = accountsStore.getAll();
+        let loadedAccounts: any[] = [];
+        if (res && typeof res.then === 'function') {
+            loadedAccounts = await res;
+        } else if (Array.isArray(res)) {
+            loadedAccounts = res;
+        } else if (res && typeof res === 'object') {
+            loadedAccounts = await new Promise((resolve, reject) => {
+                res.onsuccess = () => resolve(res.result);
+                res.onerror = () => reject(res.error);
+            });
+        }
+        if (!loadedAccounts || loadedAccounts.length === 0) {
+            return DEFAULT_ACCOUNTS;
+        }
+        return loadedAccounts;
     } catch {
-        return [];
+        return DEFAULT_ACCOUNTS;
     }
 }
 
@@ -116,6 +141,35 @@ export class UnresolvedAccountError extends Error {
         this.name = 'UnresolvedAccountError';
     }
 }
+
+const LEGACY_CODE_TO_CANONICAL: Record<string, string> = {
+    '1000': '11110', // Cash Drawer
+    '1050': '11210', // Bank
+    '1060': '11230', // Mobile Money
+    '1100': '11310', // Trade Debtors / AR
+    '1200': '12100', // Fixed Asset
+    '1300': '11400', // Inventory
+    '1400': '11310', // AR
+    '1500': '12100', // Fixed Asset
+    '1600': '12500', // Acc Depreciation
+    '2000': '21110', // Accounts Payable
+    '2100': '21110', // Accounts Payable
+    '2110': '21110', // Accounts Payable
+    '2120': '21210', // Tax Payable
+    '3000': '30000', // Equity
+    '3100': '31000', // Capital
+    '3200': '32000', // Retained Earnings
+    '3400': '34000', // Drawings
+    '4000': '41100', // Sales Revenue
+    '4100': '41100', // Sales Product
+    '4200': '41200', // Sales Service
+    '5000': '51200', // COGS
+    '5100': '51100', // Purchases
+    '6000': '52000', // Expenses
+    '6100': '52200', // Rent
+    '6200': '52300', // Utilities
+    '6300': '52100', // Salaries
+};
 
 export function resolveAccountForPosting(identifier: string, accounts: any[], options: ResolveAccountOptions = {}): string | null {
     if (!identifier) {
@@ -145,11 +199,20 @@ export function resolveAccountForPosting(identifier: string, accounts: any[], op
         return identifier;
     }
     
-    const found = accounts.find(a => 
+    let found = accounts.find(a => 
         a.id === identifier || 
         a.code === identifier || 
         a.account_number === identifier
     );
+
+    if (!found && LEGACY_CODE_TO_CANONICAL[identifier]) {
+        const canonical = LEGACY_CODE_TO_CANONICAL[identifier];
+        found = accounts.find(a =>
+            a.id === canonical ||
+            a.code === canonical ||
+            a.account_number === canonical
+        );
+    }
     
     if (!found) {
         if (options.strict) throw new UnresolvedAccountError(identifier);
@@ -161,6 +224,14 @@ export function resolveAccountForPosting(identifier: string, accounts: any[], op
         return null;
     }
     if (!options.allowNonPosting && (found.allow_posting === false || found.allow_posting === 0)) {
+        const postingChild = accounts.find(a =>
+            (a.parent_account_id === found.id || a.parent_account_id === found.code || a.parent_account_id === found.account_number) &&
+            a.allow_posting !== false && a.allow_posting !== 0 &&
+            a.is_active !== false && a.is_active !== 0
+        );
+        if (postingChild) {
+            return postingChild.id;
+        }
         if (options.strict) throw new UnresolvedAccountError(identifier);
         return null;
     }

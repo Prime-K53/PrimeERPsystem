@@ -222,25 +222,28 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const pricingSummary = summarizePricingBreakdown(normalizedItems as unknown[]);
       const refCustomer = salesContext?.customers.find((c: any) => c.id === data.customerId || c.name === data.customerName);
 
+      const paidAmount = toNum(data.paidAmount, 0);
+      const remainingBalance = data.remainingBalance !== undefined ? toNum(data.remainingBalance, totalAmount - paidAmount) : Math.max(0, totalAmount - paidAmount);
+
       const newOrder: Order = {
         id: orderNumber,
         idempotencyKey: crypto.randomUUID(),
         orderNumber,
         customerId: data.customerId || '',
         customerName: data.customerName || 'Walking Customer',
-        orderDate: new Date().toISOString(),
-        date: new Date().toISOString(),
-        status: 'Pending',
+        orderDate: data.orderDate || data.date || new Date().toISOString(),
+        date: data.date || data.orderDate || new Date().toISOString(),
+        status: data.status || 'Pending',
         subtotal,
         totalAmount,
         discount,
         discountType: data.discountType || 'fixed',
         discountRaw: data.discountRaw || 0,
         items: normalizedItems,
-        payments: [],
-        paidAmount: 0,
-        remainingBalance: totalAmount,
-        createdBy: user?.id || 'System',
+        payments: Array.isArray(data.payments) ? data.payments : [],
+        paidAmount,
+        remainingBalance,
+        createdBy: user?.id || user?.name || 'System',
         notes: data.notes,
         shippingAddress: data.shippingAddress,
         billingAddress: data.billingAddress,

@@ -905,7 +905,7 @@ export const transactionService = {
                         targetDebitAccount = payment.accountId;
                     } else {
                         if (payment.method === 'Card' || payment.method === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
-                        if (payment.method === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
+                        if (payment.method === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount || '11230';
                     }
 
                     const payEntry: LedgerEntry = {
@@ -1616,7 +1616,7 @@ export const transactionService = {
                     date: invoice.date,
                     description: `Recurring Invoice #${invoice.id}`,
                     debitAccountId: resolveAcct(gl.accountsReceivable),
-                    creditAccountId: resolveAcct(invoice.salesAccountId) || resolveAcct(gl.defaultSalesAccount),
+                    creditAccountId: resolveAcct(invoice.salesAccountId || gl.defaultSalesAccount),
                     amount: totalAmount,
                     referenceId: invoice.id,
                     reconciled: false,
@@ -1878,18 +1878,7 @@ export const transactionService = {
             ['ledger', 'accounts'],
             async (tx) => {
                 const store = tx.objectStore('ledger');
-                const accountsStore = tx.objectStore('accounts');
-                
-                let accounts: any[] = [];
-                try {
-                    accounts = await new Promise((resolve, reject) => {
-                        const request = accountsStore.getAll();
-                        request.onsuccess = () => resolve(request.result);
-                        request.onerror = () => reject(request.error);
-                    });
-                } catch {
-                    // Fallback to empty if accounts store not available
-                }
+                const accounts = await loadAccountsFromStore(tx);
                 
                 const companyConfig = getCompanyConfig();
                 const companyId = companyConfig?.companyId;
@@ -2103,7 +2092,7 @@ export const transactionService = {
                     date: invoice.date,
                     description: `Invoice #${invoice.id}`,
                     debitAccountId: resolveAcct(gl.accountsReceivable),
-                    creditAccountId: resolveAcct(invoice.salesAccountId) || resolveAcct(gl.defaultSalesAccount),
+                    creditAccountId: resolveAcct(invoice.salesAccountId || gl.defaultSalesAccount),
                     amount: totalAmount,
                     referenceId: invoice.id,
                     reconciled: false,
@@ -2562,7 +2551,7 @@ export const transactionService = {
                     date: invoiceData.date,
                     description: `Invoice #${invoiceData.id} (from Job Order #${jobOrderId})`,
                     debitAccountId: resolveAcct(gl.accountsReceivable),
-                    creditAccountId: resolveAcct(invoiceData.salesAccountId) || resolveAcct(gl.defaultSalesAccount),
+                    creditAccountId: resolveAcct(invoiceData.salesAccountId || gl.defaultSalesAccount),
                     amount: totalAmount,
                     referenceId: invoiceData.id,
                     reconciled: false,
@@ -2756,7 +2745,7 @@ export const transactionService = {
                     targetDebitAccount = payment.accountId;
                 } else {
                     if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') targetDebitAccount = resolveAcct(gl.bankAccount);
-                    if (payment.paymentMethod === 'Mobile Money') targetDebitAccount = resolveAcct(gl.mobileMoneyAccount);
+                    if (payment.paymentMethod === 'Mobile Money') targetDebitAccount = resolveAcct(gl.mobileMoneyAccount || '11230');
                 }
 
                 if (snapshot.amountRetained > 0) {
@@ -3824,7 +3813,7 @@ export const transactionService = {
                 const bankTransactionsStore = tx.objectStore('bankTransactions');
                 const accountsStore = tx.objectStore('accounts');
 
-                const accounts = await loadAccountsFromStore(accountsStore);
+                const accounts = await loadAccountsFromStore(tx);
                 const companyConfig = getCompanyConfig();
                 const companyId = companyConfig?.companyId;
                 const accountOptions = { allowNonPosting: false, companyId };
@@ -4803,6 +4792,7 @@ export const transactionService = {
                     }
                     return resolved;
                 };
+                const gl = getGLConfig();
 
                 // Pre-fetch data for adjustment processing
                 const inventory = await inventoryStore.getAll();
@@ -4855,13 +4845,12 @@ export const transactionService = {
                         (item) => item.productId
                     );
                     if (cogsTotal > 0) {
-                        const gl = getGLConfig();
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: order.orderDate,
                             description: `COGS - Order #${order.orderNumber}`,
-                            debitAccountId: gl.defaultCOGSAccount,
-                            creditAccountId: gl.defaultInventoryAccount,
+                            debitAccountId: resolveAcct(gl.defaultCOGSAccount),
+                            creditAccountId: resolveAcct(gl.defaultInventoryAccount),
                             amount: Number(cogsTotal.toFixed(2)),
                             referenceId: order.id,
                             reconciled: false,
@@ -4914,13 +4903,12 @@ export const transactionService = {
                     await orderStore.put(order);
 
                     // Recognize Revenue immediately
-                    const gl = getGLConfig();
                     const revenueEntry: LedgerEntry = {
                         id: generateId('LG-ORD-REV-NEW'),
                         date: order.orderDate,
                         description: `Immediate Revenue recognition for Order #${order.orderNumber}`,
-                        debitAccountId: resolveAcct(gl.customerDeposits),
-                        creditAccountId: resolveAcct(gl.salesRevenueAccount || gl.incomeAccount),
+                        debitAccountId: resolveAcct(gl.customerDeposits || gl.customerDepositAccount),
+                        creditAccountId: resolveAcct(gl.salesRevenueAccount || gl.defaultSalesAccount || gl.incomeAccount),
                         amount: order.totalAmount,
                         referenceId: order.id,
                         reconciled: true,
@@ -4957,8 +4945,8 @@ export const transactionService = {
                         id: generateId('LG-ORD-INIT'),
                         date: order.orderDate,
                         description: `Initial payment for Order #${order.orderNumber} via ${lastPayment.paymentMethod}`,
-                        debitAccountId: isWallet ? resolveAcct(gl.walletAccount || gl.bankAccount) : resolveAcct(gl.cashDrawerAccount || gl.bankAccount),
-                        creditAccountId: resolveAcct(gl.customerDeposits),
+                        debitAccountId: isWallet ? resolveAcct(gl.walletAccount || gl.customerDepositAccount || gl.bankAccount) : resolveAcct(gl.cashDrawerAccount || gl.bankAccount),
+                        creditAccountId: resolveAcct(gl.customerDeposits || gl.customerDepositAccount),
                         amount: order.paidAmount,
                         referenceId: order.id,
                         reconciled: false,

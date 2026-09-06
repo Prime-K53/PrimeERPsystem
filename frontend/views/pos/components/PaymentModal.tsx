@@ -4,7 +4,7 @@ import type { PaymentDetail } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useBankingStore } from '../../../context/BankingContext';
-import { DEFAULT_ACCOUNTS } from '../../../constants';
+import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
 import { currencyService } from '../../../services/currencyService';
 
 import { formatNumber } from '../../../utils/helpers';
@@ -53,6 +53,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     const [currentPaymentAmount, setCurrentPaymentAmount] = useState(() => (Number.isFinite(total) ? total.toFixed(2) : ''));
     const [changeDue, setChangeDue] = useState(0);
     const [activePaymentMethod, setActivePaymentMethod] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleCancel = useCallback(() => {
         setActivePaymentMethod(null);
@@ -102,12 +103,13 @@ const canCompleteSale = useMemo(() => {
   return totalPaid >= total - 0.01;
 }, [splitPayments, typedAmount, total]);
 
-    const handleComplete = useCallback(() => {
+    const handleComplete = useCallback(async () => {
+        if (isSubmitting) return;
         const paymentsToSubmit: PaymentDetail[] = splitPayments.length > 0
             ? splitPayments
             : (
                 typedAmount > 0
-                    ? [{ method: 'Cash', amount: typedAmount, accountId: '1000' }]
+                    ? [{ method: 'Cash', amount: typedAmount, accountId: ACCOUNT_IDS.CASH_DRAWER }]
                     : []
             );
         const totalPaid = paymentsToSubmit.reduce((sum, p) => sum + p.amount, 0);
@@ -122,9 +124,16 @@ const canCompleteSale = useMemo(() => {
             return;
         }
 
-        onComplete(paymentsToSubmit, 'Change');
-        setActivePaymentMethod(null);
-    }, [splitPayments, typedAmount, total, onComplete, notify]);
+        try {
+            setIsSubmitting(true);
+            await Promise.resolve(onComplete(paymentsToSubmit, 'Change'));
+            setActivePaymentMethod(null);
+        } catch (error: any) {
+            notify(error?.message || 'Error processing sale', 'error');
+        } finally {
+            setIsSubmitting(false);
+        }
+    }, [isSubmitting, splitPayments, typedAmount, total, onComplete, notify]);
 
     const addPaymentMethod = useCallback((accountId: string) => {
         const amountInput = parseFloat(currentPaymentAmount);
@@ -156,8 +165,8 @@ const canCompleteSale = useMemo(() => {
         } else {
             const account = DEFAULT_ACCOUNTS.find(a => a.id === accountId);
             if (!account) return;
-            method = account.name.includes('Cash') ? 'Cash' :
-                (account.name.includes('Mobile') ? 'Mobile Money' : 'Bank Transfer');
+            method = accountId === ACCOUNT_IDS.CASH_DRAWER || account.name.includes('Cash') ? 'Cash' :
+                (accountId === ACCOUNT_IDS.MOBILE_MONEY || account.name.includes('Mobile') ? 'Mobile Money' : 'Bank Transfer');
         }
 
         const newSplit = [...splitPayments, { method, amount: amountInput, accountId }];
@@ -461,17 +470,17 @@ const canCompleteSale = useMemo(() => {
                         )}
 
                         <div style={{ flex: 1 }} />
-                        <button onClick={handleComplete} disabled={!canCompleteSale}
+                        <button onClick={handleComplete} disabled={!canCompleteSale || isSubmitting}
                             style={{
                                 width: '100%', border: 'none', borderRadius: 9, padding: '13px 0',
                                 fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 600,
-                                background: canCompleteSale ? `linear-gradient(155deg, ${teal[500]}, ${teal[700]})` : teal[50],
-                                color: canCompleteSale ? '#fff' : inkSoft,
-                                cursor: canCompleteSale ? 'pointer' : 'default',
-                                boxShadow: canCompleteSale ? '0 6px 16px -6px rgba(15,84,76,.55)' : 'none',
+                                background: (canCompleteSale && !isSubmitting) ? `linear-gradient(155deg, ${teal[500]}, ${teal[700]})` : teal[50],
+                                color: (canCompleteSale && !isSubmitting) ? '#fff' : inkSoft,
+                                cursor: (canCompleteSale && !isSubmitting) ? 'pointer' : 'default',
+                                boxShadow: (canCompleteSale && !isSubmitting) ? '0 6px 16px -6px rgba(15,84,76,.55)' : 'none',
                                 transition: 'all .15s'
                             }}>
-                            {!canCompleteSale ? 'Awaiting payment' : 'Complete Sale'}
+                            {isSubmitting ? 'Processing...' : (!canCompleteSale ? 'Awaiting payment' : 'Complete Sale')}
                         </button>
                     </div>
                 </div>
