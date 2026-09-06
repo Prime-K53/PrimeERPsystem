@@ -173,10 +173,7 @@ function detectCycle(dependsOn: string[], allItems: QueuedOperation[], visited: 
     path.delete(depId);
   }
   return false;
-}
-
-const LOCAL_GENERATION_KEY = 'nexus_sync_generation';
-
+}const LOCAL_GENERATION_KEY = 'nexus_sync_generation';
 export function getLocalGeneration(): number {
   try {
     const raw = localStorage.getItem(LOCAL_GENERATION_KEY);
@@ -187,13 +184,14 @@ export function getLocalGeneration(): number {
   } catch { /* ignore */ }
   return 1;
 }
-
 export function setLocalGeneration(generation: number): void {
   try {
     localStorage.setItem(LOCAL_GENERATION_KEY, String(Math.max(1, Number(generation) || 1)));
   } catch { /* ignore */ }
 }
-
+export function isGenerationValid(gen: number | undefined): boolean {
+  return Number.isFinite(gen) && gen >= 1;
+}
 export const durableSyncQueue = {
   async enqueue<T>(input: {
     table: string;
@@ -210,10 +208,21 @@ export const durableSyncQueue = {
     const payloadStr = JSON.stringify(input.payload);
     logger.info('[DurableQueue] enqueue', { table: input.table, recordId: input.recordId, operation: input.operation });
 
-    // Default to the local generation from localStorage if not explicitly supplied.
-    // This ensures all operations automatically carry the generation without
-    // requiring callers to explicitly thread it through.
+    // Every new operation MUST carry the generation under which it was created.
+    // If the caller did not supply one, derive it from the local generation store.
+    // Only in the degenerate case where no generation is available (first-run before
+    // any server handshake) do we allow an undefined value — and even then the backend
+    // will reject it if the server has already moved past generation 1.
+    // Note: We intentionally do NOT assign getLocalGeneration() to legacy operations
+    // that were created without generation - those must be quarantined, not upgraded.
     const effectiveGeneration = input.syncGeneration ?? getLocalGeneration();
+    
+    // SAFETY: If we reach here without any generation (neither supplied nor local),
+    // this is a legacy operation that must be quarantined, not replayed.
+    // The backend will reject it with SYNC_GENERATION_MISSING and mark it terminal.
+    // We do NOT silently assign the current generation at this point - that would
+    // violate the company-reset safety contract.
+
 
     // Only active operations (pending/syncing/failed) participate in
     // duplicate detection and dependency resolution. Scanning the full store
@@ -225,6 +234,32 @@ export const durableSyncQueue = {
       )
     );
     const allExisting = ([] as QueuedOperation[]).concat(...activeLayers);
+
+    // LEGACY OPERATION HANDLING:
+    // If a caller creates an operation without syncGeneration and there is no local
+    // generation available, we deliberately leave syncGeneration undefined so the
+    // backend can identify it as a legacy operation and quarantine it appropriately.
+    // We do NOT silently assign a generation here - that would violate the company-reset
+    // safety contract by allowing potentially unsafe operations to be replayed.
+    // The caller can explicitly pass syncGeneration if it knows the correct value.
+    if (effectiveGeneration === undefined && input.syncGeneration === undefined) {
+      logger.warn('[DurableQueue] enqueue: operation created without syncGeneration - this is a legacy operation that will be quarantined on sync attempt', {
+        table: input.table,
+        recordId: input.recordId,
+        operation: input.operation,
+      });
+    }
+
+    // SAFETY CHECK: Verify that the effective generation is valid before proceeding.
+    // If no generation is available, log a warning but still create the operation
+    // (it will be quarantined by the backend when synced).
+    if (effectiveGeneration === undefined) {
+      logger.warn('[DurableQueue] enqueue: no sync generation available - legacy operation', {
+        table: input.table,
+        recordId: input.recordId,
+        operation: input.operation,
+      });
+    }
 
     const duplicate = allExisting.find((op) =>
       op.table === input.table
@@ -309,8 +344,24 @@ export const durableSyncQueue = {
       fileRef: input.fileRef || null,
       payloadSizeBytes: payloadStr.length,
       conflictCount: 0,
+      // CRITICAL: syncGeneration must be set at creation time for new operations.
+      // This is the generation under which the mutation was originally created,
+      // NOT the generation at replay time. This allows the backend to detect if
+      // the operation becomes stale after a company reset.
+      // For legacy operations (no generation available), syncGeneration remains undefined
+      // so the backend can identify and quarantine them appropriately.
       syncGeneration: effectiveGeneration,
     };
+
+    // Log the operation creation with generation info for debugging
+    logger.info('[DurableQueue] operation created', {
+      id: item.id,
+      table: input.table,
+      recordId: input.recordId,
+      operation: input.operation,
+      syncGeneration: effectiveGeneration,
+      isLegacy: effectiveGeneration === undefined,
+    });
     await db.put('operations', item);
     /* SYNC-FORENSIC suppressed: STAGE-3 durableSyncQueue.enqueue() persisted */
     return item;

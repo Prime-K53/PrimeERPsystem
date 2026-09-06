@@ -59,19 +59,24 @@ export function usePagination<T>(data: T[], initialItemsPerPage: number = 25) {
     setCurrentPage(1);
   }, []);
 
-  // Sync pagination preference across devices via cloud settings
+  // Persist pagination preference locally. This is local UI state (page size
+  // choice), not a sync'd business setting, so it must NOT enter the cloud sync
+  // queue and must not be sent to the settings table.
   useEffect(() => {
-    localStorage.setItem(GLOBAL_STORAGE_KEY, String(itemsPerPage));
-    dbService.saveSetting(GLOBAL_STORAGE_KEY, itemsPerPage).catch(() => {});
+    try { localStorage.setItem(GLOBAL_STORAGE_KEY, String(itemsPerPage)); } catch { /* quota */ }
   }, [itemsPerPage]);
 
   useEffect(() => {
     let cancelled = false;
-    dbService.getSetting<number>(GLOBAL_STORAGE_KEY).then((cloud) => {
-      if (!cancelled && cloud !== undefined && cloud > 0 && cloud !== itemsPerPage) {
-        setItemsPerPage(cloud);
+    try {
+      const cloud = localStorage.getItem(GLOBAL_STORAGE_KEY);
+      if (!cancelled && cloud) {
+        const parsed = parseInt(cloud, 10);
+        if (!Number.isNaN(parsed) && parsed > 0 && parsed !== itemsPerPage) {
+          setItemsPerPage(parsed);
+        }
       }
-    }).catch(() => {});
+    } catch { /* ignore */ }
     return () => { cancelled = true; };
   }, []);
 

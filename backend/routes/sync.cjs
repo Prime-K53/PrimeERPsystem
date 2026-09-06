@@ -264,6 +264,7 @@ router.post('/ops', async (req, res) => {
           recordId: op.recordId || null,
           operation: op.operation,
           payload: op.payload,
+          syncGeneration: op.syncGeneration,
         });
         /* SYNC-FORENSIC suppressed: STAGE-10 backend applyOp() RESULT */
       } catch (opErr) {

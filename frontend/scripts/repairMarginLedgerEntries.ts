@@ -52,7 +52,6 @@ export async function repairMarginLedgerEntries(): Promise<void> {
   if (marginEntries.length === 0) {
     console.log('No ProfitMargin entries found. Nothing to repair.');
     console.groupEnd();
-    await tx.done;
     return;
   }
 
