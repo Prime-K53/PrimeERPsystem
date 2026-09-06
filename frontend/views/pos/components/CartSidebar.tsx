@@ -9,6 +9,7 @@ import { formatNumber, generateNextId } from '../../../utils/helpers';
 import { roundToNearest, roundUpToStep } from '../../../utils/roundingUtils';
 import { displayPrice } from '../../../services/pricingDisplayService';
 import { resolveItemAdjustmentSnapshots, getMarketAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
+import { getCustomerDisplayName } from '../../../utils/customerDisplay';
 
 const B7 = '#2563EB';
 const B6 = '#1D4ED8';

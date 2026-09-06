@@ -22,6 +22,7 @@ import { customerNotificationService, type NotificationActivityType } from '../s
 import { workflowService as autoWorkflowService } from '../services/automatedWorkflowService';
 import { isSupabaseConfigured } from '../services/cloudMode';
 import { adminLifecycle, type PortalCredentials } from '../services/adminPortalClient';
+import { getCustomerDisplayName } from '../utils/customerDisplay';
 
 type ApprovedQuotationResult = {
     batchId?: string;
@@ -175,7 +176,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         return salesStore.customers.find((customer) =>
             (resolvedId && String(customer.id || '').trim() === String(resolvedId).trim())
-            || (normalizedName && String(customer.name || '').trim().toLowerCase() === normalizedName)
+            || (normalizedName && String(getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name }) || '').trim().toLowerCase() === normalizedName)
         );
     };
 
@@ -1028,12 +1029,13 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const finalCustomer = normalizeCustomerPaymentTerms({ ...customer, id });
             await transactionService.saveCustomer(finalCustomer);
             await salesStore.fetchSalesData();
-            notify(`Client ${customer.name} added successfully`, "success");
+            const customerDisplayName = getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name });
+            notify(`Client ${customerDisplayName} added successfully`, "success");
             addAuditLog({
                 action: 'CREATE',
                 entityType: 'Client',
                 entityId: id,
-                details: `Added client: ${customer.name}`,
+                details: `Added client: ${customerDisplayName}`,
                 newValue: finalCustomer
             });
             let credentials: PortalCredentials | null = null;
@@ -1078,12 +1080,13 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const normalizedCustomer = normalizeCustomerPaymentTerms(customer, oldCustomer);
             await transactionService.saveCustomer(normalizedCustomer, oldCustomer);
             await salesStore.fetchSalesData();
-            notify(`Client ${customer.name} updated successfully`, "success");
+            const customerDisplayName = getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name });
+            notify(`Client ${customerDisplayName} updated successfully`, "success");
             addAuditLog({
                 action: 'UPDATE',
                 entityType: 'Client',
                 entityId: customer.id,
-                details: `Updated client: ${customer.name}`,
+                details: `Updated client: ${customerDisplayName}`,
                 oldValue: oldCustomer,
                 newValue: normalizedCustomer
             });

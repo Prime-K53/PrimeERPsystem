@@ -10,6 +10,7 @@ import EmptyState from './components/EmptyState';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import { formatK } from './constants';
 import { F } from './portalStyles';
+import { getCustomerDisplayName } from '../../utils/customerDisplay';
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface Transaction {
@@ -25,7 +26,9 @@ interface Transaction {
 
 interface StatementData {
   customer_id?: string;
-  customer_name?: string;
+  customer_business_name?: string;
+  customer_company_name?: string;
+  customer_legacy_name?: string;
   opening_balance: number;
   closing_balance: number;
   outstanding_balance?: number;
@@ -729,7 +732,11 @@ const CustomerAccountStatements: React.FC = () => {
         startDate={currentStart}
         endDate={currentEnd}
         customerId={data?.customer_id || user?.customer_id}
-        customerName={data?.customer_name || user?.full_name}
+        customerName={getCustomerDisplayName({ 
+          businessName: data?.customer_business_name, 
+          companyName: data?.customer_company_name, 
+          legacyCustomerName: data?.customer_legacy_name 
+        }) || user?.full_name}
         periodFilter={periodFilter}
       />
     </div>

@@ -9,6 +9,7 @@ import WorkOrder from '../components/WorkOrder';
 import PurchaseOrder from '../components/PurchaseOrder';
 import { currencyService } from '../services/currencyService';
 import { calculateLedger, calculateAging } from './ledgerUtils';
+import { getCustomerDisplayName } from './customerDisplay';
 
 export type DocumentType = 'Invoice' | 'Quotation' | 'Delivery Note' | 'Statement' | 'Receipt' | 'Examination Invoice' | 'Subscription Invoice' | 'Work Order' | 'Purchase Order';
 
@@ -36,7 +37,9 @@ interface DocumentRenderResult {
 interface BaseDocumentData {
   id: string;
   date: string;
-  customerName: string;
+  customerBusinessName?: string;
+  customerCompanyName?: string;
+  customerLegacyName?: string;
   customerAddress?: string;
   items: any[];
   currencySymbol?: string;
@@ -125,6 +128,11 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
 
   const normalized = {
     ...data,
+    customerName: getCustomerDisplayName({ 
+      businessName: data.customerBusinessName, 
+      companyName: data.customerCompanyName, 
+      legacyCustomerName: data.customerLegacyName 
+    }),
     items: normalizeItems(),
     subtotal: Number(
       data?.subtotal ??

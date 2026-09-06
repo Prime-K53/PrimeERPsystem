@@ -39,6 +39,7 @@ import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/p
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 import { PrintingPOSIntegrator, isPrintingService, createProductionJobsFromSale } from '../components/printing/PrintingPOSIntegrator';
 import { usePrintingStore } from '../stores/printingStore';
+import { getCustomerDisplayName } from '../utils/customerDisplay';
 
 const POS: React.FC = () => {
   const { companyConfig, user, allUsers, notify, addAlert, updateCompanyConfig } = useAuth();
@@ -189,9 +190,9 @@ const POS: React.FC = () => {
   useEffect(() => {
     const defaultCustId = companyConfig.transactionSettings?.posDefaultCustomer;
     if (defaultCustId && !selectedCustomerName) {
-      const defaultCust = customers.find(c => c.id === defaultCustId || c.name === defaultCustId);
+      const defaultCust = customers.find(c => c.id === defaultCustId || getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === defaultCustId);
       if (defaultCust) {
-        setSelectedCustomerName(defaultCust.name);
+        setSelectedCustomerName(getCustomerDisplayName({ businessName: defaultCust.businessName, companyName: defaultCust.companyName, legacyCustomerName: defaultCust.name }));
       }
     }
   }, [companyConfig.transactionSettings?.posDefaultCustomer, customers]);
@@ -308,7 +309,7 @@ const POS: React.FC = () => {
     // Resolve customer pricing tier if customer is selected
     let customerPriceMultiplier = 1;
     if (selectedCustomerName && selectedCustomerName !== 'Walk-in') {
-      const cust = (customers || []).find((c: any) => c.name === selectedCustomerName);
+      const cust = (customers || []).find((c: any) => getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === selectedCustomerName);
       if (cust) {
         try {
           const tier = await getCustomerPricingTier(cust.id);
@@ -1024,7 +1025,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       const changeDue = round2(Math.max(totalPaid - payableTotal, 0));
 
       // Resolve customer tier/segment for pricing
-      const selectedCustomer = (customers || []).find((c: any) => c.name === selectedCustomerName);
+      const selectedCustomer = (customers || []).find((c: any) => getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === selectedCustomerName);
       const customerId = selectedCustomer?.id || selectedCustomerName || 'walk-in';
       const customerSegment = selectedCustomer?.segment || '';
 
@@ -1537,8 +1538,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           onCancel={() => setShowPaymentModal(false)}
           customerName={selectedCustomerName}
           availableCredit={0}
-          walletBalance={customers.find((c: any) => c.name === selectedCustomerName || c.id === selectedCustomerName)?.walletBalance || 0}
-          loyaltyPoints={customers.find((c: any) => c.name === selectedCustomerName || c.id === selectedCustomerName)?.loyaltyPoints || 0}
+          walletBalance={customers.find((c: any) => getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === selectedCustomerName || c.id === selectedCustomerName)?.walletBalance || 0}
+          loyaltyPoints={customers.find((c: any) => getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === selectedCustomerName || c.id === selectedCustomerName)?.loyaltyPoints || 0}
           totalProfitMargin={pricingSummary.profitMarginTotal}
           subAccountName={selectedSubAccount}
           adjustmentSummary={cartAdjustmentSummary}

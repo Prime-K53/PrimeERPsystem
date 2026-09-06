@@ -496,7 +496,7 @@ const portalService = {
     return orders.map((o) => ({
       ...o,
       order_number: o.order_number || o.orderNumber,
-      customerName: (customer && customer.name) || '',
+      customerName: (customer && customer.business_name) || customer?.name || '',
       totalAmount: o.totalAmount ?? o.total ?? 0,
       items_json: o.items,
     }));
@@ -979,7 +979,7 @@ const portalService = {
 
     return {
       customer_id: (customer && customer.id) || customerId,
-      customer_name: (customer && customer.name) || 'Customer',
+      customer_name: (customer && customer.business_name) || customer?.name || 'Customer',
       opening_balance: openingBalance,
       closing_balance: mapped.length > 0 ? mapped[mapped.length - 1].balance : openingBalance,
       outstanding_balance: ledger.outstandingBalance,
@@ -1010,7 +1010,7 @@ const portalService = {
     return {
       receiptNumber: payment.reference || payment.id?.slice(0, 8) || 'N/A',
       date: payment.date ? new Date(payment.date).toLocaleDateString() : new Date().toLocaleDateString(),
-      customerName: customer?.name || payment.customerName || payment.customer_name || 'Customer',
+      customerName: customer?.business_name || customer?.name || payment.customerName || payment.customer_name || 'Customer',
       amountReceived,
       amountApplied: totalAllocated,
       changeGiven: 0,
@@ -1047,7 +1047,7 @@ const portalService = {
 
     return {
       date: new Date().toLocaleDateString(),
-      customerName: customer?.name || 'Customer',
+      customerName: customer?.business_name || customer?.name || 'Customer',
       startDate: statementsData.startDate || 'N/A',
       endDate: statementsData.endDate || 'N/A',
       currency: 'K',
@@ -1326,7 +1326,7 @@ const portalService = {
       {
         customer_id: referredCustomerId,
         referred_by_id: customerId,
-        referred_by_name: customer.name,
+        referred_by_name: customer.business_name || customer.name,
         notes: notes || null,
       });
   },

@@ -862,25 +862,31 @@ const DashboardContent: React.FC = () => {
       if (entry.amount == null) return;
       const debitAcc = accounts.find((a: any) => a.id === entry.debitAccountId || a.code === entry.debitAccountId);
       const creditAcc = accounts.find((a: any) => a.id === entry.creditAccountId || a.code === entry.creditAccountId);
+      const isAssetOrExpense = (acc: any) => {
+        const t = acc.type || acc.account_type || '';
+        return t === 'Asset' || t === 'ASSET' || t === 'Expense' || t === 'EXPENSE';
+      };
       if (debitAcc) {
-        const sign = (debitAcc.type === 'Asset' || debitAcc.type === 'Expense') ? 1 : -1;
+        const sign = isAssetOrExpense(debitAcc) ? 1 : -1;
         ledgerBalances[debitAcc.id] = (ledgerBalances[debitAcc.id] || 0) + (entry.amount * sign);
       }
       if (creditAcc) {
-        const sign = (creditAcc.type === 'Asset' || creditAcc.type === 'Expense') ? -1 : 1;
+        const sign = isAssetOrExpense(creditAcc) ? -1 : 1;
         ledgerBalances[creditAcc.id] = (ledgerBalances[creditAcc.id] || 0) + (entry.amount * sign);
       }
     });
-    // Categorize into cash/bank/cheque/wallet — only Asset accounts, by name
+    // Categorize into cash/bank/cheque/wallet — use subtype field first, then name fallback
     let cash = 0, bank = 0, cheque = 0, wallet = 0;
     accounts.forEach((acc: any) => {
-      if (acc.type !== 'Asset') return;
+      if (acc.type !== 'Asset' && acc.account_type !== 'ASSET') return;
       const name = String(acc.name || '').toLowerCase();
+      const subtype = String(acc.subtype || '').toUpperCase();
       const bal = ledgerBalances[acc.id] ?? toSafeNumber(acc.balance);
-      if (name.includes('cash'))       cash   += bal;
-      else if (name.includes('cheque')) cheque += bal;
-      else if (name.includes('wallet')) wallet += bal;
-      else if (name.includes('bank') || name.includes('mobile')) bank += bal;
+      // Use subtype for precise categorization, fall back to name matching
+      if (subtype === 'CASH' || (!subtype && name.includes('cash'))) cash += bal;
+      else if (subtype === 'BANK' || (!subtype && (name.includes('bank') || name.includes('mobile')))) bank += bal;
+      else if (subtype === 'CHEQUE' || (!subtype && name.includes('cheque'))) cheque += bal;
+      else if (subtype === 'WALLET' || (!subtype && name.includes('wallet'))) wallet += bal;
     });
     return { cashBalance: cash, bankBalance: bank, chequeBalance: cheque, walletBalance: wallet };
   })();

@@ -442,7 +442,7 @@ router.post('/requests', idempotencyMiddleware(), async (req, res) => {
       return res.status(400).json({ error: 'At least one line item is required' });
     }
     const customerRecord = customer_id ? await repoCanonical.getById('customers', customer_id).catch(() => null) : null;
-    const customerName = (customerRecord && customerRecord.name) || full_name || email || 'Customer';
+    const customerName = (customerRecord && customerRecord.business_name) || customerRecord?.name || full_name || email || 'Customer';
     const result = await portalLifecycleService.createQuotationRequest({
       portalUserId: id,
       customerId: customer_id,

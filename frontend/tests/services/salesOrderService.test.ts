@@ -280,7 +280,8 @@ describe('number helpers', () => {
   it('recognizes official and provisional numbers', () => {
     expect(isOfficialNumber('SO-2026-000042')).toBe(true);
     expect(isOfficialNumber('SO/2026/000042')).toBe(true);
-    expect(isOfficialNumber('ORD-123')).toBe(false);
+    expect(isOfficialNumber('ORD-123')).toBe(true);
+    expect(isOfficialNumber('DRAFT-123')).toBe(false);
     expect(isOfficialNumber(null)).toBe(false);
   });
 

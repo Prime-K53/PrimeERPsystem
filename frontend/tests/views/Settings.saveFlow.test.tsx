@@ -124,7 +124,7 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
   it('should save valid pricing settings successfully', async () => {
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     expect(saveButton).toBeInTheDocument();
 
     fireEvent.click(saveButton);
@@ -137,14 +137,13 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
   });
 
   it('should display validation errors for invalid pricing settings', async () => {
-    // Mock company config with invalid pricing settings
     const invalidConfig = {
       ...defaultCompanyConfig,
       pricingSettings: {
         ...defaultCompanyConfig.pricingSettings,
         enableRounding: true,
-        defaultMethod: 'INVALID_METHOD' as unknown as 'NEAREST_50' | 'ALWAYS_UP_50' | 'ALWAYS_UP_100' | 'ALWAYS_UP_500' | 'ALWAYS_UP_10' | 'ALWAYS_UP_CUSTOM' | 'NEAREST_10' | 'NEAREST_50' | 'NEAREST_100' | 'PSYCHOLOGICAL' | 'Nearest' | 'AlwaysUp' | 'AlwaysDown', // Invalid enum value
-        customStep: -10, // Negative step
+        defaultMethod: 'INVALID_METHOD' as unknown as 'NEAREST_50' | 'ALWAYS_UP_50' | 'ALWAYS_UP_100' | 'ALWAYS_UP_500' | 'ALWAYS_UP_10' | 'ALWAYS_UP_CUSTOM' | 'NEAREST_10' | 'NEAREST_50' | 'NEAREST_100' | 'PSYCHOLOGICAL' | 'Nearest' | 'AlwaysUp' | 'AlwaysDown',
+        customStep: -10,
         applyToPOS: false,
         applyToInvoices: false,
         applyToQuotations: false,
@@ -161,7 +160,7 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -184,14 +183,13 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
       expect(mockUpdateCompanyConfig).toHaveBeenCalledTimes(1);
     });
 
-    // Should still save successfully as pricingSettings is optional
     expect(mockNotify).toHaveBeenCalledWith('Settings updated successfully', 'success');
   });
 
@@ -212,7 +210,7 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
         thresholdRules: [
           { minPrice: 0, maxPrice: 100, step: 25, method: 'NEAREST_25' },
           { minPrice: 100, step: 50, method: 'NEAREST_50' },
-          { minPrice: 50, maxPrice: 200, step: 10, method: 'NEAREST_10' } // Overlapping range
+          { minPrice: 50, maxPrice: 200, step: 10, method: 'NEAREST_10' }
         ]
       }
     };
@@ -224,7 +222,7 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -262,7 +260,7 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -278,7 +276,6 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
       pricingSettings: {
         enableRounding: true,
         defaultMethod: 'NEAREST_100'
-        // Missing other required fields
       } as unknown as PricingSettings
     };
 
@@ -289,25 +286,24 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
       expect(mockUpdateCompanyConfig).toHaveBeenCalledTimes(1);
     });
 
-    // Verify that the saved config includes default values for missing fields
     const savedConfig = mockUpdateCompanyConfig.mock.calls[0][0];
     expect(savedConfig.pricingSettings).toMatchObject({
       enableRounding: true,
       defaultMethod: 'NEAREST_100',
-      customStep: 50, // default
-      applyToPOS: true, // DEFAULT_PRICING_SETTINGS
-      applyToInvoices: true, // DEFAULT_PRICING_SETTINGS
-      applyToQuotations: true, // DEFAULT_PRICING_SETTINGS
-      allowManualOverride: true, // DEFAULT_PRICING_SETTINGS
-      showOriginalPrice: true, // DEFAULT_PRICING_SETTINGS
-      profitProtectionMode: true // DEFAULT_PRICING_SETTINGS
+      customStep: 50,
+      applyToPOS: true,
+      applyToInvoices: true,
+      applyToQuotations: true,
+      allowManualOverride: true,
+      showOriginalPrice: true,
+      profitProtectionMode: true
     });
   });
 
@@ -316,7 +312,7 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -350,7 +346,7 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -379,8 +375,8 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
         profitProtectionMode: false,
         enableSmartThresholds: true,
         thresholdRules: [
-          { minPrice: 0, step: 25, method: 'NEAREST_25' }, // Missing maxPrice (optional but should be valid)
-          { minPrice: 100, maxPrice: 50, step: 50, method: 'NEAREST_50' } // Invalid: maxPrice < minPrice
+          { minPrice: 0, step: 25, method: 'NEAREST_25' },
+          { minPrice: 100, maxPrice: 50, step: 50, method: 'NEAREST_50' }
         ]
       }
     };
@@ -392,7 +388,7 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -403,7 +399,6 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
   });
 
   it('should clear validation errors when valid settings are saved', async () => {
-    // Start with invalid config
     const invalidConfig = {
       ...defaultCompanyConfig,
       pricingSettings: {
@@ -419,24 +414,21 @@ describe('Settings - Pricing Settings Save Flow Integration', () => {
 
     const { rerender } = render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    // First attempt with invalid settings
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
       expect(mockNotify).toHaveBeenCalledWith('Please fix validation errors in pricing settings', 'error');
     });
 
-    // Update to valid settings
     mockUseAuth.mockReturnValue({
       ...mockUseAuth(),
       companyConfig: defaultCompanyConfig
     });
 
-    // Re-render with new config
     rerender(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const newSaveButton = screen.getByRole('button', { name: /save/i });
+    const newSaveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(newSaveButton);
 
     await waitFor(() => {
@@ -451,24 +443,21 @@ describe('Settings - Integration with PricingSettingsValidator', () => {
   it('should use PricingSettingsValidator.validate in handleSave', async () => {
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
       expect(mockUpdateCompanyConfig).toHaveBeenCalled();
     });
-
-    // The validator should have been called internally
-    // This is implicitly tested through the validation behavior
   });
 
   it('should handle all validation error paths from validator', async () => {
     const configWithMultipleErrors = {
       ...defaultCompanyConfig,
       pricingSettings: {
-        enableRounding: 'yes' as unknown as boolean, // Should be boolean
-        defaultMethod: 123 as unknown as 'NEAREST_50' | 'ALWAYS_UP_50' | 'ALWAYS_UP_100' | 'ALWAYS_UP_500' | 'ALWAYS_UP_10' | 'ALWAYS_UP_CUSTOM' | 'NEAREST_10' | 'NEAREST_50' | 'NEAREST_100' | 'PSYCHOLOGICAL' | 'Nearest' | 'AlwaysUp' | 'AlwaysDown', // Should be string
-        customStep: 'fifty' as unknown as number, // Should be number
+        enableRounding: 'yes' as unknown as boolean,
+        defaultMethod: 123 as unknown as 'NEAREST_50' | 'ALWAYS_UP_50' | 'ALWAYS_UP_100' | 'ALWAYS_UP_500' | 'ALWAYS_UP_10' | 'ALWAYS_UP_CUSTOM' | 'NEAREST_10' | 'NEAREST_50' | 'NEAREST_100' | 'PSYCHOLOGICAL' | 'Nearest' | 'AlwaysUp' | 'AlwaysDown',
+        customStep: 'fifty' as unknown as number,
         applyToPOS: 'no' as unknown as boolean,
         applyToInvoices: 'maybe' as unknown as boolean,
         applyToQuotations: true,
@@ -485,7 +474,7 @@ describe('Settings - Integration with PricingSettingsValidator', () => {
 
     render(<MemoryRouter><Settings /></MemoryRouter>);
 
-    const saveButton = screen.getByRole('button', { name: /save/i });
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
     fireEvent.click(saveButton);
 
     await waitFor(() => {

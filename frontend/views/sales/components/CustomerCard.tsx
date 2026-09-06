@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Phone, MapPin, KeyRound, RefreshCw, Copy, Check, Globe, Loader2 } from 'lucide-react';
 import { Customer } from '../../../types';
 import { adminLifecycle, type PortalCredentials } from '../../../services/adminPortalClient';
+import { getCustomerDisplayName, getCustomerContactName } from '../../../utils/customerDisplay';
 
 interface CustomerCardProps {
   customer: Customer;
@@ -57,12 +58,12 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
     setPortalBusy(true);
     setPortalError(null);
     try {
-      const result = await adminLifecycle.users.autoCreate({
-        customer_id: customer.id,
-        name: customer.companyName || customer.name,
-        email: customer.email,
-        phone: customer.phone,
-      });
+        const result = await adminLifecycle.users.autoCreate({
+          customer_id: customer.id,
+          name: customerDisplayName,
+          email: customer.email,
+          phone: customer.phone,
+        });
       if (result?.user) {
         applyPortalAccount(
           { id: result.user.id, email: result.user.email, status: result.user.status },
@@ -85,7 +86,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
     try {
       const result = await adminLifecycle.users.regeneratePassword(customer.portalUserId as string, {
         customer_id: customer.id,
-        name: customer.companyName || customer.name,
+        name: customerDisplayName,
         email: customer.email,
         phone: customer.phone,
       });
@@ -106,10 +107,12 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
 
   const portalActive = Boolean(customer.portalUserId) && customer.portalStatus !== 'disabled';
 
+  const customerDisplayName = getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name });
+  const customerContactName = getCustomerContactName({ contactName: customer.contactName });
   const outstanding = (balance ?? Number(customer.balance || 0)) || 0;
   const wallet = Number(customer.walletBalance || 0);
   const owing = outstanding > 0.5;
-  const initials = ((customer.companyName || customer.name || '?')?.charAt(0)?.toUpperCase() || '?') + (((customer.companyName || customer.name || '?')?.split(' ')[1])?.charAt(0)?.toUpperCase() || '');
+  const initials = (customerDisplayName || '?')?.charAt(0)?.toUpperCase() || '?';
 
   return (
     <div style={{
@@ -149,7 +152,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
               {initials}
             </div>
             <div style={{ flex: 1, minWidth: 0, paddingRight: 36 }}>
-              <div style={{ fontSize: 17, fontWeight: 600, color: ink, lineHeight: 1.2, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer.companyName || customer.name}</div>
+              <div style={{ fontSize: 17, fontWeight: 600, color: ink, lineHeight: 1.2, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customerDisplayName}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, color: inkSoft, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.04 }}>
                   {customer.id}

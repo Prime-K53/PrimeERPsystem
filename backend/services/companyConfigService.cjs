@@ -52,6 +52,12 @@ function normalizeCompanyConfig(raw) {
   }
 
   const source = raw;
+
+  // Handle wrapped format: { value: { companyName: ... } } where the actual
+  // config is nested inside a 'value' property (common storage pattern)
+  if (!source.companyName && !source.name && source.value && typeof source.value === 'object') {
+    return normalizeCompanyConfig(source.value);
+  }
   const companyName = pickFirstText(source.companyName, source.name, DEFAULT_COMPANY_CONFIG.companyName);
   const addressLine1 = pickFirstText(source.addressLine1, source.companyAddress, source.address, DEFAULT_COMPANY_CONFIG.addressLine1);
   const city = pickFirstText(source.city, DEFAULT_COMPANY_CONFIG.city);
@@ -101,17 +107,17 @@ function normalizeCompanyConfig(raw) {
 }
 
 async function loadStoredCompanyConfigRow() {
-  const rows = await repo.getAll('settings', { 'data->>key': 'eq.companyConfig' });
-  let row = (rows || [])[0] || null;
+  // Primary query: look up directly by id since id is the primary key
+  // This is the most reliable way to find the single company config row
+  const row = await repo.getById('settings', 'companyConfig');
+  if (row) return row;
 
-  if (!row) {
-    const allSettings = await repo.getAll('settings');
-    row = (allSettings || []).find(
-      (s) => s.key === 'companyConfig' || s.id === 'companyConfig' || s.key === 'nexus_company_config' || s.id === 'nexus_company_config'
-    ) || null;
-  }
-
-  return row;
+  // Fallback: scan all settings rows to find company config by key patterns
+  // This handles legacy data stored with different id formats
+  const allSettings = await repo.getAll('settings');
+  return (allSettings || []).find(
+    (s) => s.id === 'companyConfig' || s.id === 'nexus_company_config' || s.key === 'companyConfig' || s.key === 'nexus_company_config'
+  ) || null;
 }
 
 async function getCompanyConfig() {

@@ -14,6 +14,7 @@ import {
   FileBarChart,
   Eye
 } from 'lucide-react';
+import { getCustomerDisplayName, getCustomerContactName } from '../../../utils/customerDisplay';
 import { pdf } from '@react-pdf/renderer';
 import { PrimeDocument } from '../../shared/components/PDF/PrimeDocument';
 import { initializePrimePdfFonts } from '../../shared/components/PDF/templateSettings';
@@ -116,6 +117,9 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
   const { customerPayments = [], sales, quotations, updateCustomer } = useSales();
   const { addAuditLog, companyConfig, auditLogs, notify } = useAuth();
   const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
+  
+  const customerDisplayName = getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name });
+  const customerContactName = getCustomerContactName({ contactName: customer.contactName });
 
   const [activeTab, setActiveTab] = useState<'Overview' | 'Timeline' | 'Invoices' | 'Payments' | 'Ledger' | 'Accounting' | 'Wallet' | 'Referrals' | 'Documents' | 'Segmentation' | 'Settings' | 'Security Audit'>('Overview');
   const [accountMenu, setAccountMenu] = useState<{ id: string, type: 'debit' | 'credit', x: number, y: number } | null>(null);
@@ -239,28 +243,28 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
 
   // Filter data for this customer
   const customerInvoices = useMemo(() =>
-    invoices.filter(inv => inv.customerId === customer.id || inv.customerName === customer.name),
-    [invoices, customer]);
+    invoices.filter(inv => inv.customerId === customer.id || inv.customerName === customerDisplayName),
+    [invoices, customer, customerDisplayName]);
 
   const customerPaymentsList = useMemo(() =>
-    customerPayments.filter(payment => payment.customerName === customer.name),
-    [customerPayments, customer]);
+    customerPayments.filter(payment => payment.customerName === customerDisplayName),
+    [customerPayments, customer, customerDisplayName]);
 
   const customerSales = useMemo(() =>
-    sales.filter(s => s.customerId === customer.id || s.customerName === customer.name),
-    [sales, customer]);
+    sales.filter(s => s.customerId === customer.id || s.customerName === customerDisplayName),
+    [sales, customer, customerDisplayName]);
 
   const customerQuotes = useMemo(() =>
-    quotations.filter(q => q.customerName === customer.name),
-    [quotations, customer]);
+    quotations.filter(q => q.customerName === customerDisplayName),
+    [quotations, customer, customerDisplayName]);
 
   const customerLogs = useMemo(() =>
-    auditLogs.filter(log => log.entityId === customer.id || (log.details && log.details.includes(customer.name))),
-    [auditLogs, customer]);
+    auditLogs.filter(log => log.entityId === customer.id || (log.details && log.details.includes(customerDisplayName))),
+    [auditLogs, customer, customerDisplayName]);
 
   const customerLedger = useMemo(() =>
-    (ledger || []).filter(entry => entry.customerId === customer.id || entry.description?.includes(customer.name)),
-    [ledger, customer]);
+    (ledger || []).filter(entry => entry.customerId === customer.id || entry.description?.includes(customerDisplayName)),
+    [ledger, customer, customerDisplayName]);
 
   const customerWalletTransactions = useMemo(() =>
     (walletTransactions || []).filter(tx => tx.customerId === customer.id),
@@ -451,7 +455,7 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Ledger_${customer.name}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.setAttribute('download', `Ledger_${customerDisplayName}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -462,7 +466,7 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
     try {
       const statementData: StatementDoc = {
         date: new Date().toLocaleDateString('en-GB'),
-        customerName: customer.name,
+        customerName: customerDisplayName,
         startDate: ledgerStartDate || 'All Time',
         endDate: ledgerEndDate || 'Present',
         currency: currency,
@@ -497,7 +501,7 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
       const newVal = !customer.creditHold;
       await updateCustomer({ ...customer, creditHold: newVal });
       await addAuditLog({ action: newVal ? 'HOLD' : 'RELEASE' as const, entityType: 'Customer' as const, entityId: customer.id, details: `Credit hold ${newVal ? 'placed' : 'released'} by user` });
-      notify(`Credit ${newVal ? 'hold placed' : 'hold released'} for ${customer.name}`, 'success');
+      notify(`Credit ${newVal ? 'hold placed' : 'hold released'} for ${customerDisplayName}`, 'success');
     } catch (err: any) {
       notify(`Failed to update credit hold: ${err?.message || err}`, 'error');
     }
@@ -539,7 +543,7 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
               fontFamily: "'Inter',-apple-system,sans-serif", fontWeight: 700,
               fontSize: 18, margin: 0, color: '#ffffff', letterSpacing: '-0.01em', lineHeight: 1.2
             }}>
-              {customer.name}
+              {customerDisplayName}
             </h1>
             <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.65)', fontFamily: "'Inter',sans-serif", fontWeight: 500 }}>
               {activeGroupTitle} &middot; ID: {customer.id}

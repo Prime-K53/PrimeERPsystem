@@ -10,6 +10,7 @@ import { customerNotificationService } from '../services/customerNotificationSer
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 import { canonicalizeStatus } from '../types/salesOrder';
 import { salesOrderService } from '../services/salesOrderService';
+import { getCustomerDisplayName } from '../utils/customerDisplay';
 
 interface OrdersContextType {
   orders: Order[];
@@ -71,7 +72,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     return salesContext?.customers.find((customer) =>
       (normalizedId && String(customer.id || '').trim() === normalizedId)
-      || (normalizedName && String(customer.name || '').trim().toLowerCase() === normalizedName)
+      || (normalizedName && String(getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name }) || '').trim().toLowerCase() === normalizedName)
     );
   };
 
@@ -82,9 +83,10 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     try {
+      const customerDisplayName = getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name });
       await customerNotificationService.triggerNotification('SALES_ORDER', {
         id: order.orderNumber || order.id,
-        customerName: order.customerName || customer.name,
+        customerName: order.customerName || customerDisplayName,
         phoneNumber: customer.phone,
         amount: `${companyConfig?.currencySymbol || ''}${Number(order.totalAmount || 0).toLocaleString()}`
       });

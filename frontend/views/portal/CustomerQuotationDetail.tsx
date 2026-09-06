@@ -17,6 +17,7 @@ import DocumentDiscussion from './components/DocumentDiscussion';
 import VersionHistoryModal from './components/VersionHistoryModal';
 import { F } from './portalStyles';
 import { formatK } from './constants';
+import { getCustomerDisplayName } from '../../utils/customerDisplay';
 
 const stageDefinitions = [
   { key: 'submitted', label: 'Requested', description: 'Your request was received' },
@@ -131,7 +132,13 @@ const CustomerQuotationDetail: React.FC = () => {
     setActionError(null);
     try {
       if (actionName === 'accept') {
-        await portalLifecycle.quotations.accept(quotation.id, { acceptedBy: quotation.customer_name });
+        await portalLifecycle.quotations.accept(quotation.id, { 
+          acceptedBy: getCustomerDisplayName({ 
+            businessName: quotation.customer_business_name, 
+            companyName: quotation.customer_company_name, 
+            legacyCustomerName: quotation.customer_name 
+          })
+        });
       } else if (actionName === 'reject') {
         if (!rejectionReason.trim()) throw new Error('Please provide a reason for rejecting');
         await portalLifecycle.quotations.reject(quotation.id, { reason: rejectionReason });
@@ -164,8 +171,16 @@ const CustomerQuotationDetail: React.FC = () => {
           ...quotation,
           items,
           quotation_number: quotation.quotation_number,
-          customerName: quotation.customer_name,
-          customer_name: quotation.customer_name,
+          customerName: getCustomerDisplayName({ 
+            businessName: quotation.customer_business_name, 
+            companyName: quotation.customer_company_name, 
+            legacyCustomerName: quotation.customer_name 
+          }),
+          customer_name: getCustomerDisplayName({ 
+            businessName: quotation.customer_business_name, 
+            companyName: quotation.customer_company_name, 
+            legacyCustomerName: quotation.customer_name 
+          }),
           subtotal: quotation.subtotal,
           date: quotation.created_at,
         },
@@ -299,7 +314,11 @@ const CustomerQuotationDetail: React.FC = () => {
         </div>
 
         <div style={{ fontSize: 13, fontWeight: 500, color: '#4A5568' }}>
-          <span style={{ color: '#8A94A6' }}>Customer:</span> {quotation.customer_name}
+          <span style={{ color: '#8A94A6' }}>Customer:</span> {getCustomerDisplayName({ 
+            businessName: quotation.customer_business_name, 
+            companyName: quotation.customer_company_name, 
+            legacyCustomerName: quotation.customer_name 
+          }) || quotation.customer_name}
         </div>
       </div>
 

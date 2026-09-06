@@ -4,6 +4,7 @@ import { Document, Page, Text, View, StyleSheet, Font, Image } from '@react-pdf/
 import { CompanyConfig } from '../../../../types.ts';
 import { resolvePdfLogoSource } from '../../../../utils/companyAssetUtils.ts';
 import { resolvePrimeTemplateSettings, getStoredCompanyConfig } from './templateSettings.ts';
+import { getCustomerDisplayName } from '../../../../utils/customerDisplay.ts';
 
 // Helper to get dynamic config from CompanyConfig (mirrored from transactionService)
 const getCompanyConfig = (): CompanyConfig | null => {
@@ -41,7 +42,9 @@ export interface StatementEntry {
 
 export interface StatementData {
   customer: {
-    name: string;
+    businessName?: string;
+    companyName?: string;
+    legacyCustomerName?: string;
     address: string;
     cityStateZip: string;
   };
@@ -160,7 +163,7 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
 
   return (
     <Document
-      title={`Statement - ${data.customer.name}`}
+      title={`Statement - ${getCustomerDisplayName({ businessName: data.customer.businessName, companyName: data.customer.companyName, legacyCustomerName: data.customer.legacyCustomerName })}`}
       author={companyName}
       subject="Customer Account Statement"
       creator="Prime ERP System"
@@ -179,7 +182,7 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
         <View style={styles.customerSection}>
           <View>
             <Text style={styles.sectionTitle}>STATEMENT FOR:</Text>
-            <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{data.customer.name}</Text>
+            <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{getCustomerDisplayName({ businessName: data.customer.businessName, companyName: data.customer.companyName, legacyCustomerName: data.customer.legacyCustomerName })}</Text>
             <Text>{data.customer.address}</Text>
             <Text>{data.customer.cityStateZip}</Text>
           </View>

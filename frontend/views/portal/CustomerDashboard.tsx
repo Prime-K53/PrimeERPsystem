@@ -36,6 +36,7 @@ import {
   Star,
 } from 'lucide-react';
 import { F, MONO, NAVY, TEAL_GRADIENT, EMERALD, INDIGO_GRADIENT, VIOLET_GRADIENT, ROSE_GRADIENT, AMBER_GRADIENT } from './designTokens';
+import { getCustomerDisplayName } from '../../utils/customerDisplay';
 
 interface DashboardData {
   balance: number;
@@ -244,7 +245,11 @@ const CustomerDashboard: React.FC = () => {
   const [hovered, setHovered] = useState(false);
   const touchX = useRef<number | null>(null);
 
-  const displayName = user?.full_name || 'Customer';
+  const displayName = getCustomerDisplayName({ 
+    businessName: user?.business_name, 
+    companyName: user?.company_name, 
+    legacyCustomerName: user?.full_name 
+  }) || 'Customer';
   const accountId = user?.customer_id || '';
   const companyName = companyConfig?.companyName || 'ERP';
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);

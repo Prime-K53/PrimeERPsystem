@@ -3,6 +3,7 @@ import { Search, X, UserPlus, Save, Users } from 'lucide-react';
 import { useSales } from '../context/SalesContext';
 import { useFinance } from '../context/FinanceContext';
 import { useAuth } from '../context/AuthContext';
+import { getCustomerDisplayName } from '../utils/customerDisplay';
 
 interface CustomerSearchProps {
   open: boolean;
@@ -63,7 +64,7 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
     if (!searchTerm.trim()) return customerList;
     const q = searchTerm.trim().toLowerCase();
     return customerList.filter((c: any) =>
-      c.name?.toLowerCase().includes(q) ||
+      getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name })?.toLowerCase().includes(q) ||
       c.phone?.toLowerCase().includes(q) ||
       c.email?.toLowerCase().includes(q) ||
       (c.customerCode || '').toLowerCase().includes(q) ||
@@ -79,7 +80,7 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
   };
 
   const handleSelect = (c: any) => {
-    onSelect({ id: c.id, name: c.name });
+    onSelect({ id: c.id, name: getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) });
     onClose();
   };
 
@@ -219,9 +220,10 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
           ) : (
             <div className="divide-y divide-[#F0EFE8]">
               {filtered.map((c: any) => {
-                const debt = getOutstanding(c.id, c.name);
+                const customerDisplayName = getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name });
+                const debt = getOutstanding(c.id, customerDisplayName);
                 const isHovered = hoveredId === c.id;
-                const initials = (c.name || '?').charAt(0).toUpperCase();
+                const initials = (customerDisplayName || '?').charAt(0).toUpperCase();
                 const contactLine = c.phone || c.email || c.customerCode || '';
 
                 return (
@@ -245,7 +247,7 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="text-[13px] font-bold text-[#23282A] leading-tight truncate">
-                          {c.name}
+                          {customerDisplayName}
                         </div>
                         {contactLine && (
                           <div className="text-[11px] text-[#666F6C] font-['JetBrains_Mono',monospace] truncate mt-[1px]">

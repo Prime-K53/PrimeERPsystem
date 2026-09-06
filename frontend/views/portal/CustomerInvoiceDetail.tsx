@@ -18,6 +18,7 @@ import StatusBadge from './components/StatusBadge';
 import PortalLoadingSkeleton from './components/PortalLoadingSkeleton';
 import { F } from './portalStyles';
 import { formatK } from './constants';
+import { getCustomerDisplayName } from '../../utils/customerDisplay';
 
 interface LineItem {
   item_name: string;
@@ -29,6 +30,9 @@ interface LineItem {
 interface InvoiceDetail {
   id: string;
   invoice_number: string;
+  customer_business_name?: string;
+  customer_company_name?: string;
+  customer_legacy_name?: string;
   customer_name: string;
   total_amount: number;
   paid_amount: number;
@@ -99,7 +103,11 @@ const CustomerInvoiceDetail: React.FC = () => {
         {
           ...invoice,
           items,
-          customerName: invoice.customer_name,
+          customerName: getCustomerDisplayName({ 
+            businessName: invoice.customer_business_name, 
+            companyName: invoice.customer_company_name, 
+            legacyCustomerName: invoice.customer_name 
+          }),
           subtotal: invoice.total_amount,
         },
         companyConfig,
@@ -147,7 +155,11 @@ const CustomerInvoiceDetail: React.FC = () => {
         <PortalCard style={{ ...cardStyle, padding: '16px 18px', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
             <div>
-              <p style={{ ...bodyStyle, margin: 0 }}>Customer: <strong style={{ color: '#1A202C' }}>{invoice.customer_name}</strong></p>
+              <p style={{ ...bodyStyle, margin: 0 }}>Customer: <strong style={{ color: '#1A202C' }}>{getCustomerDisplayName({ 
+                businessName: invoice.customer_business_name, 
+                companyName: invoice.customer_company_name, 
+                legacyCustomerName: invoice.customer_name 
+              }) || invoice.customer_name}</strong></p>
               <p style={{ ...bodyStyle, marginTop: 4 }}>
                 Status: <StatusBadge status={invoice.status} />
               </p>
@@ -282,7 +294,11 @@ const CustomerInvoiceDetail: React.FC = () => {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
             <span style={{ color: '#4A5568' }}>Customer:</span>
-            <span style={{ color: '#1A202C' }}>{invoice.customer_name}</span>
+            <span style={{ color: '#1A202C' }}>{getCustomerDisplayName({ 
+              businessName: invoice.customer_business_name, 
+              companyName: invoice.customer_company_name, 
+              legacyCustomerName: invoice.customer_name 
+            }) || invoice.customer_name}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
             <span style={{ color: '#4A5568' }}>Status:</span>

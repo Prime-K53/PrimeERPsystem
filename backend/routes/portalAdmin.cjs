@@ -449,7 +449,7 @@ router.get('/orders', async (req, res) => {
       repoCanonical.getAll('sales_orders'),
       repoCanonical.getAll('customers'),
     ]);
-    const customerMap = new Map(customers.map(c => [c.id, c.name]));
+    const customerMap = new Map(customers.map(c => [c.id, c.business_name || c.name]));
     const rows = orders
       .sort((a, b) => String(b.orderDate || '').localeCompare(String(a.orderDate || '')))
       .map(o => ({
@@ -689,7 +689,7 @@ router.get('/users', async (req, res) => {
       const c = customerMap.get(pu.customer_id) || {};
       return {
         customer_id: c.id || pu.customer_id,
-        customer_name: c.name,
+        customer_name: c.business_name || c.name,
         customer_email: c.email,
         customer_phone: c.phone,
         customer_status: c.status,
@@ -1051,7 +1051,7 @@ router.post('/customers/:customerId/regenerate-credentials', async (req, res) =>
     const customer = (await repoCanonical.getAll('customers'))?.find((c) => c.id === customerId);
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    const customerName = name || customer.name || '';
+    const customerName = name || customer.business_name || customer.name || '';
     const portalUser = await portalAuthService.getPortalUserByCustomerId(customerId);
 
     if (!portalUser) {

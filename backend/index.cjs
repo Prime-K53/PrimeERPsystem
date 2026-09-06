@@ -732,14 +732,14 @@ async function startServer() {
         sales: recentSales.slice(0, 200).map(s => ({
           id: s.id,
           customerId: s.customer_id,
-          customerName: s.customer_name,
+          customerName: s.business_name || s.customer_name,
           totalAmount: Number(s.total_amount || 0),
           date: s.date,
         })),
         invoices: filteredInvoices.slice(0, 50).map(i => ({
           id: i.id,
           customerId: i.customer_id,
-          customerName: i.customer_name,
+          customerName: i.business_name || i.customer_name,
           totalAmount: Number(i.total_amount || 0),
           status: i.status,
           createdAt: i.created_at,
@@ -763,7 +763,7 @@ async function startServer() {
         id: row.id,
         date: row.date,
         customerId: row.customer_id,
-        customerName: row.customer_name,
+        customerName: row.business_name || row.customer_name,
         subAccountName: row.sub_account_name,
         totalAmount: Number(row.total_amount || 0),
         materialTotal: Number(row.material_total || 0),
@@ -820,7 +820,7 @@ async function startServer() {
     const subAccountName = payload.subAccountName || payload.sub_account_name || 'Main';
     
     const customerId = payload.customerId || payload.customer_id || 'walk-in';
-    const customerName = payload.customerName || payload.customer_name || 'Walk-in';
+    const customerName = payload.businessName || payload.customerName || payload.customer_name || 'Walk-in';
     const status = payload.status || 'Paid';
     const paymentMethod = payload.paymentMethod || payload.payment_method || null;
     const source = payload.source || null;
@@ -977,7 +977,7 @@ async function startServer() {
       [
         payload.date || new Date().toISOString(),
         payload.customerId || payload.customer_id || 'walk-in',
-        payload.customerName || payload.customer_name || 'Walk-in',
+        payload.businessName || payload.customerName || payload.customer_name || 'Walk-in',
         payload.subAccountName || payload.sub_account_name || 'Main',
         totalAmount, materialTotal, adjustmentTotal, profitMarginTotal, roundingTotal, otherCharges,
         snapshotsJson, payload.status || 'Paid', payload.paymentMethod || null, payload.source || null,
@@ -1771,7 +1771,7 @@ async function startServer() {
 
       const mappedData = {
         ...statementData,
-        customerName: customer?.name || statementData.customerName || 'Customer',
+        customerName: customer?.business_name || customer?.name || statementData.customerName || 'Customer',
         customerCode: customerId,
         address: customer?.address || statementData.address || '',
         phone: customer?.phone || statementData.phone || '',

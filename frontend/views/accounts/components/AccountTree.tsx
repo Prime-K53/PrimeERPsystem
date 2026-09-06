@@ -249,9 +249,9 @@ export const AccountTree: React.FC<AccountTreeProps> = ({
   }, [filteredAccounts]);
 
   const groupedByType = useMemo(() => {
-    const groups: { type: string; typeLabel: string; accounts: Account[]; total: number }[] = [];
+    const groups: { id: string; type: string; typeLabel: string; accounts: Account[]; total: number }[] = [];
     let currentType: string | undefined;
-    let currentGroup: { type: string; typeLabel: string; accounts: Account[]; total: number } | undefined;
+    let currentGroup: { id: string; type: string; typeLabel: string; accounts: Account[]; total: number } | undefined;
 
     sortedAccounts.forEach(acc => {
       const type = acc.subtype || acc.account_type || acc.type || 'OTHER';
@@ -260,7 +260,14 @@ export const AccountTree: React.FC<AccountTreeProps> = ({
 
       if (type !== currentType) {
         currentType = type;
-        currentGroup = { type, typeLabel, accounts: [], total: 0 };
+        const startKey = acc.id || acc.account_number || acc.code;
+        currentGroup = {
+          id: `section:${type}:${startKey}`,
+          type,
+          typeLabel,
+          accounts: [],
+          total: 0
+        };
         groups.push(currentGroup);
       }
       currentGroup!.accounts.push(acc);
@@ -277,7 +284,7 @@ export const AccountTree: React.FC<AccountTreeProps> = ({
   return (
     <div className="flex flex-col">
       {groupedByType.map((group) => (
-        <React.Fragment key={group.type}>
+        <React.Fragment key={group.id}>
           <GroupHeaderRow
             typeLabel={group.typeLabel}
             typeTotal={group.total}

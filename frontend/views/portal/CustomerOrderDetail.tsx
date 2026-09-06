@@ -18,6 +18,7 @@ import ErrorBanner from './components/ErrorBanner';
 import PortalButton from './components/PortalButton';
 import { F } from './portalStyles';
 import { formatK } from './constants';
+import { getCustomerDisplayName } from '../../utils/customerDisplay';
 
 interface OrderItem {
   name: string;
@@ -119,7 +120,11 @@ const CustomerOrderDetail: React.FC = () => {
         id: o.id,
         orderNumber: o.order_number || o.orderNumber,
         orderDate: o.orderDate || o.order_date || o.created_at || '',
-        customerName: o.customerName || o.customer_name || '',
+        customerName: getCustomerDisplayName({ 
+          businessName: o.customer_business_name, 
+          companyName: o.customer_company_name, 
+          legacyCustomerName: o.customerName || o.customer_name 
+        }) || '',
         totalAmount: Number(o.total ?? o.subtotal ?? 0),
         subtotal: Number(o.subtotal ?? 0),
         discountTotal: Number(o.discount_total ?? o.discountTotal ?? 0),
@@ -207,7 +212,11 @@ const CustomerOrderDetail: React.FC = () => {
         {
           ...order,
           items: order.items.map((i) => ({ desc: i.name, qty: i.quantity, price: i.unitPrice, total: i.lineTotal })),
-          customerName: order.customerName,
+          customerName: getCustomerDisplayName({ 
+            businessName: order.customer_business_name, 
+            companyName: order.customer_company_name, 
+            legacyCustomerName: order.customerName 
+          }) || order.customerName,
           subtotal: order.totalAmount,
           orderDate: order.orderDate,
           status: order.status,
@@ -350,7 +359,11 @@ const CustomerOrderDetail: React.FC = () => {
         </div>
 
         <div style={{ fontSize: 13, fontWeight: 500, color: '#4A5568' }}>
-          <span style={{ color: '#8A94A6' }}>Customer:</span> {order.customerName}
+          <span style={{ color: '#8A94A6' }}>Customer:</span> {getCustomerDisplayName({ 
+            businessName: order.customer_business_name, 
+            companyName: order.customer_company_name, 
+            legacyCustomerName: order.customerName 
+          }) || order.customerName}
         </div>
       </div>
 
