@@ -406,4 +406,61 @@ These records need **manual business review** to determine correct `business_nam
 
 ---
 
-*Verification performed 2026-09-06. Implementation is correct. Legacy data cleanup is a separate manual data operation, not a code change.*
+## APPENDIX A: Legacy Data Correction SQL
+
+### Migration File
+`supabase/0005_legacy_customer_business_name_correction.sql`
+
+### Records to Update (30 school/organization customers)
+| Customer ID | Business Name (from legacy data.name) |
+|-------------|----------------------------------------|
+| CUST-0003 | Chiitana Primary School |
+| CUST-0004 | Chimgonda Primary School |
+| CUST-0005 | Chinkhumbe RC School |
+| CUST-0006 | Kalira RC School |
+| CUST-0007 | Kaongo LEA School |
+| CUST-0008 | Kataila Primary School |
+| CUST-0010 | Makankhula Primary School |
+| CUST-0011 | Mankhamba LEA School |
+| CUST-0012 | Mankhamba TDC |
+| CUST-0013 | Matowe RC School |
+| CUST-0014 | Maupo Primary School |
+| CUST-0015 | Mchezime LEA Primary |
+| CUST-0016 | Mlambe LEA School |
+| CUST-0032 | Msekeni Primary School |
+| CUST-0033 | Mtakataka CCAP Church |
+| CUST-0034 | Mtakataka CCAP School |
+| CUST-0035 | Mtakataka Police Primary |
+| CUST-0036 | Mtakataka RC School |
+| CUST-0037 | Mtakataka Secondary School |
+| CUST-0038 | Mtandamula Primary School |
+| CUST-0039 | Mua RC School |
+| CUST-0040 | Nadzipulu LEA School |
+| CUST-0044 | Chiwaka Primary School |
+| CUST-0045 | Bolera Chiwina Primary |
+| CUST-0046 | Mkumbuka Primary School |
+| CUST-0047 | QAO Kuwacha |
+| CUST-0048 | Mlunduni Primary School |
+| CUST-0050 | Chipse Primary School |
+| CUST-0051 | Chigwenembe Primary School |
+| CUST-0053 | Bondo RC Primary |
+
+### Records NOT Updated (require separate review)
+| Customer ID | Reason |
+|-------------|--------|
+| CUST-0001 | Legacy name appears to be personal/ambiguous |
+| CUST-0017 through CUST-0031 | Require separate review |
+| CUST-0041, CUST-0042, CUST-0043 | Require separate review |
+| CUST-0052, CUST-0054 through CUST-0057 | Require separate review |
+
+### SQL Execution Order
+1. Run STEP 1 (PRE-FLIGHT SELECT) to confirm current state
+2. Run STEP 2 (VERIFICATION QUERY) to confirm all 30 have empty business_name
+3. If verification passes, run STEP 3 (UPDATE TRANSACTION)
+4. Run STEP 4 (POST-FLIGHT SELECT) to verify results
+5. Run STEP 5 (FINAL VERIFICATION COUNT) to confirm all 30 updated
+6. Run STEP 6 (SAFETY CHECK) to confirm excluded records were not touched
+
+---
+
+*Verification performed 2026-09-06. Implementation is correct. Legacy data cleanup SQL prepared for the 30 clearly-identifiable organization records.*

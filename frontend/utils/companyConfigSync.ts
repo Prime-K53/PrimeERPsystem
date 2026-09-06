@@ -3,6 +3,7 @@ import { DEFAULT_PRICING_SETTINGS } from '../services/pricingRoundingService';
 import { withNormalizedSecurityConfig } from './securitySettings';
 import { normalizeCompanyNumberingConfig } from './numbering';
 import { dbService } from '../services/db';
+import { logger } from '../services/logger';
 
 /**
  * Single authoritative persistence key for the full company configuration.
@@ -147,7 +148,9 @@ export async function loadStoredCompanyConfig(
 export async function persistCompanyConfig(
   config: CompanyConfig
 ): Promise<void> {
+  logger.info('[CompanyConfigSync] persistCompanyConfig called with key:', COMPANY_CONFIG_SETTINGS_KEY);
   await dbService.saveSetting(COMPANY_CONFIG_SETTINGS_KEY, config);
+  logger.info('[CompanyConfigSync] persistCompanyConfig done - sync queue should be triggered');
 }
 
 /**

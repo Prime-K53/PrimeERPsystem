@@ -604,16 +604,15 @@ export async function startPeriodicSync(
   onSyncComplete?: (result: { pulled: number; pushed: number; errors: string[] }) => void
 ) {
   if (!SUPABASE_ENABLED) {
-    /* SYNC-FORENSIC suppressed: startPeriodicSync() SKIPPED — SUPABASE_ENABLED=false */
+    logger.warn('[SyncService] startPeriodicSync SKIPPED — SUPABASE_ENABLED=false');
     return;
   }
   if (syncLifecycleActive) {
-    /* SYNC-FORENSIC suppressed: startPeriodicSync() SKIPPED — lifecycle already active */
+    logger.warn('[SyncService] startPeriodicSync SKIPPED — lifecycle already active');
     return;
   }
 
-  /* SYNC-FORENSIC suppressed: startPeriodicSync() START */
-  audit('sync', 'startPeriodicSync', { intervalMs });
+  logger.info('[SyncService] startPeriodicSync starting', { intervalMs, supabaseEnabled: SUPABASE_ENABLED });
 
   if (navigator.onLine) {
     const serverGen = await fetchServerGeneration();
@@ -629,7 +628,9 @@ export async function startPeriodicSync(
   });
 
   const { backgroundSyncService } = await import('./backgroundSyncService');
+  logger.info('[SyncService] calling backgroundSyncService.start()');
   backgroundSyncService.start();
+  logger.info('[SyncService] backgroundSyncService.start() called');
 
   // Periodic pull (incremental sync) - 30 second interval for catching missed realtime events
   pushTimer = setInterval(async () => {

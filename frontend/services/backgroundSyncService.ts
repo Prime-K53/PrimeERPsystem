@@ -3,6 +3,7 @@ import { sendSyncOps, SyncOp, SyncOpResult, SyncAuthError } from './syncApiClien
 import { resolvePushConflict } from './syncConflictResolver';
 import { cloudDb } from './cloudDb';
 import { audit } from './syncAudit';
+import { logger } from './logger';
 
 type SyncEventType = 'sync-start' | 'sync-complete' | 'sync-failure' | 'sync-partial' | 'queue-empty' | 'queue-full' | 'dead-letter' | 'sync-conflict';
 type SyncCallback = (event: SyncEventType, data?: unknown) => void;
@@ -94,6 +95,7 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
   let conflictsResolved = 0;
 
   const items = await durableSyncQueue.dequeue(batchSize);
+  logger.info('[BackgroundSync] processBatch dequeued', { count: items.length, tables: items.map(i => i.table) });
 
   if (items.length === 0) return { success: 0, failed: 0, deadLetter: 0, skipped: 0, conflictsResolved: 0, durationMs: 0 };
 
@@ -128,9 +130,11 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
   if (gatewayOps.length > 0) {
     try {
       const syncPayload = gatewayOps.map(({ op }) => op);
+      logger.info('[BackgroundSync] sendSyncOps sending', { ops: syncPayload.length, tables: syncPayload.map(o => o.table) });
       /* SYNC-FORENSIC suppressed: STAGE-6 sendSyncOps() calling POST /api/sync/ops */
       const response = await sendSyncOps(syncPayload);
       /* SYNC-FORENSIC suppressed: STAGE-6 sendSyncOps() response */
+      logger.info('[BackgroundSync] sendSyncOps response', { results: response.results.length });
       for (const result of response.results) {
         if (result.operationId) opResults.set(result.operationId, result);
       }
@@ -429,6 +433,7 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
   let pendingCount = 0;
   try {
     pendingCount = await durableSyncQueue.countPending();
+    logger.info('[BackgroundSync] syncOnce pendingCount:', pendingCount);
     if (pendingCount === 0) {
       /* SYNC-FORENSIC suppressed: syncOnce() SKIPPED — 0 pending ops */
       return null;
@@ -439,6 +444,7 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
 
   /* SYNC-FORENSIC suppressed: syncOnce() START */
   state.isSyncing = true;
+  logger.info('[BackgroundSync] syncOnce starting to process', { pendingCount });
 
   try {
     const metricsBefore: QueueMetrics = await durableSyncQueue.getMetrics();
@@ -579,18 +585,22 @@ export const backgroundSyncService = {
   async initialize(): Promise<void> {
     if (isInitialized) return;
     isInitialized = true;
+    logger.info('[BackgroundSync] initialize starting');
 
     const recovered = await durableSyncQueue.rebuildDependencyGraph();
     if (recovered > 0) {
       await durableSyncQueue.recordMetric('graph_recovered', recovered);
     }
 
+    logger.info('[BackgroundSync] initialize calling startPeriodicSync');
     await this.startPeriodicSync();
     await runCleanup();
+    logger.info('[BackgroundSync] initialize complete');
   },
 
   startPeriodicSync(intervalMs?: number): void {
     if (intervalId) clearInterval(intervalId);
+    logger.info('[BackgroundSync] startPeriodicSync starting', { intervalMs });
 
     audit('push', 'backgroundSyncService startPeriodicSync', { intervalMs });
 

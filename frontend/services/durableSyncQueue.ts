@@ -1,4 +1,5 @@
 import { openDB, IDBPDatabase } from 'idb';
+import { logger } from './logger';
 
 export type QueueStatus = 'pending' | 'syncing' | 'failed' | 'completed' | 'dead_letter';
 export type QueueOperation = 'insert' | 'update' | 'delete' | 'upsert';
@@ -207,6 +208,7 @@ export const durableSyncQueue = {
     const now = new Date().toISOString();
     const db = await getDb();
     const payloadStr = JSON.stringify(input.payload);
+    logger.info('[DurableQueue] enqueue', { table: input.table, recordId: input.recordId, operation: input.operation });
 
     // Default to the local generation from localStorage if not explicitly supplied.
     // This ensures all operations automatically carry the generation without

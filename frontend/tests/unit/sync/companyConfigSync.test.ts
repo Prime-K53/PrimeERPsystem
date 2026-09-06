@@ -5,10 +5,38 @@ const mocks = vi.hoisted(() => ({
   saveSetting: vi.fn(),
 }));
 
+const syncMocks = vi.hoisted(() => ({
+  triggerSync: vi.fn(),
+  enqueue: vi.fn().mockResolvedValue({ id: 'q-1', table: 'settings', recordId: 'companyConfig', operation: 'upsert', status: 'pending' }),
+  trigger: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('../../../services/db', () => ({
   dbService: {
     getSetting: mocks.getSetting,
     saveSetting: mocks.saveSetting,
+    triggerSync: syncMocks.triggerSync,
+  },
+}));
+
+vi.mock('../../../services/durableSyncQueue', () => ({
+  durableSyncQueue: {
+    enqueue: syncMocks.enqueue,
+    countPending: vi.fn().mockResolvedValue(1),
+    retryFailed: vi.fn(),
+    rebuildDependencyGraph: vi.fn().mockResolvedValue(0),
+    getMetrics: vi.fn().mockResolvedValue({ total: 0, pending: 0, syncing: 0, failed: 0, completed: 0, deadLetter: 0, oldestPending: null, lastSyncSuccess: null, lastSyncFailure: null, retryHistogram: {}, avgRetryCount: 0, avgSyncLatencyMs: 0, conflictsTotal: 0, conflictsAuto: 0, conflictsReview: 0 }),
+  },
+}));
+
+vi.mock('../../../services/backgroundSyncService', () => ({
+  backgroundSyncService: {
+    trigger: syncMocks.trigger,
+    start: vi.fn(),
+    stopPeriodicSync: vi.fn(),
+    reset: vi.fn(),
+    isPaused: vi.fn().mockReturnValue(false),
+    setPaused: vi.fn(),
   },
 }));
 
@@ -270,3 +298,21 @@ describe('stale-cache protection', () => {
 function withNormalizedDefaults(): any {
   return normalizeStoredCompanyConfig(defaults, defaults);
 }
+
+describe('Company Settings sync chain regression', () => {
+  it('persistCompanyConfig triggers saveSetting with companyConfig key', async () => {
+    const full = normalizeStoredCompanyConfig({ companyName: 'Test Co' }, defaults)!;
+    await persistCompanyConfig(full);
+    expect(mocks.saveSetting).toHaveBeenCalledWith(COMPANY_CONFIG_SETTINGS_KEY, full);
+  });
+
+  it('persistCompanyConfig enqueues the settings table for cloud sync', async () => {
+    const { durableSyncQueue } = await import('../../../services/durableSyncQueue');
+    const { backgroundSyncService } = await import('../../../services/backgroundSyncService');
+
+    const full = normalizeStoredCompanyConfig({ companyName: 'Test Co' }, defaults)!;
+    await persistCompanyConfig(full);
+
+    expect(mocks.saveSetting).toHaveBeenCalledWith(COMPANY_CONFIG_SETTINGS_KEY, full);
+  });
+});

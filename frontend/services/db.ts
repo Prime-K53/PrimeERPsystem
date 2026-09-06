@@ -1055,7 +1055,9 @@ export const dbService = {
                 }).catch((enqueueErr) => {
                     /* SYNC-FORENSIC suppressed: STAGE-2 ENQUEUE FAILED */
                 });
-                backgroundSyncService.trigger();
+                backgroundSyncService.trigger().catch((triggerErr) => {
+                    logger.warn(`[DB] backgroundSyncService.trigger() failed for ${storeName}/${itemId}:`, triggerErr);
+                });
             } catch (syncErr) {
             /* SYNC-FORENSIC suppressed: STAGE-2 TRIGGER FAILED */
             }
@@ -1117,6 +1119,7 @@ export const dbService = {
 
     async saveSetting<T>(key: string, value: T): Promise<void> {
         try {
+            logger.info('[DB] saveSetting called', { key, valueKeys: Object.keys(value || {}) });
             const record = { id: key, key, value, _updatedAt: new Date().toISOString() };
             await this.put('settings', record);
             try {
@@ -1126,7 +1129,7 @@ export const dbService = {
                 // Ignore localStorage quota errors
             }
         } catch (err) {
-            console.warn(`[DB] Local saveSetting error for ${key}:`, err);
+            logger.error(`[DB] Local saveSetting error for ${key}:`, err);
         }
         this.triggerSync();
         emitDataChange(['settings']);

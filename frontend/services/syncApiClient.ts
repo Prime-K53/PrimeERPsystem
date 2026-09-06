@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../config/api.js';
 import { getJsonRequestHeaders } from './requestHeaders';
+import { logger } from './logger';
 
 /**
  * syncApiClient.ts — browser-side client for the backend sync gateway
@@ -122,6 +123,7 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
     throw new Error('fetch is not available in this environment');
   }
 
+  logger.info('[SyncApiClient] sendSyncOps sending', { endpoint: SYNC_ENDPOINT, ops: ops.length });
   const token = await getSyncAccessToken();
   const headers: Record<string, string> = getJsonRequestHeaders();
   if (token) {
@@ -141,7 +143,7 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
       signal: controller.signal,
     });
 
-    /* SYNC-FORENSIC suppressed: STAGE-8 syncApiClient HTTP response */
+    logger.info('[SyncApiClient] sendSyncOps response', { status: res.status, ok: res.ok });
 
     if (res.status === 503) {
       throw new Error('Cloud database is not configured on this server');
