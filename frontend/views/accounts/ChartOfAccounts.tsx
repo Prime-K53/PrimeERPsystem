@@ -299,7 +299,13 @@ const ChartOfAccounts: React.FC = () => {
   const renderAccountRow = (account: Account, depth: number = 0) => {
     const code = account.account_number || account.code || '';
     const isExpanded = expandedNodes.has(code);
-    const hasChildren = accounts.some(a => a.parent_account_id === account.id);
+    // parent_account_id can be stored as either UUID (ACC-XXXX) or numeric (XXXXX)
+    // So we compare using account_number which is always numeric
+    const accountNum = account.account_number || account.code || '';
+    const hasChildren = accounts.some(a => 
+      (a.parent_account_id === accountNum) ||
+      (a.parent_account_id === account.id)
+    );
     const balance = accountBalances[account.id] || 0;
 
     return (
@@ -336,7 +342,7 @@ const ChartOfAccounts: React.FC = () => {
         {isExpanded && hasChildren && (
           <div style={{ background: `${paper}` }}>
             {accounts
-              .filter(a => a.parent_account_id === account.id)
+              .filter(a => (a.parent_account_id === accountNum) || (a.parent_account_id === account.id))
               .map(child => renderAccountRow(child, depth + 1))}
           </div>
         )}

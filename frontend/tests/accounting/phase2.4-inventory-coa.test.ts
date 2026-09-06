@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { computeHierarchicalBalances, resolveInventoryAccountByItemType, resolveInventoryAccountFromItems } from '../services/transactions/_internal';
+import { computeHierarchicalBalances, resolveInventoryAccountByItemType, resolveInventoryAccountFromItems } from '../../services/transactions/_internal';
 
 describe('Phase 2.4: Inventory ↔ COA Integration + Hierarchical Balance Rollup', () => {
   describe('resolveInventoryAccountByItemType', () => {
@@ -189,7 +189,7 @@ describe('Phase 2.4: Inventory ↔ COA Integration + Hierarchical Balance Rollup
   describe('Reconciliation Test: Purchase → GRN → Sale', () => {
     it('should reconcile inventory subsystem valuation with GL balance', () => {
       const accounts = [
-        { id: 'acc-11410', code: '11410', name: 'Merchandise Inventory', allow_posting: true, is_active: true },
+        { id: 'acc-11410', code: '11410', name: 'Merchandise Inventory', allow_posting: true, is_active: true, parent_account_id: 'acc-11400' },
         { id: 'acc-51200', code: '51200', name: 'Cost of Goods Sold', allow_posting: true, is_active: true },
         { id: 'acc-21110', code: '21110', name: 'Trade Creditors', allow_posting: true, is_active: true },
         { id: 'acc-11400', code: '11400', name: 'Inventory', parent_account_id: null, allow_posting: false },
