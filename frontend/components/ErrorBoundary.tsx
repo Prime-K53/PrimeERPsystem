@@ -93,8 +93,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                   {this.state.error?.message || 'Unknown Error'}
                 </code>
               </div>
-              <button
-                onClick={() => { this.state = { hasError: false, error: null }; }}
+                <button
+                onClick={() => { this.setState({ hasError: false, error: null }); }}
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 <RefreshCw size={18} /> Retry

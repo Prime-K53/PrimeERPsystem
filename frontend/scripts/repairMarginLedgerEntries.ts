@@ -95,7 +95,7 @@ export async function repairMarginLedgerEntries(): Promise<void> {
       reversalOf:      original.id,
     };
 
-    await store.put(reversal);
+    await dbService.put('ledger', reversal);
     console.log(
       `  REVERSED: ${original.id} (K${original.amount}) ` +
       `DR ${reversal.debitAccountId} / CR ${reversal.creditAccountId}`
@@ -103,7 +103,6 @@ export async function repairMarginLedgerEntries(): Promise<void> {
     reversed++;
   }
 
-  await tx.done;
   console.log(`Done. Reversed: ${reversed}, Skipped (already done): ${skipped}.`);
   console.groupEnd();
 }
