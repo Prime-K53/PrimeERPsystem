@@ -7,6 +7,7 @@ import { useBankingStore } from '../context/BankingContext';
 import { PenLine } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { currencyService } from '../services/currencyService';
+import { financialReportingService } from '../services/financialReportingService';
 
 export const ProfitSummaryCard: React.FC = () => {
   const { 
@@ -28,6 +29,21 @@ export const ProfitSummaryCard: React.FC = () => {
   useEffect(() => {
     fetchBankingData();
   }, [fetchBankingData]);
+
+  // COA balances for book balance display
+  const [coaBalances, setCoaBalances] = React.useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!bankAccounts || bankAccounts.length === 0) return;
+    const loadCOABalances = async () => {
+      try {
+        const balances = await financialReportingService.getBookBalancesForBankAccounts(bankAccounts);
+        setCoaBalances(balances);
+      } catch (err) {
+        console.error('Failed to load COA balances:', err);
+      }
+    };
+    loadCOABalances();
+  }, [bankAccounts]);
 
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -87,17 +103,15 @@ export const ProfitSummaryCard: React.FC = () => {
 
   // Accounts Balances Calculation
   const accountBalances = useMemo(() => {
-    // Priority 1: Use actual bank accounts if available
+    // Priority 1: Use actual bank accounts if available - use COA book balance
     if (bankAccounts && bankAccounts.length > 0) {
       return bankAccounts
         .map(acc => {
-          // Calculate true balance from transactions
-          const accTxs = bankTransactions.filter(tx => tx.bankAccountId === acc.id);
-          const calculatedBalance = accTxs.reduce((sum, tx) => sum + (tx.type === 'Deposit' ? tx.amount : -tx.amount), 0);
-          
+          // Use COA book balance (from financialReportingService)
+          const coaBalance = coaBalances[acc.id] || 0;
           return {
             name: acc.name,
-            balance: calculatedBalance !== 0 ? calculatedBalance : (acc.balance || 0)
+            balance: coaBalance
           };
         })
         .filter(a => a.balance !== 0) // Show both positive and negative balances, just not zero
@@ -107,7 +121,7 @@ export const ProfitSummaryCard: React.FC = () => {
     // Priority 2: Fallback to ledger if bank accounts aren't initialized yet
     const balances: Record<string, number> = {};
     (accounts || []).forEach(a => balances[a.id] = 0);
-    
+
     (filteredLedger || []).forEach(entry => {
       const debitAcc = (accounts || []).find(a => a.id === entry.debitAccountId || a.code === entry.debitAccountId);
       const creditAcc = (accounts || []).find(a => a.id === entry.creditAccountId || a.code === entry.creditAccountId);
@@ -129,7 +143,7 @@ export const ProfitSummaryCard: React.FC = () => {
       }))
       .filter(a => a.balance !== 0)
       .slice(0, 4); // Limit to top 4 accounts
-  }, [bankAccounts, bankTransactions, accounts, filteredLedger]);
+  }, [bankAccounts, coaBalances, accounts, filteredLedger]);
 
   return (
     <div className="flex flex-col gap-3 mb-6">

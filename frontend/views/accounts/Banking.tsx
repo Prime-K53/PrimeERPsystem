@@ -20,6 +20,7 @@ import BankingReports from '../../components/BankingReports';
 import { PreviewModal } from '../shared/components/PDF/PreviewModal';
 import { AccountDetailsDashboard } from './components/AccountDetailsDashboard';
 import { currencyService } from '../../services/currencyService';
+import { financialReportingService } from '../../services/financialReportingService';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
 import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils';
 const paper = '#FEFDFB';
@@ -65,6 +66,20 @@ const Banking: React.FC = () => {
     fetchBankingData();
   }, [fetchBankingData]);
 
+  // Fetch COA balances for book balance display
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    const loadCOABalances = async () => {
+      try {
+        const balances = await financialReportingService.getBookBalancesForBankAccounts(accounts);
+        setCoaBalances(balances);
+      } catch (err) {
+        console.error('Failed to load COA balances for banking:', err);
+      }
+    };
+    loadCOABalances();
+  }, [accounts]);
+
   // 5-minute poll + focus refresh
   useModuleRefresh(async () => {
     await Promise.allSettled([
@@ -81,6 +96,7 @@ const Banking: React.FC = () => {
   const [documentPreviewTitle, setDocumentPreviewTitle] = useState<string>('Document Preview');
   const [documentPreviewContent, setDocumentPreviewContent] = useState<React.ReactNode>(null);
   const [auditedAccount, setAuditedAccount] = useState<any | null>(null);
+  const [coaBalances, setCoaBalances] = useState<Record<string, number>>({});
 
   const [confirmState, setConfirmState] = useState<{ open: boolean; title: string; message: string; confirmText?: string; type?: ConfirmDialogType; onConfirm?: () => void }>({ open: false, title: '', message: '' });
 
@@ -1135,19 +1151,11 @@ const Banking: React.FC = () => {
                       {acc.bankName}
                     </p>
                     <div className="pt-4 border-t border-slate-100 flex justify-between items-center" style={{ borderColor: hairline }}>
-                      <span className="text-[10px] font-black tracking-wide" style={{ color: inkSoft }}>Balance</span>
+                      <span className="text-[10px] font-black tracking-wide" style={{ color: inkSoft }}>Book Balance</span>
                       <span className={`text-xl font-black ${
-                        acc.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                        (coaBalances[acc.id] || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'
                       }`}>
-                        {currency}{acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="pt-2 flex justify-between items-center">
-                      <span className="text-[10px] font-black tracking-wide" style={{ color: inkSoft }}>Available</span>
-                      <span className={`text-sm font-black ${
-                        acc.availableBalance >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                      }`}>
-                        {currency}{acc.availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {currency}{(coaBalances[acc.id] || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>

@@ -34,7 +34,7 @@ import {
     validateLedgerBalance, distributePosRetainedAmounts, getIdempotencyKeys, resolveToAccountId,
     resolveAccountForPosting, requireResolvedAccount, buildResolvedJournalLine, 
     loadAccountsFromStore, UnresolvedAccountError,
-    JournalLineInput
+    JournalLineInput, resolveInventoryAccountByItemType, resolveInventoryAccountFromItems
 } from './transactions/_internal';
 
 export const transactionService = {
@@ -850,12 +850,13 @@ export const transactionService = {
                         (item) => item.parentId || item.id
                     );
                     if (cogsTotal > 0) {
+                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(sale.items || [], accounts) : null;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: sale.date,
                             description: `COGS - Sale #${sale.id}`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: resolveAcct(gl.defaultInventoryAccount),
+                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                             amount: Number(cogsTotal.toFixed(2)),
                             referenceId: sale.id,
                             reconciled: false,
@@ -1256,11 +1257,12 @@ export const transactionService = {
 
                 if (refundCogsTotal > 0) {
                     const gl = getGLConfig();
+                    const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(refund.items || [], accounts) : null;
                     const cogsReversal: LedgerEntry = {
                         id: generateId('LG-COGS-REV'),
                         date: refund.date,
                         description: `COGS Reversal - Refund #${refund.saleId || refund.id}`,
-                        debitAccountId: resolveAcct(gl.defaultInventoryAccount),
+                        debitAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                         creditAccountId: resolveAcct(gl.defaultCOGSAccount),
                         amount: Number(refundCogsTotal.toFixed(2)),
                         referenceId: refund.id,
@@ -2040,13 +2042,13 @@ export const transactionService = {
                         (item) => item.parentId || item.id
                     );
                     if (cogsTotal > 0) {
-                        const gl = getGLConfig();
+                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(invoice.items || [], accounts) : null;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: invoice.date,
                             description: `COGS - Invoice #${invoice.id}`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: resolveAcct(gl.defaultInventoryAccount),
+                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                             amount: Number(cogsTotal.toFixed(2)),
                             referenceId: invoice.id,
                             reconciled: false,
@@ -2366,13 +2368,14 @@ export const transactionService = {
                         (item) => item.parentId || item.id
                     );
                     if (cogsTotal > 0) {
+                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(invoiceData.items || [], accounts) : null;
                         const gl = getGLConfig();
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: invoiceData.date,
                             description: `COGS - Invoice #${invoiceData.id}`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: resolveAcct(gl.defaultInventoryAccount),
+                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                             amount: Number(cogsTotal.toFixed(2)),
                             referenceId: invoiceData.id,
                             reconciled: false,
@@ -3467,11 +3470,12 @@ export const transactionService = {
                 const inventoryList = await inventoryStore.getAll();
                 const cogsTotal = await calculateItemsCost(sale.items || [], inventoryList, (item) => item.parentId || item.id);
                 if (cogsTotal > 0) {
+                    const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(sale.items || [], accounts) : null;
                     const cogsReversal: LedgerEntry = {
                         id: generateId('LG-COGS-REV'),
                         date: new Date().toISOString(),
                         description: `COGS Reversal - Void Sale #${sale.id}`,
-                        debitAccountId: resolveAcct(gl.defaultInventoryAccount),
+                        debitAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                         creditAccountId: resolveAcct(gl.defaultCOGSAccount),
                         amount: cogsTotal,
                         referenceId: id,
@@ -4023,13 +4027,14 @@ export const transactionService = {
 
                         // Reverse the PO AP entry since we're now recording actual GRN
                         if (po.status === 'Approved') {
+                            const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(po.items || [], accounts) : null;
                             // Reverse PO AP entry
                             const poReversal: LedgerEntry = {
                                 id: generateId('LG-GRN-POREV'),
                                 date: grn.date,
                                 description: `PO Reversal on GRN - ${po.id}`,
                                 debitAccountId: resolveAcct(gl.accountsPayable),
-                                creditAccountId: resolveAcct(gl.defaultInventoryAccount),
+                                creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                                 amount: poAmount,
                                 referenceId: grn.id,
                                 reconciled: false,
@@ -4062,12 +4067,14 @@ export const transactionService = {
                 // 4. Create Actual GRN Ledger Entry
                 const totalAmount = totalValue;
 
+                const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(grn.items || [], accounts) : null;
+
                 // Debit Inventory, Credit AP
                 const inventoryEntry: LedgerEntry = {
                     id: generateId('LG-GRN-INV'),
                     date: grn.date,
                     description: `Goods Receipt #${grn.id}${relatedPurchase ? ` (PO: ${relatedPurchase.id})` : ''}`,
-                    debitAccountId: resolveAcct(gl.defaultInventoryAccount),
+                    debitAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                     creditAccountId: resolveAcct(gl.accountsPayable),
                     amount: totalAmount,
                     referenceId: grn.id,
@@ -4175,12 +4182,13 @@ export const transactionService = {
 
                     if (Math.abs(params.qtyChange * adjustmentCost) > 0) {
                         const gl = getGLConfig();
+                        const inventoryAccountId = resolveInventoryAccountByItemType(item.type, accounts) || resolveAcct(gl.defaultInventoryAccount);
                         const entry: LedgerEntry = {
                             id: generateId('LG-ADJ'),
                             date: new Date().toISOString(),
                             description: `Stock Adjustment: ${params.reason} (${params.notes || ''})`,
-                            debitAccountId: params.qtyChange > 0 ? resolveAcct(gl.defaultInventoryAccount) : resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: params.qtyChange > 0 ? resolveAcct(gl.defaultCOGSAccount) : resolveAcct(gl.defaultInventoryAccount),
+                            debitAccountId: params.qtyChange > 0 ? inventoryAccountId : resolveAcct(gl.defaultCOGSAccount),
+                            creditAccountId: params.qtyChange > 0 ? resolveAcct(gl.defaultCOGSAccount) : inventoryAccountId,
                             amount: Math.abs(params.qtyChange * adjustmentCost),
                             referenceId: params.itemId,
                             reconciled: false
@@ -4327,6 +4335,7 @@ export const transactionService = {
 
                 const gl = getGLConfig();
                 const totalAmount = purchase.total || purchase.totalAmount || 0;
+                const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(purchase.items || [], accounts) : null;
 
                 // 1. Post AP Ledger Entry for Purchase Order
                 // Debit: PO Receiving Account (or Inventory Account if direct)
@@ -4335,7 +4344,7 @@ export const transactionService = {
                     id: generateId('LG-PO-AP'),
                     date: new Date().toISOString(),
                     description: `PO Commitment - ${purchase.id}`,
-                    debitAccountId: resolveAcct(gl.defaultInventoryAccount),
+                    debitAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                     creditAccountId: resolveAcct(gl.accountsPayable),
                     amount: totalAmount,
                     referenceId: purchase.id,
@@ -4399,12 +4408,13 @@ export const transactionService = {
 
                 // 1. Reverse AP Ledger Entry if PO was approved
                 if (purchase.status === 'Approved') {
+                    const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(purchase.items || [], accounts) : null;
                     const reversalEntry: LedgerEntry = {
                         id: generateId('LG-PO-REV'),
                         date: new Date().toISOString(),
                         description: `PO Cancellation - ${purchase.id} - ${reason}`,
                         debitAccountId: resolveAcct(gl.accountsPayable),
-                        creditAccountId: resolveAcct(gl.defaultInventoryAccount),
+                        creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                         amount: totalAmount,
                         referenceId: purchase.id,
                         reconciled: false,
@@ -4503,12 +4513,14 @@ export const transactionService = {
 
                 if (Math.abs(totalVarianceCost) > 0.01) {
                     const gl = getGLConfig();
+                    const firstItem = results.length > 0 ? await inventoryStore.get(results[0].itemId) : null;
+                    const inventoryAccountId = accounts.length > 0 && firstItem ? resolveInventoryAccountByItemType(firstItem.type, accounts) : null;
                     const entry: LedgerEntry = {
                         id: generateId('LG-REC'),
                         date: new Date().toISOString(),
                         description: `Inventory Reconciliation Variance`,
-                        debitAccountId: totalVarianceCost < 0 ? resolveAcct(gl.defaultCOGSAccount) : resolveAcct(gl.defaultInventoryAccount),
-                        creditAccountId: totalVarianceCost < 0 ? resolveAcct(gl.defaultInventoryAccount) : resolveAcct(gl.defaultCOGSAccount),
+                        debitAccountId: totalVarianceCost < 0 ? resolveAcct(gl.defaultCOGSAccount) : (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)),
+                        creditAccountId: totalVarianceCost < 0 ? (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)) : resolveAcct(gl.defaultCOGSAccount),
                         amount: Math.abs(totalVarianceCost),
                         referenceId: 'RECONCILE',
                         reconciled: true
@@ -4579,13 +4591,14 @@ export const transactionService = {
                         item.stock = (item.stock || 0) - mat.quantity;
                         await invStore.put(item);
 
+                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountByItemType(item.type, accounts) : null;
                         // Ledger entry for material consumption
                         const entry: LedgerEntry = {
                             id: generateId('LG-CONS'),
                             date: new Date().toISOString(),
                             description: `Material Consumption: ${item.name} (WO: ${wo.id})`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: resolveAcct(gl.defaultInventoryAccount),
+                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                             amount: mat.cost,
                             referenceId: wo.id,
                             reconciled: false
@@ -4719,12 +4732,13 @@ export const transactionService = {
 
                 // 2. Create Ledger Entry (Debit COGS/Waste, Credit Inventory)
                 const gl = getGLConfig();
+                const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountByItemType(item?.type, accounts) : null;
                 const entry: LedgerEntry = {
                     id: generateId('LG-WST'),
                     date: new Date().toISOString(),
                     description: description,
                     debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                    creditAccountId: resolveAcct(gl.defaultInventoryAccount),
+                    creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                     amount: cost,
                     referenceId: referenceId,
                     reconciled: false
@@ -4822,12 +4836,24 @@ export const transactionService = {
                         (item) => item.productId
                     );
                     if (cogsTotal > 0) {
+                        const orderCartItems = (order.items || []).map((item: any) => ({
+                            id: item.productId,
+                            name: item.productName,
+                            price: item.unitPrice,
+                            quantity: item.quantity,
+                            type: item.type || 'Product',
+                            cost: item.productionCostSnapshot?.baseProductionCost || 0,
+                            variantId: item.variantId,
+                            adjustmentSnapshots: item.adjustmentSnapshots,
+                            transactionAdjustmentSnapshots: item.transactionAdjustmentSnapshots
+                        }));
+                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(orderCartItems, accounts) : null;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: order.orderDate,
                             description: `COGS - Order #${order.orderNumber}`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: resolveAcct(gl.defaultInventoryAccount),
+                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                             amount: Number(cogsTotal.toFixed(2)),
                             referenceId: order.id,
                             reconciled: false,
@@ -5155,12 +5181,24 @@ export const transactionService = {
                     );
                     if (cogsTotal > 0) {
                         const gl = getGLConfig();
+                        const orderCartItems = (order.items || []).map((item: any) => ({
+                            id: item.productId,
+                            name: item.productName,
+                            price: item.unitPrice,
+                            quantity: item.quantity,
+                            type: item.type || 'Product',
+                            cost: item.productionCostSnapshot?.baseProductionCost || 0,
+                            variantId: item.variantId,
+                            adjustmentSnapshots: item.adjustmentSnapshots,
+                            transactionAdjustmentSnapshots: item.transactionAdjustmentSnapshots
+                        }));
+                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(orderCartItems, accounts) : null;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: new Date().toISOString(),
                             description: `COGS - Order #${order.orderNumber}`,
                             debitAccountId: gl.defaultCOGSAccount,
-                            creditAccountId: gl.defaultInventoryAccount,
+                            creditAccountId: inventoryAccountId || gl.defaultInventoryAccount,
                             amount: Number(cogsTotal.toFixed(2)),
                             referenceId: order.id,
                             reconciled: false,

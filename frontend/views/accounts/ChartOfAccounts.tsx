@@ -16,6 +16,7 @@ import { AccountDetailsDashboard } from './components/AccountDetailsDashboard';
 import { NewAccountModal } from './components/NewAccountModal';
 import { currencyService } from '../../services/currencyService';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
+import { computeHierarchicalBalances } from '../../services/transactions/_internal';
 
 const teal = { 50: '#eef7f6', 100: '#d4ebe3', 200: '#a6d9d3', 400: '#3fa294', 500: '#2d9a8a', 600: '#1f8577', 700: '#166b5e', 800: '#0f544c', 900: '#0a3d34' };
 const amber = { 50: '#fef9e7', 100: '#fef3c7', 200: '#fde68a', 400: '#d99a3f', 500: '#d99a3f', 600: '#b45309', 700: '#92400e', 800: '#78350f', 900: '#451a03' };
@@ -108,7 +109,9 @@ const ChartOfAccounts: React.FC = () => {
 
     // Initialize with opening balances from accounts
     (accounts || []).forEach((acc: Account) => {
-      balances[acc.id] = acc.opening_balance || 0;
+      const openingBalance = acc.opening_balance || 0;
+      const normalBalance = acc.normal_balance || 'DEBIT';
+      balances[acc.id] = normalBalance === 'CREDIT' ? -openingBalance : openingBalance;
     });
 
     // Apply ledger entries (type-aware)
@@ -120,22 +123,34 @@ const ChartOfAccounts: React.FC = () => {
       const debitAcc = (accounts || []).find((a: Account) => a.id === entry.debitAccountId || a.code === entry.debitAccountId || a.account_number === entry.debitAccountId);
       const creditAcc = (accounts || []).find((a: Account) => a.id === entry.creditAccountId || a.code === entry.creditAccountId || a.account_number === entry.creditAccountId);
 
-      const isDebitNormal = (acc: Account) => {
-        const t = acc.account_type || acc.type || '';
-        return t === 'ASSET' || t === 'EXPENSE' || t === 'Asset' || t === 'Expense';
+      const getNormalBalance = (acc: Account): 'DEBIT' | 'CREDIT' => {
+        if (acc.normal_balance === 'CREDIT' || acc.normal_balance === 'DEBIT') {
+          return acc.normal_balance;
+        }
+        const t = (acc.account_type || acc.type || '').toUpperCase();
+        if (t === 'ASSET' || t === 'EXPENSE') return 'DEBIT';
+        if (t === 'LIABILITY' || t === 'EQUITY' || t === 'INCOME') return 'CREDIT';
+        return 'DEBIT';
       };
 
       if (debitAcc && balances[debitAcc.id] !== undefined) {
-        const sign = isDebitNormal(debitAcc) ? 1 : -1;
+        const normal = getNormalBalance(debitAcc);
+        const sign = normal === 'DEBIT' ? 1 : -1;
         balances[debitAcc.id] = (balances[debitAcc.id] || 0) + (entry.amount * sign);
       }
       if (creditAcc && balances[creditAcc.id] !== undefined) {
-        const sign = isDebitNormal(creditAcc) ? -1 : 1;
+        const normal = getNormalBalance(creditAcc);
+        const sign = normal === 'DEBIT' ? -1 : 1;
         balances[creditAcc.id] = (balances[creditAcc.id] || 0) + (entry.amount * sign);
       }
     });
 
-    return balances;
+    // Hierarchical rollup: parent accounts aggregate their descendants
+    const hierarchicalBalances = computeHierarchicalBalances(accounts, balances, {
+      respectNormalBalance: true
+    });
+
+    return hierarchicalBalances;
   }, [accounts, ledger]);
 
   const groupedByType = useMemo(() => {

@@ -1013,6 +1013,74 @@ class FinancialReportingService {
 
     return result;
   }
+
+  /**
+   * Map a BankAccount to its canonical COA account code.
+   * This uses name-based matching to determine the correct COA account.
+   *
+   * BankAccount naming conventions:
+   * - 'Cash', 'Cash Account' → 11110 (Cash Drawer)
+   * - 'National Bank', 'Bank Account', 'Prime Bank' (not Mobile Money) → 11210 (National Bank)
+   * - 'FDH' → 11220 (FDH Bank)
+   * - 'NBS' → 11230 (NBS Bank)
+   * - 'Mobile Money', 'Momo' → 11240 (Mobile Money)
+   */
+  mapBankAccountToCOACode(bankAccount: { name?: string; accountNumber?: string; bankName?: string }): string | null {
+    const name = (bankAccount.name || '').toLowerCase();
+    const number = (bankAccount.accountNumber || '').toLowerCase();
+    const bankName = (bankAccount.bankName || '').toLowerCase();
+
+    const matches = (text: string, tokens: string[]) =>
+      tokens.some(token => text.includes(token));
+
+    if (matches(name, ['cash']) || matches(number, ['cash'])) {
+      return '11110'; // Cash Drawer
+    }
+
+    if (matches(name, ['mobile', 'momo']) || matches(bankName, ['mobile', 'momo'])) {
+      return '11240'; // Mobile Money
+    }
+
+    if (matches(name, ['nbs'])) {
+      return '11230'; // NBS Bank
+    }
+
+    if (matches(name, ['fdh'])) {
+      return '11220'; // FDH Bank
+    }
+
+    if (matches(name, ['national', 'bank']) || matches(bankName, ['bank', 'prime'])) {
+      return '11210'; // National Bank (default)
+    }
+
+    return null; // Unknown mapping
+  }
+
+  /**
+   * Get the Book Balance for a BankAccount from the canonical COA/ledger.
+   * This should be used instead of calculating from bankTransactions.
+   */
+  async getBookBalanceForBankAccount(bankAccount: { name?: string; accountNumber?: string; bankName?: string }): Promise<number> {
+    const coaCode = this.mapBankAccountToCOACode(bankAccount);
+    if (!coaCode) return 0;
+    return this.getAccountBalanceByCode(coaCode);
+  }
+
+  /**
+   * Get Book Balances for multiple BankAccounts at once.
+   * Returns a map of bankAccountId -> COA balance.
+   */
+  async getBookBalancesForBankAccounts(bankAccounts: Array<{ id: string; name?: string; accountNumber?: string; bankName?: string }>): Promise<Record<string, number>> {
+    const coaCodes = ['11110', '11210', '11220', '11230', '11240'];
+    const balances = await this.getAccountBalancesByCodes(coaCodes);
+
+    const result: Record<string, number> = {};
+    for (const bankAcc of bankAccounts) {
+      const coaCode = this.mapBankAccountToCOACode(bankAcc);
+      result[bankAcc.id] = coaCode ? balances[coaCode] || 0 : 0;
+    }
+    return result;
+  }
 }
 
 function accountCodeById(accounts: Account[], id: string): string {

@@ -829,3 +829,98 @@ export function buildResolvedJournalLines(
         .map(input => buildResolvedJournalLine(input, accounts, options))
         .filter((line): line is Omit<LedgerEntry, 'id' | 'date'> => line !== null);
 }
+
+export function resolveInventoryAccountByItemType(
+    itemType: string | undefined,
+    accounts: any[]
+): string | null {
+    if (!itemType) return null;
+    
+    const normalizedType = String(itemType).toLowerCase();
+    let targetCode = '11410';
+    
+    if (normalizedType === 'material' || normalizedType === 'raw material' || normalizedType === 'raw' || normalizedType === 'consumable') {
+        targetCode = '11420';
+    } else if (normalizedType === 'product' || normalizedType === 'finished good' || normalizedType === 'finished goods') {
+        targetCode = '11410';
+    } else if (normalizedType === 'stationery' || normalizedType === 'stationaries') {
+        targetCode = '11420';
+    }
+    
+    const found = accounts.find(a =>
+        a.code === targetCode ||
+        a.account_number === targetCode ||
+        a.id === targetCode
+    );
+    
+    if (found && found.allow_posting !== false && found.allow_posting !== 0) {
+        return found.id;
+    }
+    
+    const postingChild = accounts.find(a =>
+        (a.parent_account_id === found?.id || a.parent_account_id === found?.code || a.parent_account_id === found?.account_number) &&
+        a.allow_posting !== false && a.allow_posting !== 0 &&
+        a.is_active !== false && a.is_active !== 0
+    );
+    
+    if (postingChild) return postingChild.id;
+    return found?.id || null;
+}
+
+export function resolveInventoryAccountFromItems(
+    items: any[],
+    accounts: any[]
+): string | null {
+    if (!items || items.length === 0) return null;
+    
+    const nonServiceItems = items.filter((i: any) => i.type !== 'Service');
+    if (nonServiceItems.length === 0) return null;
+    
+    const typeCounts: Record<string, number> = {};
+    for (const item of nonServiceItems) {
+        const t = String(item.type || 'product').toLowerCase();
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+    }
+    
+    const dominantType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0][0];
+    return resolveInventoryAccountByItemType(dominantType, accounts);
+}
+
+export function computeHierarchicalBalances(
+    accounts: any[],
+    leafBalances: Record<string, number>,
+    options: { respectNormalBalance?: boolean } = {}
+): Record<string, number> {
+    const { respectNormalBalance = true } = options;
+    const result: Record<string, number> = { ...leafBalances };
+    
+    const parentMap: Record<string, any[]> = {};
+    const rootParents: any[] = [];
+    
+    for (const acc of accounts) {
+        if (acc.parent_account_id) {
+            if (!parentMap[acc.parent_account_id]) parentMap[acc.parent_account_id] = [];
+            parentMap[acc.parent_account_id].push(acc);
+        } else {
+            rootParents.push(acc);
+        }
+    }
+    
+    function rollup(accountId: string): number {
+        const children = parentMap[accountId] || [];
+        let total = result[accountId] || 0;
+        
+        for (const child of children) {
+            total += rollup(child.id);
+        }
+        
+        result[accountId] = total;
+        return total;
+    }
+    
+    for (const root of rootParents) {
+        rollup(root.id);
+    }
+    
+    return result;
+}

@@ -140,27 +140,29 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
             finalAccounts = [];
           }
       } else {
-          // Ensure core banking accounts exist and have correct names/ids
-           const coreAccountCodes = ['11110', '11100', '11120', '11210', '11220', '11230'];
+          // Ensure core banking accounts exist and have correct names
+          // Database uses UUID IDs (e.g., ACC-11210), NOT numeric IDs
+          // So we find by account_number (11210) but don't change the UUID id
+          const coreAccountCodes = ['11110', '11100', '11120', '11210', '11220', '11230', '11240'];
           for (const code of coreAccountCodes) {
               const defaultAcc = DEFAULT_ACCOUNTS.find(a => a.code === code);
-              const existingAcc = finalAccounts.find(a => a.code === code);
+              const existingAcc = finalAccounts.find(a => a.account_number === code || a.code === code);
 
               if (defaultAcc) {
                   if (!existingAcc) {
-                      // Add missing core account
-                      await dbService.put('accounts', defaultAcc);
-                      finalAccounts.push(defaultAcc);
-                  } else {
-                      // Update name AND id when code matches — id must match ledger's numeric codes
-                      const needsUpdate = existingAcc.name !== defaultAcc.name || existingAcc.id !== code;
-                      if (needsUpdate) {
-                          const updatedAcc = { ...existingAcc, id: code, name: defaultAcc.name };
-                          // Delete old record (with UUID key) and put new one (with numeric key)
-                          await dbService.delete('accounts', existingAcc.id);
-                          await dbService.put('accounts', updatedAcc);
-                          finalAccounts = finalAccounts.map(a => a.code === code ? updatedAcc : a);
-                      }
+                      // Add missing core account with UUID id, not numeric
+                      const newAcc = {
+                          ...defaultAcc,
+                          id: `ACC-${code}`,
+                          account_number: code
+                      };
+                      await dbService.put('accounts', newAcc);
+                      finalAccounts.push(newAcc);
+                  } else if (existingAcc.name !== defaultAcc.name) {
+                      // Just update the name, don't change the UUID id
+                      const updatedAcc = { ...existingAcc, name: defaultAcc.name };
+                      await dbService.put('accounts', updatedAcc);
+                      finalAccounts = finalAccounts.map(a => a.id === existingAcc.id ? updatedAcc : a);
                   }
               }
           }

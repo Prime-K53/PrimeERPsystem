@@ -15,6 +15,7 @@ import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'da
 import { exportToCSV } from '../../services/excelService';
 import { generateNextId } from '../../utils/helpers';
 import { currencyService } from '../../services/currencyService';
+import { financialReportingService } from '../../services/financialReportingService';
 import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils';
 const paper = '#FEFDFB';
 const ink = '#23282A';
@@ -66,6 +67,21 @@ const Transfers: React.FC = () => {
       refreshAllData()
     ]);
   }, { interval: REFRESH_INTERVAL });
+
+  // COA balances for book balance display
+  const [coaBalances, setCoaBalances] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!bankingAccounts || bankingAccounts.length === 0) return;
+    const loadCOABalances = async () => {
+      try {
+        const balances = await financialReportingService.getBookBalancesForBankAccounts(bankingAccounts);
+        setCoaBalances(balances);
+      } catch (err) {
+        console.error('Failed to load COA balances for transfers:', err);
+      }
+    };
+    loadCOABalances();
+  }, [bankingAccounts]);
 
   // Filter and sort transfers
   const filteredTransfers = useMemo(() => {
@@ -135,11 +151,11 @@ const Transfers: React.FC = () => {
     const balances: Record<string, number> = {};
 
     bankingAccounts.forEach(account => {
-      balances[account.id] = account.availableBalance ?? account.balance ?? 0;
+      balances[account.id] = coaBalances[account.id] ?? account.availableBalance ?? account.balance ?? 0;
     });
 
     return balances;
-  }, [bankingAccounts]);
+  }, [bankingAccounts, coaBalances]);
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
