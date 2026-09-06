@@ -451,4 +451,23 @@ describe('backgroundSyncService', () => {
       expect(await durableSyncQueue.countPending()).toBe(0);
     });
   });
+
+  describe('concurrency guard', () => {
+    it('concurrent syncOnce calls do not corrupt queue state', async () => {
+      const queueSizeBefore = await durableSyncQueue.countPending();
+      // Fire two concurrent syncNow calls
+      const [r1, r2] = await Promise.all([
+        backgroundSyncService.syncNow(),
+        backgroundSyncService.syncNow(),
+      ]);
+      // Only one should have actually processed; the second should find 0 pending
+      // or the total processed should not exceed the queue size
+      const queueSizeAfter = await durableSyncQueue.countPending();
+      const totalProcessed = (r1?.success ?? 0) + (r2?.success ?? 0);
+      // The second call should find the queue empty (isSyncing guard)
+      // so total processed should be <= original queue size
+      expect(totalProcessed).toBeLessThanOrEqual(Math.max(queueSizeBefore, 0));
+      expect(queueSizeAfter).toBe(0);
+    });
+  });
 });

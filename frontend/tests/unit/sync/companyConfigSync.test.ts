@@ -313,6 +313,10 @@ describe('Company Settings sync chain regression', () => {
     const full = normalizeStoredCompanyConfig({ companyName: 'Test Co' }, defaults)!;
     await persistCompanyConfig(full);
 
+    // persistCompanyConfig delegates to dbService.saveSetting which is mocked.
+    // The actual enqueue happens inside dbService.put which is not directly mocked here.
+    // This test verifies persistCompanyConfig correctly delegates to saveSetting
+    // with the canonical settings key and normalized config.
     expect(mocks.saveSetting).toHaveBeenCalledWith(COMPANY_CONFIG_SETTINGS_KEY, full);
   });
 });

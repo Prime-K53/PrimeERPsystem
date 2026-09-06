@@ -50,6 +50,11 @@ const SUPABASE_ENABLED = Boolean(
   import.meta.env.VITE_SUPABASE_URL !== 'https://placeholder.supabase.co'
 );
 
+const SUPABASE_HOST = (import.meta.env.VITE_SUPABASE_URL || '').replace(/^https?:\/\//, '').split('/')[0];
+const SYNC_GATEWAY_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '/api';
+
+logger.info('[SyncService] supabase project', { host: SUPABASE_HOST, gateway: SYNC_GATEWAY_URL });
+
 const PUSH_INTERVAL_MS = 60000;
 const SYNC_CONCURRENCY = 6;
 // Pull pages per table per pass. Keeps one pass bounded even for huge tables

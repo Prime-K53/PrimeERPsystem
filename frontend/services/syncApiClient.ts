@@ -124,6 +124,13 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
   }
 
   logger.info('[SyncApiClient] sendSyncOps sending', { endpoint: SYNC_ENDPOINT, ops: ops.length });
+  // Log Supabase project identifier for alignment verification (safe - hostname only)
+  try {
+    const { supabase } = await import('./supabaseClient');
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+    const supabaseHost = supabaseUrl.replace(/^https?:\/\//, '').split('/')[0];
+    logger.info('[SyncApiClient] supabase project', { host: supabaseHost, gateway: API_BASE_URL || '/api' });
+  } catch {}
   const token = await getSyncAccessToken();
   const headers: Record<string, string> = getJsonRequestHeaders();
   if (token) {
@@ -149,27 +156,41 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
       throw new Error('Cloud database is not configured on this server');
     }
     if (res.status === 429) {
-      // Rate-limited by the gateway. Honor Retry-After when present and back off.
       const retryAfter = Number(res.headers.get('Retry-After') || 0);
       const hint = Number.isFinite(retryAfter) && retryAfter > 0 ? ` (retry after ${retryAfter}s)` : '';
       throw new Error(`Sync gateway rate-limited${hint}`);
     }
     if (res.status === 401 || res.status === 403) {
-      // Permanent authorization failure. The durable queue must not retry
-      // this — the session is no longer authorized to write business data.
       throw new SyncAuthError(`Sync gateway rejected the request (${res.status})`, res.status);
     }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       const detail = (body as any)?.detail;
       const errorMsg = detail ? `${(body as any)?.error || 'Sync gateway failed'}: ${detail}` : ((body as any)?.error || `Sync gateway failed (${res.status})`);
+      logger.warn('[SyncApiClient] gateway error', { status: res.status, error: errorMsg });
       throw new Error(errorMsg);
     }
 
     const payload = await res.json() as SyncOpsResponse;
     if (!Array.isArray(payload?.results)) {
+      logger.warn('[SyncApiClient] unexpected response', { payload: JSON.stringify(payload).slice(0, 500) });
       throw new Error('Sync gateway returned an unexpected response');
     }
+    // Expose per-operation diagnostic summary (safe metadata only)
+    const diagResults = payload.results.map((r: any) => ({
+      operationId: r.operationId,
+      ok: r.ok,
+      error: r.error ? String(r.error).slice(0, 200) : undefined,
+      retryable: r.retryable,
+      conflict: r.conflict,
+      hasServer: !!r.server,
+    }));
+    logger.info('[SyncApiClient] sync response details', {
+      processed: payload.processed,
+      succeeded: payload.succeeded,
+      totalOps: ops.length,
+      results: diagResults,
+    });
     return payload;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {

@@ -135,7 +135,20 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
       const response = await sendSyncOps(syncPayload);
       /* SYNC-FORENSIC suppressed: STAGE-6 sendSyncOps() response */
       logger.info('[BackgroundSync] sendSyncOps response', { results: response.results.length });
+      // Expose per-operation outcome diagnostics (safe metadata only)
       for (const result of response.results) {
+        if (result.operationId) {
+          const matchingItem = gatewayOps.find(g => g.op.operationId === result.operationId);
+          logger.info('[BackgroundSync] op result', {
+            table: matchingItem?.op.table,
+            recordId: matchingItem?.op.recordId,
+            operation: matchingItem?.op.operation,
+            ok: result.ok,
+            error: result.error ? String(result.error).slice(0, 200) : undefined,
+            retryable: result.retryable,
+            conflict: result.conflict,
+          });
+        }
         if (result.operationId) opResults.set(result.operationId, result);
       }
     } catch (err) {
@@ -180,6 +193,7 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
 
   const settleItem = async (item: QueuedOperation, result: SyncOpResult | undefined) => {
     if (!result || result.ok) {
+      logger.info('[BackgroundSync] settleItem COMPLETED', { table: item.table, recordId: item.recordId, operation: item.operation, hasResult: !!result, ok: result?.ok });
       await durableSyncQueue.markCompleted(item.id);
 
       // Stamp the server-stamped version back into the live record (bulkPut:
@@ -216,6 +230,7 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
     // keep retrying transient ones.
     const errorMessage = result.error || 'Sync gateway rejected the operation';
     const permanent = result.retryable === false || classifyError(errorMessage) === 'permanent';
+    logger.warn('[BackgroundSync] settleItem FAILED', { table: item.table, recordId: item.recordId, operation: item.operation, error: errorMessage.slice(0, 200), retryable: result.retryable, permanent });
     await durableSyncQueue.markFailed(item.id, errorMessage);
     return permanent ? 'deadLetter' : 'failed';
   };

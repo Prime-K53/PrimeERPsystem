@@ -805,30 +805,6 @@ export const transactionService = {
                     }
                 }
 
-                // ── SmartPricing Revenue Analytics: persist margin/rounding totals on sale ──
-                const profitMarginTotal = Number(sale.profitMarginTotal || 0);
-                const roundingTotal = Number(sale.roundingTotal || sale.roundingDifference || 0);
-
-                // Write a ledger entry for realised profit margin (if captured from SmartPricing)
-                if (profitMarginTotal > 0) {
-                    const paidMargin = roundToCurrency(profitMarginTotal * paymentRatio);
-                    if (paidMargin > 0) {
-                        const marginEntry: LedgerEntry = {
-                                id: generateId('LG-MARGIN'),
-                            date: sale.date,
-                            description: `Profit Margin - Sale #${sale.id}`,
-                            debitAccountId: resolveAcct(gl.cashDrawerAccount),
-                            creditAccountId: resolveAcct(gl.marginIncomeAccount || gl.otherIncomeAccount),
-                            amount: Number(paidMargin.toFixed(2)),
-                            referenceId: sale.id,
-                            reconciled: false,
-                            customerId: sale.customerId,
-                            customerName: sale.customerName,
-                            entryType: 'ProfitMargin'
-                        };
-                        await ledgerStore.put(marginEntry);
-                    }
-                }
 
                 const paidRevenue = roundToCurrency(revenueAmount * paymentRatio);
                 const unpaidRevenue = roundToCurrency(revenueAmount - paidRevenue);
