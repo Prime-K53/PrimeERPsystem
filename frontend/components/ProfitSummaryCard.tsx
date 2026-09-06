@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
-import { format, subDays, startOfWeek, isSameDay, addDays } from 'date-fns';
-import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
+import {format, subDays, startOfWeek, isSameDay, addDays } from 'date-fns';
+import { AreaChart, Area, YAxis, Tooltip} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 import { useData } from '../context/DataContext';
 import { useBankingStore } from '../context/BankingContext';
 import { PenLine } from 'lucide-react';

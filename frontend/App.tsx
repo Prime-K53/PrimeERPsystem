@@ -1324,27 +1324,27 @@ const App: React.FC = () => {
           <NotificationProvider>
             <AuthProvider>
               <AppProvider>
-              <FinancialYearProvider>
-              <FinanceProvider>
-                <InventoryProvider>
-                  <ProductionProvider>
-                    <ExaminationProvider>
-                      <ProcurementProvider>
-                        <SalesProvider>
-                          <OrdersProvider>
-                            <DataProvider>
-                              <CustomerAuthProvider>
-                                <RootNavigator />
-                              </CustomerAuthProvider>
-                            </DataProvider>
-                          </OrdersProvider>
-                        </SalesProvider>
-                      </ProcurementProvider>
-                    </ExaminationProvider>
-                  </ProductionProvider>
-                </InventoryProvider>
-              </FinanceProvider>
-              </FinancialYearProvider>
+                <FinancialYearProvider>
+                  <FinanceProvider>
+                    <InventoryProvider>
+                      <ProductionProvider>
+                        <ExaminationProvider>
+                          <ProcurementProvider>
+                            <SalesProvider>
+                              <OrdersProvider>
+                                <DataProvider>
+                                  <CustomerAuthProvider>
+                                    <RootNavigator />
+                                  </CustomerAuthProvider>
+                                </DataProvider>
+                              </OrdersProvider>
+                            </SalesProvider>
+                          </ProcurementProvider>
+                        </ExaminationProvider>
+                      </ProductionProvider>
+                    </InventoryProvider>
+                  </FinanceProvider>
+                </FinancialYearProvider>
               </AppProvider>
             </AuthProvider>
           </NotificationProvider>

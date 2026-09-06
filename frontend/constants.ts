@@ -27,7 +27,7 @@ export const ACCOUNT_IDS = {
   // Canonical 5-digit codes (standard chart)
   CASH_DRAWER: '11110',
   BANK: '11210',
-  MOBILE_MONEY: '11230',
+  MOBILE_MONEY: '11240',
   PETTY_CASH: '11120',
   CASH_IN_HAND: '11100',
   TRADE_DEBTORS: '11310',
@@ -94,6 +94,7 @@ export const DEFAULT_ACCOUNTS: Account[] = [
   { id: '11210', code: '11210', account_number: '11210', name: 'National Bank', account_type: 'ASSET', type: 'Asset', account_group: 'CURRENT_ASSET', parent_account_id: '11200', subtype: 'BANK', is_system_account: true },
   { id: '11220', code: '11220', account_number: '11220', name: 'FDH Bank', account_type: 'ASSET', type: 'Asset', account_group: 'CURRENT_ASSET', parent_account_id: '11200', subtype: 'BANK' },
   { id: '11230', code: '11230', account_number: '11230', name: 'NBS Bank', account_type: 'ASSET', type: 'Asset', account_group: 'CURRENT_ASSET', parent_account_id: '11200', subtype: 'BANK' },
+  { id: '11240', code: '11240', account_number: '11240', name: 'Mobile Money', account_type: 'ASSET', type: 'Asset', account_group: 'CURRENT_ASSET', parent_account_id: '11200', subtype: 'MOBILE_MONEY', allow_posting: true },
   { id: '11300', code: '11300', account_number: '11300', name: 'Accounts Receivable', account_type: 'ASSET', type: 'Asset', account_group: 'CURRENT_ASSET', subtype: 'RECEIVABLE', is_system_account: true },
   { id: '11310', code: '11310', account_number: '11310', name: 'Trade Debtors', account_type: 'ASSET', type: 'Asset', account_group: 'CURRENT_ASSET', parent_account_id: '11300', allow_posting: true, is_system_account: true },
   { id: '11400', code: '11400', account_number: '11400', name: 'Inventory', account_type: 'ASSET', type: 'Asset', account_group: 'CURRENT_ASSET', subtype: 'INVENTORY', is_system_account: true },

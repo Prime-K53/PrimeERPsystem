@@ -781,5 +781,244 @@ class FinancialReportingService {
 
     return endingBalance - beginningBalance;
   }
+
+  /**
+   * Get today's total collection from accounting ledger.
+   *
+   * Today's Collection = sum of all debits to collection asset accounts
+   * (11110 Cash, 11210/11220/11230 Banks, 11240 Mobile Money)
+   * that represent customer payments.
+   *
+   * EXCLUDES:
+   * - Transfers between asset accounts (Dr asset, Cr asset)
+   * - Reversals/voids
+   * - Non-customer transactions (expenses, supplier payments, etc.)
+   *
+   * The credit account determines if it's a customer payment:
+   * - 11310 (Trade Debtors) = customer invoice payment
+   * - 21300 (Accrued Expenses/Customer Deposits) = customer deposit
+   * - Any other credit = likely a transfer, excluded
+   */
+  async getTodayCollection(): Promise<{ total: number; byAccount: Record<string, number> }> {
+    const today = new Date().toISOString().split('T')[0];
+    const ledger = await dbService.getAll<LedgerEntry>('ledger');
+    const accounts = await dbService.getAll<Account>('accounts');
+
+    // Collection asset account codes
+    const COLLECTION_ACCOUNTS = ['11110', '11210', '11220', '11230', '11240'];
+
+    // Customer payment credit accounts (receivables/deposits)
+    const CUSTOMER_CREDIT_ACCOUNTS = ['11310', '21300', '11300'];
+
+    // Map account IDs to codes
+    const accountCodeById: Record<string, string> = {};
+    for (const acc of accounts) {
+      accountCodeById[acc.id] = acc.account_number || acc.code || '';
+    }
+
+    // Get set of asset account codes for transfer detection
+    const assetAccountCodes = new Set(
+      accounts
+        .filter(a => getAccountType(a) === 'Asset')
+        .map(a => a.account_number || a.code || '')
+    );
+
+    const byAccount: Record<string, number> = {};
+    let total = 0;
+
+    for (const entry of ledger) {
+      // Filter by date
+      const entryDate = entry.date?.split('T')[0];
+      if (entryDate !== today) continue;
+
+      // Exclude reversals
+      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+
+      // Check if debit account is a collection account
+      const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
+      if (!COLLECTION_ACCOUNTS.includes(debitCode)) continue;
+
+      // Check credit account - if it's another asset account, this is a transfer, not collection
+      const creditCode = accountCodeById[entry.creditAccountId] || entry.creditAccountId;
+      if (assetAccountCodes.has(creditCode)) continue;
+
+      // This is a customer payment (Dr collection, Cr receivable/deposit)
+      const amount = entry.amount || 0;
+      total += amount;
+      byAccount[debitCode] = (byAccount[debitCode] || 0) + amount;
+    }
+
+    return { total, byAccount };
+  }
+
+  /**
+   * Get collection for a specific date (for reports/reconciliation)
+   */
+  async getCollectionForDate(date: string): Promise<{ total: number; byAccount: Record<string, number> }> {
+    const ledger = await dbService.getAll<LedgerEntry>('ledger');
+    const accounts = await dbService.getAll<Account>('accounts');
+
+    const COLLECTION_ACCOUNTS = ['11110', '11210', '11220', '11230', '11240'];
+    const CUSTOMER_CREDIT_ACCOUNTS = ['11310', '21300', '11300'];
+
+    const accountCodeById: Record<string, string> = {};
+    for (const acc of accounts) {
+      accountCodeById[acc.id] = acc.account_number || acc.code || '';
+    }
+
+    const assetAccountCodes = new Set(
+      accounts
+        .filter(a => getAccountType(a) === 'Asset')
+        .map(a => a.account_number || a.code || '')
+    );
+
+    const byAccount: Record<string, number> = {};
+    let total = 0;
+
+    for (const entry of ledger) {
+      const entryDate = entry.date?.split('T')[0];
+      if (entryDate !== date) continue;
+
+      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+
+      const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
+      if (!COLLECTION_ACCOUNTS.includes(debitCode)) continue;
+
+      const creditCode = accountCodeById[entry.creditAccountId] || entry.creditAccountId;
+      if (assetAccountCodes.has(creditCode)) continue;
+
+      const amount = entry.amount || 0;
+      total += amount;
+      byAccount[debitCode] = (byAccount[debitCode] || 0) + amount;
+    }
+
+    return { total, byAccount };
+  }
+
+  /**
+   * Calculate account balance from ledger entries.
+   * This is the canonical way to get an account's current balance.
+   */
+  async getAccountBalance(accountId: string): Promise<number> {
+    const accounts = await dbService.getAll<Account>('accounts');
+    const ledger = await dbService.getAll<LedgerEntry>('ledger');
+
+    const account = accounts.find(a => a.id === accountId);
+    if (!account) return 0;
+
+    const accountCode = account.account_number || account.code || '';
+    const isDebitNormal = isDebitNormalAccount(account);
+
+    let balance = 0;
+
+    for (const entry of ledger) {
+      // Skip reversals
+      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+
+      const debitCode = accountCodeById(accounts, entry.debitAccountId);
+      const creditCode = accountCodeById(accounts, entry.creditAccountId);
+
+      if (debitCode === accountCode) {
+        balance += entry.amount;
+      }
+      if (creditCode === accountCode) {
+        balance -= entry.amount;
+      }
+    }
+
+      return isDebitNormal ? balance : -balance;
+  }
+
+  /**
+   * Calculate COA account balance by account CODE (e.g., '11210').
+   * This is useful when you have an account_number but not the UUID.
+   * Returns the current balance (all time, excluding reversals).
+   */
+  async getAccountBalanceByCode(accountCode: string): Promise<number> {
+    const accounts = await dbService.getAll<Account>('accounts');
+    const ledger = await dbService.getAll<LedgerEntry>('ledger');
+
+    // Find account by code or account_number
+    const account = accounts.find(a =>
+      (a.account_number || a.code || '') === accountCode ||
+      a.id === accountCode
+    );
+    if (!account) return 0;
+
+    const isDebitNormal = isDebitNormalAccount(account);
+    let balance = 0;
+
+    for (const entry of ledger) {
+      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+
+      const debitCode = accountCodeById(accounts, entry.debitAccountId);
+      const creditCode = accountCodeById(accounts, entry.creditAccountId);
+
+      if (debitCode === accountCode) {
+        balance += entry.amount;
+      }
+      if (creditCode === accountCode) {
+        balance -= entry.amount;
+      }
+    }
+
+    return isDebitNormal ? balance : -balance;
+  }
+
+  /**
+   * Get COA balances for multiple account codes at once.
+   * Returns a map of accountCode -> balance.
+   * Useful for dashboard and banking screens.
+   */
+  async getAccountBalancesByCodes(accountCodes: string[]): Promise<Record<string, number>> {
+    const accounts = await dbService.getAll<Account>('accounts');
+    const ledger = await dbService.getAll<LedgerEntry>('ledger');
+
+    const result: Record<string, number> = {};
+    for (const code of accountCodes) {
+      result[code] = 0;
+    }
+
+    // Initialize balances with opening balances
+    for (const acc of accounts) {
+      const code = acc.account_number || acc.code || '';
+      if (accountCodes.includes(code) && acc.opening_balance) {
+        result[code] = acc.opening_balance;
+      }
+    }
+
+    // Apply ledger entries
+    for (const entry of ledger) {
+      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+      if (entry.amount == null) continue;
+
+      const debitCode = accountCodeById(accounts, entry.debitAccountId);
+      const creditCode = accountCodeById(accounts, entry.creditAccountId);
+
+      const debitAcc = accounts.find(a => (a.account_number || a.code || '') === debitCode);
+      const creditAcc = accounts.find(a => (a.account_number || a.code || '') === creditCode);
+
+      const isDebitNormalDebit = debitAcc ? isDebitNormalAccount(debitAcc) : true;
+      const isDebitNormalCredit = creditAcc ? isDebitNormalAccount(creditAcc) : false;
+
+      if (accountCodes.includes(debitCode)) {
+        const sign = isDebitNormalDebit ? 1 : -1;
+        result[debitCode] = (result[debitCode] || 0) + (entry.amount * sign);
+      }
+      if (accountCodes.includes(creditCode)) {
+        const sign = isDebitNormalCredit ? -1 : 1;
+        result[creditCode] = (result[creditCode] || 0) + (entry.amount * sign);
+      }
+    }
+
+    return result;
+  }
 }
+
+function accountCodeById(accounts: Account[], id: string): string {
+  const acc = accounts.find(a => a.id === id);
+  return acc ? (acc.account_number || acc.code || '') : id;
+}
+
+export const financialReportingService = new FinancialReportingService();
 

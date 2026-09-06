@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { logger } from '@/services/logger';
+import {logger } from '@/services/logger';
 import { useNavigate } from 'react-router-dom';
 import { useModuleRefresh } from '../hooks/useModuleRefresh';
 import { useAuth } from '../context/AuthContext';
@@ -10,11 +10,7 @@ import { useProduction } from '../context/ProductionContext';
 import { useInventory } from '../context/InventoryContext';
 import { useProcurement } from '../context/ProcurementContext';
 import {
-  TrendingUp, TrendingDown, DollarSign, Clock,
-  Briefcase, Users, ChevronDown, User,
-  MessageSquare, Calculator, FileText, Zap, ArrowRight, ChevronRight,
-   Sparkles, Database, BarChart2, X, ArrowUp, ArrowDown, Building2, Wallet,
-  Star, Inbox, Calendar, CalendarDays, Check, Download } from 'lucide-react';
+  TrendingUp, TrendingDown, DollarSign, Clock, Briefcase, Users, ChevronDown, User, MessageSquare, Calculator, FileText, Zap, ArrowRight, ChevronRight, Sparkles, Database, BarChart2, X, ArrowUp, ArrowDown, Building2, Wallet, Star, Inbox, Calendar, CalendarDays, Check, Download } from 'lucide-react';
 import WhatsAppMarketingModal from '../components/WhatsAppMarketingModal';
 import { adminLifecycle } from '../services/adminPortalClient';
 
@@ -23,16 +19,15 @@ import { dbService } from '../services/db';
 import { formatNumber, parseFormattedNumber } from '../utils/helpers';
 import { currencyService } from '../services/currencyService';
 import {
-  buildFinancialPerformanceChartData,
-  DASHBOARD_PERIOD_DAYS,
-  parseDashboardDate
+  buildFinancialPerformanceChartData, DASHBOARD_PERIOD_DAYS, parseDashboardDate
 } from '../utils/dashboardFinancialPerformance';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell
-} from 'recharts';
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import { format, isWithinInterval } from 'date-fns';
 import { ConfirmDialog, ConfirmDialogType } from '../components/ConfirmDialog';
+import { financialReportingService } from '../services/financialReportingService';
 
 // ─── CSS keyframes injected once ──────────────────────────────────────────────
 const DASHBOARD_STYLES = `
@@ -921,16 +916,63 @@ const DashboardContent: React.FC = () => {
 
   const revenueTrend = revenueLastMonth > 0 ? ((revenueThisMonth - revenueLastMonth) / revenueLastMonth) * 100 : (revenueThisMonth > 0 ? 100 : 0);
 
-  // 2. Today's Collection
+  // 2. Today's Collection — from accounting ledger (canonical source)
   const todayStr = new Date().toISOString().split('T')[0];
   const collectionData = (() => {
-    const todayPayments = customerPayments
-      .filter((p: any) => String(p.status || '').toLowerCase() !== 'voided')
-      .filter((p: any) => inFY(p.date || p.createdAt))
-      .filter((p: any) => String(p.date || p.createdAt || '').startsWith(todayStr));
-    const sum = todayPayments.reduce((acc, p) => acc + toSafeNumber(p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount), 0);
-    const firstAcc = todayPayments[0]?.accountName || todayPayments[0]?.method || 'Cash';
-    return { sum, acc: firstAcc };
+    // Collection asset account codes
+    const COLLECTION_ACCOUNTS = ['11110', '11210', '11220', '11230', '11240'];
+    // Customer payment credit accounts (receivables/deposits) — NOT other asset accounts
+    const CUSTOMER_CREDIT_ACCOUNTS = ['11310', '21300', '11300'];
+
+    // Get asset account codes for transfer detection
+    const assetAccountCodes = new Set(
+      (accounts || [])
+        .filter((a: any) => (a.account_type === 'ASSET' || a.type === 'Asset'))
+        .map((a: any) => a.account_number || a.code || '')
+    );
+
+    // Map account IDs to codes
+    const accountCodeById: Record<string, string> = {};
+    (accounts || []).forEach((acc: any) => {
+      accountCodeById[acc.id] = acc.account_number || acc.code || '';
+    });
+
+    let sum = 0;
+    const byAccount: Record<string, number> = {};
+
+    (ledger || []).forEach((entry: any) => {
+      // Filter by date
+      const entryDate = entry.date?.split('T')[0];
+      if (entryDate !== todayStr) return;
+      // Exclude reversals
+      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') return;
+
+      // Check if debit account is a collection account
+      const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
+      if (!COLLECTION_ACCOUNTS.includes(debitCode)) return;
+
+      // Check credit account — if it's another asset account, this is a transfer, not collection
+      const creditCode = accountCodeById[entry.creditAccountId] || entry.creditAccountId;
+      if (assetAccountCodes.has(creditCode)) return;
+
+      // This is a customer payment
+      const amount = entry.amount || 0;
+      sum += amount;
+      byAccount[debitCode] = (byAccount[debitCode] || 0) + amount;
+    });
+
+    // Determine primary collection account for display
+    const primaryAccountCode = Object.keys(byAccount)[0];
+    const accountNames: Record<string, string> = {
+      '11110': 'Cash Drawer',
+      '11210': 'National Bank',
+      '11220': 'FDH Bank',
+      '11230': 'NBS Bank',
+      '11240': 'Mobile Money'
+    };
+    const firstAcc = accountNames[primaryAccountCode] || 'Cash';
+
+    return { sum, acc: firstAcc, byAccount };
   })();
   const todaysCollection = collectionData.sum;
   const collectionAccount = collectionData.acc;
@@ -940,11 +982,33 @@ const DashboardContent: React.FC = () => {
   const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterdayStr = yesterdayDate.toISOString().split('T')[0];
   const yesterdaysCollection = (() => {
-    return customerPayments
-      .filter((p: any) => String(p.status || '').toLowerCase() !== 'voided')
-      .filter((p: any) => inFY(p.date || p.createdAt))
-      .filter((p: any) => String(p.date || p.createdAt || '').startsWith(yesterdayStr))
-      .reduce((sum: number, p: any) => sum + toSafeNumber(p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount), 0);
+    // Same ledger-based calculation for yesterday
+    const COLLECTION_ACCOUNTS = ['11110', '11210', '11220', '11230', '11240'];
+    const assetAccountCodes = new Set(
+      (accounts || [])
+        .filter((a: any) => (a.account_type === 'ASSET' || a.type === 'Asset'))
+        .map((a: any) => a.account_number || a.code || '')
+    );
+    const accountCodeById: Record<string, string> = {};
+    (accounts || []).forEach((acc: any) => {
+      accountCodeById[acc.id] = acc.account_number || acc.code || '';
+    });
+
+    let sum = 0;
+    (ledger || []).forEach((entry: any) => {
+      const entryDate = entry.date?.split('T')[0];
+      if (entryDate !== yesterdayStr) return;
+      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') return;
+
+      const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
+      if (!COLLECTION_ACCOUNTS.includes(debitCode)) return;
+
+      const creditCode = accountCodeById[entry.creditAccountId] || entry.creditAccountId;
+      if (assetAccountCodes.has(creditCode)) return;
+
+      sum += entry.amount || 0;
+    });
+    return sum;
   })();
 
   const collectionTrend = yesterdaysCollection > 0 ? ((todaysCollection - yesterdaysCollection) / yesterdaysCollection) * 100 : (todaysCollection > 0 ? 100 : 0);

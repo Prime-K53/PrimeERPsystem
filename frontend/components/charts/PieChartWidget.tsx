@@ -1,11 +1,6 @@
 import React, { useMemo, memo } from 'react';
-import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from 'recharts';
+import {PieChart, Pie, Cell, Legend} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 import { SEMANTIC_COLORS } from '../../styles/designTokens';
 
 export interface PieChartWidgetProps {

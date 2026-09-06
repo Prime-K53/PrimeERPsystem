@@ -193,7 +193,7 @@ const canCompleteSale = useMemo(() => {
              if (e.altKey) {
                  if (e.key === '1') addPaymentMethod('11110');
                  if (e.key === '2') addPaymentMethod('11210');
-                 if (e.key === '3') addPaymentMethod('11230');
+                 if (e.key === '3') addPaymentMethod(ACCOUNT_IDS.MOBILE_MONEY);
              }
         };
         window.addEventListener('keydown', handleGlobalKeys);
@@ -381,7 +381,7 @@ const canCompleteSale = useMemo(() => {
                              {[
                                  { id: '11110', icon: Banknote, label: 'Cash' },
                                  { id: '11210', icon: CreditCard, label: 'Bank' },
-                                 { id: '11230', icon: Smartphone, label: 'Mobile' },
+                                 { id: ACCOUNT_IDS.MOBILE_MONEY, icon: Smartphone, label: 'Mobile' },
                              ].map(btn => {
                                 const isActive = activePaymentMethod === btn.id;
                                 const Icon = btn.icon;

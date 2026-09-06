@@ -1,4 +1,4 @@
-import { durableSyncQueue, classifyError, QueuedOperation, QueueMetrics } from './durableSyncQueue';
+import { durableSyncQueue, quarantineOperationsMissingGeneration, classifyError, QueuedOperation, QueueMetrics } from './durableSyncQueue';
 import { sendSyncOps, SyncOp, SyncOpResult, SyncAuthError } from './syncApiClient';
 import { resolvePushConflict } from './syncConflictResolver';
 import { cloudDb } from './cloudDb';
@@ -143,10 +143,13 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
             table: matchingItem?.op.table,
             recordId: matchingItem?.op.recordId,
             operation: matchingItem?.op.operation,
+            syncGeneration: matchingItem?.op.syncGeneration,
             ok: result.ok,
             error: result.error ? String(result.error).slice(0, 200) : undefined,
             retryable: result.retryable,
             conflict: result.conflict,
+            stale: result.stale,
+            reason: result.reason,
           });
         }
         if (result.operationId) opResults.set(result.operationId, result);
@@ -228,11 +231,24 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
     }
     // Per-op rejection from the gateway: dead-letter permanent errors,
     // keep retrying transient ones.
+    //
+    // CRITICAL STATE MACHINE: a permanent rejection (including the server's
+    // SYNC_GENERATION_MISSING / SYNC_GENERATION_STALE company-reset guards,
+    // which always arrive with retryable:false) must move the item to the
+    // terminal dead-letter state in the queue. Previously this only returned
+    // a 'deadLetter' counter value while markFailed() classified the message
+    // as retryable, leaving the item in 'failed' where the next sync cycle
+    // re-queued and re-sent it forever — the source of the endless repeated
+    // warnings for INV-P726/001 and prime:pagination:default.
     const errorMessage = result.error || 'Sync gateway rejected the operation';
     const permanent = result.retryable === false || classifyError(errorMessage) === 'permanent';
-    logger.warn('[BackgroundSync] settleItem FAILED', { table: item.table, recordId: item.recordId, operation: item.operation, error: errorMessage.slice(0, 200), retryable: result.retryable, permanent });
+    logger.warn('[BackgroundSync] settleItem FAILED', { table: item.table, recordId: item.recordId, operation: item.operation, error: errorMessage.slice(0, 200), retryable: result.retryable, permanent, syncGeneration: item.syncGeneration });
+    if (permanent) {
+      await durableSyncQueue.deadLetter(item.id, errorMessage);
+      return 'deadLetter';
+    }
     await durableSyncQueue.markFailed(item.id, errorMessage);
-    return permanent ? 'deadLetter' : 'failed';
+    return 'failed';
   };
 
   const resolveConflict = async (item: QueuedOperation, result: SyncOpResult): Promise<'success' | 'deadLetter' | 'conflict'> => {
@@ -601,6 +617,21 @@ export const backgroundSyncService = {
     if (isInitialized) return;
     isInitialized = true;
     logger.info('[BackgroundSync] initialize starting');
+
+    // Legacy queue records (persisted by an older build before syncGeneration
+    // metadata existed) have no generation provenance. Quarantine them at
+    // startup so the background loop never transmits an operation whose
+    // generation cannot be verified after a company reset. Idempotent and
+    // payload-preserving (records stay visible in SyncHealth with a reason).
+    try {
+      const quarantined = await quarantineOperationsMissingGeneration();
+      if (quarantined > 0) {
+        await durableSyncQueue.recordMetric('legacy_quarantined', quarantined);
+      }
+    } catch (quarantineErr) {
+      // non-fatal: dequeue() also quarantines as a second line of defence
+      logger.warn('[BackgroundSync] initialize quarantine step failed (dequeue will retry)', { error: String(quarantineErr) });
+    }
 
     const recovered = await durableSyncQueue.rebuildDependencyGraph();
     if (recovered > 0) {

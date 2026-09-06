@@ -1,12 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  ArrowLeft, Calendar, TrendingUp, AlertTriangle, DollarSign, 
-  Package, Sliders, ShoppingCart, Download, Share2, Info, Activity, Sparkles, Printer, FileText, Loader2
+import {ArrowLeft, Calendar, TrendingUp, AlertTriangle, DollarSign, Package, Sliders, ShoppingCart, Download, Share2, Info, Activity, Sparkles, Printer, FileText, Loader2
 } from 'lucide-react';
 import { 
-  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, ReferenceLine, BarChart, Bar, Legend 
-} from 'recharts';
+  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, BarChart, Bar, Legend} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import { Item, Sale, Purchase } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { generateAIResponse } from '../../../services/geminiService';

@@ -1,13 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { logger } from '@/services/logger';
+import {logger } from '@/services/logger';
 import {
-    FileText, FileCheck, Truck, List, LayoutGrid, Plus, Repeat, CheckCircle, X, Send, Trash2,
-    Link as LinkIcon, Download, Save, AlertCircle, Clock, TrendingUp, Ban,
-    PieChart as PieChartIcon, Sparkles, Loader2, Upload, AlertTriangle, Wallet,
-    MessageSquare, ShieldCheck, Mail, ChevronRight, ChevronDown, BarChart2, Calendar,
-    Printer, Edit2, DollarSign, ArrowLeft, RefreshCw, Search, ArrowUpDown
+    FileText, FileCheck, Truck, List, LayoutGrid, Plus, Repeat, CheckCircle, X, Send, Trash2, Link as LinkIcon, Download, Save, AlertCircle, Clock, TrendingUp, Ban, PieChart as PieChartIcon, Sparkles, Loader2, Upload, AlertTriangle, Wallet, MessageSquare, ShieldCheck, Mail, ChevronRight, ChevronDown, BarChart2, Calendar, Printer, Edit2, DollarSign, ArrowLeft, RefreshCw, Search, ArrowUpDown
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, PieChart, Pie} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import { useData, REFRESH_INTERVAL } from '../../context/DataContext';
 import { useModuleRefresh } from '../../hooks/useModuleRefresh';
 import { useAuth } from '../../context/AuthContext';

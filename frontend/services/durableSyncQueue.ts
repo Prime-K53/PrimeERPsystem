@@ -141,6 +141,12 @@ const PERMANENT_ERROR_PATTERNS = [
   'row-level security',
   '42501',
   'policy',
+  // Server-side company-reset guards are terminal. The backend always returns
+  // retryable:false with these, but keeping the phrase in the classifier is a
+  // defensive fallback so an op is never stuck in the retry loop if a future
+  // gateway response omits the flag.
+  'no sync generation',
+  'older than the current generation',
 ];
 
 export function classifyError(message: string): 'retryable' | 'permanent' | 'unauthorized' {
@@ -192,6 +198,82 @@ export function setLocalGeneration(generation: number): void {
 export function isGenerationValid(gen: number | undefined): boolean {
   return Number.isFinite(gen) && gen >= 1;
 }
+
+/**
+ * Generation stamped onto a NEW operation at creation/enqueue time.
+ *
+ * The generation MUST represent the company/sync generation under which the
+ * mutation was originally created — never the generation observed later at
+ * replay time. New local writes therefore always carry the generation that is
+ * current on this device right now (`getLocalGeneration()`, floor of 1). A
+ * caller that knows a different generation (e.g. conflict re-queues that must
+ * keep provenance) can pass it explicitly.
+ *
+ * SAFETY: this function is ONLY used for brand-new operations. Pre-existing
+ * queue records that were persisted without generation (legacy records) are
+ * NEVER stamped here — they are quarantined so they cannot be replayed.
+ */
+function resolveCreationGeneration(explicit: number | undefined): number {
+  if (isGenerationValid(explicit)) return explicit as number;
+  return getLocalGeneration();
+}
+
+/** Diagnostic recorded on every quarantined legacy operation. */
+export const LEGACY_GENERATION_QUARANTINE_REASON =
+  'QUARANTINED: operation has no sync generation (legacy record without generation provenance). ' +
+  'It was NOT replayed because its generation cannot be verified after a company reset, so replaying ' +
+  'it could resurrect data into a newer company/generation. If this record is still needed, re-save ' +
+  'it from the app so a new operation is created with the current generation.';
+/**
+ * Move a single unsafe/legacy operation to the terminal dead-letter state.
+ *
+ * The op keeps its full payload, table/recordId and error history so the
+ * SyncHealth UI can explain exactly why it was discarded, but it is never
+ * dequeued, retried or replayed. Company-reset safety is preserved because
+ * an op whose generation provenance cannot be verified is never sent to the
+ * backend.
+ */
+async function quarantineOp(db: IDBPDatabase<QueueDB>, op: QueuedOperation, reason?: string): Promise<void> {
+  op.status = 'dead_letter';
+  op.errorType = 'permanent';
+  op.lastError = reason || LEGACY_GENERATION_QUARANTINE_REASON;
+  op.lastAttempt = new Date().toISOString();
+  await db.put('operations', op);
+}
+
+/**
+ * Quarantine every active (pending/syncing/failed) operation that lacks a
+ * valid sync generation. These are legacy records created by an older
+ * implementation that predates generation metadata — their provenance cannot
+ * be established, so replaying them after a company reset could resurrect
+ * stale data into a newer generation. Quarantining (dead-letter) instead of
+ * stamping the current generation keeps the reset guard intact.
+ *
+ * Idempotent: ops already in dead_letter/completed are untouched, and once an
+ * op is quarantined it is no longer 'active', so a second pass is a no-op.
+ * Returns the number of newly quarantined operations.
+ */
+export async function quarantineOperationsMissingGeneration(): Promise<number> {
+  const db = await getDb();
+  let count = 0;
+  for (const status of ['pending', 'syncing', 'failed'] as QueueStatus[]) {
+    const ops = await db.getAllFromIndex('operations', 'by-status', IDBKeyRange.only(status));
+    for (const op of ops) {
+      if (!isGenerationValid(op.syncGeneration)) {
+        await quarantineOp(db, op);
+        count++;
+      }
+    }
+  }
+  if (count > 0) {
+    logger.warn('[DurableQueue] quarantined legacy operations with no sync generation (never replayed)', {
+      count,
+      hint: 'Re-save any still-needed records from the app to create fresh operations with the current generation.',
+    });
+  }
+  return count;
+}
+
 export const durableSyncQueue = {
   async enqueue<T>(input: {
     table: string;
@@ -201,28 +283,25 @@ export const durableSyncQueue = {
     userId?: string | null;
     dependsOn?: string[];
     fileRef?: string | null;
+    /** Generation under which this mutation was created. If omitted, the
+     *  queue stamps the current local generation at creation time. */
     syncGeneration?: number;
   }): Promise<QueuedOperation> {
     const now = new Date().toISOString();
     const db = await getDb();
     const payloadStr = JSON.stringify(input.payload);
-    logger.info('[DurableQueue] enqueue', { table: input.table, recordId: input.recordId, operation: input.operation });
 
-    // Every new operation MUST carry the generation under which it was created.
-    // If the caller did not supply one, derive it from the local generation store.
-    // Only in the degenerate case where no generation is available (first-run before
-    // any server handshake) do we allow an undefined value — and even then the backend
-    // will reject it if the server has already moved past generation 1.
-    // Note: We intentionally do NOT assign getLocalGeneration() to legacy operations
-    // that were created without generation - those must be quarantined, not upgraded.
-    const effectiveGeneration = input.syncGeneration ?? getLocalGeneration();
-    
-    // SAFETY: If we reach here without any generation (neither supplied nor local),
-    // this is a legacy operation that must be quarantined, not replayed.
-    // The backend will reject it with SYNC_GENERATION_MISSING and mark it terminal.
-    // We do NOT silently assign the current generation at this point - that would
-    // violate the company-reset safety contract.
-
+    // ── Generation at CREATION time ────────────────────────────────────────
+    // Every NEW locally generated operation must carry the generation under
+    // which the mutation was created so the backend can reject it if a company
+    // reset moves the server past that generation. The stamp happens here —
+    // never later at dequeue/replay time (that would defeat the reset guard by
+    // silently upgrading stale mutations into the current generation).
+    //
+    // Pre-existing legacy queue records that were persisted without a
+    // generation are NOT upgraded here; they are quarantined (see
+    // quarantineOperationsMissingGeneration) so they can never be replayed.
+    const effectiveGeneration = resolveCreationGeneration(input.syncGeneration);
 
     // Only active operations (pending/syncing/failed) participate in
     // duplicate detection and dependency resolution. Scanning the full store
@@ -235,29 +314,30 @@ export const durableSyncQueue = {
     );
     const allExisting = ([] as QueuedOperation[]).concat(...activeLayers);
 
-    // LEGACY OPERATION HANDLING:
-    // If a caller creates an operation without syncGeneration and there is no local
-    // generation available, we deliberately leave syncGeneration undefined so the
-    // backend can identify it as a legacy operation and quarantine it appropriately.
-    // We do NOT silently assign a generation here - that would violate the company-reset
-    // safety contract by allowing potentially unsafe operations to be replayed.
-    // The caller can explicitly pass syncGeneration if it knows the correct value.
-    if (effectiveGeneration === undefined && input.syncGeneration === undefined) {
-      logger.warn('[DurableQueue] enqueue: operation created without syncGeneration - this is a legacy operation that will be quarantined on sync attempt', {
+    // A brand-new local write must never merge into — or be deduplicated
+    // against — a legacy active op that lacks generation provenance. If we
+    // folded a fresh edit into such an op it would be quarantined along with
+    // the legacy record and the legitimate new edit would silently never sync.
+    // Quarantine those records here and let this new write create a fresh,
+    // correctly-stamped operation instead.
+    const unsafeActive = allExisting.filter((op) =>
+      !isGenerationValid(op.syncGeneration)
+      && op.table === input.table
+      && op.recordId === (input.recordId || null)
+      && (op.status === 'pending' || op.status === 'failed')
+    );
+    if (unsafeActive.length > 0) {
+      for (const op of unsafeActive) {
+        await quarantineOp(db, op);
+        // Remove from the working set so the duplicate/merge checks below skip it.
+        const idx = allExisting.findIndex((o) => o.id === op.id);
+        if (idx >= 0) allExisting.splice(idx, 1);
+      }
+      logger.warn('[DurableQueue] quarantined legacy active op(s) before creating a fresh operation', {
         table: input.table,
         recordId: input.recordId,
         operation: input.operation,
-      });
-    }
-
-    // SAFETY CHECK: Verify that the effective generation is valid before proceeding.
-    // If no generation is available, log a warning but still create the operation
-    // (it will be quarantined by the backend when synced).
-    if (effectiveGeneration === undefined) {
-      logger.warn('[DurableQueue] enqueue: no sync generation available - legacy operation', {
-        table: input.table,
-        recordId: input.recordId,
-        operation: input.operation,
+        quarantined: unsafeActive.map((o) => o.id),
       });
     }
 
@@ -288,7 +368,11 @@ export const durableSyncQueue = {
       );
 
       if (existingPendingUpsert) {
-        // Merge newer fields into the existing payload (latest-write-wins)
+        // The merged item keeps the ORIGINAL operation's generation — the
+        // mutation provenance of the first write, which the newer payload
+        // merely extends. Both writes happened under that same generation
+        // (the merge path only runs while the item is still active, which
+        // ends at the next completed/dead-letter transition).
         existingPendingUpsert.payload = { ...existingPendingUpsert.payload, ...input.payload };
         const db = await getDb();
         await db.put('operations', existingPendingUpsert);
@@ -344,12 +428,12 @@ export const durableSyncQueue = {
       fileRef: input.fileRef || null,
       payloadSizeBytes: payloadStr.length,
       conflictCount: 0,
-      // CRITICAL: syncGeneration must be set at creation time for new operations.
-      // This is the generation under which the mutation was originally created,
-      // NOT the generation at replay time. This allows the backend to detect if
-      // the operation becomes stale after a company reset.
-      // For legacy operations (no generation available), syncGeneration remains undefined
-      // so the backend can identify and quarantine them appropriately.
+      // CRITICAL: syncGeneration is stamped at CREATION time for new operations.
+      // It is the generation under which the mutation was originally created —
+      // never the generation observed at replay time. This lets the backend
+      // reject the operation as stale if a company reset moved it to a newer
+      // generation. resolveCreationGeneration() always returns a valid number
+      // (>=1) for new operations, so a freshly created item is never legacy.
       syncGeneration: effectiveGeneration,
     };
 
@@ -360,7 +444,6 @@ export const durableSyncQueue = {
       recordId: input.recordId,
       operation: input.operation,
       syncGeneration: effectiveGeneration,
-      isLegacy: effectiveGeneration === undefined,
     });
     await db.put('operations', item);
     /* SYNC-FORENSIC suppressed: STAGE-3 durableSyncQueue.enqueue() persisted */
@@ -391,10 +474,36 @@ export const durableSyncQueue = {
     const db = await getDb();
     const allPending = await db.getAllFromIndex('operations', 'by-status', IDBKeyRange.only('pending'));
 
-    // Loading every completed/dead-lettr record on each dequeue was a hidden
-    // O(all operations) scan. Only load them when at least one pending item
-    // actually has dependencies (the common empty/independent case skips it).
-    const hasDeps = allPending.some((op) => op.dependsOn.length > 0);
+    // Legacy pending ops without generation provenance are quarantined at the
+    // dequeue boundary (the exact point where an op becomes actionable). This
+    // guarantees they are NEVER transmitted to the backend, regardless of which
+    // code path reached dequeue (periodic sync, navigation trigger, manual
+    // syncNow, acceptance runner). Quarantine is a one-way, terminal transition:
+    // the item is excluded from this batch and never returns to 'pending'.
+    let quarantined = 0;
+    const safePending: QueuedOperation[] = [];
+    for (const op of allPending) {
+      if (!isGenerationValid(op.syncGeneration)) {
+        await quarantineOp(db, op);
+        quarantined++;
+      } else {
+        safePending.push(op);
+      }
+    }
+    if (quarantined > 0) {
+      logger.warn('[DurableQueue] dequeue quarantined legacy operations with no sync generation (not sent to backend)', {
+        quarantined,
+        tableRecordIds: allPending
+          .filter((op) => !isGenerationValid(op.syncGeneration))
+          .slice(0, 20)
+          .map((op) => `${op.table}/${op.recordId}`),
+      });
+    }
+
+    // Loading every completed/dead-letter record on each dequeue was a hidden
+    // O(all operations) scan. Only load them when at least one safe pending
+    // item actually has dependencies (the common empty/independent case skips it).
+    const hasDeps = safePending.some((op) => op.dependsOn.length > 0);
     const completedIds = new Set<string>();
     const deadLetterIds = new Set<string>();
     if (hasDeps) {
@@ -407,7 +516,7 @@ export const durableSyncQueue = {
     const blocked = new Set<string>(completedIds);
     for (const id of deadLetterIds) blocked.add(id);
 
-    allPending.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    safePending.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
     const ready: QueuedOperation[] = [];
     const processingIds = new Set<string>();
@@ -419,7 +528,7 @@ export const durableSyncQueue = {
     let changed = true;
     while (changed && ready.length < limit) {
       changed = false;
-      for (const op of allPending) {
+      for (const op of safePending) {
         if (processingIds.has(op.id)) continue;
         if (ready.length >= limit) break;
 
@@ -497,6 +606,18 @@ export const durableSyncQueue = {
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item && item.status === 'dead_letter') {
+      // Legacy ops quarantined for missing generation provenance cannot be
+      // legitimately retried — re-sending them would re-trigger the same
+      // rejection (or worse, replay without provenance). The only safe path is
+      // to re-create the record in the app so a fresh op is stamped with the
+      // current generation. Keep it terminal.
+      if (!isGenerationValid(item.syncGeneration)) {
+        item.lastError = LEGACY_GENERATION_QUARANTINE_REASON +
+          ' Manual retry is blocked: re-save the record in the app to create a new operation with the current generation.';
+        item.lastAttempt = new Date().toISOString();
+        await db.put('operations', item);
+        return;
+      }
       item.status = 'pending';
       item.retryCount = 0;
       item.lastError = null;
@@ -647,6 +768,14 @@ export const durableSyncQueue = {
     let count = 0;
     const MAX_RETRIES = 10;
     for (const item of failed) {
+      // Legacy items without generation provenance can never be safely retried:
+      // a retry would re-send an operation whose generation cannot be verified
+      // (and the backend would reject it with SYNC_GENERATION_MISSING anyway,
+      // creating an endless fail→requeue loop). Quarantine them instead.
+      if (!isGenerationValid(item.syncGeneration)) {
+        await quarantineOp(db, item);
+        continue;
+      }
       // Permanent authorization failures (401/403) must NEVER be auto-retried.
       // They are left in 'failed' until the user re-authenticates and calls
       // resumeAfterAuth(), which stamps auth_restored and re-queues them once.
@@ -654,7 +783,12 @@ export const durableSyncQueue = {
         continue;
       }
       if ((item.retryCount || 0) >= MAX_RETRIES) {
-        await db.put('operations', { ...item, status: 'dead_letter', errorType: 'permanent' });
+        // A transient failure that never succeeded after the retry budget is
+        // escalated to the terminal dead-letter state so the periodic loop
+        // stops hammering it. Keep the last error for the SyncHealth UI.
+        item.status = 'dead_letter';
+        item.errorType = 'permanent';
+        await db.put('operations', item);
       } else {
         await db.put('operations', { ...item, status: 'pending' });
         count++;

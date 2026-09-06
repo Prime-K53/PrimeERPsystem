@@ -201,6 +201,104 @@ describe('backgroundSyncService', () => {
     });
   });
 
+  describe('company-reset guard rejections are terminal (no endless reprocessing)', () => {
+    it('dead-letters a SYNC_GENERATION_MISSING rejection and never resends it on later cycles', async () => {
+      // Server rejects the op because it has no generation provenance.
+      mockSendOps.mockImplementation(async (ops: { operationId?: string }[]) => ({
+        ok: true,
+        processed: ops.length,
+        succeeded: 0,
+        results: ops.map((op) => ({
+          operationId: op.operationId,
+          ok: false,
+          error: 'Operation has no sync generation; cannot be safely replayed after a company reset',
+          retryable: false,
+          stale: true,
+          reason: 'SYNC_GENERATION_MISSING',
+        })),
+      }));
+
+      await durableSyncQueue.enqueue({
+        table: 'invoices', recordId: 'INV-P726/001', operation: 'upsert',
+        payload: { id: 'INV-P726/001', totalAmount: 100 },
+      });
+
+      const first = await backgroundSyncService.syncNow();
+      expect(first!.success).toBe(0);
+      expect(first!.deadLetter).toBe(1);
+      // The item is terminal in the queue (not in the retryable 'failed' layer).
+      expect(await durableSyncQueue.getAll('dead_letter')).toHaveLength(1);
+      expect(await durableSyncQueue.getAll('failed')).toHaveLength(0);
+
+      // Later periodic cycles must not resend it.
+      await backgroundSyncService.retryAllFailed();
+      const second = await backgroundSyncService.syncNow();
+      expect(second!.success + second!.failed + second!.deadLetter).toBe(0);
+      expect(mockSendOps).toHaveBeenCalledTimes(1);
+    });
+
+    it('a SYNC_GENERATION_STALE rejection is also dead-lettered (never replayed into the newer generation)', async () => {
+      mockSendOps.mockImplementation(async (ops: { operationId?: string }[]) => ({
+        ok: true,
+        processed: ops.length,
+        succeeded: 0,
+        results: ops.map((op) => ({
+          operationId: op.operationId,
+          ok: false,
+          error: 'Operation belongs to sync generation 1 which is older than the current generation 2. The company has been reset.',
+          retryable: false,
+          stale: true,
+          reason: 'SYNC_GENERATION_STALE',
+        })),
+      }));
+
+      await durableSyncQueue.enqueue({
+        table: 'customers', recordId: 'CUST-OLD', operation: 'upsert',
+        payload: { id: 'CUST-OLD' }, syncGeneration: 1,
+      });
+
+      const result = await backgroundSyncService.syncNow();
+      expect(result!.deadLetter).toBe(1);
+      const dlq = await durableSyncQueue.getAll('dead_letter');
+      expect(dlq).toHaveLength(1);
+      expect(String(dlq[0].lastError)).toContain('older than the current generation');
+    });
+
+    it('a legacy op persisted without generation is quarantined at dequeue and never sent to the gateway', async () => {
+      // Simulate a record left over from an older build (no syncGeneration).
+      await freshDb.put('operations', {
+        id: 'legacy-q1',
+        operationId: 'op-legacy-1',
+        table: 'invoices',
+        recordId: 'INV-P726/001',
+        operation: 'upsert',
+        payload: { id: 'INV-P726/001', totalAmount: 100 },
+        userId: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        retryCount: 0,
+        lastAttempt: null,
+        status: 'pending',
+        lastError: null,
+        dependsOn: [],
+        fileRef: null,
+        errorType: null,
+      });
+
+      const result = await backgroundSyncService.syncNow();
+      // Nothing reached the gateway, nothing failed — it was quarantined.
+      expect(mockSendOps).not.toHaveBeenCalled();
+      expect(result!.success).toBe(0);
+      const dlq = await durableSyncQueue.getAll('dead_letter');
+      expect(dlq.some((op) => op.id === 'legacy-q1')).toBe(true);
+      expect(String(dlq.find((op) => op.id === 'legacy-q1')!.lastError)).toContain('QUARANTINED');
+      expect(await durableSyncQueue.countPending()).toBe(0);
+
+      // And a second pass does not touch it again.
+      const again = await backgroundSyncService.syncNow();
+      expect(again!.deadLetter).toBe(0);
+    });
+  });
+
   describe('metrics', () => {
     it('should return queue metrics through getMetrics', async () => {
       await durableSyncQueue.enqueue({ table: 'products', recordId: 'p1', operation: 'upsert', payload: {} });

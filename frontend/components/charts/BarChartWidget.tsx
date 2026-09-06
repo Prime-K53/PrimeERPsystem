@@ -1,15 +1,6 @@
 import React, { useMemo, memo } from 'react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  Cell,
-} from 'recharts';
+import {BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 import { motion } from 'framer-motion';
 import { SEMANTIC_COLORS, SHADOWS, RADIUS } from '../../styles/designTokens';
 

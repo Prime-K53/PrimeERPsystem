@@ -34,7 +34,7 @@ export const getGLConfig = () => {
         accountsPayable: '21110',
         cashDrawerAccount: '11110',
         bankAccount: '11210',
-        mobileMoneyAccount: '11230',
+        mobileMoneyAccount: '11240',
         salesReturnAccount: '41100',
         customerDepositAccount: '21300',
         customerDeposits: '21300',
@@ -145,7 +145,7 @@ export class UnresolvedAccountError extends Error {
 const LEGACY_CODE_TO_CANONICAL: Record<string, string> = {
     '1000': '11110', // Cash Drawer
     '1050': '11210', // Bank
-    '1060': '11230', // Mobile Money
+    '1060': '11240', // Mobile Money
     '1100': '11310', // Trade Debtors / AR
     '1200': '12100', // Fixed Asset
     '1300': '11400', // Inventory

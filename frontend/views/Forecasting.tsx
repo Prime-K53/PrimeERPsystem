@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { TrendingUp, AlertTriangle, Package, Calendar, ArrowRight, BarChart3, Wallet, ArrowUpCircle, ArrowDownCircle, Coins, Calculator } from 'lucide-react';
+import {TrendingUp, AlertTriangle, Package, Calendar, ArrowRight, BarChart3, Wallet, ArrowUpCircle, ArrowDownCircle, Coins, Calculator } from 'lucide-react';
 import { useData, REFRESH_INTERVAL } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useSales } from '../context/SalesContext';
@@ -12,9 +12,9 @@ import ProductForecastDetail from './inventory/components/ProductForecastDetail'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format, addDays, startOfDay, isBefore, isAfter, subDays } from 'date-fns';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Legend, ComposedChart
-} from 'recharts';
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Legend, ComposedChart} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import { analyzeForecastingData } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import { generateNextId } from '../utils/helpers';

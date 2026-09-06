@@ -143,11 +143,16 @@ class FinanceService {
         && a.allow_posting !== false);
       if (match && match.id) return match.id;
       // Fall back to a known system code from the 5-digit template
-      if (kind === 'cash') return '11110';   // Cash Drawer
-      if (kind === 'income') return '41100'; // Product Sales
-      return '51200';                         // Cost of Goods Sold
+      // WARNING: Silent fallback - log this for debugging
+      let fallbackCode;
+      if (kind === 'cash') fallbackCode = '11110';   // Cash Drawer
+      else if (kind === 'income') fallbackCode = '41100'; // Product Sales
+      else fallbackCode = '51200';                         // Cost of Goods Sold
+      console.warn(`[_resolveDefaultAccountId] Silent fallback to ${fallbackCode} for kind=${kind}, hint=${hint}. This should be avoided - pass explicit account_id instead.`);
+      return fallbackCode;
     } catch (err) {
       // Hard fallback when the chart of accounts is unreadable.
+      console.error(`[_resolveDefaultAccountId] Chart of accounts unreadable, using hard fallback for kind=${kind}:`, err.message);
       if (kind === 'cash') return '11110';   // Cash Drawer
       if (kind === 'income') return '41100'; // Product Sales
       return '51200';                         // Cost of Goods Sold

@@ -1,7 +1,6 @@
-import { useMemo, useState, useEffect } from 'react';
+import {useMemo, useState, useEffect } from 'react';
 import { 
-  Landmark, TrendingUp, History, 
-  Shield, Activity, X
+  Landmark, TrendingUp, History, Shield, Activity, X
 } from 'lucide-react';
 import type { Account, AuditLogEntry as TimelineAuditLogEntry } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
@@ -11,9 +10,9 @@ import type { AuditLogEntry } from '../../../services/auditLogService';
 import { AuditTimeline } from '../../shared/components/AuditTimeline';
 import { currencyService } from '../../../services/currencyService';
 import { 
-  XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, AreaChart, Area 
-} from 'recharts';
+  XAxis, YAxis, CartesianGrid, Tooltip, AreaChart, Area} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 
 interface AccountDetailsDashboardProps {
   account: Account;

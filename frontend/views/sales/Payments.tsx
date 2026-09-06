@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useSales } from '../../context/SalesContext';
 import { useOrders } from '../../context/OrdersContext';
-import { OFFLINE_MODE, DEFAULT_ACCOUNTS } from '../../constants';
+import { OFFLINE_MODE, DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../constants';
 import { CustomerPayment, InvoiceAllocation, Sale, Invoice, SupplierPayment, PurchaseAllocation, LedgerEntry, WalletTransaction, Order, OrderPayment } from '../../types';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useHighlight } from '../../hooks/useHighlight';
@@ -887,6 +887,27 @@ const Payments: React.FC = () => {
         const totalAllocated = allocations.reduce((s, a) => s + a.amount, 0);
         return Math.max(0, (Number(formData.amount) || 0) - totalAllocated);
     }, [formData.amount, allocations]);
+
+    // Allow partial payments: if the user reduces the payment amount below the
+    // currently allocated total, trim allocations proportionally so the save
+    // does not fail with "allocations exceed payment amount".
+    useEffect(() => {
+        const paymentAmount = Number(formData.amount) || 0;
+        const totalAllocated = allocations.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+
+        if (paymentAmount < 0.01 || allocations.length === 0) return;
+        if (totalAllocated <= paymentAmount + 0.01) return;
+
+        let remaining = paymentAmount;
+        const trimmed = allocations.map(a => {
+            const due = Number(a.amount) || 0;
+            const take = Math.min(due, remaining);
+            remaining -= take;
+            return { ...a, amount: take };
+        });
+
+        setAllocations(trimmed);
+    }, [formData.amount, allocations.length]);
 
     const modalOpenedRef = useRef(false);
 
@@ -2269,7 +2290,7 @@ const Payments: React.FC = () => {
                         subAccountName: p.subAccountName || 'Main',
                         amount: p.amount,
                         paymentMethod: p.paymentMethod,
-                         accountId: p.accountId || (p.paymentMethod === 'Cash' ? '11110' : (p.paymentMethod === 'Mobile Money' ? '11230' : '11210')),
+                         accountId: p.accountId || (p.paymentMethod === 'Cash' ? '11110' : (p.paymentMethod === 'Mobile Money' ? ACCOUNT_IDS.MOBILE_MONEY : '11210')),
                         reference: p.reference || '',
                         notes: p.notes || '',
                         bankCharges: p.bankCharges || 0,

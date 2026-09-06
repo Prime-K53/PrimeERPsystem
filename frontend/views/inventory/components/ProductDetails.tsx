@@ -1,12 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-    ArrowLeft, ArrowRight, Edit2, Printer, Activity, Package, DollarSign,
-    TrendingUp, AlertTriangle, Factory, Truck, ShoppingCart,
-    Calendar, FileText, Layers, BarChart3, ArrowRightLeft, X, Sparkles, Loader2, Recycle, ClipboardCheck, Calculator, ShieldCheck, Trash2, TrendingDown, Award, PieChart as PieChartIcon, RefreshCw
+import {ArrowLeft, ArrowRight, Edit2, Printer, Activity, Package, DollarSign, TrendingUp, AlertTriangle, Factory, Truck, ShoppingCart, Calendar, FileText, Layers, BarChart3, ArrowRightLeft, X, Sparkles, Loader2, Recycle, ClipboardCheck, Calculator, ShieldCheck, Trash2, TrendingDown, Award, PieChart as PieChartIcon, RefreshCw
 } from 'lucide-react';
 import {
-    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell
-} from 'recharts';
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import { useNavigate } from 'react-router-dom';
 import { Item, Sale, Purchase, ProductionBatch, WorkOrder } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';

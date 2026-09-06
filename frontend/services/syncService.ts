@@ -612,21 +612,43 @@ export async function startPeriodicSync(
     logger.warn('[SyncService] startPeriodicSync SKIPPED — SUPABASE_ENABLED=false');
     return;
   }
+
+  // ── Lifecycle ownership ──────────────────────────────────────────────────
+  // AuthContext intentionally calls startPeriodicSync() from several startup
+  // paths (cold boot, SIGNED_IN auth event, login(), the user-transition
+  // safety net) so a single missed timing window can never leave the app
+  // without a sync engine. That makes "already active" an EXPECTED, idempotent
+  // no-op rather than a problem — so it is logged at info level, not warn.
+  //
+  // The lifecycle flag is claimed SYNCHRONOUSLY before any await. If it were
+  // set after the fetchServerGeneration() gap below, two overlapping calls
+  // could both pass the guard and create duplicate realtime subscriptions and
+  // duplicate pull timers.
   if (syncLifecycleActive) {
-    logger.warn('[SyncService] startPeriodicSync SKIPPED — lifecycle already active');
+    logger.info('[SyncService] startPeriodicSync SKIPPED — lifecycle already active (idempotent, no duplicate timers created)');
     return;
   }
+  syncLifecycleActive = true;
 
   logger.info('[SyncService] startPeriodicSync starting', { intervalMs, supabaseEnabled: SUPABASE_ENABLED });
 
-  if (navigator.onLine) {
-    const serverGen = await fetchServerGeneration();
-    if (serverGen !== null) {
-      await handleGenerationMismatch(serverGen);
+  // Generation handshake before the periodic engine starts. If the server
+  // generation moved past ours the local queue/data are stale and are
+  // invalidated first. A failure here must not permanently wedge the
+  // lifecycle flag (the periodic engine still needs to start), so it is
+  // contained and the sync loop is allowed to continue.
+  try {
+    if (navigator.onLine) {
+      const serverGen = await fetchServerGeneration();
+      if (serverGen !== null) {
+        await handleGenerationMismatch(serverGen);
+      }
     }
+  } catch (genErr) {
+    logger.warn('[SyncService] generation handshake failed — continuing with periodic sync', {
+      error: genErr instanceof Error ? genErr.message : String(genErr),
+    });
   }
-
-  syncLifecycleActive = true;
 
   subscribeToRemoteChanges().catch((err) => {
     logger.warn('[Sync] subscribeToRemoteChanges failed, falling back to polling:', err);

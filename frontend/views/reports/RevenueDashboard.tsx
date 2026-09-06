@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useData, REFRESH_INTERVAL } from '../../context/DataContext';
+import {useData, REFRESH_INTERVAL } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSales } from '../../context/SalesContext';
 import { useFinance } from '../../context/FinanceContext';
@@ -7,10 +7,10 @@ import { useOrders } from '../../context/OrdersContext';
 import { useExamination } from '../../context/ExaminationContext';
 import { useModuleRefresh } from '../../hooks/useModuleRefresh';
 import {
-  Activity, Coins, DollarSign, Layers3, Receipt,
-  TrendingDown, TrendingUp, Users, Wallet,
-} from 'lucide-react';
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+  Activity, Coins, DollarSign, Layers3, Receipt, TrendingDown, TrendingUp, Users, Wallet, } from 'lucide-react';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import { getRevenueSourceLabel } from '../../services/revenueAnalysisService';
 import {
   buildRevenueReportingSnapshot, matchesRevenueDateRange,

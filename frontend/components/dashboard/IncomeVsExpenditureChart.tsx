@@ -11,16 +11,8 @@
  * - Use stable keys
  */
 import React, { useMemo, memo } from 'react';
-import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Legend,
-  Tooltip as RechartsTooltip,
-} from 'recharts';
+import {LineChart, Line, CartesianGrid, XAxis, YAxis, Legend, Tooltip as RechartsTooltip} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 import CustomTooltipComponent from './CustomTooltip';
 import { SEMANTIC_COLORS } from '../../styles/designTokens';
 

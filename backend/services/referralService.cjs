@@ -3,6 +3,7 @@ const repo = require('./supabaseRepository.cjs');
 const ReferralNotificationService = require('./referralNotificationService.cjs');
 const portalLifecycleService = require('./portalLifecycleService.cjs');
 const BaseService = require('./baseService.cjs');
+const FinanceService = require('./financeService.cjs');
 
 function round2(v) {
   return Math.round((Number(v) || 0) * 100) / 100;
@@ -1414,13 +1415,21 @@ class ReferralService extends BaseService {
     const accountId = liabilityAccount ? liabilityAccount.id : null;
 
     if (accountId) {
-      await this._run(
-        `INSERT INTO ledger_entries (id, account_id, account_code, account_name, entry_type, amount, currency, description, reference_type, reference_id, journal_id, entry_date, created_by)
-         VALUES (?, ?, ?, ?, 'credit', ?, ?, ?, 'referral_reward', ?, ?, ?, ?, ?)`,
-        [randomUUID(), accountId, null, null, amount, currency,
-         `Referral reward credit for referral ${referral.referral_code}`,
-         reward.id, walletTxId, new Date().toISOString(), 'system']
-      );
+      const finance = new FinanceService();
+      await finance.saveLedgerEntry({
+        account_id: accountId,
+        account_code: liabilityAccount.code || null,
+        account_name: liabilityAccount.name || null,
+        entry_type: 'credit',
+        amount: amount,
+        currency: currency,
+        description: `Referral reward credit for referral ${referral.referral_code}`,
+        reference_type: 'referral_reward',
+        reference_id: reward.id,
+        journal_id: walletTxId,
+        entry_date: new Date().toISOString(),
+        created_by: 'system',
+      });
     }
 
     const targetCustomerId = referral.referred_by_id || reward.customer_id;
@@ -1488,13 +1497,21 @@ class ReferralService extends BaseService {
     const accountId = liabilityAccount ? liabilityAccount.id : null;
 
     if (accountId) {
-      await this._run(
-        `INSERT INTO ledger_entries (id, account_id, account_code, account_name, entry_type, amount, currency, description, reference_type, reference_id, journal_id, entry_date, created_by)
-         VALUES (?, ?, ?, ?, 'debit', ?, ?, ?, 'referral_reversal', ?, ?, ?, ?, ?)`,
-        [randomUUID(), accountId, null, null, reversalAmount, currency,
-         `Referral reward reversal for reward ${reward.id}: ${reason}`,
-         reward.id, null, new Date().toISOString(), actorId]
-      );
+      const finance = new FinanceService();
+      await finance.saveLedgerEntry({
+        account_id: accountId,
+        account_code: liabilityAccount.code || null,
+        account_name: liabilityAccount.name || null,
+        entry_type: 'debit',
+        amount: reversalAmount,
+        currency: currency,
+        description: `Referral reward reversal for reward ${reward.id}: ${reason}`,
+        reference_type: 'referral_reversal',
+        reference_id: reward.id,
+        journal_id: randomUUID(),
+        entry_date: new Date().toISOString(),
+        created_by: actorId,
+      });
     }
 
     // Write to wallet_transactions so the DB trigger recomputes walletBalance.

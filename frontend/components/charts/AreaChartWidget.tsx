@@ -1,14 +1,6 @@
 import React, { useMemo, memo } from 'react';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from 'recharts';
+import {AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 import { motion } from 'framer-motion';
 import { SEMANTIC_COLORS, SHADOWS, RADIUS } from '../../styles/designTokens';
 

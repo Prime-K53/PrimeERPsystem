@@ -613,7 +613,7 @@ export type AccountGroup =
   | 'COST_OF_SALES'
   | 'OPERATING_EXPENSE'
   | 'OTHER_EXPENSE';
-export type AccountSubtype = 'BANK' | 'RECEIVABLE' | 'PAYABLE' | 'INVENTORY' | 'TAX' | 'CASH';
+export type AccountSubtype = 'BANK' | 'RECEIVABLE' | 'PAYABLE' | 'INVENTORY' | 'TAX' | 'CASH' | 'MOBILE_MONEY';
 
 export interface Account {
   id: string;

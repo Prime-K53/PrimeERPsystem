@@ -36,6 +36,7 @@ const CANONICAL_ACCOUNTS: Account[] = [
   { id: 'coa-uuid-11210', code: '11210', account_number: '11210', name: 'National Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', normal_balance: 'DEBIT', is_active: true, allow_posting: true },
   { id: 'coa-uuid-11220', code: '11220', account_number: '11220', name: 'FDH Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', normal_balance: 'DEBIT', is_active: true, allow_posting: true },
   { id: 'coa-uuid-11230', code: '11230', account_number: '11230', name: 'NBS Bank', account_type: 'ASSET', account_group: 'CURRENT_ASSET', normal_balance: 'DEBIT', is_active: true, allow_posting: true },
+  { id: 'coa-uuid-11240', code: '11240', account_number: '11240', name: 'Mobile Money', account_type: 'ASSET', account_group: 'CURRENT_ASSET', normal_balance: 'DEBIT', is_active: true, allow_posting: true },
   { id: 'coa-uuid-11410', code: '11410', account_number: '11410', name: 'Merchandise Inventory', account_type: 'ASSET', account_group: 'CURRENT_ASSET', normal_balance: 'DEBIT', is_active: true, allow_posting: true },
   { id: 'coa-uuid-12500', code: '12500', account_number: '12500', name: 'Accumulated Depreciation', account_type: 'ASSET', account_group: 'FIXED_ASSET', normal_balance: 'CREDIT', is_active: true, allow_posting: true },
   { id: 'coa-uuid-15100', code: '15100', account_number: '15100', name: 'Motor Vehicles', account_type: 'ASSET', account_group: 'FIXED_ASSET', normal_balance: 'DEBIT', is_active: true, allow_posting: true },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ReportResult, ReportRow, ReportColumn, ReportChart, ExportFormat } from '../types/reports';
+import {ReportResult, ReportRow, ReportColumn, ReportChart, ExportFormat } from '../types/reports';
 import { reportService } from '../services/reportService';
 import { logger } from '../services/logger';
 import Button from './Button';
@@ -8,7 +8,8 @@ import Select from './Select';
 import Card from './Card';
 import Badge from './Badge';
 import Pagination from './Pagination';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 
 interface ReportViewerProps {
   result: ReportResult;

@@ -881,7 +881,7 @@ export const transactionService = {
                         targetDebitAccount = payment.accountId;
                     } else {
                         if (payment.method === 'Card' || payment.method === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
-                        if (payment.method === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount || '11230';
+                        if (payment.method === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
                     }
 
                     const payEntry: LedgerEntry = {
@@ -953,7 +953,7 @@ export const transactionService = {
                 let tempPayments = [...allPayments];
 
                 for (const payment of normalizedPayments) {
-                    const nextId = generateNextId('RCPT', tempPayments);
+                    const nextId = generateNextId('REC', tempPayments);
                     const snapshot = calculateCustomerPaymentSnapshot({
                         amountTendered: payment.tendered,
                         appliedInvoices: [{
@@ -1083,7 +1083,8 @@ export const transactionService = {
                     // Avoid nested/non-transactional async work inside an active IDB transaction.
                     // Calling document-number service here can commit this tx early, causing
                     // "TransactionInactiveError: The transaction has finished" on later puts.
-                    invoiceId = generateNextId('INV', existingInvoices);
+                    const prefix = String(sale.id || '').toUpperCase().startsWith('POS-') ? 'POS' : 'INV';
+                    invoiceId = generateNextId(prefix, existingInvoices);
                 }
 
                 const invoice: Invoice = {
@@ -2721,7 +2722,7 @@ export const transactionService = {
                     targetDebitAccount = payment.accountId;
                 } else {
                     if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') targetDebitAccount = resolveAcct(gl.bankAccount);
-                    if (payment.paymentMethod === 'Mobile Money') targetDebitAccount = resolveAcct(gl.mobileMoneyAccount || '11230');
+                    if (payment.paymentMethod === 'Mobile Money') targetDebitAccount = resolveAcct(gl.mobileMoneyAccount);
                 }
 
                 if (snapshot.amountRetained > 0) {

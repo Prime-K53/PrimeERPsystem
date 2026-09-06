@@ -1,14 +1,11 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  Activity, Thermometer, Zap, Wrench, AlertTriangle, CheckCircle, 
-  Clock, BarChart3, RotateCcw, Settings, PlayCircle, StopCircle, UserPlus, ClipboardList, Trash2,
-  Sparkles, Loader2, X, MessageSquare
+import {Activity, Thermometer, Zap, Wrench, AlertTriangle, CheckCircle, Clock, BarChart3, RotateCcw, Settings, PlayCircle, StopCircle, UserPlus, ClipboardList, Trash2, Sparkles, Loader2, X, MessageSquare
 } from 'lucide-react';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, BarChart, Bar 
-} from 'recharts';
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, BarChart, Bar} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import { useProduction } from '../../context/ProductionContext';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';

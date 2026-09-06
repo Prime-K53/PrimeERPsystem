@@ -5,6 +5,7 @@ const batchWorkflow = require('./examinationBatchWorkflow.cjs');
 const examinationInvoiceAdapter = require('./examinationInvoiceAdapter.cjs');
 const { auditService } = require('../auditService.cjs');
 const { toNumericValue, pickPositiveNumber } = require('./examinationSharedUtils.cjs');
+const FinanceService = require('./financeService.cjs');
 
 const PAGES_PER_SHEET = pricingEngine.PAGES_PER_SHEET;
 const TONER_PAGES_PER_KG = pricingEngine.TONER_PAGES_PER_KG;
@@ -567,45 +568,46 @@ const writeAuditLog = async ({
   }
 };
 
-const saveLedgerEntry = async (entry) => {
-  const id = randomUUID();
-  await runRun(
-    `INSERT INTO ledger_entries (id, account_id, entry_type, amount, currency, description, reference_type, reference_id, entry_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ? )`,
-    [id, entry.account_id, entry.entry_type, entry.amount, entry.currency || 'USD', entry.description || null, entry.reference_type || null, entry.reference_id || null, entry.entry_date || new Date().toISOString()]
-  );
-  return id;
-};
-
 const postInvoiceLedger = async (invoiceId, invoiceData) => {
   // F-02: The previous implementation passed malformed SQL strings to
   // runGet (missing FROM / WHERE keywords), so extractTable() returned
   // null and the function always early-returned without posting. The
   // fix is to use the Supabase REST client directly with proper filters.
+  //
+  // FIX: Use exact account code matching only. Do NOT use loose regex
+  // like /revenue|sales/i which can match wrong accounts (e.g., Interest Income).
+  // Examination revenue = Service Income (41200)
   const allAccounts = await repo.getAll('chart_of_accounts');
   const arAccount = allAccounts.find(
-    (a) => /receivable/i.test(String(a.data?.name || a.name || ''))
-      || String(a.data?.code || a.code || '') === '11310'
-      || /^113\d{2}$/.test(String(a.data?.code || a.code || ''))
+    (a) => String(a.data?.code || a.code || '') === '11310'
   );
   const revenueAccount = allAccounts.find(
-    (a) => /revenue/i.test(String(a.data?.name || a.name || ''))
-      || String(a.data?.code || a.code || '') === '41100'
-      || /^411\d{2}$/.test(String(a.data?.code || a.code || ''))
-      || /revenue|sales/i.test(String(a.data?.type || a.type || ''))
+    (a) => String(a.data?.code || a.code || '') === '41200'
   );
-  if (!arAccount || !revenueAccount) return;
+  if (!arAccount) {
+    console.error(`[postInvoiceLedger] AR account 11310 not found for invoice ${invoiceId}`);
+    return;
+  }
+  if (!revenueAccount) {
+    console.error(`[postInvoiceLedger] Revenue account 41200 not found for invoice ${invoiceId}`);
+    return;
+  }
   const totalAmount = toNumericValue(invoiceData?.total_amount) ?? 0;
   if (totalAmount <= 0) return;
-  await saveLedgerEntry({
+
+  const finance = new FinanceService();
+  const journalId = randomUUID();
+  await finance.saveLedgerEntry({
     account_id: arAccount.id, entry_type: 'debit', amount: totalAmount,
     currency: invoiceData?.currency || 'USD', description: `Invoice #${invoiceId}`,
-    reference_type: 'invoice', reference_id: String(invoiceId)
+    reference_type: 'invoice', reference_id: String(invoiceId),
+    journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
   });
-  await saveLedgerEntry({
+  await finance.saveLedgerEntry({
     account_id: revenueAccount.id, entry_type: 'credit', amount: totalAmount,
     currency: invoiceData?.currency || 'USD', description: `Invoice #${invoiceId} Revenue`,
-    reference_type: 'invoice', reference_id: String(invoiceId)
+    reference_type: 'invoice', reference_id: String(invoiceId),
+    journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
   });
 };
 

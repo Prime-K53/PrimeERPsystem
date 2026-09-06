@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo } from 'react';
-import { useVatStore } from '../../stores/vatStore';
+import {useVatStore } from '../../stores/vatStore';
 import { useAuth } from '../../context/AuthContext';
 import { currencyService } from '../../services/currencyService';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
-} from 'recharts';
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import {
     TrendingUp, TrendingDown, DollarSign, Activity,
     ArrowUpRight, ArrowDownRight, FileText

@@ -10,7 +10,7 @@ describe('Sale & Order Flow Fixes', () => {
   const mockAccounts = [
     { id: 'coa-11110', code: '11110', account_number: '11110', name: 'Cash Drawer', is_active: true, allow_posting: true },
     { id: 'coa-11210', code: '11210', account_number: '11210', name: 'Bank Account', is_active: true, allow_posting: true },
-    { id: 'coa-11230', code: '11230', account_number: '11230', name: 'Mobile Money', is_active: true, allow_posting: true },
+    { id: 'coa-11240', code: '11240', account_number: '11240', name: 'Mobile Money', is_active: true, allow_posting: true },
     { id: 'coa-11310', code: '11310', account_number: '11310', name: 'Trade Debtors', is_active: true, allow_posting: true },
     { id: 'coa-21300', code: '21300', account_number: '21300', name: 'Customer Deposits', is_active: true, allow_posting: true },
     { id: 'coa-41100', code: '41100', account_number: '41100', name: 'Sales Revenue', is_active: true, allow_posting: true },
@@ -24,7 +24,7 @@ describe('Sale & Order Flow Fixes', () => {
     it('resolves canonical 5-digit accounts directly', () => {
       expect(resolveAccountForPosting(ACCOUNT_IDS.CASH_DRAWER, mockAccounts, { strict: true })).toBe('coa-11110');
       expect(resolveAccountForPosting(ACCOUNT_IDS.BANK, mockAccounts, { strict: true })).toBe('coa-11210');
-      expect(resolveAccountForPosting(ACCOUNT_IDS.MOBILE_MONEY, mockAccounts, { strict: true })).toBe('coa-11230');
+      expect(resolveAccountForPosting(ACCOUNT_IDS.MOBILE_MONEY, mockAccounts, { strict: true })).toBe('coa-11240');
     });
 
     it('resolves legacy 4-digit codes via fallback mapping without throwing in strict mode', () => {
@@ -32,8 +32,8 @@ describe('Sale & Order Flow Fixes', () => {
       expect(resolveAccountForPosting('1000', mockAccounts, { strict: true })).toBe('coa-11110');
       // Legacy bank account '1050' -> '11210'
       expect(resolveAccountForPosting('1050', mockAccounts, { strict: true })).toBe('coa-11210');
-      // Legacy mobile money account '1060' -> '11230'
-      expect(resolveAccountForPosting('1060', mockAccounts, { strict: true })).toBe('coa-11230');
+      // Legacy mobile money account '1060' -> '11240'
+      expect(resolveAccountForPosting('1060', mockAccounts, { strict: true })).toBe('coa-11240');
       // Legacy AR account '1100' -> '11310'
       expect(resolveAccountForPosting('1100', mockAccounts, { strict: true })).toBe('coa-11310');
       // Legacy sales revenue '4000' -> '41100'
@@ -104,7 +104,7 @@ describe('Sale & Order Flow Fixes', () => {
       const gl = getGLConfig();
       expect(gl.cashDrawerAccount).toBe('11110');
       expect(gl.bankAccount).toBe('11210');
-      expect(gl.mobileMoneyAccount).toBe('11230');
+      expect(gl.mobileMoneyAccount).toBe('11240');
       expect(gl.customerDepositAccount).toBe('21300');
       expect(gl.customerDeposits).toBe('21300');
       expect(gl.defaultSalesAccount).toBe('41100');

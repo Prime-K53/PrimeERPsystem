@@ -1,12 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { 
-  Plus, DollarSign, Banknote as PaymentIcon, Calendar, Search, Filter, 
-  Download, PieChart, TrendingUp, AlertTriangle, FileText, 
-  X, CheckCircle, ArrowUpRight, ArrowDownRight, Paperclip, Tag, ExternalLink, Image as ImageIcon, Sparkles, Loader2, Activity, Zap, Eye
+import {Plus, DollarSign, Banknote as PaymentIcon, Calendar, Search, Filter, Download, PieChart, TrendingUp, AlertTriangle, FileText, X, CheckCircle, ArrowUpRight, ArrowDownRight, Paperclip, Tag, ExternalLink, Image as ImageIcon, Sparkles, Loader2, Activity, Zap, Eye
 } from 'lucide-react';
 import { 
-  PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend 
-} from 'recharts';
+  PieChart as RePieChart, Pie, Cell, Tooltip as ReTooltip, Legend} from 'recharts';
+import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
+
 import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useBankingStore } from '../../context/BankingContext';
@@ -547,7 +545,7 @@ const Expenses: React.FC = () => {
               <select style={inputStyle} value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
 <option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (11110)</option>
                                 <option value={ACCOUNT_IDS.BANK}>Main Bank Account (11210)</option>
-                                <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money (11230)</option>
+                                <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money ({ACCOUNT_IDS.MOBILE_MONEY})</option>
               </select>
             </div>
 
