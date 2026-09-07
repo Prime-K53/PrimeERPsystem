@@ -862,16 +862,20 @@ export function resolveInventoryAccountByItemType(
     accounts: any[]
 ): string | null {
     if (!itemType) return null;
-    
+
     const normalizedType = String(itemType).toLowerCase();
-    let targetCode = '11410';
-    
+    let targetCode = '11410'; // Default: Merchandise Inventory
+
     if (normalizedType === 'material' || normalizedType === 'raw material' || normalizedType === 'raw' || normalizedType === 'consumable') {
-        targetCode = '11420';
-    } else if (normalizedType === 'product' || normalizedType === 'finished good' || normalizedType === 'finished goods') {
-        targetCode = '11410';
+        targetCode = '11420'; // Raw Materials
+    } else if (normalizedType === 'finished good' || normalizedType === 'finished goods') {
+        targetCode = '11430'; // Finished Goods (distinct from Merchandise)
+    } else if (normalizedType === 'product') {
+        // 'product' is ambiguous - check if a Finished Goods account exists; if so, use it
+        const hasFinishedGoods = accounts.some(a => a.code === '11430' || a.account_number === '11430');
+        targetCode = hasFinishedGoods ? '11430' : '11410';
     } else if (normalizedType === 'stationery' || normalizedType === 'stationaries') {
-        targetCode = '11420';
+        targetCode = '11420'; // Stationery tracked with Raw Materials
     }
     
     const found = accounts.find(a =>

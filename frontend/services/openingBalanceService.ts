@@ -124,10 +124,12 @@ export async function computeOpeningInventoryDiagnostic(
 
 function resolveInventoryAccountCodeByType(type: string): string | null {
   const normalizedType = type.toLowerCase();
-  if (normalizedType === 'product' || normalizedType === 'finished good' || normalizedType === 'finished goods') {
-    return '11410';
-  } else if (normalizedType === 'material' || normalizedType === 'raw material' || normalizedType === 'raw' || normalizedType === 'consumable' || normalizedType === 'stationery') {
-    return '11420';
+  if (normalizedType === 'finished good' || normalizedType === 'finished goods') {
+    return '11430'; // Finished Goods (distinct from Merchandise)
+  } else if (normalizedType === 'material' || normalizedType === 'raw material' || normalizedType === 'raw' || normalizedType === 'consumable' || normalizedType === 'stationery' || normalizedType === 'stationaries') {
+    return '11420'; // Raw Materials / Stationery
+  } else if (normalizedType === 'product') {
+    return '11410'; // Default: Merchandise Inventory
   }
   return null;
 }

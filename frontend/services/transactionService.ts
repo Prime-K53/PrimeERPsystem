@@ -4223,12 +4223,17 @@ export const transactionService = {
                     if (Math.abs(params.qtyChange * adjustmentCost) > 0) {
                         const gl = getGLConfig();
                         const inventoryAccountId = resolveInventoryAccountByItemType(item.type, accounts) || resolveAcct(gl.defaultInventoryAccount);
+                        // Stock adjustment GL:
+                        // - qtyChange > 0 (stock INCREASED, e.g. found stock): Debit Inventory, Credit Inventory Adjustment Gain (42000 Other Income)
+                        // - qtyChange < 0 (stock DECREASED, e.g. write-off/loss): Debit COGS/Inventory Loss, Credit Inventory
+                        const otherIncomeAccount = '42000';
+                        const otherIncomeAccountId = resolveAcct(otherIncomeAccount);
                         const entry: LedgerEntry = {
                             id: generateId('LG-ADJ'),
                             date: new Date().toISOString(),
                             description: `Stock Adjustment: ${params.reason} (${params.notes || ''})`,
                             debitAccountId: params.qtyChange > 0 ? inventoryAccountId : resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: params.qtyChange > 0 ? resolveAcct(gl.defaultCOGSAccount) : inventoryAccountId,
+                            creditAccountId: params.qtyChange > 0 ? otherIncomeAccountId : inventoryAccountId,
                             amount: Math.abs(params.qtyChange * adjustmentCost),
                             referenceId: params.itemId,
                             reconciled: false
@@ -4555,12 +4560,16 @@ export const transactionService = {
                     const gl = getGLConfig();
                     const firstItem = results.length > 0 ? await inventoryStore.get(results[0].itemId) : null;
                     const inventoryAccountId = accounts.length > 0 && firstItem ? resolveInventoryAccountByItemType(firstItem.type, accounts) : null;
+                    const otherIncomeAccountId = resolveAcct('42000');
+                    // Inventory reconciliation GL:
+                    // - totalVarianceCost > 0 (physical > GL): Debit Inventory, Credit Other Income (gain)
+                    // - totalVarianceCost < 0 (physical < GL): Debit COGS (loss), Credit Inventory
                     const entry: LedgerEntry = {
                         id: generateId('LG-REC'),
                         date: new Date().toISOString(),
                         description: `Inventory Reconciliation Variance`,
                         debitAccountId: totalVarianceCost < 0 ? resolveAcct(gl.defaultCOGSAccount) : (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)),
-                        creditAccountId: totalVarianceCost < 0 ? (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)) : resolveAcct(gl.defaultCOGSAccount),
+                        creditAccountId: totalVarianceCost < 0 ? (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)) : otherIncomeAccountId,
                         amount: Math.abs(totalVarianceCost),
                         referenceId: 'RECONCILE',
                         reconciled: true
