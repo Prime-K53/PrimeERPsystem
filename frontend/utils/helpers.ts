@@ -98,6 +98,15 @@ export const formatNumber = (num: number): string => {
   }).format(num || 0);
 };
 
+export const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+};
+
 export const parseFormattedNumber = (value: string): number => {
   if (!value) return 0;
   const cleaned = value.replace(/[^0-9.]/g, '');

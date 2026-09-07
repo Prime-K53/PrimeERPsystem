@@ -1077,28 +1077,24 @@ export const dbService = {
         // Local-first: always write to IndexedDB, return immediately
         const localResultId = await putToLegacyStore(storeName, raw as T);
 
-        // Background sync: fire-and-forget queue to cloud
+        // Background sync: queue to cloud and await durable sync queue insertion
         const isLocalOnly = LOCAL_ONLY_STORES.has(String(storeName));
         if (!isLocalOnly && itemId && !isCloudSource) {
             try {
                 const table = getCloudTable(String(storeName));
-                /* SYNC-FORENSIC suppressed: STAGE-2 enqueue() triggered */
-                durableSyncQueue.enqueue({
+                await durableSyncQueue.enqueue({
                     table,
                     recordId: itemId,
                     operation: 'upsert',
                     payload: raw,
-                }).catch((enqueueErr) => {
-                    /* SYNC-FORENSIC suppressed: STAGE-2 ENQUEUE FAILED */
                 });
                 backgroundSyncService.trigger().catch((triggerErr) => {
                     logger.warn(`[DB] backgroundSyncService.trigger() failed for ${storeName}/${itemId}:`, triggerErr);
                 });
             } catch (syncErr) {
-            /* SYNC-FORENSIC suppressed: STAGE-2 TRIGGER FAILED */
+                logger.warn(`[DB] Sync enqueue failed for ${storeName}/${itemId}:`, syncErr);
+                throw syncErr;
             }
-        } else {
-            /* SYNC-FORENSIC suppressed: STAGE-2 SKIPPED sync enqueue */
         }
 
         this.triggerSync();
@@ -1234,17 +1230,18 @@ export const dbService = {
         if (!isLocalOnly && id && !isCloudSource) {
             try {
                 const table = getCloudTable(String(storeName));
-                durableSyncQueue.enqueue({
+                await durableSyncQueue.enqueue({
                     table,
                     recordId: id,
                     operation: 'delete',
                     payload: { id },
-                }).catch((enqueueErr) => {
-                    console.warn(`[Sync] Delete enqueue failed for ${storeName}/${id}:`, enqueueErr);
                 });
-                backgroundSyncService.trigger();
+                backgroundSyncService.trigger().catch((triggerErr) => {
+                    logger.warn(`[DB] backgroundSyncService.trigger() failed for delete ${storeName}/${id}:`, triggerErr);
+                });
             } catch (syncErr) {
-                console.warn(`[Sync] Background sync trigger failed for delete ${storeName}/${id}:`, syncErr);
+                logger.warn(`[DB] Sync enqueue failed for delete ${storeName}/${id}:`, syncErr);
+                throw syncErr;
             }
         }
 

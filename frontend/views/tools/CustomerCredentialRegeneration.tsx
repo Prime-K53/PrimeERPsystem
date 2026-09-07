@@ -17,6 +17,7 @@ const CustomerCredentialRegeneration: React.FC = () => {
     const [confirmState, setConfirmState] = useState<{ open: boolean; title: string; message: string; confirmText?: string; type?: ConfirmDialogType; onConfirm?: () => void }>({ open: false, title: '', message: '' });
 
     const handleRun = () => {
+        if (running) return;
         setConfirmState({
             open: true, title: 'Regenerate ALL customer credentials',
             message: 'This overwrites every customer\'s portal login email with the standard derived address (e.g. name@prime.mw) and issues a non‑expiring invitation code. Customers without a portal account will be created (invited).\n\nTheir old login email will stop working immediately. This cannot be undone.\n\nContinue?',
@@ -25,19 +26,33 @@ const CustomerCredentialRegeneration: React.FC = () => {
                 setRunning(true); setResult(null); setError(null);
                 try {
                     const data = await adminLifecycle.users.bulkRegenerateCredentials();
-                    setResult(data);
-                    // Reflect the new portal login emails immediately in the customer
-                    // list and any open customer card (both read from salesStore).
+                    const store = useSalesStore.getState();
                     const emailById = new Map<string, string>();
                     (data.results || []).forEach((r: BulkRegenerateResultRow) => emailById.set(r.customer_id, r.email));
                     if (emailById.size > 0) {
-                        useSalesStore.setState((state) => ({
-                            customers: (state.customers || []).map((c) =>
-                                emailById.has(c.id)
-                                    ? { ...c, email: emailById.get(c.id)!, portalEmail: emailById.get(c.id)! }
-                                    : c
-                            ),
-                        }));
+                        let successCount = 0;
+                        let failureCount = 0;
+                        const errors: Array<{ customer_id: string; customer_name: string; error: string }> = [];
+                        for (const [customerId, email] of emailById) {
+                            const customer = store.customers.find(c => c.id === customerId);
+                            if (customer) {
+                                try {
+                                    await store.updateCustomer({ ...customer, email, portalEmail: email });
+                                    successCount++;
+                                } catch (persistErr: any) {
+                                    failureCount++;
+                                    errors.push({ customer_id: customerId, customer_name: customer.name || customerId, error: persistErr?.message || 'Local persistence failed' });
+                                }
+                            }
+                        }
+                        setResult({
+                            ...data,
+                            processed: successCount + failureCount,
+                            failed: failureCount,
+                            errors,
+                        });
+                    } else {
+                        setResult(data);
                     }
                 } catch (err: any) {
                     setError(err?.message || 'Bulk regeneration failed');
@@ -60,13 +75,11 @@ const CustomerCredentialRegeneration: React.FC = () => {
                 };
             });
             // Also update the salesStore so the client list reflects the new email
-            useSalesStore.setState((state) => ({
-                customers: (state.customers || []).map((c) =>
-                    c.id === r.customer_id
-                        ? { ...c, email: updated.email, portalEmail: updated.email }
-                        : c
-                ),
-            }));
+            const store = useSalesStore.getState();
+            const customer = store.customers.find(c => c.id === r.customer_id);
+            if (customer) {
+                await store.updateCustomer({ ...customer, email: updated.email, portalEmail: updated.email });
+            }
         } catch (err: any) {
             setError(err?.message || 'Regeneration failed for this customer');
         } finally {

@@ -163,9 +163,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
   };
 
-const inventory = useInventoryStore(s => s.inventory);
-
-    const openInventory = async () => {
+const openInventory = async () => {
         try {
             const result = await openingBalanceService.openInventory();
             await financeStore.fetchFinanceData();
