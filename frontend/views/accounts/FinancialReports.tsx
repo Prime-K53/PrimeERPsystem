@@ -1099,20 +1099,20 @@ const FinancialReports: React.FC = () => {
                     <div id="financial-report-printable" className="bg-white rounded border border-slate-200 shadow-sm overflow-hidden mb-12 print:border-0 print:shadow-none">
                         <div className="p-12 print:p-0">
                             {/* Professional Header */}
-                            <div className="flex justify-between items-start pb-6 mb-8 border-b-2 border-slate-900 print:border-slate-900">
-                                <div className="flex-1">
+                            <div className="flex justify-between items-start pb-5 mb-6 border-b-2 border-slate-900 print:border-slate-900">
+                                <div className="w-2/5">
                                     {companyConfig?.logo ? (
-                                        <img src={companyConfig.logo} alt="Logo" className="h-16 mb-3" />
+                                        <img src={companyConfig.logo} alt="Logo" className="h-14 mb-2" />
                                     ) : (
-                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{companyConfig?.companyName || 'Prime ERP System'}</h2>
+                                        <h2 className="text-xl font-bold text-slate-900 tracking-tight">{companyConfig?.companyName || 'Prime ERP System'}</h2>
                                     )}
                                     {companyConfig?.address && <p className="text-xs text-slate-600 mt-1 leading-relaxed">{companyConfig.address}</p>}
                                     {companyConfig?.phone && <p className="text-xs text-slate-600 mt-0.5">Tel: {companyConfig.phone}</p>}
                                     {companyConfig?.email && <p className="text-xs text-slate-600 mt-0.5">{companyConfig.email}</p>}
                                 </div>
-                                <div className="flex-1 text-right">
+                                <div className="w-3/5 text-right pl-6">
                                     <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-bold">Financial Report</p>
-                                    <h3 className="text-3xl font-bold text-slate-900 mt-1 tracking-tight">
+                                    <h3 className="text-2xl font-bold text-slate-900 mt-1 tracking-tight">
                                         {reportType === 'IncomeStatement' ? 'Profit & Loss Statement' :
                                             reportType === 'BalanceSheet' ? 'Balance Sheet' :
                                                 reportType === 'CashFlow' ? 'Statement of Cash Flows' :
@@ -1121,18 +1121,18 @@ const FinancialReports: React.FC = () => {
                                                             reportType === 'Budget' ? 'Budget Analysis' :
                                                                 reportType === 'AgedAR' ? 'Aged Receivables' : 'Aged Payables'}
                                     </h3>
-                                    <p className="text-sm text-slate-600 mt-2 italic">
+                                    <p className="text-sm text-slate-600 mt-1.5 italic">
                                         {reportType === 'BalanceSheet' ? `As of ${format(parseISO(dateRange.end), 'MMMM d, yyyy')}` :
                                             `${format(parseISO(dateRange.start), 'MMMM d, yyyy')} - ${format(parseISO(dateRange.end), 'MMMM d, yyyy')}`}
                                     </p>
-                                    <p className="text-xs text-slate-500 mt-2">Currency: {currency}</p>
+                                    <p className="text-xs text-slate-500 mt-1.5">Currency: {currency}</p>
                                 </div>
                             </div>
 
                             {/* Period Banner */}
-                            <div className="mb-8 p-4 bg-slate-50 border-l-4 border-blue-600 rounded-r">
+                            <div className="mb-6 p-3 bg-slate-50 border-l-4 border-blue-600">
                                 <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Reporting Period</p>
-                                <p className="text-base font-bold text-slate-900 mt-1">
+                                <p className="text-sm font-bold text-slate-900 mt-1">
                                     {reportType === 'BalanceSheet' ? `As of ${format(parseISO(dateRange.end), 'MMMM d, yyyy')}` :
                                         `${format(parseISO(dateRange.start), 'MMMM d, yyyy')} - ${format(parseISO(dateRange.end), 'MMMM d, yyyy')}`}
                                 </p>
