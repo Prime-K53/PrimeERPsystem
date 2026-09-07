@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Plus, Search, Filter, Download, Truck, Monitor, Building2, Chair,
+    Plus, Search, Filter, Download, Truck, Monitor, Building2, Armchair,
     Wrench, Package, Trash2, Edit2, Eye, X, CheckCircle, AlertTriangle,
     Calendar, DollarSign, Percent, ChevronDown, ChevronRight, FileText,
     RefreshCw, Loader2
@@ -13,7 +13,7 @@ import { formatCurrency, getDefaultDate } from '../../utils/helpers';
 
 const ASSET_CATEGORY_INFO: Record<FixedAssetCategory, { label: string; icon: React.ReactNode; accounts: string[] }> = {
     motor_vehicle: { label: 'Motor Vehicle', icon: <Truck size={16} />, accounts: ['12100'] },
-    furniture: { label: 'Furniture & Fixtures', icon: <Chair size={16} />, accounts: ['12200'] },
+    furniture: { label: 'Furniture & Fixtures', icon: <Armchair size={16} />, accounts: ['12200'] },
     computer_equipment: { label: 'Computer Equipment', icon: <Monitor size={16} />, accounts: ['12300'] },
     building: { label: 'Buildings', icon: <Building2 size={16} />, accounts: ['12400'] },
     machinery: { label: 'Machinery', icon: <Wrench size={16} />, accounts: ['12300'] },
