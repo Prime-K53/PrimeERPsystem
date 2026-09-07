@@ -75,7 +75,7 @@ const ReportRow: React.FC<ReportRowProps> = ({
 
 const FinancialReports: React.FC = () => {
     const { companyConfig, notify } = useAuth();
-    const { accounts, ledger, budgets, invoices, runMonthEndClosing, syncInventoryValuation } = useFinance();
+    const { accounts, ledger, budgets, invoices, runMonthEndClosing, syncInventoryValuation, openInventory } = useFinance();
     const { customers } = useSales();
     const { inventory } = useInventory();
     const { purchases } = useProcurement();
@@ -452,24 +452,27 @@ const FinancialReports: React.FC = () => {
         return { current: balances, previous: prevBalances };
     }, [ledger, accounts, dateRange, compareWithPrevious, selectedCustomerId, selectedSubAccountNames, refreshCounter]);
 
-    const getAccountRows = (types: AccountType[]) => {
-        return (accounts || [])
-            .filter(a => types.includes(a.type))
-            .map(a => {
-                const gl = companyConfig?.glMapping || {};
-                 const invAccId = gl.defaultInventoryAccount || '11400';
-                const isInventory = a.id === invAccId || a.code === invAccId;
+      const getAccountRows = (types: AccountType[]) => {
+          return (accounts || [])
+              .filter(a => types.includes(a.type))
+              .map(a => {
+                  const gl = companyConfig?.glMapping || {};
+                  const invAccId = gl.defaultInventoryAccount || '11400';
+                  const isInventory = a.id === invAccId || a.code === invAccId ||
+                      a.id === '11410' || a.code === '11410' ||
+                      a.id === '11420' || a.code === '11420' ||
+                      a.id === '11430' || a.code === '11430';
 
-                return {
-                    ...a,
-                    balance: accountBalances.current[a.id] || 0,
-                    prevBalance: accountBalances.previous[a.id] || 0,
-                    isInventory
-                };
-            })
-            .filter(a => Math.abs(a.balance) > 0.001 || Math.abs(a.prevBalance) > 0.001)
-            .sort((a, b) => a.code.localeCompare(b.code));
-    };
+                  return {
+                      ...a,
+                      balance: accountBalances.current[a.id] || 0,
+                      prevBalance: accountBalances.previous[a.id] || 0,
+                      isInventory
+                  };
+              })
+              .filter(a => Math.abs(a.balance) > 0.001 || Math.abs(a.prevBalance) > 0.001)
+              .sort((a, b) => a.code.localeCompare(a.code));
+      };
 
     const netIncome = useMemo(() => {
         const revenue = getAccountRows(['Revenue']).reduce((s, a) => s + a.balance, 0);
@@ -1145,13 +1148,13 @@ const FinancialReports: React.FC = () => {
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.stopPropagation();
-                                                                                if (confirm("Adjust ledger to match physical valuation? This will post an adjustment entry.")) {
-                                                                                    syncInventoryValuation(a.id, physicalValuation, a.balance);
+                                                                                if (confirm("This will post an opening inventory journal to the general ledger. This is a one-time entry establishing the company's inventory position. Continue?")) {
+                                                                                     openInventory();
                                                                                 }
                                                                             }}
                                                                             className="px-2 py-1 bg-amber-600 text-white rounded text-[8px] font-black uppercase tracking-tighter hover:bg-amber-700 transition-colors"
                                                                         >
-                                                                            Sync Ledger
+                                                                            Open Inventory
                                                                         </button>
                                                                     </div>
                                                                 </div>

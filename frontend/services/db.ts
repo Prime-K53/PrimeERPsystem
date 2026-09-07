@@ -2,7 +2,7 @@ import { openDB, DBSchema, IDBPDatabase, deleteDB } from 'idb';
 import { logger } from '@/services/logger';
 import {
     Item, Warehouse, Purchase, Sale, Quotation, JobOrder, CustomerPayment, BillOfMaterial, ProductionBatch, WorkOrder, WorkCenter, ProductionResource, Account, LedgerEntry, Invoice, RecurringInvoice, Expense, Income, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, User, ResourceAllocation, GoodsReceipt, UserRole, SMSCampaign, Subscriber, SMSTemplate, Cheque, Shipment, SubcontractOrder, MaintenanceLog, AuditLogEntry, SystemAlert, Reminder, ExamJob, ExamPaper, ExamPrintingBatch, School, Customer, Supplier, SupplierPayment, Order, PurchaseAllocation, VatTransaction, VatReturn, BOMTemplate, MarketAdjustment, MarketAdjustmentTransaction, UserGroup, MaterialCategory, WarehouseInventory, MaterialBatch, InventoryTransaction, MaterialReservation, RoundingLog, ExaminationJob, ExaminationJobSubject, ExaminationInvoiceGroup, ExaminationRecurringProfile, ExaminationInventoryDeduction, CustomerReceiptSnapshot, ExaminationBatchNotification, NotificationAuditLog,     SalesOrder, JobTicket, JobTicketSettings,
-    TaxRate
+    TaxRate, FixedAsset, DepreciationEntry, AssetDisposal, OwnerEquityTransaction, Loan, LoanRepayment, AccrualEntry, IncomeSummaryEntry, PurchaseOrder, PurchaseInvoice, InterestIncomeEntry, Prepayment, PrepaymentAmortization, StaffAdvance, UtilityExpense, UtilityPayment, BankChargeEntry, PayrollEntry
 } from '../types';
 import type { Referral, ReferralReward } from '../types/referral';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
@@ -142,11 +142,29 @@ interface NexusDB extends DBSchema {
     referralReversals: { key: string; value: ReversalRequest; };
     referralEventHistory: { key: string; value: ReferralEvent; };
     portalAds: { key: string; value: PortalAd; };
+    fixedAssets: { key: string; value: FixedAsset; };
+    depreciationEntries: { key: string; value: DepreciationEntry; };
+    assetDisposals: { key: string; value: AssetDisposal; };
+    ownerEquityTransactions: { key: string; value: OwnerEquityTransaction; };
+    loans: { key: string; value: Loan; };
+    loanRepayments: { key: string; value: LoanRepayment; };
+    accrualEntries: { key: string; value: AccrualEntry; };
+    incomeSummaryEntries: { key: string; value: IncomeSummaryEntry; };
+    purchaseOrders: { key: string; value: PurchaseOrder; };
+    purchaseInvoices: { key: string; value: PurchaseInvoice; };
+    interestIncomeEntries: { key: string; value: InterestIncomeEntry; };
+    prepayments: { key: string; value: Prepayment; };
+    prepaymentAmortizations: { key: string; value: PrepaymentAmortization; };
+    staffAdvances: { key: string; value: StaffAdvance; };
+    utilityExpenses: { key: string; value: UtilityExpense; };
+    utilityPayments: { key: string; value: UtilityPayment; };
+    bankChargeEntries: { key: string; value: BankChargeEntry; };
+    payrollEntries: { key: string; value: PayrollEntry; };
 
 }
 
 const DB_NAME = 'PrimeERP_Final_v3_Clean';
-const DB_VERSION = 53;
+const DB_VERSION = 54;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -546,6 +564,24 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'referralReversals',
     'referralEventHistory',
     'portalAds',
+    'fixedAssets',
+    'depreciationEntries',
+    'assetDisposals',
+    'ownerEquityTransactions',
+    'loans',
+    'loanRepayments',
+    'accrualEntries',
+    'incomeSummaryEntries',
+    'purchaseOrders',
+    'purchaseInvoices',
+    'interestIncomeEntries',
+    'prepayments',
+    'prepaymentAmortizations',
+    'staffAdvances',
+    'utilityExpenses',
+    'utilityPayments',
+    'bankChargeEntries',
+    'payrollEntries',
 
 ];
 

@@ -155,6 +155,11 @@ const Budgets = lazyWithRetry('./views/accounts/Budgets', () => import('./views/
 const Banking = lazyWithRetry('./views/accounts/Banking', () => import('./views/accounts/Banking'));
 const Transfers = lazyWithRetry('./views/accounts/Transfers', () => import('./views/accounts/Transfers'));
 const Payroll = lazyWithRetry('./views/accounts/Payroll', () => import('./views/accounts/Payroll'));
+const FixedAssets = lazyWithRetry('./views/accounts/FixedAssets', () => import('./views/accounts/FixedAssets'));
+const Loans = lazyWithRetry('./views/accounts/Loans', () => import('./views/accounts/Loans'));
+const OwnerEquity = lazyWithRetry('./views/accounts/OwnerEquity', () => import('./views/accounts/OwnerEquity'));
+const YearEndClosing = lazyWithRetry('./views/accounts/YearEndClosing', () => import('./views/accounts/YearEndClosing'));
+const FinanceHub = lazyWithRetry('./views/FinanceHub', () => import('./views/FinanceHub'));
 const AuditLogs = lazyWithRetry('./views/AuditLogs', () => import('./views/AuditLogs'));
 const Forecasting = lazyWithRetry('./views/Forecasting', () => import('./views/Forecasting'));
 const ItemDetailPage = lazyWithRetry('./views/inventory/ItemDetail/ItemDetailPage', () => import('./views/inventory/ItemDetail/ItemDetailPage'));
@@ -991,7 +996,13 @@ const AppLayout: React.FC = () => {
                   <Route path="/accounts/transfers" element={<ProtectedRoute permission="accounts.view"><Transfers /></ProtectedRoute>} />
                   <Route path="/accounts/payroll" element={<ProtectedRoute permission="accounts.view"><Payroll /></ProtectedRoute>} />
                   <Route path="/accounts/chart-of-accounts" element={<ProtectedRoute permission="accounts.view"><ChartOfAccounts /></ProtectedRoute>} />
+                  <Route path="/accounts/fixed-assets" element={<ProtectedRoute permission="accounts.view"><FixedAssets /></ProtectedRoute>} />
+                  <Route path="/accounts/loans" element={<ProtectedRoute permission="accounts.view"><Loans /></ProtectedRoute>} />
+                  <Route path="/accounts/owner-equity" element={<ProtectedRoute permission="accounts.view"><OwnerEquity /></ProtectedRoute>} />
+                  <Route path="/accounts/year-end-closing" element={<ProtectedRoute permission="accounts.view"><YearEndClosing /></ProtectedRoute>} />
                 </Route>
+
+                <Route path="/finance" element={<ErrorBoundary name="FinanceHub"><FinanceHub /></ErrorBoundary>} />
 
                 <Route path="/architect" element={<ErrorBoundary name="Architect"><Architect /></ErrorBoundary>} />
                 {/* AI Workspace */}

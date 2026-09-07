@@ -64,7 +64,13 @@ export const getGLConfig = () => {
         otherExpensesAccount: '54000',
         prepaymentsAccount: '11510',
         staffAdvancesAccount: '11520',
-        discountReceivedAccount: '42200'
+        discountReceivedAccount: '42200',
+        vatPayableAccount: '21210',
+        vatReceivableAccount: '21310',
+        utilitiesAccount: '52300',
+        telephoneAccount: '52400',
+        internetAccount: '52500',
+        printingAccount: '52600'
     };
 
     if (saved) {

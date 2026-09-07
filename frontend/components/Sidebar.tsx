@@ -14,7 +14,8 @@ import {
   CheckCircle, MonitorPlay, Maximize, Share2, Sparkles,
   Smartphone, FileSpreadsheet, BookOpen, FileCheck, History,
   Calculator, Search, GitFork,
-  Gift, Calendar, FileSearch, Receipt, Inbox, Megaphone, BadgePercent
+  Gift, Calendar, FileSearch, Receipt, Inbox, Megaphone, BadgePercent,
+  Building2, UserCog, CalendarCheck
 } from 'lucide-react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -293,11 +294,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
       group: "Capital",
       visible: companyConfig?.enabledModules?.accounting,
       items: [
-        { label: 'Banking & Finance', path: '/accounts/banking', icon: <Bank size={18} /> },
+            { label: 'Banking & Finance', path: '/accounts/banking', icon: <Bank size={18} /> },
         { label: 'Account Transfers', path: '/accounts/transfers', icon: <ArrowRightLeft size={18} /> },
         { label: 'VAT Module', path: '/vat', icon: <FileText size={18} /> },
+        { label: 'Finance Hub', path: '/finance', icon: <LayoutDashboard size={18} /> },
         { label: 'Chart of Accounts', path: '/accounts/chart-of-accounts', icon: <Landmark size={18} /> },
         { label: 'Payroll Engine', path: '/accounts/payroll', icon: <Users size={18} />, visible: companyConfig?.enabledModules?.payroll },
+        { label: 'Fixed Assets', path: '/accounts/fixed-assets', icon: <Building2 size={18} /> },
+        { label: 'Loans & Borrowings', path: '/accounts/loans', icon: <Landmark size={18} /> },
+        { label: 'Owner Equity', path: '/accounts/owner-equity', icon: <UserCog size={18} /> },
+        { label: 'Year-End Closing', path: '/accounts/year-end-closing', icon: <CalendarCheck size={18} /> },
         {
           label: 'Fiscal Reports',
           path: '/fiscal-reports',

@@ -6,6 +6,7 @@ import { useInventoryStore } from '../stores/inventoryStore';
 import { Account, LedgerEntry, Invoice, Expense, RecurringInvoice, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, Income, Cheque, ZReport, SupplierPayment, CustomerPayment } from '../types';
 import { useAuth } from './AuthContext'; 
 import { transactionService } from '../services/transactionService';
+import { openingBalanceService } from '../services/openingBalanceService';
 import { dbService } from '../services/db';
 import { roundFinancial, generateNextId, formatNumber } from '../utils/helpers';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
@@ -52,6 +53,7 @@ interface FinanceContextType {
   
   postJournalEntry: (entries: Omit<LedgerEntry, 'id' | 'date'>[]) => Promise<void>;
   syncInventoryValuation: (accountId: string, physicalValue: number, currentLedgerBalance: number) => Promise<void>;
+  openInventory: () => Promise<any>;
   toggleReconciled: (id: string) => void;
   
   addRecurringInvoice: (inv: RecurringInvoice) => void;
@@ -99,8 +101,9 @@ const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const financeStore = useFinanceStore();
   const salesStore = useSalesStore();
-  const inventoryStore = useInventoryStore(); 
-  const { companyConfig, notify, addAuditLog, auditLogs, user, isInitialized } = useAuth();
+   const inventoryStore = useInventoryStore();
+   const inventory = useInventoryStore(s => s.inventory);
+   const { companyConfig, notify, addAuditLog, auditLogs, user, isInitialized } = useAuth();
 
    const gl = companyConfig?.glMapping || {
      defaultSalesAccount: '41100',
@@ -160,21 +163,43 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
   };
 
-  const syncInventoryValuation = async (accountId: string, physicalValue: number, currentLedgerBalance: number) => {
-      try {
-          await transactionService.syncInventoryValuation(accountId, physicalValue, currentLedgerBalance);
-          await financeStore.fetchFinanceData();
-          notify(`Inventory valuation synchronized with ledger`, 'success');
-          addAuditLog({
-              action: 'UPDATE',
-              entityType: 'Ledger',
-              entityId: accountId,
-              details: `Synced inventory ledger (${currentLedgerBalance}) with physical valuation (${physicalValue})`
-          });
-      } catch (err: any) {
-          notify(`Sync Error: ${err.message}`, 'error');
-      }
-  };
+const inventory = useInventoryStore(s => s.inventory);
+
+    const openInventory = async () => {
+        try {
+            const result = await openingBalanceService.openInventory();
+            await financeStore.fetchFinanceData();
+            if (result.alreadyOpened) {
+                notify('Opening inventory already exists', 'info');
+            } else {
+                notify(`Opening inventory posted: ${result.entriesPosted} entries (K${result.totalDebit.toLocaleString()})`, 'success');
+            }
+            addAuditLog({
+                action: 'CREATE',
+                entityType: 'OpeningInventory',
+                entityId: result.journalId,
+                details: `Opening inventory journal: ${result.entriesPosted} entries, total K${result.totalDebit.toLocaleString()}`
+            });
+        } catch (err: any) {
+            notify(`Opening Inventory Error: ${err.message}`, 'error');
+        }
+    };
+
+   const syncInventoryValuation = async (accountId: string, physicalValue: number, currentLedgerBalance: number, inventoryItems?: any[]) => {
+        try {
+            await transactionService.syncInventoryValuation(accountId, physicalValue, currentLedgerBalance, inventoryItems || inventory);
+            await financeStore.fetchFinanceData();
+            notify(`Inventory valuation synchronized with ledger`, 'success');
+            addAuditLog({
+                action: 'UPDATE',
+                entityType: 'Ledger',
+                entityId: accountId,
+                details: `Synced inventory ledger (${currentLedgerBalance}) with physical valuation (${physicalValue})`
+            });
+        } catch (err: any) {
+            notify(`Sync Error: ${err.message}`, 'error');
+        }
+    };
 
   const runPayroll = async (month: string, date: string, employeesToPay: Employee[]) => {
       const runId = generateNextId('PAY', financeStore.payrollRuns, companyConfig);
@@ -834,7 +859,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     <FinanceContext.Provider value={{
       ...financeStore, addInvoice, updateInvoice, addExpense, approveExpense, addIncome, postJournalEntry,
       createDeliveryNote, executeTransfer, runPayroll, addCheque, updateCheque: financeStore.updateCheque, deleteCheque: financeStore.deleteCheque,
-      recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation,
+      recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory,
       addAccount: financeStore.addAccount, updateAccount: financeStore.updateAccount, deleteAccount: financeStore.deleteAccount,
       deleteInvoice, updateIncome: financeStore.updateIncome, deleteIncome: financeStore.deleteIncome,
       toggleReconciled: financeStore.toggleReconciled, addRecurringInvoice: financeStore.addRecurringInvoice, deleteRecurringInvoice: financeStore.deleteRecurringInvoice, updateRecurringInvoice: financeStore.updateRecurringInvoice,

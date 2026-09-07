@@ -1966,15 +1966,52 @@ export interface VatTransaction {
   description?: string;
   isFiled?: boolean;
   customerName?: string;
+  companyId?: string;
+  glEntryId?: string;
+  returnId?: string;
+  created_at?: string;
   [key: string]: any;
 }
 
 export interface VatReturn {
   id: string;
-  period: string;
-  outputVat: number;
-  inputVat: number;
-  netVat: number;
+  periodStart: string;
+  periodEnd: string;
+  totalInputTax: number;
+  totalOutputTax: number;
+  netPayable: number;
+  status: 'Draft' | 'Filed' | 'Paid';
+  transactions?: string[];
+  filingDate?: string;
+  paymentDate?: string;
+  [key: string]: any;
+}
+
+export interface UtilityExpense {
+  id: string;
+  utility_type: 'electricity' | 'water' | 'telephone' | 'internet' | 'printing' | 'other';
+  provider: string;
+  account_number: string;
+  amount: number;
+  period_start: string;
+  period_end: string;
+  status: 'pending' | 'accrued' | 'partial' | 'paid';
+  description?: string;
+  paid_amount?: number;
+  companyId?: string;
+  created_at: string;
+  updated_at?: string;
+  [key: string]: any;
+}
+
+export interface UtilityPayment {
+  id: string;
+  expense_id: string;
+  amount: number;
+  payment_date: string;
+  bank_account_id: string;
+  reference?: string;
+  created_at: string;
   [key: string]: any;
 }
 

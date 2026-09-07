@@ -3519,44 +3519,84 @@ export const transactionService = {
         );
     },
 
-    async syncInventoryValuation(accountId: string, physicalValue: number, currentLedgerBalance: number) {
+    async syncInventoryValuation(accountId: string, physicalValue: number, currentLedgerBalance: number, inventoryItems?: any[]) {
         return dbService.executeAtomicOperation(
-            ['ledger', 'accounts'],
+            ['ledger', 'accounts', 'inventory'],
             async (tx) => {
                 const ledgerStore = tx.objectStore('ledger');
-
                 const accounts = await loadAccountsFromStore(tx);
-                const companyConfig = getCompanyConfig();
-                const companyId = companyConfig?.companyId;
-                const accountOptions = { allowNonPosting: false, companyId };
-                const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) {
-                        throw new UnresolvedAccountError(ref || 'undefined');
-                    }
-                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
-                    if (!resolved) {
-                        throw new UnresolvedAccountError(ref);
-                    }
-                    return resolved;
-                };
+                const getAccountCode = (acc: any): string => acc.account_number || acc.code || acc.id;
 
-                const diff = physicalValue - currentLedgerBalance;
+                const allEntries = await ledgerStore.getAll();
+                const childAccountBalances: Record<string, number> = {};
 
-                if (Math.abs(diff) > 0.01) {
-                    const gl = getGLConfig();
-                    const entry: LedgerEntry = {
-                        id: generateId('LG-SYNC'),
-                        date: new Date().toISOString(),
-                        description: `Inventory Valuation Sync: Physical(${physicalValue}) vs Ledger(${currentLedgerBalance})`,
-                        debitAccountId: diff > 0 ? accountId : resolveAcct(gl.defaultCOGSAccount),
-                        creditAccountId: diff > 0 ? resolveAcct(gl.defaultCOGSAccount) : accountId,
-                        amount: Math.abs(diff),
-                        referenceId: 'SYNC-INV',
-                        reconciled: true
-                    };
-                    await ledgerStore.put(entry);
+                if (inventoryItems && inventoryItems.length > 0) {
+                    for (const item of inventoryItems) {
+                        if (item.type === 'Service') continue;
+                        const childCode = resolveInventoryAccountByItemType(item.type, accounts);
+                        if (childCode) {
+                            const found = accounts.find(a => a.id === childCode || a.code === childCode || a.account_number === childCode);
+                            const childId = found?.id || childCode;
+                            const itemValue = (item.stock || 0) * (item.cost || 0);
+                            childAccountBalances[childId] = (childAccountBalances[childId] || 0) + itemValue;
+                        }
+                    }
+                } else {
+                    const targetAccount = accounts.find(a => a.id === accountId || a.code === accountId || a.account_number === accountId);
+                    if (targetAccount && targetAccount.allow_posting === false) {
+                        const childAccounts = accounts.filter(a => a.parent_account_id === accountId || a.parent_account_id === (targetAccount.account_number || targetAccount.code));
+                        for (const child of childAccounts) {
+                            const childCode = getAccountCode(child);
+                            const childBalance = allEntries.reduce((s: number, e: LedgerEntry) => {
+                                if (e.debitAccountId === childCode || e.debitAccountId === child.id) return s + e.amount;
+                                if (e.creditAccountId === childCode || e.creditAccountId === child.id) return s - e.amount;
+                                return s;
+                            }, 0);
+                            childAccountBalances[child.id] = childBalance;
+                        }
+                    } else {
+                        childAccountBalances[accountId] = currentLedgerBalance;
+                    }
                 }
-                return { success: true };
+
+                let totalPhysicalValue = 0;
+                let totalGLBalance = 0;
+                const childDetails: Record<string, { physical: number; gl: number; variance: number }> = {};
+
+                for (const [childAccountId, childPhysicalValue] of Object.entries(childAccountBalances)) {
+                    const childAccount = accounts.find(a => a.id === childAccountId);
+                    if (!childAccount) continue;
+                    const childCode = getAccountCode(childAccount);
+                    const childBalance = allEntries.reduce((s: number, e: LedgerEntry) => {
+                        if (e.debitAccountId === childCode || e.debitAccountId === childAccountId) return s + e.amount;
+                        if (e.creditAccountId === childCode || e.creditAccountId === childAccountId) return s - e.amount;
+                        return s;
+                    }, 0);
+                    const childLedgerBalance = childAccount.normal_balance === 'DEBIT' ? childBalance : -childBalance;
+                    const variance = childPhysicalValue - childLedgerBalance;
+
+                    childDetails[childAccountId] = {
+                        physical: childPhysicalValue,
+                        gl: childLedgerBalance,
+                        variance,
+                    };
+                    totalPhysicalValue += childPhysicalValue;
+                    totalGLBalance += childLedgerBalance;
+                }
+
+                const totalVariance = totalPhysicalValue - totalGLBalance;
+                const withinTolerance = Math.abs(totalVariance) <= 0.01;
+
+                return {
+                    success: true,
+                    alreadyReconciled: withinTolerance,
+                    withinTolerance,
+                    totalPhysicalValue,
+                    totalGLBalance,
+                    totalVariance,
+                    childDetails,
+                    entriesPosted: 0,
+                };
             }
         );
     },
