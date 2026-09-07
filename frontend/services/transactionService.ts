@@ -5153,7 +5153,7 @@ export const transactionService = {
         const incoming = salesOrderService.canonicalizeStatus(status);
         const incomingLegacyPayment = salesOrderService.legacyPaymentStatus(status);
         const result = await dbService.executeAtomicOperation(
-            ['salesOrders', 'inventory', 'ledger', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions'],
+            ['salesOrders', 'inventory', 'ledger', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'accounts'],
             async (tx) => {
                 const orderStore = tx.objectStore('salesOrders');
                 const inventoryStore = tx.objectStore('inventory');
@@ -5161,6 +5161,20 @@ export const transactionService = {
                 const bomTemplatesStore = tx.objectStore('bomTemplates');
                 const marketAdjustmentsStore = tx.objectStore('marketAdjustments');
                 const marketAdjustmentTransactionsStore = tx.objectStore('marketAdjustmentTransactions');
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
 
                 const order = await orderStore.get(orderId);
                 if (!order) {
@@ -5246,8 +5260,8 @@ export const transactionService = {
                             id: generateId('LG-COGS'),
                             date: new Date().toISOString(),
                             description: `COGS - Order #${order.orderNumber}`,
-                            debitAccountId: gl.defaultCOGSAccount,
-                            creditAccountId: inventoryAccountId || gl.defaultInventoryAccount,
+                            debitAccountId: resolveAcct(gl.defaultCOGSAccount),
+                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
                             amount: Number(cogsTotal.toFixed(2)),
                             referenceId: order.id,
                             reconciled: false,
