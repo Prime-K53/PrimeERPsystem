@@ -149,7 +149,7 @@ function resolveInventoryAccountCodeByType(type: string): string | null {
   return null;
 }
 
-export async function openInventory(): Promise<OpeningInventoryResult> {
+export async function openInventory(options: { forceRebuild?: boolean } = {}): Promise<OpeningInventoryResult> {
   return dbService.executeAtomicOperation(
     ['ledger', 'accounts', 'inventory', 'idempotencyKeys'],
     async (tx) => {
@@ -172,20 +172,31 @@ export async function openInventory(): Promise<OpeningInventoryResult> {
       const openingEquityAccount = gl.ownerCapitalAccount || gl.retainedEarningsAccount || '32000';
 
       const allEntries = await ledgerStore.getAll();
-      const existingOpening = allEntries.find(
+      const existingOpenings = allEntries.filter(
         (e: LedgerEntry) => e.referenceId === OPENING_INVENTORY_REFERENCE
       );
-      if (existingOpening) {
-        return {
-          success: true,
-          entriesPosted: 0,
-          alreadyOpened: true,
-          journalId: existingOpening.id,
-          details: [],
-          totalDebit: 0,
-          totalCredit: 0,
-          variance: 0,
-        };
+
+      if (existingOpenings.length > 0) {
+        if (options.forceRebuild) {
+          // Reverse all prior opening entries by deleting them - the new entries below
+          // will recreate the opening at the current valuation. Note: this is a destructive
+          // operation that removes the prior opening journal from the ledger; if you need
+          // an audit trail, use a separate reversal entry instead.
+          for (const priorEntry of existingOpenings) {
+            await ledgerStore.delete(priorEntry.id);
+          }
+        } else {
+          return {
+            success: true,
+            entriesPosted: 0,
+            alreadyOpened: true,
+            journalId: existingOpenings[0].id,
+            details: [],
+            totalDebit: 0,
+            totalCredit: 0,
+            variance: 0,
+          };
+        }
       }
 
       const inventory = await inventoryStore.getAll();
