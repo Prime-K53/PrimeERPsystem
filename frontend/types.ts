@@ -648,6 +648,382 @@ export interface AccountTreeNode extends Account {
   isExpanded?: boolean;
   balance?: number;
 }
+
+export type DepreciationMethod = 'straight_line' | 'declining_balance' | 'sum_of_years';
+
+export interface FixedAsset {
+  id: string;
+  company_id?: string;
+  asset_code: string;
+  name: string;
+  description?: string;
+  category: FixedAssetCategory;
+  acquisition_date: string;
+  acquisition_cost: number;
+  salvage_value: number;
+  useful_life_years: number;
+  depreciation_method: DepreciationMethod;
+  depreciation_rate?: number;
+  residual_value?: number;
+  location?: string;
+  assigned_to?: string;
+  status: FixedAssetStatus;
+  fixed_asset_account_id: string;
+  accumulated_depreciation_account_id: string;
+  depreciation_expense_account_id: string;
+  disposal_date?: string;
+  disposal_proceeds?: number;
+  disposal_gain_loss?: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
+export type FixedAssetCategory = 'motor_vehicle' | 'furniture' | 'computer_equipment' | 'building' | 'machinery' | 'office_equipment' | 'other';
+
+export type FixedAssetStatus = 'active' | 'fully_depreciated' | 'disposed' | 'under_maintenance';
+
+export interface DepreciationEntry {
+  id: string;
+  fixed_asset_id: string;
+  period_year: number;
+  period_month: number;
+  depreciation_amount: number;
+  accumulated_depreciation: number;
+  book_value: number;
+  journal_entry_id?: string;
+  created_at: string;
+}
+
+export interface AssetDisposal {
+  id: string;
+  fixed_asset_id: string;
+  disposal_date: string;
+  disposal_proceeds: number;
+  original_cost: number;
+  accumulated_depreciation: number;
+  gain_loss: number;
+  journal_entry_id?: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface OwnerEquityTransaction {
+  id: string;
+  company_id?: string;
+  transaction_type: 'capital_contribution' | 'capital_withdrawal' | 'profit_distribution' | 'loss_allocation';
+  amount: number;
+  description: string;
+  reference?: string;
+  owner_account_id: string;
+  capital_account_id: string;
+  drawings_account_id: string;
+  date: string;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface BankChargeEntry {
+  id: string;
+  bank_account_id: string;
+  date: string;
+  description: string;
+  amount: number;
+  journal_entry_id?: string;
+  created_at: string;
+}
+
+export interface Employee {
+  id: string;
+  company_id?: string;
+  employee_number: string;
+  first_name: string;
+  last_name: string;
+  email?: string;
+  phone?: string;
+  department: string;
+  position: string;
+  join_date: string;
+  termination_date?: string;
+  status: 'active' | 'inactive' | 'terminated';
+  basic_salary: number;
+  pay_frequency: 'monthly' | 'bi-weekly' | 'weekly';
+  paye_number?: string;
+  bank_account_number?: string;
+  bank_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PayrollEntry {
+  id: string;
+  company_id?: string;
+  employee_id: string;
+  pay_period_start: string;
+  pay_period_end: string;
+  payment_date: string;
+  basic_salary: number;
+  gross_salary: number;
+  total_deductions: number;
+  net_salary: number;
+  paye_amount: number;
+  pension_amount?: number;
+  other_deductions?: number;
+  deduction_description?: string;
+  status: 'draft' | 'pending' | 'processed' | 'paid';
+  journal_entry_id?: string;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface Loan {
+  id: string;
+  company_id?: string;
+  loan_type: 'bank_loan' | 'other_loan' | 'shareholder_loan';
+  lender_name: string;
+  account_number?: string;
+  principal_amount: number;
+  current_balance: number;
+  interest_rate: number;
+  interest_rate_type: 'fixed' | 'variable';
+  repayment_terms_months: number;
+  start_date: string;
+  end_date?: string;
+  repayment_frequency: 'monthly' | 'quarterly' | 'annually';
+  collateral?: string;
+  status: 'active' | 'fully_paid' | 'defaulted' | 'cancelled';
+  grace_period_months?: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LoanRepayment {
+  id: string;
+  loan_id: string;
+  repayment_date: string;
+  principal_amount: number;
+  interest_amount: number;
+  total_payment: number;
+  remaining_balance: number;
+  journal_entry_id?: string;
+  reference?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface AccrualEntry {
+  id: string;
+  company_id?: string;
+  accrual_type: 'salary_accrual' | 'wage_accrual' | 'interest_accrual' | 'expense_accrual' | 'tax_accrual';
+  description: string;
+  account_id: string;
+  accrued_amount: number;
+  reversal_date?: string;
+  journal_entry_id?: string;
+  period_year: number;
+  period_month: number;
+  status: 'pending' | 'reversed' | 'posted';
+  created_at: string;
+  created_by?: string;
+}
+
+export interface IncomeSummaryEntry {
+  id: string;
+  company_id?: string;
+  account_id: string;
+  account_name: string;
+  closing_type: 'income' | 'expense' | 'net_profit' | 'net_loss';
+  amount: number;
+  fiscal_year: number;
+  journal_entry_id?: string;
+  created_at: string;
+}
+
+export interface Supplier {
+  id: string;
+  company_id?: string;
+  supplier_code: string;
+  name: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  tax_id?: string;
+  payment_terms_days: number;
+  status: 'active' | 'inactive';
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplier_id: string;
+  order_number: string;
+  order_date: string;
+  expected_delivery_date?: string;
+  status: 'draft' | 'pending' | 'approved' | 'received' | 'partial' | 'cancelled';
+  items: PurchaseOrderItem[];
+  subtotal: number;
+  tax_amount: number;
+  freight_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  item_id?: string;
+  item_name: string;
+  description?: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  received_quantity?: number;
+}
+
+export interface GoodsReceipt {
+  id: string;
+  purchase_order_id: string;
+  receipt_number: string;
+  receipt_date: string;
+  supplier_id: string;
+  items: GoodsReceiptItem[];
+  status: 'pending' | 'completed' | 'cancelled';
+  notes?: string;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface GoodsReceiptItem {
+  purchase_order_item_id: string;
+  item_id?: string;
+  item_name: string;
+  quantity_ordered: number;
+  quantity_received: number;
+  unit_cost: number;
+  total: number;
+}
+
+export interface PurchaseInvoice {
+  id: string;
+  supplier_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string;
+  purchase_order_id?: string;
+  goods_receipt_id?: string;
+  status: 'draft' | 'pending' | 'paid' | 'partial' | 'cancelled';
+  subtotal: number;
+  tax_amount: number;
+  freight_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  paid_amount: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchasePayment {
+  id: string;
+  supplier_id: string;
+  invoice_id?: string;
+  payment_date: string;
+  amount: number;
+  payment_method: 'cash' | 'bank_transfer' | 'cheque';
+  bank_account_id?: string;
+  reference?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface SupplierPayment {
+  id: string;
+  supplier_id: string;
+  invoice_id?: string;
+  payment_date: string;
+  amount: number;
+  payment_method: 'cash' | 'bank_transfer' | 'cheque' | 'mobile_money';
+  bank_account_id?: string;
+  reference?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface Prepayment {
+  id: string;
+  company_id?: string;
+  prepayment_type: 'rent' | 'insurance' | 'subscription' | 'deposit' | 'other';
+  description: string;
+  payee: string;
+  amount: number;
+  payment_date: string;
+  start_date: string;
+  end_date?: string;
+  amortization_periods: number;
+  periods_remaining: number;
+  account_id: string;
+  bank_account_id: string;
+  status: 'active' | 'expired' | 'written_off';
+  journal_entry_id?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrepaymentAmortization {
+  id: string;
+  prepayment_id: string;
+  amortization_date: string;
+  amount: number;
+  periods_amortized: number;
+  journal_entry_id?: string;
+  created_at: string;
+}
+
+export interface StaffAdvance {
+  id: string;
+  employee_id?: string;
+  employee_name?: string;
+  advance_number: string;
+  amount: number;
+  purpose: string;
+  issue_date: string;
+  expected_repayment_date?: string;
+  actual_repayment_date?: string;
+  repayment_amount: number;
+  status: 'pending' | 'partial' | 'repaid' | 'written_off';
+  journal_entry_id?: string;
+  deductions?: { payroll_date: string; amount: number }[];
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InterestIncomeEntry {
+  id: string;
+  company_id?: string;
+  bank_account_id: string;
+  interest_type: 'deposit_interest' | 'loan_interest' | 'other';
+  description: string;
+  amount: number;
+  accrual_date: string;
+  received_date?: string;
+  journal_entry_id?: string;
+  status: 'accrued' | 'received' | 'reversed';
+  reference?: string;
+  created_at: string;
+}
+
 export type Warehouse = any; // TIER 2: Added as any due to missing definitions
 export type WorkCenter = any; // TIER 2: Added as any due to missing definitions
 export type ProductionResource = any; // TIER 2: Added as any due to missing definitions

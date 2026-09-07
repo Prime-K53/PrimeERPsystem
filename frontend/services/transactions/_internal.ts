@@ -43,7 +43,28 @@ export const getGLConfig = () => {
         defaultExpenseAccount: '52000',
         defaultLaborWagesAccount: '52100',
         retainedEarningsAccount: '32000',
-        roundingAccount: '54000'
+        roundingAccount: '52900',
+        fixedAssetAccount: '12100',
+        accumulatedDepreciationAccount: '12500',
+        depreciationExpenseAccount: '53000',
+        ownerCapitalAccount: '31000',
+        ownerDrawingsAccount: '34000',
+        bankChargesAccount: '52900',
+        interestExpenseAccount: '54100',
+        interestIncomeAccount: '42100',
+        payePayableAccount: '21220',
+        salariesExpenseAccount: '52100',
+        accruedExpensesAccount: '21300',
+        bankLoansAccount: '22100',
+        otherLoansAccount: '22200',
+        currentYearEarningsAccount: '33000',
+        purchasesAccount: '51100',
+        freightAccount: '51300',
+        officeExpensesAccount: '52800',
+        otherExpensesAccount: '54000',
+        prepaymentsAccount: '11510',
+        staffAdvancesAccount: '11520',
+        discountReceivedAccount: '42200'
     };
 
     if (saved) {
@@ -923,4 +944,99 @@ export function computeHierarchicalBalances(
     }
     
     return result;
+}
+
+/**
+ * Diagnostic utility for inventory ↔ GL reconciliation.
+ * Reports physical inventory valuation, GL inventory balance, and variance
+ * broken down by inventory category (Merchandise, Raw Materials, Finished Goods).
+ */
+export function computeInventoryReconciliation(
+    inventoryItems: any[],
+    accounts: any[],
+    ledgerEntries: any[]
+): {
+    physicalInventoryValue: number;
+    glInventoryValue: number;
+    variance: number;
+    merchandiseValue: number;
+    rawMaterialsValue: number;
+    finishedGoodsValue: number;
+    glMerchandiseValue: number;
+    glRawMaterialsValue: number;
+    glFinishedGoodsValue: number;
+    unclassifiedItems: any[];
+    negativeInventoryItems: any[];
+    zeroCostItems: any[];
+} {
+    const INVENTORY_CHILD_CODES = ['11410', '11420', '11430'];
+    const PARENT_INVENTORY_CODE = '11400';
+
+    // Calculate physical inventory valuation by category
+    let merchandiseValue = 0;
+    let rawMaterialsValue = 0;
+    let finishedGoodsValue = 0;
+    let unclassifiedItems: any[] = [];
+    let negativeInventoryItems: any[] = [];
+    let zeroCostItems: any[] = [];
+
+    for (const item of inventoryItems || []) {
+        if (item.type === 'Service') continue;
+        const stock = item.stock || 0;
+        const cost = item.cost || item.costPrice || 0;
+        const value = stock * cost;
+
+        if (stock < 0) negativeInventoryItems.push(item);
+        if (cost <= 0 && stock > 0) zeroCostItems.push(item);
+
+        const type = (item.type || '').toLowerCase();
+        if (type === 'product' || type === 'finished good' || type === 'finished goods') {
+            merchandiseValue += value;
+        } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
+            rawMaterialsValue += value;
+        } else {
+            unclassifiedItems.push(item);
+        }
+    }
+
+    finishedGoodsValue = merchandiseValue; // Product type maps to Finished Goods/11410
+
+    // Calculate GL balances for each inventory child account
+    const getAccountCode = (acc: any): string => acc.account_number || acc.code || acc.id;
+
+    const glBalances: Record<string, number> = {};
+    for (const code of INVENTORY_CHILD_CODES) {
+        const account = accounts.find(a => getAccountCode(a) === code);
+        if (!account) { glBalances[code] = 0; continue; }
+
+        const balance = ledgerEntries.reduce((s: number, e: any) => {
+            if (e.debitAccountId === code || e.debitAccountId === account.id) return s + e.amount;
+            if (e.creditAccountId === code || e.creditAccountId === account.id) return s - e.amount;
+            return s;
+        }, 0);
+
+        glBalances[code] = account.normal_balance === 'DEBIT' ? balance : -balance;
+    }
+
+    const glMerchandiseValue = glBalances['11410'] || 0;
+    const glRawMaterialsValue = glBalances['11420'] || 0;
+    const glFinishedGoodsValue = glBalances['11430'] || 0;
+    const glInventoryValue = glMerchandiseValue + glRawMaterialsValue + glFinishedGoodsValue;
+    const physicalInventoryValue = merchandiseValue + rawMaterialsValue;
+    const variance = physicalInventoryValue - glInventoryValue;
+
+    return {
+        physicalInventoryValue,
+        glInventoryValue,
+        variance,
+        merchandiseValue,
+        rawMaterialsValue,
+        finishedGoodsValue,
+        glMerchandiseValue,
+        glRawMaterialsValue,
+        glFinishedGoodsValue,
+        unclassifiedItems,
+        negativeInventoryItems,
+        zeroCostItems
+    };
 }

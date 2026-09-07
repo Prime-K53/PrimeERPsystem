@@ -6,7 +6,15 @@ import {
   ChevronDown,
   Plus,
   RefreshCw,
-  FileSpreadsheet
+  FileSpreadsheet,
+  MoreVertical,
+  Pencil,
+  Trash2,
+  Eye,
+  EyeOff,
+  BookOpen,
+  BarChart3,
+  Copy
 } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
@@ -69,6 +77,8 @@ const ChartOfAccounts: React.FC = () => {
   const [drilldownAccount, setDrilldownAccount] = useState<Account | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [activeCategory, setActiveCategory] = useState<string>('ASSET');
+  const [actionMenuAccountId, setActionMenuAccountId] = useState<string | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
 
   const [confirmState, setConfirmState] = useState<{
     open: boolean;
@@ -230,7 +240,8 @@ const ChartOfAccounts: React.FC = () => {
     setIsSubmitting(true);
     try {
       if (editingAccount) {
-        await updateAccount(editingAccount.id, data);
+        const updatedAccount = { ...editingAccount, ...data };
+        await updateAccount(updatedAccount);
         notify('Account updated successfully', 'success');
       } else {
         await addAccount(data as Account);
@@ -269,8 +280,10 @@ const ChartOfAccounts: React.FC = () => {
 
   const handleToggleActive = async (account: Account) => {
     try {
-      await updateAccount(account.id, { is_active: !account.is_active });
-      notify(`Account ${account.is_active ? 'deactivated' : 'activated'}`, 'success');
+      const newStatus = !account.is_active;
+      const updatedAccount = { ...account, is_active: newStatus };
+      await updateAccount(updatedAccount);
+      notify(`Account ${newStatus ? 'activated' : 'deactivated'}`, 'success');
     } catch (err: any) {
       notify(err.message || 'Failed to update account', 'error');
     }
@@ -296,17 +309,61 @@ const ChartOfAccounts: React.FC = () => {
     return () => observer.disconnect();
   }, [groupedByType]);
 
+  // Close action menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+        setActionMenuAccountId(null);
+      }
+    };
+    if (actionMenuAccountId) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [actionMenuAccountId]);
+
   const renderAccountRow = (account: Account, depth: number = 0) => {
     const code = account.account_number || account.code || '';
     const isExpanded = expandedNodes.has(code);
     // parent_account_id can be stored as either UUID (ACC-XXXX) or numeric (XXXXX)
     // So we compare using account_number which is always numeric
     const accountNum = account.account_number || account.code || '';
-    const hasChildren = accounts.some(a => 
+    const hasChildren = accounts.some(a =>
       (a.parent_account_id === accountNum) ||
       (a.parent_account_id === account.id)
     );
     const balance = accountBalances[account.id] || 0;
+    const isMenuOpen = actionMenuAccountId === account.id;
+
+    const handleActionClick = (action: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setActionMenuAccountId(null);
+
+      switch (action) {
+        case 'view-ledger':
+          setDrilldownAccount(account);
+          break;
+        case 'view-details':
+          setDrilldownAccount(account);
+          break;
+        case 'rename':
+          handleOpenModal(account, null);
+          break;
+        case 'toggle-active':
+          handleToggleActive(account);
+          break;
+        case 'delete':
+          handleDelete(account);
+          break;
+        case 'copy-code':
+          navigator.clipboard.writeText(accountNum);
+          notify(`Copied ${accountNum} to clipboard`, 'success');
+          break;
+        case 'add-child':
+          handleOpenModal(null, account);
+          break;
+      }
+    };
 
     return (
       <div key={account.id} className="relative">
@@ -335,9 +392,95 @@ const ChartOfAccounts: React.FC = () => {
           <span className="text-sm flex-1 min-w-0 truncate" style={{ color: ink }}>
             {account.name}
           </span>
+          {!account.is_active && (
+            <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#92400e' }}>
+              Inactive
+            </span>
+          )}
           <span className={`font-mono text-sm flex-none min-w-[9rem] text-right ${balance < 0 ? '' : ''}`} style={{ color: ink }}>
             {formatCurrency(balance)}
           </span>
+          {/* Quick Action Menu */}
+          <div className="relative flex-none ml-4" ref={isMenuOpen ? actionMenuRef : undefined}>
+            <button
+              className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+              style={{ color: inkSoft }}
+              onClick={(e) => { e.stopPropagation(); setActionMenuAccountId(isMenuOpen ? null : account.id); }}
+              title="Actions"
+            >
+              <MoreVertical size={14} />
+            </button>
+            {isMenuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 py-1 w-48 rounded-lg shadow-lg border z-50"
+                style={{ background: paper, borderColor: hairline }}
+              >
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                  style={{ color: ink }}
+                  onClick={(e) => handleActionClick('view-ledger', e)}
+                >
+                  <BookOpen size={14} />
+                  View Ledger
+                </button>
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                  style={{ color: ink }}
+                  onClick={(e) => handleActionClick('view-details', e)}
+                >
+                  <BarChart3 size={14} />
+                  Account Details
+                </button>
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                  style={{ color: ink }}
+                  onClick={(e) => handleActionClick('rename', e)}
+                >
+                  <Pencil size={14} />
+                  Rename
+                </button>
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                  style={{ color: ink }}
+                  onClick={(e) => handleActionClick('add-child', e)}
+                >
+                  <Plus size={14} />
+                  Add Sub-Account
+                </button>
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                  style={{ color: ink }}
+                  onClick={(e) => handleActionClick('copy-code', e)}
+                >
+                  <Copy size={14} />
+                  Copy Code
+                </button>
+                {canEdit && (
+                  <>
+                    <div className="my-1 border-t" style={{ borderColor: hairline }} />
+                    <button
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                      style={{ color: account.is_active ? amber[700] : assets }}
+                      onClick={(e) => handleActionClick('toggle-active', e)}
+                    >
+                      {account.is_active ? <EyeOff size={14} /> : <Eye size={14} />}
+                      {account.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    {!account.is_system_account && (
+                      <button
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                        style={{ color: danger }}
+                        onClick={(e) => handleActionClick('delete', e)}
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         {isExpanded && hasChildren && (
           <div style={{ background: `${paper}` }}>
@@ -512,7 +655,8 @@ const ChartOfAccounts: React.FC = () => {
                     <span className="w-5 flex-none"></span>
                     <span className="w-16 flex-none font-mono">Code</span>
                     <span className="flex-1 font-serif">Account</span>
-                    <span className="w-32 text-right font-mono" style={{ borderLeft: `1px solid ${hairline}`, paddingLeft: 12 }}>Balance</span>
+                    <span className="w-36 text-right font-mono pr-4">Balance</span>
+                    <span className="w-12 flex-none text-center ml-4">Actions</span>
                   </div>
 
                   {/* Account List */}
@@ -550,6 +694,10 @@ const ChartOfAccounts: React.FC = () => {
         <AccountDetailsDashboard
           account={drilldownAccount}
           onClose={() => setDrilldownAccount(null)}
+          onEdit={(account) => {
+            setDrilldownAccount(null);
+            handleOpenModal(account, null);
+          }}
         />
       )}
 
