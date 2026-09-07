@@ -178,6 +178,11 @@ const FinancialReports: React.FC = () => {
                 prevAmount: netIncome.previous
             };
         } else if (reportType === 'BalanceSheet') {
+            const totalAssets = getAccountRows(['Asset']).reduce((sum, a) => sum + a.balance, 0);
+            const totalLiabilities = getAccountRows(['Liability']).reduce((sum, a) => sum + a.balance, 0);
+            const totalEquity = getAccountRows(['Equity']).reduce((sum, a) => sum + a.balance, 0);
+            const currentYearEarnings = accountBalances.current['33000'] || 0;
+
             reportData.sections = [
                 {
                     title: 'Assets',
@@ -190,7 +195,7 @@ const FinancialReports: React.FC = () => {
                         })),
                         {
                             label: 'Total Assets',
-                            amount: getAccountRows(['Asset']).reduce((sum, a) => sum + a.balance, 0),
+                            amount: totalAssets,
                             prevAmount: getAccountRows(['Asset']).reduce((sum, a) => sum + (a.prevBalance || 0), 0),
                             isTotal: true
                         }
@@ -211,16 +216,16 @@ const FinancialReports: React.FC = () => {
                             amount: a.balance,
                             prevAmount: a.prevBalance
                         })),
-                        {
+                        ...(currentYearEarnings === 0 && netIncome.current !== 0 ? [{
                             label: 'Net Profit / (Loss) for Period',
                             amount: netIncome.current,
                             prevAmount: netIncome.previous,
-                            subText: 'Linked from Income Statement'
-                        },
+                            subText: 'Current Year Earnings (pre-closing)'
+                        }] : []),
                         {
                             label: 'Total Liabilities & Equity',
-                            amount: getAccountRows(['Liability']).reduce((sum, a) => sum + a.balance, 0) + getAccountRows(['Equity']).reduce((sum, a) => sum + a.balance, 0) + netIncome.current,
-                            prevAmount: getAccountRows(['Liability']).reduce((sum, a) => sum + (a.prevBalance || 0), 0) + getAccountRows(['Equity']).reduce((sum, a) => sum + (a.prevBalance || 0), 0) + netIncome.previous,
+                            amount: totalLiabilities + totalEquity,
+                            prevAmount: getAccountRows(['Liability']).reduce((sum, a) => sum + (a.prevBalance || 0), 0) + getAccountRows(['Equity']).reduce((sum, a) => sum + (a.prevBalance || 0), 0),
                             isTotal: true
                         }
                     ]
@@ -256,14 +261,14 @@ const FinancialReports: React.FC = () => {
             };
         } else if (reportType === 'EquityStatement') {
             const equityRows = getAccountRows(['Equity']);
-            const openingEquityRow = (accountBalances.current['3000'] || 0);
+            const openingEquityRow = (accountBalances.current['30000'] || 0);
             const netIncomeVal = netIncome.current;
             const totalEquityRow = equityRows.reduce((s, a) => s + a.balance, 0);
             const capitalContributions = equityRows
-                .filter(a => a.balance > 0 && a.code !== '3000')
+                .filter(a => a.balance > 0 && a.code !== '30000')
                 .reduce((s, a) => s + a.balance, 0);
             const drawings = equityRows
-                .filter(a => a.balance < 0 && a.code !== '3000')
+                .filter(a => a.balance < 0 && a.code !== '30000')
                 .reduce((s, a) => s + Math.abs(a.balance), 0);
 
             reportData.sections = [
@@ -275,7 +280,7 @@ const FinancialReports: React.FC = () => {
                         ...(capitalContributions !== 0 ? [{ label: 'Capital Contributions', amount: capitalContributions }] : []),
                         ...(drawings !== 0 ? [{ label: 'Drawings / Distributions', amount: -drawings }] : []),
                         ...equityRows
-                            .filter(a => a.code !== '3000')
+                            .filter(a => a.code !== '30000')
                             .map(a => ({ label: a.name, amount: a.balance, subText: a.code })),
                     ]
                 }
