@@ -2346,53 +2346,53 @@ if (type === 'POS_RECEIPT') {
         {type === 'FISCAL_REPORT' && 'sections' in data && (
           <View>
             {/* Professional Header Banner */}
-            <View style={{ marginBottom: 24, paddingBottom: 16, borderBottomWidth: 2, borderBottomColor: '#0f172a' }}>
+            <View style={{ marginBottom: 20, paddingBottom: 14, borderBottomWidth: 2, borderBottomColor: '#0f172a' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                {/* Company Info (left) */}
-                <View style={{ flex: 1 }}>
+                {/* Company Info (left, narrower) */}
+                <View style={{ width: '40%' }}>
                   {!!logo ? (
-                    <Image src={logo} style={{ width: 110, marginBottom: 8 }} />
+                    <Image src={logo} style={{ width: 80, marginBottom: 6 }} />
                   ) : (
-                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a', marginBottom: 4, letterSpacing: 0.3 }}>{companyName}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#0f172a', marginBottom: 3, letterSpacing: 0.3 }}>{companyName}</Text>
                   )}
-                  {!!companyAddress && <Text style={{ fontSize: 9, color: '#475569', lineHeight: 1.4, marginTop: 4 }}>{companyAddress}</Text>}
-                  {!!companyPhone && <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>Tel: {companyPhone}</Text>}
-                  {!!companyEmail && <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{companyEmail}</Text>}
+                  {!!companyAddress && <Text style={{ fontSize: 8, color: '#475569', lineHeight: 1.4, marginTop: 3 }}>{companyAddress}</Text>}
+                  {!!companyPhone && <Text style={{ fontSize: 8, color: '#475569', marginTop: 1 }}>Tel: {companyPhone}</Text>}
+                  {!!companyEmail && <Text style={{ fontSize: 8, color: '#475569', marginTop: 1 }}>{companyEmail}</Text>}
                 </View>
 
-                {/* Report Title (right) */}
-                <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 8, color: '#64748b', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 'bold' }}>Financial Report</Text>
-                  <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0f172a', marginTop: 4, letterSpacing: 0.5 }}>{data.reportName || 'Financial Report'}</Text>
-                  <Text style={{ fontSize: 10, color: '#475569', marginTop: 6, fontStyle: 'italic' }}>{data.period}</Text>
-                  <Text style={{ fontSize: 8, color: '#94a3b8', marginTop: 6 }}>Currency: {data.currency}</Text>
+                {/* Report Title (right, wider for long titles) */}
+                <View style={{ width: '58%', alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 7, color: '#64748b', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 'bold' }}>Financial Report</Text>
+                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a', marginTop: 3, letterSpacing: 0.3, textAlign: 'right' }}>{data.reportName || 'Financial Report'}</Text>
+                  <Text style={{ fontSize: 9, color: '#475569', marginTop: 4, fontStyle: 'italic', textAlign: 'right' }}>{data.period}</Text>
+                  <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 4 }}>Currency: {data.currency}</Text>
                 </View>
               </View>
             </View>
 
             {/* Period Summary Card */}
-            <View style={{ marginBottom: 24, padding: 14, backgroundColor: '#f8fafc', borderRadius: 6, borderLeftWidth: 4, borderLeftColor: '#2563eb' }}>
-              <Text style={{ fontSize: 9, color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5 }}>Reporting Period</Text>
-              <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0f172a', marginTop: 4 }}>{data.period}</Text>
+            <View style={{ marginBottom: 18, padding: 10, backgroundColor: '#f8fafc', borderLeftWidth: 3, borderLeftColor: '#2563eb' }}>
+              <Text style={{ fontSize: 7, color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5 }}>Reporting Period</Text>
+              <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#0f172a', marginTop: 2 }}>{data.period}</Text>
             </View>
 
             {/* Report Sections - Professional Table Layout */}
             {data.sections.map((section, idx) => (
-              <View key={idx} style={{ marginBottom: 20 }}>
+              <View key={idx} style={{ marginBottom: 16 }}>
                 {/* Section Header */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 4, marginBottom: 0 }}>
-                  <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#ffffff', textTransform: 'uppercase', letterSpacing: 1.5, flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', paddingVertical: 6, paddingHorizontal: 10 }}>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#ffffff', textTransform: 'uppercase', letterSpacing: 1.2, flex: 1 }}>
                     {section.title}
                   </Text>
                 </View>
 
-                {/* Column Header Row (for tables) */}
-                <View style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#e2e8f0', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }}>
-                  <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Account / Description</Text>
+                {/* Column Header Row */}
+                <View style={{ flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 10, backgroundColor: '#e2e8f0', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }}>
+                  <Text style={{ flex: 1, fontSize: 7, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Account / Description</Text>
                   {data.sections.some(s => s.rows.some(r => r.prevAmount !== undefined)) && (
-                    <Text style={{ width: 80, fontSize: 8, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Prior Period</Text>
+                    <Text style={{ width: 70, fontSize: 7, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Prior Period</Text>
                   )}
-                  <Text style={{ width: 90, fontSize: 8, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Amount ({data.currency})</Text>
+                  <Text style={{ width: 80, fontSize: 7, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Amount ({data.currency})</Text>
                 </View>
 
                 {/* Section Rows */}
@@ -2400,62 +2400,64 @@ if (type === 'POS_RECEIPT') {
                   <View key={rowIdx} style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    paddingVertical: row.isTotal ? 8 : 6,
-                    paddingHorizontal: 12,
+                    paddingVertical: row.isTotal ? 6 : 4,
+                    paddingHorizontal: 10,
                     backgroundColor: row.isTotal ? '#f1f5f9' : (rowIdx % 2 === 0 ? '#ffffff' : '#fafbfc'),
                     borderBottomWidth: row.isTotal ? 2 : 1,
                     borderColor: row.isTotal ? '#0f172a' : '#f1f5f9',
                     borderTopWidth: row.isTotal ? 2 : 0,
-                    marginTop: row.isTotal ? 4 : 0
+                    marginTop: row.isTotal ? 3 : 0
                   }} wrap={false}>
-                    <View style={{ flex: 1, marginLeft: row.indent ? 16 : 0 }}>
+                    <View style={{ flex: 1, marginLeft: row.indent ? 14 : 0 }}>
                       <Text style={{
-                        fontSize: row.isTotal ? 11 : 10,
+                        fontSize: row.isTotal ? 9 : 8.5,
                         fontWeight: row.isTotal ? 'bold' : 'normal',
                         color: row.isTotal ? '#0f172a' : '#334155'
                       }}>{row.label}</Text>
-                      {!!row.subText && <Text style={{ fontSize: 8, color: '#64748b', marginTop: 1 }}>{row.subText}</Text>}
+                      {!!row.subText && <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1 }}>{row.subText}</Text>}
                     </View>
                     {data.sections.some(s => s.rows.some(r => r.prevAmount !== undefined)) && (
-                      <Text style={{ width: 80, fontSize: row.isTotal ? 10 : 9, color: row.isTotal ? '#475569' : '#94a3b8', textAlign: 'right' }}>
-                        {row.prevAmount !== undefined ? `${data.currency}${formatAmount(row.prevAmount)}` : '—'}
+                      <Text style={{ width: 70, fontSize: row.isTotal ? 9 : 8, color: row.isTotal ? '#475569' : '#94a3b8', textAlign: 'right' }}>
+                        {row.prevAmount !== undefined ? `${formatAmount(row.prevAmount)}` : '—'}
                       </Text>
                     )}
                     <Text style={{
-                      width: 90,
-                      fontSize: row.isTotal ? 11 : 10,
+                      width: 80,
+                      fontSize: row.isTotal ? 9 : 8.5,
                       fontWeight: row.isTotal ? 'bold' : 'normal',
                       color: row.isTotal ? '#0f172a' : '#1e293b',
                       textAlign: 'right'
                     }}>
-                      {row.amount < 0 ? `(${data.currency}${formatAmount(Math.abs(row.amount))})` : `${data.currency}${formatAmount(row.amount)}`}
+                      {row.amount < 0 ? `(${formatAmount(Math.abs(row.amount))})` : `${formatAmount(row.amount)}`}
                     </Text>
                   </View>
                 ))}
               </View>
             ))}
+              </View>
+            ))}
 
             {/* Net Performance / Key Metric Banner */}
             {!!data.netPerformance && (
-              <View style={{ marginTop: 28, padding: 16, backgroundColor: '#0f172a', borderRadius: 6, borderTopWidth: 4, borderTopColor: '#2563eb' }}>
+              <View style={{ marginTop: 20, padding: 12, backgroundColor: '#0f172a', borderTopWidth: 3, borderTopColor: '#2563eb' }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View>
-                    <Text style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 'bold' }}>Key Performance Indicator</Text>
-                    <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: 'bold', marginTop: 4 }}>{data.netPerformance.label}</Text>
+                    <Text style={{ color: '#94a3b8', fontSize: 7, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 'bold' }}>Key Performance Indicator</Text>
+                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold', marginTop: 3 }}>{data.netPerformance.label}</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     {data.netPerformance.prevAmount !== undefined && (
-                      <Text style={{ color: '#94a3b8', fontSize: 9, marginBottom: 4 }}>
-                        Prior: {data.currency}{formatAmount(data.netPerformance.prevAmount)}
+                      <Text style={{ color: '#94a3b8', fontSize: 8, marginBottom: 3 }}>
+                        Prior: {formatAmount(data.netPerformance.prevAmount)}
                       </Text>
                     )}
                     <Text style={{
                       color: data.netPerformance.amount >= 0 ? '#4ade80' : '#f87171',
-                      fontSize: 18,
+                      fontSize: 14,
                       fontWeight: 'bold',
                       textAlign: 'right'
                     }}>
-                      {data.netPerformance.amount < 0 ? `(${data.currency}${formatAmount(Math.abs(data.netPerformance.amount))})` : `${data.currency}${formatAmount(data.netPerformance.amount)}`}
+                      {data.netPerformance.amount < 0 ? `(${formatAmount(Math.abs(data.netPerformance.amount))})` : `${formatAmount(data.netPerformance.amount)}`}
                     </Text>
                   </View>
                 </View>
@@ -2463,15 +2465,15 @@ if (type === 'POS_RECEIPT') {
             )}
 
             {/* Report Footer */}
-            <View style={{ marginTop: 30, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+            <View style={{ marginTop: 20, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View>
-                  <Text style={{ fontSize: 8, color: '#94a3b8' }}>Generated: {new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</Text>
-                  <Text style={{ fontSize: 8, color: '#94a3b8', marginTop: 2 }}>Prime ERP — Financial Reporting Module</Text>
+                  <Text style={{ fontSize: 7, color: '#94a3b8' }}>Generated: {new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</Text>
+                  <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1 }}>Prime ERP — Financial Reporting Module</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 8, color: '#94a3b8' }}>{data.reportName} • {data.period}</Text>
-                  <Text style={{ fontSize: 8, color: '#94a3b8', marginTop: 2, fontStyle: 'italic' }}>All amounts in {data.currency}</Text>
+                  <Text style={{ fontSize: 7, color: '#94a3b8' }}>{data.reportName}</Text>
+                  <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1, fontStyle: 'italic' }}>All amounts in {data.currency}</Text>
                 </View>
               </View>
             </View>
