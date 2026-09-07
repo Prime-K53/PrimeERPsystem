@@ -107,6 +107,10 @@ export const formatCurrency = (amount: number): string => {
   }).format(amount || 0);
 };
 
+export const getDefaultDate = (): string => {
+  return new Date().toISOString().split('T')[0];
+};
+
 export const parseFormattedNumber = (value: string): number => {
   if (!value) return 0;
   const cleaned = value.replace(/[^0-9.]/g, '');
