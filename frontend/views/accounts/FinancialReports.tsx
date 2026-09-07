@@ -43,30 +43,30 @@ const ReportRow: React.FC<ReportRowProps> = ({
     return (
         <div
             onClick={onClick}
-            className={`flex justify-between items-center py-2 px-1 border-b border-slate-100 group ${onClick ? 'cursor-pointer hover:bg-slate-50' : ''} ${isTotal ? 'border-t-2 border-slate-900 mt-4 pt-4 font-bold bg-slate-50/30' : ''} ${indent ? 'pl-8' : ''}`}
+            className={`flex justify-between items-center py-2.5 px-3 border-b border-slate-100 group print:py-1.5 print:px-2 ${onClick ? 'cursor-pointer hover:bg-slate-50' : ''} ${isTotal ? 'border-t-2 border-slate-900 mt-2 pt-3 font-bold bg-slate-100' : ''} ${indent ? 'pl-8' : ''}`}
         >
-            <div className="flex flex-col">
-                <span className={`${isTotal ? 'text-[#393A3D] uppercase' : 'text-sm text-slate-700'} font-semibold truncate`}>{label}</span>
-                {subText && <span className="text-[10px] text-slate-400 font-medium uppercase">{subText}</span>}
+            <div className="flex flex-col flex-1 min-w-0">
+                <span className={`${isTotal ? 'text-sm text-slate-900 uppercase tracking-wide' : 'text-sm text-slate-700'} font-semibold truncate print:text-xs`}>{label}</span>
+                {subText && <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{subText}</span>}
             </div>
 
-            <div className="flex items-center gap-8">
+            <div className="flex items-center gap-6 print:gap-4">
                 {showCompare && !isTotal && (
-                    <div className="flex flex-col items-end min-w-[100px]">
-                        <span className="text-xs text-slate-400">
-                            {prevAmount < 0 ? `(${currency}${Math.abs(prevAmount).toLocaleString()})` : `${currency}${prevAmount.toLocaleString()}`}
+                    <div className="flex flex-col items-end min-w-[100px] print:min-w-[80px]">
+                        <span className="text-xs text-slate-500 print:text-[10px]">
+                            {prevAmount < 0 ? `(${currency}${Math.abs(prevAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })})` : `${currency}${prevAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
                         </span>
-                        <span className={`text-[10px] font-bold ${variance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        <span className={`text-[10px] font-bold ${variance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                             {variance >= 0 ? '+' : ''}{variancePercent.toFixed(1)}%
                         </span>
                     </div>
                 )}
 
                 <div className="flex items-center gap-3">
-                    <span className={`${isTotal ? 'text-lg text-[#393A3D]' : 'text-sm text-[#393A3D]'} font-bold tabular-nums whitespace-nowrap ${forceColor}`}>
+                    <span className={`${isTotal ? 'text-base text-slate-900' : 'text-sm text-slate-900'} font-bold tabular-nums whitespace-nowrap print:text-xs ${forceColor}`}>
                         {amount < 0 ? `(${currency}${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2 })})` : `${currency}${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
                     </span>
-                    {onClick && !isTotal && <ChevronRight size={16} className="text-slate-300 group-hover:text-[#0077C5] transition-colors" />}
+                    {onClick && !isTotal && <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-600 transition-colors print:hidden" />}
                 </div>
             </div>
         </div>
@@ -809,7 +809,17 @@ const FinancialReports: React.FC = () => {
     };
 
     const printStyles = `
+    @page {
+        size: A4;
+        margin: 12mm 10mm 15mm 10mm;
+    }
     @media print {
+        body {
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
         body * { visibility: hidden !important; }
         #financial-report-printable, #financial-report-printable * { visibility: visible !important; }
         #financial-report-printable {
@@ -818,10 +828,25 @@ const FinancialReports: React.FC = () => {
             top: 0 !important;
             width: 100% !important;
             margin: 0 !important;
-            padding: 20px !important;
+            padding: 0 !important;
             background: white !important;
+            font-size: 10pt !important;
+            color: #0f172a !important;
+            line-height: 1.5 !important;
+        }
+        #financial-report-printable h1, #financial-report-printable h2, #financial-report-printable h3 {
+            color: #0f172a !important;
+        }
+        #financial-report-printable .text-slate-400,
+        #financial-report-printable .text-slate-500,
+        #financial-report-printable .text-slate-600,
+        #financial-report-printable .text-slate-700 {
+            color: #475569 !important;
         }
         .no-print { display: none !important; }
+        .print-break-before { page-break-before: always !important; }
+        .print-break-after { page-break-after: always !important; }
+        .print-avoid-break { page-break-inside: avoid !important; }
     }
   `;
 
@@ -1071,20 +1096,43 @@ const FinancialReports: React.FC = () => {
                     
 
                     {/* Report Content */}
-                    <div id="financial-report-printable" className="bg-white rounded border border-slate-200 shadow-sm overflow-hidden mb-12">
-                        <div className="p-12">
-                            <div className="text-center mb-12">
-                                <h2 className="text-xl font-bold text-[#393A3D]">{companyConfig?.companyName || 'Prime ERP System'}</h2>
-                                <h3 className="text-2xl font-bold text-[#393A3D] mt-1">
-                                    {reportType === 'IncomeStatement' ? 'Profit & Loss' :
-                                        reportType === 'BalanceSheet' ? 'Balance Sheet' :
-                                            reportType === 'CashFlow' ? 'Statement of Cash Flows' :
-                                                reportType === 'EquityStatement' ? 'Statement of Changes in Equity' :
-                                                    reportType === 'TrialBalance' ? 'Trial Balance' :
-                                                        reportType === 'Budget' ? 'Budget Analysis' :
-                                                            reportType === 'AgedAR' ? 'Aged Receivables' : 'Aged Payables'}
-                                </h3>
-                                <p className="text-sm text-slate-500 mt-2 font-medium">
+                    <div id="financial-report-printable" className="bg-white rounded border border-slate-200 shadow-sm overflow-hidden mb-12 print:border-0 print:shadow-none">
+                        <div className="p-12 print:p-0">
+                            {/* Professional Header */}
+                            <div className="flex justify-between items-start pb-6 mb-8 border-b-2 border-slate-900 print:border-slate-900">
+                                <div className="flex-1">
+                                    {companyConfig?.logo ? (
+                                        <img src={companyConfig.logo} alt="Logo" className="h-16 mb-3" />
+                                    ) : (
+                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{companyConfig?.companyName || 'Prime ERP System'}</h2>
+                                    )}
+                                    {companyConfig?.address && <p className="text-xs text-slate-600 mt-1 leading-relaxed">{companyConfig.address}</p>}
+                                    {companyConfig?.phone && <p className="text-xs text-slate-600 mt-0.5">Tel: {companyConfig.phone}</p>}
+                                    {companyConfig?.email && <p className="text-xs text-slate-600 mt-0.5">{companyConfig.email}</p>}
+                                </div>
+                                <div className="flex-1 text-right">
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-bold">Financial Report</p>
+                                    <h3 className="text-3xl font-bold text-slate-900 mt-1 tracking-tight">
+                                        {reportType === 'IncomeStatement' ? 'Profit & Loss Statement' :
+                                            reportType === 'BalanceSheet' ? 'Balance Sheet' :
+                                                reportType === 'CashFlow' ? 'Statement of Cash Flows' :
+                                                    reportType === 'EquityStatement' ? 'Statement of Changes in Equity' :
+                                                        reportType === 'TrialBalance' ? 'Trial Balance' :
+                                                            reportType === 'Budget' ? 'Budget Analysis' :
+                                                                reportType === 'AgedAR' ? 'Aged Receivables' : 'Aged Payables'}
+                                    </h3>
+                                    <p className="text-sm text-slate-600 mt-2 italic">
+                                        {reportType === 'BalanceSheet' ? `As of ${format(parseISO(dateRange.end), 'MMMM d, yyyy')}` :
+                                            `${format(parseISO(dateRange.start), 'MMMM d, yyyy')} - ${format(parseISO(dateRange.end), 'MMMM d, yyyy')}`}
+                                    </p>
+                                    <p className="text-xs text-slate-500 mt-2">Currency: {currency}</p>
+                                </div>
+                            </div>
+
+                            {/* Period Banner */}
+                            <div className="mb-8 p-4 bg-slate-50 border-l-4 border-blue-600 rounded-r">
+                                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Reporting Period</p>
+                                <p className="text-base font-bold text-slate-900 mt-1">
                                     {reportType === 'BalanceSheet' ? `As of ${format(parseISO(dateRange.end), 'MMMM d, yyyy')}` :
                                         `${format(parseISO(dateRange.start), 'MMMM d, yyyy')} - ${format(parseISO(dateRange.end), 'MMMM d, yyyy')}`}
                                 </p>
@@ -1094,7 +1142,7 @@ const FinancialReports: React.FC = () => {
                                 {reportType === 'IncomeStatement' && (
                                     <div className="space-y-10">
                                         <div>
-                                            <h3 className="font-bold text-slate-900 border-b-2 border-slate-900 pb-2 mb-4 text-xs uppercase tracking-widest">Revenue</h3>
+                                            <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Revenue</h3>
                                             {getAccountRows(['Revenue']).map(a => <ReportRow key={a.id} label={a.name} subText={a.code} amount={a.balance} prevAmount={a.prevBalance} showCompare={compareWithPrevious} currency={currency} onClick={() => setDrilldownAccount(a)} />)}
                                             <ReportRow
                                                 label="Total Revenue"
@@ -1106,7 +1154,7 @@ const FinancialReports: React.FC = () => {
                                             />
                                         </div>
                                         <div>
-                                            <h3 className="font-bold text-slate-900 border-b-2 border-slate-900 pb-2 mb-4 text-xs uppercase tracking-widest">Expenses</h3>
+                                            <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Expenses</h3>
                                             {getAccountRows(['Expense']).map(a => <ReportRow key={a.id} label={a.name} subText={a.code} amount={a.balance} prevAmount={a.prevBalance} showCompare={compareWithPrevious} currency={currency} onClick={() => setDrilldownAccount(a)} />)}
                                             <ReportRow
                                                 label="Total Expenses"
@@ -1134,7 +1182,7 @@ const FinancialReports: React.FC = () => {
                                 {reportType === 'BalanceSheet' && (
                                     <div className="space-y-10">
                                         <div>
-                                            <h3 className="font-bold text-slate-900 border-b-2 border-slate-900 pb-2 mb-4 text-xs uppercase tracking-widest">Assets</h3>
+                                            <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Assets</h3>
                                             {getAccountRows(['Asset']).map(a => {
                                                 const drift = a.isInventory ? a.balance - physicalValuation : 0;
                                                 return (
@@ -1182,7 +1230,7 @@ const FinancialReports: React.FC = () => {
                                             />
                                         </div>
                                         <div>
-                                            <h3 className="font-bold text-slate-900 border-b-2 border-slate-900 pb-2 mb-4 text-xs uppercase tracking-widest">Liabilities & Equity</h3>
+                                            <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Liabilities & Equity</h3>
                                             {getAccountRows(['Liability']).map(a => <ReportRow key={a.id} label={a.name} subText={a.code} amount={a.balance} prevAmount={a.prevBalance} showCompare={compareWithPrevious} currency={currency} onClick={() => setDrilldownAccount(a)} />)}
                                             {getAccountRows(['Equity']).map(a => <ReportRow key={a.id} label={a.name} subText={a.code} amount={a.balance} prevAmount={a.prevBalance} showCompare={compareWithPrevious} currency={currency} onClick={() => setDrilldownAccount(a)} />)}
                                             <ReportRow
@@ -1211,19 +1259,19 @@ const FinancialReports: React.FC = () => {
                                             <ReportRow label="Opening Balance" amount={cashFlowStats.openingBalance} currency={currency} isTotal />
                                         </div>
                                         <div>
-                                            <h3 className="font-bold text-slate-900 border-b-2 border-slate-900 pb-2 mb-4 text-xs uppercase tracking-widest">Operating Activities</h3>
+                                            <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Operating Activities</h3>
                                             {cashFlowStats.activities.operating.map((a, i) => <ReportRow key={i} label={a.label} amount={a.amount} currency={currency} />)}
                                             <ReportRow label="Net Cash from Operations" amount={cashFlowStats.netOperating} currency={currency} isTotal indent />
                                         </div>
                                         {cashFlowStats.activities.investing.length > 0 && (
                                             <div>
-                                                <h3 className="font-bold text-slate-900 border-b-2 border-slate-900 pb-2 mb-4 text-xs uppercase tracking-widest">Investing Activities</h3>
+                                                <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Investing Activities</h3>
                                                 {cashFlowStats.activities.investing.map((a, i) => <ReportRow key={i} label={a.label} amount={a.amount} currency={currency} />)}
                                                 <ReportRow label="Net Cash from Investing" amount={cashFlowStats.netInvesting} currency={currency} isTotal indent />
                                             </div>
                                         )}
                                         <div>
-                                            <h3 className="font-bold text-slate-900 border-b-2 border-slate-900 pb-2 mb-4 text-xs uppercase tracking-widest">Financing Activities</h3>
+                                            <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Financing Activities</h3>
                                             {cashFlowStats.activities.financing.map((a, i) => <ReportRow key={i} label={a.label} amount={a.amount} currency={currency} />)}
                                             <ReportRow label="Net Cash from Financing" amount={cashFlowStats.netFinancing} currency={currency} isTotal indent />
                                         </div>
@@ -1238,7 +1286,7 @@ const FinancialReports: React.FC = () => {
                                 {reportType === 'EquityStatement' && (
                                     <div className="space-y-10">
                                         <div>
-                                            <h3 className="font-bold text-slate-900 border-b-2 border-slate-900 pb-2 mb-4 text-xs uppercase tracking-widest">Statement of Changes in Equity</h3>
+                                            <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Statement of Changes in Equity</h3>
                                             <ReportRow label="Opening Equity" amount={accountBalances.current['3000'] || 0} currency={currency} isTotal />
                                             <ReportRow label="Net Income / (Loss) for Period" amount={netIncome.current} currency={currency} />
                                             {getAccountRows(['Equity']).filter(a => a.code !== '3000' && a.balance > 0).map(a => (

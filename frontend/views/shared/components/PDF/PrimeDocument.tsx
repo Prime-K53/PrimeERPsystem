@@ -2342,66 +2342,139 @@ if (type === 'POS_RECEIPT') {
           </View>
         )}
 
-        {/* Case: FISCAL_REPORT */}
+        {/* Case: FISCAL_REPORT - Professional Financial Report Layout */}
         {type === 'FISCAL_REPORT' && 'sections' in data && (
-          <View style={{ marginTop: 20 }}>
-            {/* Period Summary */}
-            <View style={{ marginBottom: 20, padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#2563eb' }}>
-              <Text style={{ fontSize: 10, color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>Report Period</Text>
-              <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0f172a' }}>{data.period}</Text>
+          <View>
+            {/* Professional Header Banner */}
+            <View style={{ marginBottom: 24, paddingBottom: 16, borderBottomWidth: 2, borderBottomColor: '#0f172a' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                {/* Company Info (left) */}
+                <View style={{ flex: 1 }}>
+                  {!!logo ? (
+                    <Image src={logo} style={{ width: 110, marginBottom: 8 }} />
+                  ) : (
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a', marginBottom: 4, letterSpacing: 0.3 }}>{companyName}</Text>
+                  )}
+                  {!!companyAddress && <Text style={{ fontSize: 9, color: '#475569', lineHeight: 1.4, marginTop: 4 }}>{companyAddress}</Text>}
+                  {!!companyPhone && <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>Tel: {companyPhone}</Text>}
+                  {!!companyEmail && <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{companyEmail}</Text>}
+                </View>
+
+                {/* Report Title (right) */}
+                <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 8, color: '#64748b', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 'bold' }}>Financial Report</Text>
+                  <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0f172a', marginTop: 4, letterSpacing: 0.5 }}>{data.reportName || 'Financial Report'}</Text>
+                  <Text style={{ fontSize: 10, color: '#475569', marginTop: 6, fontStyle: 'italic' }}>{data.period}</Text>
+                  <Text style={{ fontSize: 8, color: '#94a3b8', marginTop: 6 }}>Currency: {data.currency}</Text>
+                </View>
+              </View>
             </View>
 
+            {/* Period Summary Card */}
+            <View style={{ marginBottom: 24, padding: 14, backgroundColor: '#f8fafc', borderRadius: 6, borderLeftWidth: 4, borderLeftColor: '#2563eb' }}>
+              <Text style={{ fontSize: 9, color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5 }}>Reporting Period</Text>
+              <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0f172a', marginTop: 4 }}>{data.period}</Text>
+            </View>
+
+            {/* Report Sections - Professional Table Layout */}
             {data.sections.map((section, idx) => (
               <View key={idx} style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#1e293b', textTransform: 'uppercase', borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingBottom: 4, marginBottom: 8 }}>
-                  {section.title}
-                </Text>
+                {/* Section Header */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 4, marginBottom: 0 }}>
+                  <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#ffffff', textTransform: 'uppercase', letterSpacing: 1.5, flex: 1 }}>
+                    {section.title}
+                  </Text>
+                </View>
+
+                {/* Column Header Row (for tables) */}
+                <View style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#e2e8f0', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }}>
+                  <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Account / Description</Text>
+                  {data.sections.some(s => s.rows.some(r => r.prevAmount !== undefined)) && (
+                    <Text style={{ width: 80, fontSize: 8, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Prior Period</Text>
+                  )}
+                  <Text style={{ width: 90, fontSize: 8, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Amount ({data.currency})</Text>
+                </View>
+
+                {/* Section Rows */}
                 {section.rows.map((row, rowIdx) => (
                   <View key={rowIdx} style={{
                     flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    paddingVertical: 6,
-                    paddingHorizontal: 4,
-                    backgroundColor: row.isTotal ? '#f1f5f9' : 'transparent',
-                    borderTopWidth: row.isTotal ? 1 : 0,
-                    borderColor: '#cbd5e1'
-                  }}>
-                    <View style={{ marginLeft: row.indent ? 15 : 0 }}>
-                      <Text style={{ fontSize: row.isTotal ? 10 : 9, fontWeight: row.isTotal ? 'bold' : 'normal' }}>{row.label}</Text>
-                      {!!row.subText && <Text style={{ fontSize: 7, color: '#64748b', marginTop: 1 }}>{row.subText}</Text>}
+                    alignItems: 'center',
+                    paddingVertical: row.isTotal ? 8 : 6,
+                    paddingHorizontal: 12,
+                    backgroundColor: row.isTotal ? '#f1f5f9' : (rowIdx % 2 === 0 ? '#ffffff' : '#fafbfc'),
+                    borderBottomWidth: row.isTotal ? 2 : 1,
+                    borderColor: row.isTotal ? '#0f172a' : '#f1f5f9',
+                    borderTopWidth: row.isTotal ? 2 : 0,
+                    marginTop: row.isTotal ? 4 : 0
+                  }} wrap={false}>
+                    <View style={{ flex: 1, marginLeft: row.indent ? 16 : 0 }}>
+                      <Text style={{
+                        fontSize: row.isTotal ? 11 : 10,
+                        fontWeight: row.isTotal ? 'bold' : 'normal',
+                        color: row.isTotal ? '#0f172a' : '#334155'
+                      }}>{row.label}</Text>
+                      {!!row.subText && <Text style={{ fontSize: 8, color: '#64748b', marginTop: 1 }}>{row.subText}</Text>}
                     </View>
-                    <View style={{ flexDirection: 'row', gap: 20 }}>
-                      {row.prevAmount !== undefined && (
-                        <Text style={{ fontSize: 8, color: '#94a3b8', width: 60, textAlign: 'right' }}>
-                          {data.currency}{formatAmount(row.prevAmount)}
-                        </Text>
-                      )}
-                      <Text style={{ fontSize: row.isTotal ? 10 : 9, fontWeight: row.isTotal ? 'bold' : 'normal', width: 80, textAlign: 'right' }}>
-                        {data.currency}{formatAmount(row.amount)}
+                    {data.sections.some(s => s.rows.some(r => r.prevAmount !== undefined)) && (
+                      <Text style={{ width: 80, fontSize: row.isTotal ? 10 : 9, color: row.isTotal ? '#475569' : '#94a3b8', textAlign: 'right' }}>
+                        {row.prevAmount !== undefined ? `${data.currency}${formatAmount(row.prevAmount)}` : '—'}
                       </Text>
-                    </View>
+                    )}
+                    <Text style={{
+                      width: 90,
+                      fontSize: row.isTotal ? 11 : 10,
+                      fontWeight: row.isTotal ? 'bold' : 'normal',
+                      color: row.isTotal ? '#0f172a' : '#1e293b',
+                      textAlign: 'right'
+                    }}>
+                      {row.amount < 0 ? `(${data.currency}${formatAmount(Math.abs(row.amount))})` : `${data.currency}${formatAmount(row.amount)}`}
+                    </Text>
                   </View>
                 ))}
               </View>
             ))}
 
+            {/* Net Performance / Key Metric Banner */}
             {!!data.netPerformance && (
-              <View style={{ marginTop: 20, padding: 12, backgroundColor: '#0f172a', borderRadius: 8 }}>
+              <View style={{ marginTop: 28, padding: 16, backgroundColor: '#0f172a', borderRadius: 6, borderTopWidth: 4, borderTopColor: '#2563eb' }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>{data.netPerformance.label}</Text>
-                  <View style={{ flexDirection: 'row', gap: 20 }}>
+                  <View>
+                    <Text style={{ color: '#94a3b8', fontSize: 8, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 'bold' }}>Key Performance Indicator</Text>
+                    <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: 'bold', marginTop: 4 }}>{data.netPerformance.label}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
                     {data.netPerformance.prevAmount !== undefined && (
-                      <Text style={{ color: '#94a3b8', fontSize: 10, textAlign: 'right', width: 60 }}>
-                        {data.currency}{formatAmount(data.netPerformance.prevAmount)}
+                      <Text style={{ color: '#94a3b8', fontSize: 9, marginBottom: 4 }}>
+                        Prior: {data.currency}{formatAmount(data.netPerformance.prevAmount)}
                       </Text>
                     )}
-                    <Text style={{ color: data.netPerformance.amount >= 0 ? '#4ade80' : '#f87171', fontSize: 14, fontWeight: 'bold', textAlign: 'right', width: 80 }}>
-                      {data.currency}{formatAmount(data.netPerformance.amount)}
+                    <Text style={{
+                      color: data.netPerformance.amount >= 0 ? '#4ade80' : '#f87171',
+                      fontSize: 18,
+                      fontWeight: 'bold',
+                      textAlign: 'right'
+                    }}>
+                      {data.netPerformance.amount < 0 ? `(${data.currency}${formatAmount(Math.abs(data.netPerformance.amount))})` : `${data.currency}${formatAmount(data.netPerformance.amount)}`}
                     </Text>
                   </View>
                 </View>
               </View>
             )}
+
+            {/* Report Footer */}
+            <View style={{ marginTop: 30, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <View>
+                  <Text style={{ fontSize: 8, color: '#94a3b8' }}>Generated: {new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</Text>
+                  <Text style={{ fontSize: 8, color: '#94a3b8', marginTop: 2 }}>Prime ERP — Financial Reporting Module</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 8, color: '#94a3b8' }}>{data.reportName} • {data.period}</Text>
+                  <Text style={{ fontSize: 8, color: '#94a3b8', marginTop: 2, fontStyle: 'italic' }}>All amounts in {data.currency}</Text>
+                </View>
+              </View>
+            </View>
           </View>
         )}
         
