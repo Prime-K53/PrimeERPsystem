@@ -2740,7 +2740,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                     <div className="order-form-footer border-t border-[#E4DFD1] bg-[#FEFDFB] px-[26px] py-[16px] flex items-center justify-end gap-[10px] shrink-0">
                         <button onClick={handleCancelForm}
                             className="px-[14px] py-[7px] text-[13px] font-semibold text-[#23282A] bg-[#FEFDFB] border border-[#E4DFD1] rounded-[9px] hover:border-[#72c0b7] flex items-center gap-[7px] transition-colors">
-                            <X size={14} /> Close
+                            <X size={14} /> Cancel
                         </button>
                         {isEditing && (
                             <input type="text" value={auditReason} onChange={e => setAuditReason(e.target.value)}
@@ -2748,6 +2748,13 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                 className="w-[180px] text-[11px] border border-[#E4DFD1] rounded-[6px] px-[8px] py-[5px] bg-[#FEFDFB] placeholder:text-[#666F6C] font-['JetBrains_Mono',monospace] focus:border-[#B8863B] outline-none transition-colors"
                             />
                         )}
+                        <button
+                            onClick={() => handleSubmission(false, true)}
+                            disabled={formData.items.length === 0 || (isEditing && !auditReason.trim()) || saving}
+                            title="Save the order and record full payment immediately"
+                            className="px-[16px] py-[7px] text-[13px] font-semibold text-white bg-gradient-to-br from-[#2d9a8a] to-[#146b60] rounded-[9px] shadow-[0_4px_14px_rgba(45,154,138,0.35)] hover:shadow-[0_6px_18px_rgba(45,154,138,0.45)] hover:-translate-y-[0.5px] flex items-center gap-[7px] disabled:opacity-40 transition-all">
+                            <Wallet size={14} /> Save &amp; Pay
+                        </button>
                         <button
                             onClick={() => handleSubmission(false, false)}
                             disabled={formData.items.length === 0 || (isEditing && !auditReason.trim()) || saving}
