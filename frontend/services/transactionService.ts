@@ -3521,10 +3521,23 @@ export const transactionService = {
 
     async syncInventoryValuation(accountId: string, physicalValue: number, currentLedgerBalance: number, inventoryItems?: any[]) {
         return dbService.executeAtomicOperation(
-            ['ledger', 'accounts', 'inventory'],
+            ['ledger', 'accounts', 'inventory', 'idempotencyKeys'],
             async (tx) => {
                 const ledgerStore = tx.objectStore('ledger');
                 const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
                 const getAccountCode = (acc: any): string => acc.account_number || acc.code || acc.id;
 
                 const allEntries = await ledgerStore.getAll();
@@ -3587,6 +3600,33 @@ export const transactionService = {
                 const totalVariance = totalPhysicalValue - totalGLBalance;
                 const withinTolerance = Math.abs(totalVariance) <= 0.01;
 
+                let entriesPosted = 0;
+                if (!withinTolerance) {
+                    // Post variance adjustment entries to GL for each child account
+                    const gl = getGLConfig();
+                    const cogsAccountId = resolveAcct(gl.defaultCOGSAccount);
+                    const otherIncomeAccountId = resolveAcct('42000');
+                    const syncRef = `INV-SYNC-${new Date().toISOString().split('T')[0]}`;
+
+                    for (const [childAccountId, details] of Object.entries(childDetails)) {
+                        const childVariance = details.variance;
+                        if (Math.abs(childVariance) <= 0.01) continue;
+
+                        const entry: LedgerEntry = {
+                            id: generateId('LG-INVSYNC'),
+                            date: new Date().toISOString(),
+                            description: `Inventory Valuation Sync - ${details.variance > 0 ? 'Surplus' : 'Shortage'} (${childAccountId})`,
+                            debitAccountId: childVariance > 0 ? childAccountId : cogsAccountId,
+                            creditAccountId: childVariance > 0 ? otherIncomeAccountId : childAccountId,
+                            amount: Math.abs(childVariance),
+                            referenceId: syncRef,
+                            reconciled: true
+                        };
+                        await ledgerStore.put(entry);
+                        entriesPosted++;
+                    }
+                }
+
                 return {
                     success: true,
                     alreadyReconciled: withinTolerance,
@@ -3595,7 +3635,7 @@ export const transactionService = {
                     totalGLBalance,
                     totalVariance,
                     childDetails,
-                    entriesPosted: 0,
+                    entriesPosted,
                 };
             }
         );
