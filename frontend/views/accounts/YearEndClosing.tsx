@@ -232,7 +232,7 @@ const YearEndClosing: React.FC = () => {
             </div>
 
             {/* Closing Result Modal */}
-            {isClosingModalOpen && closingResult && (
+            {closingResult && (
                 <ClosingResultModal
                     result={closingResult}
                     onClose={() => { setIsClosingModalOpen(false); setClosingResult(null); }}
@@ -240,7 +240,7 @@ const YearEndClosing: React.FC = () => {
             )}
 
             {/* Close Year Selection Modal */}
-            {!isClosingModalOpen && canEdit && (
+            {isClosingModalOpen && !closingResult && canEdit && (
                 <SelectYearModal
                     fiscalYears={fiscalYears}
                     onClose={() => setIsClosingModalOpen(false)}
