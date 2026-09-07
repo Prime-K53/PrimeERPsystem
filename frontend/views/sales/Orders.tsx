@@ -1184,6 +1184,7 @@ const Orders: React.FC = () => {
                                 roundingTotal: item.roundingTotal ?? item.roundingDifference ?? 0,
                                 roundingDifference: item.roundingDifference ?? item.roundingTotal ?? 0,
                                 roundingMethod: item.roundingMethod ?? '',
+                                sourceOrderId: item.id,
                             };
                             const invoiceId = await addInvoice(newInvoice);
                             await updateOrderStatus(item.id, 'Converted');

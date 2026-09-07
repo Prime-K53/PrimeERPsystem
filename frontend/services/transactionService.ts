@@ -2081,7 +2081,12 @@ export const transactionService = {
                 await ledgerStore.put(arEntry);
 
                 // 6. If invoice is paid/partially paid on creation, create payment records
-                if (paidAmount > 0) {
+                // SKIP if this invoice was converted from an order — the payment was already
+                // recorded against the order (see `LG-ORD-INIT` / `LG-ORD-PAY` ledger entries).
+                // Re-creating it here would double-count the same payment.
+                const convertedFromOrder = !!(invoice as any).sourceOrderId
+                    || (invoice.conversionDetails && (invoice.conversionDetails as any).sourceType === 'order');
+                if (paidAmount > 0 && !convertedFromOrder) {
                     const allPayments = await customerPaymentsStore.getAll();
                     const paymentId = generateNextId('RCPT', allPayments);
                     const paymentMethod = invoice.paymentMethod || invoice.payment_method || 'Cash';
