@@ -979,8 +979,30 @@ export function computeInventoryReconciliation(
     negativeInventoryItems: any[];
     zeroCostItems: any[];
 } {
-    const INVENTORY_CHILD_CODES = ['11410', '11420', '11430'];
-    const PARENT_INVENTORY_CODE = '11400';
+    // Derive inventory child codes from glMapping where possible, falling back to canonical defaults.
+    // The default config defines a single 'defaultInventoryAccount' (the parent), so we look up
+    // its actual children in the accounts list. If a custom-mapped parent is configured, we use
+    // its children; otherwise we use the canonical 11410/11420/11430.
+    const gl = getGLConfig();
+    const defaultParentCode = gl.defaultInventoryAccount || '11400';
+
+    // Find children: any account whose parent_account_id matches the default parent
+    const parentAccount = accounts.find(a =>
+        a.code === defaultParentCode ||
+        a.account_number === defaultParentCode ||
+        a.id === defaultParentCode
+    );
+    const parentIdOrCode = parentAccount?.id || defaultParentCode;
+
+    const dynamicChildren = accounts
+        .filter(a => a.parent_account_id === parentIdOrCode || a.parent_account_id === defaultParentCode)
+        .map(a => a.account_number || a.code || a.id);
+
+    // Final list: dynamic children if any, otherwise canonical defaults
+    const INVENTORY_CHILD_CODES = dynamicChildren.length > 0
+        ? dynamicChildren
+        : ['11410', '11420', '11430'];
+    const PARENT_INVENTORY_CODE = defaultParentCode;
 
     // Calculate physical inventory valuation by category
     let merchandiseValue = 0;
@@ -1000,16 +1022,16 @@ export function computeInventoryReconciliation(
         if (cost <= 0 && stock > 0) zeroCostItems.push(item);
 
         const type = (item.type || '').toLowerCase();
-        if (type === 'product' || type === 'finished good' || type === 'finished goods') {
+        if (type === 'finished good' || type === 'finished goods') {
+            finishedGoodsValue += value;
+        } else if (type === 'product') {
             merchandiseValue += value;
-        } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
+        } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery' || type === 'stationaries') {
             rawMaterialsValue += value;
         } else {
             unclassifiedItems.push(item);
         }
     }
-
-    finishedGoodsValue = merchandiseValue; // Product type maps to Finished Goods/11410
 
     // Calculate GL balances for each inventory child account
     const getAccountCode = (acc: any): string => acc.account_number || acc.code || acc.id;
@@ -1028,11 +1050,17 @@ export function computeInventoryReconciliation(
         glBalances[code] = account.normal_balance === 'DEBIT' ? balance : -balance;
     }
 
-    const glMerchandiseValue = glBalances['11410'] || 0;
-    const glRawMaterialsValue = glBalances['11420'] || 0;
-    const glFinishedGoodsValue = glBalances['11430'] || 0;
+    // Map first child to merchandise, second to raw materials, third to finished goods
+    // (preserves canonical mapping while allowing custom hierarchies to be reflected)
+    const merchandiseCode = INVENTORY_CHILD_CODES[0] || '11410';
+    const rawMaterialsCode = INVENTORY_CHILD_CODES[1] || '11420';
+    const finishedGoodsCode = INVENTORY_CHILD_CODES[2] || '11430';
+
+    const glMerchandiseValue = glBalances[merchandiseCode] || 0;
+    const glRawMaterialsValue = glBalances[rawMaterialsCode] || 0;
+    const glFinishedGoodsValue = glBalances[finishedGoodsCode] || 0;
     const glInventoryValue = glMerchandiseValue + glRawMaterialsValue + glFinishedGoodsValue;
-    const physicalInventoryValue = merchandiseValue + rawMaterialsValue;
+    const physicalInventoryValue = merchandiseValue + rawMaterialsValue + finishedGoodsValue;
     const variance = physicalInventoryValue - glInventoryValue;
 
     return {

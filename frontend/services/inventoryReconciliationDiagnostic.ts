@@ -18,6 +18,7 @@ import { Item } from '../types';
 import {
   resolveInventoryAccountByItemType,
   computeHierarchicalBalances,
+  getGLConfig,
 } from './transactions/_internal';
 import { Account, LedgerEntry } from '../types';
 import { dbService } from './db';
@@ -198,10 +199,13 @@ export async function computeInventoryReconciliation(): Promise<InventoryReconci
   }
 
   const hierarchicalBalances = computeHierarchicalBalances(accounts, balances);
-  // Find the inventory parent account (11400) by code, then read its rolled-up balance
-  const inventoryParentAcct = accounts.find(a => (a.code || a.account_number) === '11400');
-  const inventoryParentId = inventoryParentAcct ? inventoryParentAcct.id : '11400';
-  const glInventoryValue = hierarchicalBalances[inventoryParentId] || hierarchicalBalances[merchandiseAcct || '11410'] || 0;
+  // Find the inventory parent account by code (configurable via glMapping), then read its rolled-up balance
+  const gl = getGLConfig();
+  const inventoryParentCode = gl.defaultInventoryAccount || '11400';
+  const inventoryParentAcct = accounts.find(a => (a.code || a.account_number) === inventoryParentCode);
+  const inventoryParentId = inventoryParentAcct ? inventoryParentAcct.id : inventoryParentCode;
+  const merchandiseFallbackId = accounts.find(a => (a.code || a.account_number) === '11410')?.id || '11410';
+  const glInventoryValue = hierarchicalBalances[inventoryParentId] || hierarchicalBalances[merchandiseAcct || merchandiseFallbackId] || 0;
 
   // ── 3. Variance ──────────────────────────────────────────────────────────
   const variance = physicalInventoryValue - glInventoryValue;

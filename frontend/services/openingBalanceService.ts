@@ -41,7 +41,10 @@ export interface OpeningInventoryDiagnostic {
 }
 
 const OPENING_INVENTORY_REFERENCE = 'OPENING-INVENTORY';
-const INVENTORY_CHILD_CODES = ['11410', '11420', '11430'];
+// Canonical default inventory child codes. The diagnostic function below
+// prefers children derived from glMapping (if a custom inventory account is
+// configured), otherwise falls back to these defaults.
+const DEFAULT_INVENTORY_CHILD_CODES = ['11410', '11420', '11430'];
 
 export async function computeOpeningInventoryDiagnostic(
   inventoryItems: any[],
@@ -89,7 +92,19 @@ export async function computeOpeningInventoryDiagnostic(
   const physicalInventoryValue = merchandiseValue + rawMaterialsValue + finishedGoodsValue;
 
   const glBalances: Record<string, number> = {};
-  for (const code of INVENTORY_CHILD_CODES) {
+  // Resolve the inventory child codes from glMapping + accounts, falling back to defaults
+  const gl = getCompanyConfig();
+  const defaultParentCode = gl?.glMapping?.defaultInventoryAccount || '11400';
+  const parentAccount = accounts.find(a =>
+    a.code === defaultParentCode || a.account_number === defaultParentCode || a.id === defaultParentCode
+  );
+  const parentIdOrCode = parentAccount?.id || defaultParentCode;
+  const dynamicChildren = accounts
+    .filter(a => a.parent_account_id === parentIdOrCode || a.parent_account_id === defaultParentCode)
+    .map(a => a.account_number || a.code || a.id);
+  const inventoryChildCodes = dynamicChildren.length > 0 ? dynamicChildren : DEFAULT_INVENTORY_CHILD_CODES;
+
+  for (const code of inventoryChildCodes) {
     const account = accounts.find(a => a.account_number === code || a.code === code);
     if (!account) { glBalances[code] = 0; continue; }
     const balance = ledgerEntries.reduce((s: number, e: any) => {
@@ -100,7 +115,7 @@ export async function computeOpeningInventoryDiagnostic(
     glBalances[code] = account.normal_balance === 'DEBIT' ? balance : -balance;
   }
 
-  const glInventoryValue = glBalances['11410'] + glBalances['11420'] + glBalances['11430'];
+  const glInventoryValue = inventoryChildCodes.reduce((s, code) => s + (glBalances[code] || 0), 0);
 
   const openingEntriesExist = ledgerEntries.some(
     (e: any) => e.referenceId === OPENING_INVENTORY_REFERENCE || e.entryType === 'opening_inventory'
