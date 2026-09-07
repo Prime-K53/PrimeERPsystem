@@ -858,6 +858,7 @@ const handleOpenInventory = async () => {
       ...financeStore, addInvoice, updateInvoice, addExpense, approveExpense, addIncome, postJournalEntry,
       createDeliveryNote, executeTransfer, runPayroll, addCheque, updateCheque: financeStore.updateCheque, deleteCheque: financeStore.deleteCheque,
       recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory: handleOpenInventory,
+      refreshAccounts: financeStore.fetchFinanceData,
       addAccount: financeStore.addAccount, updateAccount: financeStore.updateAccount, deleteAccount: financeStore.deleteAccount,
       deleteInvoice, updateIncome: financeStore.updateIncome, deleteIncome: financeStore.deleteIncome,
       toggleReconciled: financeStore.toggleReconciled, addRecurringInvoice: financeStore.addRecurringInvoice, deleteRecurringInvoice: financeStore.deleteRecurringInvoice, updateRecurringInvoice: financeStore.updateRecurringInvoice,
