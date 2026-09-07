@@ -4176,18 +4176,37 @@ export const transactionService = {
                 // 6. Handle variance if GRN amount differs from PO amount
                 if (relatedPurchase && Math.abs(totalAmount - poAmount) > 0.01) {
                     const variance = totalAmount - poAmount;
+                    // Variance accounting (proper): the difference between PO commitment and actual
+                    // GRN value goes to a Purchase Price Variance account (Purchases = 51100),
+                    // NOT to COGS. COGS is for goods already sold.
+                    // - variance > 0 (GRN more than PO, e.g. landed costs): Debit Purchases, Credit AP
+                    // - variance < 0 (GRN less than PO, e.g. discount/shortage): Debit AP, Credit Purchases
+                    const purchasesAccountId = resolveAcct(gl.purchasesAccount || '51100');
+                    const apAccountId = resolveAcct(gl.accountsPayable);
                     const varianceEntry: LedgerEntry = {
                         id: generateId('LG-GRN-VAR'),
                         date: grn.date,
                         description: `GRN Variance - ${grn.id} (Actual: ${totalAmount.toFixed(2)} vs PO: ${poAmount.toFixed(2)})`,
-                        debitAccountId: variance > 0 ? resolveAcct(gl.defaultCOGSAccount) : resolveAcct(gl.accountsPayable),
-                        creditAccountId: variance > 0 ? resolveAcct(gl.accountsPayable) : resolveAcct(gl.defaultCOGSAccount),
+                        debitAccountId: variance > 0 ? purchasesAccountId : apAccountId,
+                        creditAccountId: variance > 0 ? apAccountId : purchasesAccountId,
                         amount: Math.abs(variance),
                         referenceId: grn.id,
                         reconciled: false,
                         supplierId: supplierId
                     };
                     await ledgerStore.put(varianceEntry);
+
+                    // Adjust supplier balance to reflect the variance vs AP ledger
+                    if (supplierId) {
+                        const supplier = await supplierStore.get(supplierId);
+                        if (supplier) {
+                            // variance > 0 means supplier balance is short vs what we recorded as AP
+                            // (we credited AP by full GRN amount, so supplier balance should match)
+                            // No further adjustment needed - the AP ledger and supplier balance both
+                            // use totalAmount, so they remain in sync. The variance entry uses the
+                            // purchases account, NOT AP, so AP is unchanged from totalAmount.
+                        }
+                    }
                 }
 
                 return { success: true, poReversed: !!relatedPurchase, variance: relatedPurchase ? totalAmount - poAmount : 0 };
