@@ -6,7 +6,7 @@ import { useInventoryStore } from '../stores/inventoryStore';
 import { Account, LedgerEntry, Invoice, Expense, RecurringInvoice, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, Income, Cheque, ZReport, SupplierPayment, CustomerPayment } from '../types';
 import { useAuth } from './AuthContext'; 
 import { transactionService } from '../services/transactionService';
-import { openingBalanceService } from '../services/openingBalanceService';
+import { openInventory } from '../services/openingBalanceService';
 import { dbService } from '../services/db';
 import { roundFinancial, generateNextId, formatNumber } from '../utils/helpers';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
@@ -163,9 +163,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
   };
 
-const openInventory = async () => {
+const handleOpenInventory = async () => {
         try {
-            const result = await openingBalanceService.openInventory();
+            const result = await openInventory();
             await financeStore.fetchFinanceData();
             if (result.alreadyOpened) {
                 notify('Opening inventory already exists', 'info');
@@ -857,7 +857,7 @@ const openInventory = async () => {
     <FinanceContext.Provider value={{
       ...financeStore, addInvoice, updateInvoice, addExpense, approveExpense, addIncome, postJournalEntry,
       createDeliveryNote, executeTransfer, runPayroll, addCheque, updateCheque: financeStore.updateCheque, deleteCheque: financeStore.deleteCheque,
-      recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory,
+      recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory: handleOpenInventory,
       addAccount: financeStore.addAccount, updateAccount: financeStore.updateAccount, deleteAccount: financeStore.deleteAccount,
       deleteInvoice, updateIncome: financeStore.updateIncome, deleteIncome: financeStore.deleteIncome,
       toggleReconciled: financeStore.toggleReconciled, addRecurringInvoice: financeStore.addRecurringInvoice, deleteRecurringInvoice: financeStore.deleteRecurringInvoice, updateRecurringInvoice: financeStore.updateRecurringInvoice,
