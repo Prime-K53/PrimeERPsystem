@@ -2042,7 +2042,16 @@ const Orders: React.FC = () => {
                                 <h2 style={{ fontSize: 13.5, fontWeight: 700, color: '#23282A', margin: 0, display: 'flex', alignItems: 'center', gap: 8, letterSpacing: 0.01 }}>
                                     <CheckCircle size={16} style={{ color: '#1f8577' }} /> {typeLabel} Saved
                                 </h2>
-                                <button onClick={() => setSuccessDoc(null)} style={{ color: '#5c6567', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color .15s ease' }}
+                                <button onClick={() => {
+                                    const shouldOpenPayment = successDoc?.openPaymentModal && successDoc?.type === 'Order' && successDoc?.docNumber;
+                                    const orderObj = shouldOpenPayment
+                                        ? orders.find((o: Order) => o.id === successDoc.docNumber)
+                                        : null;
+                                    setSuccessDoc(null);
+                                    if (shouldOpenPayment && orderObj) {
+                                        setPaymentOrder(orderObj);
+                                    }
+                                }} style={{ color: '#5c6567', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color .15s ease' }}
                                   onMouseEnter={e => { e.currentTarget.style.color = '#b5493f'; }}
                                   onMouseLeave={e => { e.currentTarget.style.color = '#5c6567'; }}
                                 >
@@ -2072,7 +2081,18 @@ const Orders: React.FC = () => {
                             {/* Footer */}
                             <div style={{ display: 'flex', gap: 10, padding: '14px 20px', borderTop: '1px solid #e4ddd1', background: '#eef7f6' }}>
                                 <button
-                                    onClick={() => { setSuccessDoc(null); handlePreview(previewType as any, previewData); }}
+                                    onClick={() => {
+                                        const shouldOpenPayment = successDoc?.openPaymentModal && successDoc?.type === 'Order' && successDoc?.docNumber;
+                                        const orderObj = shouldOpenPayment
+                                            ? orders.find((o: Order) => o.id === successDoc.docNumber)
+                                            : null;
+                                        setSuccessDoc(null);
+                                        if (shouldOpenPayment && orderObj) {
+                                            setPaymentOrder(orderObj);
+                                        } else {
+                                            handlePreview(previewType as any, previewData);
+                                        }
+                                    }}
                                     style={{ flex: 1, padding: '8px 12px', background: 'linear-gradient(155deg, #1f8577, #0f544c)', color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: '0 6px 16px -6px rgba(15,84,76,.55)', transition: 'all .15s ease' }}
                                     onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; }}
                                     onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 16px -6px rgba(15,84,76,.55)'; }}
@@ -2080,7 +2100,16 @@ const Orders: React.FC = () => {
                                     <FileText size={15} /> Preview PDF
                                 </button>
                                 <button
-                                    onClick={() => setSuccessDoc(null)}
+                                    onClick={() => {
+                                        const shouldOpenPayment = successDoc?.openPaymentModal && successDoc?.type === 'Order' && successDoc?.docNumber;
+                                        const orderObj = shouldOpenPayment
+                                            ? orders.find((o: Order) => o.id === successDoc.docNumber)
+                                            : null;
+                                        setSuccessDoc(null);
+                                        if (shouldOpenPayment && orderObj) {
+                                            setPaymentOrder(orderObj);
+                                        }
+                                    }}
                                     style={{ flex: 1, padding: '8px 12px', background: '#FEFDFB', border: '1.4px solid #e4ddd1', color: '#5c6567', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .15s ease' }}
                                     onMouseEnter={e => { e.currentTarget.style.background = '#eef7f6'; e.currentTarget.style.color = '#0f544c'; e.currentTarget.style.borderColor = '#a6d9d3'; }}
                                     onMouseLeave={e => { e.currentTarget.style.background = '#FEFDFB'; e.currentTarget.style.color = '#5c6567'; e.currentTarget.style.borderColor = '#e4ddd1'; }}

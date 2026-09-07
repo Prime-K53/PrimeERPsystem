@@ -42,6 +42,7 @@ export interface OrderFormSaveSuccessDoc {
     totalAmount: number;
     customerName: string;
     data?: any;
+    openPaymentModal?: boolean;
 }
 
 interface OrderFormProps {
@@ -1112,16 +1113,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 price: item.price,
             })) as OrderItem[];
 
-            const paidAmount = andPay ? finalTotalAmount : 0;
-            const payments = andPay ? [{
-                id: `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                orderId: formData.id,
-                amountPaid: finalTotalAmount,
-                paymentDate: new Date().toISOString(),
-                paymentMethod: formData.paymentMethod,
-                recordedBy: user?.name || user?.username || 'System',
-                reference: `Initial payment for Order #${formData.id}`
-            }] : [] as OrderPayment[];
+            // Note: 'andPay' is now used to signal the parent to open the
+            // Record Customer Payment modal after save (not to auto-record payment).
+            // This lets the user record partial or full payments through the proper UI.
+            const paidAmount = 0;
+            const payments = [] as OrderPayment[];
 
             const orderPayload = {
                 id: formData.id,
@@ -1175,7 +1171,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             }
 
             // Save & Finalise → close the form and let the parent celebrate with
-            // a POS-style success modal.
+            // a POS-style success modal. If andPay was requested, signal the parent
+            // to open the Record Customer Payment modal after success.
             if (!asDraft) {
                 onSaveSuccess?.({
                     type: 'Order',
@@ -1183,6 +1180,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                     totalAmount: finalTotalAmount,
                     customerName: resolvedCustomerName,
                     data: orderPayload,
+                    openPaymentModal: andPay,
                 });
             }
 
