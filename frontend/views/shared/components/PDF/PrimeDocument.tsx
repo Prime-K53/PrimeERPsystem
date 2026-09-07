@@ -1867,10 +1867,12 @@ if (type === 'POS_RECEIPT') {
               <View style={s.headerLeft}>
                 {renderBrandMark('left')}
                 <Text style={[s.title, titleStyle]}>{title}</Text>
-                <View style={s.infoText}>
-                  <Text>{toTitleCase(type)} No. {String('number' in data ? dataAny.number : ('receiptNumber' in data ? dataAny.receiptNumber : 'STATEMENT'))}</Text>
-                  <Text>{toTitleCase(type)} Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                </View>
+                {type !== 'FISCAL_REPORT' && (
+                  <View style={s.infoText}>
+                    <Text>{toTitleCase(type)} No. {String('number' in data ? dataAny.number : ('receiptNumber' in data ? dataAny.receiptNumber : 'STATEMENT'))}</Text>
+                    <Text>{toTitleCase(type)} Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
+                  </View>
+                )}
               </View>
               <View style={s.headerRight}>
               </View>
@@ -2345,35 +2347,17 @@ if (type === 'POS_RECEIPT') {
         {/* Case: FISCAL_REPORT - Professional Financial Report Layout */}
         {type === 'FISCAL_REPORT' && 'sections' in data && (
           <View>
-            {/* Professional Header Banner */}
-            <View style={{ marginBottom: 20, paddingBottom: 14, borderBottomWidth: 2, borderBottomColor: '#0f172a' }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                {/* Company Info (left, narrower) */}
-                <View style={{ width: '40%' }}>
-                  {!!logo ? (
-                    <Image src={logo} style={{ width: 80, marginBottom: 6 }} />
-                  ) : (
-                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#0f172a', marginBottom: 3, letterSpacing: 0.3 }}>{companyName}</Text>
-                  )}
-                  {!!companyAddress && <Text style={{ fontSize: 8, color: '#475569', lineHeight: 1.4, marginTop: 3 }}>{companyAddress}</Text>}
-                  {!!companyPhone && <Text style={{ fontSize: 8, color: '#475569', marginTop: 1 }}>Tel: {companyPhone}</Text>}
-                  {!!companyEmail && <Text style={{ fontSize: 8, color: '#475569', marginTop: 1 }}>{companyEmail}</Text>}
+            {/* Report Title (right-aligned to differentiate from page header) */}
+            <View style={{ marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <View>
+                  <Text style={{ fontSize: 7, color: '#64748b', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 'bold' }}>Report Period</Text>
+                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#0f172a', marginTop: 2 }}>{data.period}</Text>
                 </View>
-
-                {/* Report Title (right, wider for long titles) */}
-                <View style={{ width: '58%', alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 7, color: '#64748b', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 'bold' }}>Financial Report</Text>
-                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a', marginTop: 3, letterSpacing: 0.3, textAlign: 'right' }}>{data.reportName || 'Financial Report'}</Text>
-                  <Text style={{ fontSize: 9, color: '#475569', marginTop: 4, fontStyle: 'italic', textAlign: 'right' }}>{data.period}</Text>
-                  <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 4 }}>Currency: {data.currency}</Text>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 7, color: '#64748b' }}>Currency: {data.currency}</Text>
                 </View>
               </View>
-            </View>
-
-            {/* Period Summary Card */}
-            <View style={{ marginBottom: 18, padding: 10, backgroundColor: '#f8fafc', borderLeftWidth: 3, borderLeftColor: '#2563eb' }}>
-              <Text style={{ fontSize: 7, color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5 }}>Reporting Period</Text>
-              <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#0f172a', marginTop: 2 }}>{data.period}</Text>
             </View>
 
             {/* Report Sections - Professional Table Layout */}
@@ -2432,8 +2416,6 @@ if (type === 'POS_RECEIPT') {
                     </Text>
                   </View>
                 ))}
-              </View>
-            ))}
               </View>
             ))}
 
