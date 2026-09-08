@@ -123,6 +123,7 @@ interface NexusDB extends DBSchema {
     bankCashFlowForecasts: { key: string; value: CashFlowForecast; };
     bankAlerts: { key: string; value: BankAlert; };
     bankCategories: { key: string; value: BankCategory; };
+    bankingAttachments: { key: string; value: any; };
     idempotencyKeys: { key: string; value: { id: string; scope: string; sourceId: string; createdAt: string; metadata?: any } };
     settings: { key: string; value: any; };
     customerNotificationLogs: { key: string; value: any; };
@@ -145,6 +146,16 @@ interface NexusDB extends DBSchema {
     fixedAssets: { key: string; value: FixedAsset; };
     depreciationEntries: { key: string; value: DepreciationEntry; };
     assetDisposals: { key: string; value: AssetDisposal; };
+    fixedAssetLocations: { key: string; value: any; };
+    fixedAssetCustodians: { key: string; value: any; };
+    fixedAssetTransfers: { key: string; value: any; };
+    fixedAssetRevaluations: { key: string; value: any; };
+    fixedAssetImpairments: { key: string; value: any; };
+    fixedAssetMaintenance: { key: string; value: any; };
+    fixedAssetWarranty: { key: string; value: any; };
+    fixedAssetInsurance: { key: string; value: any; };
+    fixedAssetVerification: { key: string; value: any; };
+    fixedAssetReversals: { key: string; value: any; };
     ownerEquityTransactions: { key: string; value: OwnerEquityTransaction; };
     loans: { key: string; value: Loan; };
     loanRepayments: { key: string; value: LoanRepayment; };
@@ -425,6 +436,7 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   bankCashFlowForecasts: 'bank_cash_flow_forecasts',
   bankAlerts: 'bank_alerts',
   bankCategories: 'bank_categories',
+  bankingAttachments: 'banking_attachments',
   idempotencyKeys: 'idempotency_keys',
   financialYears: 'financial_years',
   userPreferences: 'user_preferences',
@@ -548,7 +560,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'vatTransactions', 'vatReturns', 'roundingLogs',
     'bankAccounts', 'bankTransactions', 'bankStatements', 'bankScheduledPayments',
     'bankExchangeRates', 'bankFees', 'bankReconciliations', 'bankAdjustments',
-    'bankCashFlowForecasts', 'bankAlerts', 'bankCategories',
+    'bankCashFlowForecasts',     'bankAlerts', 'bankCategories', 'bankingAttachments',
     'idempotencyKeys',
     'settings', 'profitMarginSettings', 'customerNotificationLogs',
     'whatsappChats', 'whatsappTemplates', 'whatsappCampaigns',     'whatsappAutomations',
@@ -567,6 +579,16 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'fixedAssets',
     'depreciationEntries',
     'assetDisposals',
+    'fixedAssetLocations',
+    'fixedAssetCustodians',
+    'fixedAssetTransfers',
+    'fixedAssetRevaluations',
+    'fixedAssetImpairments',
+    'fixedAssetMaintenance',
+    'fixedAssetWarranty',
+    'fixedAssetInsurance',
+    'fixedAssetVerification',
+    'fixedAssetReversals',
     'ownerEquityTransactions',
     'loans',
     'loanRepayments',

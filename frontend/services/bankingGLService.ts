@@ -60,6 +60,7 @@ import { dbService } from './db';
 import { generateId } from './transactions/_internal';
 import { logger } from './logger';
 import { roundFinancial } from '../utils/helpers';
+import { validateDateInFY } from '../utils/financialYearUtils';
 import { BankTransaction } from '../types/banking';
 
 // Canonical COA codes used by the banking module
@@ -250,6 +251,15 @@ export async function postBankTransactionGL(
   },
 ): Promise<PostedLedgerPointer | null> {
   if (tx.status === 'Draft') return null;
+
+  // Closed-period / out-of-FY guard — runs even for programmatic callers
+  // (transfers, statement imports, scheduled-txn execution). The UI layer
+  // already calls validateDateInFY; this is the last line of defence.
+  const fyErr = validateDateInFY(tx.date);
+  if (fyErr) {
+    logger.warn(`[BankingGL] Blocked posting ${tx.id}: ${fyErr}`);
+    throw new Error(fyErr);
+  }
 
   const key = `BANK:${tx.id}`;
   const existing = await getPointer(key);

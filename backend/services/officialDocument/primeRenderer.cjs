@@ -234732,7 +234732,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerLeft, children: [
             renderBrandMark("left"),
             /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.title, titleStyle], children: title }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.infoText, children: [
+            type !== "FISCAL_REPORT" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.infoText, children: [
               /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { children: [
                 toTitleCase(type),
                 " No. ",
@@ -235122,48 +235122,88 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
             companyName
           ] }) })
         ] }),
-        type === "FISCAL_REPORT" && "sections" in data2 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 20, padding: 12, backgroundColor: "#f8fafc", borderRadius: 8, borderLeftWidth: 4, borderLeftColor: "#2563eb" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, color: "#64748b", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: "Report Period" }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 14, fontWeight: "bold", color: "#0f172a" }, children: data2.period })
-          ] }),
-          data2.sections.map((section, idx) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 20 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: "#1e293b", textTransform: "uppercase", borderBottomWidth: 1, borderBottomColor: "#e2e8f0", paddingBottom: 4, marginBottom: 8 }, children: section.title }),
+        type === "FISCAL_REPORT" && "sections" in data2 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7, color: "#64748b", textTransform: "uppercase", letterSpacing: 2, fontWeight: "bold" }, children: "Report Period" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: "#0f172a", marginTop: 2 }, children: data2.period })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { alignItems: "flex-end" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 7, color: "#64748b" }, children: [
+              "Currency: ",
+              data2.currency
+            ] }) })
+          ] }) }),
+          data2.sections.map((section, idx) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginBottom: 16 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { flexDirection: "row", alignItems: "center", backgroundColor: "#0f172a", paddingVertical: 6, paddingHorizontal: 10 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 9, fontWeight: "bold", color: "#ffffff", textTransform: "uppercase", letterSpacing: 1.2, flex: 1 }, children: section.title }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 5, paddingHorizontal: 10, backgroundColor: "#e2e8f0", borderBottomWidth: 1, borderBottomColor: "#cbd5e1" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 7, fontWeight: "bold", color: "#475569", textTransform: "uppercase", letterSpacing: 0.5 }, children: "Account / Description" }),
+              data2.sections.some((s4) => s4.rows.some((r4) => r4.prevAmount !== void 0)) && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 70, fontSize: 7, fontWeight: "bold", color: "#475569", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }, children: "Prior Period" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { width: 80, fontSize: 7, fontWeight: "bold", color: "#475569", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }, children: [
+                "Amount (",
+                data2.currency,
+                ")"
+              ] })
+            ] }),
             section.rows.map((row, rowIdx) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: {
               flexDirection: "row",
-              justifyContent: "space-between",
-              paddingVertical: 6,
-              paddingHorizontal: 4,
-              backgroundColor: row.isTotal ? "#f1f5f9" : "transparent",
-              borderTopWidth: row.isTotal ? 1 : 0,
-              borderColor: "#cbd5e1"
-            }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { marginLeft: row.indent ? 15 : 0 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: row.isTotal ? 10 : 9, fontWeight: row.isTotal ? "bold" : "normal" }, children: row.label }),
-                !!row.subText && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7, color: "#64748b", marginTop: 1 }, children: row.subText })
+              alignItems: "center",
+              paddingVertical: row.isTotal ? 6 : 4,
+              paddingHorizontal: 10,
+              backgroundColor: row.isTotal ? "#f1f5f9" : rowIdx % 2 === 0 ? "#ffffff" : "#fafbfc",
+              borderBottomWidth: row.isTotal ? 2 : 1,
+              borderColor: row.isTotal ? "#0f172a" : "#f1f5f9",
+              borderTopWidth: row.isTotal ? 2 : 0,
+              marginTop: row.isTotal ? 3 : 0
+            }, wrap: false, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1, marginLeft: row.indent ? 14 : 0 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: {
+                  fontSize: row.isTotal ? 9 : 8.5,
+                  fontWeight: row.isTotal ? "bold" : "normal",
+                  color: row.isTotal ? "#0f172a" : "#334155"
+                }, children: row.label }),
+                !!row.subText && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7, color: "#94a3b8", marginTop: 1 }, children: row.subText })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", gap: 20 }, children: [
-                row.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 8, color: "#94a3b8", width: 60, textAlign: "right" }, children: [
-                  data2.currency,
-                  formatAmount2(row.prevAmount)
-                ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: row.isTotal ? 10 : 9, fontWeight: row.isTotal ? "bold" : "normal", width: 80, textAlign: "right" }, children: [
-                  data2.currency,
-                  formatAmount2(row.amount)
-                ] })
-              ] })
+              data2.sections.some((s4) => s4.rows.some((r4) => r4.prevAmount !== void 0)) && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { width: 70, fontSize: row.isTotal ? 9 : 8, color: row.isTotal ? "#475569" : "#94a3b8", textAlign: "right" }, children: row.prevAmount !== void 0 ? `${formatAmount2(row.prevAmount)}` : "\u2014" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: {
+                width: 80,
+                fontSize: row.isTotal ? 9 : 8.5,
+                fontWeight: row.isTotal ? "bold" : "normal",
+                color: row.isTotal ? "#0f172a" : "#1e293b",
+                textAlign: "right"
+              }, children: row.amount < 0 ? `(${formatAmount2(Math.abs(row.amount))})` : `${formatAmount2(row.amount)}` })
             ] }, rowIdx))
           ] }, idx)),
-          !!data2.netPerformance && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 20, padding: 12, backgroundColor: "#0f172a", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#fff", fontSize: 12, fontWeight: "bold" }, children: data2.netPerformance.label }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", gap: 20 }, children: [
-              data2.netPerformance.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#94a3b8", fontSize: 10, textAlign: "right", width: 60 }, children: [
-                data2.currency,
+          !!data2.netPerformance && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 20, padding: 12, backgroundColor: "#0f172a", borderTopWidth: 3, borderTopColor: "#2563eb" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#94a3b8", fontSize: 7, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: "bold" }, children: "Key Performance Indicator" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { color: "#ffffff", fontSize: 11, fontWeight: "bold", marginTop: 3 }, children: data2.netPerformance.label })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
+              data2.netPerformance.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: "#94a3b8", fontSize: 8, marginBottom: 3 }, children: [
+                "Prior: ",
                 formatAmount2(data2.netPerformance.prevAmount)
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { color: data2.netPerformance.amount >= 0 ? "#4ade80" : "#f87171", fontSize: 14, fontWeight: "bold", textAlign: "right", width: 80 }, children: [
-                data2.currency,
-                formatAmount2(data2.netPerformance.amount)
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: {
+                color: data2.netPerformance.amount >= 0 ? "#4ade80" : "#f87171",
+                fontSize: 14,
+                fontWeight: "bold",
+                textAlign: "right"
+              }, children: data2.netPerformance.amount < 0 ? `(${formatAmount2(Math.abs(data2.netPerformance.amount))})` : `${formatAmount2(data2.netPerformance.amount)}` })
+            ] })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 20, paddingTop: 8, borderTopWidth: 1, borderTopColor: "#e2e8f0" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 7, color: "#94a3b8" }, children: [
+                "Generated: ",
+                (/* @__PURE__ */ new Date()).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7, color: "#94a3b8", marginTop: 1 }, children: "Prime ERP \u2014 Financial Reporting Module" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7, color: "#94a3b8" }, children: data2.reportName }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: 7, color: "#94a3b8", marginTop: 1, fontStyle: "italic" }, children: [
+                "All amounts in ",
+                data2.currency
               ] })
             ] })
           ] }) })

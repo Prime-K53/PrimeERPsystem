@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { Package, AlertTriangle, DollarSign, TrendingUp, Box, Layers, BarChart3, ArrowUpDown, Search, Warehouse as WarehouseIcon, Coins, Award } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Package, AlertTriangle, DollarSign, TrendingUp, Box, Layers, BarChart3, ArrowUpDown, Search, Warehouse as WarehouseIcon, Coins, Award, ArrowUp, ArrowDown } from 'lucide-react';
 import { useInventory } from '../../context/InventoryContext';
 import { useSalesStore } from '../../stores/salesStore';
 import { useAuth } from '../../context/AuthContext';
 import { currencyService } from '../../services/currencyService';
+import { dbService } from '../../services/db';
 import type { Item, Sale as SaleType } from '../../types';
 import './inventory-reference.css';
 
@@ -47,7 +48,7 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 6, letterSpacing: 0.01
 };
 
-type ReportTab = 'overview' | 'stock-levels' | 'low-stock' | 'valuation' | 'reorder' | 'financials' | 'top-products';
+type ReportTab = 'overview' | 'stock-levels' | 'low-stock' | 'valuation' | 'reorder' | 'financials' | 'top-products' | 'stock-adjustments';
 
 const TABS: { id: ReportTab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <BarChart3 size={14} /> },
@@ -57,6 +58,7 @@ const TABS: { id: ReportTab; label: string; icon: React.ReactNode }[] = [
   { id: 'financials', label: 'Financials', icon: <Coins size={14} /> },
   { id: 'top-products', label: 'Top Products', icon: <Award size={14} /> },
   { id: 'reorder', label: 'Reorder', icon: <ArrowUpDown size={14} /> },
+  { id: 'stock-adjustments', label: 'Stock Adjustments', icon: <ArrowUp size={14} /> },
 ];
 
 export const InventoryReports: React.FC = () => {
@@ -67,6 +69,19 @@ export const InventoryReports: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ReportTab>('overview');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+
+  // Load inventory transactions (for adjustments report)
+  useEffect(() => {
+    if (activeTab === 'stock-adjustments') {
+      (async () => {
+        try {
+          const all = await dbService.getAll<any>('inventoryTransactions');
+          setAdjustments(all.filter((t) => t.type === 'ADJUSTMENT').sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+        } catch (err) { setAdjustments([]); }
+      })();
+    }
+  }, [activeTab]);
 
   const categories = useMemo(() => {
     const cats = new Set<string>();

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Plus, Search, Download, Calendar, X,
-    Loader2, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, FileText
+    Loader2, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, FileText, Landmark, RefreshCw, Package
 } from 'lucide-react';
 import { incomeSummaryService } from '../../services/incomeSummaryService';
+import { checkBankingYearEnd, BankingYearEndReport } from '../../services/bankingYearEndService';
+import { checkFixedAssetYearEnd, FixedAssetYearEndReport } from '../../services/fixedAssetYearEndService';
 import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { IncomeSummaryEntry } from '../../types';
@@ -25,6 +27,12 @@ const YearEndClosing: React.FC = () => {
     const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
     const [closingResult, setClosingResult] = useState<any>(null);
     const [closingInProgress, setClosingInProgress] = useState(false);
+    const [bankingReport, setBankingReport] = useState<BankingYearEndReport | null>(null);
+    const [bankingReportLoading, setBankingReportLoading] = useState(false);
+    const [selectedFyForBanking, setSelectedFyForBanking] = useState<number>(new Date().getFullYear());
+    const [faReport, setFaReport] = useState<FixedAssetYearEndReport | null>(null);
+    const [faReportLoading, setFaReportLoading] = useState(false);
+    const [selectedFyForFA, setSelectedFyForFA] = useState<number>(new Date().getFullYear());
 
     const canEdit = checkPermission('accounts.edit');
 
@@ -44,6 +52,33 @@ const YearEndClosing: React.FC = () => {
             setIsLoading(false);
         }
     };
+
+    const loadBankingReport = async (fy: number) => {
+        setBankingReportLoading(true);
+        try {
+            const report = await checkBankingYearEnd(fy);
+            setBankingReport(report);
+        } catch (err) {
+            notify('Failed to load banking year-end report', 'error');
+        } finally {
+            setBankingReportLoading(false);
+        }
+    };
+
+    const loadFAReport = async (fy: number) => {
+        setFaReportLoading(true);
+        try {
+            const report = await checkFixedAssetYearEnd(fy);
+            setFaReport(report);
+        } catch (err) {
+            notify('Failed to load fixed-asset year-end report', 'error');
+        } finally {
+            setFaReportLoading(false);
+        }
+    };
+
+    useEffect(() => { loadBankingReport(selectedFyForBanking); }, [selectedFyForBanking]);
+    useEffect(() => { loadFAReport(selectedFyForFA); }, [selectedFyForFA]);
 
     const fiscalYears = useMemo(() => {
         const years = new Set<number>();
@@ -161,6 +196,168 @@ const YearEndClosing: React.FC = () => {
                         <li className="font-medium" style={{ color: danger }}>This action is irreversible. Ensure all transactions are recorded before closing.</li>
                     </ol>
                 </div>
+            </div>
+
+            {/* Banking Reconciliation Status */}
+            <div className="px-6 py-4 border-b" style={{ borderColor: hairline }}>
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <Landmark size={16} style={{ color: assets }} />
+                        <h3 className="font-medium" style={{ color: ink }}>Banking Reconciliation Status — FY {selectedFyForBanking}</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <select
+                            value={selectedFyForBanking}
+                            onChange={(e) => setSelectedFyForBanking(parseInt(e.target.value, 10))}
+                            className="text-sm border rounded-lg px-3 py-1.5"
+                            style={{ borderColor: hairline, color: ink, background: paper }}
+                        >
+                            {[selectedFyForBanking, selectedFyForBanking - 1, selectedFyForBanking - 2].map((y) => (
+                                <option key={y} value={y}>{y}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={() => loadBankingReport(selectedFyForBanking)}
+                            disabled={bankingReportLoading}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border"
+                            style={{ borderColor: hairline, color: ink, background: paper }}
+                        >
+                            {bankingReportLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+
+                {bankingReportLoading && !bankingReport ? (
+                    <div className="text-sm" style={{ color: inkSoft }}>Checking banking accounts…</div>
+                ) : bankingReport ? (
+                    <>
+                        <div className="grid grid-cols-4 gap-3 mb-3">
+                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
+                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Active Accounts</div>
+                                <div className="text-xl font-semibold" style={{ color: ink }}>{bankingReport.summary.activeAccounts}</div>
+                            </div>
+                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
+                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Unreconciled</div>
+                                <div className="text-xl font-semibold" style={{ color: bankingReport.summary.unreconciledCount > 0 ? danger : assets }}>{bankingReport.summary.unreconciledCount}</div>
+                            </div>
+                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
+                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Drafts</div>
+                                <div className="text-xl font-semibold" style={{ color: bankingReport.summary.draftCount > 0 ? danger : assets }}>{bankingReport.summary.draftCount}</div>
+                            </div>
+                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
+                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Stale Recons</div>
+                                <div className="text-xl font-semibold" style={{ color: bankingReport.summary.staleAccounts > 0 ? danger : assets }}>{bankingReport.summary.staleAccounts}</div>
+                            </div>
+                        </div>
+
+                        {bankingReport.issues.length === 0 ? (
+                            <div className="p-3 rounded-lg flex items-center gap-2 text-sm" style={{ background: '#ecfdf5', color: assets }}>
+                                <CheckCircle size={14} /> Banking reconciliation is complete for FY {selectedFyForBanking}. Safe to close.
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {bankingReport.issues.map((issue, i) => (
+                                    <div
+                                        key={i}
+                                        className="p-3 rounded-lg border flex items-start gap-2 text-sm"
+                                        style={{
+                                            borderColor: hairline,
+                                            background: issue.severity === 'error' ? '#fef2f2' : issue.severity === 'warning' ? '#fef9e7' : '#f3f4f6',
+                                            color: issue.severity === 'error' ? danger : issue.severity === 'warning' ? '#b45309' : ink,
+                                        }}
+                                    >
+                                        {issue.severity === 'error' ? <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} /> :
+                                         issue.severity === 'warning' ? <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} /> :
+                                         <FileText size={14} style={{ marginTop: 2, flexShrink: 0 }} />}
+                                        <div>{issue.message}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                ) : null}
+            </div>
+
+            {/* Fixed Asset Reconciliation Status */}
+            <div className="px-6 py-4 border-b" style={{ borderColor: hairline }}>
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <Package size={16} style={{ color: assets }} />
+                        <h3 className="font-medium" style={{ color: ink }}>Fixed Asset Reconciliation — FY {selectedFyForFA}</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <select
+                            value={selectedFyForFA}
+                            onChange={(e) => setSelectedFyForFA(parseInt(e.target.value, 10))}
+                            className="text-sm border rounded-lg px-3 py-1.5"
+                            style={{ borderColor: hairline, color: ink, background: paper }}
+                        >
+                            {[selectedFyForFA, selectedFyForFA - 1, selectedFyForFA - 2].map((y) => (
+                                <option key={y} value={y}>{y}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={() => loadFAReport(selectedFyForFA)}
+                            disabled={faReportLoading}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border"
+                            style={{ borderColor: hairline, color: ink, background: paper }}
+                        >
+                            {faReportLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+
+                {faReportLoading && !faReport ? (
+                    <div className="text-sm" style={{ color: inkSoft }}>Checking fixed assets…</div>
+                ) : faReport ? (
+                    <>
+                        <div className="grid grid-cols-4 gap-3 mb-3">
+                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
+                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Active Assets</div>
+                                <div className="text-xl font-semibold" style={{ color: ink }}>{faReport.summary.activeAssets}</div>
+                            </div>
+                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
+                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Pending Cap.</div>
+                                <div className="text-xl font-semibold" style={{ color: faReport.summary.pendingCapitalisation > 0 ? danger : assets }}>{faReport.summary.pendingCapitalisation}</div>
+                            </div>
+                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
+                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Missing Mapping</div>
+                                <div className="text-xl font-semibold" style={{ color: faReport.summary.missingMapping > 0 ? danger : assets }}>{faReport.summary.missingMapping}</div>
+                            </div>
+                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
+                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Dep. Posted</div>
+                                <div className="text-xl font-semibold" style={{ color: faReport.summary.depreciationPosted ? assets : '#b45309' }}>{faReport.summary.depreciationPosted ? 'Yes' : 'No'}</div>
+                            </div>
+                        </div>
+
+                        {faReport.issues.length === 0 ? (
+                            <div className="p-3 rounded-lg flex items-center gap-2 text-sm" style={{ background: '#ecfdf5', color: assets }}>
+                                <CheckCircle size={14} /> Fixed asset reconciliation complete for FY {selectedFyForFA}. Safe to close.
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {faReport.issues.map((issue, i) => (
+                                    <div
+                                        key={i}
+                                        className="p-3 rounded-lg border flex items-start gap-2 text-sm"
+                                        style={{
+                                            borderColor: hairline,
+                                            background: issue.severity === 'error' ? '#fef2f2' : issue.severity === 'warning' ? '#fef9e7' : '#f3f4f6',
+                                            color: issue.severity === 'error' ? danger : issue.severity === 'warning' ? '#b45309' : ink,
+                                        }}
+                                    >
+                                        {issue.severity === 'error' ? <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} /> :
+                                         issue.severity === 'warning' ? <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} /> :
+                                         <FileText size={14} style={{ marginTop: 2, flexShrink: 0 }} />}
+                                        <div>{issue.message}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                ) : null}
             </div>
 
             {/* Closing History */}

@@ -599,7 +599,7 @@ const Orders: React.FC = () => {
         const outstanding = totalOrderValue - totalPaid;
         const pendingOrders = active.filter(o => o.status === 'Pending');
         const pendingValue = pendingOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-        const completedCount = active.filter(o => o.status === 'Completed' || o.status === 'Paid' || o.status === 'Converted').length;
+        const completedCount = active.filter(o => o.status === 'Completed' || o.status === 'Paid' || o.status === 'Converted' || o.status === 'Waiting').length;
         const orderCount = active.length;
         return { totalOrderValue, totalPaid, outstanding, pendingValue, completedCount, orderCount };
     }, [orders]);
@@ -1129,6 +1129,13 @@ const Orders: React.FC = () => {
                     confirmText: 'Convert',
                     onConfirm: async () => {
                         try {
+                            // First, mark all items as done before converting to invoice
+                            for (const orderItem of item.items) {
+                                if ((orderItem as any).processingStatus !== 'done') {
+                                    await markItemDone(item.id, orderItem.id);
+                                }
+                            }
+                            
                             const issuedDate = new Date().toISOString().split('T')[0];
                             const customer = customers.find((entry: any) =>
                                 entry.id === item.customerId || entry.name === item.customerName
@@ -1216,6 +1223,16 @@ const Orders: React.FC = () => {
                 const ticketId = await convertOrderToJobTicket(item);
                 notify(`Order ${item.id} successfully converted to Job Ticket ${ticketId}`, "success");
                 navigate('/sales-flow/job-tickets');
+            }
+            if (action.startsWith('mark_item_done:')) {
+                const itemId = action.split(':')[1];
+                try {
+                    await markItemDone(item.id, itemId);
+                    notify("Item marked as done", "success");
+                    if (selectedOrderForDetail) setSelectedOrderForDetail(null);
+                } catch (error: any) {
+                    notify(`Failed to mark item done: ${error.message}`, "error");
+                }
             }
         }
     };
@@ -1739,44 +1756,6 @@ const Orders: React.FC = () => {
                     )}
                 </div>
             </div>
-
-<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 18 }}>
-                 {activeView === 'Invoices' ? (
-                     <>
-                         {[
-                             { label: 'Total Invoiced', value: `${currency}${invoiceStats.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: '#1f8577', bg: '#eef7f6' },
-                             { label: 'Annual Profit', value: `${currency}${invoiceStats.annualProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: '#1f8577', bg: '#eef7f6' },
-                             { label: 'Outstanding', value: `${currency}${invoiceStats.outstanding.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: Wallet, color: '#1f8577', bg: '#eef7f6' },
-                             { label: 'Overdue Amount', value: `${currency}${invoiceStats.overdue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: AlertCircle, color: '#b5493f', bg: '#fef2f2' }
-                         ].map((item, idx) => (
-                             <div key={idx} onClick={() => {}} style={{ cursor: 'pointer', padding: '14px 16px', borderRadius: 14, background: '#FEFDFB', border: '1.4px solid #e4ddd1', borderLeft: '4px solid ' + item.color, boxShadow: '0 1px 3px rgba(0,0,0,.04)', display: 'flex', alignItems: 'flex-start', gap: 14, transition: 'transform .15s ease, box-shadow .15s ease' }}>
-                                 <div style={{ padding: 10, borderRadius: 10, background: item.bg, color: item.color, display: 'inline-flex' }}><item.icon size={20} /></div>
-                                 <div style={{ minWidth: 0 }}>
-                                     <p style={{ fontSize: 10, fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>{item.label}</p>
-                                     <p style={{ fontSize: 18, fontWeight: 700, color: '#23282A', margin: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: -0.2 }}>{item.value}</p>
-                                 </div>
-                             </div>
-                         ))}
-                     </>
-                  ) : activeView === 'Orders' ? (
-                      <>
-                          {[
-                              { label: 'Total Orders', value: `${currency}${orderStats.totalOrderValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: '#1f8577', bg: '#eef7f6' },
-                              { label: 'Completed', value: `${orderStats.completedCount} orders`, icon: CheckCircle, color: '#1f8577', bg: '#eef7f6' },
-                              { label: 'Pending Value', value: `${currency}${orderStats.pendingValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: Clock, color: '#1f8577', bg: '#eef7f6' },
-                              { label: 'Outstanding', value: `${currency}${orderStats.outstanding.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: Wallet, color: '#1f8577', bg: '#eef7f6' }
-                          ].map((item, idx) => (
-                              <div key={idx} onClick={() => {}} style={{ cursor: 'pointer', padding: '14px 16px', borderRadius: 14, background: '#FEFDFB', border: '1.4px solid #e4ddd1', borderLeft: '4px solid ' + item.color, boxShadow: '0 1px 3px rgba(0,0,0,.04)', display: 'flex', alignItems: 'flex-start', gap: 14, transition: 'transform .15s ease, box-shadow .15s ease' }}>
-                                  <div style={{ padding: 10, borderRadius: 10, background: item.bg, color: item.color, display: 'inline-flex' }}><item.icon size={20} /></div>
-                                  <div style={{ minWidth: 0 }}>
-                                      <p style={{ fontSize: 10, fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>{item.label}</p>
-                                      <p style={{ fontSize: 18, fontWeight: 700, color: '#23282A', margin: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: -0.2 }}>{item.value}</p>
-                                  </div>
-                              </div>
-                          ))}
-                      </>
-                  ) : null}
-             </div>
 
             {activeView === 'Invoices' && showVisualDashboard && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-500 shrink-0">

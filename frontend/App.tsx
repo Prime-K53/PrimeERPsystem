@@ -152,10 +152,10 @@ const ChartOfAccounts = lazyWithRetry('./views/accounts/ChartOfAccounts', () => 
 const FinancialReports = lazyWithRetry('./views/accounts/FinancialReports', () => import('./views/accounts/FinancialReports'));
 const Reconciliation = lazyWithRetry('./views/accounts/Reconciliation', () => import('./views/accounts/Reconciliation'));
 const Budgets = lazyWithRetry('./views/accounts/Budgets', () => import('./views/accounts/Budgets'));
-const Banking = lazyWithRetry('./views/accounts/Banking', () => import('./views/accounts/Banking'));
+const Banking = lazyWithRetry('./views/accounts/banking-v2', () => import('./views/accounts/banking-v2'));
 const Transfers = lazyWithRetry('./views/accounts/Transfers', () => import('./views/accounts/Transfers'));
 const Payroll = lazyWithRetry('./views/accounts/Payroll', () => import('./views/accounts/Payroll'));
-const FixedAssets = lazyWithRetry('./views/accounts/FixedAssets', () => import('./views/accounts/FixedAssets'));
+const FixedAssets = lazyWithRetry('./views/accounts/fixed-assets-v2', () => import('./views/accounts/fixed-assets-v2'));
 const Loans = lazyWithRetry('./views/accounts/Loans', () => import('./views/accounts/Loans'));
 const OwnerEquity = lazyWithRetry('./views/accounts/OwnerEquity', () => import('./views/accounts/OwnerEquity'));
 const YearEndClosing = lazyWithRetry('./views/accounts/YearEndClosing', () => import('./views/accounts/YearEndClosing'));

@@ -649,7 +649,22 @@ export interface AccountTreeNode extends Account {
   balance?: number;
 }
 
-export type DepreciationMethod = 'straight_line' | 'declining_balance' | 'sum_of_years';
+export type DepreciationMethod = 'straight_line' | 'declining_balance' | 'sum_of_years' | 'units_of_production' | 'manual';
+
+export type FixedAssetCategory =
+  | 'motor_vehicle'
+  | 'furniture'
+  | 'computer_equipment'
+  | 'building'
+  | 'machinery'
+  | 'office_equipment'
+  | 'land'
+  | 'printing_equipment'
+  | 'communication_equipment'
+  | 'leasehold_improvements'
+  | 'other';
+
+export type FixedAssetStatus = 'active' | 'fully_depreciated' | 'disposed' | 'under_maintenance';
 
 export interface FixedAsset {
   id: string;
@@ -678,11 +693,45 @@ export interface FixedAsset {
   created_at: string;
   updated_at: string;
   created_by?: string;
+  // Extended upgrade fields — optional for backward compatibility
+  lifecycle_status?: AssetLifecycleStatus;
+  capitalised_at?: string;
+  depreciation_start_date?: string;
+  depreciation_frequency?: DepreciationFrequency;
+  depreciation_convention?: 'FullMonth' | 'ProRataDaily' | 'MonthAfterAcquisition' | 'MonthOfAcquisition';
+  condition?: AssetCondition;
+  manufacturer?: string;
+  model?: string;
+  serial_number?: string;
+  barcode?: string;
+  qr_code?: string;
+  branch?: string;
+  department?: string;
+  cost_centre?: string;
+  project?: string;
+  location_id?: string;
+  custodian_id?: string;
+  supplier_id?: string;
+  purchase_reference?: string;
+  invoice_reference?: string;
+  warranty_provider?: string;
+  warranty_expiry?: string;
+  insurance_provider?: string;
+  insurance_policy?: string;
+  funding_source?: 'Bank' | 'Cash' | 'SupplierCredit' | 'Loan' | 'Other';
+  bank_account_id?: string;
+  loan_id?: string;
+  revaluation_reserve_account_id?: string;
+  impairment_expense_account_id?: string;
+  gain_on_disposal_account_id?: string;
+  loss_on_disposal_account_id?: string;
+  accumulated_impairment_account_id?: string;
+  last_verification_id?: string;
+  last_verification_date?: string;
+  units_total?: number;
+  units_per_period?: number;
+  depreciation_run_id?: string;
 }
-
-export type FixedAssetCategory = 'motor_vehicle' | 'furniture' | 'computer_equipment' | 'building' | 'machinery' | 'office_equipment' | 'other';
-
-export type FixedAssetStatus = 'active' | 'fully_depreciated' | 'disposed' | 'under_maintenance';
 
 export interface DepreciationEntry {
   id: string;
@@ -706,6 +755,157 @@ export interface AssetDisposal {
   gain_loss: number;
   journal_entry_id?: string;
   reason: string;
+  created_at: string;
+}
+
+/**
+ * Extended fixed asset lifecycle & metadata.
+ * Existing FixedAsset fields are preserved; these add the dimensions
+ * required by the upgraded module (locations, custodians, accounting
+ * configuration, lifecycle status, warranty, insurance).
+ */
+export type AssetLifecycleStatus =
+  | 'Proposed'
+  | 'Acquired'
+  | 'PendingCapitalisation'
+  | 'Capitalised'
+  | 'InService'
+  | 'Depreciating'
+  | 'FullyDepreciated'
+  | 'Disposed'
+  | 'WrittenOff';
+
+export type AssetCondition = 'New' | 'Good' | 'Fair' | 'Poor' | 'Damaged' | 'NonFunctional';
+
+export type DepreciationFrequency = 'Monthly' | 'Quarterly' | 'Annually';
+
+export type DisposalType = 'Sale' | 'Scrapping' | 'Donation' | 'WriteOff' | 'Loss' | 'Replacement';
+
+export interface FixedAssetLocation {
+  id: string;
+  name: string;
+  branch?: string;
+  address?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface FixedAssetCustodian {
+  id: string;
+  name: string;
+  employeeId?: string;
+  department?: string;
+  email?: string;
+  phone?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface FixedAssetTransfer {
+  id: string;
+  fixed_asset_id: string;
+  transfer_date: string;
+  from_location_id?: string;
+  to_location_id?: string;
+  from_custodian_id?: string;
+  to_custodian_id?: string;
+  from_department?: string;
+  to_department?: string;
+  from_cost_centre?: string;
+  to_cost_centre?: string;
+  reason: string;
+  authorised_by?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface FixedAssetRevaluation {
+  id: string;
+  fixed_asset_id: string;
+  revaluation_date: string;
+  old_carrying_value: number;
+  new_carrying_value: number;
+  revaluation_amount: number; // signed: positive = upward, negative = downward
+  reason: string;
+  valuation_method?: string;
+  supporting_document_ref?: string;
+  journal_entry_id?: string;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface FixedAssetImpairment {
+  id: string;
+  fixed_asset_id: string;
+  impairment_date: string;
+  carrying_amount: number;
+  recoverable_amount: number;
+  impairment_amount: number;
+  reason: string;
+  supporting_document_ref?: string;
+  journal_entry_id?: string;
+  is_reversal?: boolean;
+  reverses_id?: string;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface FixedAssetMaintenance {
+  id: string;
+  fixed_asset_id: string;
+  maintenance_date: string;
+  next_service_date?: string;
+  service_provider?: string;
+  description: string;
+  cost: number;
+  is_capex: boolean;
+  warranty_status?: 'UnderWarranty' | 'OutOfWarranty' | 'Expired';
+  notes?: string;
+  attachment_refs?: string[];
+  created_at: string;
+  created_by?: string;
+}
+
+export interface FixedAssetWarranty {
+  id: string;
+  fixed_asset_id: string;
+  provider: string;
+  contract_reference?: string;
+  start_date: string;
+  expiry_date: string;
+  coverage?: string;
+  contact?: string;
+  documents_refs?: string[];
+  created_at: string;
+}
+
+export interface FixedAssetInsurance {
+  id: string;
+  fixed_asset_id: string;
+  provider: string;
+  policy_number: string;
+  start_date: string;
+  expiry_date: string;
+  insured_value: number;
+  premium?: number;
+  coverage?: string;
+  documents_refs?: string[];
+  created_at: string;
+}
+
+export interface FixedAssetVerification {
+  id: string;
+  fixed_asset_id: string;
+  verification_date: string;
+  verifier?: string;
+  expected_location_id?: string;
+  actual_location_id?: string;
+  expected_custodian_id?: string;
+  actual_custodian_id?: string;
+  expected_condition?: AssetCondition;
+  actual_condition?: AssetCondition;
+  status: 'Verified' | 'NotFound' | 'Moved' | 'Damaged' | 'Disposed' | 'NeedsReview';
+  notes?: string;
   created_at: string;
 }
 
