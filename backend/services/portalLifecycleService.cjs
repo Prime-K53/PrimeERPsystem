@@ -1308,10 +1308,11 @@ const portalLifecycleService = {
     if (!request) throw new Error('Request not found');
     assertRequestTransition(request, REQUEST_STATUS.CANCELLED);
 
-    await runQuery(
-      `UPDATE quotation_requests SET status = ?, updated_at = ? WHERE id = ?`,
-      [REQUEST_STATUS.CANCELLED, nowIso(), id]
-    );
+     const result = await runQuery(
+       `UPDATE quotation_requests SET status = ?, updated_at = ? WHERE id = ? AND status = ?`,
+       [REQUEST_STATUS.CANCELLED, nowIso(), id, request.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: request status changed, please refresh and retry');
 
     await addTimeline( customerId, 'request', id, EVENT_TYPES.REQUEST_CANCELLED,
       'Request cancelled', `${request.customer_name} cancelled ${request.request_number}.`,
@@ -1453,11 +1454,12 @@ const portalLifecycleService = {
      if (typeof reason === 'string' && reason.length > 500) throw new Error('Reason too long');
      assertRequestTransition(request, REQUEST_STATUS.REJECTED);
 
-    await runQuery(
-      `UPDATE quotation_requests SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
-       WHERE id = ?`,
-      [REQUEST_STATUS.REJECTED, reason || null, admin.id, nowIso(), nowIso(), id]
-    );
+     const result = await runQuery(
+       `UPDATE quotation_requests SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
+        WHERE id = ? AND status = ?`,
+       [REQUEST_STATUS.REJECTED, reason || null, admin.id, nowIso(), nowIso(), id, request.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: request status changed, please refresh and retry');
 
     await addTimeline( request.customer_id, 'request', id, EVENT_TYPES.REQUEST_REJECTED,
       'Request rejected', `${admin.name || 'Sales'} rejected ${request.request_number}.`,
@@ -1528,15 +1530,16 @@ const portalLifecycleService = {
       throw new Error('Request is closed and cannot be assigned');
     }
 
-    const nextStatus = request.status === REQUEST_STATUS.SUBMITTED
-      ? REQUEST_STATUS.ASSIGNED
-      : request.status;
+     const nextStatus = request.status === REQUEST_STATUS.SUBMITTED
+       ? REQUEST_STATUS.ASSIGNED
+       : request.status;
 
-    await runQuery(
-      `UPDATE quotation_requests SET assigned_to = ?, assigned_by = ?, assigned_at = ?, status = ?, updated_at = ?
-       WHERE id = ?`,
-      [assignTo || null, admin.id || null, nowIso(), nextStatus, nowIso(), id]
-    );
+     const result = await runQuery(
+       `UPDATE quotation_requests SET assigned_to = ?, assigned_by = ?, assigned_at = ?, status = ?, updated_at = ?
+        WHERE id = ? AND status = ?`,
+       [assignTo || null, admin.id || null, nowIso(), nextStatus, nowIso(), id, request.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: request status changed, please refresh and retry');
 
     await addTimeline( request.customer_id, 'request', id, EVENT_TYPES.REQUEST_ASSIGNED,
       'Sales assigned', `${assignToName || assignTo || 'Sales'} was assigned to ${request.request_number}.`,
@@ -1591,10 +1594,11 @@ const portalLifecycleService = {
     }
 
     const now = nowIso();
-    await runQuery(
-      `UPDATE quotation_requests SET status = ?, deleted_at = ?, updated_at = ? WHERE id = ?`,
-      [REQUEST_STATUS.CANCELLED, now, now, id]
-    );
+     const result = await runQuery(
+       `UPDATE quotation_requests SET status = ?, deleted_at = ?, updated_at = ? WHERE id = ? AND status = ?`,
+       [REQUEST_STATUS.CANCELLED, now, now, id, request.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: request status changed, please refresh and retry');
 
     await addTimeline( request.customer_id, 'request', id, EVENT_TYPES.REQUEST_DELETED,
       'Request deleted', `${admin.name || 'Sales'} deleted ${request.request_number}.`,
@@ -1632,19 +1636,20 @@ const portalLifecycleService = {
   // quotation and does NOT reserve a quotation number. It records the event,
   // moves the request to "Ready for Conversion" and returns a prefill payload
   // for the STANDARD ERP quotation editor.
-  async startQuotationGeneration(requestId, { admin, context = {} }) {
-    const request = await this.adminGetRequest(requestId);
-    if (!request) throw new Error('Request not found');
-    if ([REQUEST_STATUS.REJECTED, REQUEST_STATUS.CANCELLED].includes(request.status)) {
-      throw new Error('Request is closed and cannot be converted');
-    }
-    if (request.quotation_id) throw new Error('A quotation has already been generated for this request');
+   async startQuotationGeneration(requestId, { admin, context = {} }) {
+     const request = await this.adminGetRequest(requestId);
+     if (!request) throw new Error('Request not found');
+     if ([REQUEST_STATUS.REJECTED, REQUEST_STATUS.CANCELLED].includes(request.status)) {
+       throw new Error('Request is closed and cannot be converted');
+     }
+     if (request.quotation_id) throw new Error('A quotation has already been generated for this request');
 
-    await runQuery(
-      `UPDATE quotation_requests SET status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
-       WHERE id = ?`,
-      [REQUEST_STATUS.READY_FOR_CONVERSION, admin.id, nowIso(), nowIso(), requestId]
-    );
+     const result = await runQuery(
+       `UPDATE quotation_requests SET status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
+        WHERE id = ? AND status = ?`,
+       [REQUEST_STATUS.READY_FOR_CONVERSION, admin.id, nowIso(), nowIso(), requestId, request.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: request status changed, please refresh and retry');
 
     await addTimeline( request.customer_id, 'request', requestId, EVENT_TYPES.QUOTATION_GENERATION_STARTED,
       'Quotation generation started', `${admin.name || 'Sales'} opened the quotation editor from ${request.request_number}.`,
@@ -1753,12 +1758,13 @@ const portalLifecycleService = {
       );
       quotationCreated = true;
 
-      await runQuery(
-        `UPDATE quotation_requests SET status = ?, quotation_id = ?, quotation_number = ?,
-           converted_at = ?, converted_by = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
-         WHERE id = ?`,
-        [REQUEST_STATUS.CONVERTED, id, number, now, admin.id, admin.id, now, now, requestId]
-      );
+       const result = await runQuery(
+         `UPDATE quotation_requests SET status = ?, quotation_id = ?, quotation_number = ?,
+            converted_at = ?, converted_by = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
+          WHERE id = ? AND status = ?`,
+         [REQUEST_STATUS.CONVERTED, id, number, now, admin.id, admin.id, now, now, requestId, request.status]
+       );
+       if (!result || result.changes === 0) throw new Error('Race condition: request status changed, please refresh and retry');
     } catch (err) {
       if (quotationCreated) {
         try { await runQuery('DELETE FROM quotations WHERE id = ?', [id]); } catch {}
@@ -1817,20 +1823,21 @@ const portalLifecycleService = {
   // reserve an order number. Records the event, moves the order request to
   // "Ready for Conversion" and returns a prefill payload for the STANDARD ERP
   // sales order editor.
-  async startOrderGeneration(requestId, { admin, context = {} }) {
-    const request = await this.adminGetRequest(requestId);
-    if (!request) throw new Error('Request not found');
-    if (request.request_type !== 'order') throw new Error('Only order requests generate official sales orders');
-    if ([REQUEST_STATUS.REJECTED, REQUEST_STATUS.CANCELLED].includes(request.status)) {
-      throw new Error('Request is closed and cannot be converted');
-    }
-    if (request.sales_order_id) throw new Error('A sales order has already been generated for this request');
+   async startOrderGeneration(requestId, { admin, context = {} }) {
+     const request = await this.adminGetRequest(requestId);
+     if (!request) throw new Error('Request not found');
+     if (request.request_type !== 'order') throw new Error('Only order requests generate official sales orders');
+     if ([REQUEST_STATUS.REJECTED, REQUEST_STATUS.CANCELLED].includes(request.status)) {
+       throw new Error('Request is closed and cannot be converted');
+     }
+     if (request.sales_order_id) throw new Error('A sales order has already been generated for this request');
 
-    await runQuery(
-      `UPDATE quotation_requests SET status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
-       WHERE id = ?`,
-      [REQUEST_STATUS.READY_FOR_CONVERSION, admin.id, nowIso(), nowIso(), requestId]
-    );
+     const result = await runQuery(
+       `UPDATE quotation_requests SET status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
+        WHERE id = ? AND status = ?`,
+       [REQUEST_STATUS.READY_FOR_CONVERSION, admin.id, nowIso(), nowIso(), requestId, request.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: request status changed, please refresh and retry');
 
     await addTimeline( request.customer_id, 'request', requestId, EVENT_TYPES.ORDER_GENERATION_STARTED,
       'Sales order generation started', `${admin.name || 'Sales'} opened the sales order editor from ${request.request_number}.`,
@@ -2014,12 +2021,13 @@ const portalLifecycleService = {
       if (!savedOrder || !savedOrder.id) throw new Error('Failed to persist the official sales order');
       orderCreated = true;
 
-      await runQuery(
-        `UPDATE quotation_requests SET status = ?, sales_order_id = ?, sales_order_number = ?,
-           converted_at = ?, converted_by = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
-         WHERE id = ?`,
-        [REQUEST_STATUS.CONVERTED, orderId, orderNumber, now, admin.id, admin.id, now, now, requestId]
-      );
+       const result = await runQuery(
+         `UPDATE quotation_requests SET status = ?, sales_order_id = ?, sales_order_number = ?,
+            converted_at = ?, converted_by = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
+          WHERE id = ? AND status = ?`,
+         [REQUEST_STATUS.CONVERTED, orderId, orderNumber, now, admin.id, admin.id, now, now, requestId, request.status]
+       );
+       if (!result || result.changes === 0) throw new Error('Race condition: request status changed, please refresh and retry');
     } catch (err) {
       if (orderCreated) { try { await runQuery('DELETE FROM sales_orders WHERE id = ?', [orderId]); } catch {} }
       throw err;
@@ -2157,23 +2165,24 @@ const portalLifecycleService = {
   },
 
   // ─── Customer: quotation decisions ─────────────────────────────────────────
-  async acceptQuotation(id, { portalUserId, customerId, signerName, signerEmail, context = {} }) {
-    const quotation = await this.getQuotationById(id, { customerId});
-    if (!quotation) throw new Error('Quotation not found');
-    if (quotation.status === QUOTATION_STATUS.EXPIRED) {
-      throw new Error('This quotation has expired and can no longer be accepted');
-    }
-    assertQuotationTransition(quotation, QUOTATION_STATUS.ACCEPTED);
+   async acceptQuotation(id, { portalUserId, customerId, signerName, signerEmail, context = {} }) {
+     const quotation = await this.getQuotationById(id, { customerId});
+     if (!quotation) throw new Error('Quotation not found');
+     if (quotation.status === QUOTATION_STATUS.EXPIRED) {
+       throw new Error('This quotation has expired and can no longer be accepted');
+     }
+     assertQuotationTransition(quotation, QUOTATION_STATUS.ACCEPTED);
 
-    const acceptedBy = signerName || quotation.customer_name || 'Customer';
-    await runQuery(
-      `UPDATE quotations SET status = ?, accepted_by = ?, accepted_by_email = ?, accepted_at = ?, updated_at = ? WHERE id = ?`,
-      [QUOTATION_STATUS.ACCEPTED, acceptedBy, signerEmail || null, nowIso(), nowIso(), id]
-    );
+     const acceptedBy = signerName || quotation.customer_name || 'Customer';
+     const result = await runQuery(
+       `UPDATE quotations SET status = ?, accepted_by = ?, accepted_by_email = ?, accepted_at = ?, updated_at = ? WHERE id = ? AND status = ?`,
+       [QUOTATION_STATUS.ACCEPTED, acceptedBy, signerEmail || null, nowIso(), nowIso(), id, quotation.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: quotation status changed, please refresh and retry');
 
-    await recordSignature({ customerId, docType: 'quotation', docId: id, decision: 'accepted',
-      signedBy: portalUserId, signerName: acceptedBy, signerEmail, context,
-    });
+     await recordSignature({ customerId, docType: 'quotation', docId: id, decision: 'accepted',
+       signedBy: portalUserId, signerName: acceptedBy, signerEmail, context,
+     });
 
     await addTimeline( customerId, 'quotation', id, EVENT_TYPES.QUOTATION_ACCEPTED,
       'Quotation accepted', `${acceptedBy} accepted ${quotation.quotation_number}.`,
@@ -2194,23 +2203,24 @@ const portalLifecycleService = {
     return { id, status: QUOTATION_STATUS.ACCEPTED };
   },
 
-  async rejectQuotation(id, { portalUserId, customerId, reason, signerName, signerEmail, context = {} }) {
-    const quotation = await this.getQuotationById(id, { customerId});
-    if (!quotation) throw new Error('Quotation not found');
-    if (quotation.status === QUOTATION_STATUS.EXPIRED) {
-      throw new Error('This quotation has expired and can no longer be responded to');
-    }
-    assertQuotationTransition(quotation, QUOTATION_STATUS.REJECTED);
+   async rejectQuotation(id, { portalUserId, customerId, reason, signerName, signerEmail, context = {} }) {
+     const quotation = await this.getQuotationById(id, { customerId});
+     if (!quotation) throw new Error('Quotation not found');
+     if (quotation.status === QUOTATION_STATUS.EXPIRED) {
+       throw new Error('This quotation has expired and can no longer be responded to');
+     }
+     assertQuotationTransition(quotation, QUOTATION_STATUS.REJECTED);
 
-    const signer = signerName || quotation.customer_name || 'Customer';
-    await runQuery(
-      `UPDATE quotations SET status = ?, rejection_reason = ?, rejected_at = ?, updated_at = ? WHERE id = ?`,
-      [QUOTATION_STATUS.REJECTED, reason || null, nowIso(), nowIso(), id]
-    );
+     const signer = signerName || quotation.customer_name || 'Customer';
+     const result = await runQuery(
+       `UPDATE quotations SET status = ?, rejection_reason = ?, rejected_at = ?, updated_at = ? WHERE id = ? AND status = ?`,
+       [QUOTATION_STATUS.REJECTED, reason || null, nowIso(), nowIso(), id, quotation.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: quotation status changed, please refresh and retry');
 
-    await recordSignature({ customerId, docType: 'quotation', docId: id, decision: 'rejected',
-      signedBy: portalUserId, signerName: signer, signerEmail, note: reason || null, context,
-    });
+     await recordSignature({ customerId, docType: 'quotation', docId: id, decision: 'rejected',
+       signedBy: portalUserId, signerName: signer, signerEmail, note: reason || null, context,
+     });
 
     await addTimeline( customerId, 'quotation', id, EVENT_TYPES.QUOTATION_REJECTED,
       'Quotation rejected', `${signer} rejected ${quotation.quotation_number}.`,
@@ -2240,15 +2250,16 @@ const portalLifecycleService = {
     }
     assertQuotationTransition(quotation, QUOTATION_STATUS.REVISION_REQUESTED);
 
-    const signer = signerName || quotation.customer_name || 'Customer';
-    await runQuery(
-      `UPDATE quotations SET status = ?, revision_note = ?, revision_requested_at = ?, updated_at = ? WHERE id = ?`,
-      [QUOTATION_STATUS.REVISION_REQUESTED, comments || null, nowIso(), nowIso(), id]
-    );
+     const signer = signerName || quotation.customer_name || 'Customer';
+     const result = await runQuery(
+       `UPDATE quotations SET status = ?, revision_note = ?, revision_requested_at = ?, updated_at = ? WHERE id = ? AND status = ?`,
+       [QUOTATION_STATUS.REVISION_REQUESTED, comments || null, nowIso(), nowIso(), id, quotation.status]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: quotation status changed, please refresh and retry');
 
-    await recordSignature({ customerId, docType: 'quotation', docId: id, decision: 'revision',
-      signedBy: portalUserId, signerName: signer, signerEmail, note: comments || null, context,
-    });
+     await recordSignature({ customerId, docType: 'quotation', docId: id, decision: 'revision',
+       signedBy: portalUserId, signerName: signer, signerEmail, note: comments || null, context,
+     });
 
     await addTimeline( customerId, 'quotation', id, EVENT_TYPES.REVISION_REQUESTED,
       'Revision requested', `${signer} requested changes to ${quotation.quotation_number}.`,
@@ -2368,10 +2379,12 @@ const portalLifecycleService = {
       );
       orderCreated = true;
 
-      await runQuery(
-        `UPDATE quotations SET status = ?, order_id = ?, converted_at = ?, updated_at = ? WHERE id = ?`,
-        [QUOTATION_STATUS.CONVERTED, orderId, nowIso(), nowIso(), id]
-      );
+       const expectedStatus = quotation.status;
+       const result = await runQuery(
+         `UPDATE quotations SET status = ?, order_id = ?, converted_at = ?, updated_at = ? WHERE id = ? AND status = ?`,
+         [QUOTATION_STATUS.CONVERTED, orderId, nowIso(), nowIso(), id, expectedStatus]
+       );
+       if (!result || result.changes === 0) throw new Error('Race condition: quotation already converted or status changed');
     } catch (err) {
       if (orderCreated) { try { await runQuery('DELETE FROM sales_orders WHERE id = ?', [orderId]); } catch {} }
       throw err;
@@ -2670,10 +2683,11 @@ const portalLifecycleService = {
 
     const fromStatus = order.status;
     const now = nowIso();
-    await runQuery(
-      `UPDATE sales_orders SET status = ?, notes = ?, updated_by = ?, updated_at = ? WHERE id = ?`,
-      [toStatus, note || order.notes || null, admin.id, now, orderId]
-    );
+     const result = await runQuery(
+       `UPDATE sales_orders SET status = ?, notes = ?, updated_by = ?, updated_at = ? WHERE id = ? AND status = ?`,
+       [toStatus, note || order.notes || null, admin.id, now, orderId, fromStatus]
+     );
+     if (!result || result.changes === 0) throw new Error('Race condition: order status changed, please refresh and retry');
 
     await addTimeline( order.customer_id, 'order', orderId, EVENT_TYPES.ORDER_STATUS_CHANGED,
       'Order status changed', `${order.order_number} moved from ${fromStatus} to ${toStatus}.`,
