@@ -1722,11 +1722,9 @@ const portalLifecycleService = {
 
     const id = genId('qt');
     const now = nowIso();
-    // Official quotation number comes from the ERP editor when available;
-    // otherwise the backend generates one so the chain never dead-ends.
     const number = quotationNumber || await workflowEngine.nextYearScopedNumber('quotations', 'quotation_number', 'QT');
 
-    await runQuery('BEGIN TRANSACTION');
+    let quotationCreated = false;
     try {
       await runQuery(
         `INSERT INTO quotations
@@ -1734,9 +1732,10 @@ const portalLifecycleService = {
             subtotal, discount, tax_rate, tax_amount, delivery_fee, total, currency,
             payment_terms, valid_until, status, created_by, source_request_number, erp_quotation_id,
             promotion, discount_total, promotion_applied)
-         VALUES (?, ?, ?, ?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, number, requestId, request.customer_id, request.customer_name, JSON.stringify(normalizedItems), subtotal, discount, taxRate, taxAmount, deliveryFee, total, quotationSnapshot.currency || 'MWK', quotationSnapshot.paymentTerms || 'Net 7', quotationSnapshot.validUntil || null, QUOTATION_STATUS.READY, admin.id, request.request_number, erpQuotationId || null, promotion ? JSON.stringify(promotion) : null, discount, promotion ? 1 : 0]
       );
+      quotationCreated = true;
 
       await runQuery(
         `UPDATE quotation_requests SET status = ?, quotation_id = ?, quotation_number = ?,
@@ -1744,70 +1743,52 @@ const portalLifecycleService = {
          WHERE id = ?`,
         [REQUEST_STATUS.CONVERTED, id, number, now, admin.id, admin.id, now, now, requestId]
       );
+    } catch (err) {
+      if (quotationCreated) {
+        try { await runQuery('DELETE FROM quotations WHERE id = ?', [id]); } catch {}
+      }
+      throw err;
+    }
 
+    try {
       await addTimeline( request.customer_id, 'request', requestId, EVENT_TYPES.QUOTATION_SAVED,
         'Quotation saved', `${number} was saved for ${request.request_number}.`,
         { type: 'admin', id: admin.id, name: admin.name || 'Sales' },
         { quotationNumber: number, total });
 
       await workflowEngine.createVersionSnapshot({
-        customerId: request.customer_id,
-        docType: 'quotation',
-        docId: id,
-        version: 1,
-        snapshot: {
-          items: normalizedItems,
-          subtotal, discount, taxRate, taxAmount, deliveryFee, total,
-          currency: quotationSnapshot.currency || 'MWK',
-          paymentTerms: quotationSnapshot.paymentTerms || 'Net 7',
-          validUntil: quotationSnapshot.validUntil || null,
-          status: QUOTATION_STATUS.READY,
-          promotion,
-        },
-        reason: 'Original',
-        actor: { id: admin.id, name: admin.name || 'Sales' },
+        customerId: request.customer_id, docType: 'quotation', docId: id, version: 1,
+        snapshot: { items: normalizedItems, subtotal, discount, taxRate, taxAmount, deliveryFee, total, currency: quotationSnapshot.currency || 'MWK', paymentTerms: quotationSnapshot.paymentTerms || 'Net 7', validUntil: quotationSnapshot.validUntil || null, status: QUOTATION_STATUS.READY, promotion },
+        reason: 'Original', actor: { id: admin.id, name: admin.name || 'Sales' },
       });
+    } catch (err) { console.error('[PortalLifecycle] post-quotation non-DB op failed:', err?.message); }
 
+    try {
       await addTimeline( request.customer_id, 'request', requestId, EVENT_TYPES.QUOTATION_NUMBER_ASSIGNED,
         'Quotation number assigned', `${number} was assigned to ${request.request_number}.`,
         { type: 'system' }, { quotationNumber: number });
+    } catch (err) { console.error('[PortalLifecycle] post-quotation non-DB op failed:', err?.message); }
 
+    try {
       await addTimeline( request.customer_id, 'quotation', id, EVENT_TYPES.QUOTATION_GENERATED,
         'Quotation ready', `Official quotation ${number} is ready for review.`,
         { type: 'system' }, { total, sourceRequest: request.request_number });
+    } catch (err) { console.error('[PortalLifecycle] post-quotation non-DB op failed:', err?.message); }
 
-      await logAudit({
-        actor: { id: admin.id, name: admin.name || 'Sales', role: admin.role || 'admin' }, action: 'QUOTATION_SAVED', entityType: 'quotation', entityId: id,
-        details: `${number} created from request ${request.request_number}`,
-        oldValue: { status: request.status },
-        newValue: { status: REQUEST_STATUS.CONVERTED, quotationNumber: number, items: normalizedItems, subtotal, taxAmount, total }, context,
-      });
+    try {
+      await logAudit({ actor: { id: admin.id, name: admin.name || 'Sales', role: admin.role || 'admin' }, action: 'QUOTATION_SAVED', entityType: 'quotation', entityId: id, details: `${number} created from request ${request.request_number}`, oldValue: { status: request.status }, newValue: { status: REQUEST_STATUS.CONVERTED, quotationNumber: number, items: normalizedItems, subtotal, taxAmount, total }, context });
+    } catch (err) { console.error('[PortalLifecycle] post-quotation non-DB op failed:', err?.message); }
 
-      await notifyCustomer({ customerId: request.customer_id, type: NOTIFICATION_TYPES.QUOTATION,
-        title: `Your quotation ${number} is ready`,
-        body: `Your official quotation (from request ${request.request_number}) is available for review.`,
-        link: `#/portal/quotations/${id}`,
-        actorName: admin.name || 'Sales',
-      });
-      const portalUsers = await getAll(
-        'SELECT id, email FROM portal_users WHERE customer_id = ? AND status = ?',
-        [request.customer_id, 'active']
-      );
-      for (const user of portalUsers) {
-        await sendEmailBestEffort({
-          to: user.email,
-          subject: `Your quotation ${number} is ready for review`,
-          text: `Dear ${request.customer_name},\n\nYour official quotation ${number} (total ${total}) prepared from request ${request.request_number} is ready.\nSign in to the customer portal to preview, download or respond.\n\nPrime ERP`,
-        });
-      }
+    try {
+      await notifyCustomer({ customerId: request.customer_id, type: NOTIFICATION_TYPES.QUOTATION, title: `Your quotation ${number} is ready`, body: `Your official quotation (from request ${request.request_number}) is available for review.`, link: `#/portal/quotations/${id}`, actorName: admin.name || 'Sales' });
+    } catch (err) { console.error('[PortalLifecycle] post-quotation non-DB op failed:', err?.message); }
 
-      await runQuery('COMMIT');
-    } catch (err) {
-      await runQuery('ROLLBACK');
-      throw err;
-    }
+    try {
+      const portalUsers = await getAll('SELECT id, email FROM portal_users WHERE customer_id = ? AND status = ?', [request.customer_id, 'active']);
+      for (const user of portalUsers) { await sendEmailBestEffort({ to: user.email, subject: `Your quotation ${number} is ready for review`, text: `Dear ${request.customer_name},\n\nYour official quotation ${number} (total ${total}) prepared from request ${request.request_number} is ready.\nSign in to the customer portal to preview, download or respond.\n\nPrime ERP` }); }
+    } catch (err) { console.error('[PortalLifecycle] post-quotation non-DB op failed:', err?.message); }
 
-    emitEntityChange('portal', { customerId: request.customer_id, docType: 'quotation', docId: id, status: QUOTATION_STATUS.READY, quotationNumber: number });
+     emitEntityChange('portal', { customerId: request.customer_id, docType: 'quotation', docId: id, status: QUOTATION_STATUS.READY, quotationNumber: number });
     emitEntityChange('portal', { customerId: request.customer_id, docType: 'request', docId: requestId, status: REQUEST_STATUS.CONVERTED, quotationNumber: number });
     emitEntityChange('admin', { customerId: request.customer_id, docType: 'quotation', docId: id, status: QUOTATION_STATUS.READY, quotationNumber: number });
     emitEntityChange('admin', { customerId: request.customer_id, docType: 'request', docId: requestId, status: REQUEST_STATUS.CONVERTED, quotationNumber: number });
@@ -2001,66 +1982,21 @@ const portalLifecycleService = {
       }
     }
 
-    await runQuery('BEGIN TRANSACTION');
+    let orderCreated = false;
     try {
-      // Merge with the cloud row when the ERP record already exists so the
-      // version-aware cloud write gate is satisfied (repo.upsert bumps the
-      // version read from the existing row).
       const erpExisting = erpOrderId ? await repo.getById('sales_orders', erpOrderId) : null;
       const orderRecord = {
-        ...(erpExisting || {}),
-        id: orderId,
-        order_number: orderNumber,
-        source_request_id: requestId,
-        source_request_number: request.request_number,
-        reorder_of: request.reorder_of || null,
-        reorder_of_number: request.reorder_of_number || null,
-        // Dual key spelling: the ERP frontend store writes `customerId`, the
-        // backend shim writes `customer_id`. Writing BOTH guarantees the order
-        // is found by the admin list AND by the portal's customer scope.
-        customer_id: request.customer_id,
-        customerId: request.customer_id,
+        ...(erpExisting || {}), id: orderId, order_number: orderNumber,
+        source_request_id: requestId, source_request_number: request.request_number,
+        reorder_of: request.reorder_of || null, reorder_of_number: request.reorder_of_number || null,
+        customer_id: request.customer_id, customerId: request.customer_id,
         customer_name: request.customer_name || orderSnapshot.customerName || null,
-        orderDate: (erpExisting && erpExisting.orderDate) || now,
-        deliveryDate,
-        status: workflowEngine.SALES_ORDER_STATUS.CONFIRMED,
-        items: itemsJson,
-        subtotal,
-        discounts: discount,
-        tax: taxAmount,
-        other_charges: otherCharges,
-        total,
-        notes: orderSnapshot.notes || request.notes || `Generated from ${request.request_number}`,
-        approved_by: admin.id,
-        approved_at: now,
-        erp_order_id: erpOrderId || null,
-        created_by: admin.id,
-        created_at: now,
-        updated_at: now,
-        promotion: promotion ? JSON.stringify(promotion) : null,
-        discount_total: discount,
-        promotion_applied: promotion ? 1 : 0,
-        subtotal_before_discount: subtotal,
-        // Referral attribution: resolve referred_by_id from customer_referrals using
-        // the referred_by_code stored at quotation-request creation time.
-        // This populates sales_orders.referred_by (SQLite) and sales_orders.data
-        // (Supabase) for the backend referral lifecycle hook.
-        referred_by: resolvedReferredById,
-        referred_by_id: resolvedReferredById,
-        referred_by_code: request.referred_by_code || null,
-        // Order-level pricing evidence aggregates (metadata only — these are
-        // NOT accounting amounts; total/subtotal above are untouched).
-        materialTotal: pricingTotals.materialTotal,
-        adjustmentTotal: pricingTotals.adjustmentTotal,
-        profitMarginTotal: pricingTotals.profitMarginTotal,
-        roundingTotal: pricingTotals.roundingTotal,
-        roundingDifference: pricingTotals.roundingTotal,
-        version: erpExisting ? erpExisting.version : undefined,
+        orderDate: (erpExisting && erpExisting.orderDate) || now, deliveryDate,
+        status: workflowEngine.SALES_ORDER_STATUS.CONFIRMED, items: itemsJson, subtotal, discounts: discount, tax: taxAmount, other_charges: otherCharges, total, notes: orderSnapshot.notes || request.notes || `Generated from ${request.request_number}`, approved_by: admin.id, approved_at: now, erp_order_id: erpOrderId || null, created_by: admin.id, created_at: now, updated_at: now, promotion: promotion ? JSON.stringify(promotion) : null, discount_total: discount, promotion_applied: promotion ? 1 : 0, subtotal_before_discount: subtotal, referred_by: resolvedReferredById, referred_by_id: resolvedReferredById, referred_by_code: request.referred_by_code || null, materialTotal: pricingTotals.materialTotal, adjustmentTotal: pricingTotals.adjustmentTotal, profitMarginTotal: pricingTotals.profitMarginTotal, roundingTotal: pricingTotals.roundingTotal, roundingDifference: pricingTotals.roundingTotal, version: erpExisting ? erpExisting.version : undefined,
       };
       const savedOrder = await repo.upsert('sales_orders', orderRecord);
-      if (!savedOrder || !savedOrder.id) {
-        throw new Error('Failed to persist the official sales order');
-      }
+      if (!savedOrder || !savedOrder.id) throw new Error('Failed to persist the official sales order');
+      orderCreated = true;
 
       await runQuery(
         `UPDATE quotation_requests SET status = ?, sales_order_id = ?, sales_order_number = ?,
@@ -2068,46 +2004,28 @@ const portalLifecycleService = {
          WHERE id = ?`,
         [REQUEST_STATUS.CONVERTED, orderId, orderNumber, now, admin.id, admin.id, now, now, requestId]
       );
-
-      await addTimeline( request.customer_id, 'request', requestId, EVENT_TYPES.ORDER_GENERATED,
-        'Sales order generated', `${orderNumber} was generated from ${request.request_number}.`,
-        { type: 'admin', id: admin.id, name: admin.name || 'Sales' },
-        { orderNumber, total });
-
-      await addTimeline( request.customer_id, 'order', orderId, EVENT_TYPES.ORDER_GENERATED,
-        'Order confirmed', `Official sales order ${orderNumber} is confirmed.`,
-        { type: 'system' }, { total, sourceRequest: request.request_number });
-
-      await logAudit({
-        actor: { id: admin.id, name: admin.name || 'Sales', role: admin.role || 'admin' }, action: 'SALES_ORDER_GENERATED', entityType: 'sales_order', entityId: orderId,
-        details: `${orderNumber} created from request ${request.request_number}`,
-        oldValue: { status: request.status },
-        newValue: { status: REQUEST_STATUS.CONVERTED, orderNumber, items: normalizedItems, subtotal, taxAmount, total }, context,
-      });
-
-      await notifyCustomer({ customerId: request.customer_id, type: NOTIFICATION_TYPES.ORDER,
-        title: `Your order ${orderNumber} is confirmed`,
-        body: `Your order request ${request.request_number} has been confirmed as official order ${orderNumber}.`,
-        link: `#/portal/orders/${orderId}`,
-        actorName: admin.name || 'Sales',
-      });
-      const portalUsers = await getAll(
-        'SELECT id, email FROM portal_users WHERE customer_id = ? AND status = ?',
-        [request.customer_id, 'active']
-      );
-      for (const user of portalUsers) {
-        await sendEmailBestEffort({
-          to: user.email,
-          subject: `Your order ${orderNumber} is confirmed`,
-          text: `Dear ${request.customer_name},\n\nYour order ${orderNumber} (total ${total}) prepared from request ${request.request_number} is confirmed.\nTrack it from the customer portal.\n\nPrime ERP`,
-        });
-      }
-
-      await runQuery('COMMIT');
     } catch (err) {
-      await runQuery('ROLLBACK');
+      if (orderCreated) { try { await runQuery('DELETE FROM sales_orders WHERE id = ?', [orderId]); } catch {} }
       throw err;
     }
+
+    try {
+      await addTimeline( request.customer_id, 'request', requestId, EVENT_TYPES.ORDER_GENERATED, 'Sales order generated', `${orderNumber} was generated from ${request.request_number}.`, { type: 'admin', id: admin.id, name: admin.name || 'Sales' }, { orderNumber, total });
+      await addTimeline( request.customer_id, 'order', orderId, EVENT_TYPES.ORDER_GENERATED, 'Order confirmed', `Official sales order ${orderNumber} is confirmed.`, { type: 'system' }, { total, sourceRequest: request.request_number });
+    } catch (err) { console.error('[PortalLifecycle] post-order non-DB op failed:', err?.message); }
+
+    try {
+      await logAudit({ actor: { id: admin.id, name: admin.name || 'Sales', role: admin.role || 'admin' }, action: 'SALES_ORDER_GENERATED', entityType: 'sales_order', entityId: orderId, details: `${orderNumber} created from request ${request.request_number}`, oldValue: { status: request.status }, newValue: { status: REQUEST_STATUS.CONVERTED, orderNumber, items: normalizedItems, subtotal, taxAmount, total }, context });
+    } catch (err) { console.error('[PortalLifecycle] post-order non-DB op failed:', err?.message); }
+
+    try {
+      await notifyCustomer({ customerId: request.customer_id, type: NOTIFICATION_TYPES.ORDER, title: `Your order ${orderNumber} is confirmed`, body: `Your order request ${request.request_number} has been confirmed as official order ${orderNumber}.`, link: `#/portal/orders/${orderId}`, actorName: admin.name || 'Sales' });
+    } catch (err) { console.error('[PortalLifecycle] post-order non-DB op failed:', err?.message); }
+
+    try {
+      const portalUsers = await getAll('SELECT id, email FROM portal_users WHERE customer_id = ? AND status = ?', [request.customer_id, 'active']);
+      for (const user of portalUsers) { await sendEmailBestEffort({ to: user.email, subject: `Your order ${orderNumber} is confirmed`, text: `Dear ${request.customer_name},\n\nYour order ${orderNumber} (total ${total}) prepared from request ${request.request_number} is confirmed.\nTrack it from the customer portal.\n\nPrime ERP` }); }
+    } catch (err) { console.error('[PortalLifecycle] post-order non-DB op failed:', err?.message); }
 
     emitEntityChange('portal', { customerId: request.customer_id, docType: 'order', docId: orderId, status: workflowEngine.SALES_ORDER_STATUS.CONFIRMED, orderNumber });
     emitEntityChange('portal', { customerId: request.customer_id, docType: 'request', docId: requestId, status: REQUEST_STATUS.CONVERTED, orderNumber });
@@ -2422,62 +2340,43 @@ const portalLifecycleService = {
     );
     const now = nowIso();
 
-    await runQuery('BEGIN TRANSACTION');
+    let orderCreated = false;
     try {
       await runQuery(
         `INSERT INTO sales_orders
            (id, order_number, quotation_id, source_request_id, source_request_number, customer_id, orderDate, deliveryDate, status, items,
             subtotal, discounts, tax, other_charges, total, notes,
             approved_by, approved_at, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )`,
         [orderId, orderNumber, id, quotation.request_id || null, quotation.source_request_number || null, quotation.customer_id, now, deliveryDate || null, workflowEngine.SALES_ORDER_STATUS.CONFIRMED, itemsJson, quotation.subtotal, quotation.discount, quotation.tax_amount, quotation.delivery_fee, quotation.total, notes || `Converted from ${quotation.quotation_number}`, admin.id, now, admin.id, now, now]
       );
+      orderCreated = true;
 
       await runQuery(
         `UPDATE quotations SET status = ?, order_id = ?, converted_at = ?, updated_at = ? WHERE id = ?`,
         [QUOTATION_STATUS.CONVERTED, orderId, nowIso(), nowIso(), id]
       );
-
-      await addTimeline( quotation.customer_id, 'quotation', id, EVENT_TYPES.ORDER_CONVERTED,
-        'Converted to sales order', `${quotation.quotation_number} was converted to sales order ${orderNumber}.`,
-        { type: 'admin', id: admin.id, name: admin.name || 'Sales' }, { orderNumber });
-
-      await addTimeline( quotation.customer_id, 'order', orderId, EVENT_TYPES.ORDER_CONVERTED,
-        'Order confirmed', `Sales order ${orderNumber} created from ${quotation.quotation_number}.`,
-        { type: 'system' }, { quotationNumber: quotation.quotation_number, total: quotation.total });
-
-      await logAudit({
-        actor: { id: admin.id, name: admin.name || 'Sales', role: admin.role || 'admin' }, action: 'SALES_ORDER_CONVERT', entityType: 'sales_order', entityId: orderId,
-        details: `${orderNumber} created from quotation ${quotation.quotation_number}`,
-        oldValue: { status: quotation.status },
-        newValue: { status: QUOTATION_STATUS.CONVERTED, orderId, orderNumber }, context,
-      });
-
-      const portalUsers = await getAll(
-        'SELECT id, email FROM portal_users WHERE customer_id = ? AND status = ?',
-        [quotation.customer_id, 'active']
-      );
-      await notifyCustomer({ customerId: quotation.customer_id, type: NOTIFICATION_TYPES.ORDER,
-        title: `Your order ${orderNumber} is confirmed`,
-        body: `Your order from ${quotation.quotation_number} has been confirmed.`,
-        link: `#/portal/orders/${orderId}`,
-        actorName: admin.name || 'Sales',
-      });
-      for (const user of portalUsers) {
-        await sendEmailBestEffort({
-          to: user.email,
-          subject: `Your order ${orderNumber} is confirmed`,
-          text: `Dear ${quotation.customer_name},\n\nYour order ${orderNumber} (total ${quotation.total}) has been confirmed.\nTrack it from the customer portal.\n\nPrime ERP`,
-        });
-      }
-
-      await runQuery('COMMIT');
     } catch (err) {
-      await runQuery('ROLLBACK');
+      if (orderCreated) { try { await runQuery('DELETE FROM sales_orders WHERE id = ?', [orderId]); } catch {} }
       throw err;
     }
 
-    emitEntityChange('portal', { customerId: quotation.customer_id, docType: 'order', docId: orderId, status: 'Confirmed', orderNumber });
+    try {
+      await addTimeline( quotation.customer_id, 'quotation', id, EVENT_TYPES.ORDER_CONVERTED, 'Converted to sales order', `${quotation.quotation_number} was converted to sales order ${orderNumber}.`, { type: 'admin', id: admin.id, name: admin.name || 'Sales' }, { orderNumber });
+      await addTimeline( quotation.customer_id, 'order', orderId, EVENT_TYPES.ORDER_CONVERTED, 'Order confirmed', `Sales order ${orderNumber} created from ${quotation.quotation_number}.`, { type: 'system' }, { quotationNumber: quotation.quotation_number, total: quotation.total });
+    } catch (err) { console.error('[PortalLifecycle] post-convert non-DB op failed:', err?.message); }
+
+    try {
+      await logAudit({ actor: { id: admin.id, name: admin.name || 'Sales', role: admin.role || 'admin' }, action: 'SALES_ORDER_CONVERT', entityType: 'sales_order', entityId: orderId, details: `${orderNumber} created from quotation ${quotation.quotation_number}`, oldValue: { status: quotation.status }, newValue: { status: QUOTATION_STATUS.CONVERTED, orderId, orderNumber }, context });
+    } catch (err) { console.error('[PortalLifecycle] post-convert non-DB op failed:', err?.message); }
+
+    try {
+      const portalUsers = await getAll('SELECT id, email FROM portal_users WHERE customer_id = ? AND status = ?', [quotation.customer_id, 'active']);
+      await notifyCustomer({ customerId: quotation.customer_id, type: NOTIFICATION_TYPES.ORDER, title: `Your order ${orderNumber} is confirmed`, body: `Your order from ${quotation.quotation_number} has been confirmed.`, link: `#/portal/orders/${orderId}`, actorName: admin.name || 'Sales' });
+      for (const user of portalUsers) { await sendEmailBestEffort({ to: user.email, subject: `Your order ${orderNumber} is confirmed`, text: `Dear ${quotation.customer_name},\n\nYour order ${orderNumber} (total ${quotation.total}) has been confirmed.\nTrack it from the customer portal.\n\nPrime ERP` }); }
+    } catch (err) { console.error('[PortalLifecycle] post-convert non-DB op failed:', err?.message); }
+
+     emitEntityChange('portal', { customerId: quotation.customer_id, docType: 'order', docId: orderId, status: 'Confirmed', orderNumber });
     emitEntityChange('admin', { customerId: quotation.customer_id, docType: 'quotation', docId: id, status: QUOTATION_STATUS.CONVERTED });
     emitEntityChange('admin', { customerId: quotation.customer_id, docType: 'order', docId: orderId, status: 'Confirmed' });
 
@@ -2558,7 +2457,7 @@ const portalLifecycleService = {
 
   async getAdminUnreadCount() {
     const row = await getOne(
-      'SELECT COUNT(*) as count FROM admin_notificationsis_read = 0',
+       'SELECT COUNT(*) as count FROM admin_notifications WHERE is_read = 0',
       []
     );
     return (row && row.count) || 0;

@@ -19,12 +19,10 @@ export const QuoteRequestModal: React.FC<QuoteRequestModalProps> = ({
   onClose,
   onSubmitQuoteRequest,
 }) => {
-  const [items, setItems] = useState<QuoteRequestItem[]>([
-    { id: '1', name: 'Annual Corporate Catalog (5,000 copies, 48 pages)', quantity: 5000, targetPrice: 2.50, notes: 'Full-color silk stock, spot UV cover finish, perfect bound' },
-  ]);
-  const [requiredByDate, setRequiredByDate] = useState('2026-08-25');
-  const [deliveryLocation, setDeliveryLocation] = useState('742 Enterprise Parkway, Loading Dock B');
-  const [priority, setPriority] = useState<'standard' | 'urgent' | 'express'>('urgent');
+   const [items, setItems] = useState<QuoteRequestItem[]>([]);
+   const [requiredByDate, setRequiredByDate] = useState('');
+   const [deliveryLocation, setDeliveryLocation] = useState('');
+   const [priority, setPriority] = useState<'standard' | 'urgent' | 'express'>('standard');
   const [generalNotes, setGeneralNotes] = useState('');
   const [attachmentName, setAttachmentName] = useState<string | null>(null);
 
@@ -50,7 +48,7 @@ export const QuoteRequestModal: React.FC<QuoteRequestModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (items.some((i) => !i.name.trim())) return;
+    if (items.length === 0 || items.some((i) => !i.name.trim())) return;
 
     onSubmitQuoteRequest(items, requiredByDate, deliveryLocation, priority, generalNotes);
     onClose();
@@ -202,7 +200,7 @@ export const QuoteRequestModal: React.FC<QuoteRequestModalProps> = ({
               </p>
               <button
                 type="button"
-                onClick={() => setAttachmentName('Technical_Specs_RFQ_2026.pdf')}
+                     onClick={() => setAttachmentName(attachmentName ? null : 'RFQ_Attachment.pdf')}
                 className="text-[11px] text-slate-900 hover:text-slate-700 font-extrabold underline"
               >
                 {attachmentName ? 'Change File' : 'Attach File'}
