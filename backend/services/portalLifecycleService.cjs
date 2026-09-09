@@ -1047,8 +1047,19 @@ const portalLifecycleService = {
     return { published: true, payload };
   },
 
-  async createQuotationRequest({ portalUserId, customerId, customerName, requestType, items, notes, requestedDeliveryDate, attachments, reorderOf, reorderOfNumber, promotionCode, referredByCode, context = {} }) {
-    if (!Array.isArray(items) || items.length === 0) throw new Error('At least one line item is required');
+   async createQuotationRequest({ portalUserId, customerId, customerName, requestType, items, notes, requestedDeliveryDate, attachments, reorderOf, reorderOfNumber, promotionCode, referredByCode, context = {} }) {
+     if (!Array.isArray(items) || items.length === 0) throw new Error('At least one line item is required');
+     if (typeof customerName !== 'string' || !customerName.trim() || customerName.length > 200) throw new Error('Invalid customer name');
+     if (notes != null && (typeof notes !== 'string' || notes.length > 1000)) throw new Error('Notes too long');
+     if (requestedDeliveryDate != null) {
+       const d = new Date(requestedDeliveryDate);
+       if (isNaN(d.getTime())) throw new Error('Invalid delivery date');
+     }
+     for (const it of items) {
+       if (typeof it.name !== 'string' || !it.name.trim()) throw new Error('Item name required');
+       if (typeof it.quantity !== 'number' || it.quantity <= 0) throw new Error('Invalid item quantity');
+       if (typeof it.unitPrice !== 'number' || it.unitPrice < 0) throw new Error('Invalid item price');
+     }
     const requestTypeValue = requestType === 'order' ? 'order' : 'quotation';
     const normalizedAttachments = Array.isArray(attachments) ? attachments.slice(0, 20).map((a) => ({
       name: String(a.name || a.fileName || 'Attachment'),
@@ -1436,10 +1447,11 @@ const portalLifecycleService = {
     return this.adminGetRequest(id);
   },
 
-  async rejectRequest(id, { admin, reason, context = {} }) {
-    const request = await this.adminGetRequest(id);
-    if (!request) throw new Error('Request not found');
-    assertRequestTransition(request, REQUEST_STATUS.REJECTED);
+   async rejectRequest(id, { admin, reason, context = {} }) {
+     const request = await this.adminGetRequest(id);
+     if (!request) throw new Error('Request not found');
+     if (typeof reason === 'string' && reason.length > 500) throw new Error('Reason too long');
+     assertRequestTransition(request, REQUEST_STATUS.REJECTED);
 
     await runQuery(
       `UPDATE quotation_requests SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
@@ -1469,9 +1481,11 @@ const portalLifecycleService = {
     return { id, status: REQUEST_STATUS.REJECTED };
   },
 
-  async requestClarification(id, { admin, note, context = {} }) {
-    const request = await this.adminGetRequest(id);
-    if (!request) throw new Error('Request not found');
+   async requestClarification(id, { admin, note, context = {} }) {
+     const request = await this.adminGetRequest(id);
+     if (!request) throw new Error('Request not found');
+     if (typeof note !== 'string' || !note.trim()) throw new Error('Clarification note required');
+     if (note.length > 1000) throw new Error('Note too long');
     if ([REQUEST_STATUS.READY_FOR_CONVERSION, REQUEST_STATUS.CONVERTED, REQUEST_STATUS.REJECTED, REQUEST_STATUS.CANCELLED].includes(request.status)) {
       throw new Error('Request can no longer be updated');
     }
@@ -1505,9 +1519,11 @@ const portalLifecycleService = {
   },
 
   // ─── Admin: assign salesperson ──────────────────────────────────────────────
-  async assignRequest(id, { admin, assignTo, assignToName, context = {} }) {
-    const request = await this.adminGetRequest(id);
-    if (!request) throw new Error('Request not found');
+   async assignRequest(id, { admin, assignTo, assignToName, context = {} }) {
+     const request = await this.adminGetRequest(id);
+     if (!request) throw new Error('Request not found');
+     if (typeof assignTo !== 'string' || !assignTo.trim()) throw new Error('Assignee required');
+     if (typeof assignToName !== 'string' || assignToName.length > 100) throw new Error('Invalid assignee name');
     if ([REQUEST_STATUS.CONVERTED, REQUEST_STATUS.REJECTED, REQUEST_STATUS.CANCELLED].includes(request.status)) {
       throw new Error('Request is closed and cannot be assigned');
     }

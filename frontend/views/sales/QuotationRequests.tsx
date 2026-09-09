@@ -477,51 +477,49 @@ const QuotationRequests: React.FC = () => {
     action(`reject_${id}`, () => adminLifecycle.requests.reject(id, rejectReason.trim()));
   };
 
-  const loadAll = useCallback(async () => {
-    try {
-      const [reqs, inboxReqs, quotes, orderList, analyticsData, users, staffList] = await Promise.all([
-        adminLifecycle.requests.list(),
-        adminLifecycle.requests.inbox().catch(() => []),
-        adminLifecycle.quotations.list(),
-        adminLifecycle.orders.list().catch(() => []),
-        adminLifecycle.analytics.get(),
-        adminLifecycle.users.list().catch(() => []),
-        adminLifecycle.staff.list().catch(() => []),
-      ]);
-      setRequests(reqs || []);
-      setInboxRequests(inboxReqs || []);
-      setQuotations(quotes || []);
-      setOrders(orderList || []);
-      setAnalytics(analyticsData);
-      const nameMap: Record<string, string> = {};
-      for (const u of (users as any[]) || []) {
-        if (u.customer_id) {
-          const resolved = u.customer_name || u.full_name || null;
-          if (resolved) nameMap[u.customer_id] = resolved;
-        }
-      }
-      setCustomerNameMap(nameMap);
-      const sMap: Record<string, string> = {};
-      for (const s of staffList || []) {
-        sMap[s.id] = s.username;
-      }
-      setStaff(staffList || []);
-      setStaffNameMap(sMap);
-      setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load requests');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+   const loadAll = useCallback(async () => {
+     try {
+       const [reqs, inboxReqs, quotes, orderList, analyticsData, users, staffList] = await Promise.all([
+         adminLifecycle.requests.list(),
+         adminLifecycle.requests.inbox(),
+         adminLifecycle.quotations.list(),
+         adminLifecycle.orders.list(),
+         adminLifecycle.analytics.get(),
+         adminLifecycle.users.list(),
+         adminLifecycle.staff.list(),
+       ]);
+       setRequests(reqs || []);
+       setInboxRequests(inboxReqs || []);
+       setQuotations(quotes || []);
+       setOrders(orderList || []);
+       setAnalytics(analyticsData);
+       const nameMap: Record<string, string> = {};
+       for (const u of (users as any[]) || []) {
+         if (u.customer_id) {
+           const resolved = u.customer_name || u.full_name || null;
+           if (resolved) nameMap[u.customer_id] = resolved;
+         }
+       }
+       setCustomerNameMap(nameMap);
+       const sMap: Record<string, string> = {};
+       for (const s of staffList || []) {
+         sMap[s.id] = s.username;
+       }
+       setStaff(staffList || []);
+       setStaffNameMap(sMap);
+       setError(null);
+     } catch (err: any) {
+       setError(err.message || 'Failed to load requests');
+     } finally {
+       setLoading(false);
+     }
+   }, []);
 
-  useEffect(() => {
-    // Opening the hub acknowledges its notifications so badges clear here,
-    // on the hub cards, and on the dashboard/topbar bell.
-    adminLifecycle.requests.markInboxRead().catch(() => {});
-    markAlertsReadForActionUrl('/sales-flow/requests').catch(() => {});
-    loadAll();
-  }, [loadAll]);
+   useEffect(() => {
+     adminLifecycle.requests.markInboxRead().catch((err: any) => setError(err?.message || 'Failed to mark inbox read'));
+     markAlertsReadForActionUrl('/sales-flow/requests').catch((err: any) => setError(err?.message || 'Failed to clear alerts'));
+     loadAll();
+   }, [loadAll]);
 
   // Support arriving with a target tab (e.g. redirect from /sales-flow/payment-requests).
   useEffect(() => {
@@ -636,11 +634,11 @@ const QuotationRequests: React.FC = () => {
     setNotifClearing(true);
     setError(null);
     try {
-      await Promise.all([
-        adminLifecycle.notifications.markAllRead().catch(() => {}),
-        adminLifecycle.requests.markInboxRead().catch(() => {}),
-        markAlertsReadForActionUrl('/sales-flow/requests').catch(() => {}),
-      ]);
+       await Promise.all([
+         adminLifecycle.notifications.markAllRead(),
+         adminLifecycle.requests.markInboxRead(),
+         markAlertsReadForActionUrl('/sales-flow/requests'),
+       ]);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(NOTIFICATION_UPDATE_EVENT));
       }
@@ -664,7 +662,7 @@ const QuotationRequests: React.FC = () => {
     setBusy('delete_all');
     setError(null);
     try {
-      await Promise.all(ids.map((id) => adminLifecycle.requests.remove(id).catch(() => {})));
+       await Promise.all(ids.map((id) => adminLifecycle.requests.remove(id)));
       await loadAll();
     } catch (err: any) {
       setError(err.message || 'Failed to delete transactions');
