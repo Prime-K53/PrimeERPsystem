@@ -5,6 +5,7 @@ import {
   PackageCheck, Inbox, History, ChevronDown, ArrowUpRight, History as HistoryIcon,
   BadgeCheck, Send, Flag, Trash2, HandCoins, MoreVertical, Eye, Download, Edit2, Plus,
   Clock, Wallet, Ban, X, FileCheck, BellOff, Users, ChevronRight, Calendar,
+  Search, FileSpreadsheet, FileDown,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { formatDateTime, formatDate } from '../../utils/formatters';
@@ -16,6 +17,8 @@ import {
 import PaymentRequests, { PaymentRequestStats } from './PaymentRequests';
 import { markAlertsReadForActionUrl, NOTIFICATION_UPDATE_EVENT } from '../../services/systemAlertService';
 import { QuotationRequestList } from './components/SalesLists';
+import { useDocumentStore } from '../../stores/documentStore';
+import { downloadPdfSource } from '../../shared/components/PDF/pdfPreviewUtils';
 
 const teal = {
   50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7',
@@ -426,10 +429,12 @@ const RejectModal: React.FC<{
   );
 };
 
-const QuotationRequests: React.FC = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { companyConfig } = useAuth();
+ const QuotationRequests: React.FC = () => {
+   const navigate = useNavigate();
+   const location = useLocation();
+   const { companyConfig } = useAuth();
+   const currency = companyConfig?.currencySymbol || 'K';
+   const { safeOpenPreview } = useDocumentStore();
   const currency = companyConfig?.currencySymbol || 'K';
   const initialTab = (location.state as any)?.tab || 'inbox';
   const [tab, setTab] = useState<string>(initialTab);
@@ -445,8 +450,9 @@ const QuotationRequests: React.FC = () => {
   const [customerNameMap, setCustomerNameMap] = useState<Record<string, string>>({});
   const [staff, setStaff] = useState<{ id: string; username: string; email: string | null }[]>([]);
   const [staffNameMap, setStaffNameMap] = useState<Record<string, string>>({});
-  const [paymentCount, setPaymentCount] = useState(0);
-  const [paymentStats, setPaymentStats] = useState<PaymentRequestStats | null>(null);
+   const [paymentCount, setPaymentCount] = useState(0);
+   const [paymentStats, setPaymentStats] = useState<PaymentRequestStats | null>(null);
+   const [searchQuery, setSearchQuery] = useState('');
   const tabMeta: Record<string, { title: string; desc: string }> = {
     inbox: { title: 'Inbox', desc: 'Review new customer requests, assign staff, and triage submissions.' },
     quotations: { title: 'Quotations', desc: 'Review official quotations, track versions, signatures, and conversions.' },
@@ -548,13 +554,24 @@ const QuotationRequests: React.FC = () => {
     [inboxRequests]
   );
 
-  const activeRequests = useMemo(() => {
-    if (tab === 'inbox') return inboxRequests;
-    if (tab === 'history') return requests.filter((r) => r.status === 'rejected' || r.status === 'cancelled' || r.status === 'converted');
-    if (tab === 'quotations') return requests.filter((r) => INBOX_STATUSES.includes(r.status) && r.request_type !== 'order');
-    if (tab === 'orders') return requests.filter((r) => INBOX_STATUSES.includes(r.status) && r.request_type === 'order');
-    return requests.filter((r) => INBOX_STATUSES.includes(r.status));
-  }, [requests, tab, inboxRequests]);
+   const activeRequests = useMemo(() => {
+     let list: AdminQuotationRequest[];
+     if (tab === 'inbox') list = inboxRequests;
+     else if (tab === 'history') list = requests.filter((r) => r.status === 'rejected' || r.status === 'cancelled' || r.status === 'converted');
+     else if (tab === 'quotations') list = requests.filter((r) => INBOX_STATUSES.includes(r.status) && r.request_type !== 'order');
+     else if (tab === 'orders') list = requests.filter((r) => INBOX_STATUSES.includes(r.status) && r.request_type === 'order');
+     else list = requests.filter((r) => INBOX_STATUSES.includes(r.status));
+     if (searchQuery.trim()) {
+       const q = searchQuery.trim().toLowerCase();
+       list = list.filter((r) =>
+         (r.request_number || '').toLowerCase().includes(q) ||
+         (r.customer_name || '').toLowerCase().includes(q) ||
+         (r.notes || '').toLowerCase().includes(q) ||
+         (r.status || '').toLowerCase().includes(q)
+       );
+     }
+     return list;
+   }, [requests, tab, inboxRequests, searchQuery]);
 
   const tabStats = useMemo(() => {
     const isConverted = (r: AdminQuotationRequest) =>
@@ -569,7 +586,31 @@ const QuotationRequests: React.FC = () => {
     return { requests: activeRequests.length, converted, downloads: documents };
   }, [activeRequests, quotations.length, orders.length, paymentCount, tab]);
 
-  const money = useCallback((v: number) => `${currency}${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, [currency]);
+   const money = useCallback((v: number) => `${currency}${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, [currency]);
+
+   const exportCsv = useCallback(() => {
+     const headers = ['Request #', 'Customer', 'Status', 'Type', 'Items', 'Subtotal', 'Total', 'Created'];
+     const rows = activeRequests.map((r) => [
+       r.request_number || '',
+       r.customer_name || '',
+       r.status || '',
+       r.request_type || '',
+       String(Array.isArray(r.items) ? r.items.length : 0),
+       String(r.subtotal ?? ''),
+       String(r.total ?? ''),
+       r.created_at ? formatDate(r.created_at) : '',
+     ]);
+     const csv = [headers, ...rows].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+     const url = URL.createObjectURL(blob);
+     const a = document.createElement('a');
+     a.href = url;
+     a.download = `requests_${tab}_${new Date().toISOString().slice(0, 10)}.csv`;
+     document.body.appendChild(a);
+     a.click();
+     document.body.removeChild(a);
+     URL.revokeObjectURL(url);
+   }, [activeRequests, tab]);
 
   const tabKpis = useMemo<KpiItem[]>(() => {
     const orderReqs = requests.filter((r) => INBOX_STATUSES.includes(r.status) && r.request_type === 'order');
@@ -826,8 +867,25 @@ const QuotationRequests: React.FC = () => {
         </div>
       )}
 
-      {/* KPI strip */}
-      <KpiCards items={tabKpis} />
+       {/* Search + Export */}
+       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+         <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 360 }}>
+           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+           <input
+             type="text"
+             placeholder="Search requests…"
+             value={searchQuery}
+             onChange={(e) => setSearchQuery(e.target.value)}
+             style={{ ...inputStyle, paddingLeft: 32, fontSize: 12 }}
+           />
+         </div>
+         <button onClick={exportCsv} style={{ ...btnGhost, fontSize: 12, padding: '6px 12px' }}>
+           <FileSpreadsheet size={14} style={{ display: 'inline', marginRight: 4 }} /> Export CSV
+         </button>
+       </div>
+
+       {/* KPI strip */}
+       <KpiCards items={tabKpis} />
 
       {/* Tabs */}
       {!(location.state as any)?.tab && (
@@ -992,9 +1050,32 @@ const QuotationRequests: React.FC = () => {
       {menuState && menuState.type === 'quotation' && (
         <ActionMenu
           items={[
-            { label: 'View Detail', onClick: () => { const q = quotations.find(q => q.id === menuState.id); if (q) setSelectedQuotation(q); }, icon: <Eye size={14} /> },
-            { label: 'Preview PDF', onClick: () => { /* preview */ }, icon: <Download size={14} /> },
-            { label: 'Download PDF', onClick: () => { /* download */ }, icon: <Download size={14} /> },
+             { label: 'View Detail', onClick: () => { const q = quotations.find(q => q.id === menuState.id); if (q) setSelectedQuotation(q); }, icon: <Eye size={14} /> },
+             { label: 'Preview PDF', onClick: () => {
+               const q = quotations.find(q => q.id === menuState.id);
+               if (!q) return;
+               safeOpenPreview('QUOTATION', {
+                 number: q.quotation_number,
+                 date: q.created_at || '',
+                 clientName: q.customer_name || '',
+                 items: (q.items || []).map((it: any) => ({ desc: it.name || it.description || '', qty: it.quantity || 1, price: it.unitPrice || 0, total: it.lineTotal || 0 })),
+                 subtotal: q.subtotal || 0,
+                 totalAmount: q.total || 0,
+                 status: q.status || '',
+               });
+             }, icon: <Download size={14} /> },
+             { label: 'Download PDF', onClick: () => {
+               const q = quotations.find(q => q.id === menuState.id);
+               if (!q) return;
+               const content = `QUOTATION ${q.quotation_number}\nCustomer: ${q.customer_name || 'N/A'}\nDate: ${q.created_at || 'N/A'}\n\nItems:\n${(q.items || []).map((it: any) => `  ${it.name || it.description || 'Item'} x${it.quantity || 1} @ ${it.unitPrice || 0} = ${it.lineTotal || 0}`).join('\n')}\n\nSubtotal: ${q.subtotal || 0}\nTotal: ${q.total || 0}\nStatus: ${q.status || ''}`;
+               const blob = new Blob([content], { type: 'application/pdf' });
+               const url = URL.createObjectURL(blob);
+               const a = document.createElement('a');
+               a.href = url;
+               a.download = `quotation_${q.quotation_number}.pdf`;
+               a.click();
+               URL.revokeObjectURL(url);
+             }, icon: <Download size={14} /> },
             { label: 'Edit', onClick: () => { /* edit */ }, icon: <Edit2 size={14} /> },
             { label: 'Convert to Order', onClick: () => { const q = quotations.find(q => q.id === menuState.id); if (q) action(`convert_${q.id}`, () => adminLifecycle.quotations.convertToOrder(q.id, {})); }, icon: <ArrowUpRight size={14} /> },
           ]}
