@@ -54,6 +54,7 @@ interface FinanceContextType {
   postJournalEntry: (entries: Omit<LedgerEntry, 'id' | 'date'>[]) => Promise<void>;
   syncInventoryValuation: (accountId: string, physicalValue: number, currentLedgerBalance: number) => Promise<void>;
   openInventory: () => Promise<any>;
+  repairDuplicateOpeningCash: (reason?: string) => Promise<any>;
   toggleReconciled: (id: string) => void;
   
   addRecurringInvoice: (inv: RecurringInvoice) => void;
@@ -136,34 +137,55 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const missingOpeningWarnedRef = useRef(false);
 
   useEffect(() => {
-    if (user && financeStore.openingBalance > 0) {
-        const hasOpeningPost = financeStore.ledger.some(l => l.referenceId === 'OPENING_BALANCE');
-        if (!hasOpeningPost) {
-            // Auto-post ONLY for genuine initialization (empty ledger).
-            // If the ledger already holds activity but the opening row is
-            // gone (deleted/reset edge), resurrecting it would silently move
-            // Cash Drawer AND Owner's Capital — so we log instead of posting.
-            if (financeStore.ledger.length > 0) {
-                if (!missingOpeningWarnedRef.current) {
-                    missingOpeningWarnedRef.current = true;
-                    logger.warn(
-                        'OPENING_BALANCE row missing on a non-empty ledger — refusing to auto-post equity. ' +
-                        'Set the opening cash balance explicitly in Settings if one is required.'
-                    );
-                }
-                return;
-            }
-            postJournalEntry([{
-                description: 'System Initialization: Opening Cash Balance',
-                debitAccountId: gl.cashDrawerAccount || '11110', 
-                creditAccountId: '31000', 
-                amount: financeStore.openingBalance,
-                referenceId: 'OPENING_BALANCE',
-                reconciled: true
-            }]);
+    let cancelled = false;
+    (async () => {
+        if (!user) return;
+        const state = useFinanceStore.getState();
+        const openingBalance = Number(state.openingBalance ?? 0);
+        if (!Number.isFinite(openingBalance) || openingBalance <= 0) return;
+
+        // Fresh authoritative read: the hook snapshot may still hold the
+        // empty pre-load array while fetching is in flight — deciding on it
+        // posted one duplicate per reload (mount race).
+        let freshLedger: any[] | null = null;
+        try {
+            freshLedger = await dbService.getAll('ledger');
+        } catch {
+            freshLedger = null;
         }
-    }
-  }, [user, financeStore.openingBalance, financeStore.ledger.length]);
+        if (cancelled) return;
+        const latest = useFinanceStore.getState();
+        const loaded = freshLedger !== null || !latest.isLoading;
+        if (!loaded) return; // load still in flight; isLoading flip re-triggers
+        const ledger = (freshLedger ?? latest.ledger ?? []) as any[];
+
+        const { decideOpeningCashPost, OPENING_CASH_BALANCE_ENTRY_ID } = await import('../services/openingBalanceService');
+        const decision = decideOpeningCashPost({ loaded: true, entries: ledger, openingBalance });
+        if (decision.action === 'skip-present' || decision.action === 'skip-not-loaded') return;
+        if (decision.action === 'warn-missing') {
+            if (!missingOpeningWarnedRef.current) {
+                missingOpeningWarnedRef.current = true;
+                logger.warn(
+                    'OPENING_BALANCE row missing on a non-empty ledger — refusing to auto-post equity. ' +
+                    'Set the opening cash balance explicitly in Settings if one is required.'
+                );
+            }
+            return;
+        }
+        // Deterministic id: even if two mounts/tabs race past the check,
+        // both puts land on the SAME row instead of duplicating.
+        await postJournalEntry([{
+            id: OPENING_CASH_BALANCE_ENTRY_ID,
+            description: 'System Initialization: Opening Cash Balance',
+            debitAccountId: gl.cashDrawerAccount || '11110',
+            creditAccountId: '31000',
+            amount: openingBalance,
+            referenceId: 'OPENING_BALANCE',
+            reconciled: true
+        }]);
+    })();
+    return () => { cancelled = true; };
+  }, [user, financeStore.openingBalance, financeStore.ledger.length, financeStore.isLoading]);
 
   const isPeriodClosed = (dateStr: string) => {
     const entryDate = parseISO(dateStr);
@@ -868,7 +890,7 @@ const handleOpenInventory = async () => {
       addAuditLog({
         action: 'CREATE',
         entityType: 'CustomerPayment',
-        entityId: payment.id,
+        entityId: payment.customerId,
         details: `Recorded customer payment of ${payment.amount} from ${payment.customerName}`,
         newValue: payment
       });
@@ -878,11 +900,40 @@ const handleOpenInventory = async () => {
     }
   };
 
+  // Explicit repair for duplicate opening-cash auto-posts (mount-race
+  // duplicates). Posts ONE balanced correcting journal; originals stay in
+  // history. Operator-triggered only — never automatic.
+  const repairDuplicateOpeningCash = async (reason?: string) => {
+    try {
+      const { repairDuplicateOpeningCash: repair } = await import('../services/openingBalanceService');
+      const result = await repair(reason);
+      await financeStore.fetchFinanceData();
+      if (result.repaired) {
+        notify(
+          `Repaired ${result.duplicatesFound} duplicate opening-cash rows with one K${result.correctionAmount.toLocaleString()} correction (history preserved)`,
+          'success'
+        );
+        addAuditLog({
+          action: 'CORRECT',
+          entityType: 'Ledger',
+          entityId: result.journalId || 'opening-cash-correction',
+          details: `Reversed ${result.duplicatesFound} duplicate OPENING_BALANCE rows (kept ${result.keptId}); correction K${result.correctionAmount}`,
+        });
+      } else {
+        notify('No duplicate opening-cash rows found', 'info');
+      }
+      return result;
+    } catch (err: any) {
+      notify(`Opening-cash repair failed: ${err.message}`, 'error');
+      throw err;
+    }
+  };
+
   return (
     <FinanceContext.Provider value={{
       ...financeStore, addInvoice, updateInvoice, addExpense, approveExpense, addIncome, postJournalEntry,
       createDeliveryNote, executeTransfer, runPayroll, addCheque, updateCheque: financeStore.updateCheque, deleteCheque: financeStore.deleteCheque,
-      recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory: handleOpenInventory,
+      recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory: handleOpenInventory, repairDuplicateOpeningCash,
       refreshAccounts: financeStore.fetchFinanceData,
       addAccount: financeStore.addAccount, updateAccount: financeStore.updateAccount, deleteAccount: financeStore.deleteAccount,
       deleteInvoice, updateIncome: financeStore.updateIncome, deleteIncome: financeStore.deleteIncome,

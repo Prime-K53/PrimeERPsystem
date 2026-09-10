@@ -30,6 +30,7 @@ import {
   computeTypeTotals,
   computeTrialBalance,
   checkBalanceSheetEquation,
+  isPostedLedgerEntry,
 } from '../../services/accountingEngine';
 
 /* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
@@ -69,7 +70,8 @@ const ChartOfAccounts: React.FC = () => {
     addAccount,
     updateAccount,
     deleteAccount,
-    fetchFinanceData
+    fetchFinanceData,
+    repairDuplicateOpeningCash
   } = useFinance();
   const { checkPermission, notify, companyConfig } = useAuth();
 
@@ -193,6 +195,22 @@ const ChartOfAccounts: React.FC = () => {
     const typeTotals = computeTypeTotals((accounts || []) as any[], ownBalances);
     return checkBalanceSheetEquation(typeTotals);
   }, [accounts, ownBalances]);
+
+  // Duplicate opening-cash detection (mount-race auto-posts): posted
+  // OPENING_BALANCE rows beyond the earliest inflate Cash + Capital.
+  const duplicateOpeningCash = useMemo(() => {
+    const posted = (ledger || []).filter(
+      (e: any) => e.referenceId === 'OPENING_BALANCE' && isPostedLedgerEntry(e as any)
+    );
+    if (posted.length <= 1) return null;
+    const total = posted.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
+    const sorted = [...posted].sort((a: any, b: any) =>
+      String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''))
+    );
+    const kept = sorted[0];
+    const correction = total - (Number((kept as any).amount) || 0);
+    return { count: posted.length, total, correction };
+  }, [ledger]);
 
   const isBalanced = trialBalance.isBalanced && balanceSheetCheck.balanced;
   const totalAccounts = Object.values(groupedByType).reduce((sum, g) => sum + g.accounts.length, 0);
@@ -556,6 +574,39 @@ const ChartOfAccounts: React.FC = () => {
       />
 
       <KpiCards items={kpiItems} />
+
+      {duplicateOpeningCash && duplicateOpeningCash.count > 1 && (
+        <div style={{ margin: '0 28px 4px', padding: '12px 16px', borderRadius: 12, background: '#fdeeee', border: `1.4px solid ${danger}55`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 260px', fontSize: 12.5, color: ink }}>
+            <b>Duplicate opening-cash rows detected:</b> {duplicateOpeningCash.count} posted OPENING_BALANCE entries
+            (K{duplicateOpeningCash.total.toLocaleString()} inflated Cash Drawer &amp; Owner&apos;s Capital). History is preserved — repair posts one correcting journal.
+          </div>
+          <button
+            onClick={() => setConfirmState({
+              open: true,
+              title: 'Repair duplicate opening cash',
+              message: `Post one correcting journal (DR Owner's Capital / CR Cash Drawer K${duplicateOpeningCash.correction.toLocaleString()}) reversing ${duplicateOpeningCash.count - 1} duplicate rows and keeping the earliest? Originals stay in history.`,
+              confirmText: 'Post correction',
+              type: 'danger',
+              onConfirm: async () => {
+                setConfirmState(s => ({ ...s, open: false }));
+                try {
+                  if (typeof repairDuplicateOpeningCash === 'function') {
+                    await repairDuplicateOpeningCash('duplicate opening-cash auto-posts (COA repair)');
+                  } else {
+                    notify('Repair action is unavailable in this build', 'error');
+                  }
+                } catch (err: any) {
+                  notify(err.message || 'Repair failed', 'error');
+                }
+              }
+            })}
+            style={{ ...btnDangerStyle }}
+          >
+            Review &amp; repair
+          </button>
+        </div>
+      )}
 
       {/* Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 28px' }}>

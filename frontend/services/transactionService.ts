@@ -1852,7 +1852,7 @@ export const transactionService = {
         );
     },
 
-    async postJournalEntry(entries: Omit<LedgerEntry, 'id' | 'date'>[]) {
+    async postJournalEntry(entries: Array<Omit<LedgerEntry, 'id' | 'date'> & { id?: string }>) {
         const date = new Date().toISOString();
 
         return dbService.executeAtomicOperation(
@@ -1891,7 +1891,10 @@ export const transactionService = {
                     
                     const newEntry: LedgerEntry = {
                         ...entry,
-                        id: generateId('LG'),
+                        // Honor an explicit id when the caller provides one
+                        // (e.g. deterministic ids make retried system postings
+                        // converge instead of duplicating).
+                        id: entry.id || generateId('LG'),
                         date,
                         reconciled: entry.reconciled || false,
                         amount: entry.amount || 0,

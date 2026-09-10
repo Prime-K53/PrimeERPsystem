@@ -82,6 +82,12 @@ export interface OpeningInventoryDiagnostic {
 }
 
 const OPENING_INVENTORY_REFERENCE = 'OPENING-INVENTORY';
+/** Reference stamped on the automatic opening-cash system posting. */
+export const OPENING_CASH_BALANCE_REFERENCE = 'OPENING_BALANCE';
+/** Deterministic id for the opening-cash post: retries/upserts converge. */
+export const OPENING_CASH_BALANCE_ENTRY_ID = 'LG-OPENING-BALANCE';
+/** Reference stamped on duplicate-opening correction journals. */
+export const OPENING_CASH_CORRECTION_REFERENCE = 'OPENING-BALANCE-CORRECTION';
 /** Returned when an opening exists but no longer matches current valuation. */
 export const OPENING_INVENTORY_REQUIRES_RECONCILIATION = 'OPENING_INVENTORY_REQUIRES_RECONCILIATION';
 /** Entry/reference markers for reversal-based replacement (audit trail, never deletions). */
@@ -622,5 +628,176 @@ export async function getOpeningInventoryStatus(): Promise<{
     expectedValue,
     difference,
     requiresReconciliation,
+  };
+}
+
+// ─── Opening-cash (OPENING_BALANCE) duplicate protection ─────────────────
+// A mount race once stamped dozens of identical K500 opening-cash rows
+// (effect fired on the empty pre-load snapshot on every reload). The
+// helpers below detect that state and repair it through ONE explicit,
+// auditable correcting journal — history is never deleted.
+
+export type OpeningCashPostDecision =
+  | { action: 'post' }
+  | { action: 'skip-present' }
+  | { action: 'skip-not-loaded' }
+  | { action: 'warn-missing' };
+
+/**
+ * Pure decision for the automatic opening-cash post. The caller must pass a
+ * FRESH ledger read (never a possibly-empty pre-load snapshot): posting is
+ * only allowed once initial loading has completed.
+ */
+export function decideOpeningCashPost(args: {
+  loaded: boolean;
+  entries: Array<Partial<LedgerEntry>>;
+  openingBalance: unknown;
+}): OpeningCashPostDecision {
+  const amount = Number(args.openingBalance ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) return { action: 'skip-not-loaded' };
+  if (!args.loaded) return { action: 'skip-not-loaded' };
+  const hasOpeningPost = (args.entries || []).some(
+    (e) => (e as LedgerEntry).referenceId === OPENING_CASH_BALANCE_REFERENCE
+  );
+  if (hasOpeningPost) return { action: 'skip-present' };
+  if ((args.entries || []).length > 0) return { action: 'warn-missing' };
+  return { action: 'post' };
+}
+
+/** Posted opening-cash rows (any id), oldest first. */
+export function findPostedOpeningCashRows(allEntries: Array<Partial<LedgerEntry>>): LedgerEntry[] {
+  return (allEntries || [])
+    .filter(
+      (e): e is LedgerEntry =>
+        (e as LedgerEntry).referenceId === OPENING_CASH_BALANCE_REFERENCE && isPostedLedgerEntry(e)
+    )
+    .sort((a, b) => {
+      const byDate = String(a.date || '').localeCompare(String(b.date || ''));
+      if (byDate !== 0) return byDate;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+}
+
+/** Ids already neutralised by a prior correction journal. */
+function findCorrectedOpeningCashIds(allEntries: Array<Partial<LedgerEntry>>): Set<string> {
+  const corrected = new Set<string>();
+  for (const e of allEntries || []) {
+    if ((e as LedgerEntry).referenceId !== OPENING_CASH_CORRECTION_REFERENCE) continue;
+    const ids = (e as any).correctsOpeningIds;
+    if (Array.isArray(ids)) {
+      for (const id of ids) corrected.add(String(id));
+    }
+  }
+  return corrected;
+}
+
+export interface DuplicateOpeningCashReport {
+  postedCount: number;
+  duplicateIds: string[];
+  keptId: string | null;
+  correctionAmount: number;
+}
+
+/**
+ * Duplicate analysis: keeps the earliest posted row as canonical, flags the
+ * rest for reversal. Ignores drafts/voids and already-corrected rows, so
+ * re-running after a repair reports nothing (idempotent).
+ */
+export function findDuplicateOpeningCash(
+  allEntries: Array<Partial<LedgerEntry>>
+): DuplicateOpeningCashReport {
+  const posted = findPostedOpeningCashRows(allEntries);
+  const corrected = findCorrectedOpeningCashIds(allEntries);
+  const outstanding = posted.filter((e) => !corrected.has(String(e.id)));
+  if (outstanding.length <= 1) {
+    return { postedCount: posted.length, duplicateIds: [], keptId: outstanding[0]?.id || null, correctionAmount: 0 };
+  }
+  const [kept, ...duplicates] = outstanding;
+  const correctionAmount = Math.round(duplicates.reduce((s, e) => s + (Number(e.amount) || 0), 0) * 100) / 100;
+  return {
+    postedCount: posted.length,
+    duplicateIds: duplicates.map((e) => String(e.id)),
+    keptId: String(kept.id),
+    correctionAmount,
+  };
+}
+
+export interface OpeningCashRepairResult {
+  repaired: boolean;
+  duplicatesFound: number;
+  keptId: string | null;
+  correctionAmount: number;
+  journalId: string | null;
+  entriesPosted: number;
+  reason?: string;
+}
+
+/**
+ * Explicit repair for duplicate opening-cash auto-posts. Posts ONE balanced
+ * correcting journal (DR Owner's Capital / CR Cash Drawer) for the duplicate
+ * total and links every reversed row id. The originals stay in history.
+ * Safe to re-run: reports repaired:false once nothing outstanding remains.
+ */
+export async function repairDuplicateOpeningCash(reason?: string): Promise<OpeningCashRepairResult> {
+  const [ledger, accounts] = await Promise.all([
+    dbService.getAll<LedgerEntry>('ledger'),
+    dbService.getAll<any>('accounts'),
+  ]);
+  const report = findDuplicateOpeningCash(ledger);
+  if (report.duplicateIds.length === 0 || report.correctionAmount <= 0) {
+    return {
+      repaired: false,
+      duplicatesFound: 0,
+      keptId: report.keptId,
+      correctionAmount: 0,
+      journalId: null,
+      entriesPosted: 0,
+      reason: 'no outstanding duplicates',
+    };
+  }
+  const resolveForPosting = (ref: string): string => {
+    const resolved = resolveAccountForPosting(ref, accounts, {});
+    if (!resolved) throw new Error(`Unable to resolve account: ${ref}`);
+    return resolved;
+  };
+  // Reverse the duplicates: cash was overstated (debits), capital overstated
+  // (credits) — so debit capital, credit cash drawer.
+  const capitalId = resolveForPosting('31000');
+  const cashId = resolveForPosting('11110');
+  const note = (reason || 'duplicate opening-cash auto-posts').trim() || 'duplicate opening-cash auto-posts';
+  const entry: LedgerEntry = {
+    id: generateId('LG-OPENFIX'),
+    date: new Date().toISOString(),
+    description:
+      `Correction: reverse ${report.duplicateIds.length} duplicate opening-cash auto-posts ` +
+      `(keeping ${report.keptId}) — ${note}`,
+    debitAccountId: capitalId,
+    creditAccountId: cashId,
+    amount: report.correctionAmount,
+    referenceId: OPENING_CASH_CORRECTION_REFERENCE,
+    referenceType: 'opening_balance_correction',
+    entryType: 'opening_balance_correction',
+    correctsOpeningIds: report.duplicateIds,
+    reconciled: false,
+  };
+  await dbService.executeAtomicOperation(
+    ['ledger', 'idempotencyKeys'],
+    async (tx) => {
+      await tx.objectStore('ledger').put(entry);
+      await tx.objectStore('idempotencyKeys').put({
+        id: generateId('IK-OPENFIX'),
+        scope: 'opening_balance_correction',
+        sourceId: entry.id,
+        createdAt: entry.date,
+      });
+    }
+  );
+  return {
+    repaired: true,
+    duplicatesFound: report.duplicateIds.length,
+    keptId: report.keptId,
+    correctionAmount: report.correctionAmount,
+    journalId: entry.id,
+    entriesPosted: 1,
   };
 }
