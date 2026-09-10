@@ -936,30 +936,49 @@ router.post('/users/:id/regenerate-password', async (req, res) => {
  */
 const PORTAL_EMAIL_DOMAIN = 'prime.mw';
 
+// Honorifics/titles must never become the email local part
+// (e.g. "Mr Banda" must yield banda@prime.mw, never mr@prime.mw).
+const PORTAL_EMAIL_TITLE_WORDS = new Set([
+  'mr', 'mrs', 'ms', 'miss', 'dr', 'prof', 'sir', 'madam', 'mx',
+  'rev', 'hon', 'capt', 'col', 'gen', 'lord', 'lady', 'chief',
+]);
+
 // Derive a stable, recognizable portal login email for a customer. The local
-// part is built from the customer's name (first.last) so it reads naturally,
-// and a numeric suffix is appended when the base collides with another
-// account — checked against both the current batch (usedEmails) and the portal
-// user store. excludeUserId lets an existing customer keep their own email.
+// part is a SINGLE name word (the first non-title word, e.g. "Example
+// Company" -> example@prime.mw). When the base collides with another
+// account, the last 3 digits of the customer number are appended
+// (e.g. example052@prime.mw for customer …052), then an incrementing suffix
+// — checked against both the current batch (usedEmails) and the portal user
+// store. excludeUserId lets an existing customer keep their own email.
 async function derivePortalEmail(name, customerId, excludeUserId, usedEmails) {
   const safe = String(name || '').toLowerCase().trim();
-  const words = safe.split(/[^a-z0-9]+/).filter(Boolean);
+  const words = safe.split(/[^a-z0-9]+/).filter((w) => w && !PORTAL_EMAIL_TITLE_WORDS.has(w));
+
+  const digitTail = String(customerId || '').replace(/\D/g, '').slice(-3);
 
   let base;
   if (words.length === 0) {
     base = `customer-${String(customerId).toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-  } else if (words.length === 1) {
-    base = words[0];
   } else {
-    base = `${words[0]}.${words[words.length - 1]}`;
+    base = words[0];
   }
 
-  let suffix = '';
+  let attempt = 0;
   for (;;) {
-    const local = suffix === '' ? base : `${base}${suffix}`;
+    let local;
+    if (attempt === 0) {
+      local = base;
+    } else if (attempt === 1 && digitTail) {
+      local = `${base}${digitTail}`;
+    } else {
+      // No digits to disambiguate with, or tail already taken: increment.
+      // attempt 1 without tail -> base2; attempt >= 2 -> base<tail><n>.
+      const n = attempt + (digitTail ? 0 : 1);
+      local = `${base}${digitTail}${n}`;
+    }
     const candidate = `${local}@${PORTAL_EMAIL_DOMAIN}`;
     if (usedEmails && usedEmails.has(candidate)) {
-      suffix = suffix === '' ? 2 : suffix + 1;
+      attempt += 1;
       continue;
     }
     const existing = await portalAuthService.getPortalUserByEmail(candidate);
@@ -967,7 +986,7 @@ async function derivePortalEmail(name, customerId, excludeUserId, usedEmails) {
       if (usedEmails) usedEmails.add(candidate);
       return candidate;
     }
-    suffix = suffix === '' ? 2 : suffix + 1;
+    attempt += 1;
   }
 }
 
