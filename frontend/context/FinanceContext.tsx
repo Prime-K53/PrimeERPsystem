@@ -138,7 +138,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             postJournalEntry([{
                 description: 'System Initialization: Opening Cash Balance',
                 debitAccountId: gl.cashDrawerAccount || '11110', 
-                creditAccountId: '3000', 
+                creditAccountId: '31000', 
                 amount: financeStore.openingBalance,
                 referenceId: 'OPENING_BALANCE',
                 reconciled: true
@@ -167,8 +167,15 @@ const handleOpenInventory = async () => {
         try {
             const result = await openInventory();
             await financeStore.fetchFinanceData();
-            if (result.alreadyOpened) {
+            if ((result as any).requiresReconciliation) {
+                notify(
+                    `Opening inventory needs review: expected K${Number((result as any).expectedValue || 0).toLocaleString()} vs active opening K${Number((result as any).openingValue || 0).toLocaleString()}. Reconcile first — no journal was posted.`,
+                    'warning'
+                );
+            } else if (result.alreadyOpened) {
                 notify('Opening inventory already exists', 'info');
+            } else if (result.entriesPosted === 0) {
+                notify('No eligible inventory to open (all items excluded — see reconciliation)', 'info');
             } else {
                 notify(`Opening inventory posted: ${result.entriesPosted} entries (K${result.totalDebit.toLocaleString()})`, 'success');
             }

@@ -37,6 +37,7 @@ import {
     JournalLineInput, resolveInventoryAccountByItemType, resolveInventoryAccountFromItems
 } from './transactions/_internal';
 import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
+import { resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
 
 export const transactionService = {
     /**
@@ -3556,7 +3557,8 @@ export const transactionService = {
                         if (childCode) {
                             const found = accounts.find(a => a.id === childCode || a.code === childCode || a.account_number === childCode);
                             const childId = found?.id || childCode;
-                            const itemValue = (item.stock || 0) * (item.cost || 0);
+                            // Canonical economics: quantity × cost (never SP).
+                            const itemValue = resolveInventoryQuantity(item) * resolveInventoryCostPerUnit(item);
                             childAccountBalances[childId] = (childAccountBalances[childId] || 0) + itemValue;
                         }
                     }

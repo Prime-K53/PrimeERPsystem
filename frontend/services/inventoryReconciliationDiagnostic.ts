@@ -21,6 +21,13 @@ import {
   getGLConfig,
 } from './transactions/_internal';
 import { isPostedLedgerEntry } from './accountingEngine';
+import {
+  reconcileInventoryValuation,
+  formatInventoryReconciliation,
+  resolveInventoryCostPerUnit,
+  resolveInventoryQuantity,
+  type InventoryValuationReconciliation,
+} from '../utils/inventoryNormalization';
 import { Account, LedgerEntry } from '../types';
 import { dbService } from './db';
 
@@ -76,8 +83,10 @@ export async function computeInventoryReconciliation(): Promise<InventoryReconci
     const isActive = String(item.status || 'Active').toLowerCase() !== 'inactive';
     if (isActive) activeItemCount++; else inactiveItemCount++;
 
-    const qty = Number(item.stock || 0);
-    const cost = Number(item.cost ?? item.costPrice ?? 0);
+    // Canonical economics: quantity × cost (never Selling Price), every
+    // historical cost representation supported.
+    const qty = resolveInventoryQuantity(item);
+    const cost = resolveInventoryCostPerUnit(item);
     const value = qty * cost;
 
     if (qty < 0) {
@@ -321,4 +330,27 @@ export function formatReconciliationReport(r: InventoryReconciliationResult): st
   lines.push('');
   lines.push(`═══ END REPORT ═══`);
   return lines.join('\n');
+}
+
+/**
+ * Read-only inventory ↔ GL valuation reconciliation (Phase 18).
+ *
+ * Runs entirely against current data and never creates journals. Exposes
+ * per-item economics (quantity × cost, expected 11410/11420/11430 account,
+ * inclusion + exclusion reason), category totals, posted-only GL balances,
+ * and the reconciling difference.
+ */
+export async function getInventoryValuationReconciliation(): Promise<InventoryValuationReconciliation> {
+  const [inventory, accounts, ledger] = await Promise.all([
+    dbService.getAll<Item>('inventory'),
+    dbService.getAll<Account>('accounts'),
+    dbService.getAll<LedgerEntry>('ledger'),
+  ]);
+  return reconcileInventoryValuation(inventory as any[], accounts as any[], ledger as any[]);
+}
+
+/** Human-readable rendering of getInventoryValuationReconciliation. */
+export async function formatInventoryValuationReconciliation(currencySymbol = 'K'): Promise<string> {
+  const report = await getInventoryValuationReconciliation();
+  return formatInventoryReconciliation(report, currencySymbol);
 }

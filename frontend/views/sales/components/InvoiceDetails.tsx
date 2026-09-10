@@ -166,17 +166,17 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
     }, [newComment, user]);
 
     const handleDuplicateInvoice = useCallback(() => {
-        navigate('/sales-flow/invoices', { state: { action: 'duplicate', invoice } });
-    }, [navigate, invoice]);
+        onAction(invoice, 'duplicate');
+    }, [onAction, invoice]);
 
     const handleCreateCreditNote = useCallback(() => {
-        navigate('/sales-flow/invoices', { state: { action: 'credit_note', invoice } });
-    }, [navigate, invoice]);
+        onAction(invoice, 'credit_note');
+    }, [onAction, invoice]);
 
     const handleEmailInvoice = useCallback(() => {
         if (!invoice.customerId) { notify('warn', 'No customer linked to this invoice'); return; }
-        navigate('/sales-flow/invoices', { state: { action: 'email', invoice } });
-    }, [navigate, invoice, notify]);
+        onAction(invoice, 'email_invoice');
+    }, [onAction, invoice, notify]);
 
     const handlePrintInvoice = useCallback(() => {
         handlePreview(invoice);

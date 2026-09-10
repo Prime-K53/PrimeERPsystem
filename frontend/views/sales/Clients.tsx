@@ -726,8 +726,8 @@ export const Clients: React.FC = () => {
 
         {/* LIST VIEW */}
         {viewMode === 'list' && (
-          <div className="clients-table-wrap sales-list-scroll rpt-legacy" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', containerType: 'inline-size' }}>
-            {/* Container-aware responsive wrapper: narrow containers stack labelled rows (see responsive-table.css). No logic change. */}
+          <div className="clients-table-wrap sales-list-scroll rpt-compact-list" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', containerType: 'inline-size' }}>
+            {/* Compact-list responsive wrapper: narrow containers keep a dense list and hide data-collapse-mobile columns (see responsive-table.css). No logic change. */}
             <style>{`
               .clients-table tbody tr { transition: background .12s ease; }
               .clients-table tbody tr:hover > td { background: #f3faf8; }
@@ -742,8 +742,8 @@ export const Clients: React.FC = () => {
                       onChange={toggleSelectAll} />
                   </th>
                   <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Customer</th>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Contact</th>
-                  <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Last Activity</th>
+                  <th data-collapse-mobile="" style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Contact</th>
+                  <th data-collapse-mobile="" style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Last Activity</th>
                   <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Wallet</th>
                   <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'right', background: teal[50], borderBottom: `1px solid ${hairline}` }}>Outstanding</th>
                   <th style={{ position: 'sticky', top: 0, zIndex: 5, padding: '11px 14px', fontSize: 10, fontWeight: 700, color: teal[800], textTransform: 'uppercase', letterSpacing: 0.08, textAlign: 'center', width: 64, background: teal[50], borderBottom: `1px solid ${hairline}` }}>Actions</th>
@@ -789,13 +789,13 @@ export const Clients: React.FC = () => {
                               </div>
                             </div>
                           </td>
-                          <td data-label="Contact" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
+                          <td data-label="Contact" data-collapse-mobile="" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                               {customer.phone && <span style={{ fontSize: 11.5, color: inkSoft, display: 'flex', alignItems: 'center', gap: 5 }}><PhoneIcon size={10} />{customer.phone}</span>}
                               {(customer.portalEmail || customer.email) && <span style={{ fontSize: 11.5, color: teal[700], display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}><Mail size={10} />{customer.portalEmail || customer.email}</span>}
                             </div>
                           </td>
-                          <td data-label="Last activity" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
+                          <td data-label="Last activity" data-collapse-mobile="" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
                             {lastTx ? (
                               <div>
                                 <div style={{ fontWeight: 600, fontSize: 12 }}>{relativeDate(lastTx.date)}</div>

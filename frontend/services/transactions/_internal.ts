@@ -10,6 +10,7 @@ import {
 import { DEFAULT_ACCOUNTS } from '../../constants';
 import { generateNextId, roundToCurrency } from '../../utils/helpers';
 import { computeHierarchicalRollup, getNormalBalance, isPostedLedgerEntry, entryTouchesAccount } from '../accountingEngine';
+import { classifyInventoryItem, resolveInventoryCostPerUnit } from '../../utils/inventoryNormalization';
 
 export const getCompanyConfig = () => {
     const saved = localStorage.getItem('nexus_company_config');
@@ -690,19 +691,19 @@ export const resolveItemUnitCost = async (item: any, inventoryItem: any): Promis
         } catch { /* fall through to weighted average */ }
     }
 
-    const directCost = Number(item?.cost_price ?? item?.cost);
+    const directCost = Number(resolveInventoryCostPerUnit(item) || resolveInventoryCostPerUnit(inventoryItem));
     if (Number.isFinite(directCost) && directCost > 0) return directCost;
 
     const variantId = item?.variantId;
     if (variantId && inventoryItem?.variants?.length) {
         const variant = inventoryItem.variants.find((v: any) => v.id === variantId);
         if (variant) {
-            const variantCost = Number(variant.cost_price ?? variant.cost);
+            const variantCost = Number(resolveInventoryCostPerUnit(variant));
             if (Number.isFinite(variantCost) && variantCost > 0) return variantCost;
         }
     }
 
-    const inventoryCost = Number(inventoryItem?.cost_price ?? inventoryItem?.cost);
+    const inventoryCost = Number(resolveInventoryCostPerUnit(inventoryItem));
     return Number.isFinite(inventoryCost) ? inventoryCost : 0;
 };
 
@@ -873,16 +874,20 @@ export function resolveInventoryAccountByItemType(
     if (!itemType) return null;
 
     const normalizedType = String(itemType).toLowerCase();
+    // Canonical mapping — must match resolveInventoryGLAccountCode in
+    // utils/inventoryNormalization.ts so opening journals and COGS relieve
+    // the SAME account. 'Product' (resale merchandise, including the UI's
+    // Finished Good collapse) posts to 11410; only explicit finished-goods
+    // types post to 11430. Never silently default: unknown types fall back
+    // to 11410 only to preserve the historical default bucket.
     let targetCode = '11410'; // Default: Merchandise Inventory
 
     if (normalizedType === 'material' || normalizedType === 'raw material' || normalizedType === 'raw' || normalizedType === 'consumable') {
         targetCode = '11420'; // Raw Materials
     } else if (normalizedType === 'finished good' || normalizedType === 'finished goods') {
         targetCode = '11430'; // Finished Goods (distinct from Merchandise)
-    } else if (normalizedType === 'product') {
-        // 'product' is ambiguous - check if a Finished Goods account exists; if so, use it
-        const hasFinishedGoods = accounts.some(a => a.code === '11430' || a.account_number === '11430');
-        targetCode = hasFinishedGoods ? '11430' : '11410';
+    } else if (normalizedType === 'product' || normalizedType === 'merchandise') {
+        targetCode = '11410'; // Merchandise Inventory
     } else if (normalizedType === 'stationery' || normalizedType === 'stationaries') {
         targetCode = '11420'; // Stationery tracked with Raw Materials
     }
@@ -992,7 +997,10 @@ export function computeInventoryReconciliation(
         : ['11410', '11420', '11430'];
     const PARENT_INVENTORY_CODE = defaultParentCode;
 
-    // Calculate physical inventory valuation by category
+    // Calculate physical inventory valuation by category through the
+    // canonical classifier (one cost rule, one GL mapping, every record
+    // shape). Services/deleted/negative/zero-cost/unmapped items are
+    // reported, never silently valued.
     let merchandiseValue = 0;
     let rawMaterialsValue = 0;
     let finishedGoodsValue = 0;
@@ -1001,24 +1009,16 @@ export function computeInventoryReconciliation(
     let zeroCostItems: any[] = [];
 
     for (const item of inventoryItems || []) {
-        if (item.type === 'Service') continue;
-        const stock = item.stock || 0;
-        const cost = item.cost || item.costPrice || 0;
-        const value = stock * cost;
-
-        if (stock < 0) negativeInventoryItems.push(item);
-        if (cost <= 0 && stock > 0) zeroCostItems.push(item);
-
-        const type = (item.type || '').toLowerCase();
-        if (type === 'finished good' || type === 'finished goods') {
-            finishedGoodsValue += value;
-        } else if (type === 'product') {
-            merchandiseValue += value;
-        } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery' || type === 'stationaries') {
-            rawMaterialsValue += value;
-        } else {
-            unclassifiedItems.push(item);
+        const classified = classifyInventoryItem(item);
+        if (!classified.included) {
+            if (classified.exclusionReason === 'NEGATIVE_STOCK') negativeInventoryItems.push(item);
+            else if (classified.exclusionReason === 'ZERO_COST' || classified.exclusionReason === 'MISSING_COST') zeroCostItems.push(item);
+            else if (classified.exclusionReason === 'UNMAPPED_TYPE') unclassifiedItems.push(item);
+            continue;
         }
+        if (classified.expectedAccount === '11430') finishedGoodsValue += classified.inventoryValue;
+        else if (classified.expectedAccount === '11420') rawMaterialsValue += classified.inventoryValue;
+        else merchandiseValue += classified.inventoryValue;
     }
 
     // Calculate GL balances for each inventory child account

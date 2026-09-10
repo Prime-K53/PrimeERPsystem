@@ -323,6 +323,18 @@
   .rpt-legacy td[data-label=''] , .rpt-legacy td:not([data-label]) { justify-content: flex-end; }
 }
 
+/* ── Compact list mode for legacy tables ─────────────────────────────
+   Keeps the table a true dense list on narrow containers: instead of
+   stacking rows into cards, low-priority columns marked with
+   `data-collapse-mobile` are hidden (their content must remain reachable
+   via the row's existing navigation/expansion). */
+.rpt-compact-list { container-type: inline-size; container-name: rpt-compact; }
+@container rpt-compact (max-width: 639px) {
+  .rpt-compact-list table { min-width: 0 !important; width: 100%; }
+  .rpt-compact-list [data-collapse-mobile] { display: none !important; }
+  .rpt-compact-list td { padding-top: 10px; padding-bottom: 10px; }
+}
+
 /* ── Dark theme follows existing [data-theme] tokens ── */
 [data-theme='dark'] .rpt-wrap { background: var(--surface, #1e2330); border-color: #2c3446; color: #e2e8f0; }
 [data-theme='dark'] .rpt-table, [data-theme='dark'] .rpt-card, [data-theme='dark'] .rpt-state,

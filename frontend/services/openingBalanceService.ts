@@ -2,7 +2,13 @@ import { dbService } from './db';
 import { getGLConfig, getCompanyConfig, generateId, resolveAccountForPosting, loadAccountsFromStore } from './transactions/_internal';
 import { LedgerEntry } from '../types';
 import { roundToCurrency } from '../utils/helpers';
-import { normalizeInventoryItems, normalizeInventoryItemForOpening, hasInventoryItems } from '../utils/inventoryNormalization';
+import { normalizeInventoryItems } from '../utils/inventoryNormalization';
+import {
+  classifyInventoryItem,
+  resolveInventoryCostPerUnit,
+  resolveInventoryGLAccountCode,
+  resolveInventoryQuantity,
+} from '../utils/inventoryNormalization';
 import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
 
 export interface OpeningInventoryResult {
@@ -14,6 +20,40 @@ export interface OpeningInventoryResult {
   totalDebit: number;
   totalCredit: number;
   variance: number;
+  /** Set when an opening exists but no longer matches current valuation. */
+  requiresReconciliation?: boolean;
+  /** Machine-readable state for the requires-reconciliation case. */
+  code?: string;
+  /** Reversal entries posted by a forceRebuild (audit trail, never deletions). */
+  reversedEntries?: number;
+  /** True when this run replaced a stale opening through reversal + repost. */
+  rebuilt?: boolean;
+  /** Current expected valuation vs active opening (informational). */
+  expectedValue?: number;
+  openingValue?: number;
+  difference?: number;
+}
+
+export interface OpeningInventoryPreviewLine {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  debitAmount: number;
+  creditAccountId: string;
+  creditAccountCode: string;
+  creditAccountName: string;
+  itemCount: number;
+}
+
+export interface OpeningInventoryPreview {
+  lines: OpeningInventoryPreviewLine[];
+  totalDebit: number;
+  totalCredit: number;
+  difference: number;
+  offsetAccountId: string;
+  offsetAccountCode: string;
+  excluded: Record<string, number>;
+  eligibleItemCount: number;
 }
 
 export interface OpeningInventoryDetail {
@@ -42,6 +82,13 @@ export interface OpeningInventoryDiagnostic {
 }
 
 const OPENING_INVENTORY_REFERENCE = 'OPENING-INVENTORY';
+/** Returned when an opening exists but no longer matches current valuation. */
+export const OPENING_INVENTORY_REQUIRES_RECONCILIATION = 'OPENING_INVENTORY_REQUIRES_RECONCILIATION';
+/** Entry/reference markers for reversal-based replacement (audit trail, never deletions). */
+const OPENING_REVERSAL_ENTRY_TYPE = 'opening_inventory_reversal';
+const OPENING_REVERSAL_REFERENCE_TYPE = 'opening_inventory_reversal';
+/** Tolerance when comparing expected valuation against the active opening. */
+const OPENING_STALENESS_TOLERANCE = 0.01;
 // Canonical default inventory child codes. The diagnostic function below
 // prefers children derived from glMapping (if a custom inventory account is
 // configured), otherwise falls back to these defaults.
@@ -63,30 +110,29 @@ export async function computeOpeningInventoryDiagnostic(
   let missingAccountMapping: any[] = [];
 
   for (const item of normalizedItems) {
-    if (item.type === 'Service') continue;
-    const stock = item.stock || 0;
-    const cost = item.cost || item.costPrice || 0;
-    const value = stock * cost;
+    // Services never carry inventory value.
+    if (String(item.type || '').toLowerCase().includes('service')) continue;
+    const stock = resolveInventoryQuantity(item);
+    const cost = resolveInventoryCostPerUnit(item);
+    const value = roundToCurrency(stock * cost);
 
     if (stock < 0) negativeInventoryItems.push(item);
     if (cost <= 0 && stock > 0) zeroCostItems.push(item);
 
-    const type = (item.type || '').toLowerCase();
-    const accountCode = resolveInventoryAccountCodeByType(type);
+    // Canonical GL mapping (shared with opening posting and COGS relief).
+    const accountCode = resolveInventoryGLAccountCode(item);
     if (!accountCode) {
       missingAccountMapping.push(item);
       unclassifiedItems.push(item);
       continue;
     }
 
-    if (type === 'product' || type === 'finished good' || type === 'finished goods') {
-      if (type === 'finished goods') {
-        finishedGoodsValue += value;
-      } else {
-        merchandiseValue += value;
-      }
-    } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
+    if (accountCode === '11430') {
+      finishedGoodsValue += value;
+    } else if (accountCode === '11420') {
       rawMaterialsValue += value;
+    } else {
+      merchandiseValue += value;
     }
   }
 
@@ -143,19 +189,216 @@ export async function computeOpeningInventoryDiagnostic(
   };
 }
 
-function resolveInventoryAccountCodeByType(type: string): string | null {
-  const normalizedType = type.toLowerCase();
-  if (normalizedType === 'finished good' || normalizedType === 'finished goods') {
-    return '11430'; // Finished Goods (distinct from Merchandise)
-  } else if (normalizedType === 'material' || normalizedType === 'raw material' || normalizedType === 'raw' || normalizedType === 'consumable' || normalizedType === 'stationery' || normalizedType === 'stationaries') {
-    return '11420'; // Raw Materials / Stationery
-  } else if (normalizedType === 'product') {
-    return '11410'; // Default: Merchandise Inventory
-  }
-  return null;
+/** True for opening-inventory posting lines (originals and reposts). */
+export function isOpeningInventoryLine(entry: Partial<LedgerEntry> | null | undefined): boolean {
+  if (!entry) return false;
+  return (
+    (entry as LedgerEntry).referenceId === OPENING_INVENTORY_REFERENCE &&
+    (entry as LedgerEntry).entryType === 'opening_inventory'
+  );
 }
 
-export async function openInventory(options: { forceRebuild?: boolean } = {}): Promise<OpeningInventoryResult> {
+/** True for reversal lines that supersede opening-inventory postings. */
+export function isOpeningInventoryReversal(entry: Partial<LedgerEntry> | null | undefined): boolean {
+  if (!entry) return false;
+  const e = entry as LedgerEntry;
+  return (
+    e.referenceId === OPENING_INVENTORY_REFERENCE &&
+    (e.entryType === OPENING_REVERSAL_ENTRY_TYPE || e.referenceType === OPENING_REVERSAL_REFERENCE_TYPE)
+  );
+}
+
+/**
+ * Active (unreversed, posted) opening-inventory lines. Reversal-based
+ * replacement nets originals to zero; this set drives staleness checks so a
+ * superseded opening is never mistaken for the current one.
+ */
+export function getActiveOpeningLines(allEntries: Array<Partial<LedgerEntry>>): LedgerEntry[] {
+  const reversedIds = new Set<string>();
+  for (const e of allEntries || []) {
+    if (isOpeningInventoryReversal(e) && isPostedLedgerEntry(e)) {
+      const target = String((e as any).reversesEntryId || '').trim();
+      if (target) reversedIds.add(target);
+    }
+  }
+  return (allEntries || []).filter(
+    (e): e is LedgerEntry =>
+      isOpeningInventoryLine(e) && isPostedLedgerEntry(e) && !reversedIds.has(String((e as LedgerEntry).id || ''))
+  );
+}
+
+interface OpeningInventoryPlan {
+  debitEntries: { accountId: string; amount: number; accountCode: string; accountName: string; count: number }[];
+  totalDebit: number;
+  totalCredit: number;
+  details: OpeningInventoryDetail[];
+  excluded: Record<string, number>;
+  eligibleItemCount: number;
+  offsetAccountCode: string;
+}
+
+/**
+ * The SINGLE valuation calculation shared by preview and posting (Phase 7:
+ * never two independent algorithms). Pure apart from account lookups.
+ */
+export function buildOpeningInventoryPlan(
+  rawInventory: any[],
+  accounts: any[],
+  openingEquityAccount: string
+): OpeningInventoryPlan {
+  const normalizedInventory = normalizeInventoryItems(rawInventory || []);
+  const childBalances: Record<string, { value: number; count: number }> = {};
+  const excluded: Record<string, number> = {};
+  let eligibleItemCount = 0;
+
+  for (const item of normalizedInventory) {
+    const classified = classifyInventoryItem(item);
+    if (!classified.included) {
+      const reason = classified.exclusionReason || 'other';
+      excluded[reason] = (excluded[reason] || 0) + 1;
+      continue;
+    }
+    eligibleItemCount += 1;
+    const accountCode = classified.expectedAccount as string;
+    const account = accounts.find((a: any) => a.account_number === accountCode || a.code === accountCode);
+    if (!account || account.allow_posting === false) {
+      excluded['NON_POSTING_ACCOUNT'] = (excluded['NON_POSTING_ACCOUNT'] || 0) + 1;
+      continue;
+    }
+    const childId = String(account.id);
+    if (!childBalances[childId]) childBalances[childId] = { value: 0, count: 0 };
+    childBalances[childId].value += classified.inventoryValue;
+    childBalances[childId].count += 1;
+  }
+
+  const debitEntries: OpeningInventoryPlan['debitEntries'] = [];
+  let totalDebit = 0;
+  for (const [childAccountId, data] of Object.entries(childBalances)) {
+    const account = accounts.find((a: any) => String(a.id) === childAccountId);
+    if (!account || account.allow_posting === false) continue;
+    const amount = roundToCurrency(data.value);
+    if (amount <= 0) continue;
+    debitEntries.push({
+      accountId: childAccountId,
+      amount,
+      accountCode: account.account_number || account.code || childAccountId,
+      accountName: account.name,
+      count: data.count,
+    });
+    totalDebit = roundToCurrency(totalDebit + amount);
+  }
+
+  return {
+    debitEntries,
+    totalDebit: roundToCurrency(totalDebit),
+    totalCredit: roundToCurrency(totalDebit),
+    details: debitEntries.map((d) => ({
+      accountId: d.accountId,
+      accountCode: d.accountCode,
+      accountName: d.accountName,
+      debitAmount: d.amount,
+      creditAmount: 0,
+      itemCount: d.count,
+      physicalValue: d.amount,
+    })),
+    excluded,
+    eligibleItemCount,
+    offsetAccountCode: openingEquityAccount,
+  };
+}
+
+/**
+ * Writes one balanced opening journal for a prebuilt plan. Posting-only
+ * helper used by openInventory (initial post and post-reversal repost).
+ */
+async function postOpeningPlan(
+  ledgerStore: any,
+  idempotencyStore: any,
+  plan: OpeningInventoryPlan,
+  resolveAcct: (ref: string | undefined) => string,
+  reason: string,
+  supersedesJournalId: string | null
+): Promise<{ entriesPosted: number; journalId: string; details: OpeningInventoryDetail[]; totalDebit: number; totalCredit: number }> {
+  if (plan.debitEntries.length === 0 || plan.totalDebit <= 0) {
+    return { entriesPosted: 0, journalId: '', details: [], totalDebit: 0, totalCredit: 0 };
+  }
+  const creditAccountId = resolveAcct(plan.offsetAccountCode);
+  const journalId = generateId('INV-OPEN');
+  const now = new Date().toISOString();
+  const entries: LedgerEntry[] = plan.debitEntries.map((debit) => ({
+    id: generateId('LG-INV'),
+    date: now,
+    description:
+      `Opening Inventory: ${debit.accountName} (${debit.count} items)` +
+      (reason ? ` — ${reason}` : '') +
+      (supersedesJournalId ? ` (supersedes ${supersedesJournalId})` : ''),
+    debitAccountId: debit.accountId,
+    creditAccountId,
+    amount: debit.amount,
+    referenceId: OPENING_INVENTORY_REFERENCE,
+    referenceType: 'opening_inventory',
+    entryType: 'opening_inventory',
+    journalId,
+    supersedesJournalId: supersedesJournalId || undefined,
+    reconciled: false,
+  }));
+  for (const entry of entries) {
+    await ledgerStore.put(entry);
+  }
+  await idempotencyStore.put({
+    id: generateId('IK-INV'),
+    scope: 'opening_inventory',
+    sourceId: journalId,
+    createdAt: now,
+  });
+  return {
+    entriesPosted: entries.length,
+    journalId,
+    details: plan.details,
+    totalDebit: plan.totalDebit,
+    totalCredit: plan.totalCredit,
+  };
+}
+
+/**
+ * Read-only preview of the exact journal openInventory() would post
+ * (Phase 7). Shares buildOpeningInventoryPlan with posting, so preview and
+ * execution can never diverge. NEVER writes.
+ */
+export async function previewOpeningInventory(): Promise<OpeningInventoryPreview> {
+  const [inventory, accounts] = await Promise.all([
+    dbService.getAll<any>('inventory'),
+    dbService.getAll<any>('accounts'),
+  ]);
+  const gl = getGLConfig();
+  const openingEquityAccount = gl.ownerCapitalAccount || gl.retainedEarningsAccount || '32000';
+  const plan = buildOpeningInventoryPlan(inventory, accounts, openingEquityAccount);
+  const offsetAccount =
+    accounts.find((a: any) => a.account_number === openingEquityAccount || a.code === openingEquityAccount || a.id === openingEquityAccount) || null;
+  return {
+    lines: plan.debitEntries.map((d) => ({
+      accountId: d.accountId,
+      accountCode: d.accountCode,
+      accountName: d.accountName,
+      debitAmount: d.amount,
+      creditAccountId: String(offsetAccount?.id || openingEquityAccount),
+      creditAccountCode: String(offsetAccount?.account_number || offsetAccount?.code || openingEquityAccount),
+      creditAccountName: String(offsetAccount?.name || openingEquityAccount),
+      itemCount: d.count,
+    })),
+    totalDebit: plan.totalDebit,
+    totalCredit: plan.totalCredit,
+    difference: roundToCurrency(plan.totalDebit - plan.totalCredit),
+    offsetAccountId: String(offsetAccount?.id || openingEquityAccount),
+    offsetAccountCode: String(offsetAccount?.account_number || offsetAccount?.code || openingEquityAccount),
+    excluded: plan.excluded,
+    eligibleItemCount: plan.eligibleItemCount,
+  };
+}
+
+export async function openInventory(
+  options: { forceRebuild?: boolean; reason?: string } = {}
+): Promise<OpeningInventoryResult> {
   return dbService.executeAtomicOperation(
     ['ledger', 'accounts', 'inventory', 'idempotencyKeys'],
     async (tx) => {
@@ -178,42 +421,105 @@ export async function openInventory(options: { forceRebuild?: boolean } = {}): P
       const openingEquityAccount = gl.ownerCapitalAccount || gl.retainedEarningsAccount || '32000';
 
       const allEntries = await ledgerStore.getAll();
-      const existingOpenings = allEntries.filter(
-        (e: LedgerEntry) => e.referenceId === OPENING_INVENTORY_REFERENCE
-      );
+      const activeOpenings = getActiveOpeningLines(allEntries);
 
-      if (existingOpenings.length > 0) {
-        if (options.forceRebuild) {
-          // Reverse all prior opening entries by deleting them - the new entries below
-          // will recreate the opening at the current valuation. Note: this is a destructive
-          // operation that removes the prior opening journal from the ledger; if you need
-          // an audit trail, use a separate reversal entry instead.
-          for (const priorEntry of existingOpenings) {
-            await ledgerStore.delete(priorEntry.id);
-          }
-        } else {
+      // Build the posting plan from CURRENT inventory through the single
+      // canonical calculation (previewOpeningInventory uses this same plan).
+      const inventory = await inventoryStore.getAll();
+      const plan = buildOpeningInventoryPlan(inventory, accounts, openingEquityAccount);
+
+      if (activeOpenings.length > 0 && !options.forceRebuild) {
+        const openingValue = roundToCurrency(
+          activeOpenings.reduce((s: number, e: LedgerEntry) => s + (Number(e.amount) || 0), 0)
+        );
+        const difference = roundToCurrency(plan.totalDebit - openingValue);
+        if (Math.abs(difference) <= OPENING_STALENESS_TOLERANCE) {
           return {
             success: true,
             entriesPosted: 0,
             alreadyOpened: true,
-            journalId: existingOpenings[0].id,
+            journalId: activeOpenings[0].journalId || activeOpenings[0].id,
             details: [],
             totalDebit: 0,
             totalCredit: 0,
             variance: 0,
+            expectedValue: plan.totalDebit,
+            openingValue,
+            difference: 0,
           };
         }
+        // An opening exists but no longer matches current valuation.
+        // NEVER silently rebuild or silently skip: report explicitly so the
+        // operator chooses the approved correction/reversal workflow.
+        return {
+          success: false,
+          entriesPosted: 0,
+          alreadyOpened: false,
+          requiresReconciliation: true,
+          code: OPENING_INVENTORY_REQUIRES_RECONCILIATION,
+          journalId: activeOpenings[0].journalId || activeOpenings[0].id,
+          details: plan.details,
+          totalDebit: plan.totalDebit,
+          totalCredit: plan.totalCredit,
+          variance: difference,
+          expectedValue: plan.totalDebit,
+          openingValue,
+          difference,
+        };
       }
 
-      const inventory = await inventoryStore.getAll();
-      const normalizedInventory = normalizeInventoryItems(inventory);
-      const activeItems = normalizedInventory.filter((item: any) => {
-        if (item.status === 'Deleted' || item.status === 'Void') return false;
-        if (item.type === 'Service') return false;
-        return true;
-      });
+      if (activeOpenings.length > 0 && options.forceRebuild) {
+        // Reversal-based replacement: originals stay in history; offsetting
+        // reversal lines net them to zero exactly once; fresh lines follow.
+        // Everything happens inside this same atomic transaction.
+        const reversalJournalId = generateId('INV-OPEN-REV');
+        const now = new Date().toISOString();
+        const reason = (options.reason || 'opening rebuild').trim() || 'opening rebuild';
+        const reversals: LedgerEntry[] = [];
+        for (const original of activeOpenings) {
+          reversals.push({
+            id: generateId('LG-INV-REV'),
+            date: now,
+            description: `REVERSAL: ${original.description || 'Opening Inventory'} — ${reason} (reverses ${original.id})`,
+            debitAccountId: original.creditAccountId,
+            creditAccountId: original.debitAccountId,
+            amount: original.amount,
+            referenceId: OPENING_INVENTORY_REFERENCE,
+            referenceType: OPENING_REVERSAL_REFERENCE_TYPE,
+            entryType: OPENING_REVERSAL_ENTRY_TYPE,
+            journalId: reversalJournalId,
+            reversesEntryId: original.id,
+            reversedJournalId: original.journalId || original.id,
+            reconciled: false,
+          });
+        }
+        for (const reversal of reversals) {
+          await ledgerStore.put(reversal);
+        }
 
-      if (!hasInventoryItems(activeItems)) {
+        const posted = await postOpeningPlan(
+          ledgerStore, idempotencyStore, plan, resolveAcct, reason, reversalJournalId
+        );
+        return {
+          success: true,
+          entriesPosted: reversals.length + posted.entriesPosted,
+          alreadyOpened: false,
+          rebuilt: true,
+          reversedEntries: reversals.length,
+          journalId: posted.journalId || reversalJournalId,
+          details: posted.details,
+          totalDebit: posted.totalDebit,
+          totalCredit: posted.totalCredit,
+          variance: 0,
+          expectedValue: plan.totalDebit,
+          openingValue: roundToCurrency(
+            activeOpenings.reduce((s: number, e: LedgerEntry) => s + (Number(e.amount) || 0), 0)
+          ),
+          difference: 0,
+        };
+      }
+
+      if (plan.totalDebit <= 0) {
         return {
           success: true,
           entriesPosted: 0,
@@ -223,122 +529,27 @@ export async function openInventory(options: { forceRebuild?: boolean } = {}): P
           totalDebit: 0,
           totalCredit: 0,
           variance: 0,
+          expectedValue: 0,
+          openingValue: 0,
+          difference: 0,
         };
       }
 
-      const childBalances: Record<string, { value: number; count: number }> = {};
-      const unclassified: any[] = [];
-      const negativeStock: any[] = [];
-      const zeroCost: any[] = [];
-
-      for (const item of activeItems) {
-        const stock = item.stock || 0;
-        const cost = item.cost || item.costPrice || item.cost_price || 0;
-        const value = roundToCurrency(stock * cost);
-
-        if (stock < 0) { negativeStock.push(item); continue; }
-        if (cost <= 0 && stock > 0) { zeroCost.push(item); continue; }
-
-        const type = (item.type || '').toLowerCase();
-        const accountCode = resolveInventoryAccountCodeByType(type);
-        if (!accountCode) { unclassified.push(item); continue; }
-
-        const account = accounts.find(a => a.account_number === accountCode || a.code === accountCode);
-        if (!account || account.allow_posting === false) { unclassified.push(item); continue; }
-
-        const childId = account.id;
-        if (!childBalances[childId]) {
-          childBalances[childId] = { value: 0, count: 0 };
-        }
-        childBalances[childId].value += value;
-        childBalances[childId].count += 1;
-      }
-
-      const debitEntries: { accountId: string; amount: number; accountCode: string; accountName: string; count: number }[] = [];
-      let totalDebit = 0;
-
-      for (const [childAccountId, data] of Object.entries(childBalances)) {
-        const account = accounts.find(a => a.id === childAccountId);
-        if (!account || account.allow_posting === false) continue;
-        const amount = roundToCurrency(data.value);
-        if (amount <= 0) continue;
-        debitEntries.push({
-          accountId: childAccountId,
-          amount,
-          accountCode: account.account_number || account.code || childAccountId,
-          accountName: account.name,
-          count: data.count,
-        });
-        totalDebit += amount;
-      }
-
-      if (totalDebit <= 0) {
-        return {
-          success: true,
-          entriesPosted: 0,
-          alreadyOpened: false,
-          journalId: '',
-          details: [],
-          totalDebit: 0,
-          totalCredit: 0,
-          variance: roundToCurrency(totalDebit),
-        };
-      }
-
-      const creditAccountId = resolveAcct(openingEquityAccount);
-      const totalCredit = roundToCurrency(totalDebit);
-
-      const journalId = generateId('INV-OPEN');
-      const now = new Date().toISOString();
-      const reconciliationEntries: LedgerEntry[] = [];
-
-      for (const debit of debitEntries) {
-        reconciliationEntries.push({
-          id: generateId('LG-INV'),
-          date: now,
-          description: `Opening Inventory: ${debit.accountName} (${debit.count} items)`,
-          debitAccountId: debit.accountId,
-          creditAccountId: creditAccountId,
-          amount: debit.amount,
-          referenceId: OPENING_INVENTORY_REFERENCE,
-          referenceType: 'opening_inventory',
-          entryType: 'opening_inventory',
-          journalId,
-          reconciled: false,
-        });
-      }
-
-      for (const entry of reconciliationEntries) {
-        await ledgerStore.put(entry);
-      }
-
-      const idempotencyKey = {
-        id: generateId('IK-INV'),
-        scope: 'opening_inventory',
-        sourceId: journalId,
-        createdAt: now,
-      };
-      await idempotencyStore.put(idempotencyKey);
-
-      const details: OpeningInventoryDetail[] = debitEntries.map(d => ({
-        accountId: d.accountId,
-        accountCode: d.accountCode,
-        accountName: d.accountName,
-        debitAmount: d.amount,
-        creditAmount: 0,
-        itemCount: d.count,
-        physicalValue: d.amount,
-      }));
-
+      const posted = await postOpeningPlan(
+        ledgerStore, idempotencyStore, plan, resolveAcct, (options.reason || '').trim(), null
+      );
       return {
         success: true,
-        entriesPosted: reconciliationEntries.length,
+        entriesPosted: posted.entriesPosted,
         alreadyOpened: false,
-        journalId,
-        details,
-        totalDebit: roundToCurrency(totalDebit),
-        totalCredit: roundToCurrency(totalCredit),
+        journalId: posted.journalId,
+        details: posted.details,
+        totalDebit: posted.totalDebit,
+        totalCredit: posted.totalCredit,
         variance: 0,
+        expectedValue: plan.totalDebit,
+        openingValue: 0,
+        difference: plan.totalDebit,
       };
     }
   );
@@ -350,19 +561,66 @@ export async function getOpeningInventoryStatus(): Promise<{
   date?: string;
   totalDebit?: number;
   totalCredit?: number;
+  /** Distinct journals backing the ACTIVE opening (duplicates if > 1). */
+  activeJournalIds?: string[];
+  /** Net active opening value (posted originals minus posted reversals). */
+  activeDebitTotal?: number;
+  /** Posted reversal lines superseding prior openings. */
+  reversedCount?: number;
+  /** Draft/voided opening-shaped rows (never counted as posted). */
+  draftCount?: number;
+  voidedCount?: number;
+  /** Current expected valuation from the subledger (informational). */
+  expectedValue?: number;
+  difference?: number;
+  /** True when an opening exists but no longer matches current valuation. */
+  requiresReconciliation?: boolean;
 }> {
-  const ledger = await dbService.getAll<LedgerEntry>('ledger');
-  const openingEntry = ledger.find(
+  const [ledger, inventory] = await Promise.all([
+    dbService.getAll<LedgerEntry>('ledger'),
+    dbService.getAll<any>('inventory').catch(() => [] as any[]),
+  ]);
+  const refLines = ledger.filter(
     (e: LedgerEntry) => e.referenceId === OPENING_INVENTORY_REFERENCE
   );
-  if (openingEntry) {
-    return {
-      opened: true,
-      journalId: openingEntry.journalId || openingEntry.id,
-      date: openingEntry.date,
-      totalDebit: openingEntry.amount,
-      totalCredit: openingEntry.amount,
-    };
+  if (refLines.length === 0) {
+    return { opened: false };
   }
-  return { opened: false };
+  const postedReversals = refLines.filter((e) => isOpeningInventoryReversal(e) && isPostedLedgerEntry(e));
+  const active = getActiveOpeningLines(ledger);
+  const firstActive = active[0] || refLines.find((e) => isPostedLedgerEntry(e) && isOpeningInventoryLine(e));
+  const activeJournalIds = [...new Set(active.map((e) => String(e.journalId || e.id)))];
+  const activeDebitTotal = roundToCurrency(active.reduce((s, e) => s + (Number(e.amount) || 0), 0));
+
+  let expectedValue = 0;
+  try {
+    const normalized = normalizeInventoryItems(inventory || []);
+    for (const item of normalized) {
+      const classified = classifyInventoryItem(item);
+      if (classified.included) expectedValue = roundToCurrency(expectedValue + classified.inventoryValue);
+    }
+  } catch {
+    expectedValue = 0;
+  }
+  const difference = roundToCurrency(expectedValue - activeDebitTotal);
+  const requiresReconciliation =
+    active.length > 0 && Math.abs(difference) > OPENING_STALENESS_TOLERANCE;
+
+  return {
+    opened: active.length > 0,
+    journalId: firstActive?.journalId || firstActive?.id,
+    date: firstActive?.date,
+    totalDebit: activeDebitTotal,
+    totalCredit: activeDebitTotal,
+    activeJournalIds,
+    activeDebitTotal,
+    reversedCount: postedReversals.length,
+    draftCount: refLines.filter((e) => !isPostedLedgerEntry(e) && String((e as any).status || '').toUpperCase() === 'DRAFT').length,
+    voidedCount: refLines.filter(
+      (e) => !isPostedLedgerEntry(e) && ['VOID', 'VOIDED', 'DELETED', 'CANCELLED'].includes(String((e as any).status || '').toUpperCase())
+    ).length,
+    expectedValue,
+    difference,
+    requiresReconciliation,
+  };
 }

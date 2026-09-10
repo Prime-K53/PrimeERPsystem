@@ -40,6 +40,7 @@ import { PrimeDocData } from '../shared/components/PDF/schemas';
 import { useDocumentPreview } from '../../hooks/useDocumentPreview';
 import { mapToInvoiceData } from '../../utils/pdfMapper';
 import { buildRecurringDraftFromInvoice } from '../../utils/recurringConversion';
+import { buildCreditNoteDraftFromInvoice } from '../../utils/creditNoteDraft';
 import { enrichDocumentCustomerData } from '../../utils/documentCustomerData';
 import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
@@ -552,7 +553,9 @@ const Orders: React.FC = () => {
 
     const invoiceStats = useMemo(() => {
         const allInvs = invoices || [];
-        const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 'Draft');
+        // Credit notes carry positive amounts but act as credits (see customerLedger.ts);
+// they must never inflate revenue/outstanding aggregates.
+const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 'Draft' && inv.status !== 'credit_note');
         const currentYear = new Date().getFullYear();
 
         const total = invs.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
@@ -606,7 +609,9 @@ const Orders: React.FC = () => {
 
     const dashboardData = useMemo(() => {
         const allInvs = invoices || [];
-        const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 'Draft');
+        // Credit notes carry positive amounts but act as credits (see customerLedger.ts);
+// they must never inflate revenue/outstanding aggregates.
+const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 'Draft' && inv.status !== 'credit_note');
         const monthlyData: Record<string, { month: string; revenue: number; profit: number }> = {};
     const statusData: Record<string, { name: string; value: number; color: string }> = {
             'Paid': { name: 'Paid', value: 0, color: '#1f8577' },
@@ -985,6 +990,13 @@ const Orders: React.FC = () => {
                 setEditingItem(duplicateDraft);
                 setIsFormOpen(true);
                 notify("Invoice copied into a new draft. Review before saving.", "success");
+                return;
+            }
+            if (action === 'credit_note') {
+                const creditDraft = buildCreditNoteDraftFromInvoice(item);
+                setEditingItem(creditDraft);
+                setIsFormOpen(true);
+                notify(`Credit note draft created against Invoice #${item.invoiceNumber || item.id}. Review before saving.`, "success");
                 return;
             }
             if (action === 'generate_dn') {

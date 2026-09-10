@@ -2,6 +2,7 @@ import { logger } from './logger';
 import { InventoryTransaction, MaterialBatch, WarehouseInventory } from '../types';
 import { dbService } from './db';
 import { generateOpaqueId } from '../utils/idGeneration';
+import { resolveInventoryCostPerUnit } from '../utils/inventoryNormalization';
 
 export interface InventoryDeductionRequest {
   itemId: string;
@@ -93,7 +94,7 @@ class InventoryTransactionService {
         await dbService.put('materialBatches', updatedBatch);
       }
 
-      const unitCost = item.cost || 0;
+      const unitCost = resolveInventoryCostPerUnit(item);
       const transaction: InventoryTransaction = {
         id: generateOpaqueId('TXN'),
         itemId,
@@ -191,7 +192,7 @@ class InventoryTransactionService {
 
       await dbService.put('inventoryTransactions', transaction);
 
-      const currentCost = item.normalizedCP ?? item.cost ?? 0;
+      const currentCost = resolveInventoryCostPerUnit(item);
       const newNormalizedCP = currentQuantity > 0
         ? ((currentCost * currentQuantity) + (unitCost * quantity)) / newQuantity
         : unitCost;

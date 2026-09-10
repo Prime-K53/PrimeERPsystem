@@ -1,6 +1,7 @@
 import { api } from '../../../../services/api';
 import { exportToCSV } from '../../../../utils/helpers';
 import { normalizeInventoryItemPricing } from '../../../../utils/pricing';
+import { resolveInventoryCostPerUnit } from '../../../../utils/inventoryNormalization';
 import type { Item } from '../../../../types';
 
 export interface InventoryStats {
@@ -34,7 +35,8 @@ export function calculateStats(items: Item[]): InventoryStats {
   for (const item of items) {
     const type = item.type || item.classification || '';
     const stock = item.stock || 0;
-    const costPrice = item.costPrice || item.cost || item.cost_price || 0;
+    // Canonical unit cost (quantity × cost economics; never Selling Price).
+    const costPrice = resolveInventoryCostPerUnit(item);
     const reserved = item.reserved || 0;
     const minStock = item.minStockLevel || item.reorderPoint || 0;
 
@@ -98,7 +100,7 @@ export function getStockHealthColor(health: string): string {
 }
 
 export function getItemMargin(item: Item): number {
-  const cost = item.costPrice || item.cost || 0;
+  const cost = resolveInventoryCostPerUnit(item);
   const sell = item.sellingPrice || item.price || 0;
   if (cost <= 0) return 0;
   return ((sell - cost) / cost) * 100;
@@ -120,9 +122,9 @@ export function exportItemsToCSV(items: Item[]): void {
       Stock: item.stock || 0,
       Reserved: item.reserved || 0,
       Available: (item.stock || 0) - (item.reserved || 0),
-      'Cost Price': item.costPrice || item.cost || 0,
+      'Cost Price': resolveInventoryCostPerUnit(item),
       'Selling Price': item.sellingPrice || item.price || 0,
-      'Inventory Value': (item.stock || 0) * (item.costPrice || item.cost || 0),
+      'Inventory Value': (item.stock || 0) * resolveInventoryCostPerUnit(item),
       Status: item.status || 'Active',
       Supplier: item.preferredSupplierId || '',
       'Min Stock': item.minStockLevel || 0,
