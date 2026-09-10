@@ -206,7 +206,12 @@ describe('Portal auth documented error semantics (no 500 escapes)', () => {
     expect(res.body.refresh_token).toBeTruthy();
     expect(res.body.refresh_token).not.toBe('rot-old-token');
 
-    // Old token was revoked during rotation — one-time use preserved.
+    // One-time grace window for concurrent duplicates: the FIRST immediate
+    // reuse is honored once (see portalRefreshConcurrency.test.cjs); the
+    // SECOND reuse is rejected, so single-use semantics are restored and no
+    // permanent replay window exists.
+    const grace = await postJson('/api/portal/auth/refresh', { refresh_token: 'rot-old-token' });
+    expect(grace.status).toBe(200);
     const reuse = await postJson('/api/portal/auth/refresh', { refresh_token: 'rot-old-token' });
     expect(reuse.status).toBe(401);
     expect(reuse.body.error).toBe('Invalid or expired refresh token');

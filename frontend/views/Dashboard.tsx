@@ -1175,7 +1175,7 @@ const DashboardContent: React.FC = () => {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ fontSize: 28, fontWeight: 800, color: '#f59e0b', letterSpacing: '-0.02em', lineHeight: 1 }}>{contractStats.count || '0'}</div>
-            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>{contractStats.count === 1 ? 'Printing contract in force' : 'Printing contracts in force'}</div>
+            <div style={{ fontSize: 13, color: '#64748b', fontWeight: 600, marginTop: 4 }}>{contractStats.count === 1 ? 'Printing contract in force' : 'Printing contracts in force'}</div>
           </div>
           <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%', margin: '2px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

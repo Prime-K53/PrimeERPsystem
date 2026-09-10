@@ -9,6 +9,39 @@ const referralService = new ReferralService();
 // In-memory store for pending 2FA verifications (keyed by a temporary token)
 const pendingTwoFactor = new Map();
 
+/**
+ * Single-use grace for refresh-token rotation races.
+ *
+ * Rotation is create-before-revoke, but a concurrent duplicate refresh can
+ * still present the old token AFTER the winner revoked it. Without a grace
+ * rule the loser gets 401 and its frontend wipes a perfectly valid session.
+ *
+ * Rule: when a rotation completes, the presented token's hash is recorded
+ * for GRACE_MS. A later presentation of that exact token — and ONLY in that
+ * case — is honored EXACTLY ONCE (consumed on use) by issuing a fresh
+ * session. Nothing is un-revoked.
+ *
+ * This scoping is deliberate: explicit revocations (logout, admin revoke,
+ * password change) never enter this set, so a logged-out token is dead
+ * immediately — unlike a pure recency check, which would re-animate it.
+ * Unknown, malformed, expired, long-revoked, or replayed tokens still 401.
+ * Entries expire lazily; the map stays tiny. Per-process by design (same
+ * constraint class as the existing in-memory rate limiters).
+ */
+const REFRESH_GRACE_MS = 60 * 1000;
+const recentRotations = new Map(); // tokenHash -> expiresAt (ms epoch)
+
+function recordRotationGrace(tokenHash) {
+  recentRotations.set(tokenHash, Date.now() + REFRESH_GRACE_MS);
+}
+
+function consumeRotationGrace(tokenHash) {
+  const expiresAt = recentRotations.get(tokenHash);
+  if (expiresAt === undefined) return false;
+  recentRotations.delete(tokenHash);
+  return expiresAt > Date.now();
+}
+
 function issuePendingTwoFactor(user) {
   const token = crypto.randomBytes(32).toString('hex');
   pendingTwoFactor.set(token, { user, createdAt: Date.now() });
@@ -129,11 +162,30 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ error: 'Invalid or expired refresh token' });
     }
     const session = await portalAuthService.findSessionByRefreshToken(refresh_token);
-    if (!session) {
-      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    let graced = false;
+    let activeSession = session;
+    if (!activeSession) {
+      // Rotation-race grace: the presented token may have been rotated away
+      // milliseconds ago by a concurrent duplicate refresh. Only tokens with
+      // a recorded, unconsumed rotation are honored — logged-out, expired,
+      // unknown, or replayed tokens still fail below.
+      const presentedHash = crypto.createHash('sha256').update(refresh_token).digest('hex');
+      if (!consumeRotationGrace(presentedHash)) {
+        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+      }
+      const prior = await portalAuthService.findAnySessionByRefreshToken(refresh_token);
+      const unexpired = !!prior && new Date(prior.expires_at) > new Date();
+      if (!prior || !unexpired) {
+        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+      }
+      const priorUser = await portalAuthService.getPortalUserById(prior.portal_user_id);
+      if (!priorUser) {
+        return res.status(401).json({ error: 'User not found' });
+      }
+      activeSession = prior;
+      graced = true;
     }
-    await portalAuthService.revokeSession(session.id);
-    const user = await portalAuthService.getPortalUserById(session.portal_user_id);
+    const user = await portalAuthService.getPortalUserById(activeSession.portal_user_id);
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -141,7 +193,24 @@ router.post('/refresh', async (req, res) => {
     const newRefreshToken = crypto.randomBytes(48).toString('hex');
     const ip = req.ip || req.connection?.remoteAddress;
     const ua = req.headers['user-agent'];
+    // Create-before-revoke: the replacement exists before the presented
+    // token is retired, so a crash between the two steps can only leave an
+    // extra live session — never a destroyed one. Record the rotation (normal
+    // path only — never for a grace redemption, otherwise grace would renew
+    // itself indefinitely) so a concurrent duplicate presenting the same
+    // token gets exactly one grace.
     await portalAuthService.createSession(user.id, newRefreshToken, ip, ua);
+    if (!graced) {
+      const presentedHash = crypto.createHash('sha256').update(refresh_token).digest('hex');
+      recordRotationGrace(presentedHash);
+      try {
+        await portalAuthService.revokeSession(activeSession.id);
+      } catch (revokeErr) {
+        // Issuance already succeeded; a failed revocation only leaves the old
+        // token usable until its natural expiry — log and continue.
+        console.error('[PortalAuth] Refresh revocation failed after issuance:', revokeErr && revokeErr.message);
+      }
+    }
     res.json({
       access_token: token,
       refresh_token: newRefreshToken,

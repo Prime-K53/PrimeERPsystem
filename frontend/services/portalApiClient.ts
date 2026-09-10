@@ -14,6 +14,12 @@ interface PortalSessionData {
   access_token: string;
   refresh_token: string;
   expires_in: string;
+  /**
+   * Local timestamp (ms epoch) of when these tokens were issued/refreshed.
+   * Recorded by login/refresh/activate flows; used to compute access-token
+   * age without trusting the shape of `expires_in`.
+   */
+  refreshed_at?: number;
   user: {
     id: string;
     customer_id: string;
@@ -50,45 +56,132 @@ export function getPortalAccessToken(): string | null {
 }
 
 /**
+ * Parse an `expires_in` value into milliseconds. The backend emits duration
+ * strings ('30m'); numeric seconds and millisecond magnitudes are accepted
+ * defensively. Anything unparseable yields `fallbackMs` — never NaN — so a
+ * format change can never silently disable (or force) refresh scheduling.
+ */
+export function parseExpiresInToMs(value: unknown, fallbackMs: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value <= 0) return fallbackMs;
+    return value < 1_000_000 ? value * 1000 : value;
+  }
+  if (typeof value === 'string') {
+    const m = value.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?$/);
+    if (m) {
+      const n = Number(m[1]);
+      const unit = m[2] || 's';
+      const mult =
+        unit === 'ms' ? 1
+        : unit === 's' ? 1000
+        : unit === 'm' ? 60000
+        : unit === 'h' ? 3600000
+        : 86400000;
+      const ms = n * mult;
+      if (Number.isFinite(ms) && ms > 0) return ms;
+    }
+  }
+  return fallbackMs;
+}
+
+/**
+ * Age of the stored access token in ms, or null when it cannot be known
+ * (e.g. sessions written before `refreshed_at` existed). Callers treat
+ * unknown age as "validate once", never as "definitely fresh".
+ */
+export function getAccessTokenAgeMs(session: PortalSessionData | null | undefined): number | null {
+  if (!session) return null;
+  const stamped = Number((session as { refreshed_at?: unknown }).refreshed_at);
+  if (!Number.isFinite(stamped) || stamped <= 0) return null;
+  return Math.max(0, Date.now() - stamped);
+}
+
+/** When to proactively refresh: 5 minutes before expiry, clamped to [60s, 25m]. */
+export function computeRefreshDelayMs(expiresIn: unknown, fallbackMs = 25 * 60 * 1000): number {
+  const parsed = parseExpiresInToMs(expiresIn, NaN);
+  if (!Number.isFinite(parsed)) return fallbackMs;
+  return Math.min(fallbackMs, Math.max(60_000, parsed - 5 * 60 * 1000));
+}
+
+/** Refresh failure classification: only definitive auth failures may destroy a session. */
+export type RefreshFailureKind = 'transient' | 'invalid';
+
+export interface RefreshOutcome {
+  ok: boolean;
+  token?: string;
+  reason?: RefreshFailureKind;
+}
+
+/**
+ * Classify a refresh failure. Timeouts, aborts, network errors and 5xx/429
+ * are TRANSIENT (retryable, never session-wiping). Only explicit
+ * authentication rejections are INVALID.
+ */
+export function classifyRefreshFailure(err: unknown, status?: number): RefreshFailureKind {
+  if (typeof status === 'number') {
+    if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
+      return 'invalid';
+    }
+    return 'transient';
+  }
+  return 'transient';
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
  * Mutex for token refresh. When multiple concurrent requests hit 401,
  * only one refresh call is made. All others await the same result.
  * Without this, each concurrent call reads the same (now-revoked)
  * refresh token from sessionStorage, causing a cascade of failures.
  */
-let pendingRefresh: Promise<string | null> | null = null;
+let pendingRefresh: Promise<RefreshOutcome> | null = null;
 
-async function doRefresh(): Promise<string | null> {
+async function attemptRefreshOnce(): Promise<RefreshOutcome> {
   const session = getPortalSession();
-  if (!session?.refresh_token) return null;
+  if (!session?.refresh_token) return { ok: false, reason: 'invalid' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASE_URL}/portal/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: session.refresh_token }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
+    const res = await fetch(`${API_BASE_URL}/portal/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: session.refresh_token }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return { ok: false, reason: classifyRefreshFailure(undefined, res.status) };
     }
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await res.json().catch(() => null);
+    if (!data || typeof data.access_token !== 'string' || !data.access_token) {
+      return { ok: false, reason: 'invalid' };
+    }
     savePortalSession({
       ...session,
       access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_in: data.expires_in,
+      refresh_token: typeof data.refresh_token === 'string' && data.refresh_token ? data.refresh_token : session.refresh_token,
+      expires_in: data.expires_in ?? session.expires_in,
+      refreshed_at: Date.now(),
     });
-    return data.access_token;
-  } catch {
-    return null;
+    return { ok: true, token: data.access_token };
+  } catch (err) {
+    // Network error / abort (timeout): transient, eligible for exactly one retry.
+    return { ok: false, reason: classifyRefreshFailure(err) };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+async function doRefresh(): Promise<RefreshOutcome> {
+  const first = await attemptRefreshOnce();
+  if (first.ok || first.reason === 'invalid') return first;
+  // Transient failure: exactly one retry with a small backoff, then give up
+  // WITHOUT destroying the session (the stored tokens may still be valid).
+  await sleep(750);
+  return attemptRefreshOnce();
+}
+
+async function refreshAccessToken(): Promise<RefreshOutcome> {
   if (pendingRefresh) return pendingRefresh;
   pendingRefresh = doRefresh().finally(() => { pendingRefresh = null; });
   return pendingRefresh;
@@ -102,10 +195,23 @@ async function refreshAccessToken(): Promise<string | null> {
 export async function refreshPortalSession(): Promise<boolean> {
   const session = getPortalSession();
   if (!session?.refresh_token) return false;
-  const newToken = await refreshAccessToken();
-  if (!newToken) return false;
+  const outcome = await refreshAccessToken();
+  if (!outcome.ok) return false;
   const updated = getPortalSession();
-  return updated?.access_token === newToken;
+  return updated?.access_token === outcome.token;
+}
+
+/**
+ * Detailed variant distinguishing transient failures (keep the session,
+ * retry later) from definitive authentication failures (drop the session).
+ */
+export async function refreshPortalSessionDetailed(): Promise<{ ok: boolean; reason?: RefreshFailureKind }> {
+  const session = getPortalSession();
+  if (!session?.refresh_token) return { ok: false, reason: 'invalid' };
+  const outcome = await refreshAccessToken();
+  if (!outcome.ok) return { ok: false, reason: outcome.reason ?? 'invalid' };
+  const updated = getPortalSession();
+  return updated?.access_token === outcome.token ? { ok: true } : { ok: false, reason: 'invalid' };
 }
 
 const isGetRequest = (method: string | undefined) => !method || method.toUpperCase() === 'GET';
@@ -187,9 +293,9 @@ async function request<T>(
   }
 
   if (response.status === 401 && !options.headers?.['X-Refresh-Attempt']) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      headers['Authorization'] = `Bearer ${newToken}`;
+    const outcome = await refreshAccessToken();
+    if (outcome.ok && outcome.token) {
+      headers['Authorization'] = `Bearer ${outcome.token}`;
       headers['X-Refresh-Attempt'] = 'true';
       try {
         response = await fetchWithTimeout(url, { ...options, headers }, timeoutMs);
@@ -200,6 +306,15 @@ async function request<T>(
         }
         throw err;
       }
+    } else if (!outcome.ok && outcome.reason === 'transient') {
+      // Transient refresh failure (timeout/network/5xx): the stored session
+      // may still be valid, so it must NOT be destroyed here. Serve cache or
+      // surface a retryable error and let the caller retry.
+      if (isGetRequest(method)) {
+        const cached = cachedGetFallback<T>(endpoint);
+        if (cached !== null) return cached;
+      }
+      throw new Error('Session refresh temporarily unavailable. Check your connection and try again.');
     } else {
       clearPortalSession();
       // Notify the auth layer so the UI drops back to the login page instead
@@ -264,11 +379,14 @@ async function requestDownload(
 
   let response = await fetchWithTimeout(url, { ...options, method: 'GET', headers }, timeoutMs);
   if (response.status === 401 && !options.headers?.['X-Refresh-Attempt']) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      headers.Authorization = `Bearer ${newToken}`;
+    const outcome = await refreshAccessToken();
+    if (outcome.ok && outcome.token) {
+      headers.Authorization = `Bearer ${outcome.token}`;
       headers['X-Refresh-Attempt'] = 'true';
       response = await fetchWithTimeout(url, { ...options, method: 'GET', headers }, timeoutMs);
+    } else if (!outcome.ok && outcome.reason === 'transient') {
+      // Transient refresh failure: keep the session; surface a retryable error.
+      throw new Error('Session refresh temporarily unavailable. Check your connection and try again.');
     } else {
       clearPortalSession();
       window.dispatchEvent(new Event('portal-session-expired'));

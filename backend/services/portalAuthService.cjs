@@ -389,6 +389,17 @@ const findSessionByRefreshToken = async (refreshToken) => {
   return row || null;
 };
 
+/**
+ * Lookup ignoring revocation (for the rotation grace window). Returns the
+ * row as stored, or null when the token was never issued. Callers decide.
+ */
+const findAnySessionByRefreshToken = async (refreshToken) => {
+  const tokenHash = hashToken(refreshToken);
+  const rows = await repo.portalEntities.portal_sessions.getAll({ 'refresh_token_hash': `eq.${tokenHash}` });
+  if (!rows || rows.length === 0) return null;
+  return rows[0] || null;
+};
+
 const revokeSession = async (sessionId) => {
   await repo.portalEntities.portal_sessions.update(sessionId, { revoked_at: new Date().toISOString() });
 };
@@ -518,6 +529,7 @@ module.exports = {
   activatePortalUser,
   createSession,
   findSessionByRefreshToken,
+  findAnySessionByRefreshToken,
   revokeSession,
   revokeAllSessions,
   revokeSessionById,

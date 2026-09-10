@@ -13,7 +13,7 @@ import { OfflineImage } from '../../../components/OfflineImage';
 import { mapToInvoiceData } from '../../../utils/pdfMapper';
 import { resolveTransactionPricingSummary } from '../../../utils/pricingBreakdown';
 import { formatDate } from '../../../utils/formatters';
-import { Edit2, Trash2, Star, List, LayoutGrid, CheckCircle, Check, Clock, User, Calendar, Box, Eye, Send, Copy, Plus, Phone, ChevronRight, FileText, FileCheck, Briefcase, Mail, MessageCircle, Repeat, XCircle, Archive, History as HistoryIcon, Users, RefreshCw, ArrowUp, ArrowDown, Link as LinkIcon, Paperclip, CalendarClock, AlertTriangle, Download, Truck, MoreVertical, Play, Pause, Package, Globe, DollarSign, TrendingUp, Zap, Target, Share2, ExternalLink, PlayCircle, Coins, Wallet, ShoppingBag, Printer, Search, X, ArrowUpRight, MessageSquare } from 'lucide-react';
+import { Edit2, Trash2, Star, List, LayoutGrid, CheckCircle, Check, Clock, User, Calendar, Box, Eye, Send, Copy, Plus, Phone, ChevronRight, FileText, FileCheck, Briefcase, Mail, MessageCircle, Repeat, XCircle, Archive, History as HistoryIcon, Users, RefreshCw, ArrowUp, ArrowDown, Link as LinkIcon, Paperclip, CalendarClock, AlertTriangle, Download, Truck, MoreVertical, Play, Pause, Package, DollarSign, TrendingUp, Zap, Target, PlayCircle, Coins, Wallet, ShoppingBag, Printer, Search, X, ArrowUpRight, MessageSquare } from 'lucide-react';
 import { TableEmptyState } from '../../../components/EmptyState';
 import { getOrderDisplayStatus, getOrderStatusClass } from './orderStatusUtils';
 
@@ -950,19 +950,6 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
 
     const { currentItems, currentPage, maxPage, totalItems, next, prev, first, last, setItemsPerPage, itemsPerPage } = usePagination(props.data, props.viewMode === 'Card' ? CARD_ITEMS_PER_PAGE : LIST_ITEMS_PER_PAGE);
 
-    const handleOpenPortal = (id: string) => {
-        const url = window.location.origin + window.location.pathname + '#/portal/invoices/' + id;
-        window.open(url, '_blank');
-        setOpenMenuId(null);
-    };
-
-    const handleCopyPortalLink = (id: string) => {
-        const url = window.location.origin + window.location.pathname + '#/portal/invoices/' + id;
-        navigator.clipboard.writeText(url);
-        notify("Portal link copied to clipboard", "success");
-        setOpenMenuId(null);
-    };
-
     const currentInvoice = (props.data || []).find((d: any) => d.id === openMenuId);
     const hoveredInvoice = (props.data || []).find((d: any) => d.id === hoveredId);
     const navigate = useNavigate();
@@ -1005,14 +992,8 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
                     <button onClick={() => { setOpenMenuId(null); handlePreview('INVOICE', inv); }} className="w-full px-4 py-2 text-xs font-medium text-[#1f8577] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors">
                         <Eye size={14} /> Preview PDF Invoice
                     </button>
-                    <button onClick={() => { setOpenMenuId(null); handlePreview('WORK_ORDER', inv); }} className="w-full px-4 py-2 text-xs font-medium text-[#0f544c] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors">
-                        <Briefcase size={14} /> Preview Work Order
-                    </button>
                     <button onClick={() => { setOpenMenuId(null); handlePreview('DELIVERY_NOTE', inv); }} className="w-full px-4 py-2 text-xs font-medium text-[#b97e2b] hover:bg-[#fbead0] flex items-center gap-3 transition-colors">
                         <Truck size={14} /> Preview Delivery Note
-                    </button>
-                    <button onClick={() => { setOpenMenuId(null); handlePreview('PO', inv); }} className="w-full px-4 py-2 text-xs font-medium text-[#146b60] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors">
-                        <ShoppingBag size={14} /> Preview Purchase Order
                     </button>
                     <button onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(inv, 'download_pdf'); }} className="w-full px-4 py-2 text-xs font-medium text-[#1f8577] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors">
                         <Download size={14} /> Download PDF Invoice
@@ -1031,49 +1012,11 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
                         </button>
                     )}
 
-                    <div className="relative group bg-[#eef7f6]/50">
-                        <button
-                            onClick={() => setActiveSubmenu(activeSubmenu === 'portal' ? null : 'portal')}
-                            className="w-full px-4 py-2 text-xs font-bold text-[#1f8577] hover:bg-white flex items-center justify-between gap-3 transition-colors"
-                        >
-                            <div className="flex items-center gap-3"><Globe size={14} /> Client Portal</div>
-                            <ChevronRight size={12} />
-                        </button>
-                        {activeSubmenu === 'portal' && (
-                            <div className="absolute left-full top-0 ml-1 w-48 bg-white rounded-xl shadow-xl border border-[#e4ddd1] py-1 overflow-hidden z-50 animate-in slide-in-from-left-2">
-                                <button onClick={() => handleOpenPortal(inv.id)} className="w-full px-4 py-2 text-xs text-left hover:bg-[#eef7f6] flex items-center gap-2"><ExternalLink size={12} /> Open Portal</button>
-                                <button onClick={() => handleCopyPortalLink(inv.id)} className="w-full px-4 py-2 text-xs text-left hover:bg-[#eef7f6] flex items-center gap-2"><Share2 size={12} /> Copy Secret Link</button>
-                            </div>
-                        )}
-                    </div>
-
                     <button onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(inv, 'generate_dn'); }} className="w-full px-4 py-2 text-xs font-medium text-[#23282A] hover:bg-[#fbead0] hover:text-[#b97e2b] flex items-center gap-3 transition-colors"><Truck size={14} /> Generate Delivery Note</button>
 
                     {!isPaid && !isPartial && (
                         <>
                             <button onClick={() => { setOpenMenuId(null); props.onEdit(inv); }} className="w-full px-4 py-2 text-xs font-medium text-[#23282A] hover:bg-[#fbead0] flex items-center gap-3 transition-colors"><Edit2 size={14} /> Edit Invoice</button>
-                            <div className="relative group">
-                                <button
-                                    onClick={() => setActiveSubmenu(activeSubmenu === 'status' ? null : 'status')}
-                                    className="w-full px-4 py-2 text-xs font-medium text-[#23282A] hover:bg-white hover:text-[#1f8577] flex items-center justify-between gap-3 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3"><RefreshCw size={14} /> Change Status</div>
-                                    <ChevronRight size={12} />
-                                </button>
-                                {activeSubmenu === 'status' && (
-                                    <div className="absolute left-full top-0 ml-1 w-48 bg-[#FEFDFB]/95 backdrop-blur-md rounded-xl shadow-xl border border-[#e4ddd1] py-1 overflow-hidden z-50">
-                                        {['Draft', 'Unpaid', 'Overdue', 'Cancelled'].map(status => (
-                                            <button
-                                                key={status}
-                                                onClick={() => { props.onAction && props.onAction(inv, `status_${status}`); setOpenMenuId(null); }}
-                                                className={`w-full px-4 py-2 text-xs text-left hover:bg-white hover:text-[#1f8577] ${inv.status === status ? 'font-bold text-[#0b3e39] bg-[#eef7f6]' : 'text-[#5c6567]'}`}
-                                            >
-                                                {status}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
                         </>
                     )}
 
@@ -1085,13 +1028,6 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
                             <DollarSign size={14} /> Receive Payment
                         </button>
                     )}
-
-                    <button
-                        onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(inv, 'convert_to_recurring'); }}
-                        className="w-full px-4 py-2 text-xs font-bold text-[#0f544c] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"
-                    >
-                        <RefreshCw size={14} /> Convert to Recurring Invoice
-                    </button>
 
                     <button
                         onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(inv, 'create_exchange'); }}

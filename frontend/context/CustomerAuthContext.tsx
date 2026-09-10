@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { portalApi, getPortalSession, savePortalSession, clearPortalSession, refreshPortalSession } from '../services/portalApiClient';
+import { portalApi, getPortalSession, savePortalSession, clearPortalSession, refreshPortalSessionDetailed, computeRefreshDelayMs, getAccessTokenAgeMs } from '../services/portalApiClient';
 import { loginWithApi } from '../services/authApiClient';
 
 interface PortalUser {
@@ -59,14 +59,21 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         logout();
         return false;
       }
-      const ok = await refreshPortalSession();
-      if (!ok) {
-        logout();
+      const result = await refreshPortalSessionDetailed();
+      if (result.ok) {
+        setUser(getPortalSession()?.user ?? null);
+        scheduleTokenRefresh(computeRefreshDelayMs(getPortalSession()?.expires_in));
+        return true;
+      }
+      if (result.reason === 'transient') {
+        // Transient failure (timeout/network/5xx): the stored session may
+        // still be valid — keep the user signed in and retry soon instead of
+        // destroying the session and bouncing to login.
+        scheduleTokenRefresh(60 * 1000);
         return false;
       }
-      setUser(getPortalSession()?.user ?? null);
-      scheduleTokenRefresh(25 * 60 * 1000);
-      return true;
+      logout();
+      return false;
     } catch {
       logout();
       return false;
@@ -93,25 +100,41 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      // Only validate the session if the access token is old (more than 5 minutes).
-      // A fresh token doesn't need a server-side refresh and can be trusted.
-      const now = Date.now();
-      const tokenAge = now - (Number(session.expires_in) || 0) * 60000; // assumes expires_in is stored in minutes
-      if (tokenAge > 5 * 60 * 1000) {
-        // Token is older than 5 minutes - validate against the server
-        const ok = await refreshPortalSession();
-        if (cancelled) return;
-        if (!ok) {
-          clearPortalSession();
-          setUser(null);
+      // Trust a freshly-issued token without a server round-trip. Age comes
+      // from the locally recorded issue timestamp — never from parsing the
+      // opaque `expires_in` duration string.
+      const ageMs = getAccessTokenAgeMs(session);
+      if (ageMs !== null && ageMs < 5 * 60 * 1000) {
+        if (!cancelled) {
+          setUser(session.user);
+          scheduleTokenRefresh(computeRefreshDelayMs(session.expires_in));
           setLoading(false);
-          return;
         }
-      } else {
-        // Fresh token - trust it and keep the user logged in
-        setUser(session.user);
+        return;
       }
-      scheduleTokenRefresh(25 * 60 * 1000);
+
+      // Unknown age or older token: validate once against the server.
+      const result = await refreshPortalSessionDetailed();
+      if (cancelled) return;
+      if (result.ok) {
+        // Successful refresh MUST restore the user — a valid session must
+        // never leave `user === null` behind.
+        setUser(getPortalSession()?.user ?? session.user);
+        scheduleTokenRefresh(computeRefreshDelayMs(getPortalSession()?.expires_in));
+        setLoading(false);
+        return;
+      }
+      if (result.reason === 'transient') {
+        // The refresh endpoint could not be reached, but the stored session
+        // may still be valid: keep the user signed in so the dashboard can
+        // render (from cache if needed) instead of bouncing to login.
+        setUser(session.user);
+        scheduleTokenRefresh(60 * 1000);
+        setLoading(false);
+        return;
+      }
+      clearPortalSession();
+      setUser(null);
       setLoading(false);
     };
 
@@ -142,10 +165,11 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         access_token: result.access_token || '',
         refresh_token: result.refresh_token || '',
         expires_in: result.expires_in || '30m',
+        refreshed_at: Date.now(),
         user: result.user as PortalUser,
       });
       setUser(result.user as PortalUser);
-      scheduleTokenRefresh(25 * 60 * 1000);
+      scheduleTokenRefresh(computeRefreshDelayMs(result.expires_in));
       return { success: true };
     } catch (err: any) {
       return { success: false, message: err?.body?.message || err?.message || 'Login failed. Please try again.' };
@@ -166,11 +190,12 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         access_token: result.access_token,
         refresh_token: result.refresh_token,
         expires_in: result.expires_in,
+        refreshed_at: Date.now(),
         user: result.user,
       });
 
       setUser(result.user);
-      scheduleTokenRefresh(25 * 60 * 1000);
+      scheduleTokenRefresh(computeRefreshDelayMs(result.expires_in));
       return 'SUCCESS';
     } catch (err: any) {
       if (err?.status === 400 || err?.status === 401 || err?.status === 409) return 'INVALID';
