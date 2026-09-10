@@ -415,14 +415,14 @@ const ExaminationHub: React.FC = () => {
 
   const handleConvertToRecurring = (batch: any) => {
     const recurringDraft = buildRecurringDraftFromExaminationBatch(batch, getSchoolName(String(batch.school_id)));
-    navigate('/sales-flow/subscriptions', {
+    navigate('/sales-flow/printing-contracts', {
       state: {
         action: 'create',
         recurringDraft
       }
     });
     setOpenMenuId(null);
-    toast.success('Batch loaded into a recurring invoice draft');
+    toast.success('Open Printing Contracts to cover this batch with an agreement');
   };
 
   const handleDeleteSingle = async (batchId: string) => {

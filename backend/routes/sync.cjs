@@ -49,8 +49,9 @@ const ALLOWED_TABLES = new Set([
   'customers', 'suppliers', 'sales', 'purchases', 'invoices', 'quotations', 'orders',
   'customer_payments', 'supplier_payments', 'payment_allocations', 'payment_allocation_lines',
   'sales_orders', 'delivery_notes',
-  'shipments', 'recurring_invoices', 'scheduled_payments', 'wallet_transactions',
-  'sales_exchanges', 'sales_exchange_items', 'reprint_jobs', 'sales_exchange_approvals',
+   'shipments', 'recurring_invoices', 'scheduled_payments', 'wallet_transactions',
+   'assessment_contracts', 'assessment_contract_items', 'contract_amendments',
+   'sales_exchanges', 'sales_exchange_items', 'reprint_jobs', 'sales_exchange_approvals',
   'subscribers', 'reminders', 'tasks', 'schools', 'classes', 'subjects',
 
   // production / inventory

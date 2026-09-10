@@ -77,7 +77,7 @@ const FinanceHub: React.FC = () => {
       title="Finance"
       subtitle="Complete financial management - payroll, assets, loans, equity, and year-end processing."
       options={options}
-      accentColor="#6366f1"
+      accentColor="#d99a3f"
     />
   );
 };

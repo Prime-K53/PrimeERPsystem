@@ -170,7 +170,7 @@ const Banking: React.FC = () => {
     accountNumber: '',
     bankName: '',
     accountType: 'Asset' as 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense',
-    currency: companyConfig?.currencySymbol || 'USD',
+    currency: companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'USD',
     status: 'Active' as 'Active' | 'Inactive' | 'Closed',
     openingDate: getDefaultDate()
   });
@@ -522,7 +522,7 @@ const Banking: React.FC = () => {
       accountNumber: '',
       bankName: '',
       accountType: 'Asset',
-      currency: companyConfig?.currencySymbol || 'USD',
+      currency: companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'USD',
       status: 'Active',
       openingDate: getDefaultDate()
     });
@@ -991,9 +991,9 @@ const Banking: React.FC = () => {
   };
 
   const handleSaveExchangeRate = async () => {
-    const rate = 1.12; // Example rate: 1 USD = 1.12 EUR
+    const rate = 1.12; // Example rate
     await saveExchangeRate({
-      baseCurrency: 'USD',
+      baseCurrency: companyConfig?.currencySymbol || 'USD',
       targetCurrency: 'EUR',
       rate,
       date: getDefaultDate(),

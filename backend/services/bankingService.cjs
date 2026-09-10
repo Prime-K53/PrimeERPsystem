@@ -91,25 +91,33 @@ class BankingService extends BaseService {
       reconciled: data.reconciled || 0,
       created_by: data.createdBy || data.created_by || null,
     };
-    await repo.upsert('bank_transactions', record);
 
-    if (data.type === 'deposit' || data.type === 'transfer_in') {
-      const account = await repo.getById('bank_accounts', record.account_id);
-      if (account) {
-        await repo.upsert('bank_accounts', {
-          ...account,
-          current_balance: round2(Number(account.current_balance || 0) + Number(data.amount || 0)),
-        });
+    // F-02: wrap balance update in a compensating-action transaction so
+    // concurrent deposits/withdrawals cannot produce an incorrect balance.
+    await this._transaction(async () => {
+      await repo.upsert('bank_transactions', record);
+      this._txCheckpoint('bank_accounts', record.account_id, null);
+
+      if (data.type === 'deposit' || data.type === 'transfer_in') {
+        const account = await repo.getById('bank_accounts', record.account_id);
+        if (account) {
+          const newBalance = round2(Number(account.current_balance || 0) + Number(data.amount || 0));
+          await repo.upsert('bank_accounts', {
+            ...account,
+            current_balance: newBalance,
+          });
+        }
+      } else if (data.type === 'withdrawal' || data.type === 'transfer_out') {
+        const account = await repo.getById('bank_accounts', record.account_id);
+        if (account) {
+          const newBalance = round2(Number(account.current_balance || 0) - Number(data.amount || 0));
+          await repo.upsert('bank_accounts', {
+            ...account,
+            current_balance: newBalance,
+          });
+        }
       }
-    } else if (data.type === 'withdrawal' || data.type === 'transfer_out') {
-      const account = await repo.getById('bank_accounts', record.account_id);
-      if (account) {
-        await repo.upsert('bank_accounts', {
-          ...account,
-          current_balance: round2(Number(account.current_balance || 0) - Number(data.amount || 0)),
-        });
-      }
-    }
+    });
 
     return repo.getById('bank_transactions', id);
   }

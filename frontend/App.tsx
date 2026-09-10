@@ -48,7 +48,6 @@ import CustomerActivate from './views/portal/CustomerActivate';
 import CustomerForgotPassword from './views/portal/CustomerForgotPassword';
 import CustomerResetPassword from './views/portal/CustomerResetPassword';
 import { ToastProvider } from './views/portal/components/Toast';
-
 // Helper for lazy loading with retry logic to handle "Failed to fetch dynamically imported module" errors
 const lazyWithRetry = (name: string, componentImport: () => Promise<any>) =>
   lazy(async () => {
@@ -806,7 +805,7 @@ const AppLayout: React.FC = () => {
                 <Route path="/sales/quotations" element={<Navigate to="/sales-flow/quotations" replace />} />
                 <Route path="/sales/invoices" element={<Navigate to="/sales-flow/invoices" replace />} />
                 <Route path="/sales/shipping" element={<Navigate to="/supply-chain/shipping" replace />} />
-                <Route path="/sales/subscriptions" element={<Navigate to="/sales-flow/subscriptions" replace />} />
+                <Route path="/sales/subscriptions" element={<Navigate to="/sales-flow/printing-contracts" replace />} />
                 <Route path="/sales/receipts" element={<Navigate to="/sales-flow/payments" replace />} />
                 <Route path="/sales-flow/receipts" element={<Navigate to="/sales-flow/payments" replace />} />
                 <Route path="/sales-flow/orders/new" element={<Navigate to="/sales-flow/orders" replace />} />
@@ -890,6 +889,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/sales-flow/orders" element={<ProtectedRoute permission="sales.view"><Orders /></ProtectedRoute>} />
                   <Route path="/sales-flow/invoices" element={<ProtectedRoute permission="sales.view"><Orders /></ProtectedRoute>} />
                   <Route path="/sales-flow/subscriptions" element={<ProtectedRoute permission="sales.view"><SubscriptionsView /></ProtectedRoute>} />
+                  <Route path="/sales-flow/printing-contracts" element={<ProtectedRoute permission="sales.view"><SubscriptionsView /></ProtectedRoute>} />
                   <Route path="/sales-flow/exchanges" element={<ProtectedRoute permission="sales.view"><SalesExchanges /></ProtectedRoute>} />
                   <Route path="/sales-flow/leads" element={<ProtectedRoute permission="sales.view"><LeadBoard /></ProtectedRoute>} />
                   <Route path="/sales-flow/sales-orders" element={<ProtectedRoute permission="sales.view"><SalesOrdersView /></ProtectedRoute>} />
@@ -1003,6 +1003,8 @@ const AppLayout: React.FC = () => {
                 </Route>
 
                 <Route path="/finance" element={<ErrorBoundary name="FinanceHub"><FinanceHub /></ErrorBoundary>} />
+
+                {/* Assessment Contracts */}
 
                 <Route path="/architect" element={<ErrorBoundary name="Architect"><Architect /></ErrorBoundary>} />
                 {/* AI Workspace */}

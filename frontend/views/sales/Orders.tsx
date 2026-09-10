@@ -952,7 +952,7 @@ const Orders: React.FC = () => {
                 const recurringDraft = buildRecurringDraftFromInvoice(item);
                 setEditingItem(recurringDraft);
                 setIsFormOpen(true);
-                navigate('/sales-flow/subscriptions');
+                navigate('/sales-flow/printing-contracts');
                 notify(`Invoice ${item.id} loaded into a recurring billing draft. Review the schedule before saving.`, "success");
                 return;
             }

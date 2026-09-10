@@ -1,6 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CheckCircle, AlertCircle } from 'lucide-react';
-import { Account, AccountType, AccountGroup, AccountSubtype, NormalBalance } from '../../types';
+import { BookOpen, AlertCircle } from 'lucide-react';
+import { Account, AccountType, AccountGroup, AccountSubtype, NormalBalance } from '../../../types';
+import { useAuth } from '../../../context/AuthContext';
+import { currencyService } from '../../../services/currencyService';
+
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    tableCard, tableHeadRow,
+} from './financeChrome';
 
 interface NewAccountModalProps {
   isOpen: boolean;
@@ -59,9 +71,11 @@ export const NewAccountModal: React.FC<NewAccountModalProps> = ({
   account,
   parentAccount,
   accounts,
-  currencySymbol = '$',
+  currencySymbol: currencySymbolProp,
   isSubmitting = false
 }) => {
+  const { companyConfig } = useAuth();
+  const currencySymbol = currencySymbolProp || companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
   const [formData, setFormData] = useState<{
     account_type: AccountType | '';
     account_group: AccountGroup | '';
@@ -207,256 +221,220 @@ export const NewAccountModal: React.FC<NewAccountModalProps> = ({
 
   const isEditing = !!account;
 
+  const errStyle = (hasErr: boolean) => (hasErr ? { ...inputStyle, borderColor: danger } : inputStyle);
+  const errSelectStyle = (hasErr: boolean) => (hasErr ? { ...selectStyle, borderColor: danger } : selectStyle);
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fadeIn border border-slate-200">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-          <h2 className="text-xl font-bold text-slate-900">
-            {isEditing ? 'Edit Account' : 'Add New Account'}
-          </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <X size={24} />
-          </button>
-        </div>
+    <div style={modalOverlayStyle} onClick={onClose}>
+      <div style={modalShell(640)} onClick={e => e.stopPropagation()}>
+        <AccentStripe />
+        <ModalHeader
+          icon={<BookOpen size={19} color="#fff" />}
+          title={isEditing ? 'Edit Account' : 'Add New Account'}
+          subtitle={parentAccount ? `Child of ${parentAccount.name} · Chart of accounts` : 'Chart of accounts — ledger reference'}
+          onClose={onClose}
+        />
+        <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+          <form id="coa-account-form" onSubmit={handleSubmit}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+              <div>
+                <label style={labelStyle}>Account Type <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                <select
+                  style={errSelectStyle(!!errors.account_type)}
+                  value={formData.account_type}
+                  onChange={e => {
+                    setFormData(f => ({
+                      ...f,
+                      account_type: e.target.value as AccountType,
+                      account_group: ''
+                    }));
+                  }}
+                  disabled={isEditing && !!account?.is_system_account}
+                >
+                  <option value="">Select Type</option>
+                  {ACCOUNT_TYPES.map(type => (
+                    <option key={type} value={type}>{getTypeLabel(type)}</option>
+                  ))}
+                </select>
+                {errors.account_type && (
+                  <p style={{ fontSize: 11.5, color: danger, margin: '6px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <AlertCircle size={12} /> {errors.account_type}
+                  </p>
+                )}
+                {account?.is_system_account && (
+                  <p style={{ fontSize: 11, color: amber[600], margin: '6px 0 0' }}>
+                    System account type cannot be changed
+                  </p>
+                )}
+              </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                Account Type <span className="text-red-500">*</span>
-              </label>
-              <select
-                className={`w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none ${
-                  errors.account_type ? 'border-red-500' : 'border-slate-200'
-                } ${account?.is_system_account ? 'bg-slate-100 cursor-not-allowed' : ''}`}
-                value={formData.account_type}
-                onChange={e => {
-                  setFormData(f => ({
-                    ...f,
-                    account_type: e.target.value as AccountType,
-                    account_group: ''
-                  }));
-                }}
-                disabled={isEditing && !!account?.is_system_account}
-              >
-                <option value="">Select Type</option>
-                {ACCOUNT_TYPES.map(type => (
-                  <option key={type} value={type}>{getTypeLabel(type)}</option>
-                ))}
-              </select>
-              {errors.account_type && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.account_type}
-                </p>
-              )}
-              {account?.is_system_account && (
-                <p className="text-[10px] text-amber-600 mt-1">
-                  System account type cannot be changed
-                </p>
-              )}
+              <div>
+                <label style={labelStyle}>Account Group</label>
+                <select
+                  style={selectStyle}
+                  value={formData.account_group}
+                  onChange={e => setFormData(f => ({ ...f, account_group: e.target.value as AccountGroup }))}
+                  disabled={filteredGroups.length === 0}
+                >
+                  <option value="">Select Group</option>
+                  {filteredGroups.map(group => (
+                    <option key={group} value={group}>{getGroupLabel(group)}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                Account Group
-              </label>
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Parent Account</label>
               <select
-                className="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                value={formData.account_group}
-                onChange={e => setFormData(f => ({ ...f, account_group: e.target.value as AccountGroup }))}
-                disabled={filteredGroups.length === 0}
+                style={selectStyle}
+                value={formData.parent_account_id}
+                onChange={e => setFormData(f => ({ ...f, parent_account_id: e.target.value }))}
               >
-                <option value="">Select Group</option>
-                {filteredGroups.map(group => (
-                  <option key={group} value={group}>{getGroupLabel(group)}</option>
+                <option value="">No Parent (Root Level)</option>
+                {filteredParents.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.account_number || acc.code} - {acc.name}
+                  </option>
                 ))}
               </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-              Parent Account
-            </label>
-            <select
-              className="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-              value={formData.parent_account_id}
-              onChange={e => setFormData(f => ({ ...f, parent_account_id: e.target.value }))}
-            >
-              <option value="">No Parent (Root Level)</option>
-              {filteredParents.map(acc => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.account_number || acc.code} - {acc.name}
-                </option>
-              ))}
-            </select>
-            {errors.parent_account_id && (
-              <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                <AlertCircle size={12} /> {errors.parent_account_id}
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                Account Number
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 11101"
-                className={`w-full p-2.5 border rounded-lg text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none ${
-                  errors.account_number ? 'border-red-500' : 'border-slate-200'
-                }`}
-                value={formData.account_number}
-                onChange={e => setFormData(f => ({ ...f, account_number: e.target.value.replace(/\D/g, '').slice(0, 5) }))}
-                maxLength={5}
-              />
-              <p className="text-[10px] text-slate-400 mt-1">5 digits (auto-generated if empty)</p>
-              {errors.account_number && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.account_number}
+              {errors.parent_account_id && (
+                <p style={{ fontSize: 11.5, color: danger, margin: '6px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <AlertCircle size={12} /> {errors.parent_account_id}
                 </p>
               )}
             </div>
 
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                Subtype
-              </label>
-              <select
-                className="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                value={formData.subtype}
-                onChange={e => setFormData(f => ({ ...f, subtype: e.target.value as AccountSubtype }))}
-              >
-                <option value="">Select Subtype</option>
-                {ACCOUNT_SUBTYPES.map(sub => (
-                  <option key={sub} value={sub}>{sub}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-              Account Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Main Cash"
-              className={`w-full p-2.5 border rounded-lg text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none ${
-                errors.name ? 'border-red-500' : 'border-slate-200'
-              }`}
-              value={formData.name}
-              onChange={e => setFormData(f => ({ ...f, name: e.target.value }))}
-              maxLength={200}
-            />
-            {errors.name && (
-              <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                <AlertCircle size={12} /> {errors.name}
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                Opening Balance
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-                  {currencySymbol}
-                </span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+              <div>
+                <label style={labelStyle}>
+                  Account Number
+                  <span style={{ fontSize: 9.5, fontWeight: 600, color: inkSoft, background: teal[50], padding: '1px 6px', borderRadius: 20, letterSpacing: 0.03, textTransform: 'uppercase', marginLeft: 6 }}>Optional</span>
+                </label>
                 <input
                   type="text"
-                  placeholder="0.00"
-                  className={`w-full pl-8 p-2.5 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none ${
-                    errors.opening_balance ? 'border-red-500' : 'border-slate-200'
-                  }`}
-                  value={formData.opening_balance}
-                  onChange={e => setFormData(f => ({ ...f, opening_balance: e.target.value }))}
+                  placeholder="e.g. 11101"
+                  style={{ ...errStyle(!!errors.account_number), fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                  value={formData.account_number}
+                  onChange={e => setFormData(f => ({ ...f, account_number: e.target.value.replace(/\D/g, '').slice(0, 5) }))}
+                  maxLength={5}
                 />
+                <p style={{ fontSize: 11, color: inkSoft, margin: '6px 0 0' }}>5 digits (auto-generated if empty)</p>
+                {errors.account_number && (
+                  <p style={{ fontSize: 11.5, color: danger, margin: '6px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <AlertCircle size={12} /> {errors.account_number}
+                  </p>
+                )}
               </div>
-              {errors.opening_balance && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.opening_balance}
+
+              <div>
+                <label style={labelStyle}>Subtype</label>
+                <select
+                  style={selectStyle}
+                  value={formData.subtype}
+                  onChange={e => setFormData(f => ({ ...f, subtype: e.target.value as AccountSubtype }))}
+                >
+                  <option value="">Select Subtype</option>
+                  {ACCOUNT_SUBTYPES.map(sub => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Account Name <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+              <input
+                type="text"
+                placeholder="e.g. Main Cash"
+                style={errStyle(!!errors.name)}
+                value={formData.name}
+                onChange={e => setFormData(f => ({ ...f, name: e.target.value }))}
+                maxLength={200}
+              />
+              {errors.name && (
+                <p style={{ fontSize: 11.5, color: danger, margin: '6px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <AlertCircle size={12} /> {errors.name}
                 </p>
               )}
             </div>
 
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                Opening Balance Date
+            <div style={sectionLabelStyle}><span>Opening Balance</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+              <div>
+                <label style={labelStyle}>Opening Balance</label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>
+                    {currencySymbol}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="0.00"
+                    style={{ ...errStyle(!!errors.opening_balance), paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                    value={formData.opening_balance}
+                    onChange={e => setFormData(f => ({ ...f, opening_balance: e.target.value }))}
+                  />
+                </div>
+                {errors.opening_balance && (
+                  <p style={{ fontSize: 11.5, color: danger, margin: '6px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <AlertCircle size={12} /> {errors.opening_balance}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label style={labelStyle}>Opening Balance Date</label>
+                <input
+                  type="date"
+                  style={inputStyle}
+                  value={formData.opening_balance_date}
+                  onChange={e => setFormData(f => ({ ...f, opening_balance_date: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>
+                Description
+                <span style={{ fontSize: 9.5, fontWeight: 600, color: inkSoft, background: teal[50], padding: '1px 6px', borderRadius: 20, letterSpacing: 0.03, textTransform: 'uppercase', marginLeft: 6 }}>Optional</span>
               </label>
-              <input
-                type="date"
-                className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                value={formData.opening_balance_date}
-                onChange={e => setFormData(f => ({ ...f, opening_balance_date: e.target.value }))}
+              <textarea
+                placeholder="Optional description…"
+                style={textareaStyle}
+                rows={3}
+                value={formData.description}
+                onChange={e => setFormData(f => ({ ...f, description: e.target.value }))}
+                maxLength={500}
               />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-              Description
-            </label>
-            <textarea
-              placeholder="Optional description..."
-              className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-              rows={2}
-              value={formData.description}
-              onChange={e => setFormData(f => ({ ...f, description: e.target.value }))}
-              maxLength={500}
-            />
-          </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 18 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: ink, fontWeight: 500 }}>
+                <input
+                  type="checkbox"
+                  checked={formData.allow_posting}
+                  onChange={e => setFormData(f => ({ ...f, allow_posting: e.target.checked }))}
+                />
+                Allow Posting
+              </label>
 
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                checked={formData.allow_posting}
-                onChange={e => setFormData(f => ({ ...f, allow_posting: e.target.checked }))}
-              />
-              <span className="text-sm font-medium text-slate-700">Allow Posting</span>
-            </label>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                checked={formData.is_active}
-                onChange={e => setFormData(f => ({ ...f, is_active: e.target.checked }))}
-              />
-              <span className="text-sm font-medium text-slate-700">Active</span>
-            </label>
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                'Saving...'
-              ) : (
-                <>
-                  <CheckCircle size={18} />
-                  {isEditing ? 'Update Account' : 'Save Account'}
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: ink, fontWeight: 500 }}>
+                <input
+                  type="checkbox"
+                  checked={formData.is_active}
+                  onChange={e => setFormData(f => ({ ...f, is_active: e.target.checked }))}
+                />
+                Active
+              </label>
+            </div>
+          </form>
+        </div>
+        <ModalFooter
+          stepLabel={isEditing ? 'Edit · chart of accounts' : 'New account · chart of accounts'}
+          onCancel={onClose}
+          submitLabel={isSubmitting ? 'Saving…' : isEditing ? 'Update Account' : 'Save Account'}
+          submitFormId="coa-account-form"
+        />
       </div>
     </div>
   );

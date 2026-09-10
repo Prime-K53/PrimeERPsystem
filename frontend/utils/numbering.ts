@@ -40,7 +40,8 @@ const PREFIX_DEFINITIONS: PrefixDefinition[] = [
   { prefix: 'BTC', aliases: ['exambatch', 'examination_batch', 'examinationbatch', 'eb'] },
   { prefix: 'ES', aliases: ['examsheet', 'exam_sheet', 'examinationsheet', 'es'] },
   { prefix: 'EXM', aliases: ['examination_invoice', 'examination', 'exm'] },
-  { prefix: 'AUD', aliases: ['audit', 'auditlog', 'auditlogs', 'aud'] },
+   { prefix: 'AUD', aliases: ['audit', 'auditlog', 'auditlogs', 'aud'] },
+   { prefix: 'PC', aliases: ['printingcontract', 'printing_contract', 'pc'] },
 ];
 
 const LEGACY_RULE_PRIORITY = [

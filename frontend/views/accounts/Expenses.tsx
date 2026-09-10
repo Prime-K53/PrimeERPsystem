@@ -13,6 +13,7 @@ import { exportToCSV } from '../../services/excelService';
 import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../constants';
 import { localFileStorage } from '../../services/localFileStorage';
 import { OfflineImage } from '../../components/OfflineImage';
+import { currencyService } from '../../services/currencyService';
 import { extractPaymentProofData, analyzeExpenses } from '../../services/geminiService';
 import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils';
 import ReactMarkdown from 'react-markdown';
@@ -37,7 +38,7 @@ const Expenses: React.FC = () => {
   React.useEffect(() => {
     fetchBankingData?.();
   }, [fetchBankingData]);
-  const currency = companyConfig?.currencySymbol || '$';
+  const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);

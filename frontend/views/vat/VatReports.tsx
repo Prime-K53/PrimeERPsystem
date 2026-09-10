@@ -8,9 +8,13 @@ import { FileText, Download, CheckCircle, AlertCircle, Plus, Calendar } from 'lu
 import { VatReturn } from '../../types';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
 
-const t = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39' };
-const amber = { 100: '#fbead0', 500: '#d99a3f' };
-const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1', danger = '#b5493f';
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline,
+    labelStyle, selectStyle,
+    btnGhostStyle, btnPrimaryStyle,
+    tableCard, tableHeadRow, EmptyState,
+} from '../accounts/components/financeChrome';
 
 export const VatReports: React.FC = () => {
     const { returns, generateReturn, fileReturn, isLoading } = useVatStore();
@@ -41,73 +45,73 @@ export const VatReports: React.FC = () => {
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ fontSize: 22, fontWeight: 700, color: ink, margin: 0 }}>VAT returns</h2>
-                <div className="prime-card" style={{ display: 'flex', alignItems: 'center', gap: 8, background: paper, padding: 8, borderRadius: 12, border: `1.4px solid ${hairline}` }}>
-                    <select className="prime-select" style={{
-                        border: 'none', background: 'transparent', fontSize: 13, fontWeight: 600, color: ink, outline: 'none', cursor: 'pointer', padding: '4px 8px'
-                    }} value={period.month} onChange={(e) => setPeriod(p => ({ ...p, month: parseInt(e.target.value) }))}>
+                <h2 style={{ fontFamily: "'DM Serif Display', 'Georgia', serif", fontWeight: 400, fontSize: 22, color: teal[800], margin: 0, letterSpacing: 0.2 }}>VAT returns</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: paper, padding: 8, borderRadius: 12, border: `1.4px solid ${hairline}` }}>
+                    <select style={{ ...selectStyle, width: 'auto', border: 'none', padding: '4px 26px 4px 8px' }} value={period.month} onChange={(e) => setPeriod(p => ({ ...p, month: parseInt(e.target.value) }))}>
                         {Array.from({ length: 12 }).map((_, i) => (<option key={i} value={i}>{format(new Date(2024, i, 1), 'MMMM')}</option>))}
                     </select>
-                    <select className="prime-select" style={{
-                        border: 'none', background: 'transparent', fontSize: 13, fontWeight: 600, color: ink, outline: 'none', cursor: 'pointer', padding: '4px 8px'
-                    }} value={period.year} onChange={(e) => setPeriod(p => ({ ...p, year: parseInt(e.target.value) }))}>
+                    <select style={{ ...selectStyle, width: 'auto', border: 'none', padding: '4px 26px 4px 8px' }} value={period.year} onChange={(e) => setPeriod(p => ({ ...p, year: parseInt(e.target.value) }))}>
                         {[0, 1, 2].map(i => (<option key={i} value={new Date().getFullYear() - i}>{new Date().getFullYear() - i}</option>))}
                     </select>
-                    <button className="prime-btn" onClick={handleGenerate} disabled={isGenerating}
-                        style={{ background: t[500], color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all .15s ease' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = t[700]; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = t[500]; }}
+                    <button onClick={handleGenerate} disabled={isGenerating}
+                        style={{ ...btnPrimaryStyle, opacity: isGenerating ? 0.6 : 1 }}
+                        onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
                     ><Plus size={16} /> Generate return</button>
                 </div>
             </div>
 
-            <div className="prime-card" style={{ background: paper, borderRadius: 14, border: `1.4px solid ${hairline}`, overflow: 'hidden' }}>
-                <table className="prime-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={tableCard}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                        <tr style={{ background: t[50] }}>
-                            <th className="prime-table-header" style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Period</th>
-                            <th className="prime-table-header" style={{ padding: '12px 20px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total output</th>
-                            <th className="prime-table-header" style={{ padding: '12px 20px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total input</th>
-                            <th className="prime-table-header" style={{ padding: '12px 20px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Net payable</th>
-                            <th className="prime-table-header" style={{ padding: '12px 20px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Status</th>
-                            <th className="prime-table-header" style={{ padding: '12px 20px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Actions</th>
+                        <tr style={tableHeadRow}>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontWeight: 700 }}>Period</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700 }}>Total output</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700 }}>Total input</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700 }}>Net payable</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'center', fontWeight: 700 }}>Status</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'center', fontWeight: 700 }}>Actions</th>
                         </tr>
                     </thead>
-                    <tbody style={{ borderTop: `1px solid ${hairline}` }}>
+                    <tbody>
                         {returns.length === 0 ? (
-                            <tr><td colSpan={6} style={{ padding: '40px 20px', textAlign: 'center', color: inkSoft }}>No VAT returns found. Generate one to get started.</td></tr>
+                            <tr><td colSpan={6} style={{ padding: 24 }}>
+                                <EmptyState icon={<FileText size={32} />} title="No VAT returns found" hint="Generate one to get started." />
+                            </td></tr>
                         ) : returns.map(ret => (
-                            <tr key={ret.id} style={{ borderBottom: `1px solid ${hairline}`, transition: 'all .15s ease' }}
-                                onMouseEnter={e => { e.currentTarget.style.background = t[50]; }}
+                            <tr key={ret.id} style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                                onMouseEnter={e => { e.currentTarget.style.background = teal[50]; }}
                                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                             >
-                                <td className="prime-table-cell" style={{ padding: '14px 20px' }}>
+                                <td style={{ padding: '14px 20px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <Calendar size={16} color={inkSoft} />
+                                        <Calendar size={16} style={{ color: inkSoft }} />
                                         <span style={{ fontWeight: 600, color: ink }}>{format(parseISO(ret.periodStart), 'MMM yyyy')}</span>
                                     </div>
                                     <div style={{ fontSize: 12, color: inkSoft, marginLeft: 24, marginTop: 2 }}>
                                         {format(parseISO(ret.periodStart), 'dd MMM')} - {format(parseISO(ret.periodEnd), 'dd MMM')}
                                     </div>
                                 </td>
-                                <td className="prime-table-cell" style={{ padding: '14px 20px', textAlign: 'right', color: ink, fontVariantNumeric: 'tabular-nums' }}>{currency} {ret.totalOutputTax.toLocaleString()}</td>
-                                <td className="prime-table-cell" style={{ padding: '14px 20px', textAlign: 'right', color: ink, fontVariantNumeric: 'tabular-nums' }}>{currency} {ret.totalInputTax.toLocaleString()}</td>
-                                <td className="prime-table-cell" style={{ padding: '14px 20px', textAlign: 'right', fontWeight: 700, color: ret.netPayable >= 0 ? ink : t[500], fontVariantNumeric: 'tabular-nums' }}>
+                                <td style={{ padding: '14px 20px', textAlign: 'right', color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{currency} {ret.totalOutputTax.toLocaleString()}</td>
+                                <td style={{ padding: '14px 20px', textAlign: 'right', color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{currency} {ret.totalInputTax.toLocaleString()}</td>
+                                <td style={{ padding: '14px 20px', textAlign: 'right', fontWeight: 700, color: ret.netPayable >= 0 ? ink : teal[700], fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
                                     {currency} {Math.abs(ret.netPayable).toLocaleString()}{ret.netPayable < 0 && ' (CR)'}
                                 </td>
-                                <td className="prime-table-cell" style={{ padding: '14px 20px', textAlign: 'center' }}>
+                                <td style={{ padding: '14px 20px', textAlign: 'center' }}>
                                     <span style={{
-                                        display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                                        background: ret.status === 'Paid' ? t[100] : ret.status === 'Filed' ? '#dbeafe' : amber[100],
-                                        color: ret.status === 'Paid' ? t[800] : ret.status === 'Filed' ? '#1e40af' : '#92400e'
+                                        display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                                        background: ret.status === 'Paid' ? teal[100] : ret.status === 'Filed' ? '#dbeafe' : amber[100],
+                                        color: ret.status === 'Paid' ? teal[800] : ret.status === 'Filed' ? '#1e40af' : '#92400e'
                                     }}>{ret.status}</span>
                                 </td>
-                                <td className="prime-table-cell" style={{ padding: '14px 20px', textAlign: 'right' }}>
-                                    {ret.status === 'Draft' && <button className="prime-btn-secondary" onClick={() => handleFileReturn(ret.id)} style={{ background: 'none', border: 'none', color: t[500], fontWeight: 600, cursor: 'pointer', fontSize: 13, marginRight: 8 }}>File</button>}
-                                    {ret.status === 'Filed' && <button className="prime-btn-secondary" onClick={() => handleMarkPaid(ret.id)} style={{ background: 'none', border: 'none', color: t[500], fontWeight: 600, cursor: 'pointer', fontSize: 13, marginRight: 8 }}>Mark paid</button>}
-                                    <button className="prime-btn-secondary" style={{ background: 'none', border: 'none', color: inkSoft, cursor: 'pointer' }}><Download size={18} /></button>
+                                <td style={{ padding: '14px 20px', textAlign: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                        {ret.status === 'Draft' && <button onClick={() => handleFileReturn(ret.id)} style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: teal[600], fontWeight: 600, fontSize: 13 }} onMouseEnter={e => e.currentTarget.style.background = teal[50]} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>File</button>}
+                                        {ret.status === 'Filed' && <button onClick={() => handleMarkPaid(ret.id)} style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: teal[600], fontWeight: 600, fontSize: 13 }} onMouseEnter={e => e.currentTarget.style.background = teal[50]} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>Mark paid</button>}
+                                        <button style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: inkSoft }} onMouseEnter={e => e.currentTarget.style.background = teal[50]} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}><Download size={16} /></button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}

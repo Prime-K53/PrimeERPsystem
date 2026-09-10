@@ -1,5 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+/* Shared Add-Customer chrome — single source of truth (mirrors financeChrome.tsx) */
+import { teal, amber, paper, ink, inkSoft, hairline } from './accounts/components/financeChrome';
 
 interface HubOption {
   label: string;
@@ -37,14 +39,14 @@ interface GenericHubProps {
 }
 
 const defaultTheme = {
-  primary: '#1f8577',
-  primaryDark: '#0f544c',
-  primaryLight: '#3fa294',
-  background: '#FEFDFB',
-  surface: '#FEFDFB',
-  border: '#e4ddd1',
-  text: '#23282A',
-  textMuted: '#5c6567',
+  primary: teal[500],
+  primaryDark: teal[700],
+  primaryLight: teal[400],
+  background: paper,
+  surface: paper,
+  border: hairline,
+  text: ink,
+  textMuted: inkSoft,
   badgeBg: '#dc2626',
 };
 
@@ -79,13 +81,20 @@ const GenericHub: React.FC<GenericHubProps> = ({
         width: '100%',
         margin: '0 auto',
       }}>
-        {/* Header */}
+        {/* Header — financeChrome accent stripe + serif title */}
         <div style={{
           textAlign: 'center',
           marginBottom: 36,
           animation: 'fadeInUp 0.6s ease-out',
           flexShrink: 0,
+          position: 'relative',
+          paddingTop: 14,
         }}>
+          <div style={{
+            position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+            width: 120, height: 4, borderRadius: 999,
+            background: `linear-gradient(90deg, ${teal[600]}, ${teal[400]} 40%, ${amber[500]} 100%)`,
+          }} />
           <h1 style={{
             fontFamily: "'DM Serif Display', 'Georgia', serif",
             fontWeight: 400,

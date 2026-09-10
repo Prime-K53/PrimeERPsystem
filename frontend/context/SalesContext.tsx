@@ -392,10 +392,10 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     await pushTransactionAlert({
                         title: 'Recurring Invoice Generated',
                         message: `Invoice #${invId} created for ${sub.customerName}.`,
-                        module: 'Subscriptions',
+                        module: 'Printing Contracts',
                         severity: 'Low',
                         type: 'SUCCESS',
-                        actionUrl: '/sales-flow/subscriptions'
+                        actionUrl: '/sales-flow/printing-contracts'
                     });
 
                     count++;

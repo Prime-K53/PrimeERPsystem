@@ -496,7 +496,7 @@ const SlidingInfoCard = ({ slides, compact, animDelay = 0 }: { slides: any[], co
 
   const routeMap: Record<string, string> = {
     'Active Jobs': '/industrial/shop-floor',
-    'Subscription': '/sales-flow/subscriptions',
+    'Subscription': '/sales-flow/printing-contracts',
     'Portal Requests': '/sales-flow/requests',
   };
 

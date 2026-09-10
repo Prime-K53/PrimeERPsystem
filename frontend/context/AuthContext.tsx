@@ -438,7 +438,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // the same rule from the verified JWT, so a missing role here must NOT
     // silently downgrade an Admin to 'Staff' (which would let them sign
     // in but block every ERP route with 403).
-    const meta = supabaseUser.app_metadata || supabaseUser.user_metadata || {};
+    // NB: supabase-js always returns `app_metadata` as an object (possibly
+    // empty, which is truthy), so `||` would never reach `user_metadata`
+    // where signup actually stores role/username/full_name. Merge both —
+    // user_metadata wins. Without this, session restore on browser refresh
+    // returns null and the app wrongly redirects to the setup page.
+    const meta = { ...(supabaseUser.app_metadata || {}), ...(supabaseUser.user_metadata || {}) };
     const explicitRole = typeof meta.role === 'string' ? meta.role : '';
     const isSuperAdmin = meta.is_super_admin === true;
     if (explicitRole || isSuperAdmin) {
@@ -507,7 +512,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }));
             }
           } else {
-            sessionStorage.removeItem('nexus_user');
+            // No Supabase session (e.g. backend API-token login, or offline).
+            // Fall back to the cached app session instead of wiping it —
+            // otherwise a browser refresh logs those users out.
+            const cachedRaw = sessionStorage.getItem('nexus_user') || localStorage.getItem('nexus_cached_user_session');
+            if (cachedRaw) {
+              try {
+                const cached = JSON.parse(cachedRaw);
+                const expiry = cached?.tokenExpiry ? new Date(cached.tokenExpiry).getTime() : 0;
+                if (!expiry || expiry > Date.now()) {
+                  restoredSession = cached;
+                  setUser(cached);
+                  sessionStorage.setItem('nexus_user', JSON.stringify(cached));
+                } else {
+                  sessionStorage.removeItem('nexus_user');
+                }
+              } catch {
+                sessionStorage.removeItem('nexus_user');
+              }
+            } else {
+              sessionStorage.removeItem('nexus_user');
+            }
           }
 
           const [groups, profileRows, logs, storedAlerts, storedReminders] = await Promise.all([

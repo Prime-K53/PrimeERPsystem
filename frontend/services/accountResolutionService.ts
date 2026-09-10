@@ -45,6 +45,10 @@ export type AccountRole =
   | 'EQUITY'
   | 'CAPITAL'
   | 'DRAWINGS'
+  | 'LOAN'
+  | 'BANK_LOAN'
+  | 'OTHER_LOAN'
+  | 'SHAREHOLDER_LOAN'
   | 'EXPENSE'
   | 'EXPENSE_OPERATING'
   | 'EXPENSE_SALARIES'
@@ -120,12 +124,13 @@ interface ResolvedAccount {
    '2120': 'TAX_PAYABLE',
    '21210': 'TAX_PAYABLE',
    '21220': 'TAX_PAYABLE',
-   '21300': 'AP',
-   '2200': 'AP',
-   '22000': 'AP',
-   '22100': 'AP',
-   '22200': 'AP',
-   // Equity
+    '21300': 'AP',
+    '2200': 'LOAN',
+    '22000': 'LOAN',
+    '22100': 'BANK_LOAN',
+    '22200': 'OTHER_LOAN',
+    '22300': 'SHAREHOLDER_LOAN',
+    // Equity
    '3000': 'EQUITY',
    '3100': 'CAPITAL',
    '3200': 'RETAINED_EARNINGS',
@@ -184,34 +189,38 @@ interface ResolvedAccount {
  * Default account IDs for each role (used when no company-specific mapping exists)
  * These correspond to the DEFAULT_ACCOUNTS in constants.ts
  */
- const DEFAULT_ROLE_ACCOUNT_IDS: Partial<Record<AccountRole, string>> = {
-   'AR': '11310',
-   'AP': '21110',
-   'CASH': '11110',
-   'PETTY_CASH': '11120',
-   'BANK': '11210',
-   'SALES': '41100',
-   'SALES_PRODUCT': '41100',
-   'SALES_SERVICE': '41200',
-   'INVENTORY': '11400',
-   'COGS': '51200',
-   'TAX_PAYABLE': '21210',
-   'TAX_INPUT': '21210',
-   'RETAINED_EARNINGS': '32000',
-   'EQUITY': '30000',
-   'CAPITAL': '31000',
-   'DRAWINGS': '34000',
-   'EXPENSE': '52000',
-   'EXPENSE_OPERATING': '52000',
-   'EXPENSE_SALARIES': '52100',
-   'EXPENSE_RENT': '52200',
-   'EXPENSE_UTILITIES': '52300',
-   'EXPENSE_OTHER': '52900',
-   'OTHER_INCOME': '42000',
-   'PURCHASES': '51100',
-   'FIXED_ASSET': '12100',
-   'ACCUMULATED_DEPRECIATION': '12500',
-   'MOBILE_MONEY': '11210',
+  const DEFAULT_ROLE_ACCOUNT_IDS: Partial<Record<AccountRole, string>> = {
+    'AR': '11310',
+    'AP': '21110',
+    'CASH': '11110',
+    'PETTY_CASH': '11120',
+    'BANK': '11210',
+    'SALES': '41100',
+    'SALES_PRODUCT': '41100',
+    'SALES_SERVICE': '41200',
+    'INVENTORY': '11400',
+    'COGS': '51200',
+    'TAX_PAYABLE': '21210',
+    'TAX_INPUT': '21210',
+    'RETAINED_EARNINGS': '32000',
+    'EQUITY': '30000',
+    'CAPITAL': '31000',
+    'DRAWINGS': '34000',
+    'LOAN': '22100',
+    'BANK_LOAN': '22100',
+    'OTHER_LOAN': '22200',
+    'SHAREHOLDER_LOAN': '22300',
+    'EXPENSE': '52000',
+    'EXPENSE_OPERATING': '52000',
+    'EXPENSE_SALARIES': '52100',
+    'EXPENSE_RENT': '52200',
+    'EXPENSE_UTILITIES': '52300',
+    'EXPENSE_OTHER': '52900',
+    'OTHER_INCOME': '42000',
+    'PURCHASES': '51100',
+    'FIXED_ASSET': '12100',
+    'ACCUMULATED_DEPRECIATION': '12500',
+    'MOBILE_MONEY': '11210',
    'OTHER_CURRENT_ASSET': '11510',
  };
 
@@ -301,6 +310,7 @@ class AccountResolutionService {
           'CURRENT_ASSET': ['AR', 'CASH', 'BANK', 'INVENTORY'],
           'FIXED_ASSET': ['FIXED_ASSET'],
           'CURRENT_LIABILITY': ['AP', 'TAX_PAYABLE'],
+          'LONG_TERM_LIABILITY': ['LOAN', 'BANK_LOAN', 'OTHER_LOAN', 'SHAREHOLDER_LOAN'],
           'EQUITY': ['EQUITY', 'CAPITAL', 'RETAINED_EARNINGS', 'DRAWINGS'],
           'REVENUE': ['SALES', 'SALES_PRODUCT', 'SALES_SERVICE', 'OTHER_INCOME'],
           'COST_OF_SALES': ['COGS', 'PURCHASES'],
@@ -314,7 +324,7 @@ class AccountResolutionService {
       // Fall back to account type
       const typeRoleMap: Record<string, AccountRole[]> = {
         'ASSET': ['AR', 'CASH', 'BANK', 'INVENTORY', 'FIXED_ASSET'],
-        'LIABILITY': ['AP', 'TAX_PAYABLE'],
+        'LIABILITY': ['AP', 'TAX_PAYABLE', 'LOAN', 'BANK_LOAN', 'OTHER_LOAN', 'SHAREHOLDER_LOAN'],
         'EQUITY': ['EQUITY', 'CAPITAL', 'RETAINED_EARNINGS', 'DRAWINGS'],
         'INCOME': ['SALES', 'SALES_PRODUCT', 'SALES_SERVICE', 'OTHER_INCOME'],
         'EXPENSE': ['EXPENSE', 'EXPENSE_OPERATING', 'EXPENSE_SALARIES', 'EXPENSE_RENT', 'EXPENSE_UTILITIES', 'EXPENSE_OTHER', 'COGS', 'PURCHASES'],
@@ -395,7 +405,7 @@ class AccountResolutionService {
     } else if (account.account_type || account.type) {
       const upperType = (account.account_type || account.type || '').toUpperCase();
       if (upperType === 'ASSET') role = 'CASH';
-      else if (upperType === 'LIABILITY') role = 'AP';
+      else if (upperType === 'LIABILITY') role = 'LOAN';
       else if (upperType === 'EQUITY') role = 'EQUITY';
       else if (upperType === 'INCOME') role = 'SALES';
       else if (upperType === 'EXPENSE') role = 'EXPENSE';
@@ -469,19 +479,19 @@ class AccountResolutionService {
   async getSystemAccounts(): Promise<ResolvedAccount[]> {
     const accounts = await this.getAccounts();
     const systemAccounts = accounts.filter(a => a.is_system_account);
-     return systemAccounts.map(a => {
-       const upperType = (a.account_type || a.type || 'ASSET').toUpperCase();
-       let role: AccountRole = 'EXPENSE';
-       if (upperType === 'ASSET') role = 'CASH';
-       else if (upperType === 'LIABILITY') role = 'AP';
-       else if (upperType === 'EQUITY') role = 'EQUITY';
-       else if (upperType === 'INCOME') role = 'SALES';
-       else if (upperType === 'EXPENSE') role = 'EXPENSE';
-       return {
-         id: a.id,
-         code: a.code || a.account_number || a.id,
-         account_number: a.account_number || a.code || a.id,
-         name: a.name,
+      return systemAccounts.map(a => {
+        const upperType = (a.account_type || a.type || 'ASSET').toUpperCase();
+        let role: AccountRole = 'EXPENSE';
+        if (upperType === 'ASSET') role = 'CASH';
+        else if (upperType === 'LIABILITY') role = 'LOAN';
+        else if (upperType === 'EQUITY') role = 'EQUITY';
+        else if (upperType === 'INCOME') role = 'SALES';
+        else if (upperType === 'EXPENSE') role = 'EXPENSE';
+        return {
+          id: a.id,
+          code: a.code || a.account_number || a.id,
+          account_number: a.account_number || a.code || a.id,
+          name: a.name,
          account_type: a.account_type || a.type || 'ASSET',
          account_group: a.account_group,
          subtype: a.subtype,

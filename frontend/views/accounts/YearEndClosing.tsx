@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Plus, Search, Download, Calendar, X,
-    Loader2, TrendingUp, TrendingDown, CheckCircle, AlertTriangle, FileText, Landmark, RefreshCw, Package
+    Download, Calendar, CalendarCheck, Loader2, TrendingUp, TrendingDown,
+    CheckCircle, AlertTriangle, FileText, Landmark, RefreshCw, Package,
 } from 'lucide-react';
 import { incomeSummaryService } from '../../services/incomeSummaryService';
 import { checkBankingYearEnd, BankingYearEndReport } from '../../services/bankingYearEndService';
@@ -10,17 +10,22 @@ import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { IncomeSummaryEntry } from '../../types';
 import { formatCurrency } from '../../utils/helpers';
+import { currencyService } from '../../services/currencyService';
 
-const paper = '#FEFDFB';
-const ink = '#23282A';
-const inkSoft = '#5c6567';
-const hairline = '#e4ddd1';
-const assets = '#1f8577';
-const danger = '#dc2626';
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    tableCard, tableHeadRow,
+} from './components/financeChrome';
 
 const YearEndClosing: React.FC = () => {
     const { user, companyConfig, checkPermission, notify } = useAuth();
     const { accounts, refreshAccounts } = useFinance();
+    const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
     const [isLoading, setIsLoading] = useState(true);
     const [closingHistory, setClosingHistory] = useState<IncomeSummaryEntry[]>([]);
@@ -138,11 +143,11 @@ const YearEndClosing: React.FC = () => {
     const getClosingTypeIcon = (type: string) => {
         switch (type) {
             case 'income':
-                return <TrendingUp size={14} style={{ color: assets }} />;
+                return <TrendingUp size={14} style={{ color: teal[600] }} />;
             case 'expense':
                 return <TrendingDown size={14} style={{ color: danger }} />;
             case 'net_profit':
-                return <CheckCircle size={14} style={{ color: assets }} />;
+                return <CheckCircle size={14} style={{ color: teal[600] }} />;
             case 'net_loss':
                 return <AlertTriangle size={14} style={{ color: danger }} />;
             default:
@@ -151,66 +156,76 @@ const YearEndClosing: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full" style={{ background: paper }}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                <div>
-                    <h1 className="text-lg font-semibold" style={{ color: ink }}>Year-End Closing</h1>
-                    <p className="text-sm" style={{ color: inkSoft }}>Close income and expense accounts, transfer to retained earnings</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={exportToCSV}
-                        className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg border transition-colors"
-                        style={{ borderColor: hairline, color: ink }}
-                    >
-                        <Download size={16} />
-                        Export
-                    </button>
-                    {canEdit && (
+        <div className="flex flex-col h-full" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
+            <PageHeader
+                icon={<CalendarCheck size={19} color="#fff" />}
+                title="Year-End Closing"
+                subtitle="Close income and expense accounts, transfer to retained earnings"
+                actions={
+                    <>
                         <button
-                            onClick={() => setIsClosingModalOpen(true)}
-                            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg text-white transition-colors"
-                            style={{ background: assets }}
-                            disabled={closingInProgress}
+                            onClick={exportToCSV}
+                            style={btnGhostStyle}
+                            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
                         >
-                            {closingInProgress ? (
-                                <Loader2 size={16} className="animate-spin" />
-                            ) : (
-                                <Calendar size={16} />
-                            )}
-                            Close Year
+                            <Download size={15} />
+                            Export
                         </button>
-                    )}
-                </div>
-            </div>
+                        {canEdit && (
+                            <button
+                                onClick={() => setIsClosingModalOpen(true)}
+                                style={{ ...btnPrimaryStyle, opacity: closingInProgress ? 0.65 : 1, cursor: closingInProgress ? 'not-allowed' : 'pointer' }}
+                                disabled={closingInProgress}
+                                onMouseEnter={e => { if (!closingInProgress) e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+                            >
+                                {closingInProgress ? (
+                                    <Loader2 size={15} className="animate-spin" />
+                                ) : (
+                                    <Calendar size={15} />
+                                )}
+                                Close Year
+                            </button>
+                        )}
+                    </>
+                }
+            />
 
             {/* Instructions */}
-            <div className="px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                <div className="p-4 rounded-lg" style={{ background: '#f3f4f6' }}>
-                    <h3 className="font-medium mb-2" style={{ color: ink }}>Year-End Closing Process</h3>
-                    <ol className="text-sm space-y-1" style={{ color: inkSoft }}>
-                        <li>1. All income accounts are closed to Current Year Earnings (33000)</li>
-                        <li>2. All expense accounts are closed to Current Year Earnings (33000)</li>
-                        <li>3. Net Profit/Loss is transferred to Retained Earnings (32000)</li>
-                        <li className="font-medium" style={{ color: danger }}>This action is irreversible. Ensure all transactions are recorded before closing.</li>
+            <div style={{ padding: '18px 28px 0' }}>
+                <div style={{
+                    padding: 16, background: amber[100], borderRadius: 9, border: `1px solid ${amber[300]}`,
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <div style={{ padding: 8, borderRadius: 8, background: paper, color: amber[600] }}>
+                            <AlertTriangle size={18} />
+                        </div>
+                        <h3 style={{ fontSize: 13, fontWeight: 700, color: ink, margin: 0 }}>Year-End Closing Process</h3>
+                    </div>
+                    <ol style={{ fontSize: 12.5, margin: 0, paddingLeft: 18, color: inkSoft, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <li>All income accounts are closed to Current Year Earnings (33000)</li>
+                        <li>All expense accounts are closed to Current Year Earnings (33000)</li>
+                        <li>Net Profit/Loss is transferred to Retained Earnings (32000)</li>
+                        <li style={{ fontWeight: 600, color: danger }}>This action is irreversible. Ensure all transactions are recorded before closing.</li>
                     </ol>
                 </div>
             </div>
 
             {/* Banking Reconciliation Status */}
-            <div className="px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                        <Landmark size={16} style={{ color: assets }} />
-                        <h3 className="font-medium" style={{ color: ink }}>Banking Reconciliation Status — FY {selectedFyForBanking}</h3>
+            <div style={{ padding: '18px 28px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ padding: 8, borderRadius: 8, background: teal[50], color: teal[600] }}>
+                            <Landmark size={16} />
+                        </div>
+                        <h3 style={{ fontSize: 13, fontWeight: 700, color: teal[800], margin: 0 }}>Banking Reconciliation Status — FY {selectedFyForBanking}</h3>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <select
                             value={selectedFyForBanking}
                             onChange={(e) => setSelectedFyForBanking(parseInt(e.target.value, 10))}
-                            className="text-sm border rounded-lg px-3 py-1.5"
-                            style={{ borderColor: hairline, color: ink, background: paper }}
+                            style={{ ...selectStyle, width: 110, padding: '7px 30px 7px 12px' }}
                         >
                             {[selectedFyForBanking, selectedFyForBanking - 1, selectedFyForBanking - 2].map((y) => (
                                 <option key={y} value={y}>{y}</option>
@@ -219,8 +234,9 @@ const YearEndClosing: React.FC = () => {
                         <button
                             onClick={() => loadBankingReport(selectedFyForBanking)}
                             disabled={bankingReportLoading}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border"
-                            style={{ borderColor: hairline, color: ink, background: paper }}
+                            style={btnGhostStyle}
+                            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
                         >
                             {bankingReportLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                             Refresh
@@ -229,42 +245,43 @@ const YearEndClosing: React.FC = () => {
                 </div>
 
                 {bankingReportLoading && !bankingReport ? (
-                    <div className="text-sm" style={{ color: inkSoft }}>Checking banking accounts…</div>
+                    <div style={{ fontSize: 13, color: inkSoft }}>Checking banking accounts…</div>
                 ) : bankingReport ? (
                     <>
-                        <div className="grid grid-cols-4 gap-3 mb-3">
-                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Active Accounts</div>
-                                <div className="text-xl font-semibold" style={{ color: ink }}>{bankingReport.summary.activeAccounts}</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+                            <div style={{ padding: '12px 14px', borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Active Accounts</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{bankingReport.summary.activeAccounts}</div>
                             </div>
-                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Unreconciled</div>
-                                <div className="text-xl font-semibold" style={{ color: bankingReport.summary.unreconciledCount > 0 ? danger : assets }}>{bankingReport.summary.unreconciledCount}</div>
+                            <div style={{ padding: '12px 14px', borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Unreconciled</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: bankingReport.summary.unreconciledCount > 0 ? danger : teal[600] }}>{bankingReport.summary.unreconciledCount}</div>
                             </div>
-                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Drafts</div>
-                                <div className="text-xl font-semibold" style={{ color: bankingReport.summary.draftCount > 0 ? danger : assets }}>{bankingReport.summary.draftCount}</div>
+                            <div style={{ padding: '12px 14px', borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Drafts</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: bankingReport.summary.draftCount > 0 ? danger : teal[600] }}>{bankingReport.summary.draftCount}</div>
                             </div>
-                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Stale Recons</div>
-                                <div className="text-xl font-semibold" style={{ color: bankingReport.summary.staleAccounts > 0 ? danger : assets }}>{bankingReport.summary.staleAccounts}</div>
+                            <div style={{ padding: '12px 14px', borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Stale Recons</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: bankingReport.summary.staleAccounts > 0 ? danger : teal[600] }}>{bankingReport.summary.staleAccounts}</div>
                             </div>
                         </div>
 
                         {bankingReport.issues.length === 0 ? (
-                            <div className="p-3 rounded-lg flex items-center gap-2 text-sm" style={{ background: '#ecfdf5', color: assets }}>
-                                <CheckCircle size={14} /> Banking reconciliation is complete for FY {selectedFyForBanking}. Safe to close.
+                            <div style={{ padding: 14, borderRadius: 9, border: `1px solid ${teal[100]}`, background: teal[50], color: teal[700], display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 600 }}>
+                                <CheckCircle size={16} /> Banking reconciliation is complete for FY {selectedFyForBanking}. Safe to close.
                             </div>
                         ) : (
-                            <div className="space-y-2">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 {bankingReport.issues.map((issue, i) => (
                                     <div
                                         key={i}
-                                        className="p-3 rounded-lg border flex items-start gap-2 text-sm"
                                         style={{
-                                            borderColor: hairline,
-                                            background: issue.severity === 'error' ? '#fef2f2' : issue.severity === 'warning' ? '#fef9e7' : '#f3f4f6',
-                                            color: issue.severity === 'error' ? danger : issue.severity === 'warning' ? '#b45309' : ink,
+                                            padding: 12, borderRadius: 9, border: `1px solid ${hairline}`,
+                                            display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13,
+                                            background: issue.severity === 'error' ? '#fef2f2' : issue.severity === 'warning' ? amber[100] : teal[50],
+                                            color: issue.severity === 'error' ? danger : issue.severity === 'warning' ? amber[600] : ink,
+                                            fontWeight: 500,
                                         }}
                                     >
                                         {issue.severity === 'error' ? <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} /> :
@@ -280,18 +297,19 @@ const YearEndClosing: React.FC = () => {
             </div>
 
             {/* Fixed Asset Reconciliation Status */}
-            <div className="px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                        <Package size={16} style={{ color: assets }} />
-                        <h3 className="font-medium" style={{ color: ink }}>Fixed Asset Reconciliation — FY {selectedFyForFA}</h3>
+            <div style={{ padding: '18px 28px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ padding: 8, borderRadius: 8, background: teal[50], color: teal[600] }}>
+                            <Package size={16} />
+                        </div>
+                        <h3 style={{ fontSize: 13, fontWeight: 700, color: teal[800], margin: 0 }}>Fixed Asset Reconciliation — FY {selectedFyForFA}</h3>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <select
                             value={selectedFyForFA}
                             onChange={(e) => setSelectedFyForFA(parseInt(e.target.value, 10))}
-                            className="text-sm border rounded-lg px-3 py-1.5"
-                            style={{ borderColor: hairline, color: ink, background: paper }}
+                            style={{ ...selectStyle, width: 110, padding: '7px 30px 7px 12px' }}
                         >
                             {[selectedFyForFA, selectedFyForFA - 1, selectedFyForFA - 2].map((y) => (
                                 <option key={y} value={y}>{y}</option>
@@ -300,8 +318,9 @@ const YearEndClosing: React.FC = () => {
                         <button
                             onClick={() => loadFAReport(selectedFyForFA)}
                             disabled={faReportLoading}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border"
-                            style={{ borderColor: hairline, color: ink, background: paper }}
+                            style={btnGhostStyle}
+                            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
                         >
                             {faReportLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                             Refresh
@@ -310,42 +329,43 @@ const YearEndClosing: React.FC = () => {
                 </div>
 
                 {faReportLoading && !faReport ? (
-                    <div className="text-sm" style={{ color: inkSoft }}>Checking fixed assets…</div>
+                    <div style={{ fontSize: 13, color: inkSoft }}>Checking fixed assets…</div>
                 ) : faReport ? (
                     <>
-                        <div className="grid grid-cols-4 gap-3 mb-3">
-                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Active Assets</div>
-                                <div className="text-xl font-semibold" style={{ color: ink }}>{faReport.summary.activeAssets}</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+                            <div style={{ padding: '12px 14px', borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Active Assets</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{faReport.summary.activeAssets}</div>
                             </div>
-                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Pending Cap.</div>
-                                <div className="text-xl font-semibold" style={{ color: faReport.summary.pendingCapitalisation > 0 ? danger : assets }}>{faReport.summary.pendingCapitalisation}</div>
+                            <div style={{ padding: '12px 14px', borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Pending Cap.</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: faReport.summary.pendingCapitalisation > 0 ? danger : teal[600] }}>{faReport.summary.pendingCapitalisation}</div>
                             </div>
-                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Missing Mapping</div>
-                                <div className="text-xl font-semibold" style={{ color: faReport.summary.missingMapping > 0 ? danger : assets }}>{faReport.summary.missingMapping}</div>
+                            <div style={{ padding: '12px 14px', borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Missing Mapping</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: faReport.summary.missingMapping > 0 ? danger : teal[600] }}>{faReport.summary.missingMapping}</div>
                             </div>
-                            <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                                <div className="text-xs uppercase tracking-wide" style={{ color: inkSoft }}>Dep. Posted</div>
-                                <div className="text-xl font-semibold" style={{ color: faReport.summary.depreciationPosted ? assets : '#b45309' }}>{faReport.summary.depreciationPosted ? 'Yes' : 'No'}</div>
+                            <div style={{ padding: '12px 14px', borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Dep. Posted</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: faReport.summary.depreciationPosted ? teal[600] : amber[600] }}>{faReport.summary.depreciationPosted ? 'Yes' : 'No'}</div>
                             </div>
                         </div>
 
                         {faReport.issues.length === 0 ? (
-                            <div className="p-3 rounded-lg flex items-center gap-2 text-sm" style={{ background: '#ecfdf5', color: assets }}>
-                                <CheckCircle size={14} /> Fixed asset reconciliation complete for FY {selectedFyForFA}. Safe to close.
+                            <div style={{ padding: 14, borderRadius: 9, border: `1px solid ${teal[100]}`, background: teal[50], color: teal[700], display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 600 }}>
+                                <CheckCircle size={16} /> Fixed asset reconciliation complete for FY {selectedFyForFA}. Safe to close.
                             </div>
                         ) : (
-                            <div className="space-y-2">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 {faReport.issues.map((issue, i) => (
                                     <div
                                         key={i}
-                                        className="p-3 rounded-lg border flex items-start gap-2 text-sm"
                                         style={{
-                                            borderColor: hairline,
-                                            background: issue.severity === 'error' ? '#fef2f2' : issue.severity === 'warning' ? '#fef9e7' : '#f3f4f6',
-                                            color: issue.severity === 'error' ? danger : issue.severity === 'warning' ? '#b45309' : ink,
+                                            padding: 12, borderRadius: 9, border: `1px solid ${hairline}`,
+                                            display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13,
+                                            background: issue.severity === 'error' ? '#fef2f2' : issue.severity === 'warning' ? amber[100] : teal[50],
+                                            color: issue.severity === 'error' ? danger : issue.severity === 'warning' ? amber[600] : ink,
+                                            fontWeight: 500,
                                         }}
                                     >
                                         {issue.severity === 'error' ? <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} /> :
@@ -361,60 +381,71 @@ const YearEndClosing: React.FC = () => {
             </div>
 
             {/* Closing History */}
-            <div className="flex-1 overflow-auto px-6 py-4">
+            <div style={{ flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
                 {isLoading ? (
-                    <div className="flex items-center justify-center h-64">
-                        <Loader2 size={24} className="animate-spin" style={{ color: assets }} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 256 }}>
+                        <Loader2 size={24} className="animate-spin" style={{ color: teal[500] }} />
                     </div>
                 ) : Object.keys(groupedByYear).length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-64" style={{ color: inkSoft }}>
-                        <Calendar size={48} className="mb-4 opacity-50" />
-                        <p>No closing entries found</p>
-                        <p className="text-sm mt-2">Process year-end closing to create entries</p>
-                    </div>
+                    <EmptyState
+                        icon={<Calendar size={32} />}
+                        title="No closing entries found"
+                        hint="Process year-end closing to create entries."
+                    />
                 ) : (
-                    <div className="space-y-6">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                         {fiscalYears.map(year => (
                             <div key={year}>
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="font-semibold text-lg" style={{ color: ink }}>Fiscal Year {year}</h3>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                    <h3 style={{ fontSize: 15, fontWeight: 700, color: ink, margin: 0 }}>Fiscal Year {year}</h3>
                                     {!groupedByYear[year] && canEdit && (
                                         <button
                                             onClick={() => handleCloseYear(year)}
-                                            className="px-3 py-1.5 text-sm rounded-lg text-white transition-colors"
-                                            style={{ background: assets }}
+                                            style={{ ...btnPrimaryStyle, padding: '7px 14px', fontSize: 12.5 }}
                                             disabled={closingInProgress}
+                                            onMouseEnter={e => { if (!closingInProgress) e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
                                         >
                                             Close {year}
                                         </button>
                                     )}
                                 </div>
                                 {groupedByYear[year] && (
-                                    <div className="rounded-lg border overflow-hidden" style={{ borderColor: hairline }}>
-                                        <table className="w-full">
+                                    <div style={tableCard}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                             <thead>
-                                                <tr className="text-left text-xs" style={{ background: '#f3f4f6', color: inkSoft }}>
-                                                    <th className="px-4 py-2 font-medium">Type</th>
-                                                    <th className="px-4 py-2 font-medium">Account</th>
-                                                    <th className="px-4 py-2 font-medium text-right">Amount</th>
+                                                <tr style={tableHeadRow}>
+                                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Type</th>
+                                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Account</th>
+                                                    <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Amount</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {groupedByYear[year].map((entry, idx) => (
-                                                    <tr key={idx} className="border-t" style={{ borderColor: hairline }}>
-                                                        <td className="px-4 py-3">
-                                                            <div className="flex items-center gap-2">
-                                                                {getClosingTypeIcon(entry.closing_type)}
-                                                                <span className="text-sm capitalize" style={{ color: ink }}>
+                                                    <tr key={idx}
+                                                        style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                                                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                                    >
+                                                        <td style={{ padding: '12px 16px' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                                <div style={{
+                                                                    width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                                                                    background: teal[50],
+                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                }}>
+                                                                    {getClosingTypeIcon(entry.closing_type)}
+                                                                </div>
+                                                                <span style={{ fontSize: 13, color: ink, textTransform: 'capitalize', fontWeight: 500 }}>
                                                                     {entry.closing_type.replace('_', ' ')}
                                                                 </span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-4 py-3 text-sm" style={{ color: ink }}>
+                                                        <td style={{ padding: '12px 16px', fontSize: 13, color: ink }}>
                                                             {entry.account_name}
                                                         </td>
-                                                        <td className="px-4 py-3 text-sm text-right font-mono" style={{ color: ink }}>
-                                                            {formatCurrency(entry.amount)}
+                                                        <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: ink, fontVariantNumeric: 'tabular-nums' }}>
+                                                            {formatCurrency(entry.amount, currency)}
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -433,6 +464,7 @@ const YearEndClosing: React.FC = () => {
                 <ClosingResultModal
                     result={closingResult}
                     onClose={() => { setIsClosingModalOpen(false); setClosingResult(null); }}
+                    currency={currency}
                 />
             )}
 
@@ -452,59 +484,58 @@ const YearEndClosing: React.FC = () => {
 interface ClosingResultModalProps {
     result: any;
     onClose: () => void;
+    currency: string;
 }
 
-const ClosingResultModal: React.FC<ClosingResultModalProps> = ({ result, onClose }) => {
+const ClosingResultModal: React.FC<ClosingResultModalProps> = ({ result, onClose, currency }) => {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-xl">
-                <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                    <h2 className="text-lg font-semibold" style={{ color: ink }}>Year-End Closing Complete</h2>
-                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-                        <X size={20} style={{ color: inkSoft }} />
-                    </button>
-                </div>
-                <div className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                            <p className="text-sm" style={{ color: inkSoft }}>Total Income Closed</p>
-                            <p className="text-lg font-semibold" style={{ color: assets }}>
-                                {formatCurrency(result.incomeResult?.totalIncome || 0)}
+        <div style={modalOverlayStyle} onClick={onClose}>
+            <div style={modalShell(560)} onClick={e => e.stopPropagation()}>
+                <AccentStripe />
+                <ModalHeader
+                    icon={<CheckCircle size={19} color="#fff" />}
+                    title="Year-End Closing Complete"
+                    subtitle="Income & expense closed to retained earnings"
+                    onClose={onClose}
+                />
+                <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                        <div style={{ padding: 14, borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>Total Income Closed</p>
+                            <p style={{ fontSize: 18, fontWeight: 700, color: teal[700], margin: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: -0.2 }}>
+                                {formatCurrency(result.incomeResult?.totalIncome || 0, currency)}
                             </p>
                         </div>
-                        <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                            <p className="text-sm" style={{ color: inkSoft }}>Total Expenses Closed</p>
-                            <p className="text-lg font-semibold" style={{ color: danger }}>
-                                {formatCurrency(result.expenseResult?.totalExpenses || 0)}
+                        <div style={{ padding: 14, borderRadius: 12, background: paper, border: `1.4px solid ${hairline}` }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>Total Expenses Closed</p>
+                            <p style={{ fontSize: 18, fontWeight: 700, color: danger, margin: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: -0.2 }}>
+                                {formatCurrency(result.expenseResult?.totalExpenses || 0, currency)}
                             </p>
                         </div>
                     </div>
-                    <div className="p-4 rounded-lg border" style={{ borderColor: hairline, background: result.netProfit > 0 ? '#d1fae5' : '#fee2e2' }}>
-                        <p className="text-sm" style={{ color: result.netProfit > 0 ? '#065f46' : '#991b1b' }}>
+                    <div style={{ padding: 16, borderRadius: 9, border: `1px solid ${hairline}`, background: result.netProfit > 0 ? '#d1fae5' : '#fee2e2', marginBottom: 14 }}>
+                        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px', color: result.netProfit > 0 ? '#065f46' : '#991b1b' }}>
                             {result.netProfit > 0 ? 'Net Profit' : 'Net Loss'}
                         </p>
-                        <p className="text-2xl font-bold" style={{ color: result.netProfit > 0 ? assets : danger }}>
-                            {formatCurrency(result.netProfit || result.netLoss)}
+                        <p style={{ fontSize: 22, fontWeight: 800, margin: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: -0.2, color: result.netProfit > 0 ? teal[700] : danger }}>
+                            {formatCurrency(result.netProfit || result.netLoss, currency)}
                         </p>
                     </div>
-                    <div className="space-y-2">
-                        <p className="text-sm" style={{ color: inkSoft }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 18 }}>
+                        <p style={{ fontSize: 12.5, color: inkSoft, margin: 0 }}>
                             Accounts closed: {result.incomeResult?.entriesClosed || 0} income, {result.expenseResult?.entriesClosed || 0} expense
                         </p>
-                        <p className="text-sm" style={{ color: inkSoft }}>
+                        <p style={{ fontSize: 12.5, color: inkSoft, margin: 0 }}>
                             Retained earnings entry: {result.retainedEarningsResult ? 'Created' : 'N/A'}
                         </p>
                     </div>
-                    <div className="flex justify-end pt-4">
-                        <button
-                            onClick={onClose}
-                            className="px-4 py-2 text-sm rounded-lg text-white"
-                            style={{ background: assets }}
-                        >
-                            Done
-                        </button>
-                    </div>
                 </div>
+                <ModalFooter
+                    stepLabel="Close · posted to ledger"
+                    onCancel={onClose}
+                    submitLabel="Done"
+                    onSubmit={onClose}
+                />
             </div>
         </div>
     );
@@ -522,37 +553,52 @@ const SelectYearModal: React.FC<SelectYearModalProps> = ({ fiscalYears, onClose,
     const availableYears = fiscalYears.includes(currentYear) ? fiscalYears : [currentYear, ...fiscalYears];
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-xl w-full max-w-sm mx-4 shadow-xl">
-                <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                    <h2 className="text-lg font-semibold" style={{ color: ink }}>Select Fiscal Year to Close</h2>
-                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-                        <X size={20} style={{ color: inkSoft }} />
-                    </button>
-                </div>
-                <div className="p-6 space-y-3">
-                    {availableYears.map(year => (
-                        <button
-                            key={year}
-                            onClick={() => onSelectYear(year)}
-                            disabled={isProcessing}
-                            className="w-full flex items-center justify-between p-4 rounded-lg border transition-colors hover:border-gray-400"
-                            style={{ borderColor: hairline }}
-                        >
-                            <span className="font-medium" style={{ color: ink }}>Fiscal Year {year}</span>
-                            <Calendar size={16} style={{ color: inkSoft }} />
-                        </button>
-                    ))}
-                    <div className="flex justify-end pt-4">
-                        <button
-                            onClick={onClose}
-                            className="px-4 py-2 text-sm rounded-lg border"
-                            style={{ borderColor: hairline, color: ink }}
-                        >
-                            Cancel
-                        </button>
+        <div style={modalOverlayStyle} onClick={onClose}>
+            <div style={modalShell(480)} onClick={e => e.stopPropagation()}>
+                <AccentStripe />
+                <ModalHeader
+                    icon={<Calendar size={19} color="#fff" />}
+                    title="Select Fiscal Year to Close"
+                    subtitle="Closing is irreversible — verify all entries"
+                    onClose={onClose}
+                />
+                <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
+                        {availableYears.map(year => (
+                            <button
+                                key={year}
+                                onClick={() => onSelectYear(year)}
+                                disabled={isProcessing}
+                                style={{
+                                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    padding: 14, borderRadius: 9, border: `1.4px solid ${hairline}`, background: paper,
+                                    cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.65 : 1,
+                                    transition: 'background .12s',
+                                }}
+                                onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.background = teal[50]; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = paper; }}
+                            >
+                                <span style={{ fontWeight: 600, fontSize: 13.5, color: ink }}>Fiscal Year {year}</span>
+                                <Calendar size={16} style={{ color: inkSoft }} />
+                            </button>
+                        ))}
+                    </div>
+                    <div style={{
+                        padding: 14, background: amber[100], borderRadius: 9, border: `1px solid ${amber[300]}`,
+                        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                    }}>
+                        <div style={{ padding: 8, borderRadius: 8, background: paper, color: amber[600] }}>
+                            <AlertTriangle size={18} />
+                        </div>
+                        <div style={{ fontSize: 12, color: ink, fontWeight: 500 }}>This action is irreversible. Ensure all transactions are recorded before closing.</div>
                     </div>
                 </div>
+                <ModalFooter
+                    stepLabel="Select · fiscal year"
+                    onCancel={onClose}
+                    submitLabel="Done"
+                    onSubmit={onClose}
+                />
             </div>
         </div>
     );

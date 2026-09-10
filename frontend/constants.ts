@@ -80,7 +80,10 @@ export const ACCOUNT_IDS = {
   TAX_PAYABLE: '21200',
   LONG_TERM_LIABILITIES: '22000',
   BANK_LOANS: '22100',
-  OTHER_LOANS: '22200'
+  OTHER_LOANS: '22200',
+  SHAREHOLDER_LOANS: '22300',
+  ACCRUED_INTEREST_PAYABLE_LT: '22310',
+  CURRENT_PORTION_LT_DEBT: '22400'
 };
 
 export const DEFAULT_ACCOUNTS: Account[] = [
@@ -122,6 +125,9 @@ export const DEFAULT_ACCOUNTS: Account[] = [
   { id: '22000', code: '22000', account_number: '22000', name: 'Long-Term Liabilities', account_type: 'LIABILITY', type: 'Liability', account_group: 'LONG_TERM_LIABILITY', allow_posting: false },
   { id: '22100', code: '22100', account_number: '22100', name: 'Bank Loans', account_type: 'LIABILITY', type: 'Liability', account_group: 'LONG_TERM_LIABILITY', parent_account_id: '22000', allow_posting: true },
   { id: '22200', code: '22200', account_number: '22200', name: 'Other Loans', account_type: 'LIABILITY', type: 'Liability', account_group: 'LONG_TERM_LIABILITY', parent_account_id: '22000', allow_posting: true },
+  { id: '22300', code: '22300', account_number: '22300', name: 'Shareholder / Related-Party Loans', account_type: 'LIABILITY', type: 'Liability', account_group: 'LONG_TERM_LIABILITY', parent_account_id: '22000', allow_posting: true },
+  { id: '22310', code: '22310', account_number: '22310', name: 'Accrued Interest Payable (LT)', account_type: 'LIABILITY', type: 'Liability', account_group: 'LONG_TERM_LIABILITY', parent_account_id: '22000', allow_posting: true },
+  { id: '22400', code: '22400', account_number: '22400', name: 'Current Portion of Long-Term Debt', account_type: 'LIABILITY', type: 'Liability', account_group: 'CURRENT_LIABILITY', allow_posting: true },
   // --- Equity (30000-39999) ---
   { id: '30000', code: '30000', account_number: '30000', name: 'Equity', account_type: 'EQUITY', type: 'Equity', allow_posting: false, is_system_account: true },
   { id: '31000', code: '31000', account_number: '31000', name: "Owner's Capital", account_type: 'EQUITY', type: 'Equity', account_group: 'EQUITY', allow_posting: true },
@@ -195,11 +201,22 @@ export const AVAILABLE_PERMISSIONS: PermissionNode[] = [
   { id: 'referrals.approve', label: 'Approve Referral Rewards', module: 'Sales' },
   { id: 'referrals.manage', label: 'Manage Referral Settings', module: 'System' },
 
-  // System
-  { id: 'admin.settings', label: 'Manage System Settings', module: 'System' },
-  { id: 'admin.users', label: 'Manage Users & Groups', module: 'System' },
-  { id: 'settings.manage', label: 'Manage System Settings', module: 'System' },
-  { id: 'users.manage', label: 'Manage Users & Groups', module: 'System' },
+   // System
+   { id: 'admin.settings', label: 'Manage System Settings', module: 'System' },
+   { id: 'admin.users', label: 'Manage Users & Groups', module: 'System' },
+   { id: 'settings.manage', label: 'Manage System Settings', module: 'System' },
+   { id: 'users.manage', label: 'Manage Users & Groups', module: 'System' },
+
+   // Printing Contracts
+   { id: 'printing_contracts.view', label: 'View Printing Contracts', module: 'Printing Contracts' },
+   { id: 'printing_contracts.create', label: 'Create Printing Contracts', module: 'Printing Contracts' },
+   { id: 'printing_contracts.edit', label: 'Edit Printing Contracts', module: 'Printing Contracts' },
+   { id: 'printing_contracts.activate', label: 'Activate Printing Contracts', module: 'Printing Contracts' },
+   { id: 'printing_contracts.amend', label: 'Amend Printing Contracts', module: 'Printing Contracts' },
+   { id: 'printing_contracts.cancel', label: 'Cancel Printing Contracts', module: 'Printing Contracts' },
+   { id: 'printing_contracts.manage_assessments', label: 'Manage Contract Assessments', module: 'Printing Contracts' },
+   { id: 'printing_contracts.view_financials', label: 'View Contract Financials', module: 'Printing Contracts' },
+   { id: 'printing_contracts.create_job', label: 'Create Job Orders from Contracts', module: 'Printing Contracts' },
 ];
 
 export const INITIAL_USER_GROUPS: UserGroup[] = [

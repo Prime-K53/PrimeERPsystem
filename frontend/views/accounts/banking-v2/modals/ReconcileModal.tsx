@@ -10,7 +10,6 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { Dialog } from '../../../../components/Dialog';
 import { CheckCircle2, AlertCircle, Plus, ArrowRightLeft } from 'lucide-react';
 import { getDefaultDate, validateDateInFY } from '../../../../utils/financialYearUtils';
 import { roundFinancial } from '../../../../utils/helpers';
@@ -18,6 +17,15 @@ import { dbService } from '../../../../services/db';
 import { CANONICAL_COA, postBalancedJournal } from '../../../../services/bankingGLService';
 import { generateId } from '../../../../services/transactions/_internal';
 import { logger } from '../../../../services/logger';
+
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, selectStyle,
+    btnGhostStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    tableHeadRow, EmptyState,
+} from '../../components/financeChrome';
 
 interface Props {
   onClose: () => void;
@@ -171,121 +179,142 @@ export const ReconcileModal: React.FC<Props> = ({ onClose, account, accounts, tr
 
   if (!account) {
     return (
-      <Dialog open={true} onOpenChange={() => onClose()} title="Reconcile">
-        <div style={{ padding: 20 }}>Select a bank account first.</div>
-      </Dialog>
+      <div style={modalOverlayStyle} onClick={onClose}>
+        <div style={modalShell(520)} onClick={e => e.stopPropagation()}>
+          <AccentStripe />
+          <ModalHeader icon={<ArrowRightLeft size={19} color="#fff" />} title="Reconcile" subtitle="Select a bank account first" onClose={onClose} />
+          <div style={{ padding: '24px 28px' }}>
+            <EmptyState icon={<ArrowRightLeft size={32} />} title="No account selected" hint="Select a bank account first." />
+          </div>
+          <ModalFooter stepLabel="Reconcile · no account" onCancel={onClose} submitLabel="Close" onSubmit={onClose} />
+        </div>
+      </div>
     );
   }
 
   return (
-    <Dialog open={true} onOpenChange={() => onClose()} title={`Reconcile: ${account.name}`} ariaLabel="Bank Reconciliation">
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 760, maxHeight: '80vh', overflow: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          <Field label="Start Date"><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></Field>
-          <Field label="Statement End Date *"><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></Field>
-          <Field label="Statement Ending Balance *"><input type="number" step="0.01" value={statementEndingBalance} onChange={(e) => setStatementEndingBalance(e.target.value)} placeholder="0.00" /></Field>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-          <Stat label="Book Balance" value={bookBalance} currency={currency} />
-          <Stat label="Cleared" value={clearedBalance} currency={currency} tone={Math.abs(clearedBalance - statementBalance) < TOLERANCE ? 'positive' : 'neutral'} />
-          <Stat label="Uncleared" value={unclearedBalance} currency={currency} />
-          <Stat label="Difference" value={difference} currency={currency} tone={canComplete ? 'positive' : 'danger'} />
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button onClick={selectAll} style={btnSm}>Select All</button>
-          <button onClick={clearAll} style={btnSm}>Clear All</button>
-          <span style={{ flex: 1 }} />
-          <button onClick={() => addAdjustment('BankCharge')} style={btnSm}><Plus size={12} /> Bank Charge</button>
-          <button onClick={() => addAdjustment('Interest')} style={btnSm}><Plus size={12} /> Interest</button>
-        </div>
-
-        {adjustments.length > 0 && (
-          <div style={{ background: '#fef9e7', padding: 10, borderRadius: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#b45309', marginBottom: 6 }}>Reconciliation Adjustments</div>
-            {adjustments.map((a) => (
-              <div key={a.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: '#92400e', minWidth: 90 }}>{a.type}</span>
-                <input type="date" value={a.date} onChange={(e) => setAdjustments((arr) => arr.map((x) => x.id === a.id ? { ...x, date: e.target.value } : x))} style={inp} />
-                <input type="number" step="0.01" value={a.amount} onChange={(e) => setAdjustments((arr) => arr.map((x) => x.id === a.id ? { ...x, amount: e.target.value } : x))} placeholder="Amount" style={inp} />
-                <input value={a.description} onChange={(e) => setAdjustments((arr) => arr.map((x) => x.id === a.id ? { ...x, description: e.target.value } : x))} placeholder="Description" style={{ ...inp, flex: 1 }} />
-                <button onClick={() => removeAdjustment(a.id)} style={btnSm}>×</button>
+    <div style={modalOverlayStyle} onClick={onClose}>
+      <div style={modalShell(800)} onClick={e => e.stopPropagation()}>
+        <AccentStripe />
+        <ModalHeader
+          icon={<CheckCircle2 size={19} color="#fff" />}
+          title={`Reconcile — ${account.name}`}
+          subtitle="Match book transactions to the bank statement"
+          onClose={onClose}
+        />
+        <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 18 }}>
+            <div>
+              <label style={labelStyle}>Start Date</label>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Statement End Date <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+              <input type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Statement Ending Balance <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                <input type="number" step="0.01" required value={statementEndingBalance} onChange={(e) => setStatementEndingBalance(e.target.value)} placeholder="0.00" style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }} />
               </div>
-            ))}
+            </div>
           </div>
-        )}
 
-        <div style={{ background: '#fff', border: '1px solid #e4ddd1', borderRadius: 8, maxHeight: 280, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead style={{ position: 'sticky', top: 0, background: '#eef7f6' }}>
-              <tr>
-                <th style={th}>✓</th>
-                <th style={th}>Date</th>
-                <th style={th}>Description</th>
-                <th style={{ ...th, textAlign: 'right' }}>Amount</th>
-                <th style={th}>Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              {accountTxns.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding: 14, textAlign: 'center', color: '#5c6567' }}>No transactions in this period.</td></tr>
-              ) : accountTxns.map((t) => (
-                <tr key={t.id} style={{ borderTop: '1px solid #e4ddd1', background: cleared.has(t.id) ? '#f0fdf4' : 'transparent' }}>
-                  <td style={td}><input type="checkbox" checked={cleared.has(t.id)} onChange={() => toggleCleared(t.id)} /></td>
-                  <td style={td}>{t.date}</td>
-                  <td style={td}>{t.description}</td>
-                  <td style={{ ...td, textAlign: 'right' }}>{t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td style={td}>{t.type}</td>
-                </tr>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
+            <Stat label="Book Balance" value={bookBalance} currency={currency} />
+            <Stat label="Cleared" value={clearedBalance} currency={currency} tone={Math.abs(clearedBalance - statementBalance) < TOLERANCE ? 'positive' : 'neutral'} />
+            <Stat label="Uncleared" value={unclearedBalance} currency={currency} />
+            <Stat label="Difference" value={difference} currency={currency} tone={canComplete ? 'positive' : 'danger'} />
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+            <button onClick={selectAll} style={btnGhostStyle}>Select All</button>
+            <button onClick={clearAll} style={btnGhostStyle}>Clear All</button>
+            <span style={{ flex: 1 }} />
+            <button onClick={() => addAdjustment('BankCharge')} style={btnGhostStyle}><Plus size={14} /> Bank Charge</button>
+            <button onClick={() => addAdjustment('Interest')} style={btnGhostStyle}><Plus size={14} /> Interest</button>
+          </div>
+
+          {adjustments.length > 0 && (
+            <div style={{ background: amber[100], border: `1px solid ${amber[300]}`, padding: 14, borderRadius: 10, marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: amber[600], textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 8 }}>Reconciliation Adjustments</div>
+              {adjustments.map((a) => (
+                <div key={a.id} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: amber[600], minWidth: 90 }}>{a.type}</span>
+                  <input type="date" value={a.date} onChange={(e) => setAdjustments((arr) => arr.map((x) => x.id === a.id ? { ...x, date: e.target.value } : x))} style={{ ...inputStyle, width: 150 }} />
+                  <input type="number" step="0.01" min="0" value={a.amount} onChange={(e) => setAdjustments((arr) => arr.map((x) => x.id === a.id ? { ...x, amount: e.target.value } : x))} placeholder="Amount" style={{ ...inputStyle, width: 130, fontFamily: "'JetBrains Mono', monospace" }} />
+                  <input value={a.description} onChange={(e) => setAdjustments((arr) => arr.map((x) => x.id === a.id ? { ...x, description: e.target.value } : x))} placeholder="Description" style={{ ...inputStyle, flex: '1 1 160px' }} />
+                  <button onClick={() => removeAdjustment(a.id)} style={btnGhostStyle}>×</button>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          )}
 
-        {error && <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 10, borderRadius: 8, background: '#fef2f2', color: '#991b1b', fontSize: 12 }}><AlertCircle size={14} /> {error}</div>}
-
-        {!canComplete && Math.abs(difference) >= TOLERANCE && (
-          <div style={{ padding: 10, borderRadius: 8, background: '#fef9e7', color: '#b45309', fontSize: 12 }}>
-            Cannot complete reconciliation. Difference: {currency} {difference.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
-            Review unmatched transactions, add a bank charge, add interest, or add an adjustment.
+          <div style={{ border: `1.4px solid ${hairline}`, borderRadius: 12, overflow: 'hidden', marginBottom: 14 }}>
+            <div style={{ maxHeight: 280, overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                  <tr style={tableHeadRow}>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700 }}>✓</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700 }}>Date</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700 }}>Description</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>Amount</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700 }}>Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accountTxns.length === 0 ? (
+                    <tr><td colSpan={5} style={{ padding: 20 }}>
+                      <EmptyState icon={<ArrowRightLeft size={32} />} title="No transactions in this period" hint="Adjust the statement dates." />
+                    </td></tr>
+                  ) : accountTxns.map((t) => (
+                    <tr key={t.id}
+                      style={{ borderTop: `1px solid ${hairline}`, background: cleared.has(t.id) ? teal[50] : 'transparent', transition: 'background .12s' }}
+                      onMouseEnter={e => { if (!cleared.has(t.id)) e.currentTarget.style.background = teal[50]; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = cleared.has(t.id) ? teal[50] : 'transparent'; }}
+                    >
+                      <td style={{ padding: '10px 14px' }}><input type="checkbox" checked={cleared.has(t.id)} onChange={() => toggleCleared(t.id)} /></td>
+                      <td style={{ padding: '10px 14px', color: ink, whiteSpace: 'nowrap' }}>{t.date}</td>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: ink }}>{t.description}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{t.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td style={{ padding: '10px 14px', color: inkSoft }}>{t.type}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
-        {canComplete && (
-          <div style={{ padding: 10, borderRadius: 8, background: '#f0fdf4', color: '#059669', fontSize: 12 }}>
-            <CheckCircle2 size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-            Statement balance equals cleared book balance. Ready to complete.
-          </div>
-        )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid #e4ddd1', paddingTop: 12 }}>
-          <button onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button onClick={complete} disabled={saving || !canComplete} style={{ ...btnPrimary, opacity: (saving || !canComplete) ? 0.6 : 1 }}>
-            {saving ? 'Completing…' : 'Complete Reconciliation'}
-          </button>
+          {error && <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 9, background: '#fdeeee', border: `1px solid ${danger}`, color: danger, fontSize: 12.5, marginBottom: 14 }}><AlertCircle size={14} /> {error}</div>}
+
+          {!canComplete && Math.abs(difference) >= TOLERANCE && (
+            <div style={{ padding: '10px 14px', borderRadius: 9, background: amber[100], border: `1px solid ${amber[300]}`, color: amber[600], fontSize: 12.5, marginBottom: 14 }}>
+              Cannot complete reconciliation. Difference: {currency} {difference.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
+              Review unmatched transactions, add a bank charge, add interest, or add an adjustment.
+            </div>
+          )}
+          {canComplete && (
+            <div style={{ padding: '10px 14px', borderRadius: 9, background: teal[50], border: `1px solid ${teal[100]}`, color: teal[700], fontSize: 12.5, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle2 size={14} />
+              Statement balance equals cleared book balance. Ready to complete.
+            </div>
+          )}
         </div>
+        <ModalFooter
+          stepLabel={`Reconcile · ${cleared.size} cleared`}
+          onCancel={onClose}
+          submitLabel={saving ? 'Completing…' : 'Complete Reconciliation'}
+          onSubmit={complete}
+        />
       </div>
-    </Dialog>
+    </div>
   );
 };
 
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-    <label style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#5c6567' }}>{label}</label>
-    {React.Children.map(children, (c) => React.isValidElement(c) ? React.cloneElement(c as any, { style: { padding: '8px 10px', borderRadius: 7, border: '1px solid #e4ddd1', fontSize: 13, background: '#FEFDFB', outline: 'none', width: '100%', ...(c.props.style || {}) } }) : c)}
-  </div>
-);
-
 const Stat: React.FC<{ label: string; value: number; currency: string; tone?: 'positive' | 'danger' | 'neutral' }> = ({ label, value, currency, tone = 'neutral' }) => (
-  <div style={{ padding: 10, borderRadius: 8, background: tone === 'positive' ? '#f0fdf4' : tone === 'danger' ? '#fef2f2' : '#eef7f6', border: '1px solid #e4ddd1' }}>
-    <div style={{ fontSize: 9, fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
-    <div style={{ fontSize: 16, fontWeight: 700, color: tone === 'positive' ? '#059669' : tone === 'danger' ? '#991b1b' : '#0b3e39', marginTop: 2 }}>{currency} {value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+  <div style={{ padding: '12px 14px', borderRadius: 10, background: tone === 'positive' ? teal[50] : tone === 'danger' ? '#fdeeee' : paper, border: `1.4px solid ${hairline}`, borderLeft: `4px solid ${tone === 'positive' ? teal[500] : tone === 'danger' ? danger : hairline}` }}>
+    <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08 }}>{label}</div>
+    <div style={{ fontSize: 16, fontWeight: 700, color: tone === 'positive' ? teal[700] : tone === 'danger' ? danger : ink, marginTop: 4, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{currency} {value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
   </div>
 );
-
-const th: React.CSSProperties = { textAlign: 'left', padding: 8, fontWeight: 700, fontSize: 11, color: '#0b3e39' };
-const td: React.CSSProperties = { padding: 8, borderTop: '1px solid #e4ddd1' };
-const inp: React.CSSProperties = { padding: '6px 8px', borderRadius: 6, border: '1px solid #e4ddd1', fontSize: 12, background: '#FEFDFB', outline: 'none' };
-const btnSm: React.CSSProperties = { padding: '6px 10px', borderRadius: 6, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 };
-const btnPrimary: React.CSSProperties = { padding: '9px 18px', borderRadius: 9, border: 'none', background: 'linear-gradient(155deg, #1f8577, #0f544c)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 };
-const btnSecondary: React.CSSProperties = { padding: '9px 18px', borderRadius: 9, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', fontSize: 13, fontWeight: 600 };

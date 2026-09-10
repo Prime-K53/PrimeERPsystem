@@ -47,7 +47,11 @@ export const loanService = {
         }
     },
 
-    async createLoan(loan: Omit<Loan, 'id' | 'created_at' | 'updated_at' | 'current_balance'>): Promise<Loan> {
+    async createLoan(
+        loan: Omit<Loan, 'id' | 'created_at' | 'updated_at' | 'current_balance'>,
+        accounts: any[] = [],
+        bankAccountId?: string
+    ): Promise<Loan> {
         const newLoan: Loan = {
             ...loan,
             id: generateId('LOAN'),
@@ -59,24 +63,36 @@ export const loanService = {
         await dbService.put(LOAN_STORE, newLoan);
 
         const config = getConfig();
+        const accts = accounts;
         const loanAccountId = loan.loan_type === 'bank_loan'
-            ? resolveAccountForPosting(config.bankLoansAccount, []) || config.bankLoansAccount
-            : resolveAccountForPosting(config.otherLoansAccount, []) || config.otherLoansAccount;
-        const bankAccountId = resolveAccountForPosting(config.bankAccount, []) || config.bankAccount;
+            ? resolveAccountForPosting(config.bankLoansAccount, accts) || config.bankLoansAccount
+            : loan.loan_type === 'shareholder_loan'
+                ? resolveAccountForPosting(config.shareholderLoansAccount, accts) || config.shareholderLoansAccount
+                : resolveAccountForPosting(config.otherLoansAccount, accts) || config.otherLoansAccount;
+        const resolvedBankAccountId = bankAccountId
+            ? resolveAccountForPosting(bankAccountId, accts) || bankAccountId
+            : resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
 
-        await ledgerService.createJournalEntry({
+        const journalEntry = await ledgerService.createJournalEntry({
             date: loan.start_date,
             description: `Loan received: ${loan.lender_name}`,
             reference: `LOAN-DRW-${newLoan.id}`,
             lines: [
                 {
-                    debitAccountId: bankAccountId,
+                    debitAccountId: resolvedBankAccountId,
                     creditAccountId: loanAccountId,
                     amount: loan.principal_amount,
                     description: `Principal received from ${loan.lender_name}`,
                 }
             ],
             entryType: 'LOAN_DRAWDOWN',
+        });
+
+        await dbService.put(LOAN_STORE, {
+            ...newLoan,
+            loan_account_id: loanAccountId,
+            bank_account_id: resolvedBankAccountId,
+            journal_entry_id: (journalEntry as any)?.id || newLoan.id,
         });
 
         return newLoan;
@@ -109,7 +125,8 @@ export const loanService = {
         interestAmount: number,
         repaymentDate: string,
         reference?: string,
-        accounts: any[] = []
+        accounts: any[] = [],
+        bankAccountId?: string
     ): Promise<LoanRepayment | null> {
         const loan = await this.getLoan(loanId);
         if (!loan) return null;
@@ -123,8 +140,12 @@ export const loanService = {
 
         const loanAccountId = loan.loan_type === 'bank_loan'
             ? resolveAccountForPosting(config.bankLoansAccount, accts) || config.bankLoansAccount
-            : resolveAccountForPosting(config.otherLoansAccount, accts) || config.otherLoansAccount;
-        const bankAccountId = resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
+            : loan.loan_type === 'shareholder_loan'
+                ? resolveAccountForPosting(config.shareholderLoansAccount, accts) || config.shareholderLoansAccount
+                : resolveAccountForPosting(config.otherLoansAccount, accts) || config.otherLoansAccount;
+        const resolvedBankAccountId = bankAccountId
+            ? resolveAccountForPosting(bankAccountId, accts) || bankAccountId
+            : resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
         const interestExpenseId = resolveAccountForPosting(config.interestExpenseAccount, accts) || config.interestExpenseAccount;
 
         const totalPayment = principalAmount + interestAmount;
@@ -135,7 +156,7 @@ export const loanService = {
             if (principalAmount > 0) {
                 lines.push({
                     debitAccountId: loanAccountId,
-                    creditAccountId: bankAccountId,
+                    creditAccountId: resolvedBankAccountId,
                     amount: principalAmount,
                     description: `Loan principal repayment`,
                 });
@@ -144,13 +165,13 @@ export const loanService = {
             if (interestAmount > 0) {
                 lines.push({
                     debitAccountId: interestExpenseId,
-                    creditAccountId: bankAccountId,
+                    creditAccountId: resolvedBankAccountId,
                     amount: interestAmount,
                     description: `Interest payment`,
                 });
             }
 
-            await ledgerService.createJournalEntry({
+            const journalEntry = await ledgerService.createJournalEntry({
                 date: repaymentDate,
                 description: `Loan repayment: ${loan.lender_name}`,
                 reference: reference || `LOAN-REP-${generateId('REP')}`,
@@ -172,6 +193,7 @@ export const loanService = {
                 interest_amount: interestAmount,
                 total_payment: totalPayment,
                 remaining_balance: Math.max(0, newBalance),
+                journal_entry_id: (journalEntry as any)?.id,
                 reference,
                 created_at: new Date().toISOString(),
             };
@@ -184,6 +206,52 @@ export const loanService = {
         }
     },
 
+    calculateAmortizationSchedule(loan: Pick<Loan, 'principal_amount' | 'interest_rate' | 'repayment_terms_months' | 'repayment_frequency'>): Array<{ period: number; date: string; payment: number; principal: number; interest: number; balance: number }> {
+        const principal = loan.principal_amount;
+        const annualRate = loan.interest_rate / 100;
+        const periods = loan.repayment_terms_months;
+        const frequency = loan.repayment_frequency || 'monthly';
+
+        if (principal <= 0 || periods <= 0 || annualRate < 0) return [];
+
+        const ratePerPeriod = frequency === 'annually' ? annualRate : frequency === 'quarterly' ? annualRate / 4 : annualRate / 12;
+        const totalPeriods = frequency === 'annually' ? Math.max(1, Math.floor(periods / 12)) : periods;
+
+        let payment: number;
+        if (ratePerPeriod === 0) {
+            payment = principal / totalPeriods;
+        } else {
+            const factor = Math.pow(1 + ratePerPeriod, totalPeriods);
+            payment = (principal * ratePerPeriod * factor) / (factor - 1);
+        }
+
+        const schedule: Array<{ period: number; date: string; payment: number; principal: number; interest: number; balance: number }> = [];
+        let balance = principal;
+        const startDate = new Date();
+
+        for (let i = 1; i <= totalPeriods; i++) {
+            const interest = balance * ratePerPeriod;
+            const principalPart = payment - interest;
+            balance = Math.max(0, balance - principalPart);
+
+            const periodDate = new Date(startDate);
+            if (frequency === 'annually') periodDate.setFullYear(startDate.getFullYear() + i - 1);
+            else if (frequency === 'quarterly') periodDate.setMonth(startDate.getMonth() + (i - 1) * 3);
+            else periodDate.setMonth(startDate.getMonth() + i - 1);
+
+            schedule.push({
+                period: i,
+                date: periodDate.toISOString().split('T')[0],
+                payment: Math.round(payment * 100) / 100,
+                principal: Math.round(principalPart * 100) / 100,
+                interest: Math.round(interest * 100) / 100,
+                balance: Math.round(balance * 100) / 100,
+            });
+        }
+
+        return schedule;
+    },
+
     async postMonthlyInterestAccrual(
         periodYear: number,
         periodMonth: number,
@@ -193,7 +261,7 @@ export const loanService = {
         const config = getConfig();
         const accts = accounts;
 
-        const accruedInterestAccountId = resolveAccountForPosting(config.accruedExpensesAccount, accts) || config.accruedExpensesAccount;
+        const accruedInterestAccountId = resolveAccountForPosting(config.accruedInterestPayableLTAccount, accts) || config.accruedInterestPayableLTAccount || resolveAccountForPosting(config.accruedExpensesAccount, accts) || config.accruedExpensesAccount;
         const interestExpenseId = resolveAccountForPosting(config.interestExpenseAccount, accts) || config.interestExpenseAccount;
 
         for (const loan of loans) {

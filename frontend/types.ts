@@ -916,6 +916,8 @@ export interface OwnerEquityTransaction {
   amount: number;
   description: string;
   reference?: string;
+  journal_entry_id?: string;
+  owner_name?: string;
   owner_account_id: string;
   capital_account_id: string;
   drawings_account_id: string;
@@ -995,6 +997,9 @@ export interface Loan {
   status: 'active' | 'fully_paid' | 'defaulted' | 'cancelled';
   grace_period_months?: number;
   notes?: string;
+  loan_account_id?: string;
+  bank_account_id?: string;
+  journal_entry_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -1978,18 +1983,19 @@ export interface Sale {
   [key: string]: any;
 }
 
-export interface JobOrder {
-  id: string;
-  customerId?: string;
-  customerName?: string;
-  productId?: string;
-  totalQuantity: number;
-  status: string;
-  date?: string;
-  dueDate?: string;
-  notes?: string;
-  [key: string]: any;
-}
+ export interface JobOrder {
+   id: string;
+   customerId?: string;
+   customerName?: string;
+   productId?: string;
+   totalQuantity: number;
+   status: string;
+   date?: string;
+   dueDate?: string;
+   notes?: string;
+   contract_assessment_id?: string;
+   [key: string]: any;
+ }
 
 export interface HeldOrder {
   id: string;
@@ -3077,9 +3083,113 @@ export interface SupportArticle {
   category: string;
   tags: string[];
   helpful?: number;
-  not_helpful?: number;
-  last_updated?: string;
-  updated_at?: string;
-  created_at?: string;
-  version?: number;
+   not_helpful?: number;
+   last_updated?: string;
+   updated_at?: string;
+   created_at?: string;
+   version?: number;
+}
+
+// ─── Printing Contracts (Phase 3) ───────────────────────────────
+
+export interface AssessmentContract {
+  id: string;
+  company_id: string;
+  customer_id: string;
+  school_id: string;
+  contract_number: string;
+  title: string;
+  description?: string;
+  status: 'draft' | 'pending_payment' | 'active' | 'suspended' | 'completed' | 'expired' | 'cancelled';
+  prepaid_amount: number;
+  consumed_amount: number;
+  reserved_amount: number;
+  available_funds?: number;
+  starts_at?: string;
+  ends_at?: string;
+  expires_at?: string;
+  activated_at?: string;
+  completed_at?: string;
+  cancelled_at?: string;
+  suspended_at?: string;
+  assessment_type: string;
+  assessment_grade?: string;
+  assessment_subject?: string;
+  assessment_count: number;
+  max_assessments: number;
+  assessment_price: number;
+  payment_id?: string;
+  payment_status?: 'pending' | 'verified' | 'failed' | 'refunded';
+  payment_verified_at?: string;
+  wallet_credit_applied_at?: string;
+  notes?: string;
+  terms?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  version: number;
+  data?: Record<string, any>;
+}
+
+export interface AssessmentContractItem {
+  id: string;
+  contract_id: string;
+  company_id: string;
+  customer_id: string;
+  school_id: string;
+  assessment_type: string;
+  assessment_grade?: string;
+  assessment_subject?: string;
+  assessment_name: string;
+  assessment_date?: string;
+  status: 'reserved' | 'consumed' | 'released' | 'cancelled';
+  item_price: number;
+  consumed_at?: string;
+  reserved_at?: string;
+  released_at?: string;
+  job_order_id?: string;
+  examination_printing_batch_id?: string;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  version: number;
+  data?: Record<string, any>;
+}
+
+export interface ContractAmendment {
+  id: string;
+  contract_id: string;
+  company_id: string;
+  customer_id: string;
+  amendment_type: string;
+  description: string;
+  change_amount?: number;
+  new_terms?: string;
+  requested_by?: string;
+  approved_by?: string;
+  approved_at?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  prepaid_amount_adjustment?: number;
+  assessment_count_adjustment?: number;
+  assessment_price_adjustment?: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  version: number;
+  data?: Record<string, any>;
+}
+
+export interface JobOrder {
+  id: string;
+  customerId?: string;
+  customerName?: string;
+  productId?: string;
+  totalQuantity: number;
+  status: string;
+  date?: string;
+  dueDate?: string;
+  notes?: string;
+  contract_assessment_id?: string;
+  [key: string]: any;
 }

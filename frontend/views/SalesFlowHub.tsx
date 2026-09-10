@@ -3,8 +3,7 @@ import { FileText, FileCheck, Banknote as PaymentIcon, RefreshCw, Printer, Targe
 import GenericHub, { HubTheme } from './GenericHub';
 import { useSalesOrderStore } from '../stores/salesOrderStore';
 import { useSalesStore } from '../stores/salesStore';
-import { useFinanceStore } from '../stores/financeStore';
-import { dbService } from '../services/db';
+import { useFinanceStore } from '../stores/financeStore';import { dbService } from '../services/db';
 
 const salesTheme: HubTheme = {
   primary: '#1f8577',
@@ -52,8 +51,8 @@ const SalesFlowHub: React.FC = () => {
       const unpaidInvoices = (invoices as any[]).filter((i: any) =>
         i.status !== 'Paid' && i.status !== 'Cancelled' && i.status !== 'Void'
       ).length;
-      const activeSubscriptions = (salesOrders as any[]).filter((o: any) =>
-        o.status === 'Active' || o.status === 'Draft'
+      const activeContracts = (financeStore.assessmentContracts as any[]).filter((c: any) =>
+        c.status === 'active' || c.status === 'pending_payment' || c.status === 'draft'
       ).length;
       const pendingExchanges = (salesExchanges as any[]).filter((e: any) =>
         e.status !== 'Completed' && e.status !== 'Rejected'
@@ -69,7 +68,7 @@ const SalesFlowHub: React.FC = () => {
         Quotations: pendingQuotations,
         Orders: pendingOrders,
         'Billing / Invoices': unpaidInvoices,
-        Subscriptions: activeSubscriptions,
+        'Printing Contracts': activeContracts,
         'Sales Exchanges': pendingExchanges,
         'Job Tickets': pendingJobTickets,
         'Referral Rewards': pendingRewards,
@@ -77,7 +76,7 @@ const SalesFlowHub: React.FC = () => {
     };
 
     fetchCounts();
-  }, [salesOrderStore.salesOrders, salesStore.jobOrders, salesStore.salesExchanges, financeStore.invoices]);
+  }, [salesOrderStore.salesOrders, salesStore.jobOrders, salesStore.salesExchanges, financeStore.invoices, financeStore.assessmentContracts]);
 
   const badge = (label: string) => counts[label] || 0;
 
@@ -107,9 +106,9 @@ const SalesFlowHub: React.FC = () => {
       icon: PaymentIcon,
     },
     {
-      label: 'Subscriptions',
-      description: 'Manage recurring billing, membership tiers, and automated renewals.',
-      path: '/sales-flow/subscriptions',
+      label: 'Printing Contracts',
+      description: 'Manage printing contracts, assessment entitlement, schedules and prepaid balances.',
+      path: '/sales-flow/printing-contracts',
       icon: RefreshCw,
     },
     {

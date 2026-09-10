@@ -8,13 +8,14 @@ import { useSales } from '../../context/SalesContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useProcurement } from '../../context/ProcurementContext';
 import { executeQuery, interpretQuery, generateQuerySuggestions } from '../../services/naturalLanguageReportingService';
+import { currencyService } from '../../services/currencyService';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
 
-function buildContext(sales: any[], inventory: any[], customers: any[], invoices: any[], accounts: any[], expenses: any[], income: any[], purchases: any[], companyName: string, userName: string): string {
+function buildContext(sales: any[], inventory: any[], customers: any[], invoices: any[], accounts: any[], expenses: any[], income: any[], purchases: any[], companyName: string, userName: string, currencySymbol: string = '$'): string {
   const unpaidInvoices = invoices.filter((inv: any) => {
     const s = String(inv.status || '').toLowerCase();
     return s !== 'cancelled' && s !== 'voided' && s !== 'draft' && (s === 'unpaid' || s === 'partial' || s === 'overdue');
@@ -41,13 +42,13 @@ function buildContext(sales: any[], inventory: any[], customers: any[], invoices
 USER: ${userName}
 DATE: ${new Date().toLocaleDateString()}
 
-INVENTORY: ${inventory.length} items, value MWK ${inventoryValue.toLocaleString()}
+INVENTORY: ${inventory.length} items, value ${currencySymbol} ${inventoryValue.toLocaleString()}
 CUSTOMERS: ${customers.length} total
-INVOICES: ${invoices.length} total (${overdueCount} overdue, ${unpaidInvoices.length - overdueCount} unpaid) — MWK ${receivables.toLocaleString()} outstanding
-TOTAL REVENUE: MWK ${totalRevenue.toLocaleString()}
-TOTAL EXPENSES: MWK ${totalExpenses.toLocaleString()}
-TOTAL INCOME: MWK ${totalIncome.toLocaleString()}
-TODAY SALES: ${todaySales.length} transactions, MWK ${todayRevenue.toLocaleString()}
+INVOICES: ${invoices.length} total (${overdueCount} overdue, ${unpaidInvoices.length - overdueCount} unpaid) — ${currencySymbol} ${receivables.toLocaleString()} outstanding
+TOTAL REVENUE: ${currencySymbol} ${totalRevenue.toLocaleString()}
+TOTAL EXPENSES: ${currencySymbol} ${totalExpenses.toLocaleString()}
+TOTAL INCOME: ${currencySymbol} ${totalIncome.toLocaleString()}
+TODAY SALES: ${todaySales.length} transactions, ${currencySymbol} ${todayRevenue.toLocaleString()}
 ACCOUNTS: ${accounts.length} chart of accounts
 PURCHASES: ${purchases.length} purchase records
 
@@ -55,7 +56,7 @@ Product sales data available: ${sales.length > 0 ? sales.length + ' sales record
 Customer payment data available: Yes`;
 }
 
-function formatQueryResult(result: any): string {
+function formatQueryResult(result: any, currencySymbol: string = '$'): string {
   const lines: string[] = [];
 
   if (result.summary) {
@@ -70,7 +71,7 @@ function formatQueryResult(result: any): string {
         if (val === null || val === undefined) return '-';
         if (col.type === 'currency') {
           const num = Number(val);
-          return isNaN(num) ? String(val) : `MWK ${num.toLocaleString()}`;
+          return isNaN(num) ? String(val) : `${currencySymbol} ${num.toLocaleString()}`;
         }
         if (col.type === 'number') {
           const num = Number(val);
@@ -95,8 +96,8 @@ function formatQueryResult(result: any): string {
   return lines.join('\n');
 }
 
-function formatCurrency(amount: number): string {
-  return `MWK ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+function formatCurrency(amount: number, currencySymbol: string = '$'): string {
+  return `${currencySymbol} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
 export default function AICopilot() {
@@ -105,6 +106,7 @@ export default function AICopilot() {
   const { customers, sales } = useSales();
   const { invoices, accounts, expenses, income } = useFinance();
   const { purchases } = useProcurement();
+  const currencySymbol = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -152,15 +154,16 @@ export default function AICopilot() {
       const result = executeQuery(text, allData);
 
       if (result.type !== 'unknown' && result.data !== undefined) {
-        setMessages(prev => [...prev, { role: 'assistant', content: formatQueryResult(result) }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: formatQueryResult(result, currencySymbol) }]);
       } else {
         const context = buildContext(
           sales || [], inventory || [], customers || [], invoices || [],
           accounts || [], expenses || [], income || [], purchases || [],
           companyConfig?.companyName || 'Prime ERP',
-          user?.name || 'Admin'
+          user?.name || 'Admin',
+          currencySymbol
         );
-        const systemPrompt = `You are Prime ERP AI Assistant. Answer the user's business question using the provided data. Use plain text only — no markdown formatting, no "**" bold, no bullet symbols. Use numbers and MWK currency format. Be concise: 3-5 sentences max.`;
+        const systemPrompt = `You are Prime ERP AI Assistant. Answer the user's business question using the provided data. Use plain text only — no markdown formatting, no "**" bold, no bullet symbols. Use numbers and ${currencySymbol} currency format. Be concise: 3-5 sentences max.`;
         const resp = await generateAIResponse(
           `${context}\n\nUser Question: ${text}`,
           systemPrompt
@@ -173,10 +176,11 @@ export default function AICopilot() {
         sales || [], inventory || [], customers || [], invoices || [],
         accounts || [], expenses || [], income || [], purchases || [],
         companyConfig?.companyName || 'Prime ERP',
-        user?.name || 'Admin'
+        user?.name || 'Admin',
+        currencySymbol
       );
       try {
-        const systemPrompt = `You are Prime ERP AI Assistant. Answer the user's business question using the provided data. Use plain text only — no markdown formatting, no "**" bold, no bullet symbols. Use numbers and MWK currency format. Be concise: 3-5 sentences max.`;
+        const systemPrompt = `You are Prime ERP AI Assistant. Answer the user's business question using the provided data. Use plain text only — no markdown formatting, no "**" bold, no bullet symbols. Use numbers and ${currencySymbol} currency format. Be concise: 3-5 sentences max.`;
         const resp = await generateAIResponse(
           `${context}\n\nUser Question: ${text}`,
           systemPrompt

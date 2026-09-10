@@ -2100,28 +2100,67 @@ sq.run('UPDATE invoices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
       await validateFyDate('date', req.body);
       const { body } = req;
       const id = body.id || randomUUID();
-      sq.run(
-        `INSERT INTO customer_payments (id, date, customer_id, customer_name, amount, payment_method, account_id, reference, notes, status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, body.date || new Date().toISOString(), body.customer_id || body.customerId || null,
-         body.customer_name || body.customerName || null, body.amount || 0,
-         body.payment_method || body.paymentMethod || 'Cash', body.account_id || body.accountId || null,
-         body.reference || null, body.notes || null, body.status || 'Cleared', req.user?.id || null],
-        function (err) {
-          if (err) { return handleInsertConstraintError(res, err, 'Create customer payment'); }
-          const paymentPayload = {
-            customerId: body.customer_id || body.customerId || null,
-            docType: 'payment',
-            docId: id,
-            event: 'payment_recorded',
-            amount: body.amount || 0,
-            method: body.payment_method || body.paymentMethod || 'Cash',
-          };
-          portalLifecycleService.emitEntityChange('portal', paymentPayload);
-          portalLifecycleService.emitEntityChange('admin', paymentPayload);
-          res.status(201).json({ id, ...body });
-        }
-      );
+      const paymentRow = {
+        id,
+        date: body.date || new Date().toISOString(),
+        customer_id: body.customer_id || body.customerId || null,
+        customer_name: body.customer_name || body.customerName || null,
+        amount: body.amount || 0,
+        payment_method: body.payment_method || body.paymentMethod || 'Cash',
+        account_id: body.account_id || body.accountId || null,
+        reference: body.reference || null,
+        notes: body.notes || null,
+        status: body.status || 'Cleared',
+        created_by: req.user?.id || null,
+      };
+
+      await new Promise((resolve, reject) => {
+        sq.run(
+          `INSERT INTO customer_payments (id, date, customer_id, customer_name, amount, payment_method, account_id, reference, notes, status, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [id, paymentRow.date, paymentRow.customer_id, paymentRow.customer_name, paymentRow.amount,
+           paymentRow.payment_method, paymentRow.account_id, paymentRow.reference, paymentRow.notes,
+           paymentRow.status, paymentRow.created_by],
+          function (err) {
+            if (err) return reject(err);
+            resolve();
+          }
+        );
+      });
+
+      const paymentPayload = {
+        customerId: paymentRow.customer_id,
+        docType: 'payment',
+        docId: id,
+        event: 'payment_recorded',
+        amount: paymentRow.amount,
+        method: paymentRow.payment_method,
+      };
+      portalLifecycleService.emitEntityChange('portal', paymentPayload);
+      portalLifecycleService.emitEntityChange('admin', paymentPayload);
+
+      // F-01: post the payment to the general ledger (DR Bank/Cash, CR AR).
+      // Ledger posting failure must not prevent the payment from being recorded.
+      try {
+        await finance.postCustomerPaymentToLedger({
+          id,
+          customerId: paymentRow.customer_id,
+          customer_name: paymentRow.customer_name,
+          amount: paymentRow.amount,
+          currency: body.currency || 'USD',
+          payment_method: paymentRow.payment_method,
+          account_id: paymentRow.account_id,
+          reference: paymentRow.reference,
+          date: paymentRow.date,
+          status: paymentRow.status,
+          created_by: paymentRow.created_by,
+          company_id: body.company_id || null,
+        });
+      } catch (ledgerErr) {
+        console.warn(`[CustomerPayments] Ledger post skipped for ${id}: ${ledgerErr?.message}`, ledgerErr?.stack);
+      }
+
+      res.status(201).json({ id, ...body });
     } catch (err) {
       console.error('[CustomerPayments] POST error:', err?.message || err);
       res.status(500).json({ error: err?.message || 'Failed to create payment' });

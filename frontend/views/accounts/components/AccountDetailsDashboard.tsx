@@ -17,7 +17,17 @@ import {
 } from 'recharts';
 import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, isWithinInterval } from 'date-fns';
-import { ConfirmDialog, ConfirmDialogType } from '../../../components/ConfirmDialog';
+import { ConfirmDialogType } from '../../../components/ConfirmDialog';
+
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    tableCard, tableHeadRow,
+} from './financeChrome';
 
 interface AccountDetailsDashboardProps {
   account: Account;
@@ -278,110 +288,59 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
     { id: 'audit' as TabType, label: 'Audit Trail', icon: Shield }
   ];
 
-  return (
-    <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-6xl h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden">
-        {/* Compact Header */}
-        <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-sm">
-              <Landmark size={20} />
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h2 className="text-lg font-bold text-gray-900">{account.name}</h2>
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
-                  {account.code || account.account_number}
-                </span>
-                {!account.is_active && (
-                  <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
-                    Inactive
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-4 text-xs text-gray-500 mt-0.5">
-                <span className="flex items-center gap-1">
-                  <Activity size={12} className="text-emerald-500" />
-                  {account.type} Account
-                </span>
-                {account.account_group && (
-                  <>
-                    <span className="text-gray-300">·</span>
-                    <span>{account.account_group.replace(/_/g, ' ')}</span>
-                  </>
-                )}
-                <span className="text-gray-300">·</span>
-                <span className="font-medium">{filteredEntries.length} transactions</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {canEdit && (
-              <>
-                <button
-                  onClick={handleEdit}
-                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  title="Edit account"
-                >
-                  <Pencil size={18} />
-                </button>
-                <button
-                  onClick={handleToggleActive}
-                  className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                  title={account.is_active ? 'Deactivate' : 'Activate'}
-                >
-                  {account.is_active ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </>
-            )}
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
+  const kpiItems = [
+    { label: 'Balance', value: `${stats.balance < 0 ? '(' : ''}${currency}${Math.abs(stats.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}${stats.balance < 0 ? ')' : ''}`, icon: Activity, color: stats.balance >= 0 ? teal[700] : danger, bg: stats.balance >= 0 ? teal[50] : '#fdeeee' },
+    { label: 'Debits', value: `${currency}${stats.totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, icon: ArrowUpRight, color: danger, bg: '#fdeeee' },
+    { label: 'Credits', value: `${currency}${stats.totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, icon: ArrowDownLeft, color: teal[700], bg: teal[50] },
+  ];
 
-        {/* Stats Bar */}
-        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center gap-6 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-gray-400 uppercase">Balance</span>
-            <span className={`text-sm font-bold tabular-nums ${stats.balance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
-              {stats.balance < 0 ? '(' : ''}{currency}{Math.abs(stats.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}{stats.balance < 0 ? ')' : ''}
-            </span>
+  return (
+    <div style={modalOverlayStyle} onClick={onClose}>
+      <div style={{ ...modalShell(800), height: '90vh' }} onClick={e => e.stopPropagation()}>
+        <AccentStripe />
+        <ModalHeader
+          icon={<Landmark size={19} color="#fff" />}
+          title={account.name}
+          subtitle={`${account.code || account.account_number} · ${account.type || account.account_type} Account · ${filteredEntries.length} transactions${account.is_active ? '' : ' · Inactive'}${account.account_group ? ` · ${account.account_group.replace(/_/g, ' ')}` : ''}`}
+          onClose={onClose}
+        />
+        {canEdit && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 28px', borderBottom: `1px solid ${hairline}`, background: paper }}>
+            <button onClick={handleEdit} title="Edit account"
+              style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
+              onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <Pencil size={16} style={{ color: inkSoft }} />
+            </button>
+            <button onClick={handleToggleActive} title={account.is_active ? 'Deactivate' : 'Activate'}
+              style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
+              onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              {account.is_active ? <EyeOff size={16} style={{ color: inkSoft }} /> : <Eye size={16} style={{ color: teal[600] }} />}
+            </button>
+            <span style={{ marginLeft: 'auto', fontSize: 11.5, color: inkSoft }}>Normal: <b style={{ color: ink }}>{account.normal_balance || 'DEBIT'}</b></span>
           </div>
-          <div className="flex items-center gap-2">
-            <ArrowUpRight size={14} className="text-red-500" />
-            <span className="text-[10px] font-bold text-gray-400 uppercase">Debits</span>
-            <span className="text-sm font-bold text-gray-700 tabular-nums">
-              {currency}{stats.totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <ArrowDownLeft size={14} className="text-emerald-500" />
-            <span className="text-[10px] font-bold text-gray-400 uppercase">Credits</span>
-            <span className="text-sm font-bold text-gray-700 tabular-nums">
-              {currency}{stats.totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-[10px] font-bold text-gray-400 uppercase">Normal</span>
-            <span className="text-xs font-semibold text-gray-600">{account.normal_balance || 'DEBIT'}</span>
-          </div>
+        )}
+
+        <div style={{ padding: '0 28px' }}>
+          <KpiCards items={kpiItems} />
         </div>
 
         {/* Tabs */}
-        <div className="px-5 border-b border-gray-200 bg-white flex items-center gap-1 shrink-0">
+        <div style={{ padding: '12px 28px 0', borderBottom: `1px solid ${hairline}`, background: paper, display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', fontSize: 13,
+                fontWeight: activeTab === tab.id ? 700 : 500, cursor: 'pointer',
+                border: 'none', background: 'transparent',
+                borderBottom: activeTab === tab.id ? `2px solid ${teal[600]}` : '2px solid transparent',
+                color: activeTab === tab.id ? teal[700] : inkSoft,
+              }}
             >
               <tab.icon size={16} />
               {tab.label}
@@ -390,26 +349,26 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-hidden">
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {/* LEDGER TAB */}
           {activeTab === 'ledger' && (
-            <div className="h-full flex flex-col">
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
               {/* Filters */}
-              <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4 shrink-0">
-                <div className="flex-1 relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <div style={{ padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
                   <input
                     type="text"
                     placeholder="Search transactions..."
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                    style={{ ...inputStyle, paddingLeft: 34 }}
                   />
                 </div>
                 <select
                   value={dateRangeFilter}
                   onChange={e => setDateRangeFilter(e.target.value as any)}
-                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  style={{ ...selectStyle, width: 170 }}
                 >
                   <option value="all">All Time</option>
                   <option value="7d">Last 7 Days</option>
@@ -420,31 +379,34 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
                 </select>
                 <button
                   onClick={handleExportCSV}
-                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                  style={btnGhostStyle}
+                  onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
                 >
-                  <Download size={14} />
+                  <Download size={15} />
                   Export
                 </button>
               </div>
 
               {/* Table */}
-              <div className="flex-1 overflow-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 uppercase">Date</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 uppercase">Description</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 uppercase text-right">Debit</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 uppercase text-right">Credit</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 uppercase text-right">Running Balance</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 uppercase">Ref</th>
+              <div style={{ flex: 1, overflow: 'auto', padding: '0 28px' }}>
+                <div style={tableCard}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                    <tr style={tableHeadRow}>
+                      <th style={{ padding: '12px 16px', fontWeight: 700 }}>Date</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 700 }}>Description</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Debit</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Credit</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Running Balance</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 700 }}>Ref</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody>
                     {paginatedEntries.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">
-                          No transactions found
+                        <td colSpan={6} style={{ padding: '32px 16px', textAlign: 'center' }}>
+                          <EmptyState icon={<BookOpen size={32} />} title="No transactions found" hint="Try adjusting filters." />
                         </td>
                       </tr>
                     ) : (
@@ -468,38 +430,41 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
                         });
 
                         return (
-                          <tr key={entry.id} className="hover:bg-gray-50/50">
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                          <tr key={entry.id} style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                            onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <td style={{ padding: '12px 16px', fontSize: 13, color: inkSoft }}>
                               {format(new Date(entry.date), 'dd MMM yyyy')}
                             </td>
-                            <td className="px-4 py-3">
-                              <span className="font-medium text-gray-900">{entry.description || '—'}</span>
+                            <td style={{ padding: '12px 16px' }}>
+                              <span style={{ fontWeight: 600, fontSize: 13, color: ink }}>{entry.description || '—'}</span>
                             </td>
-                            <td className="px-4 py-3 text-right tabular-nums">
+                            <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
                               {isDebit ? (
-                                <span className="font-medium text-red-600">
+                                <span style={{ fontWeight: 600, color: danger }}>
                                   {currency}{entry.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </span>
                               ) : (
-                                <span className="text-gray-300">—</span>
+                                <span style={{ color: hairline }}>—</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-right tabular-nums">
+                            <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
                               {!isDebit ? (
-                                <span className="font-medium text-emerald-600">
+                                <span style={{ fontWeight: 600, color: teal[700] }}>
                                   {currency}{entry.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </span>
                               ) : (
-                                <span className="text-gray-300">—</span>
+                                <span style={{ color: hairline }}>—</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-right tabular-nums">
-                              <span className={`font-semibold ${runningBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+                            <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
+                              <span style={{ fontWeight: 700, color: runningBalance >= 0 ? ink : danger }}>
                                 {runningBalance < 0 ? '(' : ''}{currency}{Math.abs(runningBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}{runningBalance < 0 ? ')' : ''}
                               </span>
                             </td>
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded font-mono">
+                            <td style={{ padding: '12px 16px' }}>
+                              <span style={{ padding: '3px 10px', background: teal[50], color: inkSoft, fontSize: 11, borderRadius: 20, fontFamily: "'JetBrains Mono', monospace" }}>
                                 {entry.referenceId || '—'}
                               </span>
                             </td>
@@ -509,27 +474,32 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between shrink-0">
-                  <span className="text-xs text-gray-500">
+                <div style={{ padding: '12px 28px', borderTop: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, background: paper }}>
+                  <span style={{ fontSize: 11.5, color: inkSoft }}>
                     Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredEntries.length)} of {filteredEntries.length}
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', opacity: currentPage === 1 ? 0.4 : 1 }}
+                      onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <ChevronLeft size={16} />
                     </button>
-                    <span className="text-sm font-medium">{currentPage} / {totalPages}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: ink }}>{currentPage} / {totalPages}</span>
                     <button
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
-                      className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', opacity: currentPage === totalPages ? 0.4 : 1 }}
+                      onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <ChevronRight size={16} />
                     </button>
@@ -541,64 +511,64 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
 
           {/* DETAILS TAB */}
           {activeTab === 'details' && (
-            <div className="h-full overflow-auto p-5">
-              <div className="grid grid-cols-2 gap-6">
+            <div style={{ height: '100%', overflow: 'auto', padding: '20px 28px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 {/* Account Info */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase mb-4">Account Information</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Account Name</span>
-                      <span className="text-sm font-semibold text-gray-900">{account.name}</span>
+                <div style={{ background: teal[50], borderRadius: 12, padding: 16, border: `1px solid ${teal[100]}` }}>
+                  <div style={sectionLabelStyle}><span>Account Information</span></div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Account Name</span>
+                      <span style={{ fontWeight: 600, color: ink }}>{account.name}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Account Code</span>
-                      <span className="text-sm font-mono font-semibold text-gray-900">{account.code || account.account_number}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Account Code</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: ink }}>{account.code || account.account_number}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Account Number</span>
-                      <span className="text-sm font-mono text-gray-900">{account.account_number || '—'}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Account Number</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: ink }}>{account.account_number || '—'}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Account Type</span>
-                      <span className="text-sm font-semibold text-gray-900">{account.type || account.account_type}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Account Type</span>
+                      <span style={{ fontWeight: 600, color: ink }}>{account.type || account.account_type}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Account Group</span>
-                      <span className="text-sm text-gray-900">{account.account_group?.replace(/_/g, ' ') || '—'}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Account Group</span>
+                      <span style={{ color: ink }}>{account.account_group?.replace(/_/g, ' ') || '—'}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Subtype</span>
-                      <span className="text-sm text-gray-900">{account.subtype || '—'}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Subtype</span>
+                      <span style={{ color: ink }}>{account.subtype || '—'}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Classification */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase mb-4">Classification</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Normal Balance</span>
-                      <span className="text-sm font-semibold text-gray-900">{account.normal_balance || 'DEBIT'}</span>
+                <div style={{ background: teal[50], borderRadius: 12, padding: 16, border: `1px solid ${teal[100]}` }}>
+                  <div style={sectionLabelStyle}><span>Classification</span></div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Normal Balance</span>
+                      <span style={{ fontWeight: 600, color: ink }}>{account.normal_balance || 'DEBIT'}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Allow Posting</span>
-                      <span className="text-sm font-semibold text-gray-900">{account.allow_posting ? 'Yes' : 'No'}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Allow Posting</span>
+                      <span style={{ fontWeight: 600, color: ink }}>{account.allow_posting ? 'Yes' : 'No'}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">System Account</span>
-                      <span className="text-sm font-semibold text-gray-900">{account.is_system_account ? 'Yes' : 'No'}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>System Account</span>
+                      <span style={{ fontWeight: 600, color: ink }}>{account.is_system_account ? 'Yes' : 'No'}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Status</span>
-                      <span className={`text-sm font-semibold ${account.is_active ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Status</span>
+                      <span style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 20, background: account.is_active ? '#d1fae5' : amber[100], color: account.is_active ? '#065f46' : amber[600] }}>
                         {account.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Opening Balance</span>
-                      <span className="text-sm font-semibold text-gray-900">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Opening Balance</span>
+                      <span style={{ fontWeight: 600, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>
                         {currency}{(account.opening_balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
@@ -606,34 +576,34 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
                 </div>
 
                 {/* Hierarchy */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase mb-4">Hierarchy</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Parent Account</span>
-                      <span className="text-sm font-semibold text-gray-900">
+                <div style={{ background: teal[50], borderRadius: 12, padding: 16, border: `1px solid ${teal[100]}` }}>
+                  <div style={sectionLabelStyle}><span>Hierarchy</span></div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Parent Account</span>
+                      <span style={{ fontWeight: 600, color: ink }}>
                         {parentAccount ? `${parentAccount.name} (${parentAccount.code || parentAccount.account_number})` : 'Root Account'}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Child Accounts</span>
-                      <span className="text-sm font-semibold text-gray-900">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Child Accounts</span>
+                      <span style={{ fontWeight: 600, color: ink }}>
                         {childAccounts.length} sub-account{childAccounts.length !== 1 ? 's' : ''}
                       </span>
                     </div>
                   </div>
                   {childAccounts.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Sub-Accounts</p>
-                      <div className="space-y-1">
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${hairline}` }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 8px' }}>Sub-Accounts</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {childAccounts.slice(0, 5).map(child => (
-                          <div key={child.id} className="flex justify-between text-sm">
-                            <span className="text-gray-700">{child.name}</span>
-                            <span className="font-mono text-gray-500">{child.code || child.account_number}</span>
+                          <div key={child.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                            <span style={{ color: ink }}>{child.name}</span>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: inkSoft }}>{child.code || child.account_number}</span>
                           </div>
                         ))}
                         {childAccounts.length > 5 && (
-                          <p className="text-xs text-gray-400">+{childAccounts.length - 5} more</p>
+                          <p style={{ fontSize: 11.5, color: inkSoft }}>+{childAccounts.length - 5} more</p>
                         )}
                       </div>
                     </div>
@@ -641,30 +611,30 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
                 </div>
 
                 {/* Balance Summary */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase mb-4">Balance Summary</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Current Balance</span>
-                      <span className={`text-sm font-bold ${stats.balance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+                <div style={{ background: teal[50], borderRadius: 12, padding: 16, border: `1px solid ${teal[100]}` }}>
+                  <div style={sectionLabelStyle}><span>Balance Summary</span></div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Current Balance</span>
+                      <span style={{ fontWeight: 700, color: stats.balance >= 0 ? ink : danger, fontFamily: "'JetBrains Mono', monospace" }}>
                         {stats.balance < 0 ? '(' : ''}{currency}{Math.abs(stats.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}{stats.balance < 0 ? ')' : ''}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Total Debits</span>
-                      <span className="text-sm font-semibold text-red-600">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Total Debits</span>
+                      <span style={{ fontWeight: 600, color: danger, fontFamily: "'JetBrains Mono', monospace" }}>
                         {currency}{stats.totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Total Credits</span>
-                      <span className="text-sm font-semibold text-emerald-600">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Total Credits</span>
+                      <span style={{ fontWeight: 600, color: teal[700], fontFamily: "'JetBrains Mono', monospace" }}>
                         {currency}{stats.totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Transaction Count</span>
-                      <span className="text-sm font-semibold text-gray-900">{accountEntries.length}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: inkSoft }}>Transaction Count</span>
+                      <span style={{ fontWeight: 600, color: ink }}>{accountEntries.length}</span>
                     </div>
                   </div>
                 </div>
@@ -674,26 +644,44 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
 
           {/* AUDIT TAB */}
           {activeTab === 'audit' && (
-            <div className="h-full overflow-auto p-5">
+            <div style={{ height: '100%', overflow: 'auto', padding: '20px 28px' }}>
               {auditLoading ? (
-                <div className="text-center py-12 text-gray-400 text-sm">Loading audit trail...</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120, fontSize: 13, color: inkSoft }}>Loading audit trail...</div>
               ) : auditLogs.length === 0 ? (
-                <div className="text-center py-12 text-gray-400 text-sm">
-                  <Shield size={32} className="mx-auto mb-2 opacity-50" />
-                  No audit logs found for this account
-                </div>
+                <EmptyState icon={<Shield size={32} />} title="No audit logs found for this account" hint="Activity will appear here once posted." />
               ) : (
                 <AuditTimeline logs={auditLogs as TimelineAuditLogEntry[]} title={`Audit Trail: ${account.code}`} />
               )}
             </div>
           )}
         </div>
+        <ModalFooter stepLabel="Account · ledger detail" onCancel={onClose} submitLabel="Done" onSubmit={onClose} />
       </div>
 
-      <ConfirmDialog
-        {...confirmState}
-        onClose={() => setConfirmState(s => ({ ...s, open: false }))}
-      />
+      {confirmState.open && (
+        <div style={modalOverlayStyle} onClick={() => setConfirmState(s => ({ ...s, open: false }))}>
+          <div style={modalShell(520)} onClick={e => e.stopPropagation()}>
+            <AccentStripe />
+            <ModalHeader
+              icon={<Shield size={19} color="#fff" />}
+              title={confirmState.title || 'Confirm'}
+              subtitle="Please confirm this action"
+              onClose={() => setConfirmState(s => ({ ...s, open: false }))}
+              dangerTile
+            />
+            <div style={{ padding: '24px 28px 8px' }}>
+              <p style={{ fontSize: 13.5, color: ink, margin: 0, lineHeight: 1.6 }}>{confirmState.message}</p>
+            </div>
+            <ModalFooter
+              stepLabel="Confirm · account"
+              onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+              submitLabel={confirmState.confirmText || 'Confirm'}
+              onSubmit={() => confirmState.onConfirm?.()}
+              danger
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

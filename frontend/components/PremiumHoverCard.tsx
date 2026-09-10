@@ -98,13 +98,22 @@ export const PremiumHoverCard: React.FC<PremiumHoverCardProps> = ({
   const catConfig = categoryConfig[item.category] || categoryConfig.product;
   const CatIcon = catConfig.icon;
 
-  // Format currency
+  // Format currency — never throw on display symbols like 'K' (MWK).
   const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || currencyService.getBaseCurrency(),
-      minimumFractionDigits: 2,
-    }).format(amount);
+    const raw = String(currency || currencyService.getBaseCurrency() || 'USD').trim();
+    const symbolMap: Record<string, string> = {
+      K: 'MWK', MK: 'MWK', $: 'USD', '€': 'EUR', '£': 'GBP', KSH: 'KES', 'KSh': 'KES',
+    };
+    const code = symbolMap[raw] || symbolMap[raw.toUpperCase()] || (/^[A-Za-z]{3}$/.test(raw) ? raw.toUpperCase() : 'MWK');
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: code,
+        minimumFractionDigits: 2,
+      }).format(amount || 0);
+    } catch {
+      return `${raw} ${(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
   };
 
   // Calculate position styles

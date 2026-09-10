@@ -10,6 +10,7 @@ const referralService = new ReferralService();
 const { customerFilter, withCustomerScope } = require('./portalScope.cjs');
 const customerLedger = require('./customerLedger.cjs');
 const companyConfigService = require('./companyConfigService.cjs');
+const paymentAllocationService = require('./paymentAllocationService.cjs');
 
 const TICKET_ATTACHMENTS_DIR = path.join(__dirname, '..', 'storage', 'ticket-attachments');
 
@@ -896,20 +897,48 @@ const portalService = {
     const paymentCustomerId = payment.customerId || payment.customer_id || null;
     if (customerId && String(paymentCustomerId) !== String(customerId)) return null;
 
-    const inlineAllocations = Array.isArray(payment.allocations) ? payment.allocations : [];
-    const validAllocations = inlineAllocations.filter((alloc) => {
-      const invoiceId = alloc.invoice_id || alloc.invoiceId || '';
-      const amount = Number(alloc.allocated ?? alloc.amount ?? 0);
-      return invoiceId && amount > 0;
-    });
+    // F-03: Read allocations from the authoritative payment_allocations +
+    // payment_allocation_lines tables, NOT from the inline payment.allocations
+    // cache which may be stale.
+    let authoritativeAllocations = [];
+    try {
+      const rawAllocations = await paymentAllocationService.getPaymentAllocations(paymentId);
+      for (const alloc of rawAllocations) {
+        const lines = await new Promise((resolve) => {
+          repo.getAll('payment_allocation_lines', { 'data->>allocation_id': `eq.${alloc.id}` })
+            .then(rows => resolve(rows || []))
+            .catch(() => resolve([]));
+        });
+        for (const line of lines) {
+          const lineData = line.data || line;
+          authoritativeAllocations.push({
+            allocation_id: alloc.id,
+            invoice_id: lineData.invoice_id || lineData.invoiceId || null,
+            amount: Number(lineData.amount || 0),
+            currency: lineData.currency || payment.currency || 'USD',
+          });
+        }
+      }
+    } catch (allocErr) {
+      console.warn(`[PortalService] Allocation read failed for ${paymentId}, falling back to inline: ${allocErr?.message}`);
+      const inlineAllocations = Array.isArray(payment.allocations) ? payment.allocations : [];
+      authoritativeAllocations = inlineAllocations
+        .filter((alloc) => {
+          const invoiceId = alloc.invoice_id || alloc.invoiceId || '';
+          const amount = Number(alloc.allocated ?? alloc.amount ?? 0);
+          return invoiceId && amount > 0;
+        })
+        .map((alloc) => ({
+          allocation_id: alloc.allocation_id || alloc.allocationId || null,
+          invoice_id: alloc.invoice_id || alloc.invoiceId || null,
+          amount: Number(alloc.allocated ?? alloc.amount ?? 0),
+          currency: alloc.currency || payment.currency || 'USD',
+        }));
+    }
 
-    const invoiceIds = [...new Set(validAllocations.map((a) => a.invoice_id || a.invoiceId))];
+    const invoiceIds = [...new Set(authoritativeAllocations.map((a) => a.invoice_id).filter(Boolean))];
     const invoiceMap = new Map();
     if (invoiceIds.length > 0) {
-      // Customer-scoped enrichment: fetch ONLY invoices that belong to the
-      // authenticated customer. A malicious or malformed allocation that
-      // references another customer's invoice resolves to a missing invoice —
-      // its number/amount/metadata are never exposed.
       const invoices = await getAllFrom('invoices', {
         id: `in.(${invoiceIds.join(',')})`,
         ...customerFilter('invoices', customerId),
@@ -919,19 +948,14 @@ const portalService = {
       }
     }
 
-    payment.allocations = validAllocations.map((alloc) => {
-      const invoiceId = alloc.invoice_id || alloc.invoiceId || '';
-      const amount = Number(alloc.allocated ?? alloc.amount ?? 0);
-      const invoice = invoiceMap.get(invoiceId) || null;
+    payment.allocations = authoritativeAllocations.map((alloc) => {
+      const invoice = invoiceMap.get(alloc.invoice_id) || null;
       return {
-        allocation_id: alloc.allocation_id || alloc.allocationId || null,
-        invoice_id: invoiceId,
-        invoice_number: invoice ? (invoice.invoice_number || invoice.invoiceNumber || invoiceId) : null,
-        // Unknown financial data must not be fabricated as zero: a missing or
-        // unauthorized invoice has NO known total, so it is null, and the
-        // frontend can distinguish "total = 0" from "invoice could not be found".
+        allocation_id: alloc.allocation_id,
+        invoice_id: alloc.invoice_id,
+        invoice_number: invoice ? (invoice.invoice_number || invoice.invoiceNumber || alloc.invoice_id) : null,
         total_amount: invoice ? Number(invoice.total_amount ?? invoice.totalAmount ?? 0) : null,
-        amount,
+        amount: alloc.amount,
         missing_invoice: !invoice,
       };
     });

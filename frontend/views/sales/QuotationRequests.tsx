@@ -432,11 +432,9 @@ const RejectModal: React.FC<{
  const QuotationRequests: React.FC = () => {
    const navigate = useNavigate();
    const location = useLocation();
-   const { companyConfig } = useAuth();
-   const currency = companyConfig?.currencySymbol || 'K';
-   const { safeOpenPreview } = useDocumentStore();
-  const currency = companyConfig?.currencySymbol || 'K';
-  const initialTab = (location.state as any)?.tab || 'inbox';
+const { companyConfig } = useAuth();
+    const { safeOpenPreview } = useDocumentStore();
+    const initialTab = (location.state as any)?.tab || 'inbox';
   const [tab, setTab] = useState<string>(initialTab);
   const [requests, setRequests] = useState<AdminQuotationRequest[]>([]);
   const [inboxRequests, setInboxRequests] = useState<AdminQuotationRequest[]>([]);

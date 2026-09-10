@@ -98,13 +98,49 @@ export const formatNumber = (num: number): string => {
   }).format(num || 0);
 };
 
-export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount || 0);
+const SYMBOL_TO_ISO_CODE: Record<string, string> = {
+  K: 'MWK',
+  MK: 'MWK',
+  'KSh': 'KES',
+  KSH: 'KES',
+  '$': 'USD',
+  '€': 'EUR',
+  '£': 'GBP',
+  R: 'ZAR',
+};
+
+export const normalizeCurrencyCode = (currency?: string | null): string => {
+  const raw = String(currency || '').trim();
+  if (!raw) return 'USD';
+  if (SYMBOL_TO_ISO_CODE[raw]) return SYMBOL_TO_ISO_CODE[raw];
+  const upper = raw.toUpperCase();
+  if (SYMBOL_TO_ISO_CODE[upper]) return SYMBOL_TO_ISO_CODE[upper];
+  // MK / KSH are common display shorthands, not ISO codes.
+  if (upper === 'MK') return 'MWK';
+  if (upper === 'KSH') return 'KES';
+  if (/^[A-Z]{3}$/.test(upper)) return upper;
+  // Unknown symbol (e.g. single-letter display symbol) — fall back safely.
+  return 'MWK';
+};
+
+export const formatCurrency = (amount: number, currency: string = 'USD'): string => {
+  const code = normalizeCurrencyCode(currency);
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount || 0);
+  } catch {
+    // Never throw from a display formatter — an invalid code must not
+    // crash the Accounting ErrorBoundary (e.g. symbol 'K' passed as code).
+    const fallbackSymbol = String(currency || code || 'K').trim() || 'K';
+    return `${fallbackSymbol} ${(amount || 0).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
 };
 
 export const getDefaultDate = (): string => {

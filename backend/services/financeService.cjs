@@ -11,6 +11,10 @@ const ACCOUNT_TYPE_NORMAL_BALANCE = {
   INCOME: 'CREDIT'
 };
 
+function round2(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
 const STANDARD_CHART_OF_ACCOUNTS = [
   // ASSETS (10000-19999)
   { account_number: '10000', name: 'Assets', account_type: 'ASSET', account_group: null, parent_account_number: null, subtype: null, is_system_account: true, allow_posting: false, normal_balance: 'DEBIT' },
@@ -114,12 +118,50 @@ class FinanceService {
     return repo.softDelete(table, id);
   }
 
+  /**
+   * Normalize a caller-supplied currency value to a 3-letter ISO code.
+   * The Prime ERP UI historically stores/shares the currency *symbol*
+   * (e.g. 'K' for Malawian Kwacha) in company config and several Accounting
+   * flows. Finance ledger/accounting endpoints, however, require an ISO code.
+   * This helper accepts either form so existing Accounting UI behavior keeps
+   * working without forcing a symbol→code migration across the whole app.
+   */
+  _normalizeCurrency(currency) {
+    const raw = String(currency || '').trim();
+    if (!raw) return 'MWK';
+
+    // Already a 3-letter ISO code.
+    if (/^[A-Z]{3}$/i.test(raw)) {
+      return raw.toUpperCase();
+    }
+
+    // Common symbol -> ISO code mapping.
+    const SYMBOL_TO_ISO = {
+      'K': 'MWK',     // Malawian Kwacha (company default symbol)
+      '$': 'USD',
+      'USD': 'USD',
+      'MWK': 'MWK',
+      'EUR': 'EUR',
+      '€': 'EUR',
+      'GBP': 'GBP',
+      '£': 'GBP',
+    };
+
+    const upper = raw.toUpperCase();
+    if (SYMBOL_TO_ISO[upper]) return SYMBOL_TO_ISO[upper];
+    if (SYMBOL_TO_ISO[raw]) return SYMBOL_TO_ISO[raw];
+
+    // Fallback: treat the input itself as the ISO code after uppercasing.
+    return upper;
+  }
+
   _validateCurrency(currency) {
-    const code = String(currency || 'USD').trim();
+    const code = this._normalizeCurrency(currency);
     const isoRegex = /^[A-Z]{3}$/;
     if (!isoRegex.test(code)) {
       throw new Error(`Invalid currency code: ${code}. Must be a 3-letter ISO code.`);
     }
+    return code;
   }
 
   /**
@@ -142,20 +184,10 @@ class FinanceService {
         && (a.subtype === kind || !a.subtype)
         && a.allow_posting !== false);
       if (match && match.id) return match.id;
-      // Fall back to a known system code from the 5-digit template
-      // WARNING: Silent fallback - log this for debugging
-      let fallbackCode;
-      if (kind === 'cash') fallbackCode = '11110';   // Cash Drawer
-      else if (kind === 'income') fallbackCode = '41100'; // Product Sales
-      else fallbackCode = '51200';                         // Cost of Goods Sold
-      console.warn(`[_resolveDefaultAccountId] Silent fallback to ${fallbackCode} for kind=${kind}, hint=${hint}. This should be avoided - pass explicit account_id instead.`);
-      return fallbackCode;
+      throw new Error(`No default account found for kind=${kind}, hint=${hint}. Ensure the standard chart of accounts is created.`);
     } catch (err) {
-      // Hard fallback when the chart of accounts is unreadable.
-      console.error(`[_resolveDefaultAccountId] Chart of accounts unreadable, using hard fallback for kind=${kind}:`, err.message);
-      if (kind === 'cash') return '11110';   // Cash Drawer
-      if (kind === 'income') return '41100'; // Product Sales
-      return '51200';                         // Cost of Goods Sold
+      console.error(`[_resolveDefaultAccountId] Resolution failed for kind=${kind}, hint=${hint}:`, err.message);
+      throw err;
     }
   }
 
@@ -308,7 +340,7 @@ class FinanceService {
   }
 
   async createAccount(data, companyId = null) {
-    this._validateCurrency(data.currency);
+    const currency = this._normalizeCurrency(data.currency);
 
     const id = data.id || crypto.randomUUID();
     const now = new Date().toISOString();
@@ -379,6 +411,7 @@ class FinanceService {
       code: data.code || accountNumber,
       type: data.type || accountType.toLowerCase(),
       category: data.category || null,
+      currency,
       created_at: now,
       updated_at: now
     };
@@ -776,7 +809,7 @@ class FinanceService {
   }
 
   async createExpense(data) {
-    this._validateCurrency(data.currency);
+    const currency = this._normalizeCurrency(data.currency);
 
     // Validate accounts BEFORE persisting
       if (data.account_id) {
@@ -798,7 +831,7 @@ class FinanceService {
       category: data.category,
       vendor_name: data.vendor_name || null,
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency,
       description: data.description || null,
       expense_date: data.expense_date,
       account_id: data.account_id || null,
@@ -841,7 +874,7 @@ class FinanceService {
           account_id: expenseAcctId,
           entry_type: 'debit',
           amount: data.amount,
-          currency: data.currency || 'USD',
+          currency,
           description: data.description || `Expense: ${data.category}`,
           reference_type: 'expense',
           reference_id: id,
@@ -854,7 +887,7 @@ class FinanceService {
           account_id: offsetAcctId,
           entry_type: 'credit',
           amount: data.amount,
-          currency: data.currency || 'USD',
+          currency,
           description: data.description || `Expense offset: ${data.category}`,
           reference_type: 'expense',
           reference_id: id,
@@ -905,7 +938,7 @@ class FinanceService {
   }
 
   async createIncome(data) {
-    this._validateCurrency(data.currency);
+    const currency = this._normalizeCurrency(data.currency);
 
     // Validate accounts BEFORE persisting
     if (data.account_id) {
@@ -926,7 +959,7 @@ class FinanceService {
       id,
       source: data.source,
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency,
       description: data.description || null,
       income_date: data.income_date,
       account_id: data.account_id || null,
@@ -947,7 +980,7 @@ class FinanceService {
           account_id: incomeAcctId,
           entry_type: 'credit',
           amount: data.amount,
-          currency: data.currency || 'USD',
+          currency,
           description: data.description || `Income: ${data.source}`,
           reference_type: 'income',
           reference_id: id,
@@ -959,7 +992,7 @@ class FinanceService {
           account_id: offsetAcctId,
           entry_type: 'debit',
           amount: data.amount,
-          currency: data.currency || 'USD',
+          currency,
           description: data.description || `Income offset: ${data.source}`,
           reference_type: 'income',
           reference_id: id,
@@ -988,7 +1021,7 @@ class FinanceService {
   }
 
   async createBudget(data) {
-    this._validateCurrency(data.currency);
+    const currency = this._normalizeCurrency(data.currency);
     const id = data.id || crypto.randomUUID();
     const record = {
       id,
@@ -996,7 +1029,7 @@ class FinanceService {
       fiscal_year: data.fiscal_year,
       category: data.category,
       budgeted_amount: data.budgeted_amount,
-      currency: data.currency || 'USD',
+      currency,
       notes: data.notes || null,
       created_by: data.created_by || null,
     };
@@ -1031,7 +1064,7 @@ class FinanceService {
   }
 
   async createTransfer(data, userId = null) {
-    this._validateCurrency(data.currency);
+    const currency = this._normalizeCurrency(data.currency);
     const id = data.id || crypto.randomUUID();
     const fromId = data.from_account_id;
     const toId = data.to_account_id;
@@ -1056,7 +1089,7 @@ class FinanceService {
       from_account_id: fromId,
       to_account_id: toId,
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency,
       description: data.description || null,
       reference: data.reference || null,
       transfer_date: transferDate,
@@ -1070,7 +1103,7 @@ class FinanceService {
       account_id: toId,
       entry_type: 'debit',
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency,
       description: data.description || `Transfer to ${toAccount.name}`,
       reference_type: 'transfer',
       reference_id: id,
@@ -1082,7 +1115,7 @@ class FinanceService {
       account_id: fromId,
       entry_type: 'credit',
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency,
       description: data.description || `Transfer from ${fromAccount.name}`,
       reference_type: 'transfer',
       reference_id: id,
@@ -1092,6 +1125,123 @@ class FinanceService {
     });
 
     return repo.getById('transfers', id);
+  }
+
+  /**
+   * Post a customer payment to the general ledger.
+   *
+   * Accounting effect:
+   *   DR Bank/Cash account (based on payment method)
+   *   CR Accounts Receivable (control account)
+   *
+   * This is the missing link identified in audit finding F-01.
+   */
+  async postCustomerPaymentToLedger(payment) {
+    if (!payment || !payment.id) {
+      throw new Error('payment is required to post to ledger');
+    }
+
+    const amount = round2(Number(payment.amount) || 0);
+    if (amount <= 0) return null;
+
+    const currency = String(payment.currency || 'USD').toUpperCase();
+    const paymentDate = payment.date || payment.created_at || new Date().toISOString();
+    const referenceId = payment.id;
+    const referenceType = 'customer_payment';
+
+    // Resolve the bank/cash account from the payment method.
+    // The payment.account_id field, when present, is authoritative.
+    // Otherwise we fall back to the configured cash/bank default.
+    let bankAccountId = payment.account_id || payment.accountId || null;
+    if (!bankAccountId) {
+      const method = String(payment.payment_method || payment.method || '').toLowerCase();
+      if (method.includes('bank') || method.includes('transfer')) {
+        bankAccountId = await this._resolveDefaultAccountId('cash', 'bank', payment.company_id);
+      } else if (method.includes('wallet')) {
+        // Wallet payments are liability movements, not AR settlements.
+        // They are posted elsewhere; skip ledger posting here.
+        return null;
+      } else {
+        bankAccountId = await this._resolveDefaultAccountId('cash', 'cash_drawer', payment.company_id);
+      }
+    }
+
+    const bankAccount = await this.getAccountById(bankAccountId);
+    if (!bankAccount) {
+      throw new Error(`Bank/Cash account not found: ${bankAccountId}`);
+    }
+    if (bankAccount.allow_posting === false || bankAccount.allow_posting === 0) {
+      throw new Error(`Bank/Cash account does not allow posting: ${bankAccountId}`);
+    }
+    if (bankAccount.is_active === false || bankAccount.is_active === 0) {
+      throw new Error(`Bank/Cash account is inactive: ${bankAccountId}`);
+    }
+
+    // Resolve the AR control account. Prefer the configured role account;
+    // fall back to Trade Debtors (11310) or the first receivable account.
+    let arAccountId = await this._getReceivableAccountId(payment.company_id);
+    if (!arAccountId) {
+      throw new Error('No Accounts Receivable account found. Ensure the standard chart of accounts is created.');
+    }
+
+    const arAccount = await this.getAccountById(arAccountId);
+    if (!arAccount) {
+      throw new Error(`AR account not found: ${arAccountId}`);
+    }
+    if (arAccount.allow_posting === false || arAccount.allow_posting === 0) {
+      throw new Error(`AR account does not allow posting: ${arAccountId}`);
+    }
+    if (arAccount.is_active === false || arAccount.is_active === 0) {
+      throw new Error(`AR account is inactive: ${arAccountId}`);
+    }
+
+    const journalId = randomUUID();
+    const description = `Customer payment ${payment.reference || payment.id}${payment.customer_name ? ` from ${payment.customer_name}` : ''}`;
+
+    // DR Bank/Cash
+    await this.saveLedgerEntry({
+      account_id: bankAccountId,
+      entry_type: 'debit',
+      amount,
+      currency,
+      description,
+      reference_type: referenceType,
+      reference_id: referenceId,
+      journal_id: journalId,
+      entry_date: paymentDate,
+      created_by: payment.created_by || null,
+    });
+
+    // CR Accounts Receivable
+    await this.saveLedgerEntry({
+      account_id: arAccountId,
+      entry_type: 'credit',
+      amount,
+      currency,
+      description: `${description} (AR reduction)`,
+      reference_type: referenceType,
+      reference_id: referenceId,
+      journal_id: journalId,
+      entry_date: paymentDate,
+      created_by: payment.created_by || null,
+    });
+
+    return { journalId, bankAccountId, arAccountId, amount };
+  }
+
+  /**
+   * Resolve the AR control account ID.
+   * Preference order: role='accounts_receivable' > '11300' > first RECEIVABLE account.
+   */
+  async _getReceivableAccountId(companyId = null) {
+    const accounts = await this.getAccounts({ company_id: companyId });
+    const receivableRole = accounts.find(a => String(a.role || '').toLowerCase() === 'accounts_receivable' && a.allow_posting !== false);
+    if (receivableRole) return receivableRole.id;
+    const receivableCode = accounts.find(a => String(a.account_number || a.code || '') === '11300');
+    if (receivableCode) return receivableCode.id;
+    const receivableType = accounts.find(a => String(a.account_type || '').toUpperCase() === 'ASSET' && String(a.subtype || '').toLowerCase() === 'receivable' && a.allow_posting !== false);
+    if (receivableType) return receivableType.id;
+    return null;
   }
 }
 

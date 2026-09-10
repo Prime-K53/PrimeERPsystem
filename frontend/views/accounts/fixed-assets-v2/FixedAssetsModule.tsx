@@ -36,10 +36,19 @@ import {
 
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
+import { currencyService } from '../../../services/currencyService';
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
-import { Dialog } from '../../../components/Dialog';
-import EmptyState from '../../../components/EmptyState';
 import { fixedAssetService } from '../../../services/fixedAssetService';
+
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    tableCard, tableHeadRow,
+} from '../components/financeChrome';
 import { dbService } from '../../../services/db';
 import { logger } from '../../../services/logger';
 import { aiService } from '../../../services/aiService';
@@ -71,14 +80,9 @@ interface AssetRow {
   depreciation_expense_account_id: string;
 }
 
-const paper = '#FEFDFB';
-const ink = '#23282A';
-const inkSoft = '#5c6567';
-const hairline = '#e4ddd1';
-const teal = { 50: '#eef7f6', 100: '#d4ebe3', 400: '#3fa294', 600: '#1f8577', 700: '#166b5e', 800: '#0f544c' };
-const amber = { 50: '#fef9e7', 600: '#b45309' };
-const danger = { 50: '#fef2f2', 600: '#991b1b' };
-const emerald = { 50: '#f0fdf4', 600: '#059669' };
+const emeraldBg = teal[50];
+const emeraldFg = teal[700];
+const dangerBg = '#fdeeee';
 
 function fmt(n: number, symbol: string) {
   return `${symbol} ${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -90,14 +94,14 @@ function statusColor(s: string): { bg: string; fg: string } {
     case 'Capitalised':
     case 'InService':
     case 'Depreciating':
-      return { bg: emerald[50], fg: emerald[600] };
+      return { bg: emeraldBg, fg: emeraldFg };
     case 'fully_depreciated':
     case 'FullyDepreciated':
-      return { bg: amber[50], fg: amber[600] };
+      return { bg: amber[100], fg: amber[600] };
     case 'disposed':
     case 'Disposed':
     case 'WrittenOff':
-      return { bg: danger[50], fg: danger[600] };
+      return { bg: dangerBg, fg: danger };
     case 'PendingCapitalisation':
     case 'Acquired':
     case 'Proposed':
@@ -108,20 +112,6 @@ function statusColor(s: string): { bg: string; fg: string } {
       return { bg: teal[50], fg: teal[700] };
   }
 }
-
-const KpiCard: React.FC<{ label: string; value: string; sub?: string; tone?: 'neutral' | 'positive' | 'warning' | 'danger'; icon?: React.ReactNode }> = ({ label, value, sub, tone = 'neutral', icon }) => {
-  const fg = tone === 'positive' ? emerald[600] : tone === 'warning' ? amber[600] : tone === 'danger' ? danger[600] : teal[700];
-  return (
-    <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: inkSoft }}>{label}</span>
-        {icon && <span style={{ color: fg }}>{icon}</span>}
-      </div>
-      <span style={{ fontSize: 22, fontWeight: 700, color: fg }}>{value}</span>
-      {sub && <span style={{ fontSize: 11, color: inkSoft }}>{sub}</span>}
-    </div>
-  );
-};
 
 export const FixedAssetsModule: React.FC = () => {
   const { user, companyConfig } = useAuth();
@@ -140,7 +130,7 @@ export const FixedAssetsModule: React.FC = () => {
   const [detailAsset, setDetailAsset] = useState<AssetRow | null>(null);
   const [confirm, setConfirm] = useState<any>(null);
 
-  const currency = companyConfig?.currencySymbol || '$';
+  const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -219,26 +209,45 @@ export const FixedAssetsModule: React.FC = () => {
     { id: 'ai', label: 'AI Assistant', icon: <Sparkles size={14} /> },
   ];
 
+  const kpiItems = [
+    { label: 'Total Assets', value: String(kpis.totalAssets), icon: Package, color: teal[700], bg: teal[50] },
+    { label: 'Acquisition Cost', value: fmt(kpis.acquisitionCost, currency), icon: Banknote, color: teal[700], bg: teal[50] },
+    { label: 'Accumulated Depreciation', value: fmt(kpis.accumulated, currency), icon: TrendingDown, color: amber[600], bg: amber[100] },
+    { label: 'Net Book Value', value: fmt(kpis.nbv, currency), icon: TrendingUp, color: teal[700], bg: teal[50] },
+    { label: 'Fully Depreciated', value: String(kpis.fullyDep), icon: CheckCircle2, color: amber[600], bg: amber[100] },
+    { label: 'Pending Capitalisation', value: String(kpis.pendingCap), icon: AlertCircle, color: kpis.pendingCap > 0 ? danger : teal[700], bg: kpis.pendingCap > 0 ? dangerBg : teal[50] },
+    { label: 'Disposed', value: String(kpis.disposed), icon: Trash2, color: inkSoft, bg: teal[50] },
+    { label: 'Need Verification', value: String(kpis.needsVerification), icon: ClipboardCheck, color: kpis.needsVerification > 0 ? amber[600] : teal[700], bg: kpis.needsVerification > 0 ? amber[100] : teal[50] },
+  ];
+
   return (
-    <div style={{ background: '#f6f3ed', minHeight: '100%', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, color: ink, fontFamily: "'DM Serif Display', Georgia, serif" }}>Fixed Assets</h1>
-          <p style={{ margin: '2px 0 0', fontSize: 12, color: inkSoft }}>Asset register, depreciation, transfers, disposals, and AI insights.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => { load(); }} style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-            <RefreshCw size={14} /> Refresh
+    <div className="flex flex-col h-full" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
+      <PageHeader
+        icon={<Building2 size={19} color="#fff" />}
+        title="Fixed Assets"
+        subtitle="Asset register — depreciation, transfers, disposals & insights"
+        actions={<>
+          <button
+            onClick={() => { load(); }}
+            style={btnGhostStyle}
+            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+          >
+            <RefreshCw size={15} /> Refresh
           </button>
-          <button onClick={() => setShowAcquire(true)} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600 }}>
-            <Plus size={14} /> Acquire Asset
+          <button
+            onClick={() => setShowAcquire(true)}
+            style={btnPrimaryStyle}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+          >
+            <Plus size={15} /> Acquire Asset
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${hairline}`, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${hairline}`, overflowX: 'auto', padding: '0 28px', background: paper }}>
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '10px 14px', border: 'none', background: 'transparent', borderBottom: tab === t.id ? `2px solid ${teal[600]}` : '2px solid transparent', color: tab === t.id ? teal[700] : inkSoft, fontWeight: tab === t.id ? 700 : 500, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             {t.icon} {t.label}
@@ -248,64 +257,63 @@ export const FixedAssetsModule: React.FC = () => {
 
       {/* Dashboard */}
       {tab === 'dashboard' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          <KpiCard label="Total Assets" value={String(kpis.totalAssets)} sub={`${kpis.disposed} disposed`} icon={<Package size={16} />} />
-          <KpiCard label="Acquisition Cost" value={fmt(kpis.acquisitionCost, currency)} icon={<Banknote size={16} />} />
-          <KpiCard label="Accumulated Depreciation" value={fmt(kpis.accumulated, currency)} tone="warning" icon={<TrendingDown size={16} />} />
-          <KpiCard label="Net Book Value" value={fmt(kpis.nbv, currency)} tone="positive" icon={<TrendingUp size={16} />} />
-          <KpiCard label="Fully Depreciated" value={String(kpis.fullyDep)} tone="warning" icon={<CheckCircle2 size={16} />} />
-          <KpiCard label="Pending Capitalisation" value={String(kpis.pendingCap)} tone={kpis.pendingCap > 0 ? 'danger' : 'positive'} icon={<AlertCircle size={16} />} />
-          <KpiCard label="Disposed" value={String(kpis.disposed)} icon={<Trash2 size={16} />} />
-          <KpiCard label="Need Verification" value={String(kpis.needsVerification)} tone={kpis.needsVerification > 0 ? 'warning' : 'positive'} icon={<ClipboardCheck size={16} />} />
-
+        <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: 28 }}>
+          <KpiCards items={kpiItems} />
           {/* Recent acquisitions */}
-          <div style={{ gridColumn: '1 / -1', background: paper, border: `1px solid ${hairline}`, borderRadius: 14, padding: 16 }}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 13, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Recent Acquisitions</h3>
-            {assetRows.length === 0 ? (
-              <EmptyState module="banking" customTitle="No fixed assets yet" customDescription="Acquire your first asset to populate the register." actionLabel="Acquire Asset" onAction={() => setShowAcquire(true)} />
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead>
-                  <tr style={{ background: teal[50] }}>
-                    <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>Date</th>
-                    <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>Code</th>
-                    <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>Name</th>
-                    <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>Category</th>
-                    <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>Cost</th>
-                    <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>NBV</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assetRows.slice(0, 8).map((a) => (
-                    <tr key={a.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                      <td style={{ padding: '8px 10px' }}>{a.acquisition_date}</td>
-                      <td style={{ padding: '8px 10px', color: inkSoft }}>{a.asset_code}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 600 }}>{a.name}</td>
-                      <td style={{ padding: '8px 10px' }}>{a.category}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{fmt(a.acquisition_cost, currency)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: a.current_book_value >= 0 ? emerald[600] : danger[600] }}>{fmt(a.current_book_value, currency)}</td>
+          <div style={{ padding: '16px 28px 0' }}>
+            <div style={tableCard}>
+              <div style={{ padding: '14px 16px', borderBottom: `1px solid ${hairline}`, ...sectionLabelStyle, margin: 0 } as React.CSSProperties}><span>Recent Acquisitions</span></div>
+              {assetRows.length === 0 ? (
+                <div style={{ padding: 20 }}>
+                  <EmptyState icon={<Package size={32} />} title="No fixed assets yet" hint="Acquire your first asset to populate the register." />
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={tableHeadRow}>
+                      <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Date</th>
+                      <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Code</th>
+                      <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Name</th>
+                      <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Category</th>
+                      <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Cost</th>
+                      <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>NBV</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                  </thead>
+                  <tbody>
+                    {assetRows.slice(0, 8).map((a) => (
+                      <tr key={a.id} style={{ borderTop: `1px solid ${hairline}` }}
+                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '10px 16px', color: ink }}>{a.acquisition_date}</td>
+                        <td style={{ padding: '10px 16px', color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{a.asset_code}</td>
+                        <td style={{ padding: '10px 16px', fontWeight: 600, color: ink }}>{a.name}</td>
+                        <td style={{ padding: '10px 16px', color: ink }}>{a.category}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{fmt(a.acquisition_cost, currency)}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: a.current_book_value >= 0 ? emeraldFg : danger }}>{fmt(a.current_book_value, currency)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* Register */}
       {tab === 'register' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: paper, padding: 10, borderRadius: 12, border: `1px solid ${hairline}` }}>
+        <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 28px 28px' }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
             <div style={{ position: 'relative', flex: '1 1 220px' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, category…" style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12, background: paper, outline: 'none' }} />
+              <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, category…" style={{ ...inputStyle, paddingLeft: 34 }} />
             </div>
-            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12, background: paper }}>
+            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={{ ...selectStyle, width: 190 }}>
               <option value="all">All Categories</option>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12, background: paper }}>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ ...selectStyle, width: 190 }}>
               <option value="all">All Statuses</option>
               <option value="active">Active</option>
               <option value="fully_depreciated">Fully Depreciated</option>
@@ -313,51 +321,60 @@ export const FixedAssetsModule: React.FC = () => {
               <option value="PendingCapitalisation">Pending Capitalisation</option>
               <option value="WrittenOff">Written Off</option>
             </select>
-            <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12, background: paper }}>
+            <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ ...selectStyle, width: 170 }}>
               <option value="all">All Branches</option>
               {branches.map((b) => <option key={b} value={b as string}>{b}</option>)}
             </select>
           </div>
 
-          <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 14, overflow: 'hidden' }}>
+          <div style={tableCard}>
             {filtered.length === 0 ? (
               <div style={{ padding: 24 }}>
-                <EmptyState module="banking" customTitle="No assets match" customDescription="Adjust filters or acquire a new asset." actionLabel="Acquire Asset" onAction={() => setShowAcquire(true)} />
+                <EmptyState icon={<Package size={32} />} title="No assets match" hint="Adjust filters or acquire a new asset." />
               </div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
-                  <tr style={{ background: teal[50], color: teal[800] }}>
-                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Code</th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Name</th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Category</th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Acquired</th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Branch / Dept</th>
-                    <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>Cost</th>
-                    <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>NBV</th>
-                    <th style={{ textAlign: 'center', padding: '10px 12px', fontWeight: 700 }}>Status</th>
-                    <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>Actions</th>
+                  <tr style={tableHeadRow}>
+                    <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Code</th>
+                    <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Name</th>
+                    <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Category</th>
+                    <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Acquired</th>
+                    <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Branch / Dept</th>
+                    <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Cost</th>
+                    <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>NBV</th>
+                    <th style={{ textAlign: 'center', padding: '12px 16px', fontWeight: 700 }}>Status</th>
+                    <th style={{ textAlign: 'center', padding: '12px 16px', fontWeight: 700 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((a) => {
                     const sc = statusColor((a as any).lifecycle_status || a.status);
                     return (
-                      <tr key={a.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                        <td style={{ padding: '10px 12px', color: inkSoft }}>{a.asset_code}</td>
-                        <td style={{ padding: '10px 12px', fontWeight: 600 }}>{a.name}</td>
-                        <td style={{ padding: '10px 12px' }}>{a.category}</td>
-                        <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{a.acquisition_date}</td>
-                        <td style={{ padding: '10px 12px', color: inkSoft }}>{a.branch || '—'} / {a.department || '—'}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>{fmt(a.acquisition_cost, currency)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: a.current_book_value >= 0 ? emerald[600] : danger[600] }}>{fmt(a.current_book_value, currency)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                          <span style={{ padding: '3px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: sc.bg, color: sc.fg }}>{(a as any).lifecycle_status || a.status}</span>
+                      <tr key={a.id} style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '12px 16px', color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{a.asset_code}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, color: ink }}>{a.name}</td>
+                        <td style={{ padding: '12px 16px', color: ink }}>{a.category}</td>
+                        <td style={{ padding: '12px 16px', whiteSpace: 'nowrap', color: ink }}>{a.acquisition_date}</td>
+                        <td style={{ padding: '12px 16px', color: inkSoft }}>{a.branch || '—'} / {a.department || '—'}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{fmt(a.acquisition_cost, currency)}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: a.current_book_value >= 0 ? emeraldFg : danger }}>{fmt(a.current_book_value, currency)}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: sc.bg, color: sc.fg }}>{(a as any).lifecycle_status || a.status}</span>
                         </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                          <button onClick={() => setDetailAsset(a)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: teal[700], cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
-                            <Eye size={12} /> View
-                          </button>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <button onClick={() => setDetailAsset(a)} title="View"
+                              style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: inkSoft, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                              <Eye size={16} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -512,61 +529,79 @@ const AcquireAssetModal: React.FC<{
   };
 
   return (
-    <Dialog open onClose={onClose} title="Acquire Fixed Asset">
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 640 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="Asset Name *"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Delivery Truck" /></Field>
-          <Field label="Asset Code"><input value={assetCode} onChange={(e) => setAssetCode(e.target.value)} placeholder="Auto-generated if blank" /></Field>
-          <Field label="Category *">
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="motor_vehicle">Motor Vehicle</option>
-              <option value="furniture">Furniture</option>
-              <option value="computer_equipment">Computer Equipment</option>
-              <option value="building">Buildings</option>
-              <option value="machinery">Machinery</option>
-              <option value="office_equipment">Office Equipment</option>
-              <option value="printing_equipment">Printing Equipment</option>
-              <option value="communication_equipment">Communication Equipment</option>
-              <option value="land">Land</option>
-              <option value="leasehold_improvements">Leasehold Improvements</option>
-              <option value="other">Other</option>
-            </select>
-          </Field>
-          <Field label="Acquisition Date *"><input type="date" value={acquisitionDate} onChange={(e) => setAcquisitionDate(e.target.value)} /></Field>
-          <Field label={`Acquisition Cost (${currency}) *`}><input type="number" step="0.01" value={acquisitionCost} onChange={(e) => setAcquisitionCost(e.target.value)} /></Field>
-          <Field label={`Salvage Value (${currency})`}><input type="number" step="0.01" value={salvageValue} onChange={(e) => setSalvageValue(e.target.value)} /></Field>
-          <Field label="Useful Life (years) *"><input type="number" step="0.1" value={usefulLife} onChange={(e) => setUsefulLife(e.target.value)} /></Field>
-          <Field label="Depreciation Method *">
-            <select value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option value="straight_line">Straight Line</option>
-              <option value="declining_balance">Declining Balance</option>
-              <option value="sum_of_years">Sum of Years Digits</option>
-              <option value="units_of_production">Units of Production</option>
-              <option value="manual">Manual</option>
-            </select>
-          </Field>
-          <Field label="Funding Source *">
-            <select value={fundingSource} onChange={(e) => setFundingSource(e.target.value)}>
-              <option value="Bank">Bank</option>
-              <option value="Cash">Cash</option>
-              <option value="SupplierCredit">Supplier Credit</option>
-              <option value="Loan">Loan</option>
-              <option value="Other">Other</option>
-            </select>
-          </Field>
-          <Field label="Branch"><input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="e.g. Lilongwe" /></Field>
-          <Field label="Department"><input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="e.g. Operations" /></Field>
-          <Field label="Cost Centre"><input value={costCentre} onChange={(e) => setCostCentre(e.target.value)} placeholder="Cost centre code" /></Field>
-          <Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Physical location" /></Field>
+    <div style={modalOverlayStyle} onClick={onClose}>
+      <div style={modalShell(640)} onClick={e => e.stopPropagation()}>
+        <AccentStripe />
+        <ModalHeader
+          icon={<Building2 size={19} color="#fff" />}
+          title="Acquire Fixed Asset"
+          subtitle="New asset record — Fixed asset register"
+          onClose={onClose}
+        />
+        <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+            <div style={{ gridColumn: '1 / -1' }}><Field label="Asset Name *"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Delivery Truck" /></Field></div>
+            <Field label="Asset Code"><input value={assetCode} onChange={(e) => setAssetCode(e.target.value)} placeholder="Auto-generated if blank" /></Field>
+            <Field label="Category *">
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="motor_vehicle">Motor Vehicle</option>
+                <option value="furniture">Furniture</option>
+                <option value="computer_equipment">Computer Equipment</option>
+                <option value="building">Buildings</option>
+                <option value="machinery">Machinery</option>
+                <option value="office_equipment">Office Equipment</option>
+                <option value="printing_equipment">Printing Equipment</option>
+                <option value="communication_equipment">Communication Equipment</option>
+                <option value="land">Land</option>
+                <option value="leasehold_improvements">Leasehold Improvements</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
+            <Field label="Acquisition Date *"><input type="date" value={acquisitionDate} onChange={(e) => setAcquisitionDate(e.target.value)} /></Field>
+            <Field label={`Acquisition Cost (${currency}) *`}>
+              <span style={{ position: 'relative', display: 'block' }}>
+                <input type="number" step="0.01" value={acquisitionCost} onChange={(e) => setAcquisitionCost(e.target.value)} placeholder="0.00" style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }} />
+              </span>
+            </Field>
+            <Field label={`Salvage Value (${currency})`}><input type="number" step="0.01" value={salvageValue} onChange={(e) => setSalvageValue(e.target.value)} /></Field>
+            <Field label="Useful Life (years) *"><input type="number" step="0.1" value={usefulLife} onChange={(e) => setUsefulLife(e.target.value)} /></Field>
+            <Field label="Depreciation Method *">
+              <select value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="straight_line">Straight Line</option>
+                <option value="declining_balance">Declining Balance</option>
+                <option value="sum_of_years">Sum of Years Digits</option>
+                <option value="units_of_production">Units of Production</option>
+                <option value="manual">Manual</option>
+              </select>
+            </Field>
+            <Field label="Funding Source *">
+              <select value={fundingSource} onChange={(e) => setFundingSource(e.target.value)}>
+                <option value="Bank">Bank</option>
+                <option value="Cash">Cash</option>
+                <option value="SupplierCredit">Supplier Credit</option>
+                <option value="Loan">Loan</option>
+                <option value="Other">Other</option>
+              </select>
+            </Field>
+          </div>
+          <div style={sectionLabelStyle}><span>Posting & Location</span></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+            <Field label="Branch"><input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="e.g. Lilongwe" /></Field>
+            <Field label="Department"><input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="e.g. Operations" /></Field>
+            <Field label="Cost Centre"><input value={costCentre} onChange={(e) => setCostCentre(e.target.value)} placeholder="Cost centre code" /></Field>
+            <Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Physical location" /></Field>
+          </div>
+          <div style={{ marginBottom: 18 }}><Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Acquisition notes…" /></Field></div>
+          {error && <div style={{ padding: 12, borderRadius: 9, background: dangerBg, color: danger, fontSize: 12.5, border: `1px solid ${danger}`, marginBottom: 18 }}>{error}</div>}
         </div>
-        <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></Field>
-        {error && <div style={{ padding: 10, borderRadius: 8, background: danger[50], color: danger[600], fontSize: 12 }}>{error}</div>}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: `1px solid ${hairline}`, paddingTop: 12 }}>
-          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{ padding: '8px 14px', borderRadius: 7, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Acquire'}</button>
-        </div>
+        <ModalFooter
+          stepLabel="New asset · Fixed asset register"
+          onCancel={onClose}
+          submitLabel={saving ? 'Saving…' : 'Acquire'}
+          onSubmit={() => { if (!saving) save(); }}
+        />
       </div>
-    </Dialog>
+    </div>
   );
 };
 
@@ -634,50 +669,60 @@ const DepreciationRunPanel: React.FC<{
   const total = preview?.reduce((s, p) => s + p.depreciation, 0) || 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 14, padding: 16 }}>
-        <h3 style={{ margin: '0 0 10px', fontSize: 14, color: ink }}>Depreciation Run — {year}-{String(month).padStart(2, '0')}</h3>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} style={{ padding: '8px 10px', borderRadius: 7, border: `1px solid ${hairline}`, fontSize: 12 }}>
-            {[year - 1, year, year + 1].map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} style={{ padding: '8px 10px', borderRadius: 7, border: `1px solid ${hairline}`, fontSize: 12 }}>
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>Month {m}</option>)}
-          </select>
-          <button onClick={calculate} style={{ padding: '8px 14px', borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: teal[700], cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Calculate</button>
-          {preview && (
-            <button onClick={post} disabled={posting} style={{ padding: '8px 14px', borderRadius: 7, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: posting ? 0.6 : 1 }}>
-              {posting ? 'Posting…' : `Post All (${preview.length})`}
-            </button>
-          )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 28px 28px' }}>
+      <div style={tableCard}>
+        <div style={{ padding: '16px' }}>
+          <div style={sectionLabelStyle}><span>Depreciation Run — {year}-{String(month).padStart(2, '0')}</span></div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} style={{ ...selectStyle, width: 130 }}>
+              {[year - 1, year, year + 1].map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} style={{ ...selectStyle, width: 170 }}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>Month {m}</option>)}
+            </select>
+            <button onClick={calculate} style={btnGhostStyle}
+              onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; }}
+              onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; }}
+            >Calculate</button>
+            {preview && (
+              <button onClick={post} disabled={posting} style={{ ...btnPrimaryStyle, opacity: posting ? 0.6 : 1 }}>
+                {posting ? 'Posting…' : `Post All (${preview.length})`}
+              </button>
+            )}
+          </div>
+          {error && <div style={{ marginTop: 12, padding: 12, borderRadius: 9, background: dangerBg, color: danger, fontSize: 12.5 }}>{error}</div>}
         </div>
-        {error && <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: danger[50], color: danger[600], fontSize: 12 }}>{error}</div>}
         {preview && (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-              <KpiCard label="Assets" value={String(preview.length)} />
-              <KpiCard label="Total Depreciation" value={fmt(total, currency)} tone="warning" />
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: teal[50] }}>
-                  <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Asset</th>
-                  <th style={{ textAlign: 'right', padding: 8, fontWeight: 700, color: teal[800] }}>Depreciation</th>
-                  <th style={{ textAlign: 'right', padding: 8, fontWeight: 700, color: teal[800] }}>Accumulated</th>
-                  <th style={{ textAlign: 'right', padding: 8, fontWeight: 700, color: teal[800] }}>Closing NBV</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((p) => (
-                  <tr key={p.asset.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                    <td style={{ padding: 8 }}>{p.asset.name} ({p.asset.asset_code})</td>
-                    <td style={{ padding: 8, textAlign: 'right', fontWeight: 700, color: amber[600] }}>{fmt(p.depreciation, currency)}</td>
-                    <td style={{ padding: 8, textAlign: 'right' }}>{fmt(p.accumulated, currency)}</td>
-                    <td style={{ padding: 8, textAlign: 'right' }}>{fmt(p.bookValue, currency)}</td>
+          <div style={{ borderTop: `1px solid ${hairline}`, padding: '16px' }}>
+            <KpiCards items={[
+              { label: 'Assets', value: String(preview.length), icon: Calculator, color: teal[700], bg: teal[50] },
+              { label: 'Total Depreciation', value: fmt(total, currency), icon: TrendingDown, color: amber[600], bg: amber[100] },
+            ]} />
+            <div style={{ ...tableCard, marginTop: 14 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={tableHeadRow}>
+                    <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Asset</th>
+                    <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Depreciation</th>
+                    <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Accumulated</th>
+                    <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Closing NBV</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {preview.map((p) => (
+                    <tr key={p.asset.id} style={{ borderTop: `1px solid ${hairline}` }}
+                      onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <td style={{ padding: '10px 16px', color: ink, fontWeight: 600 }}>{p.asset.name} ({p.asset.asset_code})</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: amber[600] }}>{fmt(p.depreciation, currency)}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{fmt(p.accumulated, currency)}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{fmt(p.bookValue, currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -741,27 +786,32 @@ const TransfersPanel: React.FC<{ assets: AssetRow[]; createdBy?: string; onDone:
         </button>
       </div>
       {transfers.length === 0 ? (
-        <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 12, padding: 20 }}>
-          <EmptyState module="banking" customTitle="No transfers" customDescription="Record asset transfers between departments, branches, locations or custodians." actionLabel="Record Transfer" onAction={() => setShowForm(true)} />
+        <div style={tableCard}>
+          <div style={{ padding: 20 }}>
+            <EmptyState icon={<ArrowRightLeft size={32} />} title="No transfers" hint="Record asset transfers between departments, branches, locations or custodians." />
+          </div>
         </div>
       ) : (
-        <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 12, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead><tr style={{ background: teal[50] }}>
-              <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>Date</th>
-              <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>Asset</th>
-              <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>From → To</th>
-              <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: teal[800] }}>Reason</th>
+        <div style={tableCard}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={tableHeadRow}>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Date</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Asset</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>From → To</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Reason</th>
             </tr></thead>
             <tbody>
               {transfers.slice(0, 20).map((t) => {
                 const a = assets.find((x) => x.id === t.fixed_asset_id);
                 return (
-                  <tr key={t.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                    <td style={{ padding: '8px 10px' }}>{t.transfer_date}</td>
-                    <td style={{ padding: '8px 10px', fontWeight: 600 }}>{a?.name || t.fixed_asset_id}</td>
-                    <td style={{ padding: '8px 10px', color: inkSoft }}>{t.from_department || '—'} → {t.to_department || '—'}</td>
-                    <td style={{ padding: '8px 10px' }}>{t.reason}</td>
+                  <tr key={t.id} style={{ borderTop: `1px solid ${hairline}` }}
+                    onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '10px 16px', color: ink }}>{t.transfer_date}</td>
+                    <td style={{ padding: '10px 16px', fontWeight: 600, color: ink }}>{a?.name || t.fixed_asset_id}</td>
+                    <td style={{ padding: '10px 16px', color: inkSoft }}>{t.from_department || '—'} → {t.to_department || '—'}</td>
+                    <td style={{ padding: '10px 16px', color: ink }}>{t.reason}</td>
                   </tr>
                 );
               })}
@@ -771,28 +821,31 @@ const TransfersPanel: React.FC<{ assets: AssetRow[]; createdBy?: string; onDone:
       )}
 
       {showForm && (
-        <Dialog open onClose={() => setShowForm(false)} title="Record Asset Transfer">
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 520 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="Asset *">
-                <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-                  <option value="">Select asset</option>
-                  {assets.filter((a) => a.status !== 'disposed').map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
-                </select>
-              </Field>
-              <Field label="Transfer Date *"><input type="date" value={transferDate} onChange={(e) => setTransferDate(e.target.value)} /></Field>
-              <Field label="To Department"><input value={toDepartment} onChange={(e) => setToDepartment(e.target.value)} /></Field>
-              <Field label="To Cost Centre"><input value={toCostCentre} onChange={(e) => setToCostCentre(e.target.value)} /></Field>
-              <Field label="To Location"><input value={toLocation} onChange={(e) => setToLocation(e.target.value)} /></Field>
-              <Field label="Reason *"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        <div style={modalOverlayStyle} onClick={() => setShowForm(false)}>
+          <div style={modalShell(560)} onClick={e => e.stopPropagation()}>
+            <AccentStripe />
+            <ModalHeader icon={<ArrowRightLeft size={19} color="#fff" />} title="Record Asset Transfer" subtitle="Move asset across departments & locations" onClose={() => setShowForm(false)} />
+            <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Field label="Asset *">
+                    <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+                      <option value="">Select asset</option>
+                      {assets.filter((a) => a.status !== 'disposed').map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Transfer Date *"><input type="date" value={transferDate} onChange={(e) => setTransferDate(e.target.value)} /></Field>
+                <Field label="Reason *"><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for transfer…" /></Field>
+                <Field label="To Department"><input value={toDepartment} onChange={(e) => setToDepartment(e.target.value)} /></Field>
+                <Field label="To Cost Centre"><input value={toCostCentre} onChange={(e) => setToCostCentre(e.target.value)} /></Field>
+                <div style={{ gridColumn: '1 / -1' }}><Field label="To Location"><input value={toLocation} onChange={(e) => setToLocation(e.target.value)} /></Field></div>
+              </div>
+              {error && <div style={{ padding: 12, borderRadius: 9, background: dangerBg, color: danger, fontSize: 12.5, marginBottom: 18 }}>{error}</div>}
             </div>
-            {error && <div style={{ padding: 10, borderRadius: 8, background: danger[50], color: danger[600], fontSize: 12 }}>{error}</div>}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: `1px solid ${hairline}`, paddingTop: 12 }}>
-              <button onClick={() => setShowForm(false)} style={{ padding: '8px 14px', borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
-              <button onClick={submit} disabled={saving} style={{ padding: '8px 14px', borderRadius: 7, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
-            </div>
+            <ModalFooter stepLabel="Transfer · audit logged" onCancel={() => setShowForm(false)} submitLabel={saving ? 'Saving…' : 'Save'} onSubmit={() => { if (!saving) submit(); }} />
           </div>
-        </Dialog>
+        </div>
       )}
     </div>
   );
@@ -852,53 +905,58 @@ const DisposalsPanel: React.FC<{
           <Plus size={12} /> Dispose Asset
         </button>
       </div>
-      <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 12, padding: 16 }}>
-        <EmptyState module="banking" customTitle="No recent disposals" customDescription="Dispose of assets via sale, scrapping, donation, write-off, or replacement. Gain/loss is calculated automatically." actionLabel="Dispose Asset" onAction={() => setShowForm(true)} />
+      <div style={tableCard}>
+        <div style={{ padding: 20 }}>
+          <EmptyState icon={<Trash2 size={32} />} title="No recent disposals" hint="Dispose of assets via sale, scrapping, donation, write-off, or replacement. Gain/loss is calculated automatically." />
+        </div>
       </div>
 
       {showForm && (
-        <Dialog open onClose={() => setShowForm(false)} title={`Dispose Asset${disposalType === 'WriteOff' ? ' (Write-off)' : ''}`}>
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 560 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="Asset *">
-                <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-                  <option value="">Select asset</option>
-                  {assets.filter((a) => a.status !== 'disposed').map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
-                </select>
-              </Field>
-              <Field label="Disposal Date *"><input type="date" value={disposalDate} onChange={(e) => setDisposalDate(e.target.value)} /></Field>
-              <Field label="Disposal Type *">
-                <select value={disposalType} onChange={(e) => setDisposalType(e.target.value)}>
-                  <option value="Sale">Sale</option>
-                  <option value="Scrapping">Scrapping</option>
-                  <option value="Donation">Donation</option>
-                  <option value="WriteOff">Write-off</option>
-                  <option value="Loss">Loss</option>
-                  <option value="Replacement">Replacement</option>
-                </select>
-              </Field>
-              <Field label={`Proceeds (${currency})`}><input type="number" step="0.01" value={proceeds} onChange={(e) => setProceeds(e.target.value)} /></Field>
-              <Field label="Buyer"><input value={buyer} onChange={(e) => setBuyer(e.target.value)} placeholder="If sold" /></Field>
-              <Field label="Reason"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
-            </div>
-            {selected && (
-              <div style={{ padding: 12, borderRadius: 8, background: teal[50], fontSize: 12 }}>
-                <div><strong>Cost:</strong> {fmt(selected.acquisition_cost, currency)}</div>
-                <div><strong>Accumulated Dep:</strong> {fmt(selected.accumulated_depreciation, currency)}</div>
-                <div><strong>NBV:</strong> {fmt(selected.current_book_value, currency)}</div>
-                <div><strong>Proceeds:</strong> {fmt(parseFloat(proceeds) || 0, currency)}</div>
-                <div style={{ marginTop: 6, fontWeight: 700, color: gainLoss >= 0 ? emerald[600] : danger[600] }}>
-                  Estimated {gainLoss >= 0 ? 'Gain' : 'Loss'}: {fmt(Math.abs(gainLoss), currency)}
+        <div style={modalOverlayStyle} onClick={() => setShowForm(false)}>
+          <div style={modalShell(560)} onClick={e => e.stopPropagation()}>
+            <AccentStripe />
+            <ModalHeader icon={<Trash2 size={19} color="#fff" />} title={`Dispose Asset${disposalType === 'WriteOff' ? ' (Write-off)' : ''}`} subtitle="Gain / loss posts to the ledger" onClose={() => setShowForm(false)} dangerTile />
+            <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Field label="Asset *">
+                    <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+                      <option value="">Select asset</option>
+                      {assets.filter((a) => a.status !== 'disposed').map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
+                    </select>
+                  </Field>
                 </div>
+                <Field label="Disposal Date *"><input type="date" value={disposalDate} onChange={(e) => setDisposalDate(e.target.value)} /></Field>
+                <Field label="Disposal Type *">
+                  <select value={disposalType} onChange={(e) => setDisposalType(e.target.value)}>
+                    <option value="Sale">Sale</option>
+                    <option value="Scrapping">Scrapping</option>
+                    <option value="Donation">Donation</option>
+                    <option value="WriteOff">Write-off</option>
+                    <option value="Loss">Loss</option>
+                    <option value="Replacement">Replacement</option>
+                  </select>
+                </Field>
+                <Field label={`Proceeds (${currency})`}><input type="number" step="0.01" value={proceeds} onChange={(e) => setProceeds(e.target.value)} placeholder="0.00" /></Field>
+                <Field label="Buyer"><input value={buyer} onChange={(e) => setBuyer(e.target.value)} placeholder="If sold" /></Field>
+                <div style={{ gridColumn: '1 / -1' }}><Field label="Reason"><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason…" /></Field></div>
               </div>
-            )}
-            {error && <div style={{ padding: 10, borderRadius: 8, background: danger[50], color: danger[600], fontSize: 12 }}>{error}</div>}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: `1px solid ${hairline}`, paddingTop: 12 }}>
-              <button onClick={() => setShowForm(false)} style={{ padding: '8px 14px', borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
-              <button onClick={submit} disabled={saving || !assetId} style={{ padding: '8px 14px', borderRadius: 7, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: (saving || !assetId) ? 0.6 : 1 }}>{saving ? 'Posting…' : 'Post Disposal'}</button>
+              {selected && (
+                <div style={{ padding: 14, borderRadius: 9, background: teal[50], border: `1px solid ${teal[100]}`, fontSize: 12.5, marginBottom: 18 }}>
+                  <div><strong>Cost:</strong> {fmt(selected.acquisition_cost, currency)}</div>
+                  <div><strong>Accumulated Dep:</strong> {fmt(selected.accumulated_depreciation, currency)}</div>
+                  <div><strong>NBV:</strong> {fmt(selected.current_book_value, currency)}</div>
+                  <div><strong>Proceeds:</strong> {fmt(parseFloat(proceeds) || 0, currency)}</div>
+                  <div style={{ marginTop: 6, fontWeight: 700, color: gainLoss >= 0 ? emeraldFg : danger }}>
+                    Estimated {gainLoss >= 0 ? 'Gain' : 'Loss'}: {fmt(Math.abs(gainLoss), currency)}
+                  </div>
+                </div>
+              )}
+              {error && <div style={{ padding: 12, borderRadius: 9, background: dangerBg, color: danger, fontSize: 12.5, marginBottom: 18 }}>{error}</div>}
             </div>
+            <ModalFooter stepLabel="Disposal · posts gain / loss" onCancel={() => setShowForm(false)} submitLabel={saving ? 'Posting…' : 'Post Disposal'} onSubmit={() => { if (!saving && assetId) submit(); }} danger />
           </div>
-        </Dialog>
+        </div>
       )}
     </div>
   );
@@ -960,39 +1018,45 @@ const MaintenancePanel: React.FC<{ assets: AssetRow[]; currency: string; created
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={() => setShowMaint(true)} style={{ padding: '8px 14px', borderRadius: 7, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Plus size={12} /> Record Maintenance
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 28px 28px' }}>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={() => setShowMaint(true)} style={btnPrimaryStyle}>
+          <Plus size={15} /> Record Maintenance
         </button>
-        <button onClick={() => setShowWarr(true)} style={{ padding: '8px 14px', borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: teal[700], cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Plus size={12} /> Set Warranty
+        <button onClick={() => setShowWarr(true)} style={btnGhostStyle}
+          onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; }}
+          onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; }}
+        >
+          <Plus size={15} /> Set Warranty
         </button>
       </div>
 
-      <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 12, padding: 16 }}>
-        <h3 style={{ margin: '0 0 10px', fontSize: 13, color: inkSoft, textTransform: 'uppercase' }}>Maintenance ({records.length})</h3>
+      <div style={tableCard}>
+        <div style={{ padding: '14px 16px', borderBottom: `1px solid ${hairline}`, ...sectionLabelStyle, margin: 0 } as React.CSSProperties}><span>Maintenance ({records.length})</span></div>
         {records.length === 0 ? (
-          <EmptyState module="banking" customTitle="No maintenance records" customDescription="Track maintenance, repairs, and service history for each asset." />
+          <div style={{ padding: 20 }}><EmptyState icon={<Wrench size={32} />} title="No maintenance records" hint="Track maintenance, repairs, and service history for each asset." /></div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead><tr style={{ background: teal[50] }}>
-              <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Date</th>
-              <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Asset</th>
-              <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Description</th>
-              <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Provider</th>
-              <th style={{ textAlign: 'right', padding: 8, fontWeight: 700, color: teal[800] }}>Cost</th>
-              <th style={{ textAlign: 'center', padding: 8, fontWeight: 700, color: teal[800] }}>CapEx?</th>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={tableHeadRow}>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Date</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Asset</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Description</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Provider</th>
+              <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Cost</th>
+              <th style={{ textAlign: 'center', padding: '12px 16px', fontWeight: 700 }}>CapEx?</th>
             </tr></thead>
             <tbody>
               {records.slice(0, 20).map((r) => (
-                <tr key={r.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                  <td style={{ padding: 8 }}>{r.maintenance_date}</td>
-                  <td style={{ padding: 8, fontWeight: 600 }}>{assets.find((a) => a.id === r.fixed_asset_id)?.name || r.fixed_asset_id}</td>
-                  <td style={{ padding: 8 }}>{r.description}</td>
-                  <td style={{ padding: 8 }}>{r.service_provider || '—'}</td>
-                  <td style={{ padding: 8, textAlign: 'right', fontWeight: 700 }}>{fmt(r.cost, currency)}</td>
-                  <td style={{ padding: 8, textAlign: 'center' }}>{r.is_capex ? 'Yes' : 'No'}</td>
+                <tr key={r.id} style={{ borderTop: `1px solid ${hairline}` }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <td style={{ padding: '10px 16px', color: ink }}>{r.maintenance_date}</td>
+                  <td style={{ padding: '10px 16px', fontWeight: 600, color: ink }}>{assets.find((a) => a.id === r.fixed_asset_id)?.name || r.fixed_asset_id}</td>
+                  <td style={{ padding: '10px 16px', color: ink }}>{r.description}</td>
+                  <td style={{ padding: '10px 16px', color: ink }}>{r.service_provider || '—'}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(r.cost, currency)}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'center', color: ink }}>{r.is_capex ? 'Yes' : 'No'}</td>
                 </tr>
               ))}
             </tbody>
@@ -1000,30 +1064,33 @@ const MaintenancePanel: React.FC<{ assets: AssetRow[]; currency: string; created
         )}
       </div>
 
-      <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 12, padding: 16 }}>
-        <h3 style={{ margin: '0 0 10px', fontSize: 13, color: inkSoft, textTransform: 'uppercase' }}>Warranties ({warranties.length})</h3>
+      <div style={tableCard}>
+        <div style={{ padding: '14px 16px', borderBottom: `1px solid ${hairline}`, ...sectionLabelStyle, margin: 0 } as React.CSSProperties}><span>Warranties ({warranties.length})</span></div>
         {warranties.length === 0 ? (
-          <EmptyState module="banking" customTitle="No warranties tracked" customDescription="Track warranty provider, contract, coverage, and expiry for assets." />
+          <div style={{ padding: 20 }}><EmptyState icon={<Shield size={32} />} title="No warranties tracked" hint="Track warranty provider, contract, coverage, and expiry for assets." /></div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead><tr style={{ background: teal[50] }}>
-              <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Asset</th>
-              <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Provider</th>
-              <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Start</th>
-              <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Expiry</th>
-              <th style={{ textAlign: 'center', padding: 8, fontWeight: 700, color: teal[800] }}>Status</th>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={tableHeadRow}>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Asset</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Provider</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Start</th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Expiry</th>
+              <th style={{ textAlign: 'center', padding: '12px 16px', fontWeight: 700 }}>Status</th>
             </tr></thead>
             <tbody>
               {warranties.map((w) => {
                 const expired = new Date(w.expiry_date) < new Date();
                 return (
-                  <tr key={w.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                    <td style={{ padding: 8, fontWeight: 600 }}>{assets.find((a) => a.id === w.fixed_asset_id)?.name || w.fixed_asset_id}</td>
-                    <td style={{ padding: 8 }}>{w.provider}</td>
-                    <td style={{ padding: 8 }}>{w.start_date}</td>
-                    <td style={{ padding: 8 }}>{w.expiry_date}</td>
-                    <td style={{ padding: 8, textAlign: 'center' }}>
-                      <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 700, background: expired ? danger[50] : emerald[50], color: expired ? danger[600] : emerald[600] }}>{expired ? 'Expired' : 'Active'}</span>
+                  <tr key={w.id} style={{ borderTop: `1px solid ${hairline}` }}
+                    onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '10px 16px', fontWeight: 600, color: ink }}>{assets.find((a) => a.id === w.fixed_asset_id)?.name || w.fixed_asset_id}</td>
+                    <td style={{ padding: '10px 16px', color: ink }}>{w.provider}</td>
+                    <td style={{ padding: '10px 16px', color: ink }}>{w.start_date}</td>
+                    <td style={{ padding: '10px 16px', color: ink }}>{w.expiry_date}</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'center' }}>
+                      <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: expired ? dangerBg : emeraldBg, color: expired ? danger : emeraldFg }}>{expired ? 'Expired' : 'Active'}</span>
                     </td>
                   </tr>
                 );
@@ -1034,48 +1101,58 @@ const MaintenancePanel: React.FC<{ assets: AssetRow[]; currency: string; created
       </div>
 
       {showMaint && (
-        <Dialog open onClose={() => setShowMaint(false)} title="Record Maintenance">
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 520 }}>
-            <Field label="Asset *">
-              <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-                <option value="">Select asset</option>
-                {assets.map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Date"><input type="date" value={maintenanceDate} onChange={(e) => setMaintenanceDate(e.target.value)} /></Field>
-            <Field label="Service Provider"><input value={serviceProvider} onChange={(e) => setServiceProvider(e.target.value)} /></Field>
-            <Field label="Description *"><input value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
-            <Field label={`Cost (${currency})`}><input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <input type="checkbox" checked={isCapex} onChange={(e) => setIsCapex(e.target.checked)} />
-              Capital expenditure (CapEx) — otherwise treated as maintenance expense
-            </label>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: `1px solid ${hairline}`, paddingTop: 12 }}>
-              <button onClick={() => setShowMaint(false)} style={{ padding: '8px 14px', borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
-              <button onClick={saveMaint} style={{ padding: '8px 14px', borderRadius: 7, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Save</button>
+        <div style={modalOverlayStyle} onClick={() => setShowMaint(false)}>
+          <div style={modalShell(560)} onClick={e => e.stopPropagation()}>
+            <AccentStripe />
+            <ModalHeader icon={<Wrench size={19} color="#fff" />} title="Record Maintenance" subtitle="Service history — asset maintenance" onClose={() => setShowMaint(false)} />
+            <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Field label="Asset *">
+                    <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+                      <option value="">Select asset</option>
+                      {assets.map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Date"><input type="date" value={maintenanceDate} onChange={(e) => setMaintenanceDate(e.target.value)} /></Field>
+                <Field label={`Cost (${currency})`}><input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0.00" /></Field>
+                <div style={{ gridColumn: '1 / -1' }}><Field label="Service Provider"><input value={serviceProvider} onChange={(e) => setServiceProvider(e.target.value)} placeholder="Provider…" /></Field></div>
+                <div style={{ gridColumn: '1 / -1' }}><Field label="Description *"><input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Work performed…" /></Field></div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: ink, marginBottom: 18 }}>
+                <input type="checkbox" checked={isCapex} onChange={(e) => setIsCapex(e.target.checked)} />
+                Capital expenditure (CapEx) — otherwise treated as maintenance expense
+              </label>
             </div>
+            <ModalFooter stepLabel="Maintenance · service history" onCancel={() => setShowMaint(false)} submitLabel="Save" onSubmit={saveMaint} />
           </div>
-        </Dialog>
+        </div>
       )}
 
       {showWarr && (
-        <Dialog open onClose={() => setShowWarr(false)} title="Set Warranty">
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 520 }}>
-            <Field label="Asset *">
-              <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-                <option value="">Select asset</option>
-                {assets.map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Provider *"><input value={warrantyProvider} onChange={(e) => setWarrantyProvider(e.target.value)} /></Field>
-            <Field label="Start Date"><input type="date" value={warrantyStart} onChange={(e) => setWarrantyStart(e.target.value)} /></Field>
-            <Field label="Expiry Date"><input type="date" value={warrantyExpiry} onChange={(e) => setWarrantyExpiry(e.target.value)} /></Field>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: `1px solid ${hairline}`, paddingTop: 12 }}>
-              <button onClick={() => setShowWarr(false)} style={{ padding: '8px 14px', borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
-              <button onClick={saveWarr} style={{ padding: '8px 14px', borderRadius: 7, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Save</button>
+        <div style={modalOverlayStyle} onClick={() => setShowWarr(false)}>
+          <div style={modalShell(560)} onClick={e => e.stopPropagation()}>
+            <AccentStripe />
+            <ModalHeader icon={<Shield size={19} color="#fff" />} title="Set Warranty" subtitle="Coverage — provider & expiry" onClose={() => setShowWarr(false)} />
+            <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Field label="Asset *">
+                    <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+                      <option value="">Select asset</option>
+                      {assets.map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}><Field label="Provider *"><input value={warrantyProvider} onChange={(e) => setWarrantyProvider(e.target.value)} placeholder="Warranty provider…" /></Field></div>
+                <Field label="Start Date"><input type="date" value={warrantyStart} onChange={(e) => setWarrantyStart(e.target.value)} /></Field>
+                <Field label="Expiry Date"><input type="date" value={warrantyExpiry} onChange={(e) => setWarrantyExpiry(e.target.value)} /></Field>
+              </div>
             </div>
+            <ModalFooter stepLabel="Warranty · coverage" onCancel={() => setShowWarr(false)} submitLabel="Save" onSubmit={saveWarr} />
           </div>
-        </Dialog>
+        </div>
       )}
     </div>
   );
@@ -1123,9 +1200,9 @@ const ReportsPanel: React.FC<{ assets: AssetRow[]; accounts: any[]; currency: st
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 8, background: paper, padding: 10, borderRadius: 12, border: `1px solid ${hairline}`, alignItems: 'center' }}>
-        <select value={report} onChange={(e) => setReport(e.target.value as any)} style={{ padding: '8px 10px', borderRadius: 7, border: `1px solid ${hairline}`, fontSize: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 28px 28px' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <select value={report} onChange={(e) => setReport(e.target.value as any)} style={{ ...selectStyle, width: 300 }}>
           <option value="register">Fixed Asset Register</option>
           <option value="movements">Asset Movements (Acquisitions + Disposals)</option>
           <option value="byDept">By Department</option>
@@ -1137,12 +1214,15 @@ const ReportsPanel: React.FC<{ assets: AssetRow[]; accounts: any[]; currency: st
           if (report === 'register') exportCSV(assets, 'fa-register.csv');
           else if (report === 'byDept') exportCSV(byDept.map(([k, v]) => ({ department: k, ...v })), 'fa-by-department.csv');
           else if (report === 'byCC') exportCSV(byCC.map(([k, v]) => ({ costCentre: k, ...v })), 'fa-by-cost-centre.csv');
-        }} style={{ padding: '8px 12px', borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Download size={12} /> Export CSV
+        }} style={btnGhostStyle}
+          onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; }}
+          onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; }}
+        >
+          <Download size={15} /> Export CSV
         </button>
       </div>
 
-      <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 12, padding: 16 }}>
+      <div style={tableCard}>
         {report === 'register' && (
           <AssetTable rows={assets.map((a) => ({ code: a.asset_code, name: a.name, category: a.category, acquired: a.acquisition_date, branch: a.branch || '', dept: a.department || '', cost: a.acquisition_cost, nbv: a.current_book_value, status: a.lifecycle_status || a.status }))} currency={currency} />
         )}
@@ -1164,19 +1244,22 @@ const ReportsPanel: React.FC<{ assets: AssetRow[]; accounts: any[]; currency: st
 };
 
 const AssetTable: React.FC<{ rows: any[]; currency: string }> = ({ rows, currency }) => {
-  if (rows.length === 0) return <EmptyState module="reports" customTitle="No data" customDescription="No records to display." />;
+  if (rows.length === 0) return <div style={{ padding: 20 }}><EmptyState icon={<FileText size={32} />} title="No data" hint="No records to display." /></div>;
   const keys = Object.keys(rows[0]);
   return (
     <div style={{ overflow: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-        <thead><tr style={{ background: teal[50] }}>
-          {keys.map((k) => <th key={k} style={{ textAlign: typeof rows[0][k] === 'number' ? 'right' : 'left', padding: 8, fontWeight: 700, color: teal[800] }}>{k}</th>)}
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead><tr style={tableHeadRow}>
+          {keys.map((k) => <th key={k} style={{ textAlign: typeof rows[0][k] === 'number' ? 'right' : 'left', padding: '12px 16px', fontWeight: 700 }}>{k}</th>)}
         </tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} style={{ borderTop: `1px solid ${hairline}` }}>
+            <tr key={i} style={{ borderTop: `1px solid ${hairline}` }}
+              onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
               {keys.map((k) => (
-                <td key={k} style={{ padding: 8, textAlign: typeof r[k] === 'number' ? 'right' : 'left', fontWeight: ['cost', 'nbv', 'amount'].includes(k.toLowerCase()) ? 700 : 400 }}>
+                <td key={k} style={{ padding: '10px 16px', textAlign: typeof r[k] === 'number' ? 'right' : 'left', fontWeight: ['cost', 'nbv', 'amount'].includes(k.toLowerCase()) ? 700 : 400, fontFamily: typeof r[k] === 'number' ? "'JetBrains Mono', monospace" : undefined, color: ink }}>
                   {typeof r[k] === 'number' ? fmt(r[k], currency) : r[k]}
                 </td>
               ))}
@@ -1202,32 +1285,37 @@ const ScheduleViewer: React.FC<{ assets: AssetRow[] }> = ({ assets }) => {
     })();
   }, [assetId]);
 
-  if (rows.length === 0) return <EmptyState module="reports" customTitle="No schedule" customDescription="Select an asset to view its depreciation schedule." />;
+  if (rows.length === 0) return <div style={{ padding: 20 }}><EmptyState icon={<Calculator size={32} />} title="No schedule" hint="Select an asset to view its depreciation schedule." /></div>;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <select value={assetId} onChange={(e) => setAssetId(e.target.value)} style={{ padding: '8px 10px', borderRadius: 7, border: `1px solid ${hairline}`, fontSize: 12, maxWidth: 360 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16 }}>
+      <select value={assetId} onChange={(e) => setAssetId(e.target.value)} style={{ ...selectStyle, maxWidth: 360 }}>
         {assets.map((a) => <option key={a.id} value={a.id}>{a.asset_code} — {a.name}</option>)}
       </select>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-        <thead><tr style={{ background: teal[50] }}>
-          <th style={{ textAlign: 'left', padding: 8, fontWeight: 700, color: teal[800] }}>Period</th>
-          <th style={{ textAlign: 'right', padding: 8, fontWeight: 700, color: teal[800] }}>Opening NBV</th>
-          <th style={{ textAlign: 'right', padding: 8, fontWeight: 700, color: teal[800] }}>Depreciation</th>
-          <th style={{ textAlign: 'right', padding: 8, fontWeight: 700, color: teal[800] }}>Accumulated</th>
-          <th style={{ textAlign: 'right', padding: 8, fontWeight: 700, color: teal[800] }}>Closing NBV</th>
-        </tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} style={{ borderTop: `1px solid ${hairline}` }}>
-              <td style={{ padding: 8 }}>{r.period}</td>
-              <td style={{ padding: 8, textAlign: 'right' }}>{r.openingNbv.toFixed(2)}</td>
-              <td style={{ padding: 8, textAlign: 'right', color: amber[600] }}>{r.depreciation.toFixed(2)}</td>
-              <td style={{ padding: 8, textAlign: 'right' }}>{r.accumulated.toFixed(2)}</td>
-              <td style={{ padding: 8, textAlign: 'right', fontWeight: 700 }}>{r.closingNbv.toFixed(2)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={tableCard}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={tableHeadRow}>
+            <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Period</th>
+            <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Opening NBV</th>
+            <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Depreciation</th>
+            <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Accumulated</th>
+            <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Closing NBV</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{ borderTop: `1px solid ${hairline}` }}
+                onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <td style={{ padding: '10px 16px', color: ink }}>{r.period}</td>
+                <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{r.openingNbv.toFixed(2)}</td>
+                <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: amber[600] }}>{r.depreciation.toFixed(2)}</td>
+                <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{r.accumulated.toFixed(2)}</td>
+                <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{r.closingNbv.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -1309,7 +1397,7 @@ const AIAssistantTab: React.FC<{ assets: AssetRow[]; accounts: any[]; currency: 
       </div>
 
       {!config?.enabled && (
-        <div style={{ padding: 12, borderRadius: 10, background: amber[50], border: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: 12, borderRadius: 10, background: amber[100], border: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 8 }}>
           <AlertCircle size={16} color={amber[600]} />
           <span style={{ fontSize: 12, color: ink }}>AI is not configured. Go to <strong>Settings → Marketing Messages → AI Settings</strong> to configure your provider.</span>
         </div>
@@ -1340,9 +1428,9 @@ const AIAssistantTab: React.FC<{ assets: AssetRow[]; accounts: any[]; currency: 
         {loading && <div style={{ alignSelf: 'flex-start', color: inkSoft, fontSize: 12, padding: 8 }}>Thinking…</div>}
       </div>
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(input); } }} placeholder="Ask about asset value, depreciation, anomalies, replacement candidates…" disabled={loading || !config?.enabled} style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: `1px solid ${hairline}`, fontSize: 13, background: paper, outline: 'none' }} />
-        <button onClick={() => ask(input)} disabled={loading || !input.trim() || !config?.enabled} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: (loading || !input.trim() || !config?.enabled) ? 0.5 : 1 }}><Send size={14} /> Ask AI</button>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(input); } }} placeholder="Ask about asset value, depreciation, anomalies, replacement candidates…" disabled={loading || !config?.enabled} style={inputStyle} />
+        <button onClick={() => ask(input)} disabled={loading || !input.trim() || !config?.enabled} style={{ ...btnPrimaryStyle, opacity: (loading || !input.trim() || !config?.enabled) ? 0.5 : 1 }}><Send size={14} /> Ask AI</button>
       </div>
     </div>
   );
@@ -1379,15 +1467,11 @@ const AssetDetailDrawer: React.FC<{
   }, [asset.id]);
 
   return (
-    <Dialog open onClose={onClose} title={`${asset.name} (${asset.asset_code})`} hideHeader>
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: ink }}>{asset.name}</div>
-            <div style={{ fontSize: 11, color: inkSoft }}>{asset.asset_code} · {asset.category} · {asset.acquisition_date}</div>
-          </div>
-          <button onClick={onClose} style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer' }}>Close</button>
-        </div>
+    <div style={modalOverlayStyle} onClick={onClose}>
+      <div style={modalShell(760)} onClick={e => e.stopPropagation()}>
+        <AccentStripe />
+        <ModalHeader icon={<Eye size={19} color="#fff" />} title={asset.name} subtitle={`${asset.asset_code} · ${asset.category} · ${asset.acquisition_date}`} onClose={onClose} />
+        <div style={{ padding: '20px 28px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
         <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${hairline}` }}>
           {['overview', 'financial', 'depreciation', 'maintenance', 'warranty'].map((t) => (
@@ -1420,50 +1504,58 @@ const AssetDetailDrawer: React.FC<{
 
         {tab === 'depreciation' && (
           <div>
-            <h4 style={{ margin: '0 0 8px', fontSize: 12, color: ink }}>Posted Depreciation ({deprec.length})</h4>
+            <div style={sectionLabelStyle}><span>Posted Depreciation ({deprec.length})</span></div>
             {deprec.length === 0 ? (
-              <EmptyState module="reports" customTitle="No depreciation posted yet" />
+              <EmptyState icon={<Calculator size={32} />} title="No depreciation posted yet" />
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
-                <thead><tr style={{ background: teal[50] }}>
-                  <th style={{ textAlign: 'left', padding: 6, color: teal[800], fontWeight: 700 }}>Period</th>
-                  <th style={{ textAlign: 'right', padding: 6, color: teal[800], fontWeight: 700 }}>Amount</th>
-                  <th style={{ textAlign: 'right', padding: 6, color: teal[800], fontWeight: 700 }}>Accumulated</th>
-                  <th style={{ textAlign: 'right', padding: 6, color: teal[800], fontWeight: 700 }}>NBV</th>
-                </tr></thead>
-                <tbody>
-                  {deprec.map((d) => (
-                    <tr key={d.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                      <td style={{ padding: 6 }}>{d.period_year}-{String(d.period_month).padStart(2, '0')}</td>
-                      <td style={{ padding: 6, textAlign: 'right', color: amber[600] }}>{d.depreciation_amount.toFixed(2)}</td>
-                      <td style={{ padding: 6, textAlign: 'right' }}>{d.accumulated_depreciation.toFixed(2)}</td>
-                      <td style={{ padding: 6, textAlign: 'right' }}>{d.book_value.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div style={tableCard}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr style={tableHeadRow}>
+                    <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700 }}>Period</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 700 }}>Amount</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 700 }}>Accumulated</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 700 }}>NBV</th>
+                  </tr></thead>
+                  <tbody>
+                    {deprec.map((d) => (
+                      <tr key={d.id} style={{ borderTop: `1px solid ${hairline}` }}
+                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '9px 14px', fontFamily: "'JetBrains Mono', monospace", color: inkSoft }}>{d.period_year}-{String(d.period_month).padStart(2, '0')}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: amber[600] }}>{d.depreciation_amount.toFixed(2)}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{d.accumulated_depreciation.toFixed(2)}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{d.book_value.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-            <h4 style={{ margin: '12px 0 8px', fontSize: 12, color: ink }}>Projected Schedule ({schedule.length} periods)</h4>
+            <div style={{ ...sectionLabelStyle, marginTop: 18 }}><span>Projected Schedule ({schedule.length} periods)</span></div>
             {schedule.length === 0 ? (
-              <EmptyState module="reports" customTitle="No schedule" />
+              <EmptyState icon={<Calculator size={32} />} title="No schedule" />
             ) : (
-              <div style={{ maxHeight: 220, overflow: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
-                  <thead><tr style={{ background: teal[50] }}>
-                    <th style={{ textAlign: 'left', padding: 6, color: teal[800], fontWeight: 700 }}>Period</th>
-                    <th style={{ textAlign: 'right', padding: 6, color: teal[800], fontWeight: 700 }}>Opening</th>
-                    <th style={{ textAlign: 'right', padding: 6, color: teal[800], fontWeight: 700 }}>Dep</th>
-                    <th style={{ textAlign: 'right', padding: 6, color: teal[800], fontWeight: 700 }}>Acc</th>
-                    <th style={{ textAlign: 'right', padding: 6, color: teal[800], fontWeight: 700 }}>Closing</th>
+              <div style={{ ...tableCard, maxHeight: 260, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr style={tableHeadRow}>
+                    <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700 }}>Period</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 700 }}>Opening</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 700 }}>Dep</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 700 }}>Acc</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 700 }}>Closing</th>
                   </tr></thead>
                   <tbody>
                     {schedule.slice(0, 30).map((s, i) => (
-                      <tr key={i} style={{ borderTop: `1px solid ${hairline}` }}>
-                        <td style={{ padding: 6 }}>{s.period}</td>
-                        <td style={{ padding: 6, textAlign: 'right' }}>{s.openingNbv.toFixed(2)}</td>
-                        <td style={{ padding: 6, textAlign: 'right' }}>{s.depreciation.toFixed(2)}</td>
-                        <td style={{ padding: 6, textAlign: 'right' }}>{s.accumulated.toFixed(2)}</td>
-                        <td style={{ padding: 6, textAlign: 'right' }}>{s.closingNbv.toFixed(2)}</td>
+                      <tr key={i} style={{ borderTop: `1px solid ${hairline}` }}
+                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '9px 14px', color: ink }}>{s.period}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{s.openingNbv.toFixed(2)}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{s.depreciation.toFixed(2)}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{s.accumulated.toFixed(2)}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{s.closingNbv.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1476,26 +1568,31 @@ const AssetDetailDrawer: React.FC<{
         {tab === 'maintenance' && (
           <div>
             {maint.length === 0 ? (
-              <EmptyState module="banking" customTitle="No maintenance recorded" customDescription="Track maintenance from the Maintenance tab." />
+              <EmptyState icon={<Wrench size={32} />} title="No maintenance recorded" hint="Track maintenance from the Maintenance tab." />
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead><tr style={{ background: teal[50] }}>
-                  <th style={{ textAlign: 'left', padding: 6, color: teal[800], fontWeight: 700 }}>Date</th>
-                  <th style={{ textAlign: 'left', padding: 6, color: teal[800], fontWeight: 700 }}>Description</th>
-                  <th style={{ textAlign: 'right', padding: 6, color: teal[800], fontWeight: 700 }}>Cost</th>
-                  <th style={{ textAlign: 'center', padding: 6, color: teal[800], fontWeight: 700 }}>CapEx</th>
-                </tr></thead>
-                <tbody>
-                  {maint.map((m) => (
-                    <tr key={m.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                      <td style={{ padding: 6 }}>{m.maintenance_date}</td>
-                      <td style={{ padding: 6 }}>{m.description}</td>
-                      <td style={{ padding: 6, textAlign: 'right' }}>{fmt(m.cost, currency)}</td>
-                      <td style={{ padding: 6, textAlign: 'center' }}>{m.is_capex ? 'Yes' : 'No'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div style={tableCard}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr style={tableHeadRow}>
+                    <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700 }}>Date</th>
+                    <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 700 }}>Description</th>
+                    <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 700 }}>Cost</th>
+                    <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 700 }}>CapEx</th>
+                  </tr></thead>
+                  <tbody>
+                    {maint.map((m) => (
+                      <tr key={m.id} style={{ borderTop: `1px solid ${hairline}` }}
+                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '9px 14px', color: ink }}>{m.maintenance_date}</td>
+                        <td style={{ padding: '9px 14px', color: ink }}>{m.description}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{fmt(m.cost, currency)}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'center', color: ink }}>{m.is_capex ? 'Yes' : 'No'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}
@@ -1503,22 +1600,24 @@ const AssetDetailDrawer: React.FC<{
         {tab === 'warranty' && (
           <div>
             {warr.length === 0 ? (
-              <EmptyState module="banking" customTitle="No warranty on record" customDescription="Set a warranty from the Maintenance tab." />
+              <EmptyState icon={<Shield size={32} />} title="No warranty on record" hint="Set a warranty from the Maintenance tab." />
             ) : (
               warr.map((w) => {
                 const expired = new Date(w.expiry_date) < new Date();
                 return (
-                  <div key={w.id} style={{ padding: 10, borderRadius: 8, background: paper, border: `1px solid ${hairline}`, marginBottom: 6, fontSize: 12 }}>
-                    <div><strong>{w.provider}</strong> · {expired ? <span style={{ color: danger[600] }}>Expired</span> : <span style={{ color: emerald[600] }}>Active</span>}</div>
-                    <div style={{ color: inkSoft, fontSize: 11 }}>{w.start_date} → {w.expiry_date}</div>
+                  <div key={w.id} style={{ padding: 12, borderRadius: 9, background: expired ? dangerBg : teal[50], border: `1px solid ${expired ? danger : teal[100]}`, marginBottom: 8, fontSize: 12.5 }}>
+                    <div style={{ color: ink }}><strong>{w.provider}</strong> · {expired ? <span style={{ color: danger, fontWeight: 700 }}>Expired</span> : <span style={{ color: emeraldFg, fontWeight: 700 }}>Active</span>}</div>
+                    <div style={{ color: inkSoft, fontSize: 11.5 }}>{w.start_date} → {w.expiry_date}</div>
                   </div>
                 );
               })
             )}
           </div>
         )}
+        </div>
+        <ModalFooter stepLabel="Asset · register detail" onCancel={onClose} submitLabel="Done" onSubmit={onClose} />
       </div>
-    </Dialog>
+    </div>
   );
 };
 
@@ -1530,9 +1629,15 @@ const KV: React.FC<{ k: string; v: any }> = ({ k, v }) => (
 );
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-    <label style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: inkSoft }}>{label}</label>
-    {React.Children.map(children, (c) => React.isValidElement(c) ? React.cloneElement(c as any, { style: { padding: '8px 10px', borderRadius: 7, border: `1px solid ${hairline}`, fontSize: 12, background: paper, outline: 'none', width: '100%', ...(c.props.style || {}) } }) : c)}
+  <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <label style={labelStyle}>{label}</label>
+    {React.Children.map(children, (c) => {
+      if (!React.isValidElement(c)) return c;
+      const el = c as any;
+      const tag = typeof el.type === 'string' ? el.type : '';
+      const chromeStyle = tag === 'select' ? selectStyle : tag === 'textarea' ? textareaStyle : inputStyle;
+      return React.cloneElement(el, { style: { ...chromeStyle, ...(el.props.style || {}) } });
+    })}
   </div>
 );
 

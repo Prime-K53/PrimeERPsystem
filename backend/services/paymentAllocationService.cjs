@@ -198,7 +198,7 @@ class PaymentAllocationService extends BaseService {
       const aOverdue = a.due_date && new Date(a.due_date) < new Date();
       const bOverdue = b.due_date && new Date(b.due_date) < new Date();
       if (aOverdue && !bOverdue) return -1;
-      if (!aOverdue && bOverdue) return 1;
+      if (bOverdue && !aOverdue) return 1;
       return new Date(a.due_date || 0) - new Date(b.due_date || 0);
     });
 
@@ -219,6 +219,106 @@ class PaymentAllocationService extends BaseService {
     }
 
     return suggestions;
+  }
+
+  /**
+   * Reverse a payment allocation.
+   *
+   * Marks the allocation and its lines as reversed, then recomputes the
+   * affected invoices' paid_amount and status from the remaining active
+   * allocations.
+   *
+   * Note: GL reversal is NOT performed here because the original ledger
+   * entries are keyed to the payment (not the allocation). Allocation-level
+   * GL reversal would require per-allocation ledger tracking, which is not
+   * implemented. Use invoice void (which calls reverseLedgerEntriesByReference)
+   * when full GL reversal is required.
+   */
+  async reverseAllocation(allocationId) {
+    if (!allocationId) {
+      throw new Error('allocationId is required');
+    }
+
+    return await this._transaction(async () => {
+      const allocation = await repo.paymentAllocations.getById(allocationId);
+      if (!allocation) {
+        throw new Error('Allocation not found');
+      }
+      const allocData = allocation.data || allocation;
+      if (allocData.reversed === true || /revers/i.test(String(allocData.status || ''))) {
+        throw new Error('Allocation is already reversed');
+      }
+
+      const paymentId = allocData.payment_id || allocData.paymentId;
+      const lines = await repo.paymentAllocationLines.getAll({
+        'data->>allocation_id': `eq.${allocationId}`,
+      });
+
+      const invoiceIds = [...new Set(
+        lines
+          .map(l => l.data?.invoiceId || l.data?.invoice_id || l.invoiceId || l.invoice_id)
+          .filter(Boolean)
+      )];
+
+      this._txCheckpoint('payment_allocations', allocationId, { ...allocation, ...allocData });
+      await repo.upsert('payment_allocations', {
+        ...allocation,
+        data: {
+          ...allocData,
+          status: 'reversed',
+          reversed: true,
+          reversed_at: new Date().toISOString(),
+        },
+      });
+
+      for (const line of lines) {
+        this._txCheckpoint('payment_allocation_lines', line.id, { ...line, ...(line.data || {}) });
+        await repo.upsert('payment_allocation_lines', {
+          ...line,
+          data: {
+            ...(line.data || {}),
+            reversed: true,
+            reversed_at: new Date().toISOString(),
+          },
+        });
+      }
+
+      for (const invoiceId of invoiceIds) {
+        const invoice = await repo.invoices.getById(invoiceId);
+        if (!invoice) continue;
+        const invData = invoice.data || invoice;
+
+        const remainingLines = await repo.paymentAllocationLines.getAll({
+          'data->>invoice_id': `eq.${invoiceId}`,
+        });
+        const activeLines = remainingLines.filter(
+          l => !(l.data?.reversed === true || /revers/i.test(String(l.data?.status || '')))
+        );
+        const remainingPaid = round2(
+          activeLines.reduce((sum, l) => sum + toNum(l.data?.amount || l.amount || 0), 0)
+        );
+
+        const total = round2(toNum(invData.total_amount));
+        const clamped = Math.min(remainingPaid, total);
+        let newStatus = invData.status || 'unpaid';
+        if (clamped <= 0) newStatus = 'unpaid';
+        else if (clamped >= total) newStatus = 'paid';
+        else newStatus = 'partial';
+
+        this._txCheckpoint('invoices', invoiceId, { ...invoice, ...invData });
+        await repo.upsert('invoices', {
+          ...invoice,
+          data: {
+            ...invData,
+            paid_amount: clamped,
+            status: newStatus,
+            updated_at: new Date().toISOString(),
+          },
+        });
+      }
+
+      return { success: true, allocationId, reversed: true };
+    });
   }
 }
 

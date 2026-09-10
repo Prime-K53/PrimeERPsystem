@@ -297,12 +297,13 @@ const ExaminationBatchDetail: React.FC = () => {
   const handleConvertToRecurring = () => {
     if (!batch) return;
     const recurringDraft = buildRecurringDraftFromExaminationBatch(batch, schoolName);
-    navigate('/sales-flow/subscriptions', {
+    navigate('/sales-flow/printing-contracts', {
       state: {
         action: 'create',
         recurringDraft
       }
     });
+    toast.success('Open Printing Contracts to cover this batch with an agreement');
   };
 
   const handleAddClass = async (data: { class_name: string; number_of_learners: number }) => {

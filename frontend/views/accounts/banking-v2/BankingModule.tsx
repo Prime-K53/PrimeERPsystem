@@ -16,7 +16,7 @@
  *  - FY validation before posting
  *  - Audit log writes via the auditLogs store
  *
- * Reuses: Dialog, ConfirmDialog, EmptyState, bankingStore, bankingService,
+ * Reuses: ConfirmDialog, bankingStore, bankingService,
  * ledgerService, accountResolutionService, financialReportingService,
  * dbService, validateDateInFY.
  */
@@ -34,8 +34,6 @@ import { useBankingStore } from '../../../context/BankingContext';
 import { useAuth } from '../../../context/AuthContext';
 import { useData } from '../../../context/DataContext';
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
-import { Dialog } from '../../../components/Dialog';
-import EmptyState from '../../../components/EmptyState';
 import { bankingService } from '../../../services/bankingService';
 import { dbService } from '../../../services/db';
 import { logger } from '../../../services/logger';
@@ -63,31 +61,16 @@ import { ScheduledTransactionsTab } from './components/ScheduledTransactionsTab'
 import { CashManagementTab } from './components/CashManagementTab';
 import { AIAssistantTab } from './components/AIAssistantTab';
 
-const paper = '#FEFDFB';
-const ink = '#23282A';
-const inkSoft = '#5c6567';
-const hairline = '#e4ddd1';
-const teal = { 50: '#eef7f6', 100: '#d4ebe3', 400: '#3fa294', 500: '#2d9a8a', 600: '#1f8577', 700: '#166b5e', 800: '#0f544c', 900: '#0a3d34' };
-const amber = { 50: '#fef9e7', 400: '#d99a3f', 600: '#b45309' };
-const danger = { 50: '#fef2f2', 400: '#dc2626', 600: '#991b1b' };
-const emerald = { 50: '#f0fdf4', 400: '#16a34a', 600: '#059669' };
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, EmptyState, tableCard, tableHeadRow, tableHeadCell,
+} from '../components/financeChrome';
 
 type Tab = 'dashboard' | 'accounts' | 'transactions' | 'reconciliation' | 'cash' | 'scheduled' | 'statements' | 'reports' | 'ai';
-
-interface KpiCardProps { label: string; value: string; sub?: string; tone?: 'neutral' | 'positive' | 'warning' | 'danger'; icon?: React.ReactNode; }
-const KpiCard: React.FC<KpiCardProps> = ({ label, value, sub, tone = 'neutral', icon }) => {
-  const color = tone === 'positive' ? emerald[600] : tone === 'warning' ? amber[600] : tone === 'danger' ? danger[600] : teal[700];
-  return (
-    <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 14, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: inkSoft }}>{label}</span>
-        {icon && <span style={{ color }}>{icon}</span>}
-      </div>
-      <span style={{ fontSize: 22, fontWeight: 700, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
-      {sub && <span style={{ fontSize: 11, color: inkSoft }}>{sub}</span>}
-    </div>
-  );
-};
 
 const fmt = (n: number, symbol: string) => `${symbol} ${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -97,16 +80,18 @@ const ActionMenu: React.FC<{ items: Array<{ label: string; icon?: React.ReactNod
     <div style={{ position: 'relative', display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
       <button
         onClick={() => setOpen((o) => !o)}
-        style={{ padding: 6, borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer' }}
+        style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', color: inkSoft, cursor: 'pointer' }}
+        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         aria-label="Actions"
       >
-        <MoreHorizontal size={14} />
+        <MoreHorizontal size={16} />
       </button>
       {open && (
         <div
           style={{
             position: 'absolute', right: 0, top: '110%', zIndex: 30,
-            background: paper, border: `1px solid ${hairline}`, borderRadius: 10,
+            background: paper, border: `1.4px solid ${hairline}`, borderRadius: 10,
             boxShadow: '0 12px 30px -10px rgba(0,0,0,.2)', minWidth: 180, padding: 4,
           }}
           onMouseLeave={() => setOpen(false)}
@@ -119,9 +104,11 @@ const ActionMenu: React.FC<{ items: Array<{ label: string; icon?: React.ReactNod
               style={{
                 width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 6,
                 background: 'transparent', border: 'none', cursor: it.disabled ? 'not-allowed' : 'pointer',
-                color: it.danger ? danger[600] : ink, display: 'flex', alignItems: 'center', gap: 8,
+                color: it.danger ? danger : ink, display: 'flex', alignItems: 'center', gap: 8,
                 fontSize: 12.5, opacity: it.disabled ? 0.5 : 1,
               }}
+              onMouseEnter={e => { if (!it.disabled) e.currentTarget.style.background = teal[50]; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
               {it.icon}
               {it.label}
@@ -313,37 +300,43 @@ export const BankingModule: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: '#f6f3ed', minHeight: '100%', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, color: ink, fontFamily: "'DM Serif Display', Georgia, serif" }}>Banking & Finance</h1>
-          <p style={{ margin: '2px 0 0', fontSize: 12, color: inkSoft }}>Bank accounts, transactions, reconciliation, and reports.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => { store.fetchBankingData(); refreshAllData(); }}
-            style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
-          >
-            <RefreshCw size={14} /> Refresh
-          </button>
-          <button
-            onClick={() => setShowNewAccount({ open: true })}
-            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, boxShadow: `0 6px 16px -6px ${teal[800]}` }}
-          >
-            <Plus size={14} /> Add Bank Account
-          </button>
-          <button
-            onClick={() => setShowNewTransaction({ open: true, preset: { type: 'Deposit', date: getDefaultDate() } as any })}
-            style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${teal[600]}`, background: paper, color: teal[700], cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600 }}
-          >
-            <Plus size={14} /> New Transaction
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col h-full" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
+      <PageHeader
+        icon={<Wallet size={19} color="#fff" />}
+        title="Banking & Finance"
+        subtitle="Bank accounts, transactions, reconciliation & reports"
+        actions={
+          <>
+            <button
+              onClick={() => { store.fetchBankingData(); refreshAllData(); }}
+              style={btnGhostStyle}
+              onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+              onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+            >
+              <RefreshCw size={15} /> Refresh
+            </button>
+            <button
+              onClick={() => setShowNewAccount({ open: true })}
+              style={btnGhostStyle}
+              onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+              onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+            >
+              <Plus size={15} /> Add Bank Account
+            </button>
+            <button
+              onClick={() => setShowNewTransaction({ open: true, preset: { type: 'Deposit', date: getDefaultDate() } as any })}
+              style={btnPrimaryStyle}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+            >
+              <Plus size={15} /> New Transaction
+            </button>
+          </>
+        }
+      />
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${hairline}`, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${hairline}`, overflowX: 'auto', padding: '0 28px', background: paper }}>
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -363,151 +356,185 @@ export const BankingModule: React.FC = () => {
 
       {/* Dashboard */}
       {tab === 'dashboard' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-          <KpiCard label="Total Bank Balance" value={fmt(kpis.totalBalance, currency)} icon={<Landmark size={16} />} sub={`${kpis.activeCount} active accounts`} />
-          <KpiCard label="Cash & Drawer" value={fmt(kpis.cashBalance, currency)} icon={<Wallet size={16} />} />
-          <KpiCard label="Unreconciled" value={String(kpis.unreconciledCount)} icon={<AlertCircle size={16} />} tone={kpis.unreconciledCount > 0 ? 'warning' : 'positive'} sub="transactions pending" />
-          <KpiCard label="This Month In" value={fmt(kpis.monthIn, currency)} icon={<ArrowDownCircle size={16} />} tone="positive" />
-          <KpiCard label="This Month Out" value={fmt(kpis.monthOut, currency)} icon={<ArrowUpCircle size={16} />} tone="warning" />
-          <KpiCard label="Net Movement" value={fmt(kpis.monthIn - kpis.monthOut, currency)} icon={<ArrowRightLeft size={16} />} tone={kpis.monthIn - kpis.monthOut >= 0 ? 'positive' : 'danger'} />
+        <>
+          <KpiCards items={[
+            { label: `Total Bank Balance · ${kpis.activeCount} active`, value: fmt(kpis.totalBalance, currency), icon: Landmark, color: teal[700], bg: teal[50] },
+            { label: 'Cash & Drawer', value: fmt(kpis.cashBalance, currency), icon: Wallet, color: teal[600], bg: teal[50] },
+            { label: 'Unreconciled · pending', value: String(kpis.unreconciledCount), icon: AlertCircle, color: kpis.unreconciledCount > 0 ? amber[600] : teal[700], bg: kpis.unreconciledCount > 0 ? amber[100] : teal[50] },
+            { label: 'This Month In', value: fmt(kpis.monthIn, currency), icon: ArrowDownCircle, color: teal[700], bg: teal[50] },
+            { label: 'This Month Out', value: fmt(kpis.monthOut, currency), icon: ArrowUpCircle, color: amber[600], bg: amber[100] },
+            { label: 'Net Movement', value: fmt(kpis.monthIn - kpis.monthOut, currency), icon: ArrowRightLeft, color: kpis.monthIn - kpis.monthOut >= 0 ? teal[700] : danger, bg: kpis.monthIn - kpis.monthOut >= 0 ? teal[50] : '#fdeeee' },
+          ]} />
 
           {/* Recent activity */}
-          <div style={{ gridColumn: '1 / -1', background: paper, border: `1px solid ${hairline}`, borderRadius: 14, padding: 16 }}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 13, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Recent Activity</h3>
-            {store.transactions.length === 0 ? (
-              <EmptyState module="banking" customTitle="No bank transactions yet" customDescription="Add a bank account and create your first transaction." />
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {store.transactions.slice(0, 6).map((t) => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, background: teal[50] }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: ink }}>{t.description}</div>
-                      <div style={{ fontSize: 11, color: inkSoft }}>{t.date} · {t.type} · {store.accounts.find((a) => a.id === t.bankAccountId)?.name || '—'}</div>
+          <div style={{ padding: '18px 28px 28px' }}>
+            <div style={{ ...tableCard, padding: 20 }}>
+              <div style={sectionLabelStyle}><span>Recent Activity</span></div>
+              {store.transactions.length === 0 ? (
+                <EmptyState icon={<Landmark size={32} />} title="No bank transactions yet" hint="Add a bank account and create your first transaction." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {store.transactions.slice(0, 6).map((t) => (
+                    <div key={t.id}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: teal[50], border: `1px solid ${hairline}` }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: ink }}>{t.description}</div>
+                        <div style={{ fontSize: 11, color: inkSoft }}>{t.date} · {t.type} · {store.accounts.find((a) => a.id === t.bankAccountId)?.name || '—'}</div>
+                      </div>
+                      <div style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: ['Deposit', 'Interest'].includes(t.type) ? teal[700] : danger }}>
+                        {['Deposit', 'Interest'].includes(t.type) ? '+' : '−'}{fmt(t.amount, currency)}
+                      </div>
                     </div>
-                    <div style={{ fontWeight: 700, color: ['Deposit', 'Interest'].includes(t.type) ? emerald[600] : danger[600] }}>
-                      {['Deposit', 'Interest'].includes(t.type) ? '+' : '−'}{fmt(t.amount, currency)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Accounts */}
       {tab === 'accounts' && (
-        <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
           {store.accounts.length === 0 ? (
-            <div style={{ padding: 28 }}>
-              <EmptyState module="banking" customTitle="No bank accounts yet" customDescription="Add your first bank account to begin tracking cash and bank activity." actionLabel="Add Bank Account" onAction={() => setShowNewAccount({ open: true })} />
-            </div>
+            <EmptyState icon={<Building2 size={32} />} title="No bank accounts yet" hint="Add your first bank account to begin tracking cash and bank activity." />
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead>
-                <tr style={{ background: teal[50], color: teal[800] }}>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Account</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Bank</th>
-                  <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>Book Balance</th>
-                  <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>Unreconciled</th>
-                  <th style={{ textAlign: 'center', padding: '10px 12px', fontWeight: 700 }}>Status</th>
-                  <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {store.accounts.map((a: any) => {
-                  const active = a.status === 'Active';
-                  const coaId = a.coaId || resolveBankCOAId(a);
-                  const bookBal = coaBalances[coaId] ?? a.balance ?? 0;
-                  const unreconciled = store.transactions.filter((t) => t.bankAccountId === a.id && !t.reconciled && (t as any).status !== 'Draft' && (t as any).status !== 'Reversed').length;
-                  return (
-                    <tr key={a.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                      <td style={{ padding: '10px 12px' }}>
-                        <div style={{ fontWeight: 600, color: ink }}>{a.name}</div>
-                        <div style={{ fontSize: 11, color: inkSoft }}>{a.accountNumber} · {coaId || 'no COA map'}</div>
-                      </td>
-                      <td style={{ padding: '10px 12px', color: inkSoft }}>{a.bankName || '—'}</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: bookBal >= 0 ? emerald[600] : danger[600] }}>{fmt(bookBal, currency)}</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right', color: unreconciled > 0 ? amber[600] : inkSoft }}>{unreconciled}</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                        <span style={{ padding: '3px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: active ? emerald[50] : danger[50], color: active ? emerald[600] : danger[600] }}>
-                          {a.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                        <ActionMenu items={[
-                          { label: 'View', icon: <Eye size={13} />, onClick: () => setShowAccountDrawer({ open: true, accountId: a.id }) },
-                          ...(active ? [
-                            { label: 'Edit', icon: <Edit2 size={13} />, onClick: () => setShowNewAccount({ open: true, editAccount: a }) },
-                            { label: 'New Transaction', icon: <Plus size={13} />, onClick: () => setShowNewTransaction({ open: true, preset: { bankAccountId: a.id, date: getDefaultDate() } as any }) },
-                            { label: 'Receive Money', icon: <ArrowDownCircle size={13} />, onClick: () => setShowNewTransaction({ open: true, preset: { bankAccountId: a.id, type: 'Deposit', date: getDefaultDate() } as any }) },
-                            { label: 'Spend Money', icon: <ArrowUpCircle size={13} />, onClick: () => setShowNewTransaction({ open: true, preset: { bankAccountId: a.id, type: 'Withdrawal', date: getDefaultDate() } as any }) },
-                            { label: 'Reconcile', icon: <CheckCircle2 size={13} />, onClick: () => setShowReconcile({ open: true, accountId: a.id }) },
-                            { label: 'Import Statement', icon: <Upload size={13} />, onClick: () => setShowStatementImport({ open: true, accountId: a.id }) },
-                            { label: 'Deactivate', icon: <Lock size={13} />, onClick: () => setConfirm({ open: true, title: 'Deactivate Account', message: `Mark ${a.name} as inactive? Posting new transactions will be blocked.`, type: 'warning', onConfirm: () => deactivateAccount(a.id) }) },
-                          ] : [
-                            { label: 'Reactivate', icon: <RefreshCw size={13} />, onClick: () => reactivateAccount(a.id) },
-                          ]),
-                        ]} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div style={tableCard}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={tableHeadRow}>
+                    <th style={{ ...tableHeadCell, textAlign: 'left' }}>Account</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'left' }}>Bank</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'right' }}>Book Balance</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'right' }}>Unreconciled</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'center' }}>Status</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {store.accounts.map((a: any) => {
+                    const active = a.status === 'Active';
+                    const coaId = a.coaId || resolveBankCOAId(a);
+                    const bookBal = coaBalances[coaId] ?? a.balance ?? 0;
+                    const unreconciled = store.transactions.filter((t) => t.bankAccountId === a.id && !t.reconciled && (t as any).status !== 'Draft' && (t as any).status !== 'Reversed').length;
+                    return (
+                      <tr key={a.id}
+                        style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: teal[100], color: teal[700], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>
+                              {(a.name || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 13, color: ink }}>{a.name}</div>
+                              <div style={{ fontSize: 11, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{a.accountNumber} · {coaId || 'no COA map'}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px 16px', fontSize: 13, color: inkSoft }}>{a.bankName || '—'}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: bookBal >= 0 ? teal[700] : danger }}>{fmt(bookBal, currency)}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: unreconciled > 0 ? amber[600] : inkSoft }}>{unreconciled}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: active ? teal[50] : '#fdeeee', color: active ? teal[700] : danger }}>
+                            {a.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          <ActionMenu items={[
+                            { label: 'View', icon: <Eye size={13} />, onClick: () => setShowAccountDrawer({ open: true, accountId: a.id }) },
+                            ...(active ? [
+                              { label: 'Edit', icon: <Edit2 size={13} />, onClick: () => setShowNewAccount({ open: true, editAccount: a }) },
+                              { label: 'New Transaction', icon: <Plus size={13} />, onClick: () => setShowNewTransaction({ open: true, preset: { bankAccountId: a.id, date: getDefaultDate() } as any }) },
+                              { label: 'Receive Money', icon: <ArrowDownCircle size={13} />, onClick: () => setShowNewTransaction({ open: true, preset: { bankAccountId: a.id, type: 'Deposit', date: getDefaultDate() } as any }) },
+                              { label: 'Spend Money', icon: <ArrowUpCircle size={13} />, onClick: () => setShowNewTransaction({ open: true, preset: { bankAccountId: a.id, type: 'Withdrawal', date: getDefaultDate() } as any }) },
+                              { label: 'Reconcile', icon: <CheckCircle2 size={13} />, onClick: () => setShowReconcile({ open: true, accountId: a.id }) },
+                              { label: 'Import Statement', icon: <Upload size={13} />, onClick: () => setShowStatementImport({ open: true, accountId: a.id }) },
+                              { label: 'Deactivate', icon: <Lock size={13} />, onClick: () => setConfirm({ open: true, title: 'Deactivate Account', message: `Mark ${a.name} as inactive? Posting new transactions will be blocked.`, type: 'warning', onConfirm: () => deactivateAccount(a.id) }) },
+                            ] : [
+                              { label: 'Reactivate', icon: <RefreshCw size={13} />, onClick: () => reactivateAccount(a.id) },
+                            ]),
+                          ]} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
       {/* Transactions */}
       {tab === 'transactions' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
           {/* Filters */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: paper, padding: 10, borderRadius: 12, border: `1px solid ${hairline}` }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div style={{ position: 'relative', flex: '1 1 220px' }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search description, reference, payee…" style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12, background: paper }} />
+              <label style={labelStyle}>Search</label>
+              <div style={{ position: 'relative' }}>
+                <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search description, reference, payee…" style={{ ...inputStyle, paddingLeft: 34 }} />
+              </div>
             </div>
-            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12, background: paper }}>
-              <option value="all">All Types</option>
-              <option value="Deposit">Deposit</option>
-              <option value="Withdrawal">Withdrawal</option>
-              <option value="Transfer">Transfer</option>
-              <option value="Fee">Fee</option>
-              <option value="Interest">Interest</option>
-              <option value="Payment">Payment</option>
-            </select>
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12, background: paper }}>
-              <option value="all">All Statuses</option>
-              <option value="Draft">Draft</option>
-              <option value="Posted">Posted</option>
-              <option value="Reversed">Reversed</option>
-            </select>
-            <select value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12, background: paper }}>
-              <option value="all">All Accounts</option>
-              {store.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12 }} />
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${hairline}`, fontSize: 12 }} />
+            <div>
+              <label style={labelStyle}>Type</label>
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ ...selectStyle, width: 160 }}>
+                <option value="all">All Types</option>
+                <option value="Deposit">Deposit</option>
+                <option value="Withdrawal">Withdrawal</option>
+                <option value="Transfer">Transfer</option>
+                <option value="Fee">Fee</option>
+                <option value="Interest">Interest</option>
+                <option value="Payment">Payment</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Status</label>
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ ...selectStyle, width: 150 }}>
+                <option value="all">All Statuses</option>
+                <option value="Draft">Draft</option>
+                <option value="Posted">Posted</option>
+                <option value="Reversed">Reversed</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Account</label>
+              <select value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)} style={{ ...selectStyle, width: 180 }}>
+                <option value="all">All Accounts</option>
+                {store.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>From</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>To</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={inputStyle} />
+            </div>
           </div>
 
-          <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 14, overflow: 'hidden' }}>
+          <div style={tableCard}>
             {filteredTxns.length === 0 ? (
               <div style={{ padding: 24 }}>
-                <EmptyState module="banking" customTitle="No transactions match" customDescription="Adjust filters or create a new transaction." actionLabel="New Transaction" onAction={() => setShowNewTransaction({ open: true })} />
+                <EmptyState icon={<ArrowRightLeft size={32} />} title="No transactions match" hint="Adjust filters or create a new transaction." />
               </div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
-                  <tr style={{ background: teal[50], color: teal[800] }}>
-                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>Date</th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>Reference</th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>Description</th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px' }}>Account</th>
-                    <th style={{ textAlign: 'right', padding: '10px 12px' }}>In</th>
-                    <th style={{ textAlign: 'right', padding: '10px 12px' }}>Out</th>
-                    <th style={{ textAlign: 'center', padding: '10px 12px' }}>Status</th>
-                    <th style={{ textAlign: 'right', padding: '10px 12px' }}>Actions</th>
+                  <tr style={tableHeadRow}>
+                    <th style={{ ...tableHeadCell, textAlign: 'left' }}>Date</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'left' }}>Reference</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'left' }}>Description</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'left' }}>Account</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'right' }}>In</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'right' }}>Out</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'center' }}>Status</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -516,23 +543,27 @@ export const BankingModule: React.FC = () => {
                     const isIn = ['Deposit', 'Interest'].includes(t.type);
                     const acc = store.accounts.find((a) => a.id === t.bankAccountId);
                     return (
-                      <tr key={t.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                        <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{t.date}</td>
-                        <td style={{ padding: '10px 12px', color: inkSoft, whiteSpace: 'nowrap' }}>{t.reference || t.id}</td>
-                        <td style={{ padding: '10px 12px' }}>{t.description}</td>
-                        <td style={{ padding: '10px 12px', color: inkSoft }}>{acc?.name || '—'}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: isIn ? emerald[600] : inkSoft, fontWeight: 600 }}>{isIn ? fmt(t.amount, currency) : ''}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: !isIn ? danger[600] : inkSoft, fontWeight: 600 }}>{!isIn ? fmt(t.amount, currency) : ''}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                      <tr key={t.id}
+                        style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '12px 16px', whiteSpace: 'nowrap', color: ink }}>{t.date}</td>
+                        <td style={{ padding: '12px 16px', color: inkSoft, whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>{t.reference || t.id}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, fontSize: 13, color: ink }}>{t.description}</td>
+                        <td style={{ padding: '12px 16px', fontSize: 13, color: inkSoft }}>{acc?.name || '—'}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: isIn ? teal[700] : inkSoft, fontWeight: 600 }}>{isIn ? fmt(t.amount, currency) : ''}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: !isIn ? danger : inkSoft, fontWeight: 600 }}>{!isIn ? fmt(t.amount, currency) : ''}</td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                           <span style={{
-                            padding: '3px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700,
-                            background: status === 'Posted' ? emerald[50] : status === 'Draft' ? amber[50] : danger[50],
-                            color: status === 'Posted' ? emerald[600] : status === 'Draft' ? amber[600] : danger[600],
+                            padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                            background: status === 'Posted' ? teal[50] : status === 'Draft' ? amber[100] : '#fdeeee',
+                            color: status === 'Posted' ? teal[700] : status === 'Draft' ? amber[600] : danger,
                           }}>
                             {status}
                           </span>
                         </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                           <ActionMenu items={[
                             { label: 'View', icon: <Eye size={13} />, onClick: () => setShowTxnDetail({ open: true, txnId: t.id }) },
                             ...(status === 'Draft' ? [
@@ -557,65 +588,77 @@ export const BankingModule: React.FC = () => {
 
       {/* Reconciliation */}
       {tab === 'reconciliation' && (
-        <ReconciliationTab onOpen={(accountId) => setShowReconcile({ open: true, accountId })} accounts={store.accounts as any} reconciliations={store.reconciliations as any} transactions={store.transactions as any} currency={currency} />
+        <div style={{ flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
+          <ReconciliationTab onOpen={(accountId) => setShowReconcile({ open: true, accountId })} accounts={store.accounts as any} reconciliations={store.reconciliations as any} transactions={store.transactions as any} currency={currency} />
+        </div>
       )}
 
       {/* Reports */}
       {tab === 'reports' && (
-        <ReportsTab
-          accounts={store.accounts as any}
-          transactions={store.transactions as any}
-          reconciliations={store.reconciliations as any}
-          scheduledPayments={(store as any).scheduledPayments || []}
-          currency={currency}
-          coaBalances={coaBalances}
-        />
+        <div style={{ flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
+          <ReportsTab
+            accounts={store.accounts as any}
+            transactions={store.transactions as any}
+            reconciliations={store.reconciliations as any}
+            scheduledPayments={(store as any).scheduledPayments || []}
+            currency={currency}
+            coaBalances={coaBalances}
+          />
+        </div>
       )}
 
       {/* Cash Management */}
       {tab === 'cash' && (
-        <CashManagementTab
-          accounts={store.accounts as any}
-          transactions={store.transactions as any}
-          scheduledPayments={(store as any).scheduledPayments || []}
-          receivables={(store as any).receivables || []}
-          payables={(store as any).payables || []}
-          currency={currency}
-          coaBalances={coaBalances}
-        />
+        <div style={{ flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
+          <CashManagementTab
+            accounts={store.accounts as any}
+            transactions={store.transactions as any}
+            scheduledPayments={(store as any).scheduledPayments || []}
+            receivables={(store as any).receivables || []}
+            payables={(store as any).payables || []}
+            currency={currency}
+            coaBalances={coaBalances}
+          />
+        </div>
       )}
 
       {/* Scheduled Transactions */}
       {tab === 'scheduled' && (
-        <ScheduledTransactionsTab
-          accounts={store.accounts as any}
-          scheduledPayments={(store as any).scheduledPayments || []}
-          currency={currency}
-          onRefresh={() => store.fetchBankingData()}
-          onCreateTransaction={(tx) => bankingService.createTransaction(tx as any).then(() => store.fetchBankingData())}
-        />
+        <div style={{ flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
+          <ScheduledTransactionsTab
+            accounts={store.accounts as any}
+            scheduledPayments={(store as any).scheduledPayments || []}
+            currency={currency}
+            onRefresh={() => store.fetchBankingData()}
+            onCreateTransaction={(tx) => bankingService.createTransaction(tx as any).then(() => store.fetchBankingData())}
+          />
+        </div>
       )}
 
       {/* Statements */}
       {tab === 'statements' && (
-        <StatementsTab
-          accounts={store.accounts as any}
-          statements={(store as any).statements || []}
-          currency={currency}
-          onImport={(accountId) => setShowStatementImport({ open: true, accountId })}
-        />
+        <div style={{ flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
+          <StatementsTab
+            accounts={store.accounts as any}
+            statements={(store as any).statements || []}
+            currency={currency}
+            onImport={(accountId) => setShowStatementImport({ open: true, accountId })}
+          />
+        </div>
       )}
 
       {/* AI Assistant */}
       {tab === 'ai' && (
-        <AIAssistantTab
-          accounts={store.accounts as any}
-          transactions={store.transactions as any}
-          reconciliations={store.reconciliations as any}
-          scheduledPayments={(store as any).scheduledPayments || []}
-          currency={currency}
-          coaBalances={coaBalances}
-        />
+        <div style={{ flex: 1, overflow: 'auto', padding: '18px 28px 28px' }}>
+          <AIAssistantTab
+            accounts={store.accounts as any}
+            transactions={store.transactions as any}
+            reconciliations={store.reconciliations as any}
+            scheduledPayments={(store as any).scheduledPayments || []}
+            currency={currency}
+            coaBalances={coaBalances}
+          />
+        </div>
       )}
 
       {/* Modals */}
@@ -711,10 +754,10 @@ const ReconciliationTab: React.FC<{
   currency: string;
 }> = ({ onOpen, accounts, reconciliations, currency }) => {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 14, padding: 16 }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: 13, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Reconcile a Bank Account</h3>
-        <p style={{ margin: '0 0 12px', fontSize: 12, color: inkSoft }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ ...tableCard, padding: 20 }}>
+        <div style={sectionLabelStyle}><span>Reconcile a Bank Account</span></div>
+        <p style={{ margin: '0 0 14px', fontSize: 12.5, color: inkSoft }}>
           Match your book transactions against your bank statement. The system prevents completion unless the difference is zero.
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
@@ -722,45 +765,55 @@ const ReconciliationTab: React.FC<{
             <button
               key={a.id}
               onClick={() => onOpen(a.id)}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, padding: 14, borderRadius: 12, border: `1px solid ${hairline}`, background: '#fff', cursor: 'pointer', textAlign: 'left' }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, padding: 14, borderRadius: 12, border: `1.4px solid ${hairline}`, background: paper, cursor: 'pointer', textAlign: 'left', transition: 'background .12s' }}
+              onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+              onMouseLeave={e => e.currentTarget.style.background = paper}
             >
               <span style={{ fontWeight: 600, color: ink, fontSize: 13 }}>{a.name}</span>
               <span style={{ fontSize: 11, color: inkSoft }}>{a.bankName}</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: teal[700] }}>{fmt(a.balance || 0, currency)}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: teal[700], fontFamily: "'JetBrains Mono', monospace" }}>{fmt(a.balance || 0, currency)}</span>
             </button>
           ))}
         </div>
       </div>
 
-      <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 14, padding: 16 }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: 13, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5 }}>Recent Reconciliations</h3>
+      <div style={{ ...tableCard, padding: 20 }}>
+        <div style={sectionLabelStyle}><span>Recent Reconciliations</span></div>
         {reconciliations.length === 0 ? (
-          <EmptyState module="banking" customTitle="No reconciliations yet" customDescription="Reconcile a bank account to start tracking your statement-to-book balance." />
+          <EmptyState icon={<CheckCircle2 size={32} />} title="No reconciliations yet" hint="Reconcile a bank account to start tracking your statement-to-book balance." />
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead>
-              <tr style={{ background: teal[50] }}>
-                <th style={{ textAlign: 'left', padding: 8 }}>Date</th>
-                <th style={{ textAlign: 'left', padding: 8 }}>Account</th>
-                <th style={{ textAlign: 'right', padding: 8 }}>Book</th>
-                <th style={{ textAlign: 'right', padding: 8 }}>Statement</th>
-                <th style={{ textAlign: 'right', padding: 8 }}>Difference</th>
-                <th style={{ textAlign: 'center', padding: 8 }}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reconciliations.slice(0, 10).map((r) => (
-                <tr key={r.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                  <td style={{ padding: 8 }}>{r.endDate}</td>
-                  <td style={{ padding: 8 }}>{accounts.find((a) => a.id === r.bankAccountId)?.name || '—'}</td>
-                  <td style={{ padding: 8, textAlign: 'right' }}>{fmt(r.bookBalance, currency)}</td>
-                  <td style={{ padding: 8, textAlign: 'right' }}>{fmt(r.endingBalance, currency)}</td>
-                  <td style={{ padding: 8, textAlign: 'right', color: Math.abs(r.difference) < 0.01 ? emerald[600] : danger[600] }}>{fmt(r.difference, currency)}</td>
-                  <td style={{ padding: 8, textAlign: 'center' }}>{r.status}</td>
+          <div style={{ border: `1.4px solid ${hairline}`, borderRadius: 12, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={tableHeadRow}>
+                  <th style={{ ...tableHeadCell, textAlign: 'left' }}>Date</th>
+                  <th style={{ ...tableHeadCell, textAlign: 'left' }}>Account</th>
+                  <th style={{ ...tableHeadCell, textAlign: 'right' }}>Book</th>
+                  <th style={{ ...tableHeadCell, textAlign: 'right' }}>Statement</th>
+                  <th style={{ ...tableHeadCell, textAlign: 'right' }}>Difference</th>
+                  <th style={{ ...tableHeadCell, textAlign: 'center' }}>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {reconciliations.slice(0, 10).map((r) => (
+                  <tr key={r.id}
+                    style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '10px 14px', color: ink }}>{r.endDate}</td>
+                    <td style={{ padding: '10px 14px', fontWeight: 600, color: ink }}>{accounts.find((a) => a.id === r.bankAccountId)?.name || '—'}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{fmt(r.bookBalance, currency)}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{fmt(r.endingBalance, currency)}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: Math.abs(r.difference) < 0.01 ? teal[700] : danger }}>{fmt(r.difference, currency)}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                      <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: teal[50], color: teal[700] }}>{r.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
@@ -777,43 +830,52 @@ const StatementsTab: React.FC<{
   const activeAccounts = accounts.filter((a) => a.status === 'Active');
   const filtered = selectedAccountId ? statements.filter((s) => s.bankAccountId === selectedAccountId) : statements;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: paper, padding: 10, borderRadius: 10, border: `1px solid ${hairline}`, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.6 }}>Account</span>
-        <select value={selectedAccountId} onChange={(e) => setSelectedAccountId(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${hairline}`, fontSize: 12, background: paper }}>
-          <option value="">All Accounts</option>
-          {activeAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <button onClick={() => onImport(selectedAccountId || undefined)} style={{ marginLeft: 'auto', padding: '8px 14px', borderRadius: 7, border: 'none', background: `linear-gradient(155deg, ${teal[600]}, ${teal[800]})`, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div>
+          <label style={labelStyle}>Account</label>
+          <select value={selectedAccountId} onChange={(e) => setSelectedAccountId(e.target.value)} style={{ ...selectStyle, width: 220 }}>
+            <option value="">All Accounts</option>
+            {activeAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+        <button onClick={() => onImport(selectedAccountId || undefined)}
+          style={{ ...btnPrimaryStyle, marginLeft: 'auto' }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}>
           <Upload size={14} /> Import Statement (CSV)
         </button>
       </div>
       {filtered.length === 0 ? (
-        <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 12, padding: 20 }}>
-          <EmptyState module="banking" customTitle="No statements imported yet" customDescription="Import a CSV bank statement to begin reconciliation. Duplicates are detected automatically." actionLabel="Import Statement" onAction={() => onImport(selectedAccountId || undefined)} />
+        <div style={{ ...tableCard, padding: 24 }}>
+          <EmptyState icon={<FileText size={32} />} title="No statements imported yet" hint="Import a CSV bank statement to begin reconciliation. Duplicates are detected automatically." />
         </div>
       ) : (
-        <div style={{ background: paper, border: `1px solid ${hairline}`, borderRadius: 12, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <div style={tableCard}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ background: teal[50], color: teal[800] }}>
-                <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Imported</th>
-                <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>Account</th>
-                <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700 }}>File</th>
-                <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>Rows</th>
-                <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>Matched</th>
-                <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 700 }}>Unmatched</th>
+              <tr style={tableHeadRow}>
+                <th style={{ ...tableHeadCell, textAlign: 'left' }}>Imported</th>
+                <th style={{ ...tableHeadCell, textAlign: 'left' }}>Account</th>
+                <th style={{ ...tableHeadCell, textAlign: 'left' }}>File</th>
+                <th style={{ ...tableHeadCell, textAlign: 'right' }}>Rows</th>
+                <th style={{ ...tableHeadCell, textAlign: 'right' }}>Matched</th>
+                <th style={{ ...tableHeadCell, textAlign: 'right' }}>Unmatched</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((s: any) => (
-                <tr key={s.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                  <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{(s.importedAt || '').slice(0, 10)}</td>
-                  <td style={{ padding: '10px 12px' }}>{accounts.find((a) => a.id === s.bankAccountId)?.name || '—'}</td>
-                  <td style={{ padding: '10px 12px', color: inkSoft }}>{s.fileName || '—'}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>{s.rowCount || 0}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', color: emerald[600] }}>{s.matchedCount || 0}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', color: (s.unmatchedCount || 0) > 0 ? danger[600] : inkSoft }}>{s.unmatchedCount || 0}</td>
+                <tr key={s.id}
+                  style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: ink }}>{(s.importedAt || '').slice(0, 10)}</td>
+                  <td style={{ padding: '10px 16px', fontWeight: 600, color: ink }}>{accounts.find((a) => a.id === s.bankAccountId)?.name || '—'}</td>
+                  <td style={{ padding: '10px 16px', color: inkSoft }}>{s.fileName || '—'}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{s.rowCount || 0}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: teal[700], fontWeight: 600 }}>{s.matchedCount || 0}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: (s.unmatchedCount || 0) > 0 ? danger : inkSoft, fontWeight: 600 }}>{s.unmatchedCount || 0}</td>
                 </tr>
               ))}
             </tbody>

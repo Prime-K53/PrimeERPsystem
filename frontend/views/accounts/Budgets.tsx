@@ -3,13 +3,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Target, Save, AlertCircle, TrendingUp, ArrowRight, FileText, ChevronRight, X } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
+import { currencyService } from '../../services/currencyService';
 import { Budget } from '../../types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const Budgets: React.FC = () => {
   const { accounts, ledger, budgets, saveBudget } = useFinance();
   const { companyConfig } = useAuth();
-  const currency = companyConfig.currencySymbol;
+  const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   

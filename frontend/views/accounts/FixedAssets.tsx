@@ -10,6 +10,17 @@ import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { FixedAsset, FixedAssetCategory, FixedAssetStatus, DepreciationEntry } from '../../types';
 import { formatCurrency, getDefaultDate } from '../../utils/helpers';
+import { currencyService } from '../../services/currencyService';
+
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    tableCard, tableHeadRow,
+} from './components/financeChrome';
 
 const ASSET_CATEGORY_INFO: Record<FixedAssetCategory, { label: string; icon: React.ReactNode; accounts: string[] }> = {
     motor_vehicle: { label: 'Motor Vehicle', icon: <Truck size={16} />, accounts: ['12100'] },
@@ -28,15 +39,10 @@ const STATUS_COLORS: Record<FixedAssetStatus, { bg: string; text: string; label:
     under_maintenance: { bg: '#dbeafe', text: '#1e40af', label: 'Under Maintenance' },
 };
 
-const paper = '#FEFDFB';
-const ink = '#23282A';
-const inkSoft = '#5c6567';
-const hairline = '#e4ddd1';
-const assets = '#1f8577';
-
 const FixedAssets: React.FC = () => {
     const { user, companyConfig, checkPermission, notify } = useAuth();
     const { accounts, refreshAccounts } = useFinance();
+    const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
     const [assets, setAssets] = useState<FixedAsset[]>([]);
     const [assetRegister, setAssetRegister] = useState<(FixedAsset & { current_book_value: number; accumulated_depreciation: number })[]>([]);
@@ -176,85 +182,69 @@ const FixedAssets: React.FC = () => {
         URL.revokeObjectURL(url);
     };
 
+    const kpis = [
+        { label: 'Total Acquisition Cost', value: formatCurrency(totals.acquisitionCost, currency), icon: DollarSign, color: teal[700], bg: teal[50] },
+        { label: 'Accumulated Depreciation', value: formatCurrency(totals.accumulatedDepreciation, currency), icon: AlertTriangle, color: amber[600], bg: amber[100] },
+        { label: 'Net Book Value', value: formatCurrency(totals.bookValue, currency), icon: FileText, color: teal[700], bg: teal[50] },
+    ];
+
     return (
-        <div className="flex flex-col h-full" style={{ background: paper }}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                <div>
-                    <h1 className="text-lg font-semibold" style={{ color: ink }}>Fixed Assets</h1>
-                    <p className="text-sm" style={{ color: inkSoft }}>Manage your organization's fixed asset register</p>
-                </div>
-                <div className="flex items-center gap-3">
+        <div className="flex flex-col h-full" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
+            <PageHeader
+                icon={<Building2 size={19} color="#fff" />}
+                title="Fixed Assets"
+                subtitle="Asset register — acquisition, depreciation & disposal"
+                actions={<>
                     <button
                         onClick={() => setIsDepreciateModalOpen(true)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg border transition-colors"
-                        style={{ borderColor: hairline, color: ink }}
+                        style={btnGhostStyle}
+                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
                     >
-                        <Percent size={16} />
+                        <Percent size={15} />
                         Run Depreciation
+                    </button>
+                    <button
+                        onClick={exportToCSV}
+                        style={btnGhostStyle}
+                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+                    >
+                        <Download size={15} />
+                        Export
                     </button>
                     {canEdit && (
                         <button
                             onClick={() => setIsAddModalOpen(true)}
-                            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg text-white transition-colors"
-                            style={{ background: assets }}
+                            style={btnPrimaryStyle}
+                            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
                         >
-                            <Plus size={16} />
+                            <Plus size={15} />
                             Add Asset
                         </button>
                     )}
-                </div>
-            </div>
+                </>}
+            />
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-3 gap-4 px-6 py-4">
-                <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                    <div className="flex items-center gap-2 mb-2">
-                        <DollarSign size={16} style={{ color: inkSoft }} />
-                        <span className="text-sm" style={{ color: inkSoft }}>Total Acquisition Cost</span>
-                    </div>
-                    <span className="text-xl font-semibold" style={{ color: ink }}>
-                        {formatCurrency(totals.acquisitionCost)}
-                    </span>
-                </div>
-                <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                    <div className="flex items-center gap-2 mb-2">
-                        <AlertTriangle size={16} style={{ color: inkSoft }} />
-                        <span className="text-sm" style={{ color: inkSoft }}>Accumulated Depreciation</span>
-                    </div>
-                    <span className="text-xl font-semibold text-amber-600">
-                        {formatCurrency(totals.accumulatedDepreciation)}
-                    </span>
-                </div>
-                <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                    <div className="flex items-center gap-2 mb-2">
-                        <FileText size={16} style={{ color: inkSoft }} />
-                        <span className="text-sm" style={{ color: inkSoft }}>Net Book Value</span>
-                    </div>
-                    <span className="text-xl font-semibold" style={{ color: assets }}>
-                        {formatCurrency(totals.bookValue)}
-                    </span>
-                </div>
-            </div>
+            <KpiCards items={kpis} />
 
             {/* Filters */}
-            <div className="flex items-center gap-4 px-6 py-3 border-b" style={{ borderColor: hairline }}>
-                <div className="flex-1 relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: inkSoft }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 28px' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                    <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
                     <input
                         type="text"
                         placeholder="Search assets..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 text-sm rounded-lg border outline-none"
-                        style={{ borderColor: hairline }}
+                        style={{ ...inputStyle, paddingLeft: 34 }}
                     />
                 </div>
                 <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value as FixedAssetCategory | 'All')}
-                    className="px-3 py-2 text-sm rounded-lg border outline-none"
-                    style={{ borderColor: hairline }}
+                    style={{ ...selectStyle, width: 200 }}
                 >
                     <option value="All">All Categories</option>
                     {Object.entries(ASSET_CATEGORY_INFO).map(([key, info]) => (
@@ -264,122 +254,132 @@ const FixedAssets: React.FC = () => {
                 <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as FixedAssetStatus | 'All')}
-                    className="px-3 py-2 text-sm rounded-lg border outline-none"
-                    style={{ borderColor: hairline }}
+                    style={{ ...selectStyle, width: 200 }}
                 >
                     <option value="All">All Status</option>
                     {Object.entries(STATUS_COLORS).map(([key, info]) => (
                         <option key={key} value={key}>{info.label}</option>
                     ))}
                 </select>
-                <button
-                    onClick={exportToCSV}
-                    className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors"
-                    style={{ borderColor: hairline, color: ink }}
-                >
-                    <Download size={16} />
-                    Export
-                </button>
             </div>
 
             {/* Asset Table */}
-            <div className="flex-1 overflow-auto px-6 py-4">
+            <div style={{ flex: 1, overflow: 'auto', padding: '0 28px 28px' }}>
                 {isLoading ? (
-                    <div className="flex items-center justify-center h-64">
-                        <Loader2 size={24} className="animate-spin" style={{ color: assets }} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 256 }}>
+                        <Loader2 size={24} className="animate-spin" style={{ color: teal[500] }} />
                     </div>
                 ) : filteredAssets.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-64" style={{ color: inkSoft }}>
-                        <Package size={48} className="mb-4 opacity-50" />
-                        <p>No fixed assets found</p>
-                    </div>
+                    <EmptyState icon={<Package size={32} />} title="No fixed assets found" hint="Add an asset to start building the register." />
                 ) : (
-                    <table className="w-full">
-                        <thead>
-                            <tr className="text-left text-xs" style={{ color: inkSoft }}>
-                                <th className="pb-3 font-medium">Asset</th>
-                                <th className="pb-3 font-medium">Category</th>
-                                <th className="pb-3 font-medium">Status</th>
-                                <th className="pb-3 font-medium text-right">Acquisition Cost</th>
-                                <th className="pb-3 font-medium text-right">Accumulated Deprec.</th>
-                                <th className="pb-3 font-medium text-right">Book Value</th>
-                                <th className="pb-3 font-medium text-center">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredAssets.map(asset => (
-                                <tr key={asset.id} className="border-t" style={{ borderColor: hairline }}>
-                                    <td className="py-3">
-                                        <div>
-                                            <p className="font-medium text-sm" style={{ color: ink }}>{asset.name}</p>
-                                            <p className="text-xs" style={{ color: inkSoft }}>{asset.asset_code}</p>
-                                        </div>
-                                    </td>
-                                    <td className="py-3">
-                                        <div className="flex items-center gap-2 text-sm" style={{ color: ink }}>
-                                            {ASSET_CATEGORY_INFO[asset.category]?.icon}
-                                            {ASSET_CATEGORY_INFO[asset.category]?.label || asset.category}
-                                        </div>
-                                    </td>
-                                    <td className="py-3">
-                                        <span
-                                            className="px-2 py-1 text-xs rounded-full"
-                                            style={{
-                                                background: STATUS_COLORS[asset.status]?.bg,
-                                                color: STATUS_COLORS[asset.status]?.text
-                                            }}
-                                        >
-                                            {STATUS_COLORS[asset.status]?.label || asset.status}
-                                        </span>
-                                    </td>
-                                    <td className="py-3 text-sm text-right font-mono" style={{ color: ink }}>
-                                        {formatCurrency(asset.acquisition_cost)}
-                                    </td>
-                                    <td className="py-3 text-sm text-right font-mono text-amber-600">
-                                        {formatCurrency(asset.accumulated_depreciation)}
-                                    </td>
-                                    <td className="py-3 text-sm text-right font-mono" style={{ color: assets }}>
-                                        {formatCurrency(asset.current_book_value)}
-                                    </td>
-                                    <td className="py-3">
-                                        <div className="flex items-center justify-center gap-2">
-                                            <button
-                                                onClick={() => handleViewDetails(asset)}
-                                                className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-                                                title="View Details"
-                                            >
-                                                <Eye size={16} style={{ color: inkSoft }} />
-                                            </button>
-                                            {asset.status === 'active' && canEdit && (
-                                                <>
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedAsset(asset);
-                                                            setIsDepreciateModalOpen(true);
-                                                        }}
-                                                        className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-                                                        title="Post Depreciation"
-                                                    >
-                                                        <Percent size={16} style={{ color: inkSoft }} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedAsset(asset);
-                                                            setIsDisposeModalOpen(true);
-                                                        }}
-                                                        className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-                                                        title="Dispose"
-                                                    >
-                                                        <Trash2 size={16} style={{ color: '#dc2626' }} />
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </td>
+                    <div style={tableCard}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr style={tableHeadRow}>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Asset</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Category</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Status</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Acquisition Cost</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Accumulated Deprec.</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Book Value</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'center' }}>Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {filteredAssets.map(asset => (
+                                    <tr key={asset.id}
+                                        style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <td style={{ padding: '12px 16px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <div style={{
+                                                    width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                                                    background: teal[100], color: teal[700],
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: 13, fontWeight: 700
+                                                }}>
+                                                    {(asset.name || '?').charAt(0).toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p style={{ fontWeight: 600, fontSize: 13, color: ink, margin: 0 }}>{asset.name}</p>
+                                                    <p style={{ fontSize: 11, color: inkSoft, margin: 0, fontFamily: "'JetBrains Mono', monospace" }}>{asset.asset_code}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '12px 16px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: ink }}>
+                                                {ASSET_CATEGORY_INFO[asset.category]?.icon}
+                                                {ASSET_CATEGORY_INFO[asset.category]?.label || asset.category}
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '12px 16px' }}>
+                                            <span
+                                                style={{
+                                                    padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 20,
+                                                    background: STATUS_COLORS[asset.status]?.bg,
+                                                    color: STATUS_COLORS[asset.status]?.text
+                                                }}
+                                            >
+                                                {STATUS_COLORS[asset.status]?.label || asset.status}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: ink, fontVariantNumeric: 'tabular-nums' }}>
+                                            {formatCurrency(asset.acquisition_cost, currency)}
+                                        </td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: amber[600], fontVariantNumeric: 'tabular-nums' }}>
+                                            {formatCurrency(asset.accumulated_depreciation, currency)}
+                                        </td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: teal[700], fontVariantNumeric: 'tabular-nums' }}>
+                                            {formatCurrency(asset.current_book_value, currency)}
+                                        </td>
+                                        <td style={{ padding: '12px 16px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                                <button
+                                                    onClick={() => handleViewDetails(asset)}
+                                                    style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
+                                                    title="View Details"
+                                                    onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                                >
+                                                    <Eye size={16} style={{ color: inkSoft }} />
+                                                </button>
+                                                {asset.status === 'active' && canEdit && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelectedAsset(asset);
+                                                                setIsDepreciateModalOpen(true);
+                                                            }}
+                                                            style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
+                                                            title="Post Depreciation"
+                                                            onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                                        >
+                                                            <Percent size={16} style={{ color: inkSoft }} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelectedAsset(asset);
+                                                                setIsDisposeModalOpen(true);
+                                                            }}
+                                                            style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
+                                                            title="Dispose"
+                                                            onMouseEnter={e => e.currentTarget.style.background = '#fdeeee'}
+                                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                                        >
+                                                            <Trash2 size={16} style={{ color: danger }} />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
 
@@ -389,6 +389,7 @@ const FixedAssets: React.FC = () => {
                     accounts={accounts}
                     onClose={() => setIsAddModalOpen(false)}
                     onSubmit={handleAddAsset}
+                    currency={currency}
                 />
             )}
 
@@ -398,6 +399,7 @@ const FixedAssets: React.FC = () => {
                     asset={selectedAsset}
                     depreciationEntries={depreciationEntries}
                     onClose={() => setSelectedAsset(null)}
+                    currency={currency}
                 />
             )}
 
@@ -418,6 +420,7 @@ const FixedAssets: React.FC = () => {
                     asset={selectedAsset}
                     onClose={() => { setIsDisposeModalOpen(false); setSelectedAsset(null); }}
                     onDispose={(proceeds, reason) => handleDispose(selectedAsset.id, proceeds, reason)}
+                    currency={currency}
                 />
             )}
         </div>
@@ -428,9 +431,10 @@ interface AddAssetModalProps {
     accounts: any[];
     onClose: () => void;
     onSubmit: (data: any) => void;
+    currency: string;
 }
 
-const AddAssetModal: React.FC<AddAssetModalProps> = ({ accounts, onClose, onSubmit }) => {
+const AddAssetModal: React.FC<AddAssetModalProps> = ({ accounts, onClose, onSubmit, currency }) => {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -455,123 +459,126 @@ const AddAssetModal: React.FC<AddAssetModalProps> = ({ accounts, onClose, onSubm
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-xl w-full max-w-lg mx-4 shadow-xl">
-                <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                    <h2 className="text-lg font-semibold" style={{ color: ink }}>Add Fixed Asset</h2>
-                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-                        <X size={20} style={{ color: inkSoft }} />
-                    </button>
+        <div style={modalOverlayStyle} onClick={onClose}>
+            <div style={modalShell(600)} onClick={e => e.stopPropagation()}>
+                <AccentStripe />
+                <ModalHeader
+                    icon={<Building2 size={19} color="#fff" />}
+                    title="Add Fixed Asset"
+                    subtitle="New asset record — Fixed asset register"
+                    onClose={onClose}
+                />
+                <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+                    <form id="add-asset-form" onSubmit={handleSubmit}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                            <div style={{ gridColumn: '1 / -1' }}>
+                                <label style={labelStyle}>Asset Name <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    placeholder="e.g. Delivery Truck"
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div style={{ gridColumn: '1 / -1' }}>
+                                <label style={labelStyle}>Category</label>
+                                <select
+                                    value={formData.category}
+                                    onChange={(e) => setFormData({ ...formData, category: e.target.value as FixedAssetCategory })}
+                                    style={selectStyle}
+                                >
+                                    {Object.entries(ASSET_CATEGORY_INFO).map(([key, info]) => (
+                                        <option key={key} value={key}>{info.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Acquisition Date <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <input
+                                    type="date"
+                                    required
+                                    value={formData.acquisition_date}
+                                    onChange={(e) => setFormData({ ...formData, acquisition_date: e.target.value })}
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Acquisition Cost <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                                    <input
+                                        type="number"
+                                        required
+                                        min="0"
+                                        step="0.01"
+                                        value={formData.acquisition_cost}
+                                        onChange={(e) => setFormData({ ...formData, acquisition_cost: e.target.value })}
+                                        placeholder="0.00"
+                                        style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Salvage Value</label>
+                                <div style={{ position: 'relative' }}>
+                                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={formData.salvage_value}
+                                        onChange={(e) => setFormData({ ...formData, salvage_value: e.target.value })}
+                                        placeholder="0.00"
+                                        style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Useful Life (Years) <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <input
+                                    type="number"
+                                    required
+                                    min="1"
+                                    value={formData.useful_life_years}
+                                    onChange={(e) => setFormData({ ...formData, useful_life_years: e.target.value })}
+                                    placeholder="e.g. 5"
+                                    style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                                />
+                            </div>
+                        </div>
+                        <div style={sectionLabelStyle}><span>Depreciation & Location</span></div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                            <div>
+                                <label style={labelStyle}>Depreciation Method</label>
+                                <select
+                                    value={formData.depreciation_method}
+                                    onChange={(e) => setFormData({ ...formData, depreciation_method: e.target.value as any })}
+                                    style={selectStyle}
+                                >
+                                    <option value="straight_line">Straight Line</option>
+                                    <option value="declining_balance">Declining Balance</option>
+                                    <option value="sum_of_years">Sum of Years Digits</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style={labelStyle}>
+                                    Location
+                                    <span style={{ fontSize: 9.5, fontWeight: 600, color: inkSoft, background: teal[50], padding: '1px 6px', borderRadius: 20, letterSpacing: 0.03, textTransform: 'uppercase', marginLeft: 6 }}>Optional</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={formData.location}
+                                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                                    placeholder="Physical location"
+                                    style={inputStyle}
+                                />
+                            </div>
+                        </div>
+                    </form>
                 </div>
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Asset Name</label>
-                        <input
-                            type="text"
-                            required
-                            value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Category</label>
-                        <select
-                            value={formData.category}
-                            onChange={(e) => setFormData({ ...formData, category: e.target.value as FixedAssetCategory })}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
-                        >
-                            {Object.entries(ASSET_CATEGORY_INFO).map(([key, info]) => (
-                                <option key={key} value={key}>{info.label}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Acquisition Date</label>
-                            <input
-                                type="date"
-                                required
-                                value={formData.acquisition_date}
-                                onChange={(e) => setFormData({ ...formData, acquisition_date: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Acquisition Cost</label>
-                            <input
-                                type="number"
-                                required
-                                min="0"
-                                step="0.01"
-                                value={formData.acquisition_cost}
-                                onChange={(e) => setFormData({ ...formData, acquisition_cost: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Salvage Value</label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={formData.salvage_value}
-                                onChange={(e) => setFormData({ ...formData, salvage_value: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Useful Life (Years)</label>
-                            <input
-                                type="number"
-                                required
-                                min="1"
-                                value={formData.useful_life_years}
-                                onChange={(e) => setFormData({ ...formData, useful_life_years: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Depreciation Method</label>
-                        <select
-                            value={formData.depreciation_method}
-                            onChange={(e) => setFormData({ ...formData, depreciation_method: e.target.value as any })}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
-                        >
-                            <option value="straight_line">Straight Line</option>
-                            <option value="declining_balance">Declining Balance</option>
-                            <option value="sum_of_years">Sum of Years Digits</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Location</label>
-                        <input
-                            type="text"
-                            value={formData.location}
-                            onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
-                        />
-                    </div>
-                    <div className="flex justify-end gap-3 pt-4">
-                        <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border" style={{ borderColor: hairline, color: ink }}>
-                            Cancel
-                        </button>
-                        <button type="submit" className="px-4 py-2 text-sm rounded-lg text-white" style={{ background: assets }}>
-                            Add Asset
-                        </button>
-                    </div>
-                </form>
+                <ModalFooter stepLabel="New asset · Fixed asset register" onCancel={onClose} submitLabel="Add Asset" submitFormId="add-asset-form" />
             </div>
         </div>
     );
@@ -581,60 +588,62 @@ interface AssetDetailsModalProps {
     asset: FixedAsset;
     depreciationEntries: DepreciationEntry[];
     onClose: () => void;
+    currency: string;
 }
 
-const AssetDetailsModal: React.FC<AssetDetailsModalProps> = ({ asset, depreciationEntries, onClose }) => {
+const AssetDetailsModal: React.FC<AssetDetailsModalProps> = ({ asset, depreciationEntries, onClose, currency }) => {
     const categoryInfo = ASSET_CATEGORY_INFO[asset.category];
     const statusInfo = STATUS_COLORS[asset.status];
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-xl w-full max-w-2xl mx-4 shadow-xl max-h-[90vh] overflow-auto">
-                <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white" style={{ borderColor: hairline }}>
-                    <h2 className="text-lg font-semibold" style={{ color: ink }}>Asset Details</h2>
-                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-                        <X size={20} style={{ color: inkSoft }} />
-                    </button>
-                </div>
-                <div className="p-6">
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="p-3 rounded-lg" style={{ background: '#f3f4f6' }}>
+        <div style={modalOverlayStyle} onClick={onClose}>
+            <div style={modalShell(760)} onClick={e => e.stopPropagation()}>
+                <AccentStripe />
+                <ModalHeader
+                    icon={<Eye size={19} color="#fff" />}
+                    title="Asset Details"
+                    subtitle={`${asset.name} · ${asset.asset_code}`}
+                    onClose={onClose}
+                />
+                <div style={{ padding: '24px 28px', overflowY: 'auto' }}>
+                    <div style={{
+                        padding: 14, background: teal[50], borderRadius: 9, border: `1px solid ${teal[100]}`,
+                        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                    }}>
+                        <div style={{ padding: 10, borderRadius: 10, background: teal[100], color: teal[700], display: 'inline-flex' }}>
                             {categoryInfo?.icon}
                         </div>
-                        <div>
-                            <h3 className="text-xl font-semibold" style={{ color: ink }}>{asset.name}</h3>
-                            <p className="text-sm" style={{ color: inkSoft }}>{asset.asset_code}</p>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: ink }}>{asset.name}</div>
+                            <div style={{ fontSize: 11.5, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{asset.asset_code} · {categoryInfo?.label}</div>
                         </div>
-                        <span
-                            className="ml-auto px-3 py-1 text-sm rounded-full"
-                            style={{ background: statusInfo?.bg, color: statusInfo?.text }}
-                        >
+                        <span style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 20, background: statusInfo?.bg, color: statusInfo?.text }}>
                             {statusInfo?.label}
                         </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-6">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
                         <div>
-                            <h4 className="text-sm font-medium mb-3" style={{ color: inkSoft }}>Asset Information</h4>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-sm">
+                            <div style={sectionLabelStyle}><span>Asset Information</span></div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <span style={{ color: inkSoft }}>Category</span>
-                                    <span style={{ color: ink }}>{categoryInfo?.label}</span>
+                                    <span style={{ color: ink, fontWeight: 600 }}>{categoryInfo?.label}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <span style={{ color: inkSoft }}>Acquisition Date</span>
                                     <span style={{ color: ink }}>{asset.acquisition_date}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <span style={{ color: inkSoft }}>Useful Life</span>
                                     <span style={{ color: ink }}>{asset.useful_life_years} years</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <span style={{ color: inkSoft }}>Depreciation Method</span>
-                                    <span style={{ color: ink }} className="capitalize">{asset.depreciation_method.replace('_', ' ')}</span>
+                                    <span style={{ color: ink, textTransform: 'capitalize' }}>{asset.depreciation_method.replace('_', ' ')}</span>
                                 </div>
                                 {asset.location && (
-                                    <div className="flex justify-between text-sm">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                         <span style={{ color: inkSoft }}>Location</span>
                                         <span style={{ color: ink }}>{asset.location}</span>
                                     </div>
@@ -642,66 +651,76 @@ const AssetDetailsModal: React.FC<AssetDetailsModalProps> = ({ asset, depreciati
                             </div>
                         </div>
                         <div>
-                            <h4 className="text-sm font-medium mb-3" style={{ color: inkSoft }}>Financial Information</h4>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-sm">
+                            <div style={sectionLabelStyle}><span>Financial Information</span></div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <span style={{ color: inkSoft }}>Acquisition Cost</span>
-                                    <span className="font-mono" style={{ color: ink }}>{formatCurrency(asset.acquisition_cost)}</span>
+                                    <span style={{ color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(asset.acquisition_cost, currency)}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <span style={{ color: inkSoft }}>Salvage Value</span>
-                                    <span className="font-mono" style={{ color: ink }}>{formatCurrency(asset.salvage_value)}</span>
+                                    <span style={{ color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(asset.salvage_value, currency)}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <span style={{ color: inkSoft }}>Accumulated Deprec.</span>
-                                    <span className="font-mono text-amber-600">
-                                        {formatCurrency(depreciationEntries.reduce((s, e) => s + e.depreciation_amount, 0))}
+                                    <span style={{ color: amber[600], fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
+                                        {formatCurrency(depreciationEntries.reduce((s, e) => s + e.depreciation_amount, 0), currency)}
                                     </span>
                                 </div>
-                                <div className="flex justify-between text-sm">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                                     <span style={{ color: inkSoft }}>Book Value</span>
-                                    <span className="font-mono font-semibold" style={{ color: assets }}>
-                                        {formatCurrency(asset.acquisition_cost - depreciationEntries.reduce((s, e) => s + e.depreciation_amount, 0))}
+                                    <span style={{ color: teal[700], fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
+                                        {formatCurrency(asset.acquisition_cost - depreciationEntries.reduce((s, e) => s + e.depreciation_amount, 0), currency)}
                                     </span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {depreciationEntries.length > 0 && (
-                        <div className="mt-6">
-                            <h4 className="text-sm font-medium mb-3" style={{ color: inkSoft }}>Depreciation History</h4>
-                            <table className="w-full">
-                                <thead>
-                                    <tr className="text-left text-xs" style={{ color: inkSoft }}>
-                                        <th className="pb-2">Period</th>
-                                        <th className="pb-2 text-right">Depreciation</th>
-                                        <th className="pb-2 text-right">Accumulated</th>
-                                        <th className="pb-2 text-right">Book Value</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {depreciationEntries.map(entry => (
-                                        <tr key={entry.id} className="border-t" style={{ borderColor: hairline }}>
-                                            <td className="py-2 text-sm" style={{ color: ink }}>
-                                                {entry.period_year}-{String(entry.period_month).padStart(2, '0')}
-                                            </td>
-                                            <td className="py-2 text-sm text-right font-mono" style={{ color: ink }}>
-                                                {formatCurrency(entry.depreciation_amount)}
-                                            </td>
-                                            <td className="py-2 text-sm text-right font-mono" style={{ color: inkSoft }}>
-                                                {formatCurrency(entry.accumulated_depreciation)}
-                                            </td>
-                                            <td className="py-2 text-sm text-right font-mono" style={{ color: assets }}>
-                                                {formatCurrency(entry.book_value)}
-                                            </td>
+                    {depreciationEntries.length > 0 ? (
+                        <div style={{ marginTop: 20 }}>
+                            <div style={sectionLabelStyle}><span>Depreciation History</span></div>
+                            <div style={{ border: `1.4px solid ${hairline}`, borderRadius: 12, overflow: 'hidden' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                    <thead>
+                                        <tr style={tableHeadRow}>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700 }}>Period</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, textAlign: 'right' }}>Depreciation</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, textAlign: 'right' }}>Accumulated</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, textAlign: 'right' }}>Book Value</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {depreciationEntries.map(entry => (
+                                            <tr key={entry.id} style={{ borderTop: `1px solid ${hairline}` }}
+                                                onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                            >
+                                                <td style={{ padding: '9px 14px', fontFamily: "'JetBrains Mono', monospace", color: inkSoft }}>
+                                                    {entry.period_year}-{String(entry.period_month).padStart(2, '0')}
+                                                </td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: ink, fontVariantNumeric: 'tabular-nums' }}>
+                                                    {formatCurrency(entry.depreciation_amount, currency)}
+                                                </td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: inkSoft, fontVariantNumeric: 'tabular-nums' }}>
+                                                    {formatCurrency(entry.accumulated_depreciation, currency)}
+                                                </td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: teal[700], fontVariantNumeric: 'tabular-nums' }}>
+                                                    {formatCurrency(entry.book_value, currency)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ marginTop: 20 }}>
+                            <EmptyState icon={<FileText size={28} />} title="No depreciation posted yet" hint="Run depreciation to build history for this asset." />
                         </div>
                     )}
                 </div>
+                <ModalFooter stepLabel="Asset · register detail" onCancel={onClose} submitLabel="Done" onSubmit={onClose} />
             </div>
         </div>
     );
@@ -723,23 +742,23 @@ const DepreciationModal: React.FC<DepreciationModalProps> = ({ assets, selectedA
     const activeAssets = assets.filter(a => a.status === 'active');
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-xl">
-                <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                    <h2 className="text-lg font-semibold" style={{ color: ink }}>Run Depreciation</h2>
-                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-                        <X size={20} style={{ color: inkSoft }} />
-                    </button>
-                </div>
-                <div className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+        <div style={modalOverlayStyle} onClick={onClose}>
+            <div style={modalShell(520)} onClick={e => e.stopPropagation()}>
+                <AccentStripe />
+                <ModalHeader
+                    icon={<Percent size={19} color="#fff" />}
+                    title="Run Depreciation"
+                    subtitle={selectedAsset ? `Single asset · ${selectedAsset.name}` : `Bulk run · ${activeAssets.length} active assets`}
+                    onClose={onClose}
+                />
+                <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
                         <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Year</label>
+                            <label style={labelStyle}>Year</label>
                             <select
                                 value={year}
                                 onChange={(e) => setYear(parseInt(e.target.value))}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
+                                style={selectStyle}
                             >
                                 {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => (
                                     <option key={y} value={y}>{y}</option>
@@ -747,12 +766,11 @@ const DepreciationModal: React.FC<DepreciationModalProps> = ({ assets, selectedA
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Month</label>
+                            <label style={labelStyle}>Month</label>
                             <select
                                 value={month}
                                 onChange={(e) => setMonth(parseInt(e.target.value))}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
+                                style={selectStyle}
                             >
                                 {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
                                     <option key={m} value={m}>{new Date(year, m - 1).toLocaleString('default', { month: 'long' })}</option>
@@ -762,40 +780,42 @@ const DepreciationModal: React.FC<DepreciationModalProps> = ({ assets, selectedA
                     </div>
 
                     {selectedAsset && (
-                        <div className="p-3 rounded-lg border" style={{ borderColor: hairline }}>
-                            <p className="text-sm font-medium" style={{ color: ink }}>{selectedAsset.name}</p>
-                            <p className="text-xs" style={{ color: inkSoft }}>{selectedAsset.asset_code}</p>
+                        <div style={{
+                            padding: 14, background: teal[50], borderRadius: 9, border: `1px solid ${teal[100]}`,
+                            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                        }}>
+                            <div style={{ padding: 8, borderRadius: 8, background: teal[100], color: teal[700] }}>
+                                <Building2 size={18} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: ink }}>{selectedAsset.name}</div>
+                                <div style={{ fontSize: 11.5, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{selectedAsset.asset_code}</div>
+                            </div>
                         </div>
                     )}
 
-                    <div className="pt-2">
-                        <p className="text-sm mb-3" style={{ color: inkSoft }}>
-                            {selectedAsset
-                                ? `Post depreciation for ${selectedAsset.name}`
-                                : `Post depreciation for ${activeAssets.length} active assets`
-                            }
-                        </p>
-                    </div>
-
-                    <div className="flex justify-end gap-3 pt-4">
-                        <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border" style={{ borderColor: hairline, color: ink }}>
-                            Cancel
-                        </button>
-                        <button
-                            onClick={() => {
-                                if (selectedAsset) {
-                                    onDepreciate(selectedAsset.id, year, month);
-                                } else {
-                                    onDepreciateAll(year, month);
-                                }
-                            }}
-                            className="px-4 py-2 text-sm rounded-lg text-white"
-                            style={{ background: assets }}
-                        >
-                            Post Depreciation
-                        </button>
+                    <div style={{
+                        padding: 12, background: paper, borderRadius: 9, border: `1px solid ${hairline}`,
+                        fontSize: 12.5, color: inkSoft, marginBottom: 18
+                    }}>
+                        {selectedAsset
+                            ? `Post depreciation for ${selectedAsset.name}`
+                            : `Post depreciation for ${activeAssets.length} active assets`
+                        }
                     </div>
                 </div>
+                <ModalFooter
+                    stepLabel="Depreciation · posts to ledger"
+                    onCancel={onClose}
+                    submitLabel="Post Depreciation"
+                    onSubmit={() => {
+                        if (selectedAsset) {
+                            onDepreciate(selectedAsset.id, year, month);
+                        } else {
+                            onDepreciateAll(year, month);
+                        }
+                    }}
+                />
             </div>
         </div>
     );
@@ -805,65 +825,75 @@ interface DisposeAssetModalProps {
     asset: FixedAsset;
     onClose: () => void;
     onDispose: (proceeds: number, reason: string) => void;
+    currency: string;
 }
 
-const DisposeAssetModal: React.FC<DisposeAssetModalProps> = ({ asset, onClose, onDispose }) => {
+const DisposeAssetModal: React.FC<DisposeAssetModalProps> = ({ asset, onClose, onDispose, currency }) => {
     const [proceeds, setProceeds] = useState('0');
     const [reason, setReason] = useState('');
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-xl">
-                <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                    <h2 className="text-lg font-semibold" style={{ color: ink }}>Dispose Asset</h2>
-                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-                        <X size={20} style={{ color: inkSoft }} />
-                    </button>
-                </div>
-                <div className="p-6 space-y-4">
-                    <div className="p-3 rounded-lg border" style={{ borderColor: hairline, background: '#fef3c7' }}>
-                        <p className="text-sm font-medium" style={{ color: '#92400e' }}>{asset.name}</p>
-                        <p className="text-xs" style={{ color: '#92400e' }}>Original Cost: {formatCurrency(asset.acquisition_cost)}</p>
+        <div style={modalOverlayStyle} onClick={onClose}>
+            <div style={modalShell(520)} onClick={e => e.stopPropagation()}>
+                <AccentStripe />
+                <ModalHeader
+                    icon={<Trash2 size={19} color="#fff" />}
+                    title="Dispose Asset"
+                    subtitle="Gain / loss will be posted to the ledger"
+                    onClose={onClose}
+                    dangerTile
+                />
+                <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+                    <div style={{
+                        padding: 14, background: amber[100], borderRadius: 9, border: `1px solid ${amber[300]}`,
+                        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                    }}>
+                        <div style={{ padding: 8, borderRadius: 8, background: paper, color: amber[600] }}>
+                            <Building2 size={18} />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: ink }}>{asset.name}</div>
+                            <div style={{ fontSize: 11.5, color: inkSoft, fontWeight: 500 }}>
+                                Original Cost: <b style={{ fontFamily: "'JetBrains Mono', monospace" }}>{formatCurrency(asset.acquisition_cost, currency)}</b>
+                            </div>
+                        </div>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Disposal Proceeds</label>
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={proceeds}
-                            onChange={(e) => setProceeds(e.target.value)}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
-                        />
+                    <div style={{ marginBottom: 18 }}>
+                        <label style={labelStyle}>Disposal Proceeds</label>
+                        <div style={{ position: 'relative' }}>
+                            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={proceeds}
+                                onChange={(e) => setProceeds(e.target.value)}
+                                placeholder="0.00"
+                                style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                            />
+                        </div>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Reason for Disposal</label>
+                    <div style={{ marginBottom: 18 }}>
+                        <label style={labelStyle}>Reason for Disposal <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
                         <textarea
                             required
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
                             rows={3}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none resize-none"
-                            style={{ borderColor: hairline }}
+                            placeholder="e.g. Sold, scrapped, donated…"
+                            style={textareaStyle}
                         />
                     </div>
-
-                    <div className="flex justify-end gap-3 pt-4">
-                        <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border" style={{ borderColor: hairline, color: ink }}>
-                            Cancel
-                        </button>
-                        <button
-                            onClick={() => onDispose(parseFloat(proceeds), reason)}
-                            className="px-4 py-2 text-sm rounded-lg text-white"
-                            style={{ background: '#dc2626' }}
-                        >
-                            Dispose Asset
-                        </button>
-                    </div>
                 </div>
+                <ModalFooter
+                    stepLabel="Disposal · posts gain / loss"
+                    onCancel={onClose}
+                    submitLabel="Dispose Asset"
+                    onSubmit={() => onDispose(parseFloat(proceeds), reason)}
+                    danger
+                />
             </div>
         </div>
     );

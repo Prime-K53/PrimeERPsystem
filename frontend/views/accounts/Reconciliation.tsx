@@ -3,13 +3,14 @@ import React, { useState, useMemo } from 'react';
 import { Scale, CheckCircle, AlertTriangle, Search, Calendar } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
+import { currencyService } from '../../services/currencyService';
 
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1';
 
 const Reconciliation: React.FC = () => {
   const { accounts, ledger, toggleReconciled } = useFinance();
   const { companyConfig } = useAuth();
-  const currency = companyConfig?.currencySymbol || '$';
+  const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
   // State
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');

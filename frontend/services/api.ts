@@ -11,7 +11,8 @@ import {
   MaintenanceLog, UserRole,
   ExamPaper, ExamPrintingBatch, School, ExamJob, Customer, Supplier, SupplierPayment, SalesReturn,
   ExaminationJob, ExaminationJobSubject, ExaminationInvoiceGroup, ExaminationRecurringProfile,
-  Order, BillOfMaterial, BOMTemplate, MarketAdjustment
+  Order, BillOfMaterial, BOMTemplate, MarketAdjustment,
+  AssessmentContract, AssessmentContractItem, ContractAmendment
 } from '../types';
 import { logger } from './logger';
 import { transactionService } from './transactionService';
@@ -1210,12 +1211,43 @@ export const api = {
       return dbService.put('payrollRuns', p);
     }, 'Finance.SavePayrollRun'),
 
-    getPayslips: () => handle(() => dbService.getAll<Payslip>('payslips'), 'Finance.GetPayslips'),
-    savePayslip: (p: Payslip) => handle(() => {
-      checkAuth(['Admin'], 'Finance.SavePayslip');
-      return dbService.put('payslips', p);
-    }, 'Finance.SavePayslip'),
-  },
+     getPayslips: () => handle(() => dbService.getAll<Payslip>('payslips'), 'Finance.GetPayslips'),
+     savePayslip: (p: Payslip) => handle(() => {
+       checkAuth(['Admin'], 'Finance.SavePayslip');
+       return dbService.put('payslips', p);
+     }, 'Finance.SavePayslip'),
+
+     // ─── Printing Contracts ──────────────────────────
+     getAssessmentContracts: () => handle(() => dbService.getAll<AssessmentContract>('assessmentContracts'), 'Finance.GetAssessmentContracts'),
+     saveAssessmentContract: (c: AssessmentContract) => handle(() => {
+       checkAuth(['Admin', 'Editor'], 'Finance.SaveAssessmentContract');
+       return dbService.put('assessmentContracts', c);
+     }, 'Finance.SaveAssessmentContract'),
+     deleteAssessmentContract: (id: string) => handle(() => {
+       checkAuth(['Admin'], 'Finance.DeleteAssessmentContract');
+       return dbService.delete('assessmentContracts', id);
+     }, 'Finance.DeleteAssessmentContract'),
+
+     getContractAssessments: () => handle(() => dbService.getAll<AssessmentContractItem>('contractAssessments'), 'Finance.GetContractAssessments'),
+     saveContractAssessment: (a: AssessmentContractItem) => handle(() => {
+       checkAuth(['Admin', 'Editor'], 'Finance.SaveContractAssessment');
+       return dbService.put('contractAssessments', a);
+     }, 'Finance.SaveContractAssessment'),
+     deleteContractAssessment: (id: string) => handle(() => {
+       checkAuth(['Admin'], 'Finance.DeleteContractAssessment');
+       return dbService.delete('contractAssessments', id);
+     }, 'Finance.DeleteContractAssessment'),
+
+     getContractAmendments: () => handle(() => dbService.getAll<ContractAmendment>('contractAmendments'), 'Finance.GetContractAmendments'),
+     saveContractAmendment: (a: ContractAmendment) => handle(() => {
+       checkAuth(['Admin', 'Editor'], 'Finance.SaveContractAmendment');
+       return dbService.put('contractAmendments', a);
+     }, 'Finance.SaveContractAmendment'),
+     deleteContractAmendment: (id: string) => handle(() => {
+       checkAuth(['Admin'], 'Finance.DeleteContractAmendment');
+       return dbService.delete('contractAmendments', id);
+     }, 'Finance.DeleteContractAmendment'),
+   },
 
   marketing: {
     getCampaigns: () => handle(() => dbService.getAll<SMSCampaign>('smsCampaigns'), 'Marketing.GetCampaigns'),

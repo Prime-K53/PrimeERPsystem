@@ -1,8 +1,9 @@
 import { openDB, DBSchema, IDBPDatabase, deleteDB } from 'idb';
 import { logger } from '@/services/logger';
 import {
-    Item, Warehouse, Purchase, Sale, Quotation, JobOrder, CustomerPayment, BillOfMaterial, ProductionBatch, WorkOrder, WorkCenter, ProductionResource, Account, LedgerEntry, Invoice, RecurringInvoice, Expense, Income, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, User, ResourceAllocation, GoodsReceipt, UserRole, SMSCampaign, Subscriber, SMSTemplate, Cheque, Shipment, SubcontractOrder, MaintenanceLog, AuditLogEntry, SystemAlert, Reminder, ExamJob, ExamPaper, ExamPrintingBatch, School, Customer, Supplier, SupplierPayment, Order, PurchaseAllocation, VatTransaction, VatReturn, BOMTemplate, MarketAdjustment, MarketAdjustmentTransaction, UserGroup, MaterialCategory, WarehouseInventory, MaterialBatch, InventoryTransaction, MaterialReservation, RoundingLog, ExaminationJob, ExaminationJobSubject, ExaminationInvoiceGroup, ExaminationRecurringProfile, ExaminationInventoryDeduction, CustomerReceiptSnapshot, ExaminationBatchNotification, NotificationAuditLog,     SalesOrder, JobTicket, JobTicketSettings,
-    TaxRate, FixedAsset, DepreciationEntry, AssetDisposal, OwnerEquityTransaction, Loan, LoanRepayment, AccrualEntry, IncomeSummaryEntry, PurchaseOrder, PurchaseInvoice, InterestIncomeEntry, Prepayment, PrepaymentAmortization, StaffAdvance, UtilityExpense, UtilityPayment, BankChargeEntry, PayrollEntry
+     Item, Warehouse, Purchase, Sale, Quotation, JobOrder, CustomerPayment, BillOfMaterial, ProductionBatch, WorkOrder, WorkCenter, ProductionResource, Account, LedgerEntry, Invoice, RecurringInvoice, Expense, Income, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, User, ResourceAllocation, GoodsReceipt, UserRole, SMSCampaign, Subscriber, SMSTemplate, Cheque, Shipment, SubcontractOrder, MaintenanceLog, AuditLogEntry, SystemAlert, Reminder, ExamJob, ExamPaper, ExamPrintingBatch, School, Customer, Supplier, SupplierPayment, Order, PurchaseAllocation, VatTransaction, VatReturn, BOMTemplate, MarketAdjustment, MarketAdjustmentTransaction, UserGroup, MaterialCategory, WarehouseInventory, MaterialBatch, InventoryTransaction, MaterialReservation, RoundingLog, ExaminationJob, ExaminationJobSubject, ExaminationInvoiceGroup, ExaminationRecurringProfile, ExaminationInventoryDeduction, CustomerReceiptSnapshot, ExaminationBatchNotification, NotificationAuditLog,     SalesOrder, JobTicket, JobTicketSettings,
+    TaxRate, FixedAsset, DepreciationEntry, AssetDisposal, OwnerEquityTransaction, Loan, LoanRepayment, AccrualEntry, IncomeSummaryEntry, PurchaseOrder, PurchaseInvoice, InterestIncomeEntry, Prepayment, PrepaymentAmortization, StaffAdvance, UtilityExpense, UtilityPayment, BankChargeEntry, PayrollEntry,
+    AssessmentContract, AssessmentContractItem, ContractAmendment
 } from '../types';
 import type { Referral, ReferralReward } from '../types/referral';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
@@ -76,7 +77,10 @@ interface NexusDB extends DBSchema {
     expenses: { key: string; value: Expense; };
     income: { key: string; value: Income; };
     scheduledPayments: { key: string; value: ScheduledPayment; };
-    walletTransactions: { key: string; value: WalletTransaction; };
+     walletTransactions: { key: string; value: WalletTransaction; };
+    assessmentContracts: { key: string; value: AssessmentContract; };
+    contractAssessments: { key: string; value: AssessmentContractItem; };
+    contractAmendments: { key: string; value: ContractAmendment; };
     deliveryNotes: { key: string; value: DeliveryNote; };
     budgets: { key: string; value: Budget; };
     transfers: { key: string; value: Transfer; };
@@ -474,8 +478,11 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   subjects: 'subjects',
   recurringInvoices: 'recurring_invoices',
   scheduledPayments: 'scheduled_payments',
-  walletTransactions: 'wallet_transactions',
-  deliveryNotes: 'delivery_notes',
+   walletTransactions: 'wallet_transactions',
+   assessmentContracts: 'assessment_contracts',
+   contractAssessments: 'assessment_contract_items',
+   contractAmendments: 'contract_amendments',
+   deliveryNotes: 'delivery_notes',
   payrollRuns: 'payroll_runs',
   shipments: 'shipments',
   schools: 'schools',
@@ -542,7 +549,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'workOrders', 'jobTickets', 'jobTicketSettings', 'workCenters', 'resources', 'resourceAllocations',
     'accounts', 'ledger', 'invoices', 'recurringInvoices',
     'expenses', 'income', 'scheduledPayments',
-    'walletTransactions', 'deliveryNotes', 'budgets', 'cheques',
+     'walletTransactions', 'assessmentContracts', 'contractAssessments', 'contractAmendments', 'deliveryNotes', 'budgets', 'cheques',
     'transfers', 'employees', 'payrollRuns', 'payslips', 'tasks',
     'users', 'userGroups', 'goodsReceipts', 'files',
     'financialYears',

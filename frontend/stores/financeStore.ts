@@ -1,6 +1,6 @@
 
 import { create } from 'zustand';
-import { Account, LedgerEntry, Invoice, Expense, RecurringInvoice, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, Income, Cheque, SupplierPayment } from '../types';
+import { Account, LedgerEntry, Invoice, Expense, RecurringInvoice, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, Income, Cheque, SupplierPayment, AssessmentContract, AssessmentContractItem, ContractAmendment } from '../types';
 import { api } from '../services/api';
 import { dbService } from '../services/db';
 import { transactionService } from '../services/transactionService';
@@ -27,9 +27,12 @@ interface FinanceState {
   employees: Employee[];
   payrollRuns: PayrollRun[];
   payslips: Payslip[];
-  cheques: Cheque[];
-  supplierPayments: SupplierPayment[];
-  isLoading: boolean;
+   cheques: Cheque[];
+   supplierPayments: SupplierPayment[];
+   assessmentContracts: AssessmentContract[];
+   contractAssessments: AssessmentContractItem[];
+   contractAmendments: ContractAmendment[];
+   isLoading: boolean;
 
   fetchFinanceData: () => Promise<void>;
   
@@ -78,9 +81,21 @@ interface FinanceState {
   updateCheque: (cheque: Cheque) => Promise<void>;
   deleteCheque: (id: string) => Promise<void>;
   
-  recordSupplierPayment: (payment: SupplierPayment) => Promise<void>;
-  updateSupplierPayment: (payment: SupplierPayment) => Promise<void>;
-  voidSupplierPayment: (id: string) => Promise<void>;
+   recordSupplierPayment: (payment: SupplierPayment) => Promise<void>;
+   updateSupplierPayment: (payment: SupplierPayment) => Promise<void>;
+   voidSupplierPayment: (id: string) => Promise<void>;
+
+   addAssessmentContract: (contract: AssessmentContract) => Promise<void>;
+   updateAssessmentContract: (contract: AssessmentContract) => Promise<void>;
+   deleteAssessmentContract: (id: string) => Promise<void>;
+
+   addContractAssessment: (assessment: AssessmentContractItem) => Promise<void>;
+   updateContractAssessment: (assessment: AssessmentContractItem) => Promise<void>;
+   deleteContractAssessment: (id: string) => Promise<void>;
+
+   addContractAmendment: (amendment: ContractAmendment) => Promise<void>;
+   updateContractAmendment: (amendment: ContractAmendment) => Promise<void>;
+   deleteContractAmendment: (id: string) => Promise<void>;
 }
 
 export const useFinanceStore = create<FinanceState>((set, get) => ({
@@ -99,9 +114,12 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   employees: [],
   payrollRuns: [],
   payslips: [],
-  cheques: [],
-  supplierPayments: [],
-  isLoading: false,
+   cheques: [],
+   supplierPayments: [],
+   assessmentContracts: [],
+   contractAssessments: [],
+   contractAmendments: [],
+   isLoading: false,
 
   fetchFinanceData: async () => {
     set({ isLoading: true });
@@ -111,7 +129,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           expenses, income, scheduledPayments, 
           walletTransactions, deliveryNotes, budgets,
           transfers, employees, payrollRuns, payslips,
-          cheques, supplierPayments
+          cheques, supplierPayments,
+          assessmentContracts, contractAssessments, contractAmendments
       ] = await Promise.all([
         dbService.getAll<Account>('accounts'),
         dbService.getAll<LedgerEntry>('ledger'),
@@ -129,6 +148,9 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         dbService.getAll<Payslip>('payslips'),
         dbService.getAll<Cheque>('cheques'),
         dbService.getAll<SupplierPayment>('supplierPayments'),
+        dbService.getAll<AssessmentContract>('assessmentContracts').catch(() => [] as AssessmentContract[]),
+        dbService.getAll<AssessmentContractItem>('contractAssessments').catch(() => [] as AssessmentContractItem[]),
+        dbService.getAll<ContractAmendment>('contractAmendments').catch(() => [] as ContractAmendment[]),
       ]);
 
       let finalAccounts = accounts;
@@ -174,7 +196,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           ledger, invoices, recurringInvoices, expenses, income,
           scheduledPayments, walletTransactions, deliveryNotes, budgets,
           openingBalance,
-          transfers, employees, payrollRuns, payslips, cheques, supplierPayments
+          transfers, employees, payrollRuns, payslips, cheques, supplierPayments,
+          assessmentContracts, contractAssessments, contractAmendments
       });
 
     } catch (error) {
@@ -382,9 +405,49 @@ addInvoice: async (invoice) => {
       set(state => ({ supplierPayments: state.supplierPayments.map(p => p.id === payment.id ? payment : p) }));
       await api.finance.updateSupplierPayment(payment);
   },
-  voidSupplierPayment: async (id) => {
-      await api.finance.voidSupplierPayment(id);
-      // Refresh data to get updated PO balances and ledger
-      await get().fetchFinanceData();
-  }
+   voidSupplierPayment: async (id) => {
+       await api.finance.voidSupplierPayment(id);
+       // Refresh data to get updated PO balances and ledger
+       await get().fetchFinanceData();
+   },
+
+   // ─── Printing Contracts ────────────────────────────────────
+   addAssessmentContract: async (contract: AssessmentContract) => {
+       set(state => ({ assessmentContracts: [...state.assessmentContracts, contract] }));
+       await api.finance.saveAssessmentContract(contract);
+   },
+   updateAssessmentContract: async (contract: AssessmentContract) => {
+       set(state => ({ assessmentContracts: state.assessmentContracts.map(c => c.id === contract.id ? contract : c) }));
+       await api.finance.saveAssessmentContract(contract);
+   },
+   deleteAssessmentContract: async (id: string) => {
+       set(state => ({ assessmentContracts: state.assessmentContracts.filter(c => c.id !== id) }));
+       await api.finance.deleteAssessmentContract(id);
+   },
+
+   addContractAssessment: async (assessment: AssessmentContractItem) => {
+       set(state => ({ contractAssessments: [...state.contractAssessments, assessment] }));
+       await api.finance.saveContractAssessment(assessment);
+   },
+   updateContractAssessment: async (assessment: AssessmentContractItem) => {
+       set(state => ({ contractAssessments: state.contractAssessments.map(a => a.id === assessment.id ? assessment : a) }));
+       await api.finance.saveContractAssessment(assessment);
+   },
+   deleteContractAssessment: async (id: string) => {
+       set(state => ({ contractAssessments: state.contractAssessments.filter(a => a.id !== id) }));
+       await api.finance.deleteContractAssessment(id);
+   },
+
+   addContractAmendment: async (amendment: ContractAmendment) => {
+       set(state => ({ contractAmendments: [...state.contractAmendments, amendment] }));
+       await api.finance.saveContractAmendment(amendment);
+   },
+   updateContractAmendment: async (amendment: ContractAmendment) => {
+       set(state => ({ contractAmendments: state.contractAmendments.map(a => a.id === amendment.id ? amendment : a) }));
+       await api.finance.saveContractAmendment(amendment);
+   },
+   deleteContractAmendment: async (id: string) => {
+       set(state => ({ contractAmendments: state.contractAmendments.filter(a => a.id !== id) }));
+       await api.finance.deleteContractAmendment(id);
+   },
 }));

@@ -1,24 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Plus, Search, Download, Users, DollarSign, Calendar, X,
-    UserPlus, Trash2, Edit2, Eye, Loader2, TrendingUp, CreditCard
+    Search, Download, Users, DollarSign, TrendingUp,
+    CreditCard, UserPlus, Loader2,
 } from 'lucide-react';
 import { payrollService } from '../../services/payrollService';
 import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { Employee, PayrollEntry } from '../../types';
 import { formatCurrency, getDefaultDate } from '../../utils/helpers';
+import { currencyService } from '../../services/currencyService';
 
-const paper = '#FEFDFB';
-const ink = '#23282A';
-const inkSoft = '#5c6567';
-const hairline = '#e4ddd1';
-const assets = '#1f8577';
-const danger = '#dc2626';
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    tableCard, tableHeadRow,
+} from './components/financeChrome';
 
 const Payroll: React.FC = () => {
     const { user, companyConfig, checkPermission, notify } = useAuth();
     const { accounts, refreshAccounts } = useFinance();
+    const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [payrollEntries, setPayrollEntries] = useState<PayrollEntry[]>([]);
@@ -123,96 +128,74 @@ const Payroll: React.FC = () => {
         URL.revokeObjectURL(url);
     };
 
+    const kpis = [
+        { label: 'Total Employees', value: String(summary.employeeCount), icon: Users, color: amber[600], bg: amber[100] },
+        { label: 'Total Gross (YTD)', value: formatCurrency(summary.totalGross, currency), icon: DollarSign, color: teal[700], bg: teal[50] },
+        { label: 'Total PAYE (YTD)', value: formatCurrency(summary.totalPAYE, currency), icon: TrendingUp, color: danger, bg: '#fdeeee' },
+        { label: 'Total Net (YTD)', value: formatCurrency(summary.totalNet, currency), icon: CreditCard, color: teal[600], bg: teal[100] },
+    ];
+
     return (
-        <div className="flex flex-col h-full" style={{ background: paper }}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                <div>
-                    <h1 className="text-lg font-semibold" style={{ color: ink }}>Payroll</h1>
-                    <p className="text-sm" style={{ color: inkSoft }}>Manage employees and process payroll</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={exportToCSV}
-                        className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg border transition-colors"
-                        style={{ borderColor: hairline, color: ink }}
-                    >
-                        <Download size={16} />
-                        Export
-                    </button>
-                    {canEdit && (
-                        <>
+        <div className="flex flex-col h-full" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
+            <PageHeader
+                icon={<Users size={19} color="#fff" />}
+                title="Payroll"
+                subtitle="Manage employees and process payroll"
+                actions={
+                    <>
+                        <button
+                            onClick={exportToCSV}
+                            style={btnGhostStyle}
+                            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+                        >
+                            <Download size={15} />
+                            Export
+                        </button>
+                        {canEdit && (
                             <button
                                 onClick={() => setIsAddEmployeeModalOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg border transition-colors"
-                                style={{ borderColor: hairline, color: ink }}
+                                style={btnGhostStyle}
+                                onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
                             >
-                                <UserPlus size={16} />
+                                <UserPlus size={15} />
                                 Add Employee
                             </button>
+                        )}
+                        {canEdit && (
                             <button
                                 onClick={() => setIsPayrollModalOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg text-white transition-colors"
-                                style={{ background: assets }}
+                                style={btnPrimaryStyle}
+                                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
                             >
-                                <CreditCard size={16} />
+                                <CreditCard size={15} />
                                 Process Payroll
                             </button>
-                        </>
-                    )}
-                </div>
-            </div>
+                        )}
+                    </>
+                }
+            />
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-4 gap-4 px-6 py-4">
-                <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                    <div className="flex items-center gap-2 mb-2">
-                        <Users size={16} style={{ color: inkSoft }} />
-                        <span className="text-sm" style={{ color: inkSoft }}>Total Employees</span>
-                    </div>
-                    <span className="text-xl font-semibold" style={{ color: ink }}>{summary.employeeCount}</span>
-                </div>
-                <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                    <div className="flex items-center gap-2 mb-2">
-                        <DollarSign size={16} style={{ color: inkSoft }} />
-                        <span className="text-sm" style={{ color: inkSoft }}>Total Gross (YTD)</span>
-                    </div>
-                    <span className="text-xl font-semibold" style={{ color: ink }}>{formatCurrency(summary.totalGross)}</span>
-                </div>
-                <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                    <div className="flex items-center gap-2 mb-2">
-                        <TrendingUp size={16} style={{ color: danger }} />
-                        <span className="text-sm" style={{ color: inkSoft }}>Total PAYE (YTD)</span>
-                    </div>
-                    <span className="text-xl font-semibold" style={{ color: danger }}>{formatCurrency(summary.totalPAYE)}</span>
-                </div>
-                <div className="p-4 rounded-lg border" style={{ borderColor: hairline }}>
-                    <div className="flex items-center gap-2 mb-2">
-                        <DollarSign size={16} style={{ color: assets }} />
-                        <span className="text-sm" style={{ color: inkSoft }}>Total Net (YTD)</span>
-                    </div>
-                    <span className="text-xl font-semibold" style={{ color: assets }}>{formatCurrency(summary.totalNet)}</span>
-                </div>
-            </div>
+            <KpiCards items={kpis} />
 
             {/* Filters */}
-            <div className="flex items-center gap-4 px-6 py-3 border-b" style={{ borderColor: hairline }}>
-                <div className="flex-1 relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: inkSoft }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 28px' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                    <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
                     <input
                         type="text"
                         placeholder="Search employees..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 text-sm rounded-lg border outline-none"
-                        style={{ borderColor: hairline }}
+                        style={{ ...inputStyle, paddingLeft: 34 }}
                     />
                 </div>
                 <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-2 text-sm rounded-lg border outline-none"
-                    style={{ borderColor: hairline }}
+                    style={{ ...selectStyle, width: 190 }}
                 >
                     <option value="All">All Status</option>
                     <option value="active">Active</option>
@@ -222,77 +205,94 @@ const Payroll: React.FC = () => {
             </div>
 
             {/* Employee Table */}
-            <div className="flex-1 overflow-auto px-6 py-4">
+            <div style={{ flex: 1, overflow: 'auto', padding: '0 28px 28px' }}>
                 {isLoading ? (
-                    <div className="flex items-center justify-center h-64">
-                        <Loader2 size={24} className="animate-spin" style={{ color: assets }} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 256 }}>
+                        <Loader2 size={24} className="animate-spin" style={{ color: teal[500] }} />
                     </div>
                 ) : filteredEmployees.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-64" style={{ color: inkSoft }}>
-                        <Users size={48} className="mb-4 opacity-50" />
-                        <p>No employees found</p>
-                    </div>
+                    <EmptyState
+                        icon={<Users size={32} />}
+                        title="No employees found"
+                        hint="Add an employee to start running payroll."
+                    />
                 ) : (
-                    <table className="w-full">
-                        <thead>
-                            <tr className="text-left text-xs" style={{ color: inkSoft }}>
-                                <th className="pb-3 font-medium">Employee</th>
-                                <th className="pb-3 font-medium">Department</th>
-                                <th className="pb-3 font-medium">Position</th>
-                                <th className="pb-3 font-medium text-right">Basic Salary</th>
-                                <th className="pb-3 font-medium">Status</th>
-                                <th className="pb-3 font-medium text-center">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredEmployees.map(emp => (
-                                <tr key={emp.id} className="border-t" style={{ borderColor: hairline }}>
-                                    <td className="py-3">
-                                        <div>
-                                            <p className="font-medium text-sm" style={{ color: ink }}>
-                                                {emp.first_name} {emp.last_name}
-                                            </p>
-                                            <p className="text-xs" style={{ color: inkSoft }}>{emp.employee_number}</p>
-                                        </div>
-                                    </td>
-                                    <td className="py-3 text-sm" style={{ color: ink }}>{emp.department}</td>
-                                    <td className="py-3 text-sm" style={{ color: ink }}>{emp.position}</td>
-                                    <td className="py-3 text-sm text-right font-mono" style={{ color: ink }}>
-                                        {formatCurrency(emp.basic_salary)}
-                                    </td>
-                                    <td className="py-3">
-                                        <span
-                                            className="px-2 py-1 text-xs rounded-full"
-                                            style={{
-                                                background: emp.status === 'active' ? '#d1fae5' : emp.status === 'inactive' ? '#fef3c7' : '#fee2e2',
-                                                color: emp.status === 'active' ? '#065f46' : emp.status === 'inactive' ? '#92400e' : '#991b1b'
-                                            }}
-                                        >
-                                            {emp.status}
-                                        </span>
-                                    </td>
-                                    <td className="py-3">
-                                        <div className="flex items-center justify-center gap-2">
-                                            {canEdit && (
-                                                <>
+                    <div style={tableCard}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr style={tableHeadRow}>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Employee</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Department</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Position</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Basic Salary</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700 }}>Status</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'center' }}>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredEmployees.map(emp => (
+                                    <tr key={emp.id}
+                                        style={{ borderTop: `1px solid ${hairline}`, transition: 'background .12s' }}
+                                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <td style={{ padding: '12px 16px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <div style={{
+                                                    width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                                                    background: teal[100], color: teal[700],
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: 13, fontWeight: 700
+                                                }}>
+                                                    {(emp.first_name || '?').charAt(0).toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p style={{ fontWeight: 600, fontSize: 13, color: ink, margin: 0 }}>
+                                                        {emp.first_name} {emp.last_name}
+                                                    </p>
+                                                    <p style={{ fontSize: 11, color: inkSoft, margin: 0, fontFamily: "'JetBrains Mono', monospace" }}>{emp.employee_number}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: ink }}>{emp.department}</td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: ink }}>{emp.position}</td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: ink, fontVariantNumeric: 'tabular-nums' }}>
+                                            {formatCurrency(emp.basic_salary, currency)}
+                                        </td>
+                                        <td style={{ padding: '12px 16px' }}>
+                                            <span
+                                                style={{
+                                                    padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 20, textTransform: 'capitalize',
+                                                    background: emp.status === 'active' ? '#d1fae5' : emp.status === 'inactive' ? '#fef3c7' : '#fee2e2',
+                                                    color: emp.status === 'active' ? '#065f46' : emp.status === 'inactive' ? '#92400e' : '#991b1b'
+                                                }}
+                                            >
+                                                {emp.status}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '12px 16px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                                {canEdit && (
                                                     <button
                                                         onClick={() => {
                                                             setSelectedEmployee(emp);
                                                             setIsPayrollModalOpen(true);
                                                         }}
-                                                        className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                                                        style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
                                                         title="Process Payroll"
+                                                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                                     >
-                                                        <CreditCard size={16} style={{ color: assets }} />
+                                                        <CreditCard size={16} style={{ color: teal[600] }} />
                                                     </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
 
@@ -301,6 +301,7 @@ const Payroll: React.FC = () => {
                 <AddEmployeeModal
                     onClose={() => setIsAddEmployeeModalOpen(false)}
                     onSubmit={handleAddEmployee}
+                    currency={currency}
                 />
             )}
 
@@ -311,6 +312,7 @@ const Payroll: React.FC = () => {
                     selectedEmployee={selectedEmployee}
                     onClose={() => { setIsPayrollModalOpen(false); setSelectedEmployee(null); }}
                     onSubmit={handleProcessPayroll}
+                    currency={currency}
                 />
             )}
         </div>
@@ -320,9 +322,10 @@ const Payroll: React.FC = () => {
 interface AddEmployeeModalProps {
     onClose: () => void;
     onSubmit: (data: any) => void;
+    currency: string;
 }
 
-const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ onClose, onSubmit }) => {
+const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ onClose, onSubmit, currency }) => {
     const [formData, setFormData] = useState({
         employee_number: '',
         first_name: '',
@@ -349,133 +352,153 @@ const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ onClose, onSubmit }
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-xl w-full max-w-lg mx-4 shadow-xl max-h-[90vh] overflow-auto">
-                <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white" style={{ borderColor: hairline }}>
-                    <h2 className="text-lg font-semibold" style={{ color: ink }}>Add Employee</h2>
-                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-                        <X size={20} style={{ color: inkSoft }} />
-                    </button>
+        <div style={modalOverlayStyle} onClick={onClose}>
+            <div style={modalShell(640)} onClick={e => e.stopPropagation()}>
+                <AccentStripe />
+                <ModalHeader
+                    icon={<UserPlus size={19} color="#fff" />}
+                    title="Add Employee"
+                    subtitle="New staff record — Payroll ledger"
+                    onClose={onClose}
+                />
+                <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+                    <form id="add-employee-form" onSubmit={handleSubmit}>
+                        <div style={sectionLabelStyle}><span>Personal Details</span></div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                            <div>
+                                <label style={labelStyle}>First Name <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.first_name}
+                                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
+                                    placeholder="First name"
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Last Name <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.last_name}
+                                    onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                                    placeholder="Last name"
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>
+                                    Email
+                                    <span style={{ fontSize: 9.5, fontWeight: 600, color: inkSoft, background: teal[50], padding: '1px 6px', borderRadius: 20, letterSpacing: 0.03, textTransform: 'uppercase', marginLeft: 6 }}>Optional</span>
+                                </label>
+                                <input
+                                    type="email"
+                                    value={formData.email}
+                                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                    placeholder="name@company.com"
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>
+                                    Phone
+                                    <span style={{ fontSize: 9.5, fontWeight: 600, color: inkSoft, background: teal[50], padding: '1px 6px', borderRadius: 20, letterSpacing: 0.03, textTransform: 'uppercase', marginLeft: 6 }}>Optional</span>
+                                </label>
+                                <input
+                                    type="tel"
+                                    value={formData.phone}
+                                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                    placeholder="+260 …"
+                                    style={inputStyle}
+                                />
+                            </div>
+                        </div>
+
+                        <div style={sectionLabelStyle}><span>Employment &amp; Pay</span></div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+                            <div>
+                                <label style={labelStyle}>Department <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.department}
+                                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                                    placeholder="e.g. Finance"
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Position <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={formData.position}
+                                    onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+                                    placeholder="e.g. Accountant"
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Join Date <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <input
+                                    type="date"
+                                    required
+                                    value={formData.join_date}
+                                    onChange={(e) => setFormData({ ...formData, join_date: e.target.value })}
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Basic Salary <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                                <div style={{ position: 'relative' }}>
+                                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                                    <input
+                                        type="number"
+                                        required
+                                        min="0"
+                                        step="0.01"
+                                        value={formData.basic_salary}
+                                        onChange={(e) => setFormData({ ...formData, basic_salary: e.target.value })}
+                                        placeholder="0.00"
+                                        style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{ marginBottom: 18 }}>
+                            <label style={labelStyle}>Pay Frequency</label>
+                            <select
+                                value={formData.pay_frequency}
+                                onChange={(e) => setFormData({ ...formData, pay_frequency: e.target.value as any })}
+                                style={selectStyle}
+                            >
+                                <option value="monthly">Monthly</option>
+                                <option value="bi-weekly">Bi-Weekly</option>
+                                <option value="weekly">Weekly</option>
+                            </select>
+                        </div>
+
+                        <div style={{
+                            padding: 16, background: teal[50], borderRadius: 9, border: `1px solid ${teal[100]}`,
+                            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                        }}>
+                            <div style={{ padding: 8, borderRadius: 8, background: teal[100], color: teal[600] }}>
+                                <CreditCard size={18} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: teal[800] }}>PAYE &amp; pension</div>
+                                <div style={{ fontSize: 11, color: inkSoft, fontWeight: 500 }}>PAYE is auto-calculated on each pay run from the annual tax brackets.</div>
+                            </div>
+                        </div>
+                    </form>
                 </div>
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>First Name</label>
-                            <input
-                                type="text"
-                                required
-                                value={formData.first_name}
-                                onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Last Name</label>
-                            <input
-                                type="text"
-                                required
-                                value={formData.last_name}
-                                onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Email</label>
-                            <input
-                                type="email"
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Phone</label>
-                            <input
-                                type="tel"
-                                value={formData.phone}
-                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Department</label>
-                            <input
-                                type="text"
-                                required
-                                value={formData.department}
-                                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Position</label>
-                            <input
-                                type="text"
-                                required
-                                value={formData.position}
-                                onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Join Date</label>
-                            <input
-                                type="date"
-                                required
-                                value={formData.join_date}
-                                onChange={(e) => setFormData({ ...formData, join_date: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Basic Salary</label>
-                            <input
-                                type="number"
-                                required
-                                min="0"
-                                step="0.01"
-                                value={formData.basic_salary}
-                                onChange={(e) => setFormData({ ...formData, basic_salary: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Pay Frequency</label>
-                        <select
-                            value={formData.pay_frequency}
-                            onChange={(e) => setFormData({ ...formData, pay_frequency: e.target.value as any })}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
-                        >
-                            <option value="monthly">Monthly</option>
-                            <option value="bi-weekly">Bi-Weekly</option>
-                            <option value="weekly">Weekly</option>
-                        </select>
-                    </div>
-                    <div className="flex justify-end gap-3 pt-4">
-                        <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border" style={{ borderColor: hairline, color: ink }}>
-                            Cancel
-                        </button>
-                        <button type="submit" className="px-4 py-2 text-sm rounded-lg text-white" style={{ background: assets }}>
-                            Add Employee
-                        </button>
-                    </div>
-                </form>
+                <ModalFooter
+                    stepLabel="New staff · Payroll ledger"
+                    onCancel={onClose}
+                    submitLabel="Add Employee"
+                    submitFormId="add-employee-form"
+                />
             </div>
         </div>
     );
@@ -486,9 +509,10 @@ interface ProcessPayrollModalProps {
     selectedEmployee: Employee | null;
     onClose: () => void;
     onSubmit: (data: any) => void;
+    currency: string;
 }
 
-const ProcessPayrollModal: React.FC<ProcessPayrollModalProps> = ({ employees, selectedEmployee, onClose, onSubmit }) => {
+const ProcessPayrollModal: React.FC<ProcessPayrollModalProps> = ({ employees, selectedEmployee, onClose, onSubmit, currency }) => {
     const [employeeId, setEmployeeId] = useState(selectedEmployee?.id || '');
     const [formData, setFormData] = useState({
         payPeriodStart: getDefaultDate(),
@@ -518,17 +542,35 @@ const ProcessPayrollModal: React.FC<ProcessPayrollModalProps> = ({ employees, se
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-xl">
-                <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: hairline }}>
-                    <h2 className="text-lg font-semibold" style={{ color: ink }}>Process Payroll</h2>
-                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-                        <X size={20} style={{ color: inkSoft }} />
-                    </button>
-                </div>
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Employee</label>
+        <div style={modalOverlayStyle} onClick={onClose}>
+            <div style={modalShell(600)} onClick={e => e.stopPropagation()}>
+                <AccentStripe />
+                <ModalHeader
+                    icon={<CreditCard size={19} color="#fff" />}
+                    title="Process Payroll"
+                    subtitle={selectedEmp ? `${selectedEmp.first_name} ${selectedEmp.last_name} — pay run` : 'Pay run — PAYE auto-calculated'}
+                    onClose={onClose}
+                />
+                <form id="process-payroll-form" onSubmit={handleSubmit} style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+                    {selectedEmp && (
+                        <div style={{
+                            padding: 14, background: amber[100], borderRadius: 9, border: `1px solid ${amber[300]}`,
+                            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                        }}>
+                            <div style={{ padding: 8, borderRadius: 8, background: paper, color: amber[600] }}>
+                                <Users size={18} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: ink }}>{selectedEmp.first_name} {selectedEmp.last_name}</div>
+                                <div style={{ fontSize: 11.5, color: inkSoft, fontWeight: 500 }}>
+                                    Basic: <b style={{ color: teal[700], fontFamily: "'JetBrains Mono', monospace" }}>{formatCurrency(selectedEmp.basic_salary, currency)}</b>/month
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div style={{ marginBottom: 18 }}>
+                        <label style={labelStyle}>Employee <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
                         <select
                             required
                             value={employeeId}
@@ -539,105 +581,121 @@ const ProcessPayrollModal: React.FC<ProcessPayrollModalProps> = ({ employees, se
                                     setFormData({ ...formData, grossSalary: emp.basic_salary.toString() });
                                 }
                             }}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
+                            style={selectStyle}
                         >
                             <option value="">Select Employee</option>
                             {employees.filter(e => e.status === 'active').map(emp => (
                                 <option key={emp.id} value={emp.id}>
-                                    {emp.first_name} {emp.last_name} - {formatCurrency(emp.basic_salary)}/month
+                                    {emp.first_name} {emp.last_name} - {formatCurrency(emp.basic_salary, currency)}/month
                                 </option>
                             ))}
                         </select>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
                         <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Pay Period Start</label>
+                            <label style={labelStyle}>Pay Period Start <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
                             <input
                                 type="date"
                                 required
                                 value={formData.payPeriodStart}
                                 onChange={(e) => setFormData({ ...formData, payPeriodStart: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
+                                style={inputStyle}
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Pay Period End</label>
+                            <label style={labelStyle}>Pay Period End <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
                             <input
                                 type="date"
                                 required
                                 value={formData.payPeriodEnd}
                                 onChange={(e) => setFormData({ ...formData, payPeriodEnd: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
+                                style={inputStyle}
                             />
                         </div>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Payment Date</label>
+                    <div style={{ marginBottom: 18 }}>
+                        <label style={labelStyle}>Payment Date <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
                         <input
                             type="date"
                             required
                             value={formData.paymentDate}
                             onChange={(e) => setFormData({ ...formData, paymentDate: e.target.value })}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
+                            style={inputStyle}
                         />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Gross Salary</label>
-                        <input
-                            type="number"
-                            required
-                            min="0"
-                            step="0.01"
-                            value={formData.grossSalary}
-                            onChange={(e) => setFormData({ ...formData, grossSalary: e.target.value })}
-                            className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                            style={{ borderColor: hairline }}
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Pension (Optional)</label>
+                    <div style={{ marginBottom: 18 }}>
+                        <label style={labelStyle}>Gross Salary <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
+                        <div style={{ position: 'relative' }}>
+                            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
                             <input
                                 type="number"
+                                required
                                 min="0"
                                 step="0.01"
-                                value={formData.pensionAmount}
-                                onChange={(e) => setFormData({ ...formData, pensionAmount: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
+                                value={formData.grossSalary}
+                                onChange={(e) => setFormData({ ...formData, grossSalary: e.target.value })}
+                                placeholder="0.00"
+                                style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
                             />
                         </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
                         <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: ink }}>Other Deductions</label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={formData.otherDeductions}
-                                onChange={(e) => setFormData({ ...formData, otherDeductions: e.target.value })}
-                                className="w-full px-3 py-2 text-sm rounded-lg border outline-none"
-                                style={{ borderColor: hairline }}
-                            />
+                            <label style={labelStyle}>
+                                Pension
+                                <span style={{ fontSize: 9.5, fontWeight: 600, color: inkSoft, background: teal[50], padding: '1px 6px', borderRadius: 20, letterSpacing: 0.03, textTransform: 'uppercase', marginLeft: 6 }}>Optional</span>
+                            </label>
+                            <div style={{ position: 'relative' }}>
+                                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={formData.pensionAmount}
+                                    onChange={(e) => setFormData({ ...formData, pensionAmount: e.target.value })}
+                                    placeholder="0.00"
+                                    style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label style={labelStyle}>
+                                Other Deductions
+                                <span style={{ fontSize: 9.5, fontWeight: 600, color: inkSoft, background: teal[50], padding: '1px 6px', borderRadius: 20, letterSpacing: 0.03, textTransform: 'uppercase', marginLeft: 6 }}>Optional</span>
+                            </label>
+                            <div style={{ position: 'relative' }}>
+                                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={formData.otherDeductions}
+                                    onChange={(e) => setFormData({ ...formData, otherDeductions: e.target.value })}
+                                    placeholder="0.00"
+                                    style={{ ...inputStyle, paddingLeft: 28, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}
+                                />
+                            </div>
                         </div>
                     </div>
                     {selectedEmp && (
-                        <div className="p-3 rounded-lg text-xs" style={{ background: '#f3f4f6' }}>
-                            <p style={{ color: ink }}>PAYE will be auto-calculated based on annual tax brackets</p>
+                        <div style={{
+                            padding: 14, background: teal[50], borderRadius: 9, border: `1px solid ${teal[100]}`,
+                            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18
+                        }}>
+                            <div style={{ padding: 8, borderRadius: 8, background: teal[100], color: teal[600] }}>
+                                <DollarSign size={18} />
+                            </div>
+                            <div style={{ fontSize: 12, color: ink, fontWeight: 500 }}>PAYE will be auto-calculated based on annual tax brackets</div>
                         </div>
                     )}
-                    <div className="flex justify-end gap-3 pt-4">
-                        <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border" style={{ borderColor: hairline, color: ink }}>
-                            Cancel
-                        </button>
-                        <button type="submit" className="px-4 py-2 text-sm rounded-lg text-white" style={{ background: assets }}>
-                            Process Payroll
-                        </button>
-                    </div>
                 </form>
+                <ModalFooter
+                    stepLabel="Pay run · Dr Salary / Cr Bank"
+                    onCancel={onClose}
+                    submitLabel="Process Payroll"
+                    submitFormId="process-payroll-form"
+                />
             </div>
         </div>
     );

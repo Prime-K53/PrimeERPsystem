@@ -569,20 +569,15 @@ const writeAuditLog = async ({
 };
 
 const postInvoiceLedger = async (invoiceId, invoiceData) => {
-  // F-02: The previous implementation passed malformed SQL strings to
-  // runGet (missing FROM / WHERE keywords), so extractTable() returned
-  // null and the function always early-returned without posting. The
-  // fix is to use the Supabase REST client directly with proper filters.
-  //
-  // FIX: Use exact account code matching only. Do NOT use loose regex
-  // like /revenue|sales/i which can match wrong accounts (e.g., Interest Income).
-  // Examination revenue = Service Income (41200)
   const allAccounts = await repo.getAll('chart_of_accounts');
   const arAccount = allAccounts.find(
     (a) => String(a.data?.code || a.code || '') === '11310'
   );
   const revenueAccount = allAccounts.find(
     (a) => String(a.data?.code || a.code || '') === '41200'
+  );
+  const taxAccount = allAccounts.find(
+    (a) => String(a.data?.code || a.code || '') === '21210'
   );
   if (!arAccount) {
     console.error(`[postInvoiceLedger] AR account 11310 not found for invoice ${invoiceId}`);
@@ -595,6 +590,9 @@ const postInvoiceLedger = async (invoiceId, invoiceData) => {
   const totalAmount = toNumericValue(invoiceData?.total_amount) ?? 0;
   if (totalAmount <= 0) return;
 
+  const taxAmount = toNumericValue(invoiceData?.tax_amount) ?? 0;
+  const revenueAmount = taxAmount > 0 ? pricingEngine.roundCurrency(totalAmount - taxAmount) : totalAmount;
+
   const finance = new FinanceService();
   const journalId = randomUUID();
   await finance.saveLedgerEntry({
@@ -604,11 +602,19 @@ const postInvoiceLedger = async (invoiceId, invoiceData) => {
     journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
   });
   await finance.saveLedgerEntry({
-    account_id: revenueAccount.id, entry_type: 'credit', amount: totalAmount,
+    account_id: revenueAccount.id, entry_type: 'credit', amount: revenueAmount,
     currency: invoiceData?.currency || 'USD', description: `Invoice #${invoiceId} Revenue`,
     reference_type: 'invoice', reference_id: String(invoiceId),
     journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
   });
+  if (taxAccount && taxAmount > 0) {
+    await finance.saveLedgerEntry({
+      account_id: taxAccount.id, entry_type: 'credit', amount: taxAmount,
+      currency: invoiceData?.currency || 'USD', description: `Invoice #${invoiceId} Tax`,
+      reference_type: 'invoice', reference_id: String(invoiceId),
+      journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
+    });
+  }
 };
 
 const clearTableCache = (tableName) => {

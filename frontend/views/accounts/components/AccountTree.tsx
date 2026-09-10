@@ -22,7 +22,19 @@ import {
   ArrowUpRight,
   ArrowDownRight
 } from 'lucide-react';
-import { Account } from '../../types';
+import { Account } from '../../../types';
+import { useAuth } from '../../../context/AuthContext';
+import { currencyService } from '../../../services/currencyService';
+
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    tableCard, tableHeadRow,
+} from './financeChrome';
 
 interface AccountTreeProps {
   accounts: Account[];
@@ -53,43 +65,43 @@ interface AccountRowProps {
   canEdit: boolean;
 }
 
-const ACCOUNT_TYPE_CONFIG: Record<string, { label: string; color: string; bgColor: string; icon: React.ReactNode }> = {
-  ASSET: { label: 'Asset', color: 'text-emerald-700', bgColor: 'bg-emerald-50 border-emerald-200', icon: <Building2 size={12} /> },
-  LIABILITY: { label: 'Liability', color: 'text-red-700', bgColor: 'bg-red-50 border-red-200', icon: <CreditCard size={12} /> },
-  EQUITY: { label: 'Equity', color: 'text-violet-700', bgColor: 'bg-violet-50 border-violet-200', icon: <Wallet size={12} /> },
-  INCOME: { label: 'Revenue', color: 'text-green-700', bgColor: 'bg-green-50 border-green-200', icon: <TrendingUp size={12} /> },
-  EXPENSE: { label: 'Expense', color: 'text-orange-700', bgColor: 'bg-orange-50 border-orange-200', icon: <TrendingDown size={12} /> },
+const ACCOUNT_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+  ASSET: { label: 'Asset', color: teal[700], bg: teal[50], icon: <Building2 size={12} /> },
+  LIABILITY: { label: 'Liability', color: danger, bg: '#fdeeee', icon: <CreditCard size={12} /> },
+  EQUITY: { label: 'Equity', color: teal[800], bg: teal[100], icon: <Wallet size={12} /> },
+  INCOME: { label: 'Revenue', color: teal[700], bg: teal[50], icon: <TrendingUp size={12} /> },
+  EXPENSE: { label: 'Expense', color: amber[600], bg: amber[100], icon: <TrendingDown size={12} /> },
 };
 
 const getAccountTypeConfig = (type?: string) => {
   return ACCOUNT_TYPE_CONFIG[type || 'ASSET'] || ACCOUNT_TYPE_CONFIG['ASSET'];
 };
 
-const SUBTYPE_CONFIG: Record<string, { label: string; bgColor: string; textColor: string }> = {
-  BANK: { label: 'Bank', bgColor: 'bg-blue-50', textColor: 'text-blue-700' },
-  RECEIVABLE: { label: 'Receivable', bgColor: 'bg-cyan-50', textColor: 'text-cyan-700' },
-  PAYABLE: { label: 'Payable', bgColor: 'bg-rose-50', textColor: 'text-rose-700' },
-  INVENTORY: { label: 'Inventory', bgColor: 'bg-amber-50', textColor: 'text-amber-700' },
-  TAX: { label: 'Tax', bgColor: 'bg-purple-50', textColor: 'text-purple-700' },
-  CASH: { label: 'Cash', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700' },
-  FIXED: { label: 'Fixed Asset', bgColor: 'bg-stone-50', textColor: 'text-stone-700' },
-  CURRENT: { label: 'Current', bgColor: 'bg-sky-50', textColor: 'text-sky-700' },
-  NON_CURRENT: { label: 'Non-Current', bgColor: 'bg-slate-50', textColor: 'text-slate-700' },
+const SUBTYPE_CONFIG: Record<string, { label: string; bg: string; fg: string }> = {
+  BANK: { label: 'Bank', bg: teal[50], fg: teal[700] },
+  RECEIVABLE: { label: 'Receivable', bg: teal[50], fg: teal[700] },
+  PAYABLE: { label: 'Payable', bg: '#fdeeee', fg: danger },
+  INVENTORY: { label: 'Inventory', bg: amber[100], fg: amber[600] },
+  TAX: { label: 'Tax', bg: teal[100], fg: teal[800] },
+  CASH: { label: 'Cash', bg: teal[50], fg: teal[700] },
+  FIXED: { label: 'Fixed Asset', bg: teal[50], fg: inkSoft },
+  CURRENT: { label: 'Current', bg: teal[50], fg: teal[700] },
+  NON_CURRENT: { label: 'Non-Current', bg: teal[50], fg: inkSoft },
 };
 
 const getSubtypeConfig = (subtype?: string) => {
   if (!subtype) return null;
-  return SUBTYPE_CONFIG[subtype] || { label: subtype, bgColor: 'bg-slate-100', textColor: 'text-slate-600' };
+  return SUBTYPE_CONFIG[subtype] || { label: subtype, bg: teal[50], fg: inkSoft };
 };
 
 const formatCurrency = (value: number | undefined, currencySymbol: string) => {
-  if (value === undefined || value === null) return { text: '—', color: 'text-slate-300', prefix: '' };
+  if (value === undefined || value === null) return { text: '—', color: inkSoft, prefix: '' };
   const isNegative = value < 0;
   const absValue = Math.abs(value);
   const formatted = `${currencySymbol}${absValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return {
     text: formatted,
-    color: isNegative ? 'text-red-600' : 'text-slate-900',
+    color: isNegative ? danger : ink,
     prefix: isNegative ? '(' : ''
   };
 };
@@ -133,15 +145,21 @@ const AccountRow: React.FC<AccountRowProps> = ({
 
   return (
     <div
-      className={`group grid items-center transition-all duration-150 cursor-pointer border-b border-slate-100 ${
-        isSelected ? 'bg-blue-50/70' : 'hover:bg-slate-50/80'
-      } ${isInactive ? 'opacity-50' : ''}`}
-      style={{ gridTemplateColumns: '100px 1fr 130px 140px 36px' }}
+      className="group grid items-center cursor-pointer"
+      style={{
+        gridTemplateColumns: '100px 1fr 130px 140px 36px',
+        borderBottom: `1px solid ${hairline}`,
+        background: isSelected ? teal[50] : 'transparent',
+        opacity: isInactive ? 0.55 : 1,
+        transition: 'background .12s',
+      }}
+      onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = teal[50]; }}
+      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
       onClick={onSelect}
     >
       {/* Account Number */}
       <div className="px-4 py-3">
-        <span className="font-mono text-xs font-medium text-slate-500 tracking-tight">
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 500, color: inkSoft }}>
           {account.account_number || account.code || '—'}
         </span>
       </div>
@@ -149,22 +167,22 @@ const AccountRow: React.FC<AccountRowProps> = ({
       {/* Account Name & Subtype */}
       <div className="px-4 py-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-sm text-slate-900 truncate">
+          <span style={{ fontWeight: 600, fontSize: 13, color: ink }}>
             {account.name}
           </span>
           {isInactive && (
-            <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 rounded">
-              INACTIVE
+            <span style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 20, background: amber[100], color: amber[600] }}>
+              Inactive
             </span>
           )}
         </div>
         {subtypeConfig && (
           <div className="flex items-center gap-2 mt-1">
-            <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-full ${subtypeConfig.bgColor} ${subtypeConfig.textColor}`}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', fontSize: 10, fontWeight: 700, borderRadius: 20, background: subtypeConfig.bg, color: subtypeConfig.fg }}>
               {subtypeConfig.label}
             </span>
             {account.description && (
-              <span className="text-[11px] text-slate-400 truncate max-w-[200px]" title={account.description}>
+              <span className="truncate max-w-[200px]" style={{ fontSize: 11, color: inkSoft }} title={account.description}>
                 {account.description}
               </span>
             )}
@@ -174,7 +192,7 @@ const AccountRow: React.FC<AccountRowProps> = ({
 
       {/* Type Badge */}
       <div className="px-4 py-3">
-        <span className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md border ${typeConfig.bgColor} ${typeConfig.color}`}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 20, background: typeConfig.bg, color: typeConfig.color }}>
           {typeConfig.icon}
           {typeConfig.label}
         </span>
@@ -184,11 +202,11 @@ const AccountRow: React.FC<AccountRowProps> = ({
       <div className="px-4 py-3 text-right">
         <div className="flex items-center justify-end gap-1">
           {(balance !== undefined && balance < 0) ? (
-            <ArrowDownRight size={12} className="text-red-400" />
+            <ArrowDownRight size={12} style={{ color: danger }} />
           ) : (balance !== undefined && balance > 0) ? (
-            <ArrowUpRight size={12} className="text-emerald-400" />
+            <ArrowUpRight size={12} style={{ color: teal[600] }} />
           ) : null}
-          <span className={`font-semibold text-sm tabular-nums ${formatted.color}`}>
+          <span style={{ fontWeight: 600, fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: formatted.color }}>
             {formatted.prefix}{formatted.text}{(balance !== undefined && balance < 0) ? ')' : ''}
           </span>
         </div>
@@ -198,54 +216,68 @@ const AccountRow: React.FC<AccountRowProps> = ({
       <div className="px-1 py-3 flex items-center justify-center relative" ref={dropdownRef}>
         <button
           onClick={handleDropdownClick}
-          className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: inkSoft }}
+          onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           title="Actions"
         >
           <MoreHorizontal size={16} />
         </button>
         {showDropdown && (
-          <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 z-50 min-w-[180px]">
+          <div className="absolute right-0 top-full mt-1 py-1 z-50 min-w-[180px]" style={{ background: paper, border: `1.4px solid ${hairline}`, borderRadius: 12, boxShadow: '0 8px 24px -8px rgba(0,0,0,.25)', overflow: 'hidden' }}>
             <button
               onClick={(e) => { e.stopPropagation(); onViewLedger(); setShowDropdown(false); }}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', fontSize: 13, color: ink, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+              onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
-              <Eye size={14} className="text-slate-400" />
+              <Eye size={14} style={{ color: inkSoft }} />
               View Account
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onViewLedger(); setShowDropdown(false); }}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', fontSize: 13, color: ink, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+              onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
-              <Receipt size={14} className="text-slate-400" />
+              <Receipt size={14} style={{ color: inkSoft }} />
               View Ledger
             </button>
             {canEdit && !isSystem && (
               <>
-                <div className="my-1.5 border-t border-slate-100" />
+                <div style={{ margin: '4px 0', borderTop: `1px solid ${hairline}` }} />
                 <button
                   onClick={(e) => { e.stopPropagation(); onAddSubAccount(); setShowDropdown(false); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', fontSize: 13, color: ink, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <Plus size={14} className="text-slate-400" />
+                  <Plus size={14} style={{ color: inkSoft }} />
                   Add Sub-Account
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onEdit(); setShowDropdown(false); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', fontSize: 13, color: ink, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <Edit2 size={14} className="text-slate-400" />
+                  <Edit2 size={14} style={{ color: inkSoft }} />
                   Edit Account
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onToggleActive(); setShowDropdown(false); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', fontSize: 13, color: ink, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  {account.is_active ? <PowerOff size={14} className="text-slate-400" /> : <Power size={14} className="text-slate-400" />}
+                  {account.is_active ? <PowerOff size={14} style={{ color: inkSoft }} /> : <Power size={14} style={{ color: teal[600] }} />}
                   {account.is_active ? 'Deactivate' : 'Activate'}
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onDelete(); setShowDropdown(false); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', fontSize: 13, color: danger, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#fdeeee'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <Trash2 size={14} />
                   Delete Account
@@ -253,7 +285,7 @@ const AccountRow: React.FC<AccountRowProps> = ({
               </>
             )}
             {isSystem && (
-              <div className="flex items-center gap-2 px-4 py-2.5 text-xs text-amber-600 bg-amber-50/50">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', fontSize: 11.5, color: amber[600], background: amber[100] }}>
                 <Lock size={12} />
                 System Account
               </div>
@@ -278,25 +310,25 @@ const GroupHeaderRow: React.FC<GroupHeaderRowProps> = ({ typeLabel, typeTotal, c
 
   return (
     <div
-      className="grid items-center bg-gradient-to-r from-slate-100/90 to-slate-50/90 border-b-2 border-slate-200/80 backdrop-blur-sm"
-      style={{ gridTemplateColumns: '100px 1fr 130px 140px 36px' }}
+      className="grid items-center"
+      style={{ ...tableHeadRow, gridTemplateColumns: '100px 1fr 130px 140px 36px' }}
     >
       <div className="px-4 py-2.5">
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md ${typeConfig.bgColor} ${typeConfig.color}`}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.08, borderRadius: 20, background: typeConfig.bg, color: typeConfig.color }}>
           {typeConfig.icon}
           {typeLabel}
         </span>
       </div>
       <div className="px-4 py-2.5">
-        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+        <span style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08 }}>
           {accountCount} {accountCount === 1 ? 'account' : 'accounts'}
         </span>
       </div>
       <div className="px-4 py-2.5"></div>
       <div className="px-4 py-2.5 text-right">
         <div className="flex items-center justify-end gap-1.5">
-          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Total</span>
-          <span className={`font-bold text-sm tabular-nums ${formatted.color}`}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08 }}>Total</span>
+          <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: formatted.color }}>
             {formatted.prefix}{formatted.text}{(typeTotal < 0) ? ')' : ''}
           </span>
         </div>
@@ -317,9 +349,11 @@ export const AccountTree: React.FC<AccountTreeProps> = ({
   selectedAccountId,
   searchTerm = '',
   balances = {},
-  currencySymbol = '$',
+  currencySymbol: currencySymbolProp,
   canEdit = false
 }) => {
+  const { companyConfig } = useAuth();
+  const currencySymbol = currencySymbolProp || companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
   const filteredAccounts = useMemo(() => {
     if (!searchTerm) return accounts;
     const term = searchTerm.toLowerCase();
@@ -368,11 +402,11 @@ export const AccountTree: React.FC<AccountTreeProps> = ({
   }, [sortedAccounts, balances]);
 
   if (accounts.length === 0) {
-    return null;
+    return <EmptyState icon={<Building2 size={32} />} title="No accounts found" hint="Create your first account to get started." />;
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col" style={tableCard}>
       {groupedByType.map((group) => (
         <React.Fragment key={group.id}>
           <GroupHeaderRow

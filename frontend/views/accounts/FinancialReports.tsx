@@ -1287,12 +1287,12 @@ const FinancialReports: React.FC = () => {
                                     <div className="space-y-10">
                                         <div>
                                             <h3 className="font-bold text-white bg-slate-900 px-4 py-2 mb-0 text-xs uppercase tracking-widest rounded-t print:bg-slate-900 print:text-white">Statement of Changes in Equity</h3>
-                                            <ReportRow label="Opening Equity" amount={accountBalances.current['3000'] || 0} currency={currency} isTotal />
+                                            <ReportRow label="Opening Equity" amount={accountBalances.current['30000'] || 0} currency={currency} isTotal />
                                             <ReportRow label="Net Income / (Loss) for Period" amount={netIncome.current} currency={currency} />
-                                            {getAccountRows(['Equity']).filter(a => a.code !== '3000' && a.balance > 0).map(a => (
+                                            {getAccountRows(['Equity']).filter(a => a.code !== '30000' && a.balance > 0).map(a => (
                                                 <ReportRow key={a.id} label={a.name} amount={a.balance} currency={currency} subText={a.code} />
                                             ))}
-                                            {getAccountRows(['Equity']).filter(a => a.code !== '3000' && a.balance < 0).map(a => (
+                                            {getAccountRows(['Equity']).filter(a => a.code !== '30000' && a.balance < 0).map(a => (
                                                 <ReportRow key={a.id} label={`Drawings: ${a.name}`} amount={a.balance} currency={currency} subText={a.code} />
                                             ))}
                                             <div className="pt-6 border-t-4 border-double border-slate-900 mt-6 bg-[#393A3D] text-white p-8 rounded-xl">

@@ -48,22 +48,26 @@ export const ownerEquityService = {
         description: string,
         date: string,
         reference?: string,
-        accounts?: any[]
+        accounts?: any[],
+        bankAccountId?: string,
+        ownerName?: string
     ): Promise<OwnerEquityTransaction | null> {
         const config = getConfig();
         const accts = accounts || [];
 
         const capitalAccountId = resolveAccountForPosting(config.ownerCapitalAccount, accts) || config.ownerCapitalAccount;
-        const bankAccountId = resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
+        const resolvedBankAccountId = bankAccountId
+            ? resolveAccountForPosting(bankAccountId, accts) || bankAccountId
+            : resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
 
         try {
-            await ledgerService.createJournalEntry({
+            const journalEntry = await ledgerService.createJournalEntry({
                 date,
                 description: `Capital Contribution: ${description}`,
                 reference: reference || `CAP-${generateId('CAP')}`,
                 lines: [
                     {
-                        debitAccountId: bankAccountId,
+                        debitAccountId: resolvedBankAccountId,
                         creditAccountId: capitalAccountId,
                         amount,
                         description: `Capital contribution - ${description}`,
@@ -78,7 +82,9 @@ export const ownerEquityService = {
                 amount,
                 description,
                 reference,
-                owner_account_id: bankAccountId,
+                journal_entry_id: (journalEntry as any)?.id,
+                owner_name: ownerName,
+                owner_account_id: resolvedBankAccountId,
                 capital_account_id: capitalAccountId,
                 drawings_account_id: '',
                 date,
@@ -98,23 +104,27 @@ export const ownerEquityService = {
         description: string,
         date: string,
         reference?: string,
-        accounts?: any[]
+        accounts?: any[],
+        bankAccountId?: string,
+        ownerName?: string
     ): Promise<OwnerEquityTransaction | null> {
         const config = getConfig();
         const accts = accounts || [];
 
         const drawingsAccountId = resolveAccountForPosting(config.ownerDrawingsAccount, accts) || config.ownerDrawingsAccount;
-        const bankAccountId = resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
+        const resolvedBankAccountId = bankAccountId
+            ? resolveAccountForPosting(bankAccountId, accts) || bankAccountId
+            : resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
 
         try {
-            await ledgerService.createJournalEntry({
+            const journalEntry = await ledgerService.createJournalEntry({
                 date,
                 description: `Capital Withdrawal: ${description}`,
                 reference: reference || `WD-${generateId('WD')}`,
                 lines: [
                     {
                         debitAccountId: drawingsAccountId,
-                        creditAccountId: bankAccountId,
+                        creditAccountId: resolvedBankAccountId,
                         amount,
                         description: `Owner withdrawal - ${description}`,
                     }
@@ -128,7 +138,9 @@ export const ownerEquityService = {
                 amount,
                 description,
                 reference,
-                owner_account_id: bankAccountId,
+                journal_entry_id: (journalEntry as any)?.id,
+                owner_name: ownerName,
+                owner_account_id: resolvedBankAccountId,
                 capital_account_id: '',
                 drawings_account_id: drawingsAccountId,
                 date,
@@ -148,23 +160,28 @@ export const ownerEquityService = {
         description: string,
         date: string,
         reference?: string,
-        accounts?: any[]
+        accounts?: any[],
+        bankAccountId?: string,
+        ownerName?: string
     ): Promise<OwnerEquityTransaction | null> {
         const config = getConfig();
         const accts = accounts || [];
 
         const drawingsAccountId = resolveAccountForPosting(config.ownerDrawingsAccount, accts) || config.ownerDrawingsAccount;
         const retainedEarningsId = resolveAccountForPosting(config.retainedEarningsAccount, accts) || config.retainedEarningsAccount;
+        const resolvedBankAccountId = bankAccountId
+            ? resolveAccountForPosting(bankAccountId, accts) || bankAccountId
+            : resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
 
         try {
-            await ledgerService.createJournalEntry({
+            const journalEntry = await ledgerService.createJournalEntry({
                 date,
                 description: `Profit Distribution: ${description}`,
                 reference: reference || `PD-${generateId('PD')}`,
                 lines: [
                     {
                         debitAccountId: retainedEarningsId,
-                        creditAccountId: drawingsAccountId,
+                        creditAccountId: resolvedBankAccountId,
                         amount,
                         description: `Profit distribution to owner - ${description}`,
                     }
@@ -178,7 +195,9 @@ export const ownerEquityService = {
                 amount,
                 description,
                 reference,
-                owner_account_id: retainedEarningsId,
+                journal_entry_id: (journalEntry as any)?.id,
+                owner_name: ownerName,
+                owner_account_id: resolvedBankAccountId,
                 capital_account_id: '',
                 drawings_account_id: drawingsAccountId,
                 date,
@@ -193,29 +212,86 @@ export const ownerEquityService = {
         }
     },
 
+    async createLossAllocation(
+        amount: number,
+        description: string,
+        date: string,
+        reference?: string,
+        accounts?: any[],
+        bankAccountId?: string,
+        ownerName?: string
+    ): Promise<OwnerEquityTransaction | null> {
+        const config = getConfig();
+        const accts = accounts || [];
+
+        const capitalAccountId = resolveAccountForPosting(config.ownerCapitalAccount, accts) || config.ownerCapitalAccount;
+        const resolvedBankAccountId = bankAccountId
+            ? resolveAccountForPosting(bankAccountId, accts) || bankAccountId
+            : resolveAccountForPosting(config.bankAccount, accts) || config.bankAccount;
+
+        try {
+            const journalEntry = await ledgerService.createJournalEntry({
+                date,
+                description: `Loss Allocation: ${description}`,
+                reference: reference || `LA-${generateId('LA')}`,
+                lines: [
+                    {
+                        debitAccountId: resolvedBankAccountId,
+                        creditAccountId: capitalAccountId,
+                        amount,
+                        description: `Loss allocation to owner capital - ${description}`,
+                    }
+                ],
+                entryType: 'LOSS_ALLOCATION',
+            });
+
+            const transaction: OwnerEquityTransaction = {
+                id: generateId('OE'),
+                transaction_type: 'loss_allocation',
+                amount,
+                description,
+                reference,
+                journal_entry_id: (journalEntry as any)?.id,
+                owner_name: ownerName,
+                owner_account_id: resolvedBankAccountId,
+                capital_account_id: capitalAccountId,
+                drawings_account_id: '',
+                date,
+                created_at: new Date().toISOString(),
+            };
+
+            await dbService.put(STORE_NAME, transaction);
+            return transaction;
+        } catch (error) {
+            logger.error('Failed to create loss allocation', error);
+            return null;
+        }
+    },
+
     async getCapitalBalance(accounts?: any[]): Promise<{ capital: number; drawings: number; net: number }> {
-        const transactions = await this.getAll();
         const config = getConfig();
         const accts = accounts || [];
 
         const capitalAccountId = resolveAccountForPosting(config.ownerCapitalAccount, accts);
         const drawingsAccountId = resolveAccountForPosting(config.ownerDrawingsAccount, accts);
 
-        let capitalContributions = 0;
-        let withdrawals = 0;
+        let capitalBalance = 0;
+        let drawingsBalance = 0;
 
-        for (const tx of transactions) {
-            if (tx.transaction_type === 'capital_contribution') {
-                capitalContributions += tx.amount;
-            } else if (tx.transaction_type === 'capital_withdrawal' || tx.transaction_type === 'profit_distribution') {
-                withdrawals += tx.amount;
-            }
+        if (capitalAccountId) {
+            const raw = await ledgerService.calculateBalance(capitalAccountId);
+            capitalBalance = -raw;
+        }
+
+        if (drawingsAccountId) {
+            const raw = await ledgerService.calculateBalance(drawingsAccountId);
+            drawingsBalance = raw;
         }
 
         return {
-            capital: capitalContributions,
-            drawings: withdrawals,
-            net: capitalContributions - withdrawals,
+            capital: capitalBalance,
+            drawings: drawingsBalance,
+            net: capitalBalance - drawingsBalance,
         };
     },
 

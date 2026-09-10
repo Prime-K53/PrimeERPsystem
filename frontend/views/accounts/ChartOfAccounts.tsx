@@ -23,17 +23,20 @@ import { format, parseISO } from 'date-fns';
 import { AccountDetailsDashboard } from './components/AccountDetailsDashboard';
 import { NewAccountModal } from './components/NewAccountModal';
 import { currencyService } from '../../services/currencyService';
-import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
+import { ConfirmDialogType } from '../../components/ConfirmDialog';
 import { computeHierarchicalBalances } from '../../services/transactions/_internal';
 
-const teal = { 50: '#eef7f6', 100: '#d4ebe3', 200: '#a6d9d3', 400: '#3fa294', 500: '#2d9a8a', 600: '#1f8577', 700: '#166b5e', 800: '#0f544c', 900: '#0a3d34' };
-const amber = { 50: '#fef9e7', 100: '#fef3c7', 200: '#fde68a', 400: '#d99a3f', 500: '#d99a3f', 600: '#b45309', 700: '#92400e', 800: '#78350f', 900: '#451a03' };
-const paper = '#FEFDFB';
-const ink = '#23282A';
-const inkSoft = '#5c6567';
+/* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
+import {
+    teal, amber, paper, ink, inkSoft, hairline, danger,
+    labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
+    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
+    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    tableCard, tableHeadRow,
+} from './components/financeChrome';
+
 const inkFaint = '#8C958D';
-const hairline = '#e4ddd1';
-const danger = '#B23B3B';
 const assets = '#3F6D5C';
 const liabilities = '#A14E3C';
 const equity = '#4B4E76';
@@ -368,8 +371,10 @@ const ChartOfAccounts: React.FC = () => {
     return (
       <div key={account.id} className="relative">
         <div
-          className={`flex items-center gap-3 py-2.5 px-4 border-b transition-colors cursor-pointer ${depth === 0 ? 'font-semibold' : ''}`}
-          style={{ borderColor: hairline, paddingLeft: `${depth * 1.5 + 1}rem` }}
+          className={`flex items-center gap-3 py-2.5 px-4 border-b cursor-pointer ${depth === 0 ? 'font-semibold' : ''}`}
+          style={{ borderColor: hairline, paddingLeft: `${depth * 1.5 + 1}rem`, transition: 'background .12s' }}
+          onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           onClick={() => {
             if (hasChildren) toggleNode(code);
             setSelectedAccount(account);
@@ -378,33 +383,35 @@ const ChartOfAccounts: React.FC = () => {
           <div className="w-5 h-5 flex items-center justify-center flex-none">
             {hasChildren ? (
               <button
-                className="w-4 h-4 flex items-center justify-center hover:text-[var(--ink)] transition-colors"
-                style={{ color: inkFaint }}
+                style={{ width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: inkSoft, border: 'none', background: 'transparent', cursor: 'pointer', borderRadius: 6 }}
+                onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 onClick={(e) => { e.stopPropagation(); toggleNode(code); }}
               >
                 {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               </button>
             ) : null}
           </div>
-          <span className="font-mono text-sm font-medium min-w-[5rem] flex-none" style={{ color: inkSoft }}>
+          <span className="font-mono text-sm font-medium min-w-[5rem] flex-none" style={{ color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>
             {code}
           </span>
-          <span className="text-sm flex-1 min-w-0 truncate" style={{ color: ink }}>
+          <span className="text-sm flex-1 min-w-0 truncate" style={{ color: ink, fontWeight: depth === 0 ? 600 : 400 }}>
             {account.name}
           </span>
           {!account.is_active && (
-            <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#92400e' }}>
+            <span style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 20, background: amber[100], color: amber[600] }}>
               Inactive
             </span>
           )}
-          <span className={`font-mono text-sm flex-none min-w-[9rem] text-right ${balance < 0 ? '' : ''}`} style={{ color: ink }}>
+          <span className="font-mono text-sm flex-none min-w-[9rem] text-right" style={{ color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(balance)}
           </span>
           {/* Quick Action Menu */}
           <div className="relative flex-none ml-4" ref={isMenuOpen ? actionMenuRef : undefined}>
             <button
-              className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-              style={{ color: inkSoft }}
+              style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: inkSoft }}
+              onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               onClick={(e) => { e.stopPropagation(); setActionMenuAccountId(isMenuOpen ? null : account.id); }}
               title="Actions"
             >
@@ -416,40 +423,50 @@ const ChartOfAccounts: React.FC = () => {
                 style={{ background: paper, borderColor: hairline }}
               >
                 <button
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                  style={{ color: ink }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                  style={{ color: ink, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   onClick={(e) => handleActionClick('view-ledger', e)}
                 >
                   <BookOpen size={14} />
                   View Ledger
                 </button>
                 <button
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                  style={{ color: ink }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                  style={{ color: ink, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   onClick={(e) => handleActionClick('view-details', e)}
                 >
                   <BarChart3 size={14} />
                   Account Details
                 </button>
                 <button
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                  style={{ color: ink }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                  style={{ color: ink, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   onClick={(e) => handleActionClick('rename', e)}
                 >
                   <Pencil size={14} />
                   Rename
                 </button>
                 <button
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                  style={{ color: ink }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                  style={{ color: ink, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   onClick={(e) => handleActionClick('add-child', e)}
                 >
                   <Plus size={14} />
                   Add Sub-Account
                 </button>
                 <button
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                  style={{ color: ink }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                  style={{ color: ink, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   onClick={(e) => handleActionClick('copy-code', e)}
                 >
                   <Copy size={14} />
@@ -459,8 +476,10 @@ const ChartOfAccounts: React.FC = () => {
                   <>
                     <div className="my-1 border-t" style={{ borderColor: hairline }} />
                     <button
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                      style={{ color: account.is_active ? amber[700] : assets }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                      style={{ color: account.is_active ? amber[600] : teal[700], background: 'transparent', border: 'none', cursor: 'pointer' }}
+                      onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       onClick={(e) => handleActionClick('toggle-active', e)}
                     >
                       {account.is_active ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -468,8 +487,10 @@ const ChartOfAccounts: React.FC = () => {
                     </button>
                     {!account.is_system_account && (
                       <button
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                        style={{ color: danger }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                        style={{ color: danger, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#fdeeee'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         onClick={(e) => handleActionClick('delete', e)}
                       >
                         <Trash2 size={14} />
@@ -493,100 +514,65 @@ const ChartOfAccounts: React.FC = () => {
     );
   };
 
-  return (
-    <div className="min-h-screen" style={{ background: paper, color: ink, fontFamily: "'Inter', 'DM Sans', sans-serif" }}>
-      <style>{`
-        :root {
-          --paper: ${paper};
-          --panel: #F4F5EE;
-          --stripe: rgba(30,38,32,0.028);
-          --ink: ${ink};
-          --ink-soft: ${inkSoft};
-          --ink-faint: ${inkFaint};
-          --rule: ${hairline};
-          --rule-strong: #A7A995;
-          --gold: ${gold};
-          --red: #B23B3B;
-          --assets: ${assets};
-          --liabilities: ${liabilities};
-          --equity: ${equity};
-          --income: ${income};
-          --expenses: ${expenses};
-          --serif: "Source Serif 4", Georgia, serif;
-          --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-        }
-        * { box-sizing: border-box; }
-        body { margin: 0; -webkit-font-smoothing: antialiased; }
-        ::selection { background: var(--gold); color: #fff; }
-      `}</style>
+  const kpiItems = [
+    { label: 'Assets', value: formatMK(totals.assets), icon: BookOpen, color: teal[700], bg: teal[50] },
+    { label: 'Liabilities', value: formatMK(totals.liabilities), icon: BookOpen, color: amber[600], bg: amber[100] },
+    { label: 'Equity', value: formatMK(totals.equity), icon: BarChart3, color: teal[700], bg: teal[50] },
+    { label: isBalanced ? 'Balanced' : 'Out of balance', value: `${totalAccounts} accounts`, icon: BookOpen, color: isBalanced ? teal[700] : danger, bg: isBalanced ? teal[50] : '#fdeeee' },
+  ];
 
-      {/* Masthead */}
-      <div className="pt-8 pb-6 px-6">
-        <div className="text-sm tracking-wide mb-5" style={{ color: inkSoft }}>
-          Prime ERP <span style={{ color: gold }}>·</span> ledger reference
-        </div>
-        <h1 className="text-3xl font-semibold mb-3 leading-tight" style={{ fontFamily: "'Source Serif 4', Georgia, serif", color: ink }}>
-          Chart of accounts
-        </h1>
-        <p className="text-base mb-5 leading-relaxed max-w-3xl" style={{ color: inkSoft, fontFamily: "'Source Serif 4', Georgia, serif" }}>
-          Every account Prime ERP posts against, arranged the way the general ledger reads them: by code, from the balance sheet down through the income statement, with the current trial balance carried alongside.
-        </p>
-        
-        {/* Accounting Equation */}
-        <div className="flex flex-wrap items-center gap-3 px-5 py-3.5 border rounded-[14px] text-sm" style={{ background: '#F4F5EE', borderColor: hairline, borderLeft: `4px solid ${gold}` }}>
-          <span className="flex items-center gap-1.5">
-            <span className="font-semibold" style={{ color: assets }}>Assets</span>
-            <span style={{ color: inkSoft }}>{formatMK(totals.assets)}</span>
-          </span>
-          <span style={{ color: inkFaint }}>=</span>
-          <span className="flex items-center gap-1.5">
-            <span className="font-semibold" style={{ color: liabilities }}>Liabilities</span>
-            <span style={{ color: inkSoft }}>{formatMK(totals.liabilities)}</span>
-          </span>
-          <span style={{ color: inkFaint }}>+</span>
-          <span className="flex items-center gap-1.5">
-            <span className="font-semibold" style={{ color: equity }}>Equity</span>
-            <span style={{ color: inkSoft }}>{formatMK(totals.equity)}</span>
-          </span>
-          <span className="ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap" style={{ color: isBalanced ? assets : '#B23B3B' }}>
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: isBalanced ? assets : '#B23B3B' }}></span>
-            {isBalanced ? 'Balances' : 'Out of balance'}
-          </span>
-        </div>
-      </div>
+  return (
+    <div className="flex flex-col h-full" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
+      <PageHeader
+        icon={<BookOpen size={19} color="#fff" />}
+        title="Chart of Accounts"
+        subtitle="Ledger reference — accounts by code with trial balance"
+        actions={<>
+          <button onClick={expandAll} style={btnGhostStyle}
+            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+          >
+            Expand all
+          </button>
+          <button onClick={collapseAll} style={btnGhostStyle}
+            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+          >
+            Collapse all
+          </button>
+          {canEdit && (
+            <button onClick={() => handleOpenModal(null, null)} style={btnPrimaryStyle}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+            >
+              <Plus size={15} />
+              New Account
+            </button>
+          )}
+        </>}
+      />
+
+      <KpiCards items={kpiItems} />
 
       {/* Controls */}
-      <div className="px-6 pb-4 border-b" style={{ borderColor: hairline }}>
-        <div className="flex gap-4 items-center">
-          <div className="flex-1 flex items-center gap-2 border px-4 py-2.5 rounded-[14px]" style={{ borderColor: hairline, background: '#F4F5EE' }}>
-            <Search size={16} style={{ color: inkFaint }} className="flex-none" />
-            <input
-              type="text"
-              placeholder="Find an account by code or name"
-              className="flex-1 bg-transparent border-none outline-none text-sm"
-              style={{ color: ink, placeholderColor: inkFaint, fontFamily: "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace" }}
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-4 text-sm" style={{ color: inkSoft }}>
-            <button onClick={expandAll} className="border-b pb-px hover:border-[var(--gold)] hover:text-[var(--gold)] transition-colors" style={{ borderColor: '#A7A995' }}>
-              Expand all
-            </button>
-            <button onClick={collapseAll} className="border-b pb-px hover:border-[var(--gold)] hover:text-[var(--gold)] transition-colors" style={{ borderColor: '#A7A995' }}>
-              Collapse all
-            </button>
-          </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 28px' }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
+          <input
+            type="text"
+            placeholder="Find an account by code or name"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{ ...inputStyle, paddingLeft: 34, fontFamily: "'JetBrains Mono', monospace" }}
+          />
         </div>
       </div>
 
       {/* Main Layout */}
-      <div className="px-6 py-6 grid gap-8" style={{ gridTemplateColumns: '16rem 1fr' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '14rem 1fr', gap: 20, padding: '0 28px 28px', flex: 1, overflow: 'hidden' }}>
         {/* Navigation Rail */}
-        <nav className="flex flex-col gap-1">
-          <div className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: inkFaint, fontSize: 11, letterSpacing: '0.06em' }}>
-            Categories
-          </div>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div style={{ ...sectionLabelStyle, margin: '4px 0 10px' }}><span>Categories</span></div>
           {ACCOUNT_TYPE_ORDER.map(type => {
             const config = ACCOUNT_CATEGORY_CONFIG[type];
             const count = groupedByType[type]?.accounts.length || 0;
@@ -594,35 +580,38 @@ const ChartOfAccounts: React.FC = () => {
               <a
                 key={type}
                 href={`#${type.toLowerCase()}`}
-                className={`flex items-center gap-2.5 px-3 py-2 text-sm no-underline transition-all rounded-[10px]`}
                 style={{
-                  color: activeCategory === type ? ink : inkSoft,
-                  background: activeCategory === type ? '#F4F5EE' : 'transparent',
-                  borderLeft: `2px solid ${activeCategory === type ? gold : 'transparent'}`,
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', fontSize: 13, textDecoration: 'none',
+                  borderRadius: 9, transition: 'background .12s',
+                  color: activeCategory === type ? teal[800] : inkSoft,
+                  background: activeCategory === type ? teal[50] : 'transparent',
+                  borderLeft: `3px solid ${activeCategory === type ? teal[600] : 'transparent'}`,
+                  fontWeight: activeCategory === type ? 700 : 500,
                 }}
+                onMouseEnter={e => { if (activeCategory !== type) e.currentTarget.style.background = teal[50]; }}
+                onMouseLeave={e => { if (activeCategory !== type) e.currentTarget.style.background = 'transparent'; }}
                 onClick={(e) => {
                   e.preventDefault();
                   const el = categoryRefs.current[type];
                   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }}
               >
-                <span 
-                  className="w-2 h-2 rounded-full flex-none"
-                  style={{ backgroundColor: config.color }}
+                <span
+                  style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, backgroundColor: config.color }}
                 />
-                <span className="flex-1">{config.label}</span>
-                <span className="text-xs" style={{ color: inkFaint }}>{count}</span>
+                <span style={{ flex: 1 }}>{config.label}</span>
+                <span style={{ fontSize: 11, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{count}</span>
               </a>
             );
           })}
-          <div className="mt-4 pt-3 border-t text-xs" style={{ borderColor: hairline, color: inkFaint }}>
-            <b className="font-semibold" style={{ color: ink }}>{totalAccounts}</b> accounts total
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft }}>
+            <b style={{ fontWeight: 700, color: ink }}>{totalAccounts}</b> accounts total
           </div>
         </nav>
 
         {/* Main Content */}
-        <main>
-          <div className="space-y-8">
+        <main style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {ACCOUNT_TYPE_ORDER.map(type => {
               const config = ACCOUNT_CATEGORY_CONFIG[type];
               const group = groupedByType[type];
@@ -631,41 +620,39 @@ const ChartOfAccounts: React.FC = () => {
               const rootAccounts = group.accounts.filter(a => !a.parent_account_id);
 
               return (
-                <section 
-                  key={type} 
+                <section
+                  key={type}
                   id={type.toLowerCase()}
                   data-category={type}
                   ref={el => { categoryRefs.current[type] = el; }}
                   className="scroll-mt-6"
+                  style={tableCard}
                 >
                   {/* Category Header */}
-                  <div className="flex items-center gap-3 mb-3 pb-2.5" style={{ borderBottom: `2px solid ${hairline}` }}>
-                    <div 
-                      className="w-1 self-stretch rounded-full"
-                      style={{ backgroundColor: config.color }}
-                    />
-                    <h2 className="text-xl font-semibold" style={{ fontFamily: "'Source Serif 4', Georgia, serif", color: ink }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${hairline}` }}>
+                    <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, backgroundColor: config.color }} />
+                    <h2 style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontWeight: 400, fontSize: 18, margin: 0, color: teal[800] }}>
                       {config.label}
                     </h2>
-                    <span className="ml-auto text-xs font-mono" style={{ color: inkFaint }}>{config.range}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{config.range}</span>
                   </div>
 
                   {/* Table Header */}
-                  <div className="flex items-center gap-3 px-4 py-2.5 text-xs border-b" style={{ color: inkFaint, borderColor: '#A7A995', background: '#F4F5EE' }}>
-                    <span className="w-5 flex-none"></span>
-                    <span className="w-16 flex-none font-mono">Code</span>
-                    <span className="flex-1 font-serif">Account</span>
-                    <span className="w-36 text-right font-mono pr-4">Balance</span>
-                    <span className="w-12 flex-none text-center ml-4">Actions</span>
+                  <div style={{ ...tableHeadRow, display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
+                    <span style={{ width: 20, flexShrink: 0 }}></span>
+                    <span style={{ width: 80, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace" }}>Code</span>
+                    <span style={{ flex: 1 }}>Account</span>
+                    <span style={{ width: 144, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", paddingRight: 16 }}>Balance</span>
+                    <span style={{ width: 48, flexShrink: 0, textAlign: 'center', marginLeft: 16 }}>Actions</span>
                   </div>
 
                   {/* Account List */}
-                  <div className="border-x border-b rounded-b-[14px] overflow-hidden" style={{ borderColor: hairline }}>
+                  <div style={{ overflow: 'hidden' }}>
                     {rootAccounts.map(account => renderAccountRow(account, 0))}
                   </div>
 
                   {searchTerm && rootAccounts.length === 0 && (
-                    <div className="py-4 px-4 text-sm" style={{ color: inkFaint }}>
+                    <div style={{ padding: '16px', fontSize: 13, color: inkSoft }}>
                       No accounts match that search.
                     </div>
                   )}
@@ -675,17 +662,13 @@ const ChartOfAccounts: React.FC = () => {
           </div>
 
           {filteredAccounts.length === 0 && (
-            <div className="py-16 text-center" style={{ color: inkFaint }}>
-              <Search size={36} className="mx-auto mb-4 opacity-40" />
-              <p className="text-sm font-medium" style={{ color: inkSoft }}>No accounts found</p>
-              <p className="text-xs mt-1.5">Try adjusting your search</p>
-            </div>
+            <EmptyState icon={<Search size={32} />} title="No accounts found" hint="Try adjusting your search" />
           )}
         </main>
       </div>
 
       {/* Footer */}
-      <footer className="px-6 py-5 mt-4 border-t text-xs" style={{ borderColor: hairline, color: inkFaint }}>
+      <footer style={{ padding: '14px 28px', borderTop: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft, background: paper }}>
         Prime ERP · chart of accounts, {totalAccounts} accounts across {Object.values(groupedByType).filter(g => g.accounts.length > 0).length} categories. Balances shown in {companyConfig?.currencySymbol || currency}, current trial balance.
       </footer>
 
@@ -712,11 +695,31 @@ const ChartOfAccounts: React.FC = () => {
         isSubmitting={isSubmitting}
       />
 
-      {/* Confirm Dialog */}
-      <ConfirmDialog
-        {...confirmState}
-        onClose={() => setConfirmState(s => ({ ...s, open: false }))}
-      />
+      {/* Confirm Dialog — danger chrome */}
+      {confirmState.open && (
+        <div style={modalOverlayStyle} onClick={() => setConfirmState(s => ({ ...s, open: false }))}>
+          <div style={modalShell(520)} onClick={e => e.stopPropagation()}>
+            <AccentStripe />
+            <ModalHeader
+              icon={<Trash2 size={19} color="#fff" />}
+              title={confirmState.title || 'Confirm'}
+              subtitle="This action cannot be undone"
+              onClose={() => setConfirmState(s => ({ ...s, open: false }))}
+              dangerTile
+            />
+            <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+              <p style={{ fontSize: 13.5, color: ink, margin: 0, lineHeight: 1.6 }}>{confirmState.message}</p>
+            </div>
+            <ModalFooter
+              stepLabel="Confirm · destructive"
+              onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+              submitLabel={confirmState.confirmText || 'Confirm'}
+              onSubmit={() => confirmState.onConfirm?.()}
+              danger
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
