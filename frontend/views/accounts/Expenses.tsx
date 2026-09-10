@@ -731,19 +731,20 @@ const Expenses: React.FC = () => {
                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
                </select>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto' }}>
+            {/* Container-aware responsive wrapper: narrow containers stack labelled rows (see responsive-table.css). No logic change. */}
+            <div className="rpt-legacy" style={{ flex: 1, overflowY: 'auto', containerType: 'inline-size' }}>
                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead style={{
                     background: teal[50], color: inkSoft, fontWeight: 700,
                     borderBottom: `1px solid ${hairline}`, position: 'sticky', top: 0, zIndex: 10, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.06
                   }}>
                     <tr>
-                      <th style={{ padding: '10px 14px', width: 110 }}>Date</th>
-                      <th style={{ padding: '10px 14px' }}>Description</th>
-                      <th style={{ padding: '10px 14px' }}>Category</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>Amount</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'center' }}>Status</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>Action</th>
+                      <th scope="col" style={{ padding: '10px 14px', width: 110 }}>Date</th>
+                      <th scope="col" style={{ padding: '10px 14px' }}>Description</th>
+                      <th scope="col" style={{ padding: '10px 14px' }}>Category</th>
+                      <th scope="col" style={{ padding: '10px 14px', textAlign: 'right' }}>Amount</th>
+                      <th scope="col" style={{ padding: '10px 14px', textAlign: 'center' }}>Status</th>
+                      <th scope="col" style={{ padding: '10px 14px', textAlign: 'right' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody style={{ divideY: `1px solid ${hairline}` }}>
@@ -754,15 +755,15 @@ const Expenses: React.FC = () => {
                         <tr key={exp.id} style={{ borderBottom: `1px solid ${hairline}`, cursor: 'pointer', transition: 'background .15s ease' }}
                           onMouseEnter={e => { e.currentTarget.style.background = teal[50]; }}
                           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
-                           <td style={{ padding: '10px 14px', color: inkSoft, whiteSpace: 'nowrap', fontSize: 12 }} onClick={() => setSelectedExpense(exp)}>{new Date(exp.date).toLocaleDateString()}</td>
-                           <td style={{ padding: '10px 14px', fontWeight: 600, color: ink, fontSize: 12 }} onClick={() => setSelectedExpense(exp)}>
+                           <td data-label="Date" style={{ padding: '10px 14px', color: inkSoft, whiteSpace: 'nowrap', fontSize: 12 }} onClick={() => setSelectedExpense(exp)}>{new Date(exp.date).toLocaleDateString()}</td>
+                           <td data-label="Description" style={{ padding: '10px 14px', fontWeight: 600, color: ink, fontSize: 12 }} onClick={() => setSelectedExpense(exp)}>
                              {exp.description}
                              <div style={{ fontSize: 10, color: inkSoft, fontWeight: 500, display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
                                {exp.id} &bull; By {exp.recordedBy}
                                {exp.paymentProofUrl && <Paperclip size={10} style={{ color: teal[600] }} />}
                              </div>
                            </td>
-                           <td style={{ padding: '10px 14px' }} onClick={() => setSelectedExpense(exp)}>
+                           <td data-label="Category" style={{ padding: '10px 14px' }} onClick={() => setSelectedExpense(exp)}>
                              <span style={{
                                display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: 6,
                                fontSize: 10, fontWeight: 700, background: teal[50], color: teal[700], border: `1px solid ${teal[100]}`
@@ -770,11 +771,11 @@ const Expenses: React.FC = () => {
                                {exp.category}
                              </span>
                            </td>
-                           <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: teal[800], fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }} onClick={() => setSelectedExpense(exp)}>
+                           <td data-label="Amount" style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: teal[800], fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontVariantNumeric: 'tabular-nums' }} onClick={() => setSelectedExpense(exp)}>
                              {currency}{exp.amount.toFixed(2)}
                            </td>
-                           <td style={{ padding: '10px 14px', textAlign: 'center' }} onClick={() => setSelectedExpense(exp)}>
-                                <span style={{
+                           <td data-label="Status" style={{ padding: '10px 14px', textAlign: 'center' }} onClick={() => setSelectedExpense(exp)}>
+                                <span role="status" aria-label={`Status: ${exp.status || 'Paid'}`} style={{
                                   padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700,
                                   textTransform: 'uppercase', letterSpacing: 0.06, border: `1px solid ${exp.status === 'Paid' ? teal[100] : amber[100]}`,
                                   background: exp.status === 'Paid' ? teal[50] : amber[100],
@@ -783,10 +784,11 @@ const Expenses: React.FC = () => {
                                     {exp.status || 'Paid'}
                                 </span>
                            </td>
-                           <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                           <td data-label="Actions" style={{ padding: '10px 14px', textAlign: 'right' }}>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                                    <button 
+                                    <button
                                         onClick={() => setSelectedExpense(exp)}
+                                        aria-label={`View expense ${exp.description}`}
                                         style={{
                                           padding: 6, color: inkSoft, background: 'transparent',
                                           border: 'none', borderRadius: 6, cursor: 'pointer',

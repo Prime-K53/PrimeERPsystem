@@ -20,7 +20,7 @@ describe('reportService', () => {
     ];
 
     const ledger = [
-      // Prior period: should affect Liability (BS) but not Expense (P&L in current period).
+      // Prior period: affects Liability (BS, cumulative) but not Expense (P&L is period-only).
       { id: 'L1', date: '2026-01-15T10:00:00.000Z', debitAccountId: 'E-52000', creditAccountId: 'L-21110', amount: 100 },
       // Current period.
       { id: 'L2', date: '2026-02-10T10:00:00.000Z', debitAccountId: 'E-52000', creditAccountId: 'L-21110', amount: 50 },
@@ -29,10 +29,30 @@ describe('reportService', () => {
 
     const balances = calculateAccountBalances(accounts, ledger, { start: '2026-02-01', end: '2026-02-28' });
 
-    expect(balances.current['E-500']).toBe(50);
-    expect(balances.current['L-200']).toBe(-50);
-    expect(balances.current['A-100']).toBe(80);
-    expect(balances.current['R-400']).toBe(-80);
+    // Normal-positive presentation, keyed by account id (code references resolve).
+    expect(balances.current['E-52000']).toBe(50);
+    expect(balances.current['L-21110']).toBe(150);
+    expect(balances.current['A-11110']).toBe(80);
+    expect(balances.current['R-41100']).toBe(80);
+  });
+
+  it('excludes draft/void rows and resolves code references to account ids', () => {
+    const accounts = [
+      { id: 'A-11110', code: '11110', name: 'Cash Drawer', type: 'Asset', account_type: 'ASSET' },
+      { id: 'R-41100', code: '41100', name: 'Product Sales', type: 'Revenue', account_type: 'INCOME' }
+    ];
+
+    const ledger = [
+      { id: 'L1', date: '2026-02-10T10:00:00.000Z', debitAccountId: '11110', creditAccountId: '41100', amount: 80 },
+      { id: 'L2', date: '2026-02-11T10:00:00.000Z', debitAccountId: '11110', creditAccountId: '41100', amount: 999, status: 'Draft' },
+      { id: 'L3', date: '2026-02-12T10:00:00.000Z', debitAccountId: '11110', creditAccountId: '41100', amount: 888, status: 'voided' }
+    ];
+
+    const balances = calculateAccountBalances(accounts, ledger, { start: '2026-02-01', end: '2026-02-28' });
+
+    // Code references resolve to the UUID rows; drafts and voids are excluded.
+    expect(balances.current['A-11110']).toBe(80);
+    expect(balances.current['R-41100']).toBe(80);
   });
 
   it('uses dueDate (fallback date) for AR and AP aging buckets', () => {

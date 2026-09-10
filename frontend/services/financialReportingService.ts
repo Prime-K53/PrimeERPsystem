@@ -13,6 +13,7 @@
 import { dbService } from './db';
 import { Account, LedgerEntry } from '../types';
 import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
+import { isPostedLedgerEntry, accountIdentifiers } from './accountingEngine';
 
 export type AccountType = 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
 
@@ -237,6 +238,7 @@ class FinancialReportingService {
       let creditAmount = 0;
 
       const accountEntries = ledger.filter(entry => {
+        if (!isPostedLedgerEntry(entry)) return false;
         const entryDate = entry.date?.split('T')[0];
         return entryDate >= periodStart &&
                entryDate <= periodEnd &&
@@ -319,6 +321,7 @@ class FinancialReportingService {
       let balance = 0;
 
       const accountEntries = ledger.filter(entry => {
+        if (!isPostedLedgerEntry(entry)) return false;
         const entryDate = entry.date?.split('T')[0];
         return entryDate <= asOfDate &&
                (accountMatchesEntry(entry, account, 'debit') || accountMatchesEntry(entry, account, 'credit'));
@@ -356,17 +359,36 @@ class FinancialReportingService {
       }
     }
 
-    // Calculate retained earnings (net income since inception)
+    // Calculate retained earnings (net income since inception).
+    // Merge into the canonical 32000 account when it already carries a
+    // balance (e.g. year-end closing posts there) instead of pushing a
+    // second 32000 row that would double-count the same profit.
     const retainedEarnings = await this.calculateRetainedEarnings(asOfDate);
-    
-    // Add retained earnings to equity
+
     if (retainedEarnings !== 0) {
-      equity.push({
-        accountId: 'retained-earnings',
-        accountCode: '32000',
-        accountName: 'Retained Earnings',
-        amount: retainedEarnings
-      });
+      const retainedAccount = accounts.find(a =>
+        (a.account_number || a.code || '') === '32000'
+      );
+      const retainedAccountIds = new Set<string>();
+      if (retainedAccount) {
+        for (const id of accountIdentifiers(retainedAccount)) retainedAccountIds.add(id);
+      }
+      retainedAccountIds.add('32000');
+      retainedAccountIds.add('retained-earnings');
+
+      const existing = equity.find(e =>
+        retainedAccountIds.has(e.accountId) || e.accountCode === '32000'
+      );
+      if (existing) {
+        existing.amount += retainedEarnings;
+      } else {
+        equity.push({
+          accountId: retainedAccount?.id || 'retained-earnings',
+          accountCode: '32000',
+          accountName: retainedAccount?.name || 'Retained Earnings',
+          amount: retainedEarnings
+        });
+      }
     }
 
     // Categorize assets
@@ -437,6 +459,7 @@ class FinancialReportingService {
       let amount = 0;
       
       const accountEntries = ledger.filter(entry => {
+        if (!isPostedLedgerEntry(entry)) return false;
         const entryDate = entry.date?.split('T')[0];
         return entryDate >= periodStart && 
                entryDate <= periodEnd &&
@@ -669,33 +692,36 @@ class FinancialReportingService {
     const ledger = await dbService.getAll<LedgerEntry>('ledger');
     const accounts = await dbService.getAll<Account>('accounts');
 
-    const revenueAccountIds = accounts
-      .filter(a => getAccountType(a) === 'Revenue')
-      .map(a => a.id);
-
-    const expenseAccountIds = accounts
-      .filter(a => getAccountType(a) === 'Expense')
-      .map(a => a.id);
+    // Match by id AND code/account_number: legacy ledger rows may reference
+    // accounts by code while newer rows use the canonical id.
+    const revenueRefs = new Set<string>();
+    const expenseRefs = new Set<string>();
+    for (const a of accounts) {
+      const refs = accountIdentifiers(a);
+      if (getAccountType(a) === 'Revenue') refs.forEach(r => revenueRefs.add(r));
+      else if (getAccountType(a) === 'Expense') refs.forEach(r => expenseRefs.add(r));
+    }
 
     let retainedEarnings = 0;
 
     for (const entry of ledger) {
+      if (!isPostedLedgerEntry(entry)) continue;
       const entryDate = entry.date?.split('T')[0];
       if (entryDate > asOfDate) continue;
 
       // Revenue increases retained earnings (credit)
-      if (revenueAccountIds.includes(entry.creditAccountId)) {
+      if (revenueRefs.has(entry.creditAccountId)) {
         retainedEarnings += entry.amount;
       }
-      if (revenueAccountIds.includes(entry.debitAccountId)) {
+      if (revenueRefs.has(entry.debitAccountId)) {
         retainedEarnings -= entry.amount;
       }
 
       // Expenses decrease retained earnings (debit)
-      if (expenseAccountIds.includes(entry.debitAccountId)) {
+      if (expenseRefs.has(entry.debitAccountId)) {
         retainedEarnings -= entry.amount;
       }
-      if (expenseAccountIds.includes(entry.creditAccountId)) {
+      if (expenseRefs.has(entry.creditAccountId)) {
         retainedEarnings += entry.amount;
       }
     }
@@ -708,6 +734,7 @@ class FinancialReportingService {
     let balance = 0;
 
     for (const entry of ledger) {
+      if (!isPostedLedgerEntry(entry)) continue;
       const entryDate = entry.date?.split('T')[0];
       if (entryDate > asOfDate) continue;
 
@@ -727,6 +754,7 @@ class FinancialReportingService {
     let depreciation = 0;
 
     for (const entry of ledger) {
+      if (!isPostedLedgerEntry(entry)) continue;
       const entryDate = entry.date?.split('T')[0];
       if (entryDate < periodStart || entryDate > periodEnd) continue;
 
@@ -754,12 +782,13 @@ class FinancialReportingService {
         // Check both legacy 4-digit code and new 5-digit account_number
         return code.startsWith(accountCodePrefix) || number.startsWith(accountCodePrefix);
       })
-      .map(a => a.id);
+      .flatMap(a => accountIdentifiers(a));
 
     let beginningBalance = 0;
     let endingBalance = 0;
 
     for (const entry of ledger) {
+      if (!isPostedLedgerEntry(entry)) continue;
       const entryDate = entry.date?.split('T')[0];
       
       let amount = 0;
@@ -831,8 +860,8 @@ class FinancialReportingService {
       const entryDate = entry.date?.split('T')[0];
       if (entryDate !== today) continue;
 
-      // Exclude reversals
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+      // Exclude drafts, voids, and reversals — collections reflect posted truth.
+      if (!isPostedLedgerEntry(entry)) continue;
 
       // Check if debit account is a collection account
       const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
@@ -879,7 +908,7 @@ class FinancialReportingService {
       const entryDate = entry.date?.split('T')[0];
       if (entryDate !== date) continue;
 
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+      if (!isPostedLedgerEntry(entry)) continue;
 
       const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
       if (!COLLECTION_ACCOUNTS.includes(debitCode)) continue;
@@ -912,8 +941,8 @@ class FinancialReportingService {
     let balance = 0;
 
     for (const entry of ledger) {
-      // Skip reversals
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+      // Skip drafts, voids, and reversals — balances reflect posted truth.
+      if (!isPostedLedgerEntry(entry)) continue;
 
       const debitCode = accountCodeById(accounts, entry.debitAccountId);
       const creditCode = accountCodeById(accounts, entry.creditAccountId);
@@ -949,7 +978,7 @@ class FinancialReportingService {
     let balance = 0;
 
     for (const entry of ledger) {
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+      if (!isPostedLedgerEntry(entry)) continue;
 
       const debitCode = accountCodeById(accounts, entry.debitAccountId);
       const creditCode = accountCodeById(accounts, entry.creditAccountId);
@@ -989,7 +1018,7 @@ class FinancialReportingService {
 
     // Apply ledger entries
     for (const entry of ledger) {
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+      if (!isPostedLedgerEntry(entry)) continue;
       if (entry.amount == null) continue;
 
       const debitCode = accountCodeById(accounts, entry.debitAccountId);

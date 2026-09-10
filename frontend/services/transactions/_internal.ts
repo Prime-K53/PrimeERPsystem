@@ -9,6 +9,7 @@ import {
 } from '../../types';
 import { DEFAULT_ACCOUNTS } from '../../constants';
 import { generateNextId, roundToCurrency } from '../../utils/helpers';
+import { computeHierarchicalRollup, getNormalBalance, isPostedLedgerEntry, entryTouchesAccount } from '../accountingEngine';
 
 export const getCompanyConfig = () => {
     const saved = localStorage.getItem('nexus_company_config');
@@ -930,38 +931,17 @@ export function computeHierarchicalBalances(
     leafBalances: Record<string, number>,
     options: { respectNormalBalance?: boolean } = {}
 ): Record<string, number> {
-    const { respectNormalBalance = true } = options;
-    const result: Record<string, number> = { ...leafBalances };
-    
-    const parentMap: Record<string, any[]> = {};
-    const rootParents: any[] = [];
-    
-    for (const acc of accounts) {
-        if (acc.parent_account_id) {
-            if (!parentMap[acc.parent_account_id]) parentMap[acc.parent_account_id] = [];
-            parentMap[acc.parent_account_id].push(acc);
-        } else {
-            rootParents.push(acc);
-        }
-    }
-    
-    function rollup(accountId: string): number {
-        const children = parentMap[accountId] || [];
-        let total = result[accountId] || 0;
-        
-        for (const child of children) {
-            total += rollup(child.id);
-        }
-        
-        result[accountId] = total;
-        return total;
-    }
-    
-    for (const root of rootParents) {
-        rollup(root.id);
-    }
-    
-    return result;
+    // Canonical implementation lives in accountingEngine (single source of
+    // truth). This wrapper preserves the historical signature used across
+    // the codebase. Rollup is DISPLAY-only: callers must use
+    // computeTypeTotals()/computeOwnBalances() for aggregate totals so that
+    // parent and child balances are never double-counted.
+    //
+    // NOTE: `leafBalances` are treated as OWN (pre-rollup) balances. The
+    // engine resolves parent links across id/code/account_number, treats
+    // dangling references as roots, and is immune to parent/child cycles.
+    void options;
+    return computeHierarchicalRollup(accounts ?? [], leafBalances ?? {});
 }
 
 /**
@@ -1050,12 +1030,15 @@ export function computeInventoryReconciliation(
         if (!account) { glBalances[code] = 0; continue; }
 
         const balance = ledgerEntries.reduce((s: number, e: any) => {
-            if (e.debitAccountId === code || e.debitAccountId === account.id) return s + e.amount;
-            if (e.creditAccountId === code || e.creditAccountId === account.id) return s - e.amount;
+            if (!isPostedLedgerEntry(e)) return s;
+            if (entryTouchesAccount(e, account, 'debit')) return s + e.amount;
+            if (entryTouchesAccount(e, account, 'credit')) return s - e.amount;
             return s;
         }, 0);
 
-        glBalances[code] = account.normal_balance === 'DEBIT' ? balance : -balance;
+        // Normal-positive presentation (explicit normal_balance wins, else
+        // type-derived). See accountingEngine.getNormalBalance.
+        glBalances[code] = getNormalBalance(account) === 'DEBIT' ? balance : -balance;
     }
 
     // Map first child to merchandise, second to raw materials, third to finished goods

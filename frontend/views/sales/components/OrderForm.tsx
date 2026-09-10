@@ -2587,14 +2587,6 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                         </td>
                                                         <td data-label="Amount" className="px-2 py-1 text-right text-sm font-semibold text-indigo-700">
                                                             <div>{currency}{((Number(item.price) || 0) * qty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                                                            {(() => {
-                                                                const lineProfit = Number((item as any).lineProfit) || 0;
-                                                                return (
-                                                                    <div title="Profit" className={`text-[10px] font-['JetBrains_Mono',monospace] font-semibold ${lineProfit >= 0 ? 'text-[#146b60]' : 'text-[#a03c3c]'}`}>
-                                                                        {lineProfit >= 0 ? '+' : '-'}{currency}{Math.abs(lineProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                                                    </div>
-                                                                );
-                                                            })()}
                                                         </td>
                                                         <td data-label="" className="px-2 py-1 text-center">
                                                             <button
@@ -2737,6 +2729,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                             </div>
                             <div>
                                 <div className="summary-card" style={{background:"#FBF8F2",border:"1.5px solid #0F3D3E",borderRadius:"10px",padding:"12px 14px",position:"relative"}}>
+                                    {formData.otherChargesEnabled && (
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
                                         <span style={{fontSize:"10px",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.5px",color:"#146b60"}}>Round Up</span>
                                         <div className="flex items-center gap-[4px]">
@@ -2755,6 +2748,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                             />
                                         </div>
                                     </div>
+                                    )}
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px dashed #E4DFD1",fontSize:"12px"}}>
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Discount{formData.discountType === 'percentage' && formData.discount > 0 ? ` ${formData.discount}%` : ''}</span>
                                          <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",color:"#146b60"}}>-{currency}{analysis.discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
@@ -2767,14 +2761,18 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Profit</span>
                                         <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",color: analysis.totalProfit >= 0 ? "#146b60" : "#a03c3c"}}>{analysis.totalProfit >= 0 ? '' : '-'}{currency}{Math.abs(analysis.totalProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </div>
+                                    {formData.otherChargesEnabled && (
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px dashed #E4DFD1",fontSize:"12px"}}>
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Other Charges</span>
                                         <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",background:"#F7EFDF",padding:"2px 8px",borderRadius:"5px",color:"#B8863B"}}>{currency}{(Number(formData.otherCharges || 0) + calculatedOtherCharges).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </div>
+                                    )}
+                                    {formData.otherChargesEnabled && (
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"none",fontSize:"12px"}}>
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Round Off</span>
                                         <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",color:"#23282A"}}>{roundOff.toFixed(2)}</span>
                                     </div>
+                                    )}
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginTop:"8px",paddingTop:"8px",borderTop:"2px solid #0F3D3E"}}>
                                         <span style={{fontFamily:"DM Serif Display,serif",fontSize:"15px",color:"#23282A"}}>Total Amount</span>
                                         <span style={{fontFamily:"DM Serif Display,serif",fontSize:"25px",color:"#0F3D3E"}}>{currency}{(finalDisplayTotal + roundOff).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>

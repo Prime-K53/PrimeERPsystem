@@ -1,5 +1,6 @@
 @import './print.css';
 @import './sales-mobile.css';
+@import './components/data-table/responsive-table.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -202,19 +202,20 @@ const Suppliers: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
+        {/* Container-aware responsive wrapper: narrow containers stack labelled rows (see responsive-table.css). No logic change. */}
+        <div className="rpt-legacy" style={{ overflowX: 'auto', containerType: 'inline-size' }}>
           <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: teal[50] }}>
-                <th style={{ padding: '10px 16px', width: 40, fontWeight: 600, fontSize: 12, color: inkSoft }}>
-                  <input id="select-all-suppliers" name="select_all" type="checkbox" checked={selectedIds.length === filteredSuppliers.length && filteredSuppliers.length > 0} onChange={toggleSelectAll}
+                <th scope="col" style={{ padding: '10px 16px', width: 40, fontWeight: 600, fontSize: 12, color: inkSoft }}>
+                  <input id="select-all-suppliers" name="select_all" type="checkbox" aria-label="Select all suppliers" checked={selectedIds.length === filteredSuppliers.length && filteredSuppliers.length > 0} onChange={toggleSelectAll}
                     style={{ width: 16, height: 16, accentColor: teal[600], cursor: 'pointer' }} />
                 </th>
-                <th style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft }}>Supplier Name</th>
-                <th style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft }}>Contact Details</th>
-                <th style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft }}>Last Transaction</th>
-                <th style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft, textAlign: 'right' }}>Balance Due</th>
-                <th style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft, textAlign: 'center' }}>Actions</th>
+                <th scope="col" style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft }}>Supplier Name</th>
+                <th scope="col" style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft }}>Contact Details</th>
+                <th scope="col" style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft }}>Last Transaction</th>
+                <th scope="col" style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft, textAlign: 'right' }}>Balance Due</th>
+                <th scope="col" style={{ padding: '10px 16px', fontWeight: 600, fontSize: 12, color: inkSoft, textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -228,11 +229,11 @@ const Suppliers: React.FC = () => {
                     style={{ borderBottom: `1.4px solid ${teal[50]}`, cursor: 'pointer', background: selectedIds.includes(supplier.id) ? teal[50] : 'transparent' }}
                     onMouseEnter={e => { if (!selectedIds.includes(supplier.id)) e.currentTarget.style.background = teal[50]; }}
                     onMouseLeave={e => { if (!selectedIds.includes(supplier.id)) e.currentTarget.style.background = 'transparent'; }}>
-                    <td style={{ padding: '10px 16px' }} onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={selectedIds.includes(supplier.id)} onChange={() => toggleSelect(supplier.id)}
+                    <td data-label="" style={{ padding: '10px 16px' }} onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" aria-label={`Select supplier ${supplier.name}`} checked={selectedIds.includes(supplier.id)} onChange={() => toggleSelect(supplier.id)}
                         style={{ width: 16, height: 16, accentColor: teal[600], cursor: 'pointer' }} />
                     </td>
-                    <td style={{ padding: '10px 16px' }}>
+                    <td data-label="Supplier" style={{ padding: '10px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <div style={{ width: 32, height: 32, borderRadius: '50%', background: teal[50], color: teal[600], display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 12, border: `1.4px solid ${teal[100]}` }}>{supplier.name.charAt(0)}</div>
                         <div>
@@ -246,20 +247,20 @@ const Suppliers: React.FC = () => {
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: '10px 16px' }}>
+                    <td data-label="Contact" style={{ padding: '10px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: ink, fontSize: 13, fontWeight: 700 }}>
                         <Phone size={13} style={{ color: inkSoft }} /> {supplier.phone || 'No phone'}
                       </div>
                     </td>
-                    <td style={{ padding: '10px 16px' }}>
+                    <td data-label="Last transaction" style={{ padding: '10px 16px' }}>
                       <p style={{ fontSize: 13, color: ink, fontWeight: 700, margin: 0 }}>{getLastTransaction(supplier.id)}</p>
                     </td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <p style={{ fontWeight: 700, fontSize: 13, margin: 0, color: (supplier.balance || 0) > 0 ? danger : teal[600] }}>
+                    <td data-label="Balance due" style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <p className="finance-nums" style={{ fontWeight: 700, fontSize: 13, margin: 0, color: (supplier.balance || 0) > 0 ? danger : teal[600], fontVariantNumeric: 'tabular-nums' }}>
                         {currency}{(supplier.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                     </td>
-                    <td style={{ padding: '10px 16px' }} onClick={(e) => e.stopPropagation()}>
+                    <td data-label="Actions" style={{ padding: '10px 16px' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                         <button onClick={() => handleEdit(supplier)}
                           style={{ padding: '6px 10px', background: teal[50], color: teal[600], border: 'none', borderRadius: 9, fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}

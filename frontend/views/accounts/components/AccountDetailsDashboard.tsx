@@ -18,6 +18,7 @@ import {
 import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, isWithinInterval } from 'date-fns';
 import { ConfirmDialogType } from '../../../components/ConfirmDialog';
+import { getCanonicalAccountType, isPostedLedgerEntry } from '../../../services/accountingEngine';
 
 /* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
 import {
@@ -63,11 +64,14 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
   const canEdit = checkPermission('accounts.edit');
 
   const accountEntries = useMemo(() => {
+    const accountNumber = (account as any).account_number;
     return (ledger || []).filter((e: any) =>
       e.debitAccountId === account.id ||
       e.debitAccountId === account.code ||
+      e.debitAccountId === accountNumber ||
       e.creditAccountId === account.id ||
-      e.creditAccountId === account.code
+      e.creditAccountId === account.code ||
+      e.creditAccountId === accountNumber
     ).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [ledger, account]);
 
@@ -182,11 +186,18 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
     let balance = 0;
     let totalDebit = 0;
     let totalCredit = 0;
-    const isAssetOrExpense = account.type === 'Asset' || account.type === 'Expense';
+    // Canonical type resolution (synced accounts may only carry account_type).
+    const canonicalType = getCanonicalAccountType(account as any);
+    const isAssetOrExpense = canonicalType === 'ASSET' || canonicalType === 'EXPENSE';
+    const touches = (ref: unknown): boolean =>
+      ref === account.id || ref === account.code || ref === (account as any).account_number;
 
     accountEntries.forEach((entry: any) => {
-      const isDebit = entry.debitAccountId === account.id || entry.debitAccountId === account.code;
-      const isCredit = entry.creditAccountId === account.id || entry.creditAccountId === account.code;
+      // Balance and totals reflect posted truth; the ledger tab itself still
+      // lists every row for audit visibility.
+      if (!isPostedLedgerEntry(entry)) return;
+      const isDebit = touches(entry.debitAccountId);
+      const isCredit = touches(entry.creditAccountId);
 
       if (isDebit) totalDebit += entry.amount;
       if (isCredit) totalCredit += entry.amount;
@@ -200,8 +211,10 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
       }
     });
 
-    const chartData = [...accountEntries].reverse().slice(-90).map((entry: any) => {
-      const isDebit = entry.debitAccountId === account.id || entry.debitAccountId === account.code;
+    const chartData = [...accountEntries]
+      .filter((entry: any) => isPostedLedgerEntry(entry))
+      .reverse().slice(-90).map((entry: any) => {
+      const isDebit = touches(entry.debitAccountId);
       return {
         date: entry.date,
         balance: isAssetOrExpense
@@ -235,7 +248,7 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
   const handleExportCSV = () => {
     const headers = ['Date', 'Description', 'Debit', 'Credit', 'Balance', 'Reference'];
     const rows = filteredEntries.map((entry: any) => {
-      const isDebit = entry.debitAccountId === account.id || entry.debitAccountId === account.code;
+      const isDebit = entry.debitAccountId === account.id || entry.debitAccountId === account.code || entry.debitAccountId === (account as any).account_number;
       return [
         new Date(entry.date).toLocaleDateString(),
         entry.description || '',

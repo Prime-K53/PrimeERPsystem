@@ -12,6 +12,7 @@
 import { dbService } from './db';
 import { IncomeSummaryEntry, LedgerEntry } from '../types';
 import { getGLConfig, generateId, resolveAccountForPosting, loadAccountsFromStore } from './transactions/_internal';
+import { entryTouchesAccount, isPostedLedgerEntry } from './accountingEngine';
 import { ledgerService } from './ledgerService';
 import { logger } from './logger';
 
@@ -37,7 +38,6 @@ export const incomeSummaryService = {
         const config = getGLConfig();
         const accts = accounts;
 
-        const incomeAccountId = resolveAccountForPosting(config.incomeAccount, accts) || config.incomeAccount;
         const currentYearEarningsId = resolveAccountForPosting(config.currentYearEarningsAccount, accts) || config.currentYearEarningsAccount;
 
         try {
@@ -57,10 +57,18 @@ export const incomeSummaryService = {
             for (const account of incomeAccounts) {
                 if (!account.allow_posting && !account.is_system_account) continue;
 
-                const accountId = account.id || account.account_number || account.code;
+                // Resolve to the canonical posting id so the closing line
+                // zeroes THIS account (not an arbitrary summary account).
+                const accountId = resolveAccountForPosting(
+                    account.id || account.account_number || account.code, accts
+                ) || account.id || account.account_number || account.code;
+                // Net activity for this account in the fiscal year, matched by
+                // id/code/account_number so legacy-referenced rows are not
+                // silently skipped. Drafts/voids never close.
                 const credits = ledgerEntries
                     .filter(e =>
-                        e.creditAccountId === accountId &&
+                        isPostedLedgerEntry(e) &&
+                        entryTouchesAccount(e, account, 'credit') &&
                         e.date >= periodStart &&
                         e.date <= periodEnd
                     )
@@ -68,7 +76,8 @@ export const incomeSummaryService = {
 
                 const debits = ledgerEntries
                     .filter(e =>
-                        e.debitAccountId === accountId &&
+                        isPostedLedgerEntry(e) &&
+                        entryTouchesAccount(e, account, 'debit') &&
                         e.date >= periodStart &&
                         e.date <= periodEnd
                     )
@@ -85,8 +94,12 @@ export const incomeSummaryService = {
                 return { totalIncome: 0, totalExpenses: 0, netProfit: 0, netLoss: 0, entriesClosed: 0, journalEntryId: null };
             }
 
+            // Proper closing: debit EACH revenue account (zeroing it) and
+            // credit Current Year Earnings. Debiting a single summary account
+            // would leave the revenue balances in place and count the same
+            // profit twice (once in Income, once in Equity).
             const lines = accountClosures.map(closure => ({
-                debitAccountId: incomeAccountId,
+                debitAccountId: closure.accountId,
                 creditAccountId: currentYearEarningsId,
                 amount: closure.amount,
                 description: `Close ${closure.name} for ${fiscalYear}`,
@@ -128,7 +141,6 @@ export const incomeSummaryService = {
         const config = getGLConfig();
         const accts = accounts;
 
-        const expenseAccountId = resolveAccountForPosting(config.defaultExpenseAccount, accts) || config.defaultExpenseAccount;
         const currentYearEarningsId = resolveAccountForPosting(config.currentYearEarningsAccount, accts) || config.currentYearEarningsAccount;
 
         try {
@@ -149,10 +161,15 @@ export const incomeSummaryService = {
             for (const account of expenseAccounts) {
                 if (!account.allow_posting && !account.is_system_account) continue;
 
-                const accountId = account.id || account.account_number || account.code;
+                // Resolve to the canonical posting id so the closing line
+                // zeroes THIS account (not an arbitrary summary account).
+                const accountId = resolveAccountForPosting(
+                    account.id || account.account_number || account.code, accts
+                ) || account.id || account.account_number || account.code;
                 const debits = ledgerEntries
                     .filter(e =>
-                        e.debitAccountId === accountId &&
+                        isPostedLedgerEntry(e) &&
+                        entryTouchesAccount(e, account, 'debit') &&
                         e.date >= periodStart &&
                         e.date <= periodEnd
                     )
@@ -160,7 +177,8 @@ export const incomeSummaryService = {
 
                 const credits = ledgerEntries
                     .filter(e =>
-                        e.creditAccountId === accountId &&
+                        isPostedLedgerEntry(e) &&
+                        entryTouchesAccount(e, account, 'credit') &&
                         e.date >= periodStart &&
                         e.date <= periodEnd
                     )
@@ -174,12 +192,14 @@ export const incomeSummaryService = {
             }
 
             if (totalExpenses === 0) {
-                return { totalIncome: 0, totalExpenses: 0, netProfit: 0, netLoss: 0, entriesClosed: 0, journalEntryId: null };
+                return { totalIncome: 0, totalExpenses, netProfit: 0, netLoss: 0, entriesClosed: 0, journalEntryId: null };
             }
 
+            // Proper closing: credit EACH expense account (zeroing it) and
+            // debit Current Year Earnings.
             const lines = accountClosures.map(closure => ({
                 debitAccountId: currentYearEarningsId,
-                creditAccountId: expenseAccountId,
+                creditAccountId: closure.accountId,
                 amount: closure.amount,
                 description: `Close ${closure.name} for ${fiscalYear}`,
             }));

@@ -188,6 +188,37 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
                   }
               }
           }
+          // Heal missing hierarchy links on previously-seeded accounts.
+          // Older seeds stored intermediate accounts (11000, 11100, 31000,
+          // 41000, …) without parent_account_id, which breaks COA rollup to
+          // the roots. Only fills EMPTY links from the canonical chart —
+          // never overwrites an existing (possibly user-customised) parent,
+          // never touches balances, journals, or sync metadata.
+          const canonicalParentByCode = new Map<string, string>();
+          for (const def of DEFAULT_ACCOUNTS) {
+              const code = String(def.account_number || def.code || '').trim();
+              const parent = String((def as { parent_account_id?: unknown }).parent_account_id || '').trim();
+              if (code && parent) canonicalParentByCode.set(code, parent);
+          }
+          if (canonicalParentByCode.size > 0) {
+              let healed = false;
+              finalAccounts = await Promise.all(finalAccounts.map(async (stored) => {
+                  const code = String(stored.account_number || stored.code || '').trim();
+                  const hasParent = String((stored as { parent_account_id?: unknown }).parent_account_id || '').trim();
+                  const canonicalParent = code ? canonicalParentByCode.get(code) : undefined;
+                  if (!code || hasParent || !canonicalParent) return stored;
+                  const healedAcc = { ...stored, parent_account_id: canonicalParent };
+                  try {
+                      await dbService.put('accounts', healedAcc);
+                      healed = true;
+                  } catch {
+                      // Keep the in-memory repair even if persistence fails;
+                      // the next load will retry persisting it.
+                  }
+                  return healedAcc;
+              }));
+              if (healed) logger.info('Healed missing COA parent links from canonical chart');
+          }
       }
 
       const openingBalance = await dbService.getSetting<number>('opening_balance').then(v => v ?? 500).catch(() => 500);

@@ -19,6 +19,16 @@ import { format, startOfYear, endOfYear, startOfMonth, endOfMonth, isWithinInter
 import { exportToCSV } from '../../services/excelService';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { currencyService } from '../../services/currencyService';
+import { getCanonicalAccountType, computeTrialBalance, isPostedLedgerEntry } from '../../services/accountingEngine';
+
+/**
+ * Legacy display account type used throughout this report's logic
+ * ('Revenue' covers the canonical INCOME type). Distinct from the uppercase
+ * canonical AccountType in types.ts.
+ */
+type DisplayAccountType = 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
+
+const DISPLAY_ACCOUNT_TYPES: readonly string[] = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'];
 
 interface ReportRowProps {
     label: string;
@@ -181,7 +191,13 @@ const FinancialReports: React.FC = () => {
             const totalAssets = getAccountRows(['Asset']).reduce((sum, a) => sum + a.balance, 0);
             const totalLiabilities = getAccountRows(['Liability']).reduce((sum, a) => sum + a.balance, 0);
             const totalEquity = getAccountRows(['Equity']).reduce((sum, a) => sum + a.balance, 0);
-            const currentYearEarnings = accountBalances.current['33000'] || 0;
+            const prevTotalLiabEquity = getAccountRows(['Liability']).reduce((sum, a) => sum + (a.prevBalance || 0), 0) + getAccountRows(['Equity']).reduce((sum, a) => sum + (a.prevBalance || 0), 0);
+            // Unclosed period profit lives in Income accounts until year-end
+            // closing moves it to 33000/32000, so the L&E total must include
+            // it — exactly as the on-screen statement does. (Post-closing the
+            // period P&L is zero, making this a no-op.)
+            const unclosedProfit = netIncome.current;
+            const unclosedPrevProfit = netIncome.previous;
 
             reportData.sections = [
                 {
@@ -216,16 +232,16 @@ const FinancialReports: React.FC = () => {
                             amount: a.balance,
                             prevAmount: a.prevBalance
                         })),
-                        ...(currentYearEarnings === 0 && netIncome.current !== 0 ? [{
+                        {
                             label: 'Net Profit / (Loss) for Period',
-                            amount: netIncome.current,
-                            prevAmount: netIncome.previous,
-                            subText: 'Current Year Earnings (pre-closing)'
-                        }] : []),
+                            amount: unclosedProfit,
+                            prevAmount: unclosedPrevProfit,
+                            subText: 'Unclosed P&L (pre-closing)'
+                        },
                         {
                             label: 'Total Liabilities & Equity',
-                            amount: totalLiabilities + totalEquity,
-                            prevAmount: getAccountRows(['Liability']).reduce((sum, a) => sum + (a.prevBalance || 0), 0) + getAccountRows(['Equity']).reduce((sum, a) => sum + (a.prevBalance || 0), 0),
+                            amount: totalLiabilities + totalEquity + unclosedProfit,
+                            prevAmount: prevTotalLiabEquity + unclosedPrevProfit,
                             isTotal: true
                         }
                     ]
@@ -264,6 +280,10 @@ const FinancialReports: React.FC = () => {
             const openingEquityRow = (accountBalances.current['30000'] || 0);
             const netIncomeVal = netIncome.current;
             const totalEquityRow = equityRows.reduce((s, a) => s + a.balance, 0);
+            // Closing equity must include unclosed period profit (which sits
+            // in Income accounts until year-end closing), matching the
+            // Balance Sheet treatment. Post-closing this is a no-op.
+            const closingEquityRow = totalEquityRow + netIncomeVal;
             const capitalContributions = equityRows
                 .filter(a => a.balance > 0 && a.code !== '30000')
                 .reduce((s, a) => s + a.balance, 0);
@@ -287,54 +307,38 @@ const FinancialReports: React.FC = () => {
             ];
             reportData.netPerformance = {
                 label: 'Closing Equity',
-                amount: totalEquityRow
+                amount: closingEquityRow
             };
         } else if (reportType === 'TrialBalance') {
-            const totalDebit = (accounts || []).reduce((sum, a) => {
-                const bal = accountBalances.current[a.id] || 0;
-                return sum + (bal > 0 ? bal : 0);
-            }, 0);
-            const totalCredit = (accounts || []).reduce((sum, a) => {
-                const bal = accountBalances.current[a.id] || 0;
-                return sum + (bal < 0 ? Math.abs(bal) : 0);
-            }, 0);
+            // Canonical trial balance: gross posted debits/credits per
+            // account; balanced iff total debits equal total credits.
+            const debitLines = trialBalanceReport.lines.filter(l => l.totalDebit > 0);
+            const creditLines = trialBalanceReport.lines.filter(l => l.totalCredit > 0);
 
             reportData.sections = [
                 {
                     title: 'Debit Balances',
-                    rows: (accounts || [])
-                        .map(a => ({
-                            label: a.name,
-                            subText: a.code,
-                            balance: accountBalances.current[a.id] || 0
-                        }))
-                        .filter(a => a.balance > 0)
-                        .map(a => ({
-                            label: a.label,
-                            subText: a.subText,
-                            amount: a.balance
-                        }))
+                    rows: debitLines.map(l => ({
+                        label: l.accountName,
+                        subText: l.accountCode,
+                        amount: l.totalDebit
+                    }))
                 },
                 {
                     title: 'Credit Balances',
-                    rows: (accounts || [])
-                        .map(a => ({
-                            label: a.name,
-                            subText: a.code,
-                            balance: accountBalances.current[a.id] || 0
-                        }))
-                        .filter(a => a.balance < 0)
-                        .map(a => ({
-                            label: a.label,
-                            subText: a.subText,
-                            amount: Math.abs(a.balance)
-                        }))
+                    rows: creditLines.map(l => ({
+                        label: l.accountName,
+                        subText: l.accountCode,
+                        amount: l.totalCredit
+                    }))
                 }
             ];
             reportData.netPerformance = {
-                label: 'Trial Balance Totals (Debit / Credit)',
-                amount: totalDebit,
-                prevAmount: totalCredit
+                label: trialBalanceReport.isBalanced
+                    ? 'Trial Balance Totals (Debit / Credit) — BALANCED'
+                    : 'Trial Balance Totals (Debit / Credit) — OUT OF BALANCE',
+                amount: trialBalanceReport.totalDebits,
+                prevAmount: trialBalanceReport.totalCredits
             };
         } else if (reportType === 'Budget') {
             reportData.sections = budgetData.reduce((acc: any[], item) => {
@@ -402,64 +406,104 @@ const FinancialReports: React.FC = () => {
         const startDay = dateRange.start;
         const endDay = dateRange.end;
 
+        // Canonical type resolution: synced accounts may carry the uppercase
+        // account_type as source of truth with a stale/missing legacy `type`.
+        const displayTypeOf = (a: any): DisplayAccountType | undefined => {
+            if (!a) return undefined;
+            const legacy = String(a.type || '').trim();
+            if ((DISPLAY_ACCOUNT_TYPES as string[]).includes(legacy)) {
+                return legacy as DisplayAccountType;
+            }
+            const canonical = getCanonicalAccountType(a);
+            if (canonical === 'ASSET') return 'Asset';
+            if (canonical === 'LIABILITY') return 'Liability';
+            if (canonical === 'EQUITY') return 'Equity';
+            if (canonical === 'INCOME') return 'Revenue';
+            return 'Expense';
+        };
+
         // Calculate previous period dates
         const diff = endDate.getTime() - startDate.getTime();
         const prevStartDate = new Date(startDate.getTime() - diff - 86400000);
         const prevEndDate = new Date(startDate.getTime() - 86400000);
         const prevStartDay = format(prevStartDate, 'yyyy-MM-dd');
         const prevEndDay = format(prevEndDate, 'yyyy-MM-dd');
-        const isBalanceSheetAccount = (type?: AccountType) => type === 'Asset' || type === 'Liability' || type === 'Equity';
-        const shouldIncludeForType = (entryDay: string, accountType: AccountType | undefined, rangeStart: string, rangeEnd: string) => {
+        const isBalanceSheetAccount = (type?: DisplayAccountType) => type === 'Asset' || type === 'Liability' || type === 'Equity';
+        const shouldIncludeForType = (entryDay: string, accountType: DisplayAccountType | undefined, rangeStart: string, rangeEnd: string) => {
             if (!accountType) return false;
             if (isBalanceSheetAccount(accountType)) return entryDay <= rangeEnd;
             return entryDay >= rangeStart && entryDay <= rangeEnd;
         };
 
         (accounts || []).forEach(a => {
-            balances[a.id] = 0;
-            prevBalances[a.id] = 0;
+            // Balance-sheet accounts seed their cumulative opening position;
+            // P&L accounts measure period activity only. Mirrors the canonical
+            // engine (services/accountingEngine.ts).
+            const bsTypes: Array<DisplayAccountType | undefined> = ['Asset', 'Liability', 'Equity'];
+            const seed = bsTypes.includes(displayTypeOf(a)) ? Number(a.opening_balance || 0) : 0;
+            balances[a.id] = Number.isFinite(seed) ? seed : 0;
+            prevBalances[a.id] = Number.isFinite(seed) ? seed : 0;
         });
 
         (ledger || []).forEach(entry => {
             // Apply Customer/Sub-Account Filtering
             if (selectedCustomerId && entry.customerId !== selectedCustomerId) return;
             if (selectedSubAccountNames.length > 0 && !selectedSubAccountNames.includes(entry.subAccountName || 'Main')) return;
+            // Drafts, voids, and reversals never enter reported balances.
+            if ((entry as any).amount == null) return;
+            if (!isPostedLedgerEntry(entry as any)) return;
 
             const entryDay = String(entry.date || '').slice(0, 10);
-            const debitAcc = accounts.find(a => a.id === entry.debitAccountId || a.code === entry.debitAccountId);
-            const creditAcc = accounts.find(a => a.id === entry.creditAccountId || a.code === entry.creditAccountId);
+            const debitAcc = accounts.find(a => a.id === entry.debitAccountId || a.code === entry.debitAccountId || (a as any).account_number === entry.debitAccountId);
+            const creditAcc = accounts.find(a => a.id === entry.creditAccountId || a.code === entry.creditAccountId || (a as any).account_number === entry.creditAccountId);
+            const debitType = displayTypeOf(debitAcc);
+            const creditType = displayTypeOf(creditAcc);
 
-            const includeDebitCurrent = shouldIncludeForType(entryDay, debitAcc?.type, startDay, endDay);
-            const includeCreditCurrent = shouldIncludeForType(entryDay, creditAcc?.type, startDay, endDay);
+            const includeDebitCurrent = shouldIncludeForType(entryDay, debitType, startDay, endDay);
+            const includeCreditCurrent = shouldIncludeForType(entryDay, creditType, startDay, endDay);
 
             if (debitAcc && includeDebitCurrent) {
-                const sign = (debitAcc.type === 'Asset' || debitAcc.type === 'Expense') ? 1 : -1;
+                const sign = (debitType === 'Asset' || debitType === 'Expense') ? 1 : -1;
                 balances[debitAcc.id] = (balances[debitAcc.id] || 0) + ((entry.amount || 0) * sign);
             }
             if (creditAcc && includeCreditCurrent) {
-                const sign = (creditAcc.type === 'Asset' || creditAcc.type === 'Expense') ? -1 : 1;
+                const sign = (creditType === 'Asset' || creditType === 'Expense') ? -1 : 1;
                 balances[creditAcc.id] = (balances[creditAcc.id] || 0) + ((entry.amount || 0) * sign);
             }
 
             if (!compareWithPrevious) return;
-            const includeDebitPrev = shouldIncludeForType(entryDay, debitAcc?.type, prevStartDay, prevEndDay);
-            const includeCreditPrev = shouldIncludeForType(entryDay, creditAcc?.type, prevStartDay, prevEndDay);
+            const includeDebitPrev = shouldIncludeForType(entryDay, debitType, prevStartDay, prevEndDay);
+            const includeCreditPrev = shouldIncludeForType(entryDay, creditType, prevStartDay, prevEndDay);
 
             if (debitAcc && includeDebitPrev) {
-                const sign = (debitAcc.type === 'Asset' || debitAcc.type === 'Expense') ? 1 : -1;
+                const sign = (debitType === 'Asset' || debitType === 'Expense') ? 1 : -1;
                 prevBalances[debitAcc.id] = (prevBalances[debitAcc.id] || 0) + ((entry.amount || 0) * sign);
             }
             if (creditAcc && includeCreditPrev) {
-                const sign = (creditAcc.type === 'Asset' || creditAcc.type === 'Expense') ? -1 : 1;
+                const sign = (creditType === 'Asset' || creditType === 'Expense') ? -1 : 1;
                 prevBalances[creditAcc.id] = (prevBalances[creditAcc.id] || 0) + ((entry.amount || 0) * sign);
             }
         });
         return { current: balances, previous: prevBalances };
     }, [ledger, accounts, dateRange, compareWithPrevious, selectedCustomerId, selectedSubAccountNames, refreshCounter]);
 
-      const getAccountRows = (types: AccountType[]) => {
+      const getAccountRows = (types: DisplayAccountType[]) => {
+          // NOTE: balances keyed here are OWN (pre-rollup) balances, so
+          // summing rows never double-counts ancestors and descendants.
+          const typeOf = (a: any): DisplayAccountType => {
+              const legacy = String(a.type || '').trim();
+              if ((DISPLAY_ACCOUNT_TYPES as string[]).includes(legacy)) {
+                  return legacy as DisplayAccountType;
+              }
+              const canonical = getCanonicalAccountType(a);
+              if (canonical === 'ASSET') return 'Asset';
+              if (canonical === 'LIABILITY') return 'Liability';
+              if (canonical === 'EQUITY') return 'Equity';
+              if (canonical === 'INCOME') return 'Revenue';
+              return 'Expense';
+          };
           return (accounts || [])
-              .filter(a => types.includes(a.type))
+              .filter(a => types.includes(typeOf(a)))
               .map(a => {
                   const gl = companyConfig?.glMapping || {};
                   const invAccId = gl.defaultInventoryAccount || '11400';
@@ -476,7 +520,7 @@ const FinancialReports: React.FC = () => {
                   };
               })
               .filter(a => Math.abs(a.balance) > 0.001 || Math.abs(a.prevBalance) > 0.001)
-              .sort((a, b) => a.code.localeCompare(a.code));
+              .sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
       };
 
     const netIncome = useMemo(() => {
@@ -489,6 +533,17 @@ const FinancialReports: React.FC = () => {
             previous: prevRevenue - prevExpenses
         };
     }, [accountBalances, accounts, dateRange]);
+
+    // Authoritative trial balance (point-in-time as of the report end date):
+    // TOTAL posted debits vs TOTAL posted credits. Per-account debit/credit
+    // asymmetry (e.g. Sales with purely credit activity) is normal and never
+    // means "out of balance". Company-wide statement: customer/sub-account
+    // drilldown filters do not apply here.
+    const trialBalanceReport = useMemo(() => {
+        return computeTrialBalance((accounts || []) as any[], (ledger || []) as any[], {
+            asOfDate: dateRange.end
+        });
+    }, [accounts, ledger, dateRange.end]);
 
     // Cash Flow Logic (Direct Method Simulation)
     const cashFlowStats = useMemo(() => {
@@ -786,16 +841,13 @@ const FinancialReports: React.FC = () => {
         const rows = (accounts || []).map(a => ({ ...a, balance: accountBalances.current[a.id] || 0 })).filter(a => Math.abs(a.balance) > 0.001);
 
         if (reportType === 'TrialBalance') {
-            data = rows.map(r => {
-                const isDebitNature = r.type === 'Asset' || r.type === 'Expense';
-                return {
-                    Code: r.code,
-                    Name: r.name,
-                    Type: r.type,
-                    Debit: isDebitNature ? (r.balance > 0 ? r.balance : 0) : (r.balance < 0 ? Math.abs(r.balance) : 0),
-                    Credit: !isDebitNature ? (r.balance > 0 ? r.balance : 0) : (r.balance < 0 ? Math.abs(r.balance) : 0)
-                };
-            });
+            data = trialBalanceReport.lines.map(l => ({
+                Code: l.accountCode,
+                Name: l.accountName,
+                Type: l.accountType,
+                Debit: l.totalDebit,
+                Credit: l.totalCredit
+            }));
         } else {
             data = rows.map(r => ({ Code: r.code, Name: r.name, Type: r.type, Balance: r.balance }));
         }
@@ -1298,7 +1350,7 @@ const FinancialReports: React.FC = () => {
                                             <div className="pt-6 border-t-4 border-double border-slate-900 mt-6 bg-[#393A3D] text-white p-8 rounded-xl">
                                                 <ReportRow
                                                     label="Closing Equity"
-                                                    amount={getAccountRows(['Equity']).reduce((s, a) => s + a.balance, 0)}
+                                                    amount={getAccountRows(['Equity']).reduce((s, a) => s + a.balance, 0) + netIncome.current}
                                                     currency={currency}
                                                     isTotal
                                                     forceColor="text-emerald-400"
@@ -1318,29 +1370,25 @@ const FinancialReports: React.FC = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {accounts.map(a => {
-                                                const bal = accountBalances.current[a.id] || 0;
-                                                if (Math.abs(bal) < 0.01) return null;
-                                                const dr = bal > 0 ? bal : 0;
-                                                const cr = bal < 0 ? Math.abs(bal) : 0;
+                                            {trialBalanceReport.lines.map(l => {
                                                 return (
-                                                    <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                                                    <tr key={l.accountId} className="hover:bg-slate-50 transition-colors">
                                                         <td className="py-3 px-2">
-                                                            <span className="text-slate-500 font-mono text-xs mr-3">{a.code}</span>
-                                                            <span className="font-medium text-slate-700">{a.name}</span>
+                                                            <span className="text-slate-500 font-mono text-xs mr-3">{l.accountCode}</span>
+                                                            <span className="font-medium text-slate-700">{l.accountName}</span>
                                                         </td>
-                                                        <td className="py-3 text-right tabular-nums font-mono">{dr > 0 ? dr.toLocaleString() : '—'}</td>
-                                                        <td className="py-3 text-right tabular-nums font-mono">{cr > 0 ? cr.toLocaleString() : '—'}</td>
+                                                        <td className="py-3 text-right tabular-nums font-mono">{l.totalDebit > 0 ? l.totalDebit.toLocaleString() : '—'}</td>
+                                                        <td className="py-3 text-right tabular-nums font-mono">{l.totalCredit > 0 ? l.totalCredit.toLocaleString() : '—'}</td>
                                                     </tr>
                                                 );
                                             })}
                                             <tr className="border-t-4 border-double border-[#393A3D] font-bold bg-slate-50">
-                                                <td className="py-4 px-2">TOTALS</td>
+                                                <td className="py-4 px-2">TOTALS{trialBalanceReport.isBalanced ? '' : ' — OUT OF BALANCE'}</td>
                                                 <td className="py-4 text-right tabular-nums font-mono">
-                                                    {currency}{accounts.reduce((sum, a) => sum + (accountBalances.current[a.id] > 0 ? accountBalances.current[a.id] : 0), 0).toLocaleString()}
+                                                    {currency}{trialBalanceReport.totalDebits.toLocaleString()}
                                                 </td>
                                                 <td className="py-4 text-right tabular-nums font-mono">
-                                                    {currency}{accounts.reduce((sum, a) => sum + (accountBalances.current[a.id] < 0 ? Math.abs(accountBalances.current[a.id]) : 0), 0).toLocaleString()}
+                                                    {currency}{trialBalanceReport.totalCredits.toLocaleString()}
                                                 </td>
                                             </tr>
                                         </tbody>

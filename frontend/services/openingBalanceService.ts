@@ -3,6 +3,7 @@ import { getGLConfig, getCompanyConfig, generateId, resolveAccountForPosting, lo
 import { LedgerEntry } from '../types';
 import { roundToCurrency } from '../utils/helpers';
 import { normalizeInventoryItems, normalizeInventoryItemForOpening, hasInventoryItems } from '../utils/inventoryNormalization';
+import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
 
 export interface OpeningInventoryResult {
   success: boolean;
@@ -108,11 +109,16 @@ export async function computeOpeningInventoryDiagnostic(
     const account = accounts.find(a => a.account_number === code || a.code === code);
     if (!account) { glBalances[code] = 0; continue; }
     const balance = ledgerEntries.reduce((s: number, e: any) => {
-      if (e.debitAccountId === code || e.debitAccountId === account.id) return s + e.amount;
-      if (e.creditAccountId === code || e.creditAccountId === account.id) return s - e.amount;
+      if (!isPostedLedgerEntry(e)) return s;
+      if (entryTouchesAccount(e, account, 'debit')) return s + e.amount;
+      if (entryTouchesAccount(e, account, 'credit')) return s - e.amount;
       return s;
     }, 0);
-    glBalances[code] = account.normal_balance === 'DEBIT' ? balance : -balance;
+    // Normal-positive presentation: explicit normal_balance wins, otherwise
+    // derived from account type (Asset/Expense are debit-normal). A strict
+    // `normal_balance === 'DEBIT'` check would invert every canonical account
+    // because the chart stores the type as the source of truth.
+    glBalances[code] = getNormalBalance(account) === 'DEBIT' ? balance : -balance;
   }
 
   const glInventoryValue = inventoryChildCodes.reduce((s, code) => s + (glBalances[code] || 0), 0);

@@ -53,15 +53,23 @@ const SortableTh: React.FC<{
     const isCenter = className.includes('text-center');
     return (
         <th
-            className={`table-header cursor-pointer select-none ${className} ${isActive ? 'text-[#0b3e39] font-bold' : ''}`}
-            onClick={() => onSort?.(field)}
+            aria-sort={isActive ? (sortConfig?.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+            className={`table-header select-none ${className} ${isActive ? 'text-[#0b3e39] font-bold' : ''}`}
         >
-            <div className={`flex items-center gap-1 ${isRight ? 'justify-end' : isCenter ? 'justify-center' : 'justify-start'}`}>
+            <button
+                type="button"
+                onClick={() => onSort?.(field)}
+                aria-label={`Sort by ${typeof children === 'string' ? children : field}${isActive ? ` (currently ${sortConfig?.direction === 'asc' ? 'ascending' : 'descending'})` : ''}`}
+                className={`flex items-center gap-1 w-full bg-transparent border-0 p-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#3B82F6] focus-visible:outline-offset-2 focus-visible:rounded ${isRight ? 'justify-end' : isCenter ? 'justify-center' : 'justify-start'}`}
+                style={{ font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit' }}
+            >
                 {children}
-                {isActive && (
-                    sortConfig?.direction === 'asc' ? <ArrowUp size={12} className="text-[#1f8577] shrink-0" /> : <ArrowDown size={12} className="text-[#1f8577] shrink-0" />
+                {isActive ? (
+                    sortConfig?.direction === 'asc' ? <ArrowUp size={12} className="text-[#1f8577] shrink-0" aria-hidden="true" /> : <ArrowDown size={12} className="text-[#1f8577] shrink-0" aria-hidden="true" />
+                ) : (
+                    <span aria-hidden="true" className="opacity-0" />
                 )}
-            </div>
+            </button>
         </th>
     );
 };

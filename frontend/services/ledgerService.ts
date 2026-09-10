@@ -11,6 +11,7 @@
 import { dbService } from './db';
 import { LedgerEntry } from '../types';
 import { loadAccountsFromStore, resolveAccountForPosting, getCompanyConfig, generateId } from './transactions/_internal';
+import { isPostedLedgerEntry } from './accountingEngine';
 import { logger } from './logger';
 
 interface JournalLine {
@@ -128,6 +129,9 @@ export const ledgerService = {
         let creditTotal = 0;
 
         for (const entry of entries) {
+            // Exclude explicitly marked draft/void/reversal rows so the
+            // balance always reflects posted accounting truth.
+            if (!isPostedLedgerEntry(entry)) continue;
             if (entry.debitAccountId === accountId) {
                 debitTotal += entry.amount;
             }
@@ -174,7 +178,10 @@ export const ledgerService = {
                 async (tx) => {
                     const store = tx.objectStore(this.STORE_NAME);
 
-                    const debitReversal: LedgerEntry = {
+                    // A reversal is a SINGLE offsetting entry with swapped
+                    // sides: it nets the original to zero exactly once.
+                    // (Writing two swapped copies would reverse 2x.)
+                    const reversal: LedgerEntry = {
                         ...original,
                         id: generateId('LG'),
                         date: reversalDate,
@@ -184,20 +191,9 @@ export const ledgerService = {
                         referenceId: `REV-${original.id}`,
                     };
 
-                    const creditReversal: LedgerEntry = {
-                        ...original,
-                        id: generateId('LG'),
-                        date: reversalDate,
-                        description: `REVERSAL: ${original.description || ''} - ${reason}`,
-                        debitAccountId: original.creditAccountId,
-                        creditAccountId: original.debitAccountId,
-                        referenceId: `REV-${original.id}`,
-                    };
+                    await store.put(reversal);
 
-                    await store.put(debitReversal);
-                    await store.put(creditReversal);
-
-                    reversalEntries.push(debitReversal, creditReversal);
+                    reversalEntries.push(reversal);
                 }
             );
 

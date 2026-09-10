@@ -20,6 +20,7 @@ import {
   computeHierarchicalBalances,
   getGLConfig,
 } from './transactions/_internal';
+import { isPostedLedgerEntry } from './accountingEngine';
 import { Account, LedgerEntry } from '../types';
 import { dbService } from './db';
 
@@ -131,8 +132,8 @@ export async function computeInventoryReconciliation(): Promise<InventoryReconci
     if (!targetId) return 0;
     let balance = 0;
     for (const entry of ledger) {
-      // Skip reversals for balance computation consistency
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+      // Skip drafts, voids, and reversals for balance computation consistency
+      if (!isPostedLedgerEntry(entry)) continue;
       const amount = Number(entry.amount || 0);
       if (!amount) continue;
 
@@ -170,7 +171,7 @@ export async function computeInventoryReconciliation(): Promise<InventoryReconci
   }
   // Apply ledger entries (same logic as ChartOfAccounts)
   for (const entry of ledger) {
-    if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') continue;
+    if (!isPostedLedgerEntry(entry)) continue;
     const amount = Number(entry.amount || 0);
     if (!amount) continue;
 

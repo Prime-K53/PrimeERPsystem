@@ -278,7 +278,8 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
 
             {openMenuId && menuPos && currentPO && renderMenu(currentPO)}
 
-            <div className="phist-scrollbar" style={{flex:1,overflowY:'auto'}}>
+            {/* Container-aware responsive wrapper: narrow containers stack labelled rows (see responsive-table.css). No logic change. */}
+            <div className="phist-scrollbar rpt-legacy" style={{flex:1,overflowY:'auto',containerType:'inline-size'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',textAlign:'left'}}>
                     <thead>
                         <tr style={{position:'sticky',top:0,zIndex:10,background:`linear-gradient(135deg,${teal[50]},#FEFDFB)`,borderBottom:`1.4px solid ${teal[100]}`}}>
@@ -310,40 +311,40 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                             <tr key={po.id} id={`bill-${po.id}`}
                                 style={rowBg(idx,isSelected,openMenuId===po.id)}
                                 onContextMenu={(e)=>handleContextMenu(e,po.id)} onClick={(e)=>handleRowClick(e,po.id)}>
-                                <td style={{padding:'9px 12px',textAlign:'center'}} onClick={(e)=>e.stopPropagation()}>
-                                    <button onClick={()=>handleToggleSelect(po.id)} style={{border:'none',background:'transparent',cursor:'pointer',color:inkSoft,display:'inline-flex',transition:'color .12s'}} onMouseEnter={e=>e.currentTarget.style.color=teal[600]} onMouseLeave={e=>e.currentTarget.style.color=inkSoft}>
+                                <td data-label="" style={{padding:'9px 12px',textAlign:'center'}} onClick={(e)=>e.stopPropagation()}>
+                                    <button onClick={()=>handleToggleSelect(po.id)} aria-label={isSelected?`Deselect bill ${po.id}`:`Select bill ${po.id}`} style={{border:'none',background:'transparent',cursor:'pointer',color:inkSoft,display:'inline-flex',transition:'color .12s'}} onMouseEnter={e=>e.currentTarget.style.color=teal[600]} onMouseLeave={e=>e.currentTarget.style.color=inkSoft}>
                                         {isSelected?<CheckSquare size={16} style={{color:teal[500]}}/>:<Square size={16}/>}
                                     </button>
                                 </td>
-                                <td style={{padding:'9px 12px'}}>
+                                <td data-label="" style={{padding:'9px 12px'}}>
                                     <div style={{width:38,height:38,borderRadius:10,background:teal[50],border:`1px solid ${teal[100]}`,overflow:'hidden',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
                                         <OfflineImage src={product?.image} alt={firstItem?.name||'Item'} style={{width:'100%',height:'100%',objectFit:'cover'}} fallback={<Package size={16} style={{color:teal[200]}}/>} />
                                     </div>
                                 </td>
-                                <td style={{padding:'9px 12px',fontWeight:700,fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,color:teal[700]}}>
+                                <td data-label="Bill" style={{padding:'9px 12px',fontWeight:700,fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,color:teal[700]}}>
                                     <DocLink docNumber={po.id} targetPage="/procurement/bills" rowId={`bill-${po.id}`} currentPage={location.pathname} />
                                 </td>
-                                <td style={{padding:'9px 12px',fontSize:12.5,color:inkSoft,fontFamily:"'JetBrains Mono',monospace"}}>{new Date(po.date).toLocaleDateString()}</td>
-                                <td style={{padding:'9px 12px',fontWeight:600,fontSize:13,color:ink}}>{(suppliers||[]).find(s=>s.id===po.supplierId)?.name||po.supplierId}</td>
-                                <td style={{padding:'9px 12px',fontSize:11,color:inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em'}}>{po.reference||'-'}</td>
-                                <td style={{padding:'9px 12px',fontFamily:"'JetBrains Mono',monospace",fontWeight:600,fontSize:12.5,color:isOverdue?'#b5493f':inkSoft}}>
+                                <td data-label="Date" style={{padding:'9px 12px',fontSize:12.5,color:inkSoft,fontFamily:"'JetBrains Mono',monospace"}}>{new Date(po.date).toLocaleDateString()}</td>
+                                <td data-label="Supplier" style={{padding:'9px 12px',fontWeight:600,fontSize:13,color:ink}}>{(suppliers||[]).find(s=>s.id===po.supplierId)?.name||po.supplierId}</td>
+                                <td data-label="Vendor ref" style={{padding:'9px 12px',fontSize:11,color:inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em'}}>{po.reference||'-'}</td>
+                                <td data-label="Due date" style={{padding:'9px 12px',fontFamily:"'JetBrains Mono',monospace",fontWeight:600,fontSize:12.5,color:isOverdue?'#b5493f':inkSoft}}>
                                     {po.dueDate?new Date(po.dueDate).toLocaleDateString():'-'}
                                 </td>
-                                <td style={{padding:'9px 12px',textAlign:'right',fontWeight:700,color:ink,fontFamily:"'JetBrains Mono',monospace",fontSize:13}}>{currency}{(po.total||0).toFixed(2)}</td>
-                                <td style={{padding:'9px 12px',textAlign:'center'}}>
-                                    <span style={{display:'inline-block',padding:'3px 10px',borderRadius:999,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',...(po.paymentStatus==='Paid'?(PAY_COLORS['Paid']):po.paymentStatus==='Partial'?(PAY_COLORS['Partial']):po.paymentStatus==='Cancelled'?(PAY_COLORS['Cancelled']):`background:#fdf2f2;color:${danger};border:1px solid #f5c6c6`)}}>
+                                <td data-label="Total" style={{padding:'9px 12px',textAlign:'right',fontWeight:700,color:ink,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontVariantNumeric:'tabular-nums'}}>{currency}{(po.total||0).toFixed(2)}</td>
+                                <td data-label="Payment" style={{padding:'9px 12px',textAlign:'center'}}>
+                                    <span role="status" aria-label={`Payment status: ${po.paymentStatus||'Unpaid'}`} style={{display:'inline-block',padding:'3px 10px',borderRadius:999,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',...(po.paymentStatus==='Paid'?(PAY_COLORS['Paid']):po.paymentStatus==='Partial'?(PAY_COLORS['Partial']):po.paymentStatus==='Cancelled'?(PAY_COLORS['Cancelled']):`background:#fdf2f2;color:${danger};border:1px solid #f5c6c6`)}}>
                                         {po.paymentStatus||'Unpaid'}
                                     </span>
                                 </td>
-                                <td style={{padding:'9px 12px',textAlign:'center'}}>
-                                    <span style={{display:'inline-block',padding:'3px 10px',borderRadius:999,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',...(STATUS_COLORS[po.status]||STATUS_COLORS['Draft'])}}>
+                                <td data-label="Status" style={{padding:'9px 12px',textAlign:'center'}}>
+                                    <span role="status" aria-label={`Status: ${po.status}`} style={{display:'inline-block',padding:'3px 10px',borderRadius:999,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',...(STATUS_COLORS[po.status]||STATUS_COLORS['Draft'])}}>
                                         {po.status}
                                     </span>
                                 </td>
-                                <td style={{padding:'9px 12px',textAlign:'right',position:'relative'}}>
+                                <td data-label="Actions" style={{padding:'9px 12px',textAlign:'right',position:'relative'}}>
                                     <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:6}}>
-                                        <button onClick={(e)=>{e.stopPropagation();handlePreview('PO',enrichPO(po))}} style={{padding:7,borderRadius:9,border:`1px solid ${teal[100]}`,background:teal[50],color:teal[600],cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background=teal[100];e.currentTarget.style.borderColor=teal[300]}} onMouseLeave={e=>{e.currentTarget.style.background=teal[50];e.currentTarget.style.borderColor=teal[100]}} title="Preview PDF"><Eye size={15}/></button>
-                                        <button onClick={(e)=>{e.stopPropagation();handleDownloadPDF(po)}} style={{padding:7,borderRadius:9,border:`1px solid ${hairline}`,background:paper,color:inkSoft,cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background='#f5f4f0';e.currentTarget.style.borderColor='#d4cdc2'}} onMouseLeave={e=>{e.currentTarget.style.background=paper;e.currentTarget.style.borderColor=hairline}} title="Download PDF"><FileDown size={15}/></button>
+                                        <button onClick={(e)=>{e.stopPropagation();handlePreview('PO',enrichPO(po))}} aria-label={`Preview bill ${po.id}`} style={{padding:7,borderRadius:9,border:`1px solid ${teal[100]}`,background:teal[50],color:teal[600],cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background=teal[100];e.currentTarget.style.borderColor=teal[300]}} onMouseLeave={e=>{e.currentTarget.style.background=teal[50];e.currentTarget.style.borderColor=teal[100]}} title="Preview PDF"><Eye size={15}/></button>
+                                        <button onClick={(e)=>{e.stopPropagation();handleDownloadPDF(po)}} aria-label={`Download bill ${po.id} PDF`} style={{padding:7,borderRadius:9,border:`1px solid ${hairline}`,background:paper,color:inkSoft,cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background='#f5f4f0';e.currentTarget.style.borderColor='#d4cdc2'}} onMouseLeave={e=>{e.currentTarget.style.background=paper;e.currentTarget.style.borderColor=hairline}} title="Download PDF"><FileDown size={15}/></button>
                                         {(po.status==='Ordered'||po.status==='Partially Received'||po.status==='Draft')?(
                                             <button onClick={(e)=>{e.stopPropagation();onReceive(po.id)}} style={{padding:'5px 12px',borderRadius:9,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:5,transition:'all .12s ease',...(po.status==='Draft'?({background:'#f5f4f0',color:'#5c6567',border:`1px solid ${hairline}`}):({background:`linear-gradient(155deg,${teal[500]},${teal[700]})`,color:'#fff',border:'none',boxShadow:'0 4px 10px -4px rgba(15,84,76,.5)'}))}} onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)'}} onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)'}} title={po.status==='Draft'?'Process Draft':'Receive Items'}>
                                                 <Package size={12}/> {po.status==='Draft'?'Process':'Receive'}

@@ -36,6 +36,7 @@ import {
     loadAccountsFromStore, UnresolvedAccountError,
     JournalLineInput, resolveInventoryAccountByItemType, resolveInventoryAccountFromItems
 } from './transactions/_internal';
+import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
 
 export const transactionService = {
     /**
@@ -3564,10 +3565,10 @@ export const transactionService = {
                     if (targetAccount && targetAccount.allow_posting === false) {
                         const childAccounts = accounts.filter(a => a.parent_account_id === accountId || a.parent_account_id === (targetAccount.account_number || targetAccount.code));
                         for (const child of childAccounts) {
-                            const childCode = getAccountCode(child);
                             const childBalance = allEntries.reduce((s: number, e: LedgerEntry) => {
-                                if (e.debitAccountId === childCode || e.debitAccountId === child.id) return s + e.amount;
-                                if (e.creditAccountId === childCode || e.creditAccountId === child.id) return s - e.amount;
+                                if (!isPostedLedgerEntry(e)) return s;
+                                if (entryTouchesAccount(e, child, 'debit')) return s + e.amount;
+                                if (entryTouchesAccount(e, child, 'credit')) return s - e.amount;
                                 return s;
                             }, 0);
                             childAccountBalances[child.id] = childBalance;
@@ -3584,13 +3585,16 @@ export const transactionService = {
                 for (const [childAccountId, childPhysicalValue] of Object.entries(childAccountBalances)) {
                     const childAccount = accounts.find(a => a.id === childAccountId);
                     if (!childAccount) continue;
-                    const childCode = getAccountCode(childAccount);
                     const childBalance = allEntries.reduce((s: number, e: LedgerEntry) => {
-                        if (e.debitAccountId === childCode || e.debitAccountId === childAccountId) return s + e.amount;
-                        if (e.creditAccountId === childCode || e.creditAccountId === childAccountId) return s - e.amount;
+                        if (!isPostedLedgerEntry(e)) return s;
+                        if (entryTouchesAccount(e, childAccount, 'debit')) return s + e.amount;
+                        if (entryTouchesAccount(e, childAccount, 'credit')) return s - e.amount;
                         return s;
                     }, 0);
-                    const childLedgerBalance = childAccount.normal_balance === 'DEBIT' ? childBalance : -childBalance;
+                    // Normal-positive presentation (explicit normal_balance
+                    // wins, else type-derived). Inverting this sign posts the
+                    // valuation adjustment backwards, corrupting the ledger.
+                    const childLedgerBalance = getNormalBalance(childAccount) === 'DEBIT' ? childBalance : -childBalance;
                     const variance = childPhysicalValue - childLedgerBalance;
 
                     childDetails[childAccountId] = {

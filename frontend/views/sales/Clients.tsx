@@ -726,7 +726,8 @@ export const Clients: React.FC = () => {
 
         {/* LIST VIEW */}
         {viewMode === 'list' && (
-          <div className="clients-table-wrap sales-list-scroll" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+          <div className="clients-table-wrap sales-list-scroll rpt-legacy" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)', containerType: 'inline-size' }}>
+            {/* Container-aware responsive wrapper: narrow containers stack labelled rows (see responsive-table.css). No logic change. */}
             <style>{`
               .clients-table tbody tr { transition: background .12s ease; }
               .clients-table tbody tr:hover > td { background: #f3faf8; }
@@ -769,11 +770,11 @@ export const Clients: React.FC = () => {
                         <tr className={isChecked ? 'selected-row' : ''}
                           onClick={() => setSelectedCardCustomer(customer)}
                           style={{ cursor: 'pointer', background: isChecked ? teal[50] : owing ? '#fffefa' : 'transparent' }}>
-                          <td style={{ padding: '12px 14px', textAlign: 'center', borderBottom: `1px solid ${hairline}` }} onClick={e => e.stopPropagation()}>
-                            <input type="checkbox" style={{ width: 14, height: 14, borderRadius: 5, accentColor: teal[600], cursor: 'pointer' }}
+                          <td data-label="" style={{ padding: '12px 14px', textAlign: 'center', borderBottom: `1px solid ${hairline}` }} onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" aria-label={`Select customer ${customer.companyName || customer.name}`} style={{ width: 14, height: 14, borderRadius: 5, accentColor: teal[600], cursor: 'pointer' }}
                               checked={isChecked} onChange={() => toggleSelect(customer.id)} />
                           </td>
-                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
+                          <td data-label="Customer" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 36, height: 36, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: pal.bg, color: pal.text, fontWeight: 700, fontSize: 12, letterSpacing: 0.3, flexShrink: 0, border: `1px solid ${teal[100]}` }}>
                                 {getInitials(customer.companyName || customer.name)}
@@ -788,13 +789,13 @@ export const Clients: React.FC = () => {
                               </div>
                             </div>
                           </td>
-                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
+                          <td data-label="Contact" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                               {customer.phone && <span style={{ fontSize: 11.5, color: inkSoft, display: 'flex', alignItems: 'center', gap: 5 }}><PhoneIcon size={10} />{customer.phone}</span>}
                               {(customer.portalEmail || customer.email) && <span style={{ fontSize: 11.5, color: teal[700], display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}><Mail size={10} />{customer.portalEmail || customer.email}</span>}
                             </div>
                           </td>
-                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
+                          <td data-label="Last activity" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}` }}>
                             {lastTx ? (
                               <div>
                                 <div style={{ fontWeight: 600, fontSize: 12 }}>{relativeDate(lastTx.date)}</div>
@@ -802,18 +803,18 @@ export const Clients: React.FC = () => {
                               </div>
                             ) : <span style={{ color: inkSoft, fontSize: 12 }}>—</span>}
                           </td>
-                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'right', fontWeight: 600, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                          <td data-label="Wallet" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'right', fontWeight: 600, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
                             {fmtMoney(customer.walletBalance)}
                           </td>
-                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'right' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 12.5, color: owing ? danger : '#15803d', fontVariantNumeric: 'tabular-nums' }}>
-                              <span style={{ width: 7, height: 7, borderRadius: '50%', background: owing ? danger : '#22c55e', flexShrink: 0 }} />
+                          <td data-label="Outstanding" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'right' }}>
+                            <span role="status" aria-label={owing ? `Outstanding balance ${fmtMoney(openBalance)}` : 'No outstanding balance'} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 12.5, color: owing ? danger : '#15803d', fontVariantNumeric: 'tabular-nums' }}>
+                              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: owing ? danger : '#22c55e', flexShrink: 0 }} />
                               {owing ? fmtMoney(openBalance) : 'Paid'}
                             </span>
                           </td>
-                          <td style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                          <td data-label="Actions" style={{ padding: '12px 14px', borderBottom: `1px solid ${hairline}`, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                             <div style={{ position: 'relative', display: 'inline-block' }}>
-                              <button onClick={e => handleRowMenuClick(e, customer.id)}
+                              <button onClick={e => handleRowMenuClick(e, customer.id)} aria-label={`Actions for ${customer.companyName || customer.name}`} aria-haspopup="menu"
                                 style={{ padding: '6px 8px', borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'inline-flex', boxShadow: '0 1px 2px rgba(0,0,0,.04)' }}>
                                 <MoreVertical size={14} />
                               </button>

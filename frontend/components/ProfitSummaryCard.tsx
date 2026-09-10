@@ -8,6 +8,7 @@ import { PenLine } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { currencyService } from '../services/currencyService';
 import { financialReportingService } from '../services/financialReportingService';
+import { computeOwnBalances, getCanonicalAccountType } from '../services/accountingEngine';
 
 export const ProfitSummaryCard: React.FC = () => {
   const { 
@@ -102,6 +103,13 @@ export const ProfitSummaryCard: React.FC = () => {
   const currentDayIndex = weekDays.findIndex(d => isSameDay(d, now));
 
   // Accounts Balances Calculation
+  // Canonical own balances for the ledger fallback (posted entries only,
+  // type-aware, opening balances included) — never a parallel engine.
+  const ownFallbackBalances = useMemo(
+    () => computeOwnBalances((accounts || []) as any[], (filteredLedger || []) as any[]),
+    [accounts, filteredLedger]
+  );
+
   const accountBalances = useMemo(() => {
     // Priority 1: Use actual bank accounts if available - use COA book balance
     if (bankAccounts && bankAccounts.length > 0) {
@@ -118,32 +126,16 @@ export const ProfitSummaryCard: React.FC = () => {
         .slice(0, 4);
     }
 
-    // Priority 2: Fallback to ledger if bank accounts aren't initialized yet
-    const balances: Record<string, number> = {};
-    (accounts || []).forEach(a => balances[a.id] = 0);
-
-    (filteredLedger || []).forEach(entry => {
-      const debitAcc = (accounts || []).find(a => a.id === entry.debitAccountId || a.code === entry.debitAccountId);
-      const creditAcc = (accounts || []).find(a => a.id === entry.creditAccountId || a.code === entry.creditAccountId);
-      if (debitAcc) {
-        const sign = (debitAcc.type === 'Asset' || debitAcc.type === 'Expense') ? 1 : -1;
-        balances[debitAcc.id] = (balances[debitAcc.id] || 0) + (entry.amount * sign);
-      }
-      if (creditAcc) {
-        const sign = (creditAcc.type === 'Asset' || creditAcc.type === 'Expense') ? -1 : 1;
-        balances[creditAcc.id] = (balances[creditAcc.id] || 0) + (entry.amount * sign);
-      }
-    });
-
+    // Priority 2: Fallback to ledger if bank accounts aren't initialized yet.
     return (accounts || [])
-      .filter(a => a.type === 'Asset' && (a.name.toLowerCase().includes('bank') || a.name.toLowerCase().includes('cash') || a.name.toLowerCase().includes('mobile')))
+      .filter(a => getCanonicalAccountType(a as any) === 'ASSET' && ((a.name || '').toLowerCase().includes('bank') || (a.name || '').toLowerCase().includes('cash') || (a.name || '').toLowerCase().includes('mobile')))
       .map(a => ({
         name: a.name,
-        balance: balances[a.id] || 0
+        balance: ownFallbackBalances[a.id] || 0
       }))
       .filter(a => a.balance !== 0)
       .slice(0, 4); // Limit to top 4 accounts
-  }, [bankAccounts, coaBalances, accounts, filteredLedger]);
+  }, [bankAccounts, coaBalances, accounts, ownFallbackBalances]);
 
   return (
     <div className="flex flex-col gap-3 mb-6">

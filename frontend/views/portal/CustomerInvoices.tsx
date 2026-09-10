@@ -95,6 +95,9 @@ const CustomerInvoices: React.FC = () => {
 
   const [tab, setTab] = useState<InvoiceTab>(initialTab);
 
+  // Row expansion state (Rank → Stack → Slot → Label → Reveal)
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   // Payment sheet state
   const [payTarget, setPayTarget] = useState<Invoice | null>(null);
   const [payMethod, setPayMethod] = useState<PayMethod>('card');
@@ -312,16 +315,21 @@ const CustomerInvoices: React.FC = () => {
         />
       </div>
 
-      {/* Invoice list — flat rows, no cards */}
+      {/* Invoice list — responsive records: primary (number + amount slot) stays
+          visible, secondary stacks underneath, tertiary reveals on expansion.
+          Business logic (classification, totals, tabs, payment flow) untouched. */}
       {filtered.length === 0 ? (
         <EmptyState icon={<Receipt size={32} />} title={emptyCopy[tab].title} description={emptyCopy[tab].desc} />
       ) : (
-        <div>
+        <div style={{ containerType: 'inline-size' }}>
           {filtered.map((inv, index) => {
             const kind = classifyInvoice(inv);
             const chip = chipMeta(kind);
             const due = amountDue(inv);
+            const paid = displayPaid(inv);
             const isLast = index === filtered.length - 1;
+            const isOpen = expandedId === inv.id;
+            const detailId = `portal-inv-detail-${inv.id}`;
 
             return (
               <div
@@ -346,7 +354,23 @@ const CustomerInvoices: React.FC = () => {
                   e.currentTarget.style.borderLeftColor = 'transparent';
                 }}
               >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {/* Summary — tappable to reveal the labelled detail below.
+                    Inner action buttons stop propagation so they stay operable. */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isOpen}
+                  aria-controls={detailId}
+                  aria-label={`Invoice ${inv.invoice_number}, ${chip.label}, ${formatK(due > 0 ? due : inv.total_amount)} due. Activate to ${isOpen ? 'collapse' : 'expand'} details.`}
+                  onClick={() => setExpandedId(isOpen ? null : inv.id)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(isOpen ? null : inv.id); }
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid #3B82F6'; e.currentTarget.style.outlineOffset = '2px'; e.currentTarget.style.borderRadius = '8px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer' }}
+                >
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0, lineHeight: 1.3, fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>
@@ -356,20 +380,15 @@ const CustomerInvoices: React.FC = () => {
                         Issue Date: {inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—'} · Due: {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '—'}
                       </div>
                     </div>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: chip.color, background: chip.bg, border: `1px solid ${chip.border}`, padding: '4px 10px', borderRadius: 9999, textTransform: 'uppercase', flexShrink: 0, lineHeight: 1.4 }}>
+                    <span role="status" aria-label={`Status: ${chip.label}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: chip.color, background: chip.bg, border: `1px solid ${chip.border}`, padding: '4px 10px', borderRadius: 9999, textTransform: 'uppercase', flexShrink: 0, lineHeight: 1.4 }}>
+                      <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', background: chip.color }} />
                       {chip.label}
                     </span>
                   </div>
 
-                  {inv.description && (
+                  {inv.description && !isOpen && (
                     <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.5 }}>
                       {inv.description}
-                    </div>
-                  )}
-
-                  {inv.reference && (
-                    <div style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.4 }}>
-                      {inv.reference}
                     </div>
                   )}
 
@@ -379,11 +398,11 @@ const CustomerInvoices: React.FC = () => {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button
-                        onClick={() => navigate(`/portal/invoices/${inv.id}`)}
-                        aria-label="Download PDF"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/portal/invoices/${inv.id}`); }}
+                        aria-label={`Download PDF for invoice ${inv.invoice_number}`}
                         title="Download PDF"
                         style={{
-                          height: 34, padding: '0 12px', borderRadius: 9,
+                          minHeight: 44, padding: '0 12px', borderRadius: 9,
                           border: '1px solid #E2E8F0', background: '#fff', color: '#4A5568',
                           cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
                           fontSize: 12, fontWeight: 600,
@@ -394,10 +413,11 @@ const CustomerInvoices: React.FC = () => {
                       </button>
                       {kind !== 'paid' && (
                         <button
-                          onClick={() => { setPayTarget(inv); setPayError(null); setPaySuccess(false); }}
+                          onClick={(e) => { e.stopPropagation(); setPayTarget(inv); setPayError(null); setPaySuccess(false); }}
+                          aria-label={`Pay invoice ${inv.invoice_number}, ${formatK(due)} due`}
                           style={{
                             display: 'inline-flex', alignItems: 'center', gap: 6,
-                            padding: '8px 16px', borderRadius: 9, border: 'none',
+                            minHeight: 44, padding: '8px 16px', borderRadius: 9, border: 'none',
                             background: TEAL_GRADIENT, color: '#fff',
                             fontSize: 12, fontWeight: 700, cursor: 'pointer',
                             boxShadow: '0 4px 12px -4px rgba(15,84,76,0.55)',
@@ -412,6 +432,51 @@ const CustomerInvoices: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Revealed detail — every hidden field stays accessible with labels */}
+                {isOpen && (
+                  <div id={detailId} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #E2E8F0' }}>
+                    <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px 14px' }}>
+                      {[
+                        { label: 'Invoice', value: inv.invoice_number },
+                        { label: 'Customer', value: inv.customer_name || '—' },
+                        { label: 'Issue date', value: inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—' },
+                        { label: 'Due date', value: inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '—' },
+                        { label: 'Total', value: formatK(inv.total_amount) },
+                        { label: 'Paid', value: formatK(paid) },
+                        { label: 'Balance due', value: formatK(due) },
+                        { label: 'Status', value: chip.label },
+                      ].map((f) => (
+                        <div key={f.label} style={{ minWidth: 0 }}>
+                          <dt style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748B', marginBottom: 2 }}>{f.label}</dt>
+                          <dd style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#0F172A', overflowWrap: 'anywhere' }}>{f.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {inv.description && (
+                      <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.5, margin: '10px 0 0' }}>{inv.description}</p>
+                    )}
+                    {inv.reference && (
+                      <p style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.4, margin: '6px 0 0' }}>{inv.reference}</p>
+                    )}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                      <button
+                        onClick={() => navigate(`/portal/invoices/${inv.id}`)}
+                        style={{ minHeight: 44, padding: '0 16px', borderRadius: 9, border: '1px solid #E2E8F0', background: '#fff', color: '#0F2C59', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        View invoice
+                      </button>
+                      {kind !== 'paid' && (
+                        <button
+                          onClick={() => { setPayTarget(inv); setPayError(null); setPaySuccess(false); }}
+                          style={{ minHeight: 44, padding: '0 16px', borderRadius: 9, border: 'none', background: TEAL_GRADIENT, color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Request payment
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -420,9 +485,16 @@ const CustomerInvoices: React.FC = () => {
 
       {/* ── Payment Bottom Sheet ── */}
       {payTarget && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(2px)' }} onClick={() => !submitting && resetPaySheet()} />
-          <div style={{
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          onKeyDown={(e) => { if (e.key === 'Escape' && !submitting) resetPaySheet(); }}
+        >
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(2px)' }} onClick={() => !submitting && resetPaySheet()} aria-hidden="true" />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Pay invoice ${payTarget.invoice_number}`}
+            style={{
             position: 'relative', width: '100%', maxWidth: 500, background: '#fff',
             borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92vh', overflowY: 'auto',
             padding: '16px 18px 20px', boxShadow: '0 -12px 40px rgba(0,0,0,.2)',
@@ -435,7 +507,7 @@ const CustomerInvoices: React.FC = () => {
                   {payTarget.invoice_number} · {formatK(amountDue(payTarget))} due
                 </p>
               </div>
-              <button onClick={resetPaySheet} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 4, borderRadius: 8 }}><X size={18} /></button>
+              <button onClick={resetPaySheet} aria-label="Close payment sheet" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 10, borderRadius: 8, minWidth: 44, minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
             </div>
 
             {paySuccess ? (

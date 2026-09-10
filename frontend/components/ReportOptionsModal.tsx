@@ -5,6 +5,7 @@ import { useFinance } from '../context/FinanceContext';
 import { useProcurement } from '../context/ProcurementContext';
 import { useDocumentStore } from '../stores/documentStore';
 import { calculateAccountBalances, getAgedData } from '../services/reportService';
+import { computeTrialBalance, getCanonicalAccountType } from '../services/accountingEngine';
 import { format, parseISO, startOfYear, endOfYear, startOfMonth, endOfMonth } from 'date-fns';
 import { currencyService } from '../services/currencyService';
 import {
@@ -45,9 +46,22 @@ const ReportOptionsModal: React.FC<ReportOptionsModalProps> = ({ isOpen, onClose
             sections: []
         };
 
+        // Canonical display-type resolution: synced accounts may carry the
+        // uppercase account_type as source of truth with a stale/missing type.
+        const displayTypeOf = (a: any): string => {
+            const legacy = String(a?.type || '').trim();
+            if (['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'].includes(legacy)) return legacy;
+            const canonical = getCanonicalAccountType(a);
+            if (canonical === 'ASSET') return 'Asset';
+            if (canonical === 'LIABILITY') return 'Liability';
+            if (canonical === 'EQUITY') return 'Equity';
+            if (canonical === 'INCOME') return 'Revenue';
+            return 'Expense';
+        };
+
         const getAccountRows = (types: string[]) => {
             return (accounts || [])
-                .filter(a => types.includes(a.type))
+                .filter(a => types.includes(displayTypeOf(a)))
                 .map(a => ({
                     label: a.name,
                     subText: a.code,
@@ -102,23 +116,29 @@ const ReportOptionsModal: React.FC<ReportOptionsModalProps> = ({ isOpen, onClose
             ];
         }
         else if (reportType === 'TrialBalance') {
-            const allRows = (accounts || []).map(a => ({
-                label: a.name,
-                subText: a.code,
-                balance: balances.current[a.id] || 0
-            })).filter(a => Math.abs(a.balance) > 0.001);
-
-            const debits = allRows.filter(a => a.balance > 0).map(a => ({ label: a.label, subText: a.subText, amount: a.balance }));
-            const credits = allRows.filter(a => a.balance < 0).map(a => ({ label: a.label, subText: a.subText, amount: Math.abs(a.balance) }));
+            // Canonical trial balance: gross posted debits/credits per
+            // account as of the report end date. Per-account asymmetry is
+            // normal and never "out of balance" by itself.
+            const trial = computeTrialBalance((accounts || []) as any[], (ledger || []) as any[], {
+                asOfDate: dateRange.end
+            });
+            const debits = trial.lines
+                .filter(l => l.totalDebit > 0)
+                .map(l => ({ label: l.accountName, subText: l.accountCode, amount: l.totalDebit }));
+            const credits = trial.lines
+                .filter(l => l.totalCredit > 0)
+                .map(l => ({ label: l.accountName, subText: l.accountCode, amount: l.totalCredit }));
 
             reportData.sections = [
                 { title: 'Debit Balances', rows: debits },
                 { title: 'Credit Balances', rows: credits }
             ];
             reportData.netPerformance = {
-                label: 'Trial Balance Totals (Debit / Credit)',
-                amount: debits.reduce((s, a) => s + a.amount, 0),
-                prevAmount: credits.reduce((s, a) => s + a.amount, 0)
+                label: trial.isBalanced
+                    ? 'Trial Balance Totals (Debit / Credit) — BALANCED'
+                    : 'Trial Balance Totals (Debit / Credit) — OUT OF BALANCE',
+                amount: trial.totalDebits,
+                prevAmount: trial.totalCredits
             };
         }
         else if (reportType === 'AgedAR' || reportType === 'AgedAP') {
@@ -150,7 +170,7 @@ const ReportOptionsModal: React.FC<ReportOptionsModalProps> = ({ isOpen, onClose
             });
 
             const items = (accounts || [])
-                .filter(a => a.type === 'Revenue' || a.type === 'Expense')
+                .filter(a => displayTypeOf(a) === 'Revenue' || displayTypeOf(a) === 'Expense')
                 .map(acc => {
                     const actual = balances.current[acc.id] || 0;
                     const budgetAmount = activeBudgets

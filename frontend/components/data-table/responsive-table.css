@@ -1,0 +1,337 @@
+/* ── Prime ERP Responsive Data Table system ──────────────────────────
+   Container-aware: behaviour follows the table's own width, not the viewport.
+   Rank → Stack → Slot → Label → Reveal → Breakpoint.
+   Tokens reuse index.css (:root --brand-*, --paper, hairline #e4ddd1). */
+
+.rpt-wrap {
+  container-type: inline-size;
+  container-name: rpt;
+  background: var(--surface, #FFFFFF);
+  border: 1.4px solid #e4ddd1;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  font-family: 'Inter', sans-serif;
+  color: #23282A;
+}
+
+/* ── Desktop table ── */
+.rpt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+  background: var(--surface, #fff);
+}
+.rpt-caption {
+  text-align: left;
+  font-size: 12px;
+  color: #5c6567;
+  padding: 8px 14px;
+}
+.rpt-th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #0b3e39;
+  background: #eef7f6;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e4ddd1;
+  white-space: nowrap;
+  user-select: none;
+}
+.rpt-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.rpt-sort-btn:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.rpt-sort-idle { opacity: 0.35; }
+.rpt-td {
+  padding: 8px 14px;
+  color: #23282A;
+  border-bottom: 1px solid #f1efe9;
+  vertical-align: middle;
+  line-height: 1.5;
+}
+.rpt-tr:hover .rpt-td { background: #f6faf9; }
+.rpt-tr:focus-within .rpt-td { background: #f6faf9; }
+.rpt-align-right { text-align: right; }
+.rpt-align-center { text-align: center; }
+.rpt-num, .rpt-card-amount, .rpt-money-lg {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+.rpt-td.rpt-num { font-weight: 600; }
+.rpt-th-check, .rpt-td-check { width: 40px; text-align: center; }
+.rpt-th-check input, .rpt-td-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: #146b60;
+  cursor: pointer;
+}
+.rpt-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Density */
+.rpt-wrap[data-density='compact'] .rpt-td { padding: 8px 14px; }
+.rpt-wrap[data-density='comfortable'] .rpt-td { padding: 12px 14px; }
+
+/* Medium container: shed opt-in low-priority columns (still in cards/detail) */
+@container rpt (max-width: 900px) {
+  .rpt-th[data-hide-below='lg'], .rpt-td[data-hide-below='lg'] { display: none; }
+}
+@container rpt (max-width: 760px) {
+  .rpt-th[data-hide-below='md'], .rpt-td[data-hide-below='md'] { display: none; }
+}
+
+/* ── Layout switch (container, not viewport) ── */
+.rpt-only-narrow { display: none; }
+@container rpt (max-width: 639px) {
+  .rpt-only-wide { display: none; }
+  .rpt-only-narrow { display: block; }
+}
+
+/* ── Mobile record cards: Title + Amount slot / sub-line / reveal ── */
+.rpt-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rpt-card { border-bottom: 1px solid #ece7dc; background: #fff; }
+.rpt-card:last-child { border-bottom: none; }
+.rpt-card-hit {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  cursor: pointer;
+  min-height: 44px;
+}
+.rpt-card-hit:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: -2px;
+}
+.rpt-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rpt-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #23282A;
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rpt-card-amount {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0b3e39;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.rpt-card-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.rpt-card-meta { font-size: 12px; color: #5c6567; }
+.rpt-card-status { flex-shrink: 0; }
+.rpt-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.rpt-card-hint { color: #94a3b8; display: inline-flex; }
+.rpt-chevron-open { transform: rotate(180deg); }
+.rpt-card .rpt-card-detail { border-top: 1px dashed #e4ddd1; }
+
+/* ── Detail (expanded row / card) ── */
+.rpt-detail { padding: 12px 14px; background: #fbfaf7; }
+.rpt-detail-tr .rpt-detail-td { padding: 0; background: #fbfaf7; }
+.rpt-detail-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px 16px;
+}
+.rpt-detail-item dt {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5c6567;
+  margin-bottom: 3px;
+}
+.rpt-detail-item dd { margin: 0; font-size: 13px; color: #23282A; overflow-wrap: anywhere; }
+.rpt-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+/* ── Buttons (Prime teal direction, 44px touch targets) ── */
+.rpt-btn-primary, .rpt-btn-secondary, .rpt-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.4px solid transparent;
+  transition: all 150ms ease;
+}
+.rpt-btn-primary {
+  background: linear-gradient(155deg, #1f8577, #0f544c);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 6px 16px -6px rgba(15, 84, 76, 0.55);
+}
+.rpt-btn-secondary { background: #fff; border-color: #e4ddd1; color: #3f4750; }
+.rpt-btn-danger { background: #fff; border-color: #f0c9c4; color: #b5493f; }
+.rpt-row-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #e4ddd1;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f4750;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rpt-row-btn:hover { background: #f6faf9; }
+.rpt-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid #e4ddd1;
+  background: #fff;
+  color: #5c6567;
+  cursor: pointer;
+}
+.rpt-icon-btn:hover:not(:disabled) { background: #f6faf9; color: #0b3e39; }
+.rpt-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rpt-icon-btn:focus-visible, .rpt-btn-primary:focus-visible,
+.rpt-btn-secondary:focus-visible, .rpt-row-btn:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: 2px;
+}
+.rpt-card-cta { min-height: 44px; }
+
+/* ── Footer ── */
+.rpt-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-top: 1px solid #e4ddd1;
+  background: #fff;
+}
+.rpt-count { font-size: 12px; color: #5c6567; }
+.rpt-pages { display: flex; align-items: center; gap: 8px; }
+.rpt-page-ind {
+  font-size: 12px;
+  font-weight: 700;
+  color: #23282A;
+  background: #f6f3ef;
+  border: 1px solid #ece7dc;
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+}
+.rpt-perpage { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #5c6567; }
+.rpt-perpage select {
+  border: 1px solid #e4ddd1;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: #fff;
+  min-height: 36px;
+}
+
+/* ── States ── */
+.rpt-state { background: #fff; }
+.rpt-pulse { background: #e9e4d9; animation: rpt-pulse 1.6s ease-in-out infinite; }
+@keyframes rpt-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+/* ── Generic enhancement for legacy tables (no logic change) ──
+   Add class `rpt-legacy` to a wrapper div around any existing <table>.
+   Narrow containers become labelled stacked rows using each cell's data-label. */
+.rpt-legacy { container-type: inline-size; container-name: rpt-legacy; }
+@container rpt-legacy (max-width: 639px) {
+  .rpt-legacy table, .rpt-legacy tbody, .rpt-legacy tr, .rpt-legacy td { display: block; width: 100%; }
+  .rpt-legacy table { min-width: 0 !important; }
+  .rpt-legacy thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .rpt-legacy tr { border-bottom: 1px solid #ece7dc; padding: 10px 14px; background: #fff; }
+  .rpt-legacy td {
+    border: none !important;
+    padding: 3px 0 !important;
+    display: flex !important;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    text-align: right !important;
+  }
+  .rpt-legacy td::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #5c6567;
+    text-align: left;
+    flex-shrink: 0;
+  }
+  .rpt-legacy td[data-label='']::before, .rpt-legacy td:not([data-label])::before { content: none; }
+  .rpt-legacy td[data-label=''] , .rpt-legacy td:not([data-label]) { justify-content: flex-end; }
+}
+
+/* ── Dark theme follows existing [data-theme] tokens ── */
+[data-theme='dark'] .rpt-wrap { background: var(--surface, #1e2330); border-color: #2c3446; color: #e2e8f0; }
+[data-theme='dark'] .rpt-table, [data-theme='dark'] .rpt-card, [data-theme='dark'] .rpt-state,
+[data-theme='dark'] .rpt-footer { background: var(--surface, #1e2330); }
+[data-theme='dark'] .rpt-td, [data-theme='dark'] .rpt-card-title { color: #e2e8f0; }
+[data-theme='dark'] .rpt-detail { background: rgba(255, 255, 255, 0.03); }
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .rpt-pulse { animation: none; }
+  .rpt-btn-primary, .rpt-btn-secondary, .rpt-row-btn, .rpt-icon-btn { transition: none; }
+}

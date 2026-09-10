@@ -27,6 +27,13 @@ import {
 import { logger } from './logger';
 import { dbService } from './db';
 import { extractProfitMargin } from '@/utils/financial/extractors';
+import {
+  entryTouchesAccount,
+  getCanonicalAccountType,
+  getNormalBalance,
+  isPostedLedgerEntry,
+  round2,
+} from './accountingEngine';
 
 
 
@@ -1194,36 +1201,77 @@ export function calculateAccountBalances(
     return { current, previous };
   }
 
-  // Initialize all accounts
+  // Canonical balance semantics (single source of truth — see
+  // services/accountingEngine.ts):
+  // - posted journal lines only (drafts/voids/reversals excluded)
+  // - ledger references resolve by id, code, or account_number
+  // - normal-positive presentation (Asset/Expense: debits−credits;
+  //   Liability/Equity/Income: credits−debits)
+  // - balance-sheet accounts are cumulative positions (entry ≤ range end);
+  //   P&L accounts are period activity only
+  // - balance-sheet opening_balance seeds the cumulative position
+  const isBalanceSheetAccount = (acc: any): boolean => {
+    const t = getCanonicalAccountType(acc);
+    return t === 'ASSET' || t === 'LIABILITY' || t === 'EQUITY';
+  };
+
+  // Initialize all accounts (balance-sheet accounts seed their cumulative
+  // opening position; P&L accounts start at zero period activity)
   accounts.forEach((acc: any) => {
-    current[acc.id] = 0;
-    previous[acc.id] = 0;
+    const seed = isBalanceSheetAccount(acc) ? round2(Number(acc.opening_balance ?? 0)) : 0;
+    current[acc.id] = Number.isFinite(seed) ? seed : 0;
+    previous[acc.id] = Number.isFinite(seed) ? seed : 0;
   });
 
   // Parse dates
-  const startDate = new Date(dateRange.start);
-  const endDate = new Date(dateRange.end);
-  const yearBefore = new Date(startDate);
-  yearBefore.setFullYear(yearBefore.getFullYear() - 1);
+  const startDay = dateRange.start;
+  const endDay = dateRange.end;
+  const startDate = new Date(startDay);
+  const endDate = new Date(endDay);
+
+  // Previous comparison window: equal-length period immediately before start
+  const diffMs = endDate.getTime() - startDate.getTime();
+  const prevEndDay = new Date(startDate.getTime() - 86400000).toISOString().split('T')[0];
+  const prevStartDay = new Date(startDate.getTime() - diffMs - 86400000).toISOString().split('T')[0];
+
+  const inCurrentWindow = (day: string, acc: any): boolean => {
+    if (!day) return false;
+    if (isBalanceSheetAccount(acc)) return day <= endDay;
+    return day >= startDay && day <= endDay;
+  };
+  const inPreviousWindow = (day: string, acc: any): boolean => {
+    if (!day) return false;
+    if (isBalanceSheetAccount(acc)) return day <= prevEndDay;
+    return day >= prevStartDay && day <= prevEndDay;
+  };
 
   // Process ledger entries
   ledger.forEach((entry: any) => {
-    if (!entry.date || !entry.debitAccountId || !entry.creditAccountId || entry.amount == null) {
-      return;
-    }
+    if (!isPostedLedgerEntry(entry)) return;
+    const amount = Number(entry.amount);
+    if (!Number.isFinite(amount)) return;
+    if (entry.amount == null) return;
 
-    const entryDate = new Date(entry.date);
+    const entryDay = String(entry.date || '').slice(0, 10);
+    if (!entryDay) return;
 
-    // Current period
-    if (entryDate >= startDate && entryDate <= endDate) {
-      if (entry.debitAccountId) current[entry.debitAccountId] = (current[entry.debitAccountId] || 0) + entry.amount;
-      if (entry.creditAccountId) current[entry.creditAccountId] = (current[entry.creditAccountId] || 0) - entry.amount;
-    }
-
-    // Previous period (for comparison)
-    if (compareWithPrevious && entryDate >= yearBefore && entryDate < startDate) {
-      if (entry.debitAccountId) previous[entry.debitAccountId] = (previous[entry.debitAccountId] || 0) + entry.amount;
-      if (entry.creditAccountId) previous[entry.creditAccountId] = (previous[entry.creditAccountId] || 0) - entry.amount;
+    for (const acc of accounts) {
+      if (acc.id == null) continue;
+      const debitNormal = getNormalBalance(acc) === 'DEBIT';
+      if (entryTouchesAccount(entry, acc, 'debit')) {
+        const signed = debitNormal ? amount : -amount;
+        if (inCurrentWindow(entryDay, acc)) current[acc.id] = round2((current[acc.id] || 0) + signed);
+        if (compareWithPrevious && inPreviousWindow(entryDay, acc)) {
+          previous[acc.id] = round2((previous[acc.id] || 0) + signed);
+        }
+      }
+      if (entryTouchesAccount(entry, acc, 'credit')) {
+        const signed = debitNormal ? -amount : amount;
+        if (inCurrentWindow(entryDay, acc)) current[acc.id] = round2((current[acc.id] || 0) + signed);
+        if (compareWithPrevious && inPreviousWindow(entryDay, acc)) {
+          previous[acc.id] = round2((previous[acc.id] || 0) + signed);
+        }
+      }
     }
   });
 

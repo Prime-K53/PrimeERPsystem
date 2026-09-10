@@ -24,7 +24,13 @@ import { AccountDetailsDashboard } from './components/AccountDetailsDashboard';
 import { NewAccountModal } from './components/NewAccountModal';
 import { currencyService } from '../../services/currencyService';
 import { ConfirmDialogType } from '../../components/ConfirmDialog';
-import { computeHierarchicalBalances } from '../../services/transactions/_internal';
+import {
+  computeOwnBalances,
+  computeHierarchicalRollup,
+  computeTypeTotals,
+  computeTrialBalance,
+  checkBalanceSheetEquation,
+} from '../../services/accountingEngine';
 
 /* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
 import {
@@ -116,55 +122,20 @@ const ChartOfAccounts: React.FC = () => {
     );
   }, [accounts, searchTerm]);
 
-  // Calculate account balances from ledger (type-aware, excluding reversals)
-  const accountBalances = useMemo(() => {
-    const balances: Record<string, number> = {};
-
-    // Initialize with opening balances from accounts
-    (accounts || []).forEach((acc: Account) => {
-      const openingBalance = acc.opening_balance || 0;
-      const normalBalance = acc.normal_balance || 'DEBIT';
-      balances[acc.id] = normalBalance === 'CREDIT' ? -openingBalance : openingBalance;
-    });
-
-    // Apply ledger entries (type-aware)
-    (ledger || []).forEach((entry: any) => {
-      // Skip reversals
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') return;
-      if (entry.amount == null) return;
-
-      const debitAcc = (accounts || []).find((a: Account) => a.id === entry.debitAccountId || a.code === entry.debitAccountId || a.account_number === entry.debitAccountId);
-      const creditAcc = (accounts || []).find((a: Account) => a.id === entry.creditAccountId || a.code === entry.creditAccountId || a.account_number === entry.creditAccountId);
-
-      const getNormalBalance = (acc: Account): 'DEBIT' | 'CREDIT' => {
-        if (acc.normal_balance === 'CREDIT' || acc.normal_balance === 'DEBIT') {
-          return acc.normal_balance;
-        }
-        const t = (acc.account_type || acc.type || '').toUpperCase();
-        if (t === 'ASSET' || t === 'EXPENSE') return 'DEBIT';
-        if (t === 'LIABILITY' || t === 'EQUITY' || t === 'INCOME') return 'CREDIT';
-        return 'DEBIT';
-      };
-
-      if (debitAcc && balances[debitAcc.id] !== undefined) {
-        const normal = getNormalBalance(debitAcc);
-        const sign = normal === 'DEBIT' ? 1 : -1;
-        balances[debitAcc.id] = (balances[debitAcc.id] || 0) + (entry.amount * sign);
-      }
-      if (creditAcc && balances[creditAcc.id] !== undefined) {
-        const normal = getNormalBalance(creditAcc);
-        const sign = normal === 'DEBIT' ? -1 : 1;
-        balances[creditAcc.id] = (balances[creditAcc.id] || 0) + (entry.amount * sign);
-      }
-    });
-
-    // Hierarchical rollup: parent accounts aggregate their descendants
-    const hierarchicalBalances = computeHierarchicalBalances(accounts, balances, {
-      respectNormalBalance: true
-    });
-
-    return hierarchicalBalances;
+  // Canonical accounting math (see services/accountingEngine.ts):
+  //  - ownBalances: authoritative per-account balances derived from
+  //    opening_balance + posted journal lines (normal-positive convention).
+  //  - accountBalances: DISPLAY-ONLY hierarchical rollup for the tree rows.
+  //  - totals: summed from OWN balances so ancestors never double-count
+  //    their descendants, at any hierarchy depth.
+  //  - trial: authoritative trial balance; debits must equal credits.
+  const ownBalances = useMemo(() => {
+    return computeOwnBalances((accounts || []) as any[], (ledger || []) as any[]);
   }, [accounts, ledger]);
+
+  const accountBalances = useMemo(() => {
+    return computeHierarchicalRollup((accounts || []) as any[], ownBalances);
+  }, [accounts, ownBalances]);
 
   const groupedByType = useMemo(() => {
     const groups: Record<string, { accounts: Account[]; total: number }> = {};
@@ -173,32 +144,57 @@ const ChartOfAccounts: React.FC = () => {
       groups[type] = { accounts: [], total: 0 };
     });
 
+    // Group membership is for display; totals come from the canonical engine
+    // (own balances) so hierarchy depth can never inflate them.
+    const totalsByType = computeTypeTotals((accounts || []) as any[], ownBalances);
+    const totalFor = (type: string): number => {
+      if (type === 'ASSET') return totalsByType.assets;
+      if (type === 'LIABILITY') return totalsByType.liabilities;
+      if (type === 'EQUITY') return totalsByType.equity;
+      if (type === 'INCOME') return totalsByType.income;
+      if (type === 'EXPENSE') return totalsByType.expenses;
+      return 0;
+    };
+
     filteredAccounts.forEach(acc => {
       const type = acc.account_type || 'ASSET';
       if (!groups[type]) {
         groups[type] = { accounts: [], total: 0 };
       }
       groups[type].accounts.push(acc);
-      const balance = accountBalances[acc.id] || 0;
-      groups[type].total += balance;
+    });
+    Object.keys(groups).forEach(type => {
+      groups[type].total = totalFor(type);
     });
 
     return groups;
-  }, [filteredAccounts, accountBalances]);
+  }, [filteredAccounts, accounts, ownBalances]);
 
   const totals = useMemo(() => {
-    const result = { assets: 0, liabilities: 0, equity: 0, income: 0, expenses: 0 };
-    Object.entries(groupedByType).forEach(([type, data]) => {
-      if (type === 'ASSET') result.assets = data.total;
-      else if (type === 'LIABILITY') result.liabilities = data.total;
-      else if (type === 'EQUITY') result.equity = data.total;
-      else if (type === 'INCOME') result.income = data.total;
-      else if (type === 'EXPENSE') result.expenses = data.total;
-    });
-    return result;
-  }, [groupedByType]);
+    const typeTotals = computeTypeTotals((accounts || []) as any[], ownBalances);
+    return {
+      assets: typeTotals.assets,
+      liabilities: typeTotals.liabilities,
+      equity: typeTotals.equity,
+      income: typeTotals.income,
+      expenses: typeTotals.expenses,
+    };
+  }, [accounts, ownBalances]);
 
-  const isBalanced = Math.abs(totals.assets - (totals.liabilities + totals.equity)) < 0.01;
+  // Authoritative balance signal: the trial balance compares TOTAL posted
+  // debits against TOTAL posted credits. A single account with only debits
+  // or only credits (e.g. Sales with purely credit activity) is normal and
+  // is never "out of balance" on its own.
+  const trialBalance = useMemo(() => {
+    return computeTrialBalance((accounts || []) as any[], (ledger || []) as any[]);
+  }, [accounts, ledger]);
+
+  const balanceSheetCheck = useMemo(() => {
+    const typeTotals = computeTypeTotals((accounts || []) as any[], ownBalances);
+    return checkBalanceSheetEquation(typeTotals);
+  }, [accounts, ownBalances]);
+
+  const isBalanced = trialBalance.isBalanced && balanceSheetCheck.balanced;
   const totalAccounts = Object.values(groupedByType).reduce((sum, g) => sum + g.accounts.length, 0);
 
   const toggleNode = (code: string) => {
@@ -518,7 +514,14 @@ const ChartOfAccounts: React.FC = () => {
     { label: 'Assets', value: formatMK(totals.assets), icon: BookOpen, color: teal[700], bg: teal[50] },
     { label: 'Liabilities', value: formatMK(totals.liabilities), icon: BookOpen, color: amber[600], bg: amber[100] },
     { label: 'Equity', value: formatMK(totals.equity), icon: BarChart3, color: teal[700], bg: teal[50] },
-    { label: isBalanced ? 'Balanced' : 'Out of balance', value: `${totalAccounts} accounts`, icon: BookOpen, color: isBalanced ? teal[700] : danger, bg: isBalanced ? teal[50] : '#fdeeee' },
+    // Trial-balance status: total posted debits vs total posted credits.
+    // Never a per-account "N accounts out of balance" figure — an account
+    // with only debits or only credits is perfectly normal.
+    {
+      label: isBalanced ? 'Balanced' : 'Out of balance',
+      value: isBalanced ? `${totalAccounts} accounts` : `${formatMK(Math.abs(trialBalance.difference))} diff`,
+      icon: BookOpen, color: isBalanced ? teal[700] : danger, bg: isBalanced ? teal[50] : '#fdeeee'
+    },
   ];
 
   return (
@@ -670,6 +673,8 @@ const ChartOfAccounts: React.FC = () => {
       {/* Footer */}
       <footer style={{ padding: '14px 28px', borderTop: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft, background: paper }}>
         Prime ERP · chart of accounts, {totalAccounts} accounts across {Object.values(groupedByType).filter(g => g.accounts.length > 0).length} categories. Balances shown in {companyConfig?.currencySymbol || currency}, current trial balance.
+        {' '}Trial: Dr {formatCurrency(trialBalance.totalDebits)} = Cr {formatCurrency(trialBalance.totalCredits)}
+        {trialBalance.isBalanced ? ' (balanced)' : ` (difference ${formatCurrency(trialBalance.difference)})`}.
       </footer>
 
       {/* Account Details Dashboard */}
