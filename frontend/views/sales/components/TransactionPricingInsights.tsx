@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ArrowDownRight, ArrowUpRight, Coins, Layers3, TrendingUp, Wallet } from 'lucide-react';
 import { resolveTransactionPricingSummary } from '../../../utils/pricingBreakdown';
+import { calculateTransactionProfit } from '../../../utils/saleProfit';
 
 interface TransactionPricingInsightsProps {
   transaction: any;
@@ -22,6 +23,18 @@ export const TransactionPricingInsights: React.FC<TransactionPricingInsightsProp
   title = 'Internal Pricing Breakdown',
 }) => {
   const summary = useMemo(() => resolveTransactionPricingSummary(transaction), [transaction]);
+
+  // Actual profit amount from the sale lines' own CP/SP economics (shared
+  // with POS and Order Form). Never derived from markup percentages.
+  const actualProfit = useMemo(() => calculateTransactionProfit(transaction), [transaction]);
+
+  const formatProfit = (value: number) =>
+    value < 0
+      ? `-${currencySymbol}${Math.abs(value).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`
+      : formatMoney(currencySymbol, value);
 
   const hasData = useMemo(() => {
     return Math.abs(summary.materialTotal) > 0.0001
@@ -69,8 +82,8 @@ export const TransactionPricingInsights: React.FC<TransactionPricingInsightsProp
               <TrendingUp size={20} />
             </div>
             <div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight leading-none mb-1.5">Profit Markup</p>
-              <p className={`text-lg md:text-xl font-semibold finance-nums ${summary.profitMarginTotal >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>{formatMoney(currencySymbol, summary.profitMarginTotal)}</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight leading-none mb-1.5">Profit</p>
+              <p className={`text-lg md:text-xl font-semibold finance-nums ${actualProfit >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>{formatProfit(actualProfit)}</p>
             </div>
           </div>
 

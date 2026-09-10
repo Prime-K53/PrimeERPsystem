@@ -8,6 +8,7 @@ import { PrintJobCartCard } from '../../../components/printing/PrintJobCartCard'
 import { formatNumber, generateNextId } from '../../../utils/helpers';
 import { roundToNearest, roundUpToStep } from '../../../utils/roundingUtils';
 import { displayPrice } from '../../../services/pricingDisplayService';
+import { calculateLineProfit, calculateSaleProfit } from '../../../utils/saleProfit';
 import { resolveItemAdjustmentSnapshots, getMarketAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
 import { getCustomerDisplayName } from '../../../utils/customerDisplay';
 
@@ -97,7 +98,12 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
         return adjustmentSummary.reduce((sum, adj) => sum + (adj.totalAmount || 0), 0);
     }, [adjustmentSummary]);
     const baseTotal = grandTotal - adjustmentTotal;
-    const totalProfit = effectiveTotal - totalCost;
+    // Authoritative actual-profit path (shared with Order Form + View Details):
+    // sum of per-line (SP - CP) x qty, less the order-level discount.
+    const totalProfit = useMemo(
+        () => calculateSaleProfit(cart, discountAmount),
+        [cart, discountAmount]
+    );
     const profitMarginPct = effectiveTotal > 0 ? (totalProfit / effectiveTotal) * 100 : 0;
 
     const customerOutstanding = useMemo(() => {
@@ -204,7 +210,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0', lineHeight: 1.3 }}>
-                        <span style={{ color: totalProfit >= 0 ? '#0f4f42' : '#a03c3c', fontWeight: 400 }}>Profit</span>
+                        <span style={{ color: totalProfit >= 0 ? '#0f4f42' : '#a03c3c', fontWeight: 400 }}>Total Profit</span>
                         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: 'tabular-nums', color: totalProfit >= 0 ? '#0f4f42' : '#a03c3c', fontWeight: 500 }}>
                             {totalProfit >= 0 ? '+' : '-'}{currency}{formatNumber(Math.abs(totalProfit))}
                         </span>
@@ -296,6 +302,7 @@ const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta
     const adjSnapshots = useMemo(() => getMarketAdjustmentSnapshots(resolveItemAdjustmentSnapshots(item)), [item]);
     const adjAmount = useMemo(() => adjSnapshots.reduce((s: number, a: any) => s + (a.calculatedAmount || 0), 0), [adjSnapshots]);
     const hasAdj = adjAmount !== 0;
+    const lineProfit = useMemo(() => calculateLineProfit(item), [item]);
 
     const isPrintType = serviceDetails && (item.pages || serviceDetails.pages);
     const totalPages = isPrintType ? (serviceDetails.pages || item.pages || 1) * (serviceDetails.copies || item.quantity || 1) : 0;
@@ -332,8 +339,13 @@ const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta
                 {hasAdj && <span style={{ fontSize: 9, fontWeight: 600, color: AMBER, background: '#fbf1e2', padding: '1px 4px', borderRadius: 4, flexShrink: 0 }}>ADJ</span>}
             </div>
 
-            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, color: INK, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                {currency}{formatNumber(displayPrice(item.price * item.quantity, undefined, 'pos'))}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, color: INK }}>
+                    {currency}{formatNumber(displayPrice(item.price * item.quantity, undefined, 'pos'))}
+                </span>
+                <span title="Profit" style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 500, fontSize: 10.5, color: lineProfit >= 0 ? '#0f4f42' : '#a03c3c' }}>
+                    {lineProfit >= 0 ? '+' : '-'}{currency}{formatNumber(Math.abs(lineProfit))}
+                </span>
             </div>
 
             <button onClick={() => removeFromCart(item.id)} style={{ border: 'none', background: 'none', color: SOFT, cursor: 'pointer', fontSize: 12, padding: '2px 4px', opacity: 0.6, transition: '.15s', flexShrink: 0, display: 'flex', alignItems: 'center' }} title="Remove item" aria-label="Remove item from cart">

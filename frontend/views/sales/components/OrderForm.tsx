@@ -23,6 +23,8 @@ import { calculateSellingPrice, calculateServicePrice } from '../../../utils/pri
 import { getPlaceholder } from '../../../constants/placeholders';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../../../utils/pricing';
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
+import { calculateLineProfit, resolveSaleLineCostPrice } from '../../../utils/saleProfit';
+import { roundMoney } from '../../../utils/roundingUtils';
 import { displayPrice } from '../../../services/pricingDisplayService';
 import { resolveCustomerPrice, getApplicableDiscounts, applyDiscounts, incrementDiscountUsage, getCustomerPricingTier } from '../../../services/customerPricingService';
 import { calculateItemTax } from '../../../services/taxRateService';
@@ -126,6 +128,24 @@ const normalizeOtherCharges = (items: any[] = []): { items: any[]; otherChargesC
         };
     });
     return { items: normalized, otherChargesCalculated: roundToCurrency(totalAdj) };
+};
+
+/**
+ * Live cost-price lookup for an order line, used as the fallback when the
+ * line itself carries no stored CP. Mirrors the resolution historically used
+ * for the order cost roll-up; the profit display prefers the line's own CP
+ * via resolveSaleLineCostPrice(item, liveCost).
+ */
+const resolveOrderFormLineCost = (item: CartItem, inventory: Item[]): number => {
+    if (item.serviceDetails) {
+        return Number((item as CartItem).cost) || 0;
+    }
+    const invItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
+    if (!invItem) return Number((item as CartItem).cost) || 0;
+    const variant = item.parentId && invItem.variants
+        ? invItem.variants.find((v: any) => v.id === item.id)
+        : null;
+    return Number(variant ? (variant.cost || 0) : invItem.cost) || 0;
 };
 
 export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave, onCancel, onPreview, saving, onSaveSuccess }) => {
@@ -722,6 +742,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         let totalGross = 0;
         let totalNet = 0;
         let totalCostPrice = 0;
+        let totalLineCost = 0;
+        let totalLineProfit = 0;
         let totalQty = 0;
         const adjustmentBreakdown: Record<string, number> = {};
 
@@ -746,6 +768,13 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             }
             totalCostPrice += itemCost * item.quantity;
 
+            // Actual-profit display economics: the line's own CP wins over the
+            // live lookup so rows stay consistent with POS and View Details.
+            const liveCost = resolveOrderFormLineCost(item, inventory);
+            const lineProfit = calculateLineProfit(item, liveCost);
+            totalLineCost = roundMoney(totalLineCost + resolveSaleLineCostPrice(item, liveCost) * (Number(item.quantity) || 0));
+            totalLineProfit = roundMoney(totalLineProfit + lineProfit);
+
             let currentSnapshots = resolveItemAdjustmentSnapshots(item);
 
             const isSmartPricingVariant = !!item.parentId && !!item.smartPricingSnapshot;
@@ -769,7 +798,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             return attachPricingBreakdown({
                 ...item,
                 adjustmentSnapshots: currentSnapshots,
-                lineTotalNet: lineTotal
+                lineTotalNet: lineTotal,
+                lineProfit,
             });
         });
 
@@ -788,6 +818,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         return {
             subTotal,
             totalCostPrice,
+            totalLineCost: roundMoney(totalLineCost),
+            totalLineProfit: roundMoney(totalLineProfit),
+            totalProfit: roundMoney(totalLineProfit - discountAmount),
             totalAmount: finalTotal,
             tax: taxAmount,
             taxRate: currentTaxRate,
@@ -2553,7 +2586,15 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                                 />}
                                                         </td>
                                                         <td data-label="Amount" className="px-2 py-1 text-right text-sm font-semibold text-indigo-700">
-                                                            {currency}{((Number(item.price) || 0) * qty).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            <div>{currency}{((Number(item.price) || 0) * qty).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                                            {(() => {
+                                                                const lineProfit = Number((item as any).lineProfit) || 0;
+                                                                return (
+                                                                    <div title="Profit" className={`text-[10px] font-['JetBrains_Mono',monospace] font-semibold ${lineProfit >= 0 ? 'text-[#146b60]' : 'text-[#a03c3c]'}`}>
+                                                                        {lineProfit >= 0 ? '+' : '-'}{currency}{Math.abs(lineProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </td>
                                                         <td data-label="" className="px-2 py-1 text-center">
                                                             <button
@@ -2717,6 +2758,14 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px dashed #E4DFD1",fontSize:"12px"}}>
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Discount{formData.discountType === 'percentage' && formData.discount > 0 ? ` ${formData.discount}%` : ''}</span>
                                          <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",color:"#146b60"}}>-{currency}{analysis.discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px dashed #E4DFD1",fontSize:"12px"}}>
+                                        <span style={{color:"#666F6C",fontWeight:"500"}}>Cost</span>
+                                        <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",color:"#23282A"}}>{currency}{analysis.totalLineCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px dashed #E4DFD1",fontSize:"12px"}}>
+                                        <span style={{color:"#666F6C",fontWeight:"500"}}>Profit</span>
+                                        <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",color: analysis.totalProfit >= 0 ? "#146b60" : "#a03c3c"}}>{analysis.totalProfit >= 0 ? '' : '-'}{currency}{Math.abs(analysis.totalProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </div>
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px dashed #E4DFD1",fontSize:"12px"}}>
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Other Charges</span>
