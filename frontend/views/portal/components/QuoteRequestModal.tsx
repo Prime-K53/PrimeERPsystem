@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FileUp, MessageSquareQuote, Plus, Trash2, X } from 'lucide-react';
-import { QuoteRequestItem } from '../../types';
+import { QuoteRequestItem } from '../../../types';
 
 interface QuoteRequestModalProps {
   isOpen: boolean;

@@ -24,7 +24,7 @@ import {
     btnGhostStyle, btnPrimaryStyle,
     modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
     EmptyState,
-} from '../components/financeChrome';
+} from '../../components/financeChrome';
 
 interface Props {
   onClose: () => void;

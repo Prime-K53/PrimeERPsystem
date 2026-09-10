@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PDFPreviewSource } from '../views/shared/components/PDF/pdfPreviewUtils';
+import type { PDFPreviewSource } from '../../views/shared/components/PDF/pdfPreviewUtils';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 

@@ -18,7 +18,7 @@ import PaymentRequests, { PaymentRequestStats } from './PaymentRequests';
 import { markAlertsReadForActionUrl, NOTIFICATION_UPDATE_EVENT } from '../../services/systemAlertService';
 import { QuotationRequestList } from './components/SalesLists';
 import { useDocumentStore } from '../../stores/documentStore';
-import { downloadPdfSource } from '../../shared/components/PDF/pdfPreviewUtils';
+import { downloadPdfSource } from '../shared/components/PDF/pdfPreviewUtils';
 
 const teal = {
   50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7',
