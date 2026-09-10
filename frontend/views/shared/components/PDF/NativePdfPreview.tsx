@@ -158,6 +158,16 @@ export const NativePdfPreview: React.FC<NativePdfPreviewProps> = ({
       el.addEventListener('load', onIframeLoad);
     }
 
+    // Mobile/tablet browsers cannot render PDFs inside iframes, so the load
+    // event never fires and the handoff card is shown instead. Don't arm the
+    // slow/hard timers there — they would replace the card with a false
+    // "timed out" error.
+    if (isTabletOrMobile) {
+      return () => {
+        if (el) el.removeEventListener('load', onIframeLoad);
+      };
+    }
+
     const slowTimer = setTimeout(() => {
       if (!loadedRef.current) setSlow(true);
     }, SLOW_WARN_MS);
@@ -181,7 +191,16 @@ export const NativePdfPreview: React.FC<NativePdfPreviewProps> = ({
   const handleRetry = () => { cleanup(); setError(null); setPhase('idle'); setRetry((k) => k + 1); previewLog('retry', { title }); };
 
   const handleDownload = () => {
-    if (source) downloadPdfSource(source, title).catch((e) => { setError(getPdfErrorMessage(e)); setPhase('error'); });
+    if (source) { downloadPdfSource(source, title).catch((e) => { setError(getPdfErrorMessage(e)); setPhase('error'); }); return; }
+    if (directPath) {
+      // Blob-URL previews (e.g. template preview) — trigger a download via anchor.
+      const a = document.createElement('a');
+      a.href = directPath;
+      a.download = `${title || 'document'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
   };
 
   const handleOpenSystemViewer = async () => {
@@ -258,8 +277,9 @@ export const NativePdfPreview: React.FC<NativePdfPreviewProps> = ({
   }
 
   if (hideHeader) {
-    // iOS devices can't reliably display PDFs in iframes — open in new window instead
-    if (isIOS && phase === 'load' && previewUrl) {
+    // Mobile/tablet browsers (iOS Safari, Android WebView/Chrome) can't reliably
+    // display PDFs in iframes — hand off to the browser's own viewer instead
+    if (isTabletOrMobile && phase === 'load' && previewUrl) {
       const handleOpenInNewWindow = () => {
         window.open(previewUrl, '_blank');
       };
@@ -339,9 +359,9 @@ export const NativePdfPreview: React.FC<NativePdfPreviewProps> = ({
         </div>
       </div>
 
-      {isIOS && phase === 'load' && previewUrl && !loadedRef.current && (
+      {isTabletOrMobile && phase === 'load' && previewUrl && !loadedRef.current && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[10px] text-amber-800">
-          <span>iOS may not display PDF previews in-browser. </span>
+          <span>Mobile browsers may not display PDF previews in-browser. </span>
           <button onClick={handleDownload} className="font-semibold underline">Download</button>
           <span> or </span>
           <button onClick={() => window.open(previewUrl, '_blank')} className="font-semibold underline">Open in new tab</button>

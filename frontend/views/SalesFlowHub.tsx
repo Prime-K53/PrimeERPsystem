@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, FileCheck, Banknote as PaymentIcon, RefreshCw, Printer, Target, CheckSquare, ArrowLeftRight, Award } from 'lucide-react';
+import { FileText, FileCheck, Banknote as PaymentIcon, RefreshCw, Printer, Target, CheckSquare, ArrowLeftRight } from 'lucide-react';
 import GenericHub, { HubTheme } from './GenericHub';
 import { useSalesOrderStore } from '../stores/salesOrderStore';
 import { useSalesStore } from '../stores/salesStore';
@@ -32,14 +32,12 @@ const SalesFlowHub: React.FC = () => {
         invoices,
         jobOrders,
         salesExchanges,
-        referralRewards,
       ] = await Promise.all([
         dbService.getAll('quotations'),
         Promise.resolve(salesOrderStore.salesOrders),
         Promise.resolve(financeStore.invoices),
         Promise.resolve(salesStore.jobOrders),
         Promise.resolve(salesStore.salesExchanges),
-        dbService.getAll('referralRewards'),
       ]);
 
       const pendingQuotations = (quotations as any[]).filter((q: any) =>
@@ -60,9 +58,6 @@ const SalesFlowHub: React.FC = () => {
       const pendingJobTickets = (jobOrders as any[]).filter((j: any) =>
         j.status !== 'Completed' && j.status !== 'Cancelled'
       ).length;
-      const pendingRewards = (referralRewards as any[]).filter((r: any) =>
-        r.status === 'pending' || r.status === 'Pending'
-      ).length;
 
       setCounts({
         Quotations: pendingQuotations,
@@ -71,7 +66,6 @@ const SalesFlowHub: React.FC = () => {
         'Printing Contracts': activeContracts,
         'Sales Exchanges': pendingExchanges,
         'Job Tickets': pendingJobTickets,
-        'Referral Rewards': pendingRewards,
       });
     };
 
@@ -122,12 +116,6 @@ const SalesFlowHub: React.FC = () => {
       description: 'Manage print jobs, photocopy orders, and production tracking.',
       path: '/sales-flow/job-tickets',
       icon: Printer,
-    },
-    {
-      label: 'Referral Rewards',
-      description: 'Review referral bonuses, track pending rewards, and manage payout status.',
-      path: '/sales-flow/referral-rewards',
-      icon: Award,
     },
     {
       label: 'Lead Board',

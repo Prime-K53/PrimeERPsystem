@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { useFinanceStore } from '../stores/financeStore';
 import { useSalesStore } from '../stores/salesStore';
 import { useInventoryStore } from '../stores/inventoryStore'; 
-import { Account, LedgerEntry, Invoice, Expense, RecurringInvoice, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, Income, Cheque, ZReport, SupplierPayment, CustomerPayment } from '../types';
+import { Account, LedgerEntry, Invoice, Expense, RecurringInvoice, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, Income, Cheque, ZReport, SupplierPayment, CustomerPayment, AssessmentContract } from '../types';
 import { useAuth } from './AuthContext'; 
 import { transactionService } from '../services/transactionService';
 import { openInventory } from '../services/openingBalanceService';
@@ -35,6 +35,7 @@ interface FinanceContextType {
   cheques: Cheque[];
   supplierPayments: SupplierPayment[];
   customerPayments: CustomerPayment[];
+  assessmentContracts: AssessmentContract[];
   
   addAccount: (account: Account) => void;
   updateAccount: (account: Account) => void;

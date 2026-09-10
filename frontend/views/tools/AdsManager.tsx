@@ -987,6 +987,9 @@ export const AdsManager: React.FC = () => {
                   {/* Details Tab */}
                   {activeTab === 'Details' && (
                     <>
+                      {/* Text-overlay content is text-ad only — image ads are the uploaded banner itself. */}
+                      {adType !== 'image' && (
+                      <>
                       <div style={sectionLabelStyle}><span>Content</span></div>
 
                       <div style={{ marginBottom: 18 }}>
@@ -1096,6 +1099,8 @@ export const AdsManager: React.FC = () => {
                           ))}
                         </div>
                       </div>
+                      </>
+                      )}
 
                       {adType === 'image' && (
                         <div style={{ marginBottom: 18 }}>

@@ -10,7 +10,7 @@ import { useProduction } from '../context/ProductionContext';
 import { useInventory } from '../context/InventoryContext';
 import { useProcurement } from '../context/ProcurementContext';
 import {
-  TrendingUp, TrendingDown, DollarSign, Clock, Briefcase, Users, ChevronDown, User, MessageSquare, Calculator, FileText, Zap, ArrowRight, ChevronRight, Sparkles, Database, BarChart2, X, ArrowUp, ArrowDown, Building2, Wallet, Star, Inbox, Calendar, CalendarDays, Check, Download } from 'lucide-react';
+  TrendingUp, TrendingDown, DollarSign, Clock, Briefcase, Users, ChevronDown, User, MessageSquare, Calculator, FileText, Zap, ArrowRight, ChevronRight, Sparkles, Database, BarChart2, X, ArrowUp, ArrowDown, Building2, Wallet, Inbox, Calendar, CalendarDays, Check, Download } from 'lucide-react';
 import WhatsAppMarketingModal from '../components/WhatsAppMarketingModal';
 import { adminLifecycle } from '../services/adminPortalClient';
 
@@ -496,7 +496,7 @@ const SlidingInfoCard = ({ slides, compact, animDelay = 0 }: { slides: any[], co
 
   const routeMap: Record<string, string> = {
     'Active Jobs': '/industrial/shop-floor',
-    'Subscription': '/sales-flow/printing-contracts',
+    'Contracts': '/sales-flow/printing-contracts',
     'Portal Requests': '/sales-flow/requests',
   };
 
@@ -739,7 +739,7 @@ const DashboardContent: React.FC = () => {
   const isDesktop = screenWidth >= 1024;
 
   const { companyConfig, resetSystem } = useAuth();
-  const { accounts, invoices, expenses, ledger } = useFinance();
+  const { accounts, invoices, expenses, ledger, assessmentContracts } = useFinance();
   const { customers, sales, customerPayments, quotations, jobOrders } = useSales();
   const { workOrders } = useProduction();
   const { purchases, suppliers } = useProcurement();
@@ -1149,47 +1149,42 @@ const DashboardContent: React.FC = () => {
 
   const activeJobsCount = jobOrders.filter(j => !['Completed', 'Cancelled', 'Closed', 'Delivered'].includes(String(j.status || ''))).length;
 
-  const nextSubscription = (() => {
-    const activeSubs = expenses.filter(s => String(s.status || '').toLowerCase() === 'active');
-    if (activeSubs.length === 0) return null;
-    const enriched = activeSubs.map((sub) => {
-      const nextRunAt = sub.nextRunDate || sub.nextDueDate || sub.nextBillingDate || sub.dueDate || null;
-      const amountDue = toSafeNumber(sub.total ?? sub.totalAmount);
-      return { ...sub, nextRunAt, nextDueDate: nextRunAt, nextBillingDate: nextRunAt, dueDate: nextRunAt, totalAmount: amountDue, amountDue };
-    });
-    const sorted = [...enriched].sort((a, b) => new Date(a.nextRunAt || '9999-12-31').getTime() - new Date(b.nextRunAt || '9999-12-31').getTime());
-    const next = sorted[0];
-    if (!next || (!next.customerName && !next.planName && !next.frequency)) return null;
-    return next;
+  // Active printing contracts (same definition as the Sales Flow badge)
+  const contractStats = (() => {
+    const contracts = (assessmentContracts || []) as any[];
+    const live = contracts.filter((c: any) =>
+      c.status === 'active' || c.status === 'pending_payment' || c.status === 'draft'
+    );
+    const pendingPayment = contracts.filter((c: any) => c.status === 'pending_payment').length;
+    const prepaidBalance = live.reduce((s: number, c: any) => {
+      const available = c.available_funds ?? (toSafeNumber(c.prepaid_amount) - toSafeNumber(c.consumed_amount) - toSafeNumber(c.reserved_amount));
+      return s + Math.max(0, toSafeNumber(available));
+    }, 0);
+    return { live, count: live.length, pendingPayment, prepaidBalance };
   })();
-
-  const formatSubName = (name: string) => {
-    if (!name) return '';
-    return name.trim();
-  };
 
   // sliding info slides
   const infoSlides = [
     {
-      label: 'Subscription', color: '#f59e0b', icon: <Star size={20} />,
+      label: 'Contracts', color: '#f59e0b', icon: <FileText size={20} />,
       render: (compact: boolean) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em', textTransform: 'uppercase' }}>SUBSCRIPTION</div>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b', flexShrink: 0 }}><Star size={16} fill="currentColor" /></div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em', textTransform: 'uppercase' }}>ACTIVE CONTRACTS</div>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b', flexShrink: 0 }}><FileText size={16} /></div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#f59e0b', letterSpacing: '-0.02em', lineHeight: 1 }}>{nextSubscription ? formatSubName(nextSubscription.customerName || nextSubscription.planName || 'Active') : 'Enterprise'}</div>
-            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>{nextSubscription ? `${nextSubscription.customerName || 'Company account'} · ${nextSubscription.frequency || 'Pro'}` : 'Prime ERP Management System'}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#f59e0b', letterSpacing: '-0.02em', lineHeight: 1 }}>{contractStats.count || '0'}</div>
+            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>{contractStats.count === 1 ? 'Printing contract in force' : 'Printing contracts in force'}</div>
           </div>
           <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%', margin: '2px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Next billing</div>
-            <div style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>{nextSubscription ? format(new Date(nextSubscription.nextDueDate || nextSubscription.nextBillingDate || nextSubscription.dueDate), 'MMM d, yyyy') : '—'}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Pending payment</div>
+            <div style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>{contractStats.pendingPayment}</div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Amount due</div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#b45309', backgroundColor: '#fffbeb', padding: '1px 8px', borderRadius: 6 }}>{formatShortCurrency(currency, toSafeNumber(nextSubscription?.amountDue))}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Prepaid balance</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#b45309', backgroundColor: '#fffbeb', padding: '1px 8px', borderRadius: 6 }}>{formatShortCurrency(currency, contractStats.prepaidBalance)}</div>
           </div>
         </div>
       )

@@ -73,6 +73,10 @@ vi.mock('../../services/db', () => ({
   dbService: { getAll: vi.fn(async () => []) },
 }));
 
+vi.mock('../../context/FinanceContext', () => ({
+  useFinance: () => ({ addInvoice: vi.fn(async () => 'INV-0001') }),
+}));
+
 import PrintingContractsView from '../../components/printing-contracts/PrintingContractsView';
 
 describe('PrintingContracts modal chrome (Add Customer look, no sidebars)', () => {
@@ -107,6 +111,10 @@ describe('PrintingContracts modal chrome (Add Customer look, no sidebars)', () =
     expect(screen.getByText('Parties & Type')).toBeTruthy();
     expect(screen.getByText('Commercials & Period')).toBeTruthy();
     expect(screen.getByText('Create Draft Contract')).toBeTruthy();
+    // Invoice-style billing: billable lines with totals + issue action
+    expect(screen.getByText('Assessment item')).toBeTruthy();
+    expect(screen.getByText('Contract total')).toBeTruthy();
+    expect(screen.getByText('Save & issue invoice')).toBeTruthy();
     // No sidebar nav (customer modal's "Customer Setup" rail must not exist here)
     expect(screen.queryByText('Customer Setup')).toBeNull();
     expect(container.querySelector('.max-w-2xl')).toBeNull();

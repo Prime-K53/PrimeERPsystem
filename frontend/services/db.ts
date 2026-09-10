@@ -147,6 +147,7 @@ interface NexusDB extends DBSchema {
     referralReversals: { key: string; value: ReversalRequest; };
     referralEventHistory: { key: string; value: ReferralEvent; };
     portalAds: { key: string; value: PortalAd; };
+    engagementPromotions: { key: string; value: any; };
     fixedAssets: { key: string; value: FixedAsset; };
     depreciationEntries: { key: string; value: DepreciationEntry; };
     assetDisposals: { key: string; value: AssetDisposal; };
@@ -179,7 +180,8 @@ interface NexusDB extends DBSchema {
 }
 
 const DB_NAME = 'PrimeERP_Final_v3_Clean';
-const DB_VERSION = 54;
+// v55: register the `engagementPromotions` store (PromotionsAdmin / PromotionsPanel / promotionPlugin).
+const DB_VERSION = 55;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -583,6 +585,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'referralReversals',
     'referralEventHistory',
     'portalAds',
+    'engagementPromotions',
     'fixedAssets',
     'depreciationEntries',
     'assetDisposals',

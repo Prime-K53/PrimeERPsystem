@@ -11,6 +11,12 @@ import type {
 import { useFinanceStore } from '../../stores/financeStore';
 import { useSalesStore } from '../../stores/salesStore';
 import { useAuth } from '../../context/AuthContext';
+import { useFinance } from '../../context/FinanceContext';
+import {
+  emptyContractLine, contractLineAmount, contractLinesTotal, contractLinesQuantity,
+  isValidContractLine, buildContractItemsFromLines, buildInvoiceDraftFromContract,
+  type ContractFormLine,
+} from '../../utils/contractInvoiceDraft';
 import { dbService } from '../../services/db';
 import { generateNextId } from '../../utils/helpers';
 import { currencyService } from '../../services/currencyService';
@@ -141,6 +147,9 @@ const emptyContractDraft = () => ({
   description: '',
   terms: '',
   notes: '',
+  // Invoice-style billable lines (create mode). Totals derive from these,
+  // exactly like invoice lines roll up into the invoice total.
+  lines: [emptyContractLine()] as ContractFormLine[],
 });
 
 const emptyItemDraft = () => ({
@@ -155,6 +164,7 @@ const emptyItemDraft = () => ({
 
 const PrintingContractsView: React.FC = () => {
   const { companyConfig, notify, user } = useAuth();
+  const { addInvoice } = useFinance();
   const currency = companyConfig?.currencySymbol
     || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol
     || '$';
@@ -330,25 +340,61 @@ const PrintingContractsView: React.FC = () => {
       description: c.description || '',
       terms: c.terms || '',
       notes: c.notes || '',
+      // Edit mode keeps the agreement fields; entitlement changes go through
+      // the Assessments tab / amendments so consumed history is protected.
+      lines: [] as ContractFormLine[],
     });
     setIsFormOpen(true);
   };
 
-  const validateContractDraft = () => {
+  const validateContractDraft = (issueInvoice = false) => {
     if (!formDraft.title.trim()) return 'Contract title is required.';
     if (!formDraft.customer_id) return 'Select a customer for this contract.';
     if (!formDraft.school_id) return 'Select a school for this contract.';
-    if (formDraft.max_assessments <= 0) return 'Assessment entitlement must be at least 1.';
-    if (formDraft.prepaid_amount < 0) return 'Prepaid amount cannot be negative.';
-    if (formDraft.assessment_price < 0) return 'Assessment price cannot be negative.';
+    if (!editingContract) {
+      const validLines = (formDraft.lines || []).filter(isValidContractLine);
+      if (validLines.length === 0) return 'Add at least one billable item (name, quantity and unit price).';
+      if (issueInvoice && contractLinesTotal(validLines) <= 0) {
+        return 'Add billable items with a value greater than zero to issue an invoice.';
+      }
+    } else {
+      if (formDraft.max_assessments <= 0) return 'Assessment entitlement must be at least 1.';
+      if (formDraft.prepaid_amount < 0) return 'Prepaid amount cannot be negative.';
+      if (formDraft.assessment_price < 0) return 'Assessment price cannot be negative.';
+    }
     if (formDraft.ends_at && formDraft.starts_at && formDraft.ends_at < formDraft.starts_at) {
       return 'Contract end date must be on or after the start date (contracts may span financial years).';
     }
     return null;
   };
 
-  const handleSaveContract = async () => {
-    const err = validateContractDraft();
+  const issueContractInvoice = async (
+    contractNumber: string,
+    contractTitle: string,
+    customerId: string,
+    lines: ContractFormLine[],
+    terms?: string,
+    notes?: string,
+  ): Promise<string | null> => {
+    const customer = (customers || []).find((c: Customer) => String(c.id) === String(customerId));
+    if (!customer) { notify('Customer not found — invoice not issued.', 'error'); return null; }
+    const draft = buildInvoiceDraftFromContract(
+      {
+        contract_number: contractNumber,
+        contract_title: contractTitle,
+        customer,
+        issuedDate: new Date().toISOString().slice(0, 10),
+        terms,
+        notes,
+      },
+      lines,
+    );
+    const invoiceId = await addInvoice(draft as any);
+    return invoiceId || null;
+  };
+
+  const handleSaveContract = async (issueInvoice = false) => {
+    const err = validateContractDraft(issueInvoice);
     if (err) { notify(err, 'error'); return; }
     if (isSaving) return;
     setIsSaving(true);
@@ -380,17 +426,23 @@ const PrintingContractsView: React.FC = () => {
         });
         notify('Printing contract updated', 'success');
       } else {
+        // Invoice-style totals: entitlement and prepaid derive from the lines.
+        const validLines = (formDraft.lines || []).filter(isValidContractLine);
+        const linesTotal = contractLinesTotal(validLines);
+        const linesQty = contractLinesQuantity(validLines);
         const contractNumber = generateNextId('PC', assessmentContracts || [], companyConfig);
+        const companyId = (companyConfig as any)?.id || (user as any)?.companyId || 'default';
+        const createdBy = (user as any)?.id || (user as any)?.username || 'system';
         const record: AssessmentContract = {
           id: uid(),
-          company_id: (companyConfig as any)?.id || (user as any)?.companyId || 'default',
+          company_id: companyId,
           customer_id: formDraft.customer_id,
           school_id: formDraft.school_id,
           contract_number: contractNumber,
           title: formDraft.title.trim(),
           description: formDraft.description || undefined,
           status: 'draft',
-          prepaid_amount: num(formDraft.prepaid_amount),
+          prepaid_amount: linesTotal,
           consumed_amount: 0,
           reserved_amount: 0,
           starts_at: formDraft.starts_at ? new Date(formDraft.starts_at).toISOString() : now,
@@ -399,24 +451,109 @@ const PrintingContractsView: React.FC = () => {
           assessment_grade: formDraft.assessment_grade || undefined,
           assessment_subject: formDraft.assessment_subject || undefined,
           assessment_count: 0,
-          max_assessments: Math.floor(num(formDraft.max_assessments)),
-          assessment_price: num(formDraft.assessment_price),
+          max_assessments: linesQty,
+          assessment_price: linesQty > 0 ? linesTotal / linesQty : 0,
           payment_status: 'pending',
           terms: formDraft.terms || undefined,
           notes: formDraft.notes || undefined,
-          created_by: (user as any)?.id || (user as any)?.username || 'system',
+          created_by: createdBy,
           created_at: now,
           updated_at: now,
           version: 1,
-          data: {},
+          // Snapshot the billable lines so the invoice can be (re)issued from
+          // the detail view and the commercial basis stays auditable.
+          data: { lines: validLines },
         };
         await addAssessmentContract(record);
-        notify(`Printing contract ${contractNumber} created as draft`, 'success');
+        // Materialise one reserved assessment record per billed unit.
+        const contractItems = buildContractItemsFromLines(
+          {
+            contract_id: record.id,
+            company_id: companyId,
+            customer_id: formDraft.customer_id,
+            school_id: formDraft.school_id,
+            created_by: createdBy,
+            now,
+          },
+          validLines,
+        );
+        for (const item of contractItems) {
+          await addContractAssessment(item);
+        }
+        if (issueInvoice) {
+          const invoiceId = await issueContractInvoice(
+            contractNumber,
+            record.title,
+            formDraft.customer_id,
+            validLines,
+            formDraft.terms,
+            formDraft.notes,
+          );
+          if (invoiceId) {
+            await updateAssessmentContract({
+              ...record,
+              data: { ...(record.data || {}), issued_invoice_id: invoiceId },
+              updated_at: new Date().toISOString(),
+            });
+            notify(`Printing contract ${contractNumber} created — invoice ${invoiceId} issued to the customer`, 'success');
+          } else {
+            notify(`Printing contract ${contractNumber} created as draft — invoice issue failed`, 'error');
+          }
+        } else {
+          notify(`Printing contract ${contractNumber} created as draft`, 'success');
+        }
       }
       setIsFormOpen(false);
       setEditingContract(null);
     } catch (e: any) {
       notify(`Failed to save contract: ${e.message}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleIssueInvoiceForSelected = async () => {
+    if (!selected || isSaving) return;
+    const data = (selected.data || {}) as any;
+    if (data.issued_invoice_id) {
+      notify(`Invoice ${data.issued_invoice_id} is already issued for this contract.`, 'info');
+      return;
+    }
+    const storedLines = Array.isArray(data.lines) ? (data.lines as ContractFormLine[]) : [];
+    const lines: ContractFormLine[] = storedLines.length > 0
+      ? storedLines
+      : [{
+        ...emptyContractLine(selected.assessment_type),
+        assessment_name: selected.title,
+        assessment_grade: selected.assessment_grade || '',
+        assessment_subject: selected.assessment_subject || '',
+        quantity: Math.max(1, Math.floor(num(selected.max_assessments))),
+        unit_price: num(selected.assessment_price),
+      }];
+    if (contractLinesTotal(lines.filter(isValidContractLine)) <= 0) {
+      notify('No billable value to invoice on this contract.', 'error');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const invoiceId = await issueContractInvoice(
+        selected.contract_number,
+        selected.title,
+        selected.customer_id,
+        lines,
+        selected.terms,
+        selected.notes,
+      );
+      if (invoiceId) {
+        await updateAssessmentContract({
+          ...selected,
+          data: { ...data, issued_invoice_id: invoiceId },
+          updated_at: new Date().toISOString(),
+        });
+        notify(`Invoice ${invoiceId} issued to the customer`, 'success');
+      }
+    } catch (e: any) {
+      notify(`Failed to issue invoice: ${e.message}`, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -903,8 +1040,19 @@ const PrintingContractsView: React.FC = () => {
           onClose={() => { setIsFormOpen(false); setEditingContract(null); }}
           footerHint={editingContract ? `Contract ${editingContract.contract_number} — historical records are protected` : 'Prepaid is the commercial figure — wallet moves only at payment time'}
           submitLabel={editingContract ? 'Save Changes' : 'Create Draft Contract'}
-          onSubmit={handleSaveContract}
+          onSubmit={() => handleSaveContract(false)}
           submitDisabled={isSaving}
+          footerActions={editingContract ? undefined : (
+            <>
+              <ContractGhostButton onClick={() => { setIsFormOpen(false); setEditingContract(null); }}>Cancel</ContractGhostButton>
+              <ContractGhostButton onClick={() => handleSaveContract(true)}>
+                <FileText size={14} /> {isSaving ? 'Saving…' : 'Save & issue invoice'}
+              </ContractGhostButton>
+              <ContractPrimaryButton onClick={() => handleSaveContract(false)} disabled={isSaving}>
+                {isSaving ? 'Saving…' : 'Create Draft Contract'}
+              </ContractPrimaryButton>
+            </>
+          )}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
             <div style={{ gridColumn: '1 / -1' }}>
@@ -966,6 +1114,109 @@ const PrintingContractsView: React.FC = () => {
           </div>
 
           <ContractSectionLabel>Commercials &amp; Period</ContractSectionLabel>
+          {!editingContract ? (
+            <>
+              {/* Invoice-style billable items: each line rolls into entitlement + prepaid total */}
+              <div style={{ border: `1px solid ${contractHairline}`, borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: contractTeal[50], color: contractTeal[800], fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.06 }}>
+                        <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', minWidth: 180 }}>Assessment item</th>
+                        <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', width: 110 }}>Type</th>
+                        <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', width: 90 }}>Grade</th>
+                        <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', width: 100 }}>Subject</th>
+                        <th scope="col" style={{ textAlign: 'right', padding: '8px 10px', width: 64 }}>Qty</th>
+                        <th scope="col" style={{ textAlign: 'right', padding: '8px 10px', width: 110 }}>Unit price</th>
+                        <th scope="col" style={{ textAlign: 'right', padding: '8px 10px', width: 110 }}>Amount</th>
+                        <th scope="col" style={{ padding: '8px 10px', width: 40 }}><span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Remove</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(formDraft.lines || []).map((line) => (
+                        <tr key={line.key} style={{ borderTop: `1px solid ${contractHairline}` }}>
+                          <td style={{ padding: 6 }}>
+                            <input value={line.assessment_name}
+                              onChange={e => setFormDraft({ ...formDraft, lines: formDraft.lines.map(l => l.key === line.key ? { ...l, assessment_name: e.target.value } : l) })}
+                              placeholder="e.g. Term 2 Grade 7 Mathematics"
+                              aria-label="Assessment item name"
+                              style={{ ...contractInputStyle, padding: '7px 10px', fontSize: 12 }} />
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <select value={line.assessment_type}
+                              onChange={e => setFormDraft({ ...formDraft, lines: formDraft.lines.map(l => l.key === line.key ? { ...l, assessment_type: e.target.value } : l) })}
+                              aria-label="Assessment type"
+                              style={{ ...contractSelectStyle, padding: '7px 8px', fontSize: 12 }}>
+                              <option value="examination">Examination</option>
+                              <option value="commercial">Commercial</option>
+                              <option value="general">General</option>
+                            </select>
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <input value={line.assessment_grade}
+                              onChange={e => setFormDraft({ ...formDraft, lines: formDraft.lines.map(l => l.key === line.key ? { ...l, assessment_grade: e.target.value } : l) })}
+                              placeholder="—" aria-label="Grade"
+                              style={{ ...contractInputStyle, padding: '7px 10px', fontSize: 12 }} />
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <input value={line.assessment_subject}
+                              onChange={e => setFormDraft({ ...formDraft, lines: formDraft.lines.map(l => l.key === line.key ? { ...l, assessment_subject: e.target.value } : l) })}
+                              placeholder="—" aria-label="Subject"
+                              style={{ ...contractInputStyle, padding: '7px 10px', fontSize: 12 }} />
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <input type="number" min={1} step={1} value={line.quantity}
+                              onChange={e => setFormDraft({ ...formDraft, lines: formDraft.lines.map(l => l.key === line.key ? { ...l, quantity: Number(e.target.value) } : l) })}
+                              aria-label="Quantity"
+                              style={{ ...contractInputStyle, padding: '7px 10px', fontSize: 12, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+                          </td>
+                          <td style={{ padding: 6 }}>
+                            <input type="number" min={0} step="0.01" value={line.unit_price}
+                              onChange={e => setFormDraft({ ...formDraft, lines: formDraft.lines.map(l => l.key === line.key ? { ...l, unit_price: Number(e.target.value) } : l) })}
+                              aria-label="Unit price"
+                              style={{ ...contractInputStyle, padding: '7px 10px', fontSize: 12, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+                          </td>
+                          <td className="finance-nums" style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: contractInk, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                            {currency}{contractLineAmount(line).toLocaleString()}
+                          </td>
+                          <td style={{ padding: 6, textAlign: 'center' }}>
+                            <button type="button"
+                              onClick={() => setFormDraft({ ...formDraft, lines: formDraft.lines.filter(l => l.key !== line.key) })}
+                              disabled={(formDraft.lines || []).length <= 1}
+                              aria-label={`Remove ${line.assessment_name || 'line'}`}
+                              style={{ padding: 7, borderRadius: 8, border: `1px solid ${contractHairline}`, background: '#fff', color: (formDraft.lines || []).length <= 1 ? '#c9c2b4' : contractDanger, cursor: (formDraft.lines || []).length <= 1 ? 'not-allowed' : 'pointer', display: 'inline-flex' }}>
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                <ContractGhostButton compact onClick={() => setFormDraft({ ...formDraft, lines: [...(formDraft.lines || []), emptyContractLine(formDraft.assessment_type)] })}>
+                  <Plus size={13} /> Add item
+                </ContractGhostButton>
+                <div className="finance-nums" style={{ display: 'flex', gap: 16, fontSize: 12, color: contractInkSoft, fontVariantNumeric: 'tabular-nums' }}>
+                  <span>Entitlement <b style={{ color: contractInk }}>{contractLinesQuantity(formDraft.lines || [])}</b></span>
+                  <span>Contract total <b style={{ color: contractTeal[800], fontSize: 14 }}>{currency}{contractLinesTotal(formDraft.lines || []).toLocaleString()}</b></span>
+                </div>
+              </div>
+              <div style={contractGridStyle}>
+                <div>
+                  <label style={contractLabelStyle}>Start date</label>
+                  <input type="date" value={formDraft.starts_at} onChange={e => setFormDraft({ ...formDraft, starts_at: e.target.value })}
+                    style={contractInputStyle} />
+                </div>
+                <div>
+                  <label style={contractLabelStyle}>End date (may cross FY)</label>
+                  <input type="date" value={formDraft.ends_at} onChange={e => setFormDraft({ ...formDraft, ends_at: e.target.value })}
+                    style={contractInputStyle} />
+                </div>
+              </div>
+            </>
+          ) : (
           <div style={contractGridStyle}>
             <div>
               <label style={contractLabelStyle}>Prepaid amount (commercial figure)</label>
@@ -1004,6 +1255,7 @@ const PrintingContractsView: React.FC = () => {
                 style={contractInputStyle} />
             </div>
           </div>
+          )}
 
           <ContractSectionLabel>Terms &amp; Notes</ContractSectionLabel>
           <div style={{ marginBottom: 18 }}>
@@ -1096,6 +1348,19 @@ const PrintingContractsView: React.FC = () => {
                       </div>
                     ))}
                   </div>
+                  <div style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 12 }}>
+                      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: '0 0 2px' }}>Customer invoice</p>
+                      <p className="finance-nums" style={{ fontWeight: 700, color: contractInk, margin: 0, fontFamily: "'JetBrains Mono', monospace" }}>
+                        {(selected.data as any)?.issued_invoice_id || 'Not yet issued'}
+                      </p>
+                    </div>
+                    {!(selected.data as any)?.issued_invoice_id && (
+                      <ContractPrimaryButton compact chevron={false} onClick={handleIssueInvoiceForSelected}>
+                        <FileText size={13} /> Issue invoice
+                      </ContractPrimaryButton>
+                    )}
+                  </div>
                   <div style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 12 }}>
                     <p style={{ margin: 0 }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Period</span>
                       <span style={{ color: contractInk }}>{selected.starts_at ? new Date(selected.starts_at).toLocaleDateString() : '—'} → {selected.ends_at ? new Date(selected.ends_at).toLocaleDateString() : 'open'}</span></p>
@@ -1175,11 +1440,11 @@ const PrintingContractsView: React.FC = () => {
                       ))}
                     </div>}
                   {(invoices || []).filter((inv: any) =>
-                    String(inv.customerId || inv.customerName || '').includes(String(selected.customer_id)) && inv.status !== 'Paid').slice(0, 5).length > 0 && (
+                    (String(inv.customerId || inv.customerName || '').includes(String(selected.customer_id)) || String((inv as any).reference || (inv as any).referenceDoc || '').includes(String(selected.contract_number || ''))) && inv.status !== 'Paid').slice(0, 5).length > 0 && (
                     <div className="mt-4">
                       <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: '0 0 8px' }}>Related open invoices</p>
                       {(invoices || []).filter((inv: any) =>
-                        String(inv.customerId || inv.customerName || '').includes(String(selected.customer_id)) && inv.status !== 'Paid').slice(0, 5)
+                        (String(inv.customerId || inv.customerName || '').includes(String(selected.customer_id)) || String((inv as any).reference || (inv as any).referenceDoc || '').includes(String(selected.contract_number || ''))) && inv.status !== 'Paid').slice(0, 5)
                         .map((inv: any) => (
                           <div key={inv.id} className="flex justify-between"
                             style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 10, marginBottom: 6, fontSize: 12 }}>

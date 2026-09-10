@@ -3554,6 +3554,47 @@ const FinancialYearsSettingsTab: React.FC<{ notify: (msg: string, type?: string)
     const [newStart, setNewStart] = useState('');
     const [newEnd, setNewEnd] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const [editingFy, setEditingFy] = useState<any>(null);
+    const [editName, setEditName] = useState('');
+    const [editStart, setEditStart] = useState('');
+    const [editEnd, setEditEnd] = useState('');
+    const [editSubmitting, setEditSubmitting] = useState(false);
+
+    const openEditForm = (fy: any) => {
+        setEditingFy(fy);
+        setEditName(fy.name || '');
+        setEditStart(fy.start_date || '');
+        setEditEnd(fy.end_date || '');
+        setShowCreateForm(false);
+    };
+
+    const handleEdit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingFy || !editName || !editStart || !editEnd) return;
+        if (editEnd < editStart) {
+            notify('End date must be on or after the start date', 'error');
+            return;
+        }
+        setEditSubmitting(true);
+        try {
+            await api.system.updateFinancialYear(editingFy.id, {
+                name: editName,
+                code: editName.replace(/\s+/g, '_').toUpperCase(),
+                start_date: editStart,
+                end_date: editEnd,
+            });
+            notify('Financial year updated successfully', 'success');
+            setEditingFy(null);
+            refreshFinancialYears();
+            if (selectedFinancialYear?.id === editingFy.id) {
+                setFinancialYear({ ...selectedFinancialYear, name: editName, start_date: editStart, end_date: editEnd });
+            }
+        } catch (err: any) {
+            notify(err?.message || 'Failed to update financial year', 'error');
+        } finally {
+            setEditSubmitting(false);
+        }
+    };
 
     const resetForm = () => {
         setNewName('');
@@ -3704,6 +3745,60 @@ const FinancialYearsSettingsTab: React.FC<{ notify: (msg: string, type?: string)
                     </div>
                 )}
 
+                {editingFy && (
+                    <div style={{ padding: '24px', borderStyle: 'solid', borderColor: '#D4D7DC', background: '#eef7f6' }}>
+                        <form onSubmit={handleEdit} style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '16px' }}>
+                            <div>
+                                <label style={labelStyle}>Year Name</label>
+                                <input
+                                    type="text"
+                                    style={inputStyle}
+                                    placeholder="e.g. 2025/2026"
+                                    value={editName}
+                                    onChange={e => setEditName(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Start Date</label>
+                                <input
+                                    type="date"
+                                    style={inputStyle}
+                                    value={editStart}
+                                    onChange={e => setEditStart(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>End Date</label>
+                                <input
+                                    type="date"
+                                    style={inputStyle}
+                                    value={editEnd}
+                                    onChange={e => setEditEnd(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'end', gap: '8px' }}>
+                                <button
+                                    type="submit"
+                                    disabled={editSubmitting}
+                                    style={{ paddingLeft: '16px', paddingTop: '8px', background: '#1f8577', color: '#fff', borderRadius: '12px', fontSize: '13px', fontWeight: 600, paddingRight: '16px', paddingBottom: '8px' }}
+                                >
+                                    {editSubmitting ? 'Saving...' : 'Save Changes'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingFy(null)}
+                                    style={{ paddingLeft: '16px', paddingTop: '8px', background: '#d3ece9', color: '#23282A', borderRadius: '12px', fontSize: '13px', fontWeight: 600, paddingRight: '16px', paddingBottom: '8px' }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                )}
+
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', textAlign: 'left', fontSize: '13px' }}>
                         <thead>
@@ -3744,6 +3839,12 @@ const FinancialYearsSettingsTab: React.FC<{ notify: (msg: string, type?: string)
                                             </td>
                                             <td style={{ paddingLeft: '24px', paddingTop: '16px', textAlign: 'right', paddingRight: '24px', paddingBottom: '16px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                                    <button
+                                                        onClick={() => openEditForm(fy)}
+                                                        style={{ fontSize: '11px', color: '#23282A', fontWeight: 500 }}
+                                                    >
+                                                        Edit
+                                                    </button>
                                                     {!isDefault && fy.status === 'Active' && (
                                                         <button
                                                             onClick={() => handleSetActive(fy)}

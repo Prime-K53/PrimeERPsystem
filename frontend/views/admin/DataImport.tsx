@@ -10,6 +10,7 @@ import type { Item, ItemType } from '../../types';
 import type { InventoryRole, ResourceSubtype } from '../../types/inventory';
 import type { ProductType } from '../../types/service';
 import { validateMinimumMarkup } from '../../services/pricingValidationService';
+import { resolveImportCustomerNames, customerBusinessIdentity } from '../../utils/customerImportNames';
 
 const t = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39' };
 const amber = { 100: '#fbead0', 500: '#d99a3f' };
@@ -89,11 +90,12 @@ const processImport = async () => {
 
         try {
           if (importingType === 'Customers') {
-            const name = row['Full name'] || row.Name || row.name || row.CustomerName;
-            if (name) {
-              const nameLower = name.toLowerCase();
+            // Two-name mapping: Business name (identity → companyName) + Contact person (→ contactName + legacy name).
+            const { business, contact } = resolveImportCustomerNames(row);
+            if (business) {
+              const businessLower = business.toLowerCase();
               const exists = currentCustomers.some(
-                c => c.name.toLowerCase() === nameLower
+                c => customerBusinessIdentity(c) === businessLower
               );
               if (exists) {
                 rejected.push({ ...row, status: 'Skipped', message: 'Duplicate - customer already exists' });
@@ -102,7 +104,9 @@ const processImport = async () => {
               const phoneValue = normalizePhone(row['Phone number'] || row.Contact || row.Phone || row.contact || row['Phone Number'] || row.PhoneNumber || row.Mobile || row['Mobile Number'] || row.MobileNumber || row.Telephone || row['Phone No'] || row.Phone_Number || '');
                 const customer = {
                  id: row['Customer ID'] || row.ID || row.id || generateCustomerId(currentCustomers),
-                 name,
+                 name: contact || business,
+                 companyName: business,
+                 contactName: contact,
                  accountNumber: row['Branch Account'] || row.AccountNumber || row.accountNumber || generateAccountNumber(),
                  contact: phoneValue,
                  phone: phoneValue,
@@ -124,10 +128,10 @@ const processImport = async () => {
                  message: 'Successfully imported',
                  customer_id: customer.id,
                  portal_email: credentials?.email ?? '',
-                 invite_code: credentials?.inviteCode ?? '',
-               });
-             } else {
-               rejected.push({ ...row, status: 'Rejected', message: 'Missing Name field' });
+                  invite_code: credentials?.inviteCode ?? '',
+                });
+              } else {
+                rejected.push({ ...row, status: 'Rejected', message: 'Missing Business name field' });
              }
            } else {
              const name = row.Name || row.name || row.ItemName;
@@ -227,15 +231,18 @@ const processUpdate = async () => {
 
         try {
           if (importingType === 'Customers') {
-            const name = row['Full name'] || row.Name || row.name || row.CustomerName;
-            if (name) {
-              const nameLower = name.toLowerCase();
-              const existing = customers.find(c => c.name.toLowerCase() === nameLower);
+            const { business, contact } = resolveImportCustomerNames(row);
+            if (business) {
+              const businessLower = business.toLowerCase();
+              const existing = customers.find(c => customerBusinessIdentity(c) === businessLower);
               if (existing) {
                   const phoneValue = normalizePhone(row['Phone number'] || row.Contact || row.Phone || row.contact || row['Phone Number'] || row.PhoneNumber || row.Mobile || row['Mobile Number'] || row.MobileNumber || row.Telephone || row['Phone No'] || row.Phone_Number || row['Tel'] || row.Tel || row['Contact Number'] || row['ContactNo'] || row['Cell'] || row.Cell || '');
                   const updatedCustomer = {
                     ...existing,
-                    name,
+                    companyName: business,
+                    // Only overwrite the contact person when the CSV provides one.
+                    name: contact || existing.name || business,
+                    contactName: contact || (existing as any).contactName || '',
                     accountNumber: row['Branch Account'] || row.AccountNumber || row.accountNumber || existing.accountNumber,
                     contact: phoneValue || existing.contact,
                     phone: phoneValue || existing.phone,
@@ -251,12 +258,12 @@ const processUpdate = async () => {
                  };
                  await updateCustomer(updatedCustomer);
                  accepted.push({ ...row, status: 'Updated', message: 'Successfully updated' });
-               } else {
-                 rejected.push({ ...row, status: 'Skipped', message: 'Customer not found - no matching record to update' });
-               }
-             } else {
-               rejected.push({ ...row, status: 'Rejected', message: 'Missing Name field' });
-             }
+                } else {
+                  rejected.push({ ...row, status: 'Skipped', message: 'Customer not found - no matching record to update' });
+                }
+              } else {
+                rejected.push({ ...row, status: 'Rejected', message: 'Missing Business name field' });
+              }
            } else {
              const name = row.Name || row.name || row.ItemName;
              if (name) {
@@ -326,7 +333,7 @@ const processUpdate = async () => {
    };
 
     const handleExportCustomers = () => {
-        const data = customers.map(c => ({ 'Customer ID': c.id, 'Full name': c.name, 'Billing Address': c.billingAddress || c.address || '', 'Phone number': c.phone, 'Segment': c.segment, 'Shipping Address': c.shippingAddress || '', 'Opening Balance': c.balance || 0, 'Wallet Balance': c.walletBalance || 0, 'Branch Account': c.accountNumber || '' }));
+        const data = customers.map(c => ({ 'Customer ID': c.id, 'Business name': c.companyName || (c as any).businessName || c.name || '', 'Contact person': (c as any).contactName || '', 'Full name': c.name, 'Billing Address': c.billingAddress || c.address || '', 'Phone number': c.phone, 'Segment': c.segment, 'Shipping Address': c.shippingAddress || '', 'Opening Balance': c.balance || 0, 'Wallet Balance': c.walletBalance || 0, 'Branch Account': c.accountNumber || '' }));
         exportToCSV(data, `customers_export_${new Date().toISOString().split('T')[0]}`);
         notify("Customer records exported to CSV", "success");
     };
@@ -343,7 +350,7 @@ const processUpdate = async () => {
             .filter((r: any) => r.customer_id && r.invite_code)
             .map((r: any) => ({
                 'Customer ID': r.customer_id,
-                'Full name': r.Name || r.name || '',
+                'Full name': resolveImportCustomerNames(r).business || r.Name || r.name || '',
                 'Email': r.portal_email || '',
                 'Portal URL': portalUrl,
                 'Invite code': r.invite_code,
@@ -418,7 +425,7 @@ const processUpdate = async () => {
             {/* Import/Export Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
                 {[
-                    { title: 'Import Customers', desc: 'Upload your client database via CSV. Automatically maps names, contacts, and balances.', icon: <Users size={28} />, type: 'Customers' as const, color: t[500] },
+                    { title: 'Import Customers', desc: 'Upload your client database via CSV. Maps Business name + Contact person, phones, and balances.', icon: <Users size={28} />, type: 'Customers' as const, color: t[500] },
                     { title: 'Import Inventory', desc: 'Sync your product catalog via CSV. Handles SKUs, pricing, and initial stock levels.', icon: <Package size={28} />, type: 'Products' as const, color: t[600] },
                     { title: 'Export Customers', desc: 'Download your complete client list as a formatted CSV file for backup or external use.', icon: <FileSpreadsheet size={28} />, type: 'Customers' as const, color: '#d99a3f', isExport: true },
                     { title: 'Export Inventory', desc: 'Extract your entire product list with current stock levels and pricing data to CSV.', icon: <FileSpreadsheet size={28} />, type: 'Products' as const, color: '#8b5cf6', isExport: true },
@@ -473,7 +480,7 @@ const processUpdate = async () => {
                                         <tr key={idx} className="prime-table-cell" style={{ transition: 'all .15s ease' }} onMouseEnter={e => { e.currentTarget.style.background = '#fff'; }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
                                             <td style={{ padding: '6px 12px', fontFamily: "'JetBrains Mono', monospace", color: inkSoft }}>{idx + 1}</td>
                                             <td style={{ padding: '6px 12px' }}>
-                                                <div style={{ fontWeight: 700, color: ink }}>{row.Name || row.name || 'Unknown Item'}</div>
+                                                <div style={{ fontWeight: 700, color: ink }}>{resolveImportCustomerNames(row).business || row.Name || row.name || 'Unknown Item'}</div>
                                                 <div style={{ fontSize: 9, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{row.SKU || row.AccountNumber || 'No Reference'}</div>
                                                 {row.invite_code && (
                                                     <div style={{ fontSize: 9, color: amber[500], fontFamily: "'JetBrains Mono', monospace", fontWeight: 800 }}>Invite: {row.invite_code}</div>
@@ -525,6 +532,7 @@ const processUpdate = async () => {
                         <li>Do not include currency symbols ($) in numeric columns.</li>
                         <li>Existing records with matching IDs will be updated.</li>
                         <li>Existing records with matching Names or SKUs will be skipped automatically.</li>
+                        <li>Customers: use <b>Business name</b> (identity) and <b>Contact person</b> columns — legacy <b>Full name</b>/<b>Name</b> columns still import as the business name.</li>
                         <li>Missing ID fields will trigger automatic system ID generation.</li>
                     </ul>
                 </div>
