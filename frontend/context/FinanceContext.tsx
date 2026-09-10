@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { useFinanceStore } from '../stores/financeStore';
 import { useSalesStore } from '../stores/salesStore';
 import { useInventoryStore } from '../stores/inventoryStore'; 
@@ -131,10 +131,28 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [isInitialized]);
 
+  // Warn-once guard: a missing opening row on a non-empty ledger must never
+  // be silently re-posted (that would create equity + cash out of thin air).
+  const missingOpeningWarnedRef = useRef(false);
+
   useEffect(() => {
     if (user && financeStore.openingBalance > 0) {
         const hasOpeningPost = financeStore.ledger.some(l => l.referenceId === 'OPENING_BALANCE');
         if (!hasOpeningPost) {
+            // Auto-post ONLY for genuine initialization (empty ledger).
+            // If the ledger already holds activity but the opening row is
+            // gone (deleted/reset edge), resurrecting it would silently move
+            // Cash Drawer AND Owner's Capital — so we log instead of posting.
+            if (financeStore.ledger.length > 0) {
+                if (!missingOpeningWarnedRef.current) {
+                    missingOpeningWarnedRef.current = true;
+                    logger.warn(
+                        'OPENING_BALANCE row missing on a non-empty ledger — refusing to auto-post equity. ' +
+                        'Set the opening cash balance explicitly in Settings if one is required.'
+                    );
+                }
+                return;
+            }
             postJournalEntry([{
                 description: 'System Initialization: Opening Cash Balance',
                 debitAccountId: gl.cashDrawerAccount || '11110', 

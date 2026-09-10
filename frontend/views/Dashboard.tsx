@@ -27,7 +27,7 @@ import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 
 import { format, isWithinInterval } from 'date-fns';
 import { ConfirmDialog, ConfirmDialogType } from '../components/ConfirmDialog';
-import { financialReportingService } from '../services/financialReportingService';
+import { financialReportingService, isCustomerCollectionEntry } from '../services/financialReportingService';
 
 // ─── CSS keyframes injected once ──────────────────────────────────────────────
 const DASHBOARD_STYLES = `
@@ -916,26 +916,21 @@ const DashboardContent: React.FC = () => {
 
   const revenueTrend = revenueLastMonth > 0 ? ((revenueThisMonth - revenueLastMonth) / revenueLastMonth) * 100 : (revenueThisMonth > 0 ? 100 : 0);
 
-  // 2. Today's Collection — from accounting ledger (canonical source)
+  // 2. Today's Collection — posted customer receipts ONLY (canonical
+  // definition in financialReportingService.isCustomerCollectionEntry).
+  // Cash-sale revenue (Dr cash / Cr income) and opening balances (Dr cash /
+  // Cr equity) debit collection accounts but are NOT receipts, so they must
+  // never inflate this KPI. Matches the sparkline + integrity service, which
+  // both derive collections from customerPayments records.
   const todayStr = new Date().toISOString().split('T')[0];
   const collectionData = (() => {
-    // Collection asset account codes
-    const COLLECTION_ACCOUNTS = ['11110', '11210', '11220', '11230', '11240'];
-    // Customer payment credit accounts (receivables/deposits) — NOT other asset accounts
-    const CUSTOMER_CREDIT_ACCOUNTS = ['11310', '21300', '11300'];
-
-    // Get asset account codes for transfer detection
-    const assetAccountCodes = new Set(
-      (accounts || [])
-        .filter((a: any) => (a.account_type === 'ASSET' || a.type === 'Asset'))
-        .map((a: any) => a.account_number || a.code || '')
-    );
-
-    // Map account IDs to codes
+    // Map account IDs to codes (ledger may reference id, code, or number)
     const accountCodeById: Record<string, string> = {};
     (accounts || []).forEach((acc: any) => {
       accountCodeById[acc.id] = acc.account_number || acc.code || '';
     });
+    const codeOf = (ref: string | undefined): string =>
+      (ref && accountCodeById[ref]) || ref || '';
 
     let sum = 0;
     const byAccount: Record<string, number> = {};
@@ -944,18 +939,10 @@ const DashboardContent: React.FC = () => {
       // Filter by date
       const entryDate = entry.date?.split('T')[0];
       if (entryDate !== todayStr) return;
-      // Exclude reversals
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') return;
-
-      // Check if debit account is a collection account
-      const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
-      if (!COLLECTION_ACCOUNTS.includes(debitCode)) return;
-
-      // Check credit account — if it's another asset account, this is a transfer, not collection
-      const creditCode = accountCodeById[entry.creditAccountId] || entry.creditAccountId;
-      if (assetAccountCodes.has(creditCode)) return;
+      if (!isCustomerCollectionEntry(entry, codeOf)) return;
 
       // This is a customer payment
+      const debitCode = codeOf(entry.debitAccountId);
       const amount = entry.amount || 0;
       sum += amount;
       byAccount[debitCode] = (byAccount[debitCode] || 0) + amount;
@@ -982,29 +969,19 @@ const DashboardContent: React.FC = () => {
   const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterdayStr = yesterdayDate.toISOString().split('T')[0];
   const yesterdaysCollection = (() => {
-    // Same ledger-based calculation for yesterday
-    const COLLECTION_ACCOUNTS = ['11110', '11210', '11220', '11230', '11240'];
-    const assetAccountCodes = new Set(
-      (accounts || [])
-        .filter((a: any) => (a.account_type === 'ASSET' || a.type === 'Asset'))
-        .map((a: any) => a.account_number || a.code || '')
-    );
+    // Same receipts-only definition as today's KPI.
     const accountCodeById: Record<string, string> = {};
     (accounts || []).forEach((acc: any) => {
       accountCodeById[acc.id] = acc.account_number || acc.code || '';
     });
+    const codeOf = (ref: string | undefined): string =>
+      (ref && accountCodeById[ref]) || ref || '';
 
     let sum = 0;
     (ledger || []).forEach((entry: any) => {
       const entryDate = entry.date?.split('T')[0];
       if (entryDate !== yesterdayStr) return;
-      if (entry.entryType === 'Reversal' || entry.referenceType === 'reversal') return;
-
-      const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
-      if (!COLLECTION_ACCOUNTS.includes(debitCode)) return;
-
-      const creditCode = accountCodeById[entry.creditAccountId] || entry.creditAccountId;
-      if (assetAccountCodes.has(creditCode)) return;
+      if (!isCustomerCollectionEntry(entry, codeOf)) return;
 
       sum += entry.amount || 0;
     });

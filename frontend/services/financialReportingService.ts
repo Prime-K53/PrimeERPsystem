@@ -98,6 +98,37 @@ function isCreditNormalAccount(account: Account): boolean {
   return accountType === 'Liability' || accountType === 'Equity' || accountType === 'Revenue';
 }
 
+/**
+ * Collection (receipt) definition — single source of truth shared by the
+ * service methods below and the Dashboard KPI.
+ *
+ * A collection is a POSTED journal that brings customer money into a
+ * collection asset account (11110 Cash, 11210/11220/11230 Banks, 11240
+ * Mobile Money) AGAINST a customer balance (11310/11300 Receivables or
+ * 21300 Customer Deposits).
+ *
+ * The credit side is decisive. In particular these are NEVER collections:
+ * - cash-sale revenue (Dr cash, Cr 41100 income)
+ * - opening cash (Dr cash, Cr 31000/32000 equity)
+ * - bank/cash transfers (Dr asset, Cr asset)
+ * - supplier refunds, expense journals, COGS, inventory movements
+ */
+export const COLLECTION_DEBIT_CODES = ['11110', '11210', '11220', '11230', '11240'];
+export const CUSTOMER_CREDIT_CODES = ['11310', '11300', '21300'];
+
+export function isCustomerCollectionEntry(
+  entry: Partial<LedgerEntry>,
+  codeOf: (accountRef: string | undefined) => string
+): boolean {
+  if (!isPostedLedgerEntry(entry)) return false;
+  const amount = Number((entry as { amount?: unknown }).amount ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+  if (!COLLECTION_DEBIT_CODES.includes(codeOf(entry.debitAccountId))) return false;
+  // Strict credit rule: only receipts against receivables/deposits count.
+  if (!CUSTOMER_CREDIT_CODES.includes(codeOf(entry.creditAccountId))) return false;
+  return true;
+}
+
 export interface TrialBalanceEntry {
   accountId: string;
   accountCode: string;
@@ -814,43 +845,23 @@ class FinancialReportingService {
   /**
    * Get today's total collection from accounting ledger.
    *
-   * Today's Collection = sum of all debits to collection asset accounts
-   * (11110 Cash, 11210/11220/11230 Banks, 11240 Mobile Money)
-   * that represent customer payments.
-   *
-   * EXCLUDES:
-   * - Transfers between asset accounts (Dr asset, Cr asset)
-   * - Reversals/voids
-   * - Non-customer transactions (expenses, supplier payments, etc.)
-   *
-   * The credit account determines if it's a customer payment:
-   * - 11310 (Trade Debtors) = customer invoice payment
-   * - 21300 (Accrued Expenses/Customer Deposits) = customer deposit
-   * - Any other credit = likely a transfer, excluded
+   * Today's Collection = posted customer receipts (see
+   * isCustomerCollectionEntry). Cash-sale revenue, opening balances,
+   * transfers, and non-customer journals are excluded even when they debit
+   * a cash/bank account.
    */
   async getTodayCollection(): Promise<{ total: number; byAccount: Record<string, number> }> {
     const today = new Date().toISOString().split('T')[0];
     const ledger = await dbService.getAll<LedgerEntry>('ledger');
     const accounts = await dbService.getAll<Account>('accounts');
 
-    // Collection asset account codes
-    const COLLECTION_ACCOUNTS = ['11110', '11210', '11220', '11230', '11240'];
-
-    // Customer payment credit accounts (receivables/deposits)
-    const CUSTOMER_CREDIT_ACCOUNTS = ['11310', '21300', '11300'];
-
-    // Map account IDs to codes
+    // Map account IDs to codes (ledger may reference id, code, or number)
     const accountCodeById: Record<string, string> = {};
     for (const acc of accounts) {
       accountCodeById[acc.id] = acc.account_number || acc.code || '';
     }
-
-    // Get set of asset account codes for transfer detection
-    const assetAccountCodes = new Set(
-      accounts
-        .filter(a => getAccountType(a) === 'Asset')
-        .map(a => a.account_number || a.code || '')
-    );
+    const codeOf = (ref: string | undefined): string =>
+      (ref && accountCodeById[ref]) || ref || '';
 
     const byAccount: Record<string, number> = {};
     let total = 0;
@@ -860,18 +871,10 @@ class FinancialReportingService {
       const entryDate = entry.date?.split('T')[0];
       if (entryDate !== today) continue;
 
-      // Exclude drafts, voids, and reversals — collections reflect posted truth.
-      if (!isPostedLedgerEntry(entry)) continue;
+      // Strict receipts-only rule (posted; Dr collection; Cr AR/deposits).
+      if (!isCustomerCollectionEntry(entry, codeOf)) continue;
 
-      // Check if debit account is a collection account
-      const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
-      if (!COLLECTION_ACCOUNTS.includes(debitCode)) continue;
-
-      // Check credit account - if it's another asset account, this is a transfer, not collection
-      const creditCode = accountCodeById[entry.creditAccountId] || entry.creditAccountId;
-      if (assetAccountCodes.has(creditCode)) continue;
-
-      // This is a customer payment (Dr collection, Cr receivable/deposit)
+      const debitCode = codeOf(entry.debitAccountId);
       const amount = entry.amount || 0;
       total += amount;
       byAccount[debitCode] = (byAccount[debitCode] || 0) + amount;
@@ -887,19 +890,12 @@ class FinancialReportingService {
     const ledger = await dbService.getAll<LedgerEntry>('ledger');
     const accounts = await dbService.getAll<Account>('accounts');
 
-    const COLLECTION_ACCOUNTS = ['11110', '11210', '11220', '11230', '11240'];
-    const CUSTOMER_CREDIT_ACCOUNTS = ['11310', '21300', '11300'];
-
     const accountCodeById: Record<string, string> = {};
     for (const acc of accounts) {
       accountCodeById[acc.id] = acc.account_number || acc.code || '';
     }
-
-    const assetAccountCodes = new Set(
-      accounts
-        .filter(a => getAccountType(a) === 'Asset')
-        .map(a => a.account_number || a.code || '')
-    );
+    const codeOf = (ref: string | undefined): string =>
+      (ref && accountCodeById[ref]) || ref || '';
 
     const byAccount: Record<string, number> = {};
     let total = 0;
@@ -908,14 +904,10 @@ class FinancialReportingService {
       const entryDate = entry.date?.split('T')[0];
       if (entryDate !== date) continue;
 
-      if (!isPostedLedgerEntry(entry)) continue;
+      // Strict receipts-only rule (posted; Dr collection; Cr AR/deposits).
+      if (!isCustomerCollectionEntry(entry, codeOf)) continue;
 
-      const debitCode = accountCodeById[entry.debitAccountId] || entry.debitAccountId;
-      if (!COLLECTION_ACCOUNTS.includes(debitCode)) continue;
-
-      const creditCode = accountCodeById[entry.creditAccountId] || entry.creditAccountId;
-      if (assetAccountCodes.has(creditCode)) continue;
-
+      const debitCode = codeOf(entry.debitAccountId);
       const amount = entry.amount || 0;
       total += amount;
       byAccount[debitCode] = (byAccount[debitCode] || 0) + amount;
