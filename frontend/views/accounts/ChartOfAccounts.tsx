@@ -579,7 +579,7 @@ const ChartOfAccounts: React.FC = () => {
         <div style={{ margin: '0 28px 4px', padding: '12px 16px', borderRadius: 12, background: '#fdeeee', border: `1.4px solid ${danger}55`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 260px', fontSize: 12.5, color: ink }}>
             <b>Duplicate opening-cash rows detected:</b> {duplicateOpeningCash.count} posted OPENING_BALANCE entries
-            (K{duplicateOpeningCash.total.toLocaleString()} inflated Cash Drawer &amp; Owner&apos;s Capital). History is preserved — repair posts one correcting journal.
+            (K{duplicateOpeningCash.correction.toLocaleString()} inflated Cash Drawer &amp; Owner&apos;s Capital after keeping the earliest row). History is preserved — repair posts one correcting journal.
           </div>
           <button
             onClick={() => setConfirmState({
