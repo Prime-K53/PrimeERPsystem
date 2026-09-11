@@ -1976,8 +1976,8 @@ export const transactionService = {
                 // 1. Save Invoice
                 await invoiceStore.put(invoice);
 
-                // 2. Update Inventory (Gated)
-                const shouldDeduct = invoice.status === 'Paid' || invoice.status === 'Partial';
+                // 2. Update Inventory (Gated by fulfillment, not payment status)
+                const shouldDeduct = invoice.status !== 'Draft' && invoice.status !== 'Cancelled';
                 if (shouldDeduct) {
                     await this._executeDeductInventory(
                         inventoryStore,
@@ -2327,8 +2327,8 @@ export const transactionService = {
                     invoiceData.dueDate = issuedDate;
                 }
 
-                // 3. Update Inventory (only if paid/partial — goods delivered)
-                const shouldDeductConv = invoiceData.status === 'Paid' || invoiceData.status === 'Partial';
+                // 3. Update Inventory (fulfillment-based — goods delivered)
+                const shouldDeductConv = invoiceData.status !== 'Draft' && invoiceData.status !== 'Cancelled';
                 if (shouldDeductConv) {
                     await this._executeDeductInventory(
                         inventoryStore,
@@ -2470,6 +2470,16 @@ export const transactionService = {
                 const inventory = await inventoryStore.getAll();
                 const bomTemplates: BOMTemplate[] = await bomTemplatesStore.getAll();
                 const marketAdjustments: MarketAdjustment[] = await marketAdjustmentsStore.getAll();
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) throw new UnresolvedAccountError(ref || 'undefined');
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) throw new UnresolvedAccountError(ref);
+                    return resolved;
+                };
 
                 // 1. Update Job Order status
                 const jobOrder = await jobOrderStore.get(jobOrderId);
@@ -2488,8 +2498,8 @@ export const transactionService = {
                     `${invoiceData.notes}\nConverted from [JobOrder] #[${jobOrderId}] on [${timestamp}] as accepted by [System]` :
                     `Converted from [JobOrder] #[${jobOrderId}] on [${timestamp}] as accepted by [System]`;
 
-                // 3. Update Inventory (only if paid/partial — goods delivered)
-                const shouldDeductJob = invoiceData.status === 'Paid' || invoiceData.status === 'Partial';
+                // 3. Update Inventory (fulfillment-based — goods delivered)
+                const shouldDeductJob = invoiceData.status !== 'Draft' && invoiceData.status !== 'Cancelled';
                 if (shouldDeductJob) {
                     for (const item of invoiceData.items) {
                         const invItem = await resolveInventoryRecord(item.id, inventory, inventoryStore);
@@ -2528,10 +2538,35 @@ export const transactionService = {
 
                 await invoiceStore.put(invoiceData);
 
+                // COGS entry (gated by fulfillment status)
+                if (shouldDeductJob) {
+                    const cogsTotal = await calculateItemsCost(
+                        invoiceData.items || [],
+                        inventory,
+                        (item) => item.parentId || item.id
+                    );
+                    if (cogsTotal > 0) {
+                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(invoiceData.items || [], accounts) : null;
+                        const cogsEntry: LedgerEntry = {
+                            id: generateId('LG-COGS'),
+                            date: invoiceData.date,
+                            description: `COGS - Invoice #${invoiceData.id} (from Job Order #${jobOrderId})`,
+                            debitAccountId: resolveAcct(gl.defaultCOGSAccount),
+                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
+                            amount: Number(cogsTotal.toFixed(2)),
+                            referenceId: invoiceData.id,
+                            reconciled: false,
+                            customerId: invoiceData.customerId,
+                            customerName: invoiceData.customerName
+                        };
+                        await ledgerStore.put(cogsEntry);
+                    }
+                }
+
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
                 // Independent balance mutation removed.
 
-                // 6. Create Ledger Entry
+                // 7. Create Ledger Entry
                 const gl = getGLConfig();
                 const totalAmount = Number(invoiceData.totalAmount);
 
