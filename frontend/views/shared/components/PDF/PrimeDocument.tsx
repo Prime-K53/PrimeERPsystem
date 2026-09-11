@@ -394,7 +394,7 @@ const CleanInvoiceTemplate = ({
 
   return (
     <Document title={docTitleForMeta} author={companyName}>
-      <Page size="A4" style={{ padding: 40, fontFamily: templateSettings.fontFamily }}>
+      <Page size="A4" style={{ padding: 40, paddingBottom: 100, fontFamily: templateSettings.fontFamily }}>
         {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
         {/* Header */}

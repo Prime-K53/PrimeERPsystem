@@ -3,6 +3,10 @@ import { StyleSheet } from '@react-pdf/renderer';
 export const docStyles = StyleSheet.create({
   page: {
     padding: 40,
+    // Reserve clearance above the absolutely-positioned legal/security
+    // footer (bottom ~26px + ~60px content) so flowing body content breaks
+    // to the next page instead of printing underneath it.
+    paddingBottom: 100,
     fontFamily: 'Helvetica',
     fontSize: 12, // 16px body
     color: '#000',
