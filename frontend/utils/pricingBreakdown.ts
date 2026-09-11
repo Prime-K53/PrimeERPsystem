@@ -209,12 +209,16 @@ export const buildPricingBreakdownSnapshot = (
     ?? smartSnapshot?.roundedPrice
     ?? 0
   );
+  const productionSnapshotCost = Number(item?.productionCostSnapshot?.baseProductionCost);
+  const resolvedProductionCost = Number.isFinite(productionSnapshotCost) && productionSnapshotCost > 0
+    ? productionSnapshotCost
+    : undefined;
   const baseMaterialCost = roundMoney(
-    smartSnapshot?.baseCost
+    resolvedProductionCost
+    ?? smartSnapshot?.baseCost
     ?? item.basePrice
     ?? item.cost_price
     ?? item.cost
-    ?? item.productionCostSnapshot?.baseProductionCost
     ?? 0
   );
   const explicitMarketAdjustmentTotal = [

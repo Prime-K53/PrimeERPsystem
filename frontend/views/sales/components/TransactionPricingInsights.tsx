@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { ArrowDownRight, ArrowUpRight, Coins, Layers3, TrendingUp, Wallet } from 'lucide-react';
 import { resolveTransactionPricingSummary } from '../../../utils/pricingBreakdown';
-import { calculateTransactionProfit } from '../../../utils/saleProfit';
 
 interface TransactionPricingInsightsProps {
   transaction: any;
@@ -24,9 +23,7 @@ export const TransactionPricingInsights: React.FC<TransactionPricingInsightsProp
 }) => {
   const summary = useMemo(() => resolveTransactionPricingSummary(transaction), [transaction]);
 
-  // Actual profit amount from the sale lines' own CP/SP economics (shared
-  // with POS and Order Form). Never derived from markup percentages.
-  const actualProfit = useMemo(() => calculateTransactionProfit(transaction), [transaction]);
+  const actualProfit = useMemo(() => summary.profitMarginTotal, [summary]);
 
   const formatProfit = (value: number) =>
     value < 0
