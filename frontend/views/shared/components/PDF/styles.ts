@@ -542,6 +542,7 @@ export const docStyles = StyleSheet.create({
     flexDirection: 'column',
     textAlign: 'left',
     lineHeight: 1.2,
+    alignItems: 'flex-start',
   },
   statementSide: {
     alignItems: 'flex-end',

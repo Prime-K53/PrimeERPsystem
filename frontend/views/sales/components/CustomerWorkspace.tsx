@@ -1,105 +1,36 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { logger } from '@/services/logger';
 import { useNavigate } from 'react-router-dom';
 import {
-  X, User, Mail, Phone, MapPin, CreditCard, FileText,
-  Globe, Building, Truck, Plus, Trash2, Edit2,
-  TrendingUp, AlertTriangle, Clock, CheckCircle,
-  DollarSign, ArrowLeft, MoreHorizontal, Download,
-  ExternalLink, Calendar, MessageSquare, History,
-  PieChart, Settings, FileSearch, Paperclip,
-  Briefcase, ShieldAlert, BadgeCheck, FileDown,
-  ChevronDown, ChevronRight,
-  RefreshCw,
-  FileBarChart,
-  Eye
+  X, Plus, Download,
+  RefreshCw, Check, Copy, Pencil,
+  ShieldAlert, FileDown,
 } from 'lucide-react';
-import { getCustomerDisplayName, getCustomerContactName } from '../../../utils/customerDisplay';
+import { getCustomerDisplayName } from '../../../utils/customerDisplay';
 import { pdf } from '@react-pdf/renderer';
 import { PrimeDocument } from '../../shared/components/PDF/PrimeDocument';
-import { initializePrimePdfFonts } from '../../shared/components/PDF/templateSettings';
-import { StatementDoc } from '../../shared/components/PDF/schemas';
-import { Customer, Invoice, CustomerPayment, Sale, Quotation, AuditLogEntry } from '../../../types';
+import { generatePrimeDocumentBlob } from '../../shared/components/PDF/generatePrimeDocumentBlob';
+import { getStoredCompanyConfig, initializePrimePdfFonts } from '../../shared/components/PDF/templateSettings';
+import { ReceiptSchema, StatementDoc, type PrimeDocData } from '../../shared/components/PDF/schemas';
+import { mapToInvoiceData } from '../../../utils/pdfMapper';
+import { enrichDocumentCustomerData } from '../../../utils/documentCustomerData';
+import { buildCustomerReceiptDoc } from '../../../services/receiptCalculationService';
+import { hydrateCompanyPdfAssets } from '../../../utils/companyAssetUtils';
+import { downloadBlob } from '../../../utils/helpers';
+import type { Customer, CustomerDocument } from '../../../types';
+import { customerDocumentsService, formatCustomerDocSize } from '../../../services/customerDocumentsService';
 import { useSales } from '../../../context/SalesContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useAuth } from '../../../context/AuthContext';
 import { useData, REFRESH_INTERVAL } from '../../../context/DataContext';
 import { useModuleRefresh } from '../../../hooks/useModuleRefresh';
-import { format, parseISO, isAfter } from 'date-fns';
+import { format, parseISO, isAfter, subMonths } from 'date-fns';
 import { attachDocumentSecurity } from '../../../utils/documentSecurity';
-import { AuditTimeline } from '../../shared/components/AuditTimeline';
-import AICustomerInsights from '../../../components/ai/AICustomerInsights';
-import CRMSegmentation from '../../../components/CRM/CRMSegmentation';
 import { currencyService } from '../../../services/currencyService';
 import { referralService } from '../../../services/referralService';
-import { referralTimelineService } from '../../../services/referralTimelineService';
-import { referralAuditService } from '../../../services/referralAuditService';
 import type { Referral, ReferralReward } from '../../../types/referral';
-import type { ReferralTimelineEntry, ReferralAuditEntry } from '../../../types/referral-extended';
 import { buildLedgerFromRecords } from '../../../services/customerLedger';
-
-const teal = {
-  50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7',
-  400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c',
-  800: '#0b3e39', 900: '#082e2a'
-};
-const amber = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f', 600: '#b97e2b' };
-const paper = '#FEFDFB';
-const ink = '#23282A';
-const inkSoft = '#5c6567';
-const hairline = '#e4ddd1';
-const danger = '#b5493f';
-
-const labelStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 6,
-  fontSize: 12.5, fontWeight: 600, color: '#3b454c',
-  marginBottom: 7, letterSpacing: 0.01
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', fontFamily: "'Inter', sans-serif", fontSize: 13.5,
-  color: ink, background: '#fff',
-  border: '1px solid #e2ded3', borderRadius: 10,
-  padding: '10px 13px', outline: 'none',
-  boxShadow: 'inset 0 1px 2px rgba(16,24,40,0.03)',
-  transition: 'border-color .15s ease, box-shadow .15s ease, background .15s ease'
-};
-
-const textareaStyle: React.CSSProperties = {
-  ...inputStyle, resize: 'none', minHeight: 72, lineHeight: 1.5
-};
-
-const selectStyle: React.CSSProperties = {
-  ...inputStyle,
-  appearance: 'none',
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235c6567'/%3E%3C/svg%3E")`,
-  backgroundRepeat: 'no-repeat',
-  backgroundPosition: 'right 12px center',
-  paddingRight: 30,
-  cursor: 'pointer'
-};
-
-const sectionLabelStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10,
-  margin: '28px 0 14px', paddingLeft: 10,
-  borderLeft: `3px solid ${teal[500]}`
-};
-
-const btnGhostStyle: React.CSSProperties = {
-  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
-  padding: '9px 18px', borderRadius: 10, cursor: 'pointer',
-  background: '#fff', border: `1px solid ${hairline}`, color: inkSoft,
-  display: 'flex', alignItems: 'center', gap: 7, transition: 'all .15s ease'
-};
-
-const btnPrimaryStyle: React.CSSProperties = {
-  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
-  padding: '9px 18px', borderRadius: 10, cursor: 'pointer', border: '1px solid transparent',
-  background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`,
-  color: '#fff', display: 'flex', alignItems: 'center', gap: 7,
-  boxShadow: `0 8px 20px -8px rgba(15,84,76,.6)`,
-  transition: 'all .15s ease'
-};
+import { adminLifecycle, type PortalCredentials } from '../../../services/adminPortalClient';
 
 interface CustomerWorkspaceProps {
   customer: Customer;
@@ -107,359 +38,765 @@ interface CustomerWorkspaceProps {
   onEdit: (customer: Customer) => void;
 }
 
+type RefTab = 'overview' | 'invoices' | 'payments' | 'accounting' | 'wallet' | 'referrals' | 'documents' | 'activity';
+
+const PROFILE_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+.cp-root{
+  --ink:#1C2321; --paper:#EDE9DD; --card:#FBFAF6; --line:#DEDACB; --line-soft:#E9E5D8;
+  --teal:#1F5F53; --teal-deep:#153F37; --teal-bg:#E4EEEA;
+  --amber:#A8631E; --amber-bg:#F5E9DA; --red:#C0392B; --red-bg:#F3E1DC;
+  --green:#15803D; --muted:#726F63; --cream:#F4F0E4;
+  min-height:100vh; background:var(--paper);
+  font-family:'Space Grotesk',sans-serif; color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+}
+.cp-root a{color:inherit;text-decoration:none;}
+.cp-root button{font-family:inherit;}
+
+/* ============ top bar ============ */
+.cp-topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 20px; gap:16px;
+  border-bottom:1px solid var(--line);
+  background:var(--card);
+  position:sticky; top:0; z-index:40;
+}
+.cp-breadcrumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);min-width:0;flex:1;}
+.cp-breadcrumb a{color:var(--muted);white-space:nowrap;}
+.cp-breadcrumb a:hover{color:var(--ink);}
+.cp-breadcrumb button.cp-crumb-btn{background:none;border:none;padding:0;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap;}
+.cp-breadcrumb button.cp-crumb-btn:hover{color:var(--ink);}
+.cp-breadcrumb .cp-sep{opacity:.5;flex:none;}
+.cp-breadcrumb .cp-current{color:var(--ink);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cp-topbar-actions{display:flex;gap:10px;align-items:center;flex:none;}
+.cp-btn{
+  font-size:13px;font-weight:500;padding:9px 14px;border-radius:8px;cursor:pointer;
+  display:flex;align-items:center;gap:7px;
+  transition:background .15s ease,border-color .15s ease,transform .1s ease;
+  border:1px solid transparent; white-space:nowrap;
+}
+.cp-btn:active{transform:scale(.97);}
+.cp-btn svg{width:14px;height:14px;flex:none;}
+.cp-btn-primary{background:var(--ink);color:var(--cream);border-color:var(--ink);}
+.cp-btn-primary:hover{background:#000;}
+.cp-btn-secondary{background:transparent;color:var(--ink);border-color:var(--line);}
+.cp-btn-secondary:hover{border-color:var(--ink);background:var(--cream);}
+.cp-btn-ghost{background:transparent;color:var(--muted);border-color:transparent;padding:9px;}
+.cp-btn-ghost:hover{background:var(--line-soft);color:var(--ink);}
+.cp-kebab-wrap{position:relative;}
+.cp-kebab-menu{
+  position:absolute;right:0;top:calc(100% + 8px);width:230px;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 16px 40px -12px rgba(21,33,29,.32);overflow:hidden;z-index:60;
+  animation:cpPop .14s ease;
+}
+@keyframes cpPop{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+.cp-kebab-menu button{
+  display:flex;width:100%;align-items:center;gap:10px;padding:10px 14px;
+  background:transparent;border:none;border-bottom:1px solid var(--line-soft);
+  font-size:12.5px;font-weight:500;color:var(--ink);cursor:pointer;text-align:left;
+}
+.cp-kebab-menu button:last-child{border-bottom:none;}
+.cp-kebab-menu button:hover{background:var(--teal-bg);color:var(--teal);}
+.cp-kebab-menu button svg{width:14px;height:14px;}
+.cp-kebab-menu .cp-sep{height:1px;background:var(--line-soft);}
+
+/* ============ page layout ============ */
+.cp-page{
+  max-width:none;margin:0;padding:20px 20px 48px;
+  display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;
+}
+
+/* ============ left column ============ */
+.cp-side{position:sticky;top:80px;display:flex;flex-direction:column;gap:16px;min-width:0;}
+.cp-panel{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+.cp-profile-head{
+  background:linear-gradient(155deg, var(--teal-deep), var(--teal) 130%);
+  padding:22px 20px 18px;color:var(--cream);position:relative;overflow:hidden;
+}
+.cp-profile-head::before{
+  content:"";position:absolute;inset:0;
+  background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 2px, transparent 2px 26px);
+}
+.cp-avatar-lg{
+  position:relative;width:52px;height:52px;border-radius:50%;
+  background:var(--cream);color:var(--teal-deep);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Fraunces',serif;font-weight:700;font-size:18px;
+  box-shadow:0 0 0 3px rgba(244,240,228,.22);margin-bottom:12px;
+}
+.cp-profile-head h1{
+  position:relative;font-family:'Fraunces',serif;font-weight:600;font-size:19px;
+  margin:0 0 6px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;
+}
+.cp-profile-head .cp-meta{
+  position:relative;font-size:12px;color:rgba(244,240,228,.75);
+  display:flex;align-items:center;gap:7px;margin-bottom:12px;
+}
+.cp-profile-head .cp-meta .cp-dot{opacity:.5;}
+.cp-status-pill{
+  position:relative;display:inline-flex;align-items:center;gap:6px;
+  font-size:11px;font-weight:500;padding:5px 11px;border-radius:100px;
+  background:rgba(244,240,228,.16);color:var(--cream);
+  border:1px solid rgba(244,240,228,.2);
+}
+.cp-status-dot{width:6px;height:6px;border-radius:50%;background:#8FE3C8;box-shadow:0 0 0 3px rgba(143,227,200,.22);flex:none;}
+
+.cp-info-list{padding:6px 4px;}
+.cp-info-row{
+  display:flex;align-items:center;gap:10px;padding:11px 16px;font-size:13px;
+  border-bottom:1px solid var(--line-soft);cursor:default;background:none;border-left:none;border-right:none;border-top:none;
+  width:100%;text-align:left;font-family:inherit;color:var(--ink);
+}
+.cp-info-row:last-child{border-bottom:none;}
+.cp-info-row svg{width:14px;height:14px;color:var(--muted);flex:none;}
+.cp-info-row .cp-txt{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;}
+.cp-info-row .cp-txt .cp-l{font-size:10.5px;color:var(--muted);}
+.cp-info-row .cp-txt .cp-v{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cp-info-row.cp-clickable{cursor:pointer;transition:background .15s ease;}
+.cp-info-row.cp-clickable:hover{background:var(--teal-bg);}
+.cp-info-row .cp-copied-flag{font-size:10.5px;color:var(--teal);display:none;margin-left:auto;flex:none;}
+.cp-info-row.cp-copied-state .cp-copied-flag{display:inline;}
+
+.cp-panel-title{font-size:11px;color:var(--muted);padding:14px 16px 4px;}
+.cp-fact-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 16px;font-size:12.5px;}
+.cp-fact-row .cp-l{color:var(--muted);flex:none;}
+.cp-fact-row .cp-v{font-weight:500;text-align:right;overflow:hidden;text-overflow:ellipsis;}
+.cp-rotate-btn{
+  margin:12px 16px 16px;width:calc(100% - 32px);
+  font-size:12px;font-weight:500;color:var(--ink);
+  background:transparent;border:1px solid var(--line);border-radius:8px;
+  padding:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.cp-rotate-btn svg{width:12px;height:12px;}
+.cp-rotate-btn:hover:not(:disabled){border-color:var(--ink);background:var(--cream);}
+.cp-rotate-btn:disabled{opacity:.6;cursor:default;}
+.cp-spin{animation:cpSpin 1s linear infinite;}
+@keyframes cpSpin{to{transform:rotate(360deg);}}
+.cp-portal-err{margin:0 16px 12px;font-size:11px;color:var(--red);line-height:1.5;}
+
+.cp-quick-grid{display:grid;grid-template-columns:1fr 1fr;}
+.cp-quick-grid button{
+  background:var(--card);border:none;
+  border-right:1px solid var(--line-soft);border-top:1px solid var(--line-soft);
+  padding:14px 6px;font-size:11.5px;font-weight:500;color:var(--ink);
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:7px;
+  transition:background .15s ease,color .15s ease;
+}
+.cp-quick-grid button:nth-child(2n){border-right:none;}
+.cp-quick-grid button:hover{background:var(--teal-bg);color:var(--teal);}
+.cp-quick-grid svg{width:16px;height:16px;}
+
+/* ============ main column ============ */
+.cp-main{display:flex;flex-direction:column;gap:20px;min-width:0;}
+.cp-stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.cp-stat-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;min-width:0;}
+.cp-stat-card .cp-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.cp-stat-card .cp-label{font-size:11px;color:var(--muted);}
+.cp-stat-card .cp-icon{width:14px;height:14px;color:var(--muted);opacity:.7;}
+.cp-stat-card .cp-amount{font-family:'Fraunces',serif;font-weight:600;font-size:21px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cp-stat-card .cp-amount .cp-code{font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:500;color:var(--muted);margin-right:3px;}
+.cp-stat-card.cp-due .cp-amount{color:var(--red);}
+.cp-stat-card.cp-due .cp-amount .cp-code{color:var(--red);}
+.cp-stat-card.cp-wallet .cp-amount{color:var(--green);}
+.cp-stat-card.cp-wallet .cp-amount .cp-code{color:var(--green);}
+.cp-stat-card .cp-delta{font-size:11px;color:var(--muted);margin-top:6px;}
+.cp-stat-card .cp-delta.cp-up{color:var(--red);}
+.cp-stat-card .cp-delta.cp-down{color:var(--teal);}
+.cp-stat-card.cp-wallet .cp-delta{color:var(--green);}
+.cp-stat-card.cp-due .cp-delta{color:var(--red);}
+.cp-stat-card.cp-due.cp-paid .cp-amount{color:var(--green);}
+.cp-stat-card.cp-due.cp-paid .cp-delta{color:var(--green);}
+
+/* ============ tabs ============ */
+.cp-tabs{
+  display:flex;gap:2px;border-bottom:1px solid var(--line);
+  padding:0 4px;overflow-x:auto;scrollbar-width:none;
+}
+.cp-tabs::-webkit-scrollbar{display:none;}
+.cp-tab{
+  display:flex;align-items:center;gap:7px;background:none;border:none;
+  padding:11px 15px;font-size:13px;font-weight:500;color:var(--muted);
+  cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;
+  transition:color .15s ease;white-space:nowrap;flex:none;
+}
+.cp-tab svg{width:14px;height:14px;opacity:.75;}
+.cp-tab:hover{color:var(--ink);}
+.cp-tab.cp-active{color:var(--ink);border-bottom-color:var(--teal);}
+.cp-tab.cp-active svg{opacity:1;}
+
+.cp-card-block{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+.cp-card-block-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 20px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap;
+}
+.cp-card-block-head h3{font-family:'Fraunces',serif;font-weight:600;font-size:15px;margin:0;}
+.cp-card-block-head .cp-note{font-size:12px;color:var(--muted);}
+.cp-card-block-head .cp-head-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.cp-mini-btn{
+  font-size:12px;font-weight:500;padding:7px 12px;border-radius:7px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;
+  background:transparent;color:var(--ink);border:1px solid var(--line);
+}
+.cp-mini-btn svg{width:12px;height:12px;}
+.cp-mini-btn:hover{border-color:var(--ink);background:var(--cream);}
+
+/* balance trend */
+.cp-trend{padding:20px 20px 6px;}
+.cp-trend-bars{display:flex;align-items:flex-end;gap:10px;height:120px;}
+.cp-trend-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end;min-width:0;}
+.cp-trend-bar{width:100%;border-radius:5px 5px 2px 2px;background:var(--teal-bg);position:relative;min-height:6px;}
+.cp-trend-bar.cp-paid{background:var(--teal-bg);}
+.cp-trend-bar.cp-paid::after{content:"";position:absolute;bottom:0;left:0;right:0;background:var(--teal);border-radius:5px 5px 2px 2px;height:100%;opacity:.85;}
+.cp-trend-bar.cp-due{background:var(--amber-bg);}
+.cp-trend-bar.cp-due::after{content:"";position:absolute;bottom:0;left:0;right:0;background:var(--amber);border-radius:5px 5px 2px 2px;height:100%;}
+.cp-trend-label{font-size:10.5px;color:var(--muted);}
+.cp-trend-legend{display:flex;gap:16px;padding:14px 0 18px;font-size:11.5px;color:var(--muted);flex-wrap:wrap;}
+.cp-trend-legend span{display:flex;align-items:center;gap:6px;}
+.cp-swatch{width:8px;height:8px;border-radius:2px;flex:none;}
+
+/* timeline */
+.cp-timeline{padding:6px 0;}
+.cp-t-row{display:flex;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line-soft);}
+.cp-t-row:last-child{border-bottom:none;}
+.cp-t-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none;}
+.cp-t-icon svg{width:13px;height:13px;}
+.cp-t-icon.cp-pay{background:var(--teal-bg);color:var(--teal);}
+.cp-t-icon.cp-inv{background:var(--amber-bg);color:var(--amber);}
+.cp-t-icon.cp-sys{background:var(--line-soft);color:var(--muted);}
+.cp-t-content{flex:1;min-width:0;}
+.cp-t-title{font-size:13px;font-weight:500;}
+.cp-t-desc{font-size:12px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;}
+.cp-t-time{font-size:11px;color:var(--muted);flex:none;white-space:nowrap;}
+
+/* tables */
+.cp-table-scroll{overflow-x:auto;}
+.cp-table-scroll table{width:100%;border-collapse:collapse;font-size:13px;min-width:620px;}
+.cp-table-scroll thead th{
+  text-align:left;font-weight:500;color:var(--muted);font-size:11px;
+  padding:10px 20px;border-bottom:1px solid var(--line-soft);white-space:nowrap;
+}
+.cp-table-scroll tbody td{padding:12px 20px;border-bottom:1px solid var(--line-soft);vertical-align:middle;}
+.cp-table-scroll tbody tr:last-child td{border-bottom:none;}
+.cp-table-scroll tbody tr:hover{background:var(--cream);}
+.cp-num{font-weight:500;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.cp-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:4px 9px;border-radius:100px;white-space:nowrap;}
+.cp-pill.cp-paid{background:var(--teal-bg);color:var(--teal);}
+.cp-pill.cp-pending{background:var(--amber-bg);color:var(--amber);}
+.cp-pill.cp-overdue{background:var(--red-bg);color:var(--red);}
+.cp-pill.cp-deposit{background:var(--teal-bg);color:var(--teal);}
+.cp-pill.cp-deduction{background:var(--red-bg);color:var(--red);}
+.cp-pill .cp-d{width:5px;height:5px;border-radius:50%;background:currentColor;flex:none;}
+.cp-dr{color:var(--red);}
+.cp-cr{color:var(--teal);}
+.cp-mono-small{font-size:11px;color:var(--muted);}
+
+/* accounting */
+.cp-account-pills{display:flex;gap:8px;padding:16px 20px 4px;flex-wrap:wrap;}
+.cp-account-pill{
+  font-size:12px;font-weight:500;padding:6px 12px;border-radius:100px;
+  border:1px solid var(--line);color:var(--muted);cursor:pointer;background:transparent;
+  transition:border-color .15s ease,color .15s ease,background .15s ease;
+}
+.cp-account-pill:hover{border-color:var(--ink);color:var(--ink);}
+.cp-account-pill.cp-active{background:var(--teal-deep);border-color:var(--teal-deep);color:var(--cream);}
+.cp-ledger-summary{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--line-soft);margin:16px 20px;border:1px solid var(--line-soft);border-radius:10px;overflow:hidden;
+}
+.cp-ledger-summary .cp-cell{background:var(--card);padding:13px 16px;min-width:0;}
+.cp-ledger-summary .cp-cell .cp-l{font-size:10.5px;color:var(--muted);margin-bottom:4px;}
+.cp-ledger-summary .cp-cell .cp-v{font-family:'Fraunces',serif;font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cp-ledger-summary .cp-cell .cp-v .cp-code{font-family:'Space Grotesk',sans-serif;font-size:10.5px;font-weight:500;color:var(--muted);margin-right:2px;}
+
+/* wallet */
+.cp-wallet-hero{
+  margin:18px 20px 6px;padding:20px;border-radius:12px;
+  background:linear-gradient(155deg, var(--teal-deep), var(--teal) 130%);
+  color:var(--cream);position:relative;overflow:hidden;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.cp-wallet-hero::before{content:"";position:absolute;inset:0;background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 2px, transparent 2px 26px);}
+.cp-wallet-hero .cp-l{position:relative;font-size:11.5px;color:rgba(244,240,228,.75);margin-bottom:6px;}
+.cp-wallet-hero .cp-v{position:relative;font-family:'Fraunces',serif;font-weight:700;font-size:28px;}
+.cp-wallet-hero .cp-v .cp-code{font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:500;color:rgba(244,240,228,.7);margin-right:5px;}
+.cp-wallet-hero .cp-top-up{
+  position:relative;background:var(--cream);color:var(--teal-deep);
+  font-size:13px;font-weight:500;padding:10px 16px;border-radius:8px;border:none;cursor:pointer;
+  display:flex;align-items:center;gap:7px;white-space:nowrap;
+}
+.cp-wallet-hero .cp-top-up:hover{background:#fff;}
+.cp-wallet-hero .cp-top-up svg{width:14px;height:14px;}
+.cp-wallet-mini{display:flex;gap:22px;position:relative;flex-wrap:wrap;}
+.cp-wallet-mini div{display:flex;flex-direction:column;gap:3px;}
+.cp-wallet-mini .cp-l{font-size:10.5px;color:rgba(244,240,228,.65);}
+.cp-wallet-mini .cp-v{font-size:14px;font-weight:600;font-family:'Space Grotesk',sans-serif;}
+
+/* referrals */
+.cp-ref-summary{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  background:var(--line-soft);margin:18px 20px;border:1px solid var(--line-soft);border-radius:10px;overflow:hidden;
+}
+.cp-ref-summary .cp-cell{background:var(--card);padding:14px 16px;min-width:0;}
+.cp-ref-summary .cp-cell .cp-l{font-size:10.5px;color:var(--muted);margin-bottom:5px;}
+.cp-ref-summary .cp-cell .cp-v{font-family:'Fraunces',serif;font-weight:600;font-size:17px;overflow:hidden;text-overflow:ellipsis;}
+.cp-ref-summary .cp-cell .cp-v.cp-mono{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;letter-spacing:.5px;}
+.cp-ref-summary .cp-cell .cp-v .cp-code{font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:500;color:var(--muted);margin-right:2px;}
+.cp-ref-list{padding:4px 0;}
+.cp-ref-row{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line-soft);}
+.cp-ref-row:last-child{border-bottom:none;}
+.cp-ref-avatar{
+  width:32px;height:32px;border-radius:50%;background:var(--teal-bg);color:var(--teal);
+  display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;flex:none;
+  font-family:'Fraunces',serif;
+}
+.cp-ref-body{flex:1;min-width:0;}
+.cp-ref-name{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cp-ref-sub{font-size:11.5px;color:var(--muted);margin-top:1px;}
+.cp-ref-reward{text-align:right;flex:none;}
+.cp-ref-reward .cp-amt{font-size:13px;font-weight:600;}
+.cp-ref-reward .cp-amt.cp-pos{color:var(--teal);}
+.cp-empty{padding:28px 20px;text-align:center;color:var(--muted);font-size:13px;}
+
+/* documents */
+.cp-doc-section-title{padding:16px 20px 4px;font-size:11px;color:var(--muted);}
+.cp-doc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:8px 20px 20px;}
+.cp-doc-card{
+  border:1px solid var(--line-soft);border-radius:10px;padding:14px;
+  display:flex;flex-direction:column;gap:10px;cursor:pointer;background:transparent;
+  transition:border-color .15s ease,background .15s ease;text-align:left;width:100%;
+  font-family:inherit;color:var(--ink);font-size:12.5px;
+}
+.cp-doc-card:hover{border-color:var(--line);background:var(--cream);}
+.cp-doc-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;}
+.cp-doc-icon svg{width:16px;height:16px;}
+.cp-doc-icon.cp-pdf{background:var(--red-bg);color:var(--red);}
+.cp-doc-icon.cp-report{background:var(--teal-bg);color:var(--teal);}
+.cp-doc-icon.cp-upload{background:var(--amber-bg);color:var(--amber);}
+.cp-doc-name{font-size:12.5px;font-weight:500;line-height:1.3;}
+.cp-doc-meta{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.cp-doc-dl{color:var(--muted);display:inline-flex;}
+.cp-doc-dl:hover{color:var(--ink);}
+.cp-doc-dl svg{width:13px;height:13px;}
+
+/* statement modal */
+.cp-modal-overlay{
+  position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+  padding:16px;background:rgba(28,35,33,.45);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.cp-modal-card{
+  background:var(--card);border-radius:14px;
+  box-shadow:0 25px 60px -12px rgba(0,0,0,.4);
+  width:100%;max-width:1100px;height:88vh;max-height:88vh;
+  display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line);
+}
+.cp-modal-head{
+  padding:14px 22px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;background:var(--cream);gap:12px;
+}
+.cp-modal-head h3{margin:0;font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;font-family:'Fraunces',serif;}
+.cp-modal-head h3 svg{width:17px;height:17px;color:var(--teal);}
+.cp-modal-x{
+  width:30px;height:30px;border-radius:8px;border:1px solid var(--line);
+  background:var(--card);color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;
+}
+.cp-modal-x:hover{color:var(--ink);border-color:var(--ink);}
+.cp-modal-body{flex:1;background:var(--paper);padding:14px;overflow:hidden;min-height:0;}
+.cp-modal-body iframe{width:100%;height:100%;border-radius:8px;background:#fff;border:1px solid var(--line);}
+.cp-modal-foot{
+  padding:12px 22px;border-top:1px solid var(--line);background:var(--cream);
+  display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;
+}
+.cp-creds-card{max-width:420px !important;height:auto !important;}
+.cp-creds-head{
+  position:relative;background:linear-gradient(155deg, var(--teal-deep), var(--teal) 130%);
+  padding:20px 22px 18px;color:var(--cream);overflow:hidden;
+}
+.cp-creds-head::before{content:"";position:absolute;inset:0;background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 2px, transparent 2px 26px);}
+.cp-creds-head h3{margin:0;font-family:'Fraunces',serif;font-size:17px;font-weight:600;position:relative;}
+.cp-creds-head p{margin:4px 0 0;font-size:12px;color:rgba(244,240,228,.75);line-height:1.45;position:relative;}
+.cp-creds-body{padding:16px 22px 18px;display:flex;flex-direction:column;gap:8px;}
+.cp-cred-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:11px 14px;background:var(--cream);border:1px solid var(--line-soft);border-radius:10px;
+}
+.cp-cred-row.cp-amber{background:#FBF3E2;border-color:#EAD9B8;}
+.cp-cred-label{font-size:10px;font-weight:600;letter-spacing:.06px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
+.cp-cred-row.cp-amber .cp-cred-label{color:var(--amber);}
+.cp-cred-val{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;}
+.cp-copy-btn{
+  flex:none;width:32px;height:32px;border-radius:8px;border:1px solid var(--line);
+  background:var(--card);color:var(--muted);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.cp-copy-btn:hover{color:var(--teal);border-color:var(--teal);}
+.cp-copy-btn svg{width:14px;height:14px;}
+
+/* ============ responsive ============ */
+@media (max-width:960px){
+  .cp-page{grid-template-columns:1fr;padding:16px 16px 40px;}
+  .cp-side{position:static;}
+  .cp-stat-grid{grid-template-columns:1fr 1fr;}
+  .cp-ledger-summary{grid-template-columns:1fr 1fr;}
+  .cp-ref-summary{grid-template-columns:1fr 1fr;}
+  .cp-doc-grid{grid-template-columns:1fr 1fr;}
+}
+@media (max-width:640px){
+  .cp-topbar{padding:8px 12px;gap:10px;flex-wrap:wrap;}
+  .cp-breadcrumb{font-size:12px;}
+  .cp-crumb-mid{display:none;}
+  .cp-btn{padding:8px 11px;font-size:12px;}
+  .cp-btn .cp-btn-label{display:none;}
+  .cp-btn .cp-btn-label-always{display:inline;}
+  .cp-page{padding:12px 12px 32px;gap:16px;}
+  .cp-stat-grid{grid-template-columns:1fr 1fr;gap:10px;}
+  .cp-stat-card{padding:13px 14px;}
+  .cp-trend-bars{gap:6px;}
+  .cp-trend-label{font-size:9.5px;}
+  .cp-stat-card .cp-amount{font-size:18px;}
+  .cp-ledger-summary{grid-template-columns:1fr;margin:12px 14px;}
+  .cp-ref-summary{grid-template-columns:1fr 1fr;margin:12px 14px;}
+  .cp-account-pills{padding:12px 14px 2px;}
+  .cp-doc-grid{grid-template-columns:1fr;padding:8px 14px 14px;}
+  .cp-doc-section-title{padding:12px 14px 2px;}
+  .cp-card-block-head{padding:13px 14px;}
+  .cp-trend{padding:14px 14px 4px;}
+  .cp-t-row{padding:12px 14px;}
+  .cp-wallet-hero{margin:12px 14px 4px;padding:16px;}
+  .cp-wallet-hero .cp-v{font-size:24px;}
+  .cp-profile-head{padding:20px 18px 16px;}
+  .cp-modal-card{height:92vh;max-height:92vh;}
+}
+@media (max-width:420px){
+  .cp-ref-summary{grid-template-columns:1fr;}
+  .cp-stat-grid{grid-template-columns:1fr;}
+}
+`;
+
+const fmtMoney = (n: number) =>
+  (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const initialsOf = (name: string) =>
+  ((name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w.charAt(0)?.toUpperCase()).join('')) || '?';
+
 export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, onBack, onEdit }) => {
   const navigate = useNavigate();
-  const { invoices, ledger, accounts, walletTransactions } = useFinance();
+  const { invoices, walletTransactions } = useFinance();
   const { refreshAllData } = useData();
-  
-  // 5-minute poll + focus refresh
   useModuleRefresh(refreshAllData, { interval: REFRESH_INTERVAL });
-  const { customerPayments = [], sales, quotations, updateCustomer } = useSales();
-  const { addAuditLog, companyConfig, auditLogs, notify } = useAuth();
-  const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
-  
+  const { customers = [], customerPayments = [], updateCustomer } = useSales();
+  const { addAuditLog, companyConfig, auditLogs, notify, user } = useAuth() as any;
+  const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'MWK ';
+  const currencyCode = (customer as any).currency || companyConfig?.currency || 'MWK';
+
   const customerDisplayName = getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name });
-  const customerContactName = getCustomerContactName({ contactName: customer.contactName });
+  const initials = initialsOf(customerDisplayName);
+  // Real segment from the customer record; 'Individual' is the system default (ClientModal)
+  const segmentLabel = customer.segment || (customer as any).customerType || 'Individual';
 
-  const [activeTab, setActiveTab] = useState<'Overview' | 'Timeline' | 'Invoices' | 'Payments' | 'Ledger' | 'Accounting' | 'Wallet' | 'Referrals' | 'Documents' | 'Segmentation' | 'Settings' | 'Security Audit'>('Overview');
-  const [accountMenu, setAccountMenu] = useState<{ id: string, type: 'debit' | 'credit', x: number, y: number } | null>(null);
-  const [viewingAccountId, setViewingAccountId] = useState<string | null>(null);
-  const [referrals, setReferrals] = useState<Referral[]>([]);
-  const [referralRewards, setReferralRewards] = useState<ReferralReward[]>([]);
-  const [referralTimeline, setReferralTimeline] = useState<ReferralTimelineEntry[]>([]);
-  const [referralAuditEntries, setReferralAuditEntries] = useState<ReferralAuditEntry[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.innerHTML = `
-      .white-card {
-        background: #FFFFFF;
-        border: 1px solid #E8E5DF;
-        border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-        transition: box-shadow .18s ease, border-color .18s ease;
-      }
-      .white-card:hover {
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-      }
-      .settings-section-header {
-        padding: 16px 24px;
-        border-bottom: 1px solid #E8E5DF;
-        background: #FAFAF8;
-        border-top-left-radius: 12px;
-        border-top-right-radius: 12px;
-      }
-      .customer-workspace input:not([type=checkbox]):not([type=radio]):not([type=range]),
-      .customer-workspace textarea,
-      .customer-workspace select {
-        transition: border-color .15s ease, box-shadow .15s ease !important;
-      }
-      .customer-workspace input:not([type=checkbox]):not([type=radio]):not([type=range]):focus,
-      .customer-workspace textarea:focus,
-      .customer-workspace select:focus {
-        outline: none;
-        border-color: #1f8577 !important;
-        box-shadow: 0 0 0 3px rgba(31,133,119,0.18) !important;
-      }
-      .toggle-input {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border-width: 0;
-      }      .toggle-track {
-        width: 40px; height: 22px; background: #d1d5db;
-        border-radius: 9999px;
-        position: relative;
-        transition: background 0.2s ease;
-        cursor: pointer;
-        flex-shrink: 0;
-      }
-      .toggle-track::after {
-        content: '';
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        width: 18px;
-        height: 18px;
-        background: #ffffff;
-        border-radius: 50%;
-        transition: transform 0.2s ease;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      }
-      .toggle-input:checked + .toggle-track {
-        background: #1f8577;
-      }
-      .toggle-input:checked + .toggle-track::after {
-        transform: translateX(20px);
-      }
-    `;
-    document.head.appendChild(style);
-    return () => { document.head.removeChild(style); };
-  }, []);
-
-  useEffect(() => {
-    if (!customer?.id) return
-    referralService.getReferralsByReferrer(customer.id).then(setReferrals).catch(() => {})
-    referralService.getRewardsByCustomer(customer.id).then(setReferralRewards).catch(() => {})
-    Promise.all([
-      (async () => {
-        const timeline = await referralTimelineService.getAllTimeline(50)
-        setReferralTimeline(timeline.filter(t => {
-          const ref = referrals.find(r => r.id === t.referralId)
-          return ref?.referredById === customer.id
-        }))
-      })()
-    ]).catch(() => {})
-    referralAuditService.getAll(50).then(all => setReferralAuditEntries(all)).catch(() => {})
-  }, [customer?.id])
-
-  // Memoized transactions for viewingAccountId
-  const accountTransactions = useMemo(() => {
-    if (!viewingAccountId) return [];
-    return (ledger || []).filter(entry =>
-      (entry.debitAccountId === viewingAccountId || entry.creditAccountId === viewingAccountId) &&
-      (entry.customerId === customer.id || entry.description?.includes(customer.name))
-    ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [viewingAccountId, ledger, customer]);
-
-  // Ledger Filters
-  const [ledgerStartDate, setLedgerStartDate] = useState<string>('');
-  const [ledgerEndDate, setLedgerEndDate] = useState<string>('');
-  const [ledgerTypeFilter, setLedgerTypeFilter] = useState<'All' | 'Invoice' | 'Payment'>('All');
-  const [ledgerSubAccountFilter, setLedgerSubAccountFilter] = useState<string>('All');
-
-  // UI State for placeholders
-  const [isTransactionMenuOpen, setIsTransactionMenuOpen] = useState(false);
-  const [isReminderSent, setIsReminderSent] = useState(false);
+  const [activeTab, setActiveTab] = useState<RefTab>('overview');
+  const [activeAccount, setActiveAccount] = useState('Accounts Receivable');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [copiedRow, setCopiedRow] = useState<string | null>(null);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [portalCreds, setPortalCreds] = useState<PortalCredentials | null>(null);
+  const [copiedCred, setCopiedCred] = useState<'email' | 'password' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [statementPdfUrl, setStatementPdfUrl] = useState<string | null>(null);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [referralRewards, setReferralRewards] = useState<ReferralReward[]>([]);
+  const [docs, setDocs] = useState<CustomerDocument[]>((customer as any).documents || []);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Filter data for this customer
-  const customerInvoices = useMemo(() =>
-    invoices.filter(inv => inv.customerId === customer.id || inv.customerName === customerDisplayName),
-    [invoices, customer, customerDisplayName]);
+  useEffect(() => {
+    setDocs(((customer as any).documents || []) as CustomerDocument[]);
+  }, [customer?.id]);
 
-  const customerPaymentsList = useMemo(() =>
-    customerPayments.filter(payment => payment.customerName === customerDisplayName),
-    [customerPayments, customer, customerDisplayName]);
+  useEffect(() => {
+    if (!customer?.id) return;
+    referralService.getReferralsByReferrer(customer.id).then(setReferrals).catch(() => {});
+    referralService.getRewardsByCustomer(customer.id).then(setReferralRewards).catch(() => {});
+  }, [customer?.id]);
 
-  const customerSales = useMemo(() =>
-    sales.filter(s => s.customerId === customer.id || s.customerName === customerDisplayName),
-    [sales, customer, customerDisplayName]);
-
-  const customerQuotes = useMemo(() =>
-    quotations.filter(q => q.customerName === customerDisplayName),
-    [quotations, customer, customerDisplayName]);
-
-  const customerLogs = useMemo(() =>
-    auditLogs.filter(log => log.entityId === customer.id || (log.details && log.details.includes(customerDisplayName))),
-    [auditLogs, customer, customerDisplayName]);
-
-  const customerLedger = useMemo(() =>
-    (ledger || []).filter(entry => entry.customerId === customer.id || entry.description?.includes(customerDisplayName)),
-    [ledger, customer, customerDisplayName]);
-
-  const customerWalletTransactions = useMemo(() =>
-    (walletTransactions || []).filter(tx => tx.customerId === customer.id),
-    [walletTransactions, customer]);
-
-  const menuGroups = [
-    {
-      title: 'Overview',
-      items: [
-        { id: 'Overview', icon: User, label: 'Overview', desc: 'KPI summary & client profile overview' },
-      ]
-    },
-    {
-      title: 'Financials',
-      items: [
-        { id: 'Invoices', icon: FileText, label: 'Invoices', desc: 'All invoices & outstanding balances' },
-        { id: 'Payments', icon: DollarSign, label: 'Payments', desc: 'Payment history & transaction records' },
-        { id: 'Ledger', icon: FileBarChart, label: 'Ledger', desc: 'Running balance & date-filtered entries' },
-        { id: 'Accounting', icon: Briefcase, label: 'Accounting', desc: 'Double-entry GL postings & account views' },
-        { id: 'Wallet', icon: CreditCard, label: 'Wallet', desc: 'Prepaid wallet deposits & deductions' },
-      ]
-    },
-    {
-      title: 'Growth',
-      items: [
-        { id: 'Referrals', icon: TrendingUp, label: 'Referrals', desc: 'Referral program & reward earnings' },
-      ]
-    },
-    {
-      title: 'Documents',
-      items: [
-        { id: 'Documents', icon: Paperclip, label: 'Documents', desc: 'Uploaded files & generated reports' },
-      ]
-    },
-    {
-      title: 'Management',
-      items: [
-        { id: 'Segmentation', icon: PieChart, label: 'Segmentation', desc: 'CRM segment rules & classification' },
-        { id: 'Settings', icon: Settings, label: 'Settings', desc: 'Billing terms, shipping & preferences' },
-        { id: 'Security Audit', icon: ShieldAlert, label: 'Security Audit', desc: 'Immutable client modification trail' },
-      ]
-    }
-  ];
-
-  const filteredGroups = menuGroups.map(group => ({
-    ...group,
-    items: group.items.filter(item =>
-      item.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.desc.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  })).filter(group => group.items.length > 0);
-
-  const activeGroupTitle = menuGroups.find(g => g.items.some(i => i.id === activeTab))?.title || 'Customer Profile';
-  const activeItemLabel = menuGroups.flatMap(g => g.items).find(i => i.id === activeTab)?.label || activeTab;
-
-  // Canonical ledger — single authoritative definition shared with the
-  // backend (services/customerLedger.ts). The stored customers.balance field
-  // is a deprecated cache and is no longer the financial source of truth.
-  const canonicalLedger = useMemo(
-    () => buildLedgerFromRecords({ customerId: customer.id, invoices: customerInvoices, payments: customerPaymentsList, openingBalance: Number(customer.balance || 0) }),
-    [customer.id, customer.balance, customerInvoices, customerPaymentsList]
+  const customerInvoices = useMemo(
+    () => invoices.filter(inv => inv.customerId === customer.id || (inv as any).customerName === customerDisplayName || (inv as any).customer === customerDisplayName),
+    [invoices, customer, customerDisplayName]
+  );
+  const customerPaymentsList = useMemo(
+    () => customerPayments.filter(p => (p as any).customerName === customerDisplayName || (p as any).customerId === customer.id),
+    [customerPayments, customer, customerDisplayName]
+  );
+  const customerLogs = useMemo(
+    () => auditLogs.filter(log => (log as any).entityId === customer.id || ((log as any).details && String((log as any).details).includes(customerDisplayName))),
+    [auditLogs, customer, customerDisplayName]
+  );
+  const customerWalletTransactions = useMemo(
+    () => (walletTransactions || []).filter(tx => (tx as any).customerId === customer.id),
+    [walletTransactions, customer]
   );
 
-  // KPIs — derived from the canonical ledger to stay consistent with the
-  // Ledger tab. Only invoices that pass isInvoiceIncluded() are counted.
+  const canonicalLedger = useMemo(
+    () => buildLedgerFromRecords({ customerId: customer.id, invoices: customerInvoices as any, payments: customerPaymentsList as any, openingBalance: Number((customer as any).balance || 0) }),
+    [customer.id, (customer as any).balance, customerInvoices, customerPaymentsList]
+  );
+
   const kpis = useMemo(() => {
-    // Use canonical ledger transactions (already filtered by validated rules)
     const includedInvoices = canonicalLedger.transactions.filter(t => t.type === 'invoice' || t.type === 'credit_note');
     const includedPayments = canonicalLedger.transactions.filter(t => t.type === 'payment');
-
     const totalInvoiced = includedInvoices.reduce((sum, t) => sum + t.debit, 0);
     const totalPaid = includedPayments.reduce((sum, t) => sum + t.credit, 0);
-
-    // Overdue: invoices included by the ledger that are past due date
     const overdueBalance = canonicalLedger.transactions
       .filter(t => {
-        if (t.type !== 'invoice') return false; // credit_notes are not overdue
-        const inv = customerInvoices.find(i => String(i.id) === t.id);
+        if (t.type !== 'invoice') return false;
+        const inv: any = customerInvoices.find(i => String((i as any).id) === t.id);
         const dueDate = inv?.dueDate || inv?.due_date;
-        return dueDate && isAfter(new Date(), parseISO(dueDate));
+        return dueDate && isAfter(new Date(), parseISO(String(dueDate)));
       })
       .reduce((sum, t) => sum + t.debit, 0);
-
-    // YTD: only included invoices from the current year
-    const currentYear = new Date().getFullYear();
-    const ytdSales = canonicalLedger.transactions
-      .filter(t => t.type === 'invoice' && t.date && new Date(t.date).getFullYear() === currentYear)
-      .reduce((sum, t) => sum + t.debit, 0);
-
-    const lastInvoice = customerInvoices.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-
+    const unpaidCount = customerInvoices.filter((inv: any) => (inv.status || '').toLowerCase() !== 'paid').length;
     return {
       balance: canonicalLedger.closingBalance,
-      overdueBalance,
-      creditLimit: customer.creditLimit || 0,
       outstandingBalance: canonicalLedger.outstandingBalance,
-      ytdSales,
-      lastInvoiceTotal: lastInvoice?.totalAmount || 0,
-      lastInvoiceDate: lastInvoice?.date || null
+      totalInvoiced, totalPaid, overdueBalance, unpaidCount,
     };
-  }, [customer, customerInvoices, canonicalLedger]);
+  }, [canonicalLedger, customerInvoices]);
 
   const { openingBalance, ledgerEntries } = useMemo(() => {
-    // Canonical ledger transactions (validated inclusion/sign/ordering rules),
-    // enriched with display-only metadata (memo, sub-account) from the raw
-    // records. The running balances come exclusively from the canonical
-    // module — never recomputed locally.
-    const invMeta = new Map(customerInvoices.map(inv => [String(inv.id), inv]));
-    const payMeta = new Map(customerPaymentsList.map(p => [String(p.id), p]));
-
-    const entriesWithBalance = canonicalLedger.transactions.map(tx => {
+    const invMeta = new Map(customerInvoices.map((inv: any) => [String(inv.id), inv]));
+    const payMeta = new Map(customerPaymentsList.map((p: any) => [String(p.id), p]));
+    const entries = canonicalLedger.transactions.map(tx => {
       const meta: any = tx.type === 'payment' ? payMeta.get(tx.id) : invMeta.get(tx.id);
-      const subAccountId = meta?.subAccountId;
-      const accountName = subAccountId
-        ? customer.subAccounts?.find(s => s.id === subAccountId)?.name
-        : 'Main Account';
       return {
-        date: tx.date || '',
-        id: tx.id,
-        memo: meta?.memo || (tx.type === 'payment' ? 'Customer Payment' : 'Invoice'),
-        subAccountId,
+        date: tx.date || '', id: tx.id,
+        memo: meta?.memo || meta?.description || (tx.type === 'payment' ? 'Customer Payment' : 'Invoice'),
         type: tx.type === 'payment' ? 'Payment' : 'Invoice',
-        debit: tx.debit,
-        credit: tx.credit,
-        runningBalance: tx.balance,
-        accountName
+        debit: tx.debit, credit: tx.credit, runningBalance: tx.balance,
       };
     });
+    return { openingBalance: 0, ledgerEntries: entries };
+  }, [canonicalLedger, customerInvoices, customerPaymentsList]);
 
-    const startDate = ledgerStartDate ? parseISO(ledgerStartDate) : null;
-    const endDate = ledgerEndDate ? parseISO(ledgerEndDate) : null;
+  const movement = (canonicalLedger.closingBalance || 0) - (openingBalance || 0);
+  const wallet = Number((customer as any).walletBalance || 0);
+  const owing = (kpis.outstandingBalance || 0) > 0.5;
+  const portalActive = Boolean((customer as any).portalUserId) && (customer as any).portalStatus !== 'disabled';
+  const portalEmail = (customer as any).portalEmail || customer.email || '';
+  const totalDeposited = customerWalletTransactions.filter((t: any) => t.type === 'Deposit').reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+  const totalDeducted = customerWalletTransactions.filter((t: any) => t.type === 'Deduction').reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
 
-    // Undated entries sort to epoch 0 — matching the canonical module's
-    // deterministic ordering.
-    const tsOf = (s: string) => {
-      const t = new Date(s).getTime();
-      return Number.isFinite(t) ? t : 0;
-    };
-    const startT = startDate ? startDate.getTime() : null;
-    const endT = endDate ? endDate.getTime() : null;
-
-    // Opening balance is the balance of the last entry before the start date
-    const lastEntryBeforeStart = startT != null
-      ? entriesWithBalance.filter(e => tsOf(e.date) < startT!).pop()
-      : null;
-    const openingBal = lastEntryBeforeStart ? lastEntryBeforeStart.runningBalance : 0;
-
-    const filtered = entriesWithBalance.filter(item => {
-      const itemTs = tsOf(item.date);
-      const isAfterStart = startT == null || itemTs >= startT;
-      const isBeforeEnd = endT == null || itemTs <= endT;
-
-      const matchesType = ledgerTypeFilter === 'All' ||
-        (ledgerTypeFilter === 'Invoice' && item.type === 'Invoice') ||
-        (ledgerTypeFilter === 'Payment' && item.type === 'Payment');
-
-      const matchesAccount = ledgerSubAccountFilter === 'All' ||
-        (ledgerSubAccountFilter === 'Main' && !item.subAccountId) ||
-        (item.subAccountId === ledgerSubAccountFilter);
-
-      return isAfterStart && isBeforeEnd && matchesType && matchesAccount;
+  // Avg. days to pay — computed from real payment behaviour:
+  // paid invoices use paidAt (or the allocating payment's date); otherwise '—'.
+  const { avgPayDays, paidInvoiceCount } = useMemo(() => {
+    const days: number[] = [];
+    const allocDateByInvoice = new Map<string, number>();
+    customerPaymentsList.forEach((p: any) => {
+      const ts = +new Date(p.date);
+      if (!Number.isFinite(ts)) return;
+      (p.allocations || []).forEach((a: any) => {
+        if (!a?.invoiceId) return;
+        const prev = allocDateByInvoice.get(String(a.invoiceId));
+        if (prev == null || ts < prev) allocDateByInvoice.set(String(a.invoiceId), ts);
+      });
     });
+    customerInvoices.forEach((inv: any) => {
+      const isPaid = String(inv.status || '').toLowerCase() === 'paid' || Number(inv.paidAmount || 0) >= Number(inv.totalAmount || 0);
+      if (!isPaid) return;
+      const invTs = +new Date(inv.date);
+      if (!Number.isFinite(invTs)) return;
+      const paidTs = +new Date(inv.paidAt || '') ;
+      const ts = Number.isFinite(paidTs) ? paidTs : allocDateByInvoice.get(String(inv.id));
+      if (ts == null || !Number.isFinite(ts) || ts < invTs) return;
+      days.push(Math.round((ts - invTs) / 86400000));
+    });
+    if (days.length === 0) return { avgPayDays: null as number | null, paidInvoiceCount: 0 };
+    return { avgPayDays: Math.round(days.reduce((s, d) => s + d, 0) / days.length), paidInvoiceCount: days.length };
+  }, [customerInvoices, customerPaymentsList]);
 
-    return { openingBalance: openingBal, ledgerEntries: filtered };
-  }, [canonicalLedger, customerInvoices, customerPaymentsList, ledgerStartDate, ledgerEndDate, ledgerTypeFilter, ledgerSubAccountFilter, customer.subAccounts]);
+  // The shareable referral code IS the customer id — this matches the portal,
+  // which builds referral links as `#/portal/referrals?ref=<customerId>`
+  // (see CustomerReferrals). A stored override wins if one exists.
+  const referralCode = (customer as any).referralCode || customer.id;
+  const referralLink = typeof window !== 'undefined'
+    ? `${window.location.origin}/#/portal/referrals?ref=${encodeURIComponent(customer.id)}`
+    : '';
+  const [copiedReferral, setCopiedReferral] = useState<'code' | 'link' | null>(null);
+  const copyReferral = async (kind: 'code' | 'link') => {
+    try {
+      await navigator.clipboard.writeText(kind === 'code' ? referralCode : referralLink);
+      setCopiedReferral(kind);
+      setTimeout(() => setCopiedReferral(null), 1200);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  // Wallet running balances, reconstructed backwards from the live wallet
+  // balance so every row shows a real "balance after".
+  const walletRows = useMemo(() => {
+    const asc = customerWalletTransactions.slice().sort((a: any, b: any) => +new Date(a.date) - +new Date(b.date));
+    const net = asc.reduce((s: number, t: any) => s + (t.type === 'Deposit' ? 1 : -1) * Number(t.amount || 0), 0);
+    let running = wallet - net; // implied opening balance before shown history
+    return asc.map((tx: any, i: number) => {
+      running += (tx.type === 'Deposit' ? 1 : -1) * Number(tx.amount || 0);
+      return { tx, after: running, key: `${tx.id || tx.reference || 'tx'}-${i}` };
+    }).reverse();
+  }, [customerWalletTransactions, wallet]);
+
+  // Referred-account names resolved from the real customer records
+  // (Referral.customerId is the referred party; referredById is this customer).
+  const customerNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    (customers || []).forEach((c: any) => {
+      const nm = getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name });
+      map.set(String(c.id), nm || String(c.id));
+    });
+    return map;
+  }, [customers]);
+  const rewardByReferralId = useMemo(() => {
+    const map = new Map<string, any>();
+    referralRewards.forEach((r: any) => { if (r?.referralId && !map.has(String(r.referralId))) map.set(String(r.referralId), r); });
+    return map;
+  }, [referralRewards]);
+  const rewardsEarned = referralRewards.filter(r => r.status === 'paid' || (r as any).status === 'approved').reduce((s, r) => s + Number((r as any).amount || 0), 0);
+  const rewardsPending = referralRewards.filter(r => (r as any).status === 'pending').reduce((s, r) => s + Number((r as any).amount || 0), 0);
+
+  const trend = useMemo(() => {
+    const months: { label: string; invoiced: number; paid: number }[] = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = subMonths(now, i);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const label = format(d, 'MMM');
+      const invoiced = customerInvoices
+        .filter((inv: any) => { try { const dt = parseISO(String(inv.date)); return dt.getFullYear() === d.getFullYear() && dt.getMonth() === d.getMonth(); } catch { return false; } })
+        .reduce((s: number, inv: any) => s + Number(inv.totalAmount || 0), 0);
+      const paid = customerPaymentsList
+        .filter((p: any) => { try { const dt = parseISO(String(p.date)); return dt.getFullYear() === d.getFullYear() && dt.getMonth() === d.getMonth(); } catch { return false; } })
+        .reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+      months.push({ label, invoiced, paid, key } as any);
+    }
+    const max = Math.max(1, ...months.map(m => Math.max(m.invoiced, m.paid)));
+    return months.map(m => {
+      const top = Math.max(m.invoiced, m.paid);
+      const h = Math.max(10, Math.round((top / max) * 100));
+      const isDue = m.invoiced > m.paid;
+      return { ...m, height: h, isDue };
+    });
+  }, [customerInvoices, customerPaymentsList]);
+
+  const recentActivity = useMemo(() => {
+    const items: { kind: 'inv' | 'pay' | 'sys'; title: string; desc: string; time: string; ts: number }[] = [];
+    customerInvoices.slice().sort((a: any, b: any) => +new Date(b.date) - +new Date(a.date)).slice(0, 3).forEach((inv: any) => {
+      items.push({
+        kind: 'inv', title: `Invoice ${inv.id} raised`,
+        desc: `${currencyCode} ${fmtMoney(Number(inv.totalAmount || 0))}${inv.memo ? ` — ${inv.memo}` : ''}`,
+        time: safeDate(inv.date), ts: +new Date(inv.date),
+      });
+    });
+    customerPaymentsList.slice().sort((a: any, b: any) => +new Date(b.date) - +new Date(a.date)).slice(0, 2).forEach((p: any) => {
+      items.push({
+        kind: 'pay', title: 'Payment received',
+        desc: `${currencyCode} ${fmtMoney(Number(p.amount || 0))}${p.paymentMethod ? ` via ${p.paymentMethod}` : ''}`,
+        time: safeDate(p.date), ts: +new Date(p.date),
+      });
+    });
+    customerLogs.slice(0, 2).forEach((l: any) => {
+      items.push({ kind: 'sys', title: String(l.action || l.details || 'Activity').slice(0, 60), desc: String(l.details || '').slice(0, 90), time: safeDate(l.date), ts: +new Date(l.date) });
+    });
+    return items.sort((a, b) => b.ts - a.ts).slice(0, 5);
+  }, [customerInvoices, customerPaymentsList, customerLogs, currencyCode]);
+
+  const activityFeed = useMemo(() => {
+    const items: { kind: 'inv' | 'pay' | 'sys'; title: string; desc: string; time: string; ts: number }[] = [];
+    customerInvoices.forEach((inv: any) => items.push({
+      kind: 'inv', title: `Invoice ${inv.id} raised`,
+      desc: `${currencyCode} ${fmtMoney(Number(inv.totalAmount || 0))} — ${inv.status || 'Unpaid'}`,
+      time: safeDate(inv.date), ts: +new Date(inv.date),
+    }));
+    customerPaymentsList.forEach((p: any) => items.push({
+      kind: 'pay', title: 'Payment received',
+      desc: `${currencyCode} ${fmtMoney(Number(p.amount || 0))}${p.paymentMethod ? ` via ${p.paymentMethod}` : ''}`,
+      time: safeDate(p.date), ts: +new Date(p.date),
+    }));
+    customerLogs.forEach((l: any) => items.push({
+      kind: 'sys', title: String(l.action || 'System event'), desc: String(l.details || '').slice(0, 120),
+      time: safeDate(l.date), ts: +new Date(l.date),
+    }));
+    return items.sort((a, b) => b.ts - a.ts).slice(0, 30);
+  }, [customerInvoices, customerPaymentsList, customerLogs, currencyCode]);
+
+  function safeDate(d: any) {
+    try { return format(parseISO(String(d)), 'd MMM'); } catch { return '—'; }
+  }
+
+  const copyRow = async (key: string, text: string) => {
+    try { await navigator.clipboard.writeText(text); } catch { /* noop */ }
+    setCopiedRow(key);
+    setTimeout(() => setCopiedRow(null), 1200);
+  };
+
+  const handleRegeneratePassword = async () => {
+    const portalUserId = (customer as any).portalUserId;
+    if (portalBusy || !portalUserId) {
+      if (!portalUserId) {
+        // create instead
+        setPortalBusy(true); setPortalError(null);
+        try {
+          const result = await adminLifecycle.users.autoCreate({
+            customer_id: customer.id, name: customerDisplayName, email: customer.email, phone: customer.phone,
+          });
+          if (result?.user) {
+            if (result.generated_password) setPortalCreds({ email: result.user.email, password: result.generated_password });
+            updateCustomer({ ...customer, portalUserId: result.user.id, portalEmail: result.user.email, portalStatus: result.user.status || 'active' } as any).catch(() => {});
+          }
+        } catch (err: any) {
+          setPortalError(err?.body?.error || err?.message || 'Failed to create portal account');
+        } finally { setPortalBusy(false); }
+      }
+      return;
+    }
+    setPortalBusy(true); setPortalError(null);
+    try {
+      const result = await adminLifecycle.users.regeneratePassword(portalUserId, {
+        customer_id: customer.id, name: customerDisplayName, email: customer.email, phone: customer.phone,
+      });
+      setPortalCreds({ email: portalEmail, password: result.generated_password });
+    } catch (err: any) {
+      setPortalError(err?.body?.error || err?.message || 'Failed to rotate password');
+    } finally { setPortalBusy(false); }
+  };
+
+  const copyCred = async (field: 'email' | 'password') => {
+    if (!portalCreds) return;
+    try { await navigator.clipboard.writeText(portalCreds[field]); setCopiedCred(field); setTimeout(() => setCopiedCred(null), 1500); } catch { /* noop */ }
+  };
+
+  const toggleCreditHold = async () => {
+    try {
+      const newVal = !(customer as any).creditHold;
+      await updateCustomer({ ...customer, creditHold: newVal } as any);
+      await addAuditLog({ action: (newVal ? 'HOLD' : 'RELEASE') as any, entityType: 'Customer' as any, entityId: customer.id, details: `Credit hold ${newVal ? 'placed' : 'released'} by user` } as any);
+      notify(`Credit ${newVal ? 'hold placed' : 'hold released'} for ${customerDisplayName}`, 'success');
+      setMenuOpen(false);
+    } catch (err: any) {
+      notify(`Failed to update credit hold: ${err?.message || err}`, 'error');
+    }
+  };
 
   const handleExportLedger = () => {
-    const headers = ['Date', 'Reference', 'Description', 'Account', 'Debit', 'Credit', 'Balance'];
-    const rows = ledgerEntries.map(entry => {
-      const labeledEntry = entry as typeof entry & { debit: number; credit: number; runningBalance: number; accountName: string };
-      return [
-        labeledEntry.date,
-        labeledEntry.id,
-        labeledEntry.memo,
-        labeledEntry.subAccountId ? (customer.subAccounts?.find(s => s.id === labeledEntry.subAccountId)?.name || 'Sub-account') : 'Main Account',
-        labeledEntry.debit || 0,
-        labeledEntry.credit || 0,
-        labeledEntry.runningBalance || 0
-      ];
-    });
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const headers = ['Date', 'Reference', 'Description', 'Debit', 'Credit', 'Balance'];
+    const rows = ledgerEntries.map(e => [e.date, e.id, `"${(e.memo || '').replace(/"/g, '""')}"`, e.debit || 0, e.credit || 0, e.runningBalance || 0]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Ledger_${customerDisplayName}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    link.href = url;
+    link.download = `Ledger_${customerDisplayName}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    setMenuOpen(false);
   };
 
   const handlePreviewStatement = async () => {
@@ -467,1309 +804,712 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
       const statementData: StatementDoc = {
         date: new Date().toLocaleDateString('en-GB'),
         customerName: customerDisplayName,
-        startDate: ledgerStartDate || 'All Time',
-        endDate: ledgerEndDate || 'Present',
-        currency: currency,
+        startDate: 'All Time', endDate: 'Present', currency,
         openingBalance,
         transactions: ledgerEntries.map(e => ({
-          date: format(parseISO(e.date), 'dd/MM/yyyy'),
-          reference: e.id,
-          memo: e.memo || (e.type === 'Invoice' ? 'Invoice Payment' : 'Payment'),
-          debit: e.debit || 0,
-          credit: e.credit || 0,
-          runningBalance: e.runningBalance
+          date: (() => { try { return format(parseISO(e.date), 'dd/MM/yyyy'); } catch { return e.date; } })(),
+          reference: e.id, memo: e.memo || (e.type === 'Invoice' ? 'Invoice' : 'Payment'),
+          debit: e.debit || 0, credit: e.credit || 0, runningBalance: e.runningBalance,
         })),
-        totalInvoiced: ledgerEntries.reduce((sum, e) => sum + (e.debit || 0), 0),
-        totalReceived: ledgerEntries.reduce((sum, e) => sum + (e.credit || 0), 0),
+        totalInvoiced: ledgerEntries.reduce((s, e) => s + (e.debit || 0), 0),
+        totalReceived: ledgerEntries.reduce((s, e) => s + (e.credit || 0), 0),
         finalBalance: ledgerEntries.length > 0 ? ledgerEntries[ledgerEntries.length - 1].runningBalance : openingBalance,
       };
-
-      const securedStatementData = await attachDocumentSecurity(statementData, companyConfig?.companyName);
+      const secured = await attachDocumentSecurity(statementData, companyConfig?.companyName);
       await initializePrimePdfFonts();
-      const blob = await pdf(<PrimeDocument type="ACCOUNT_STATEMENT" data={securedStatementData as StatementDoc} />).toBlob();
-      const url = URL.createObjectURL(blob);
-      setStatementPdfUrl(url);
+      const blob = await pdf(<PrimeDocument type="ACCOUNT_STATEMENT" data={secured as StatementDoc} />).toBlob();
+      setStatementPdfUrl(URL.createObjectURL(blob));
       setIsStatementModalOpen(true);
     } catch (error) {
-      logger.error("PDF generation failed:", error);
-      alert("Failed to generate statement preview.");
+      logger.error('PDF generation failed:', error);
+      alert('Failed to generate statement preview.');
     }
   };
 
-  const toggleCreditHold = async () => {
+  const handleDocFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
     try {
-      const newVal = !customer.creditHold;
-      await updateCustomer({ ...customer, creditHold: newVal });
-      await addAuditLog({ action: newVal ? 'HOLD' : 'RELEASE' as const, entityType: 'Customer' as const, entityId: customer.id, details: `Credit hold ${newVal ? 'placed' : 'released'} by user` });
-      notify(`Credit ${newVal ? 'hold placed' : 'hold released'} for ${customerDisplayName}`, 'success');
+      let updated: Customer = { ...customer, documents: docs };
+      for (const f of Array.from(files)) {
+        updated = await customerDocumentsService.upload(updated, f, (user as any)?.name || (user as any)?.email);
+      }
+      await updateCustomer(updated);
+      setDocs(updated.documents || []);
+      notify(`${files.length} document${files.length === 1 ? '' : 's'} uploaded`, 'success');
     } catch (err: any) {
-      notify(`Failed to update credit hold: ${err?.message || err}`, 'error');
+      notify(`Upload failed: ${err?.message || err}`, 'error');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const handleDocDownload = async (doc: CustomerDocument) => {
+    try {
+      const url = await customerDocumentsService.resolveUrl(doc.fileRef);
+      if (!url) { notify('File is not available offline yet', 'error'); return; }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      notify('Could not download file', 'error');
+    }
+  };
+
+  const handleDocRemove = async (doc: CustomerDocument) => {
+    try {
+      const updated = customerDocumentsService.remove({ ...customer, documents: docs }, doc.id);
+      await updateCustomer(updated);
+      setDocs(updated.documents || []);
+      notify('Document removed', 'success');
+    } catch (err: any) {
+      notify(`Remove failed: ${err?.message || err}`, 'error');
+    }
+  };
+
+  const [downloadingDoc, setDownloadingDoc] = useState<string | null>(null);
+
+  const downloadInvoicePdf = async (inv: any) => {
+    const key = `inv-${inv.id}`;
+    if (downloadingDoc) return;
+    setDownloadingDoc(key);
+    try {
+      const config = await hydrateCompanyPdfAssets(getStoredCompanyConfig());
+      const enriched = enrichDocumentCustomerData(
+        { ...inv, customerName: inv.customerName || customerDisplayName },
+        customers as any
+      );
+      const mapped = mapToInvoiceData(enriched, config, 'INVOICE');
+      const secured = await attachDocumentSecurity(mapped, (config as any)?.companyName);
+      const blob = await generatePrimeDocumentBlob('INVOICE', secured as PrimeDocData, config);
+      downloadBlob(blob, `Invoice - ${inv.invoiceNumber || inv.id}.pdf`);
+      notify(`Invoice ${inv.id} downloaded`, 'success');
+    } catch (err) {
+      logger.error('Invoice PDF download failed:', err);
+      notify('Failed to generate invoice PDF', 'error');
+    } finally {
+      setDownloadingDoc(null);
+    }
+  };
+
+  const downloadReceiptPdf = async (p: any) => {
+    const key = `rcpt-${p.id}`;
+    if (downloadingDoc) return;
+    setDownloadingDoc(key);
+    try {
+      const config = await hydrateCompanyPdfAssets(getStoredCompanyConfig());
+      const formatted = buildCustomerReceiptDoc({
+        payment: p,
+        customerName: customerDisplayName,
+        currentBalance: kpis.outstandingBalance,
+        currencySymbol: currency,
+        appliedOrders: (p as any).orderAllocations?.map((a: any) => a.orderId) || [],
+      });
+      const parsed = ReceiptSchema.safeParse(formatted);
+      if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || 'Invalid receipt payload');
+      const secured = await attachDocumentSecurity(parsed.data, (config as any)?.companyName);
+      const blob = await generatePrimeDocumentBlob('RECEIPT', secured as PrimeDocData, config);
+      downloadBlob(blob, `Receipt - ${p.id}.pdf`);
+      notify(`Receipt ${p.id} downloaded`, 'success');
+    } catch (err) {
+      logger.error('Receipt PDF download failed:', err);
+      notify('Failed to generate receipt PDF', 'error');
+    } finally {
+      setDownloadingDoc(null);
+    }
+  };
+
+  const goInvoice = () => { navigate('/sales-flow/invoices', { state: { action: 'create', customer: customer.name, customerId: customer.id } }); setMenuOpen(false); };
+  const goQuote = () => { navigate('/sales-flow/orders', { state: { action: 'create', customer: customer.name, customerId: customer.id } }); setMenuOpen(false); };
+  const goPayment = () => { navigate('/sales-flow/payments', { state: { action: 'create', customer: customer.name, customerId: customer.id } }); setMenuOpen(false); };
+  const goChat = () => { if (customer.phone) window.open(`https://wa.me/${String(customer.phone).replace(/[^0-9]/g, '')}`, '_blank'); };
+
+  const invoiceStatus = (inv: any): 'paid' | 'pending' | 'overdue' => {
+    const s = String(inv.status || '').toLowerCase();
+    if (s === 'paid' || s === 'cleared') return 'paid';
+    const due = inv.dueDate || inv.due_date;
+    if (due) { try { if (isAfter(new Date(), parseISO(String(due)))) return 'overdue'; } catch { /* noop */ } }
+    if (s === 'overdue') return 'overdue';
+    return 'pending';
+  };
+  const statusLabel = (inv: any) => {
+    const k = invoiceStatus(inv);
+    return k === 'paid' ? 'Paid' : k === 'overdue' ? 'Overdue' : 'Pending';
+  };
+
+  const journalRows = useMemo(() => {
+    if (activeAccount === 'Revenue') return ledgerEntries.filter(e => e.type === 'Invoice');
+    if (activeAccount === 'Cash / Bank') return ledgerEntries.filter(e => e.type === 'Payment');
+    return ledgerEntries;
+  }, [ledgerEntries, activeAccount]);
+
+  const tabs: { id: RefTab; label: string; icon: JSX.Element }[] = [
+    { id: 'overview', label: 'Overview', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg> },
+    { id: 'invoices', label: 'Invoices', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 2h9l5 5v15H6z" /><path d="M15 2v5h5" /><path d="M9 13h6M9 17h6" /></svg> },
+    { id: 'payments', label: 'Payments', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="6" width="20" height="13" rx="2" /><path d="M2 10h20M17 15h.01" /></svg> },
+    { id: 'accounting', label: 'Accounting', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 4h16v16H4z" /><path d="M4 10h16M10 4v16" /></svg> },
+    { id: 'wallet', label: 'Wallet', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M19 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2" /><path d="M18 12h.01" /><path d="M4 8h15a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4" /></svg> },
+    { id: 'referrals', label: 'Referrals', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="8" cy="8" r="3.5" /><circle cx="17" cy="15" r="3.5" /><path d="M10.5 9.8 14.5 13" /></svg> },
+    { id: 'documents', label: 'Documents', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg> },
+    { id: 'activity', label: 'Activity', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg> },
+  ];
+
+  const sinceLabel = useMemo(() => {
+    const first: any = customerInvoices.slice().sort((a: any, b: any) => +new Date(a.date) - +new Date(b.date))[0];
+    if ((customer as any).createdAt) { try { return format(parseISO(String((customer as any).createdAt)), 'd MMM yyyy'); } catch { /* noop */ } }
+    if (first?.date) { try { return format(parseISO(String(first.date)), 'd MMM yyyy'); } catch { /* noop */ } }
+    return '—';
+  }, [customerInvoices, customer]);
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
+    <div className="cp-root">
+      <style>{PROFILE_CSS}</style>
 
-      {/* Header */}
-      <div style={{
-        position: 'relative',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 28px',
-        borderBottom: '1px solid rgba(11,62,57,0.25)',
-        background: 'linear-gradient(135deg, #0b3e39 0%, #146b60 50%, #1a8a76 100%)',
-        boxShadow: '0 4px 16px -8px rgba(11,62,57,0.45)',
-        zIndex: 20,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={onBack}
-            style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .18s ease', flexShrink: 0 }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.22)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
-          >
-            <ArrowLeft size={17} />
-          </button>
-          <div style={{
-            width: 40, height: 40, borderRadius: 11,
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06))',
-            border: '1px solid rgba(255,255,255,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0
-          }}>
-            <User size={18} color="#fff" />
-          </div>
-          <div>
-            <h1 style={{
-              fontFamily: "'Inter',-apple-system,sans-serif", fontWeight: 700,
-              fontSize: 18, margin: 0, color: '#ffffff', letterSpacing: '-0.01em', lineHeight: 1.2
-            }}>
-              {customerDisplayName}
-            </h1>
-            <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.65)', fontFamily: "'Inter',sans-serif", fontWeight: 500 }}>
-              {activeGroupTitle} &middot; ID: {customer.id}
-            </p>
-          </div>
+      <div className="cp-topbar">
+        <div className="cp-breadcrumb">
+          <button className="cp-crumb-btn" onClick={onBack}>Customers</button>
+          <span className="cp-sep">/</span>
+          <span className="cp-crumb-mid" style={{ whiteSpace: 'nowrap' }}>{segmentLabel}</span>
+          <span className="cp-sep cp-crumb-mid">/</span>
+          <span className="cp-current">{customerDisplayName}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button
-            onClick={() => onEdit(customer)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, background: '#ffffff', color: '#0f544c', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', transition: 'all .18s ease', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)'; }}
-          >
-            <Edit2 size={14} /> Edit
+        <div className="cp-topbar-actions">
+          <button className="cp-btn cp-btn-secondary" onClick={() => onEdit(customer)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+            <span className="cp-btn-label-always">Edit details</span>
           </button>
-          <button
-            onClick={toggleCreditHold}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, fontWeight: 600, fontSize: 12.5, cursor: 'pointer', transition: 'all .18s ease', border: 'none', ...(customer.creditHold ? { background: '#c0495f', color: '#fff' } : { background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }) }}
-            onMouseEnter={e => { if (!customer.creditHold) { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; } }}
-            onMouseLeave={e => { if (!customer.creditHold) { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; } }}
-          >
-            <ShieldAlert size={14} />
-            {customer.creditHold ? 'Release Hold' : 'Hold'}
+          <button className="cp-btn cp-btn-primary" onClick={goInvoice}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 5v14M5 12h14" /></svg>
+            <span className="cp-btn-label-always">New invoice</span>
           </button>
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setIsTransactionMenuOpen(!isTransactionMenuOpen)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, background: '#ffffff', color: '#0f544c', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', transition: 'all .18s ease', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)'; }}
-            >
-              <Plus size={14} />
-              New
+          <div className="cp-kebab-wrap">
+            <button className="cp-btn cp-btn-ghost" aria-label="More actions" onClick={() => setMenuOpen(v => !v)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" /></svg>
             </button>
-            {isTransactionMenuOpen && (
-              <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 6, width: 188, background: '#fff', borderRadius: 10, boxShadow: '0 12px 40px -8px rgba(0,0,0,.25), 0 0 0 1px rgba(0,0,0,.06)', padding: '4px 0', zIndex: 30 }}>
-                <button
-                  onClick={() => {
-                    navigate('/sales-flow/invoices', {
-                      state: {
-                        action: 'create',
-                        customer: customer.name,
-                        customerId: customer.id
-                      }
-                    });
-                    setIsTransactionMenuOpen(false);
-                  }}
-                  style={{ width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12.5, fontWeight: 600, color: '#5c6567', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#F5F4F0'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <FileText size={14} style={{ color: '#5c6567', flexShrink: 0 }} />
-                  New Invoice
-                </button>
-                <button
-                  onClick={() => {
-                    navigate('/sales-flow/payments', {
-                      state: {
-                        action: 'create',
-                        customer: customer.name,
-                        customerId: customer.id
-                      }
-                    });
-                    setIsTransactionMenuOpen(false);
-                  }}
-                  style={{ width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12.5, fontWeight: 600, color: '#5c6567', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#F5F4F0'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <DollarSign size={14} style={{ color: '#5c6567', flexShrink: 0 }} />
-                  New Payment
-                </button>
-                <button
-                  onClick={() => {
-                    navigate('/sales-flow/quotations', {
-                      state: {
-                        action: 'create',
-                        type: 'Quotation',
-                        customer: customer.name,
-                        customerId: customer.id
-                      }
-                    });
-                    setIsTransactionMenuOpen(false);
-                  }}
-                  style={{ width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12.5, fontWeight: 600, color: '#5c6567', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#F5F4F0'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <FileSearch size={14} style={{ color: '#5c6567', flexShrink: 0 }} />
-                  New Quotation
-                </button>
+            {menuOpen && (
+              <div className="cp-kebab-menu" onClick={e => e.stopPropagation()}>
+                <button onClick={goPayment}><Plus size={14} /> New payment</button>
+                <button onClick={goQuote}><Pencil size={14} /> New quotation</button>
+                <button onClick={() => { handlePreviewStatement(); setMenuOpen(false); }}><FileDown size={14} /> PDF statement</button>
+                <button onClick={handleExportLedger}><Download size={14} /> Export ledger (CSV)</button>
+                <div className="cp-sep" />
+                <button onClick={toggleCreditHold}><ShieldAlert size={14} /> {(customer as any).creditHold ? 'Release credit hold' : 'Place credit hold'}</button>
+                <button onClick={() => { setMenuOpen(false); onBack(); }}><X size={14} /> Back to customers</button>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Sidebar */}
-        <div style={{
-          width: 260, flexShrink: 0,
-          background: '#FAFAF8',
-          borderRight: '1px solid #E8E5DF',
-          display: 'flex', flexDirection: 'column', position: 'relative', overflowY: 'auto'
-        }}>
-          <div style={{ padding: '16px 14px 8px' }}>
-            <div style={{
-              color: '#9ca3af', fontSize: 10, letterSpacing: '0.08em',
-              textTransform: 'uppercase', fontWeight: 700, padding: '0 6px 10px'
-            }}>
-              Sections
+      <div className="cp-page">
+        {/* ============ LEFT SIDEBAR ============ */}
+        <div className="cp-side">
+          <div className="cp-panel">
+            <div className="cp-profile-head">
+              <div className="cp-avatar-lg">{initials}</div>
+              <h1 title={customerDisplayName}>{customerDisplayName}</h1>
+              <div className="cp-meta"><span>{customer.id}</span><span className="cp-dot">·</span><span>{segmentLabel}</span></div>
+              <span className="cp-status-pill"><span className="cp-status-dot" />{(customer as any).status || 'Active'}</span>
             </div>
-            <div style={{ padding: '0 0 10px' }}>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                style={{ width: '100%', padding: '7px 11px', background: '#fff', border: '1px solid #E8E5DF', borderRadius: 8, fontSize: 12, color: '#23282A', outline: 'none', fontFamily: "'Inter',sans-serif" }}
-              />
-            </div>
-          </div>
-          <div style={{ padding: '0 10px 16px', flex: 1 }}>
-            {filteredGroups.map(group => (
-              <div key={group.title} style={{ marginBottom: 14 }}>
-                <div style={{
-                  color: '#9ca3af', fontSize: 9.5, letterSpacing: '0.08em',
-                  textTransform: 'uppercase', fontWeight: 700, padding: '4px 8px 6px'
-                }}>{group.title}</div>
-                {group.items.map(item => {
-                  const isActive = activeTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setActiveTab(item.id)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '9px 10px', borderRadius: 9, width: '100%',
-                        background: isActive ? '#0f544c' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer', marginBottom: 3,
-                        transition: 'all .15s ease', textAlign: 'left',
-                      }}
-                      onMouseEnter={e => {
-                        if (!isActive) { e.currentTarget.style.background = '#eef7f6'; }
-                      }}
-                      onMouseLeave={e => {
-                        if (!isActive) { e.currentTarget.style.background = 'transparent'; }
-                      }}
-                    >
-                      <div style={{
-                        width: 30, height: 30, borderRadius: 8,
-                        background: isActive ? 'rgba(255,255,255,0.15)' : '#eef7f6',
-                        color: isActive ? '#fff' : teal[600],
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                      }}>
-                        <item.icon size={14} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, color: isActive ? '#fff' : '#23282A', lineHeight: 1.3 }}>{item.label}</div>
-                        <div style={{ fontSize: 10, color: isActive ? 'rgba(255,255,255,0.7)' : '#9ca3af', marginTop: 1, lineHeight: 1.2 }}>{item.desc}</div>
-                      </div>
-                    </button>
-                  );
-                })}
+
+            <div className="cp-info-list">
+              {customer.phone && (
+                <button className={`cp-info-row cp-clickable${copiedRow === 'phone' ? ' cp-copied-state' : ''}`} onClick={() => copyRow('phone', String(customer.phone))}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.86.34 1.7.65 2.5a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.58-1.22a2 2 0 0 1 2.11-.45c.8.31 1.64.53 2.5.65A2 2 0 0 1 22 16.92z" /></svg>
+                  <span className="cp-txt"><span className="cp-l">Phone</span><span className="cp-v">{customer.phone}</span></span>
+                  <span className="cp-copied-flag">Copied</span>
+                </button>
+              )}
+              {customer.email && (
+                <button className={`cp-info-row cp-clickable${copiedRow === 'email' ? ' cp-copied-state' : ''}`} onClick={() => copyRow('email', String(customer.email))}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
+                  <span className="cp-txt"><span className="cp-l">Email</span><span className="cp-v">{customer.email}</span></span>
+                  <span className="cp-copied-flag">Copied</span>
+                </button>
+              )}
+              {(customer.address || (customer as any).city) && (
+                <div className="cp-info-row">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 21s-7-6.1-9.3-10.2A5.5 5.5 0 0 1 12 4.6a5.5 5.5 0 0 1 9.3 6.2C19 14.9 12 21 12 21z" /></svg>
+                  <span className="cp-txt"><span className="cp-l">Zone</span><span className="cp-v">{customer.address}{(customer as any).city ? ` · ${(customer as any).city}` : ''}</span></span>
+                </div>
+              )}
+              <div className="cp-info-row">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                <span className="cp-txt"><span className="cp-l">Customer portal</span><span className="cp-v">{portalActive ? (portalEmail || 'Active') : 'No account'}</span></span>
               </div>
-            ))}
+            </div>
+            <button className="cp-rotate-btn" onClick={handleRegeneratePassword} disabled={portalBusy}>
+              {portalBusy
+                ? <RefreshCw size={12} className="cp-spin" />
+                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>}
+              {portalActive ? 'Rotate portal password' : 'Create portal account'}
+            </button>
+            {portalError && <p className="cp-portal-err">{portalError}</p>}
+          </div>
+
+          <div className="cp-panel">
+            <div className="cp-panel-title">Account details</div>
+            <div className="cp-fact-row"><span className="cp-l">Customer since</span><span className="cp-v">{sinceLabel}</span></div>
+            <div className="cp-fact-row"><span className="cp-l">Payment terms</span><span className="cp-v">{(customer as any).paymentTerms || 'Net 30'}</span></div>
+            <div className="cp-fact-row"><span className="cp-l">Billing cycle</span><span className="cp-v">{(customer as any).billingCycle || '—'}</span></div>
+            <div className="cp-fact-row"><span className="cp-l">Zone agent</span><span className="cp-v">{(customer as any).assignedSalesperson || 'Unassigned'}</span></div>
+            <div style={{ height: 12 }} />
+          </div>
+
+          <div className="cp-panel">
+            <div className="cp-panel-title">Quick actions</div>
+            <div className="cp-quick-grid">
+              <button onClick={goInvoice}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M6 2h9l5 5v15H6z" /><path d="M15 2v5h5" /><path d="M9 13h6M9 17h6" /></svg>
+                Invoice
+              </button>
+              <button onClick={goQuote}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M6 2h9l5 5v15H6z" /><path d="M15 2v5h5" /><path d="M9 12h6M9 16h4" /></svg>
+                Quote
+              </button>
+              <button onClick={handlePreviewStatement}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="4" y="3" width="16" height="18" rx="1" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+                Statement
+              </button>
+              <button onClick={goChat}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 20l1-4.5A8.38 8.38 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5z" /></svg>
+                Chat
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Content Area */}
-        <div style={{ flex: 1, overflowY: 'auto', background: '#F5F4F0' }}>
-          <div style={{ maxWidth: '920px', padding: '20px 24px' }}>
-          {activeTab === 'Overview' && (
-            <div style={{ display: 'flex', gap: 24 }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 24 }}>
-                <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Financial Overview</span></div>
-                <div style={{ display: 'grid', gap: 16 }} className="grid-cols-2 lg:grid-cols-4">
-                  {[
-                    { icon: DollarSign, label: 'Total Balance', value: kpis.balance, color: teal[500], accent: teal[500], sub: 'Good Standing' },
-                    { icon: AlertTriangle, label: 'Overdue Balance', value: kpis.overdueBalance, color: danger, accent: danger, sub: `${kpis.overdueBalance > 0 ? canonicalLedger.transactions.filter(t => { if (t.type !== 'invoice') return false; const inv = customerInvoices.find(i => String(i.id) === t.id); const dueDate = inv?.dueDate || inv?.due_date; return dueDate && isAfter(new Date(), parseISO(dueDate)); }).length : 0} invoices` },
-                    { icon: Clock, label: 'Outstanding', value: kpis.outstandingBalance || 0, color: amber[500], accent: amber[500], sub: 'Open invoices & unpaid' },
-                    { icon: TrendingUp, label: 'YTD Purchases', value: kpis.ytdSales, color: teal[700], accent: teal[500], sub: `FY ${new Date().getFullYear()}` },
-                  ].map((kpi, i) => {
-                    const Icon = kpi.icon;
+        {/* ============ MAIN CONTENT ============ */}
+        <div className="cp-main">
+          <div className="cp-stat-grid">
+            <div className={`cp-stat-card cp-due${owing ? '' : ' cp-paid'}`}>
+              <div className="cp-top"><span className="cp-label">Outstanding</span>
+                <svg className="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 8v8M9 12h6" /><circle cx="12" cy="12" r="9" /></svg>
+              </div>
+              <div className="cp-amount"><span className="cp-code">{currencyCode}</span>{fmtMoney(kpis.outstandingBalance)}</div>
+              <div className={`cp-delta${owing ? ' cp-up' : ' cp-down'}`}>{owing ? `↑ ${kpis.unpaidCount} invoice${kpis.unpaidCount === 1 ? '' : 's'} unpaid` : 'Fully paid'}</div>
+            </div>
+            <div className="cp-stat-card cp-wallet">
+              <div className="cp-top"><span className="cp-label">Wallet</span>
+                <svg className="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="6" width="20" height="13" rx="2" /><path d="M2 10h20M17 15h.01" /></svg>
+              </div>
+              <div className="cp-amount"><span className="cp-code">{currencyCode}</span>{fmtMoney(wallet)}</div>
+              <div className="cp-delta">Available credit</div>
+            </div>
+            <div className="cp-stat-card">
+              <div className="cp-top"><span className="cp-label">Total invoiced</span>
+                <svg className="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 3v18h18" /><path d="m7 14 4-4 3 3 5-6" /></svg>
+              </div>
+              <div className="cp-amount"><span className="cp-code">{currencyCode}</span>{fmtMoney(kpis.totalInvoiced)}</div>
+              <div className="cp-delta">Since {sinceLabel}</div>
+            </div>
+            <div className="cp-stat-card">
+              <div className="cp-top"><span className="cp-label">Avg. days to pay</span>
+                <svg className="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
+              </div>
+              <div className="cp-amount">{avgPayDays == null ? '—' : avgPayDays}</div>
+              <div className="cp-delta cp-down">
+                {paidInvoiceCount > 0
+                  ? `From ${paidInvoiceCount} paid invoice${paidInvoiceCount === 1 ? '' : 's'}`
+                  : 'No paid invoices yet'}
+              </div>
+            </div>
+          </div>
+
+          <div className="cp-card-block">
+            <div className="cp-tabs" role="tablist">
+              {tabs.map(t => (
+                <button
+                  key={t.id} role="tab" aria-selected={activeTab === t.id}
+                  className={`cp-tab${activeTab === t.id ? ' cp-active' : ''}`}
+                  onClick={() => setActiveTab(t.id)}
+                >
+                  {t.icon}{t.label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === 'overview' && (
+              <div>
+                <div className="cp-trend">
+                  <div className="cp-trend-bars">
+                    {trend.map((m: any) => (
+                      <div key={m.key} className="cp-trend-bar-wrap">
+                        <div className={`cp-trend-bar${m.isDue ? ' cp-due' : ' cp-paid'}`} style={{ height: `${m.height}%` }} title={`${m.label}: inv ${fmtMoney(m.invoiced)}, paid ${fmtMoney(m.paid)}`} />
+                        <span className="cp-trend-label">{m.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="cp-trend-legend">
+                    <span><span className="cp-swatch" style={{ background: 'var(--teal)' }} />Paid on time</span>
+                    <span><span className="cp-swatch" style={{ background: 'var(--amber)' }} />Outstanding</span>
+                  </div>
+                </div>
+                <div className="cp-card-block-head"><h3>Recent activity</h3><span className="cp-note">Last 30 days</span></div>
+                <div className="cp-timeline">
+                  {recentActivity.length === 0 && <div className="cp-empty">No recent activity.</div>}
+                  {recentActivity.map((a, i) => (
+                    <div key={i} className="cp-t-row">
+                      <div className={`cp-t-icon${a.kind === 'pay' ? ' cp-pay' : a.kind === 'inv' ? ' cp-inv' : ' cp-sys'}`}>
+                        {a.kind === 'pay'
+                          ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6 9 17l-5-5" /></svg>
+                          : a.kind === 'inv'
+                            ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2h9l5 5v15H6z" /><path d="M15 2v5h5" /></svg>
+                            : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>}
+                      </div>
+                      <div className="cp-t-content"><div className="cp-t-title">{a.title}</div><div className="cp-t-desc">{a.desc}</div></div>
+                      <div className="cp-t-time">{a.time}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'invoices' && (
+              <div className="cp-table-scroll">
+                <table>
+                  <thead><tr><th>Invoice</th><th>Date</th><th>Description</th><th style={{ textAlign: 'right' }}>Amount</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {customerInvoices.length === 0 && <tr><td colSpan={5}><div className="cp-empty">No invoices for this customer.</div></td></tr>}
+                    {customerInvoices.slice().sort((a: any, b: any) => +new Date(b.date) - +new Date(a.date)).map((inv: any) => {
+                      const k = invoiceStatus(inv);
+                      return (
+                        <tr key={inv.id}>
+                          <td style={{ fontWeight: 600 }}>{inv.id}</td>
+                          <td>{safeDate(inv.date)} {new Date(inv.date).getFullYear() || ''}</td>
+                          <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.memo || inv.description || '—'}</td>
+                          <td className="cp-num">{fmtMoney(Number(inv.totalAmount || 0))}</td>
+                          <td><span className={`cp-pill cp-${k}`}><span className="cp-d" />{statusLabel(inv)}</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {activeTab === 'payments' && (
+              <div className="cp-table-scroll">
+                <table>
+                  <thead><tr><th>Reference</th><th>Date</th><th>Method</th><th style={{ textAlign: 'right' }}>Amount</th><th>Applied to</th></tr></thead>
+                  <tbody>
+                    {customerPaymentsList.length === 0 && <tr><td colSpan={5}><div className="cp-empty">No payments recorded.</div></td></tr>}
+                    {customerPaymentsList.slice().sort((a: any, b: any) => +new Date(b.date) - +new Date(a.date)).map((p: any) => (
+                      <tr key={p.id}>
+                        <td style={{ fontWeight: 600 }}>{p.id}</td>
+                        <td>{safeDate(p.date)}</td>
+                        <td>{p.paymentMethod || p.method || '—'}</td>
+                        <td className="cp-num">{fmtMoney(Number(p.amount || 0))}</td>
+                        <td>{(p.allocations || []).map((a: any) => a?.invoiceId).filter(Boolean).join(', ') || p.invoiceId || p.reference || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {activeTab === 'accounting' && (
+              <div>
+                <div className="cp-account-pills">
+                  {['Accounts Receivable', 'Revenue', 'Wallet Liability', 'Cash / Bank'].map(a => (
+                    <button key={a} className={`cp-account-pill${activeAccount === a ? ' cp-active' : ''}`} onClick={() => setActiveAccount(a)}>{a}</button>
+                  ))}
+                </div>
+                <div className="cp-ledger-summary">
+                  <div className="cp-cell"><div className="cp-l">Opening balance</div><div className="cp-v"><span className="cp-code">{currencyCode}</span>{fmtMoney(openingBalance)}</div></div>
+                  <div className="cp-cell"><div className="cp-l">Movement this period</div><div className="cp-v"><span className="cp-code">{currencyCode}</span>{fmtMoney(movement)}</div></div>
+                  <div className="cp-cell"><div className="cp-l">Closing balance</div><div className="cp-v"><span className="cp-code">{currencyCode}</span>{fmtMoney(canonicalLedger.closingBalance)}</div></div>
+                </div>
+                <div className="cp-card-block-head">
+                  <h3>Journal postings</h3>
+                  <span className="cp-note">Account: {activeAccount}</span>
+                </div>
+                <div className="cp-table-scroll">
+                  <table>
+                    <thead><tr><th>Date</th><th>Journal</th><th>Description</th><th style={{ textAlign: 'right' }}>Debit</th><th style={{ textAlign: 'right' }}>Credit</th><th style={{ textAlign: 'right' }}>Balance</th></tr></thead>
+                    <tbody>
+                      {journalRows.length === 0 && <tr><td colSpan={6}><div className="cp-empty">No postings for this account.</div></td></tr>}
+                      {journalRows.slice().reverse().slice(0, 60).map((e, i) => (
+                        <tr key={`${e.id}-${i}`}>
+                          <td>{safeDate(e.date)}</td>
+                          <td className="cp-mono-small">{e.id}</td>
+                          <td>{e.memo} <span className="cp-mono-small">· {e.type === 'Payment' ? 'Dr Bank / Cr AR' : 'Dr AR / Cr Revenue'}</span></td>
+                          <td className="cp-num cp-dr">{e.debit > 0 ? fmtMoney(e.debit) : '—'}</td>
+                          <td className="cp-num cp-cr">{e.credit > 0 ? fmtMoney(e.credit) : '—'}</td>
+                          <td className="cp-num">{fmtMoney(e.runningBalance)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'wallet' && (
+              <div>
+                <div className="cp-wallet-hero">
+                  <div>
+                    <div className="cp-l">Available balance</div>
+                    <div className="cp-v"><span className="cp-code">{currencyCode}</span>{fmtMoney(wallet)}</div>
+                  </div>
+                  <div className="cp-wallet-mini">
+                    <div><span className="cp-l">Total deposited</span><span className="cp-v">{currencyCode} {fmtMoney(totalDeposited)}</span></div>
+                    <div><span className="cp-l">Total deducted</span><span className="cp-v">{currencyCode} {fmtMoney(totalDeducted)}</span></div>
+                  </div>
+                  <button className="cp-top-up" onClick={goPayment}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 5v14M5 12h14" /></svg>
+                    Top up wallet
+                  </button>
+                </div>
+                <div className="cp-card-block-head"><h3>Wallet transactions</h3><span className="cp-note">Prepaid deposits &amp; deductions</span></div>
+                <div className="cp-table-scroll">
+                  <table>
+                    <thead><tr><th>Date</th><th>Reference</th><th>Description</th><th>Type</th><th style={{ textAlign: 'right' }}>Amount</th><th style={{ textAlign: 'right' }}>Balance after</th></tr></thead>
+                    <tbody>
+                      {walletRows.length === 0 && <tr><td colSpan={6}><div className="cp-empty">No wallet transactions.</div></td></tr>}
+                      {walletRows.map(({ tx, after, key }: any) => (
+                        <tr key={key}>
+                          <td>{safeDate(tx.date)}</td>
+                          <td className="cp-mono-small">{tx.id || tx.reference || '—'}</td>
+                          <td>{tx.description || tx.memo || '—'}</td>
+                          <td><span className={`cp-pill ${tx.type === 'Deposit' ? 'cp-deposit' : 'cp-deduction'}`}><span className="cp-d" />{tx.type || '—'}</span></td>
+                          <td className={`cp-num ${tx.type === 'Deposit' ? 'cp-cr' : 'cp-dr'}`}>{fmtMoney(Number(tx.amount || 0))}</td>
+                          <td className="cp-num">{fmtMoney(after)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'referrals' && (
+              <div>
+                <div className="cp-ref-summary">
+                  <div className="cp-cell">
+                    <div className="cp-l">Referral code</div>
+                    <div className="cp-v cp-mono" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{referralCode}</span>
+                      <button
+                        className="cp-mini-btn" style={{ padding: '4px 8px', fontSize: 11 }}
+                        onClick={() => copyReferral('code')} title="Copy referral code"
+                      >
+                        {copiedReferral === 'code' ? <Check size={12} /> : <Copy size={12} />}
+                        {copiedReferral === 'code' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="cp-cell"><div className="cp-l">Schools referred</div><div className="cp-v">{referrals.length}</div></div>
+                  <div className="cp-cell"><div className="cp-l">Rewards earned</div><div className="cp-v"><span className="cp-code">{currencyCode}</span>{fmtMoney(rewardsEarned).split('.')[0]}</div></div>
+                  <div className="cp-cell"><div className="cp-l">Rewards pending</div><div className="cp-v"><span className="cp-code">{currencyCode}</span>{fmtMoney(rewardsPending).split('.')[0]}</div></div>
+                </div>
+                <div className="cp-card-block-head">
+                  <h3>Referred accounts</h3>
+                  <span className="cp-head-actions">
+                    <span className="cp-note">{referrals.length} total</span>
+                    <button className="cp-mini-btn" onClick={() => copyReferral('link')} title="Copy customer signup link">
+                      {copiedReferral === 'link' ? <Check size={12} /> : <Copy size={12} />}
+                      {copiedReferral === 'link' ? 'Link copied' : 'Copy signup link'}
+                    </button>
+                  </span>
+                </div>
+                <div className="cp-ref-list">
+                  {referrals.length === 0 && <div className="cp-empty">No referred accounts yet. Share the signup link above to refer schools.</div>}
+                  {referrals.map((r: any) => {
+                    const referredName = customerNameById.get(String(r.customerId)) || r.customerId;
+                    const reward = rewardByReferralId.get(String(r.id));
+                    const rewardLabel = reward
+                      ? `+${currencyCode} ${fmtMoney(Number(reward.amount || 0)).split('.')[0]}`
+                      : '—';
+                    const rewardState = reward ? String(reward.status || 'Pending') : (r.status === 'converted' ? 'Reward pending' : (r.status || 'Pending'));
                     return (
-                      <div key={i} className="white-card" style={{ padding: '16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                        <div style={{ padding: 8, background: `${kpi.color}10`, borderRadius: 10, color: kpi.color, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Icon size={18} />
+                      <div key={r.id} className="cp-ref-row">
+                        <div className="cp-ref-avatar">{initialsOf(referredName)}</div>
+                        <div className="cp-ref-body">
+                          <div className="cp-ref-name">{referredName}</div>
+                          <div className="cp-ref-sub">Joined {safeDate(r.convertedAt || r.date)} · {r.customerId || ''}{r.referralCode ? ` · Code ${r.referralCode}` : ''}</div>
                         </div>
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: 10.5, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.04, lineHeight: 1, marginBottom: 5 }}>{kpi.label}</p>
-                          <p style={{ margin: 0, fontSize: 19, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>{currency}{kpi.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                          <p style={{ margin: 0, fontSize: 10.5, fontWeight: 500, color: inkSoft, marginTop: 4 }}>{kpi.sub}</p>
+                        <div className="cp-ref-reward">
+                          <div className={`cp-amt${reward && (reward.status === 'paid' || reward.status === 'approved') ? ' cp-pos' : ''}`}>{rewardLabel}</div>
+                          <div className="cp-ref-sub">{rewardState}</div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-
-                <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Contact Information</span></div>
-                <div className="white-card grid grid-cols-1 md:grid-cols-2" style={{ padding: '20px', gap: 20 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {[
-                      { icon: Mail, label: 'Email Address', value: customer.email || 'N/A' },
-                      { icon: Phone, label: 'Phone Number', value: customer.phone || 'N/A' },
-                      { icon: Globe, label: 'Website', value: customer.website || 'N/A' },
-                    ].map((item, i) => {
-                      const Icon = item.icon;
-                      return (
-                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                          <div style={{ padding: 8, background: teal[50], borderRadius: 8, color: inkSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Icon size={16} />
-                          </div>
-                          <div>
-                            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.03 }}>{item.label}</p>
-                            <p style={{ margin: 0, fontWeight: 600, color: ink }}>{item.value}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {[
-                      { icon: MapPin, label: 'Billing Address', value: customer.billingAddress || customer.address || 'N/A' },
-                      { icon: Briefcase, label: 'Account Manager', value: customer.assignedSalesperson || 'Unassigned' },
-                    ].map((item, i) => {
-                      const Icon = item.icon;
-                      return (
-                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                          <div style={{ padding: 8, background: teal[50], borderRadius: 8, color: inkSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Icon size={16} />
-                          </div>
-                          <div>
-                            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.03 }}>{item.label}</p>
-                            <p style={{ margin: 0, fontWeight: 600, color: ink, whiteSpace: 'pre-line' }}>{item.value}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Client Notes</span></div>
-                <div className="white-card" style={{ padding: '24px' }}>
-                  <p style={{ margin: 0, color: inkSoft, lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-                    {customer.notes || 'No notes available for this client.'}
-                  </p>
-                </div>
               </div>
+            )}
 
-              <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 24, flexShrink: 0 }}>
-                <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Financial Health</span></div>
-                <div className="white-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {[
-                    { label: 'Avg. Payment Days', value: `${customer.avgPaymentDays || 12} Days` },
-                    { label: 'Profitability Score', value: `${customer.profitabilityScore || 85}%`, bar: customer.profitabilityScore || 85 },
-                    { label: 'Risk Profile', value: 'Low Risk', badge: true },
-                  ].map((item, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500, color: inkSoft }}>{item.label}</span>
-                      {'bar' in item ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 80, background: teal[100], height: 6, borderRadius: 4, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', background: teal[500], borderRadius: 4, width: `${item.bar}%` }} />
-                          </div>
-                          <span style={{ fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{item.value}</span>
-                        </div>
-                      ) : 'badge' in item && item.badge ? (
-                        <span style={{ padding: '2px 10px', background: teal[50], color: teal[700], borderRadius: 20, fontSize: 10, fontWeight: 700, border: `1px solid ${teal[100]}`, textTransform: 'uppercase' }}>{item.value}</span>
-                      ) : (
-                        <span style={{ fontWeight: 700, color: ink }}>{item.value}</span>
-                      )}
-                    </div>
-                  ))}
+            {activeTab === 'documents' && (
+              <div>
+                <div className="cp-doc-section-title">Generated reports</div>
+                <div className="cp-doc-grid">
+                  <button className="cp-doc-card" onClick={handlePreviewStatement}>
+                    <div className="cp-doc-icon cp-report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="4" y="3" width="16" height="18" rx="1" /><path d="M8 8h8M8 12h8M8 16h5" /></svg></div>
+                    <div className="cp-doc-name">Account statement — {format(new Date(), 'MMM yyyy')}</div>
+                    <div className="cp-doc-meta"><span>PDF · preview &amp; download</span><span className="cp-doc-dl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3v12m0 0-4-4m4 4 4-4" /><path d="M4 19h16" /></svg></span></div>
+                  </button>
                 </div>
-
-                <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Recent Activity</span></div>
-                <div className="white-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {customerLogs.slice(0, 5).map(log => (
-                    <div key={log.id} style={{ display: 'flex', gap: 10 }}>
-                      <div style={{ marginTop: 4, width: 8, height: 8, borderRadius: '50%', background: teal[500], flexShrink: 0 }} />
-                      <div>
-                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: ink }}>{log.details}</p>
-                        <p style={{ margin: 0, fontSize: 11, color: inkSoft }}>{format(parseISO(log.date), 'MMM dd, yyyy HH:mm')}</p>
+                <div className="cp-doc-section-title">Invoices · {customerInvoices.length}</div>
+                <div className="cp-doc-grid">
+                  {customerInvoices.length === 0 && <div className="cp-empty">No invoices for this customer.</div>}
+                  {customerInvoices.slice().sort((a: any, b: any) => +new Date(b.date) - +new Date(a.date)).map((inv: any) => {
+                    const busy = downloadingDoc === `inv-${inv.id}`;
+                    return (
+                      <button
+                        key={inv.id}
+                        className="cp-doc-card"
+                        disabled={busy || downloadingDoc != null}
+                        onClick={() => downloadInvoicePdf(inv)}
+                        title={`Download Invoice ${inv.id} as PDF`}
+                      >
+                        <div className="cp-doc-icon cp-pdf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 2h9l5 5v15H6z" /><path d="M15 2v5h5" /></svg></div>
+                        <div className="cp-doc-name">{busy ? 'Preparing PDF…' : `Invoice ${inv.invoiceNumber || inv.id}`}</div>
+                        <div className="cp-doc-meta"><span>{safeDate(inv.date)} · {currencyCode} {fmtMoney(Number(inv.totalAmount || 0))} · {statusLabel(inv)}</span><span className="cp-doc-dl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3v12m0 0-4-4m4 4 4-4" /><path d="M4 19h16" /></svg></span></div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="cp-doc-section-title">Payment receipts · {customerPaymentsList.length}</div>
+                <div className="cp-doc-grid">
+                  {customerPaymentsList.length === 0 && <div className="cp-empty">No payment receipts for this customer.</div>}
+                  {customerPaymentsList.slice().sort((a: any, b: any) => +new Date(b.date) - +new Date(a.date)).map((p: any) => {
+                    const busy = downloadingDoc === `rcpt-${p.id}`;
+                    return (
+                      <button
+                        key={p.id}
+                        className="cp-doc-card"
+                        disabled={busy || downloadingDoc != null}
+                        onClick={() => downloadReceiptPdf(p)}
+                        title={`Download Receipt ${p.id} as PDF`}
+                      >
+                        <div className="cp-doc-icon cp-report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="6" width="20" height="13" rx="2" /><path d="M2 10h20M17 15h.01" /></svg></div>
+                        <div className="cp-doc-name">{busy ? 'Preparing PDF…' : `Receipt ${p.id}`}</div>
+                        <div className="cp-doc-meta"><span>{safeDate(p.date)} · {currencyCode} {fmtMoney(Number(p.amount || 0))} · {p.paymentMethod || p.method || 'Payment'}</span><span className="cp-doc-dl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3v12m0 0-4-4m4 4 4-4" /><path d="M4 19h16" /></svg></span></div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="cp-doc-section-title">Uploaded files · {docs.length}</div>
+                <div className="cp-doc-grid">
+                  <button
+                    className="cp-doc-card"
+                    disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <div className="cp-doc-icon cp-upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 16V4m0 0 4 4m-4-4L8 8" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg></div>
+                    <div className="cp-doc-name">{isUploading ? 'Uploading…' : 'Upload a file'}</div>
+                    <div className="cp-doc-meta"><span>Contracts, proofs, orders</span></div>
+                  </button>
+                  {docs.map(doc => (
+                    <div key={doc.id} className="cp-doc-card" style={{ cursor: 'default' }}>
+                      <div className="cp-doc-icon cp-upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg></div>
+                      <div className="cp-doc-name" title={doc.fileName}>{doc.fileName}</div>
+                      <div className="cp-doc-meta">
+                        <span>{doc.mimeType.split('/')[1]?.toUpperCase() || 'FILE'} · {formatCustomerDocSize(doc.size)}</span>
+                        <span style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            className="cp-doc-dl" title="Download" aria-label={`Download ${doc.fileName}`}
+                            onClick={() => handleDocDownload(doc)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3v12m0 0-4-4m4 4 4-4" /><path d="M4 19h16" /></svg>
+                          </button>
+                          <button
+                            className="cp-doc-dl" title="Remove" aria-label={`Remove ${doc.fileName}`}
+                            onClick={() => handleDocRemove(doc)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13h8l1-13" /></svg>
+                          </button>
+                        </span>
                       </div>
                     </div>
                   ))}
-                  {customerLogs.length === 0 && (
-                    <p style={{ margin: 0, textAlign: 'center', padding: '12px 0', color: inkSoft, fontStyle: 'italic' }}>No recent activity logs.</p>
-                  )}
                 </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Timeline' && (
-            <div className="white-card" style={{ padding: '24px', maxWidth: 960, margin: '0 auto' }}>
-              <h3 style={{ margin: 0, fontWeight: 700, color: ink, fontSize: 18, marginBottom: 24 }}>Unified History Feed</h3>
-              <div style={{ position: 'relative' }} className="space-y-8 before:absolute before:inset-0 before:ml-5 before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
-                {[...customerInvoices, ...customerPaymentsList, ...customerSales, ...customerQuotes]
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                  .map((item: any, idx) => (
-                    <div key={item.id + idx} className="relative flex items-center justify-between md:justify-start md:odd:flex-row-reverse group">
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: '50%', border: '2px solid #fff', background: teal[100], color: teal[700], boxShadow: '0 2px 6px rgba(0,0,0,.08)', transition: 'all .15s ease', zIndex: 10, flexShrink: 0 }}
-                        className="group-hover:bg-teal-600 group-hover:text-white">
-                        {item.totalAmount !== undefined ? <FileText size={18} /> : <DollarSign size={18} />}
-                      </div>
-                      <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border border-slate-100 bg-white group-hover:border-teal-200 transition-all shadow-sm ml-6">
-                        <div className="flex items-center justify-between mb-1">
-                          <time style={{ fontWeight: 700, color: teal[600], fontSize: 11, textTransform: 'uppercase' }}>{format(parseISO(item.date), 'MMM dd, yyyy')}</time>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${item.status === 'Paid' || item.status === 'Cleared' ? 'bg-emerald-50 text-emerald-700' :
-                            item.status === 'Unpaid' || item.status === 'Overdue' ? 'bg-rose-50 text-rose-700' :
-                              'bg-slate-100 text-slate-600'
-                            }`}>
-                            {item.status}
-                          </span>
-                        </div>
-                        <div className="text-slate-900 font-bold mb-1">
-                          {item.totalAmount !== undefined
-                            ? (item.source === 'POS' || item.id?.startsWith('POS-') || item.cashierId
-                              ? <span className="flex items-center gap-2">POS Sale #{item.id}<span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-200">POS</span></span>
-                              : `Invoice #${item.id}`)
-                            : `Payment Received #${item.id}`}
-                        </div>
-                        <div className="text-slate-500 text-[12px] font-medium">
-                          {item.totalAmount !== undefined ?
-                            `Invoiced amount: ${currency}${item.totalAmount.toLocaleString()}` :
-                            `Received amount: ${currency}${item.amount.toLocaleString()}`}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Invoices' && (
-            <div className="white-card" style={{ overflow: 'hidden' }}>
-              <div className="settings-section-header">
-                <h3 style={{ margin: 0, fontWeight: 700, color: ink, fontSize: 14 }}>Customer Invoices</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr style={{ background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Date</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Invoice #</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Status</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider text-right">Total</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider text-right">Balance</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {customerInvoices.map(inv => (
-                      <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 font-medium text-slate-700">{format(parseISO(inv.date), 'MMM dd, yyyy')}</td>
-                        <td className="px-6 py-4 font-bold text-slate-900">{inv.id}</td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${inv.status === 'Paid' ? 'bg-emerald-50 text-emerald-700' :
-                            inv.status === 'Overdue' ? 'bg-rose-50 text-rose-700' :
-                              'bg-amber-50 text-amber-700'
-                            }`}>
-                            {inv.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right font-bold text-slate-900 finance-nums">
-                          {currency}{inv.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-6 py-4 text-right font-bold text-rose-600 finance-nums">
-                          {currency}{(inv.totalAmount - (inv.paidAmount || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-2">
-                            <button className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all">
-                              <Download size={16} />
-                            </button>
-                            <button className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all">
-                              <ExternalLink size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Payments' && (
-            <div className="white-card" style={{ overflow: 'hidden' }}>
-              <div className="settings-section-header">
-                <h3 style={{ margin: 0, fontWeight: 700, color: ink, fontSize: 14 }}>Payment History</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr style={{ background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Date</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Payment #</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Method</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Reference</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider text-right">Amount</th>
-                      <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {customerPaymentsList.map(p => (
-                      <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 font-medium text-slate-700">{format(parseISO(p.date), 'MMM dd, yyyy')}</td>
-                        <td className="px-6 py-4 font-bold text-slate-900">{p.id}</td>
-                        <td className="px-6 py-4 font-semibold text-slate-600">{p.paymentMethod}</td>
-                        <td className="px-6 py-4 font-medium text-slate-500">{p.reference || 'N/A'}</td>
-                        <td className="px-6 py-4 text-right font-bold text-emerald-600 finance-nums">
-                          {currency}{p.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${p.status === 'Cleared' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                            }`}>
-                            {p.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Segmentation' && (
-            <CRMSegmentation />
-          )}
-          {activeTab === 'Settings' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Billing Settings</span></div>
-              <div className="white-card" style={{ padding: '24px', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                    <span className="text-slate-600 font-medium">Payment Terms</span>
-                    <span className="font-bold text-slate-900">{customer.paymentTerms || 'Net 30'}</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                    <span className="text-slate-600 font-medium">Default Currency</span>
-                    <span className="font-bold text-slate-900">{customer.currency || 'USD'}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Shipping & Logistics</span></div>
-              <div className="white-card" style={{ padding: '24px', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-slate-50 rounded-lg text-slate-400">
-                      <MapPin size={16} />
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Shipping Address</p>
-                      <p className="font-semibold text-slate-700 whitespace-pre-line">{customer.shippingAddress || customer.address || 'Same as billing'}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                    <span className="text-slate-600 font-medium">Auto-Send Statements</span>
-                    <span className="font-bold text-slate-900">Enabled (Monthly)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Security Audit' && (
-            <>
-              <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Security Audit Trail</span></div>
-              <div className="white-card" style={{ padding: '24px', overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 600 }}>
-                <AuditTimeline 
-                  logs={customerLogs} 
-                  title={`Security Audit: ${customer.name}`}
-                  subtitle="Immutable trail of all modifications to this client profile."
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={e => handleDocFiles(e.target.files)}
                 />
               </div>
-            </>
-          )}
+            )}
 
-          {activeTab === 'Documents' && (
-            <div className="space-y-6">
-              <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Uploaded Documents</span></div>
-              <div className="white-card" style={{ padding: '28px 24px', textAlign: 'center' }}>
-                <div style={{ width: 56, height: 56, background: teal[50], color: inkSoft, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-                  <Paperclip size={26} />
-                </div>
-                <h3 style={{ margin: 0, fontWeight: 700, color: ink, fontSize: 16, marginBottom: 6 }}>No Documents Uploaded</h3>
-                <p style={{ margin: 0, color: inkSoft, marginBottom: 20, maxWidth: 300, marginLeft: 'auto', marginRight: 'auto', fontSize: 13 }}>Upload contracts, purchase orders, or ID documents for this customer.</p>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                  <button
-                    onClick={() => {
-                      setIsUploading(true);
-                      setTimeout(() => {
-                        setIsUploading(false);
-                        alert('Document uploaded successfully!');
-                      }, 2000);
-                    }}
-                    disabled={isUploading}
-                    style={{ padding: '9px 18px', background: `linear-gradient(135deg, ${teal[500]}, ${teal[700]})`, color: '#fff', borderRadius: 8, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all .15s ease', boxShadow: '0 2px 8px rgba(15,84,76,0.3)', opacity: isUploading ? 0.5 : 1, fontSize: 12.5 }}
-                  >
-                    {isUploading ? 'Uploading...' : 'Upload Document'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      const url = prompt('Enter folder URL (Google Drive, Dropbox, etc.):');
-                      if (url) alert(`Folder linked: ${url}`);
-                    }}
-                    style={{ padding: '9px 18px', background: '#fff', border: '1px solid #E8E5DF', color: inkSoft, borderRadius: 8, fontWeight: 600, cursor: 'pointer', transition: 'all .15s ease', fontSize: 12.5 }}
-                    onMouseEnter={e => { e.currentTarget.style.background = '#F5F4F0'; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = '#E8E5DF'; }}
-                  >
-                    Link Shared Folder
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Generated Reports</span></div>
-                <div className="white-card" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group hover:border-teal-200 transition-all">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white rounded shadow-sm" style={{ color: teal[600] }}>
-                          <FileText size={16} />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900">Account Statement Template</p>
-                          <p className="text-[11px] text-slate-500 font-medium">Standard financial summary format</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={handlePreviewStatement}
-                        className="px-3 py-1.5 bg-blue-600 text-white rounded-lg font-bold text-[11px] opacity-0 group-hover:opacity-100 transition-all"
-                      >
-                        Generate
-                      </button>
+            {activeTab === 'activity' && (
+              <div className="cp-timeline">
+                {activityFeed.length === 0 && <div className="cp-empty">No activity yet.</div>}
+                {activityFeed.map((a, i) => (
+                  <div key={i} className="cp-t-row">
+                    <div className={`cp-t-icon${a.kind === 'pay' ? ' cp-pay' : a.kind === 'inv' ? ' cp-inv' : ' cp-sys'}`}>
+                      {a.kind === 'pay'
+                        ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6 9 17l-5-5" /></svg>
+                        : a.kind === 'inv'
+                          ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2h9l5 5v15H6z" /><path d="M15 2v5h5" /></svg>
+                          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>}
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group hover:border-blue-200 transition-all">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white rounded shadow-sm text-emerald-600">
-                          <TrendingUp size={16} />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900">Sales Performance Report</p>
-                          <p className="text-[11px] text-slate-500 font-medium">Customer purchase history & trends</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => alert('Generating Sales Report...')}
-                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-bold text-[11px] opacity-0 group-hover:opacity-100 transition-all"
-                      >
-                        Generate
-                      </button>
-                    </div>
+                    <div className="cp-t-content"><div className="cp-t-title">{a.title}</div><div className="cp-t-desc">{a.desc}</div></div>
+                    <div className="cp-t-time">{a.time}</div>
                   </div>
-                </div>
-
-                <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Document Settings</span></div>
-                <div className="white-card" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <label className="flex items-center justify-between p-2 hover:bg-teal-50 rounded transition-colors cursor-pointer">
-                      <span className="font-medium text-slate-700">Auto-attach Invoices to Statement</span>
-                      <input type="checkbox" name="autoAttachInvoices" className="rounded border-slate-300 focus:ring-teal-500" style={{ accentColor: teal[600] }} defaultChecked />
-                    </label>
-                    <label className="flex items-center justify-between p-2 hover:bg-teal-50 rounded transition-colors cursor-pointer">
-                      <span className="font-medium text-slate-700">Email Monthly Statement</span>
-                      <input type="checkbox" name="emailMonthlyStatement" className="rounded border-slate-300 focus:ring-teal-500" style={{ accentColor: teal[600] }} />
-                    </label>
-                    <label className="flex items-center justify-between p-2 hover:bg-teal-50 rounded transition-colors cursor-pointer">
-                      <span className="font-medium text-slate-700">Include Sub-accounts in Ledger</span>
-                      <input type="checkbox" name="includeSubAccounts" className="rounded border-slate-300 focus:ring-teal-500" style={{ accentColor: teal[600] }} defaultChecked />
-                    </label>
-                  </div>
-                </div>
+                ))}
               </div>
-            </div>
-          )}
-
-          {activeTab === 'Ledger' && (
-            <div className="space-y-4">
-              <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Transaction Ledger</span></div>
-              <div className="white-card" style={{ overflow: 'hidden' }}>
-                <div className="settings-section-header" style={{ display: 'flex', flexDirection: 'column', gap: 16 }} >
-                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', border: `1px solid ${hairline}`, borderRadius: 8, padding: '4px 8px' }}>
-                      <Calendar size={14} style={{ color: inkSoft }} />
-                      <input
-                        type="date"
-                        name="ledgerStartDate"
-                        value={ledgerStartDate}
-                        onChange={(e) => setLedgerStartDate(e.target.value)}
-                        style={{ fontSize: 11, fontWeight: 600, color: ink, outline: 'none', border: 'none', background: 'transparent', fontFamily: "'Inter', sans-serif" }}
-                      />
-                      <span style={{ color: hairline }}>-</span>
-                      <input
-                        type="date"
-                        name="ledgerEndDate"
-                        value={ledgerEndDate}
-                        onChange={(e) => setLedgerEndDate(e.target.value)}
-                        style={{ fontSize: 11, fontWeight: 600, color: ink, outline: 'none', border: 'none', background: 'transparent', fontFamily: "'Inter', sans-serif" }}
-                      />
-                    </div>
-
-                    <select
-                      name="ledgerTypeFilter"
-                      value={ledgerTypeFilter}
-                      onChange={(e) => setLedgerTypeFilter(e.target.value as 'All' | 'Invoice' | 'Payment')}
-                      style={{ padding: '4px 10px', background: '#fff', border: `1px solid ${hairline}`, borderRadius: 8, fontSize: 11, fontWeight: 700, color: ink, outline: 'none', cursor: 'pointer' }}
-                    >
-                      <option value="All">All Types</option>
-                      <option value="Invoice">Invoices</option>
-                      <option value="Payment">Payments</option>
-                    </select>
-
-                    {customer.subAccounts && customer.subAccounts.length > 0 && (
-                      <select
-                        name="ledgerSubAccountFilter"
-                        value={ledgerSubAccountFilter}
-                        onChange={(e) => setLedgerSubAccountFilter(e.target.value)}
-                        style={{ padding: '4px 10px', background: '#fff', border: `1px solid ${hairline}`, borderRadius: 8, fontSize: 11, fontWeight: 700, color: ink, outline: 'none', cursor: 'pointer' }}
-                      >
-                        <option value="All">All Accounts</option>
-                        <option value="Main">Main Account</option>
-                        {customer.subAccounts.map(sub => (
-                          <option key={sub.id} value={sub.id}>{sub.name}</option>
-                        ))}
-                      </select>
-                    )}
-
-                    <div style={{ width: 1, height: 24, background: hairline, margin: '0 4px' }} className="hidden md:block" />
-
-                    <button
-                      onClick={handleExportLedger}
-                      className="flex items-center gap-2 px-3 py-1 bg-white border border-slate-200 rounded-lg text-slate-600 font-bold hover:bg-slate-50 transition-all text-[11px]"
-                      title="Export to CSV"
-                    >
-                      <Download size={14} />
-                      Export
-                    </button>
-
-                    <button
-                      onClick={handlePreviewStatement}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', background: '#fff', border: `1.4px solid ${hairline}`, borderRadius: 8, color: teal[600], fontWeight: 700, cursor: 'pointer', transition: 'all .15s ease', fontSize: 11 }}
-                      onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.borderColor = teal[200]; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = hairline; }}
-                      title="Download PDF Statement"
-                    >
-                      <FileDown size={14} />
-                      PDF Statement
-                    </button>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr style={{ background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Date</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Type</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Account</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider">Ref #</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider text-right">Debit</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider text-right">Credit</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[11px] tracking-wider text-right">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      <tr style={{ background: teal[50] }}>
-                        <td colSpan={6} className="px-6 py-3 font-bold text-slate-500">Opening Balance</td>
-                        <td className="px-6 py-3 text-right font-bold text-slate-900 finance-nums">{currency}{openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                      {ledgerEntries.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-6 py-4 font-medium text-slate-700">{format(parseISO(row.date), 'MMM dd, yyyy')}</td>
-                          <td className="px-6 py-4 font-semibold text-slate-600">{row.type}</td>
-                          <td className="px-6 py-4 font-medium text-slate-500 text-[11px]">{row.accountName}</td>
-                          <td className="px-6 py-4 font-bold text-slate-900">{row.id}</td>
-                          <td className="px-6 py-4 text-right text-rose-600 finance-nums">{row.debit > 0 ? `${currency}${row.debit.toLocaleString()}` : '-'}</td>
-                          <td className="px-6 py-4 text-right text-emerald-600 finance-nums">{row.credit > 0 ? `${currency}${row.credit.toLocaleString()}` : '-'}</td>
-                          <td className="px-6 py-4 text-right font-bold text-slate-900 finance-nums">{currency}{row.runningBalance.toLocaleString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Accounting' && (
-            <div className="space-y-4 animate-in fade-in duration-300">
-              {/* Account Actions Menu (Floating) */}
-              {accountMenu && (
-                <div
-                  style={{ position: 'fixed', zIndex: 200, background: '#FEFDFB', borderRadius: 12, boxShadow: '0 20px 50px -12px rgba(0,0,0,.3), 0 0 0 1px rgba(0,0,0,.04)', top: accountMenu.y + 8, left: accountMenu.x, padding: '6px 0', width: 224 }}
-                  onMouseLeave={() => setAccountMenu(null)}
-                >
-                  <div style={{ padding: '8px 16px', borderBottom: `1px solid ${hairline}`, marginBottom: 4 }}>
-                    <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.1 }}>Account Actions</p>
-                    <p className="text-[11px] font-bold text-slate-900 truncate">
-                      {accounts.find(a => a.id === accountMenu.id || a.code === accountMenu.id)?.name || accountMenu.id}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setViewingAccountId(accountMenu.id);
-                      setAccountMenu(null);
-                    }}
-                    className="w-full text-left px-4 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                  >
-                    <Eye size={14} className="text-blue-500" />
-                    View Account Activity
-                  </button>
-                  <button
-                    onClick={() => {
-                      notify('Full Account Details feature is under development', 'info');
-                      setAccountMenu(null);
-                    }}
-                    className="w-full text-left px-4 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                  >
-                    <CreditCard size={14} className="text-slate-400" />
-                    Account Details & Settings
-                  </button>
-                  <button
-                    onClick={() => {
-                      navigate('/accounts/chart-of-accounts', { state: { accountId: accountMenu.id } });
-                      setAccountMenu(null);
-                    }}
-                    className="w-full text-left px-4 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                  >
-                    <ExternalLink size={14} className="text-slate-400" />
-                    Go to Chart of Accounts
-                  </button>
-                  <button
-                    onClick={() => {
-                      navigate('/sales-flow/payments', {
-                        state: {
-                          action: 'create',
-                          customer: customer.name,
-                          customerId: customer.id,
-                          subAccount: accounts.find(a => a.id === accountMenu.id || a.code === accountMenu.id)?.name || 'Main',
-                          preferredAccount: accountMenu.id
-                        }
-                      });
-                      setAccountMenu(null);
-                    }}
-                    className="w-full text-left px-4 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                  >
-                    <DollarSign size={14} className="text-emerald-500" />
-                    Record Customer Payment
-                  </button>
-                  <button
-                    onClick={() => {
-                      notify('Internal Transfer feature is under development', 'info');
-                      setAccountMenu(null);
-                    }}
-                    className="w-full text-left px-4 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                  >
-                    <RefreshCw size={14} className="text-blue-500" />
-                    Internal Transfer
-                  </button>
-                </div>
-              )}
-              <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>General Ledger Postings</span></div>
-              <div className="white-card" style={{ overflow: 'hidden' }}>
-                <div className="settings-section-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ margin: 0, fontWeight: 700, color: ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <History size={18} style={{ color: teal[600] }} />
-                    General Ledger Postings
-                  </h3>
-                  <span style={{ fontSize: 10, fontWeight: 800, background: teal[100], color: teal[700], padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.1 }}>Double Entry View</span>
-                </div>
-              <div style={{ background: paper, borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
-                <div style={{ padding: '14px 20px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ margin: 0, fontWeight: 700, color: ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <History size={18} style={{ color: teal[600] }} />
-                    General Ledger Postings
-                  </h3>
-                  <span style={{ fontSize: 10, fontWeight: 800, background: teal[100], color: teal[700], padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.1 }}>Double Entry View</span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Date</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Description</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Debit Account</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Credit Account</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {customerLedger.map((entry, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-4 text-slate-500 font-medium whitespace-nowrap">{format(parseISO(entry.date), 'MMM dd, yyyy')}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <div className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{entry.description}</div>
-                              {entry.referenceId && (
-                                <button
-                                  onClick={() => {
-                                    const isPayment = entry.referenceId?.startsWith('RCP') || entry.referenceId?.startsWith('PAY');
-                                    const isInvoice = entry.referenceId?.startsWith('INV');
-                                    if (isPayment) navigate('/sales-flow/payments', { state: { paymentId: entry.referenceId } });
-                                    else if (isInvoice) navigate('/sales-flow/invoices', { state: { invoiceId: entry.referenceId } });
-                                  }}
-                                  className="p-1 hover:bg-blue-50 text-blue-400 hover:text-blue-600 rounded transition-colors"
-                                  title="View Source Transaction"
-                                >
-                                  <ExternalLink size={10} />
-                                </button>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-medium">Ref: {entry.referenceId || 'N/A'}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="relative">
-                              <button
-                                onClick={(e) => {
-                                  const rect = e.currentTarget?.getBoundingClientRect();
-                                  if (!rect) return;
-                                  setAccountMenu({ id: entry.debitAccountId, type: 'debit', x: rect.left, y: rect.bottom });
-                                }}
-                                className="text-[11px] font-black text-blue-700 bg-blue-50 px-2 py-1 rounded-lg inline-flex items-center gap-1 hover:bg-blue-100 transition-colors"
-                              >
-                                {accounts.find(a => a.id === entry.debitAccountId || a.code === entry.debitAccountId)?.name || entry.debitAccountId}
-                                <ChevronDown size={10} className="opacity-40" />
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="relative">
-                              <button
-                                onClick={(e) => {
-                                  const rect = e.currentTarget?.getBoundingClientRect();
-                                  if (!rect) return;
-                                  setAccountMenu({ id: entry.creditAccountId, type: 'credit', x: rect.left, y: rect.bottom });
-                                }}
-                                className="text-[11px] font-black text-rose-700 bg-rose-50 px-2 py-1 rounded-lg inline-flex items-center gap-1 hover:bg-rose-100 transition-colors"
-                              >
-                                {accounts.find(a => a.id === entry.creditAccountId || a.code === entry.creditAccountId)?.name || entry.creditAccountId}
-                                <ChevronDown size={10} className="opacity-40" />
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-right font-black text-slate-900 finance-nums">{currency}{entry.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        </tr>
-                      ))}
-                      {customerLedger.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">No general ledger entries found for this customer.</td>
-                        </tr>
-                      )}
-                    </tbody>
-</table>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
-        )}
-
-        {activeTab === 'Referrals' && (
-            <div className="space-y-6 animate-in fade-in duration-300" style={{ padding: 24 }}>
-              {/* Timeline Section */}
-              {referralTimeline.length > 0 && (
-                <div style={{ background: paper, borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
-                  <div style={{ padding: '14px 20px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <h3 style={{ margin: 0, fontWeight: 700, color: ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <History size={18} style={{ color: amber[500] }} />
-                      Referral Timeline
-                    </h3>
-                  </div>
-                  <div className="p-6 max-h-60 overflow-y-auto custom-scrollbar">
-                    <div className="relative pl-8 space-y-4">
-                      <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-slate-100"></div>
-                      {referralTimeline.slice(0, 20).map((entry) => (
-                        <div key={entry.id} className="relative">
-                          <div className="absolute -left-6 top-1 w-3 h-3 rounded-full border-2 border-amber-500 bg-white"></div>
-                          <p className="font-bold text-slate-900 text-sm">{entry.title}</p>
-                          {entry.description && <p className="text-[11px] text-slate-500">{entry.description}</p>}
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] text-slate-400">{new Date(entry.timestamp).toLocaleString()}</span>
-                            {entry.amount !== undefined && <span className="text-[10px] font-bold text-emerald-600">{currency}{entry.amount.toLocaleString()}</span>}
-                            {entry.actorName && <span className="text-[10px] text-slate-400">by {entry.actorName}</span>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                {[
-                  { icon: TrendingUp, label: 'Referrals Made', value: referrals.length, sub: 'Total referrals', color: amber[500], accent: amber[500] },
-                  { icon: DollarSign, label: 'Rewards Earned', value: referralRewards.filter(r => r.status === 'paid' || r.status === 'approved').reduce((sum, r) => sum + r.amount, 0), sub: 'Total rewards paid', color: teal[500], accent: teal[500], isCurrency: true },
-                  { icon: Clock, label: 'Pending', value: referralRewards.filter(r => r.status === 'pending').length, sub: 'Awaiting approval', color: amber[500], accent: amber[500] },
-                ].map((kpi, i) => {
-                  const Icon = kpi.icon;
-                  return (
-                    <div key={i} style={{ background: paper, padding: '14px 16px', borderRadius: 12, border: `1px solid ${hairline}`, borderLeft: `4px solid ${kpi.accent}`, display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                      <div style={{ padding: 8, background: `${kpi.color}15`, borderRadius: 8, color: kpi.color, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Icon size={20} />
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.05, lineHeight: 1, marginBottom: 4 }}>{kpi.label}</p>
-                        <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{kpi.isCurrency ? currency : ''}{typeof kpi.value === 'number' ? kpi.value.toLocaleString(undefined, { minimumFractionDigits: kpi.isCurrency ? 2 : 0 }) : kpi.value}</p>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: inkSoft, marginTop: 4 }}>{kpi.sub}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ background: paper, borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
-                <div style={{ padding: '14px 20px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ margin: 0, fontWeight: 700, color: ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <TrendingUp size={18} style={{ color: amber[500] }} />
-                    Referrals Made
-                  </h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr style={{ background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Referred Customer</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Code</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Date</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {referrals.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">No referrals made by this customer.</td>
-                        </tr>
-                      ) : (
-                        referrals.map((ref) => (
-                          <tr key={ref.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-6 py-4 font-bold text-slate-900">{ref.referredByName || ref.customerId}</td>
-                            <td className="px-6 py-4 text-slate-500 font-medium">{ref.referralCode}</td>
-                            <td className="px-6 py-4 text-slate-500 font-medium">{format(parseISO(ref.date), 'MMM dd, yyyy')}</td>
-                            <td className="px-6 py-4">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${ref.status === 'active' ? 'bg-blue-50 text-blue-700 border-blue-100' : ref.status === 'converted' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                                {ref.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div style={{ background: paper, borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
-                <div style={{ padding: '14px 20px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ margin: 0, fontWeight: 700, color: ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <DollarSign size={18} style={{ color: teal[600] }} />
-                    Reward History
-                  </h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr style={{ background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Date</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Invoice</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Amount</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {referralRewards.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">No rewards yet.</td>
-                        </tr>
-                      ) : (
-                        referralRewards.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((r) => (
-                          <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-6 py-4 text-slate-500 font-medium">{format(parseISO(r.date), 'MMM dd, yyyy')}</td>
-                            <td className="px-6 py-4 font-bold text-slate-900">#{r.invoiceId.slice(-8)}</td>
-                            <td className="px-6 py-4 font-black text-emerald-600 finance-nums">{currency}{r.amount.toLocaleString()}</td>
-                            <td className="px-6 py-4">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${r.status === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : r.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-100' : r.status === 'approved' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
-                                {r.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Wallet' && (
-            <div className="space-y-6 animate-in fade-in duration-300" style={{ padding: 24 }}>
-              {/* Wallet Header */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                {[
-                  { icon: CreditCard, label: 'Current Balance', value: customer.walletBalance || 0, sub: 'Available for purchases', color: teal[500], accent: teal[500], isCurrency: true },
-                  { icon: Plus, label: 'Total Deposits', value: customerWalletTransactions.filter(t => t.type === 'Deposit').reduce((sum, t) => sum + t.amount, 0), sub: 'Lifetime contributions', color: teal[500], accent: teal[500], isCurrency: true },
-                  { icon: TrendingUp, label: 'Total Spent', value: customerWalletTransactions.filter(t => t.type === 'Deduction').reduce((sum, t) => sum + t.amount, 0), sub: 'Used for payments', color: danger, accent: danger, isCurrency: true },
-                ].map((kpi, i) => {
-                  const Icon = kpi.icon;
-                  return (
-                    <div key={i} style={{ background: paper, padding: '14px 16px', borderRadius: 12, border: `1px solid ${hairline}`, borderLeft: `4px solid ${kpi.accent}`, display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                      <div style={{ padding: 8, background: `${kpi.color}15`, borderRadius: 8, color: kpi.color, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Icon size={20} />
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.05, lineHeight: 1, marginBottom: 4 }}>{kpi.label}</p>
-                        <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{kpi.isCurrency ? currency : ''}{kpi.value.toLocaleString(undefined, { minimumFractionDigits: kpi.isCurrency ? 2 : 0 })}</p>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: inkSoft, marginTop: 4 }}>{kpi.sub}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Wallet Transactions Table */}
-              <div style={{ background: paper, borderRadius: 12, border: `1px solid ${hairline}`, overflow: 'hidden' }}>
-                <div style={{ padding: '14px 20px', borderBottom: `1px solid ${hairline}`, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ margin: 0, fontWeight: 700, color: ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <History size={18} style={{ color: teal[600] }} />
-                    Wallet Activity History
-                  </h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr style={{ background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Date</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Type</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Description</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Sub-Account</th>
-                        <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {customerWalletTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((tx, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-4 text-slate-500 font-medium whitespace-nowrap">{format(parseISO(tx.date), 'MMM dd, yyyy')}</td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${tx.type === 'Deposit' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-                              }`}>
-                              {tx.type}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 font-bold text-slate-900">{tx.description}</td>
-                          <td className="px-6 py-4 text-slate-500 font-medium">{tx.subAccountName || 'Main'}</td>
-                          <td className={`px-6 py-4 text-right font-black finance-nums ${tx.type === 'Deposit' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {tx.type === 'Deposit' ? '+' : '-'}{currency}{tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      ))}
-                      {customerWalletTransactions.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">No wallet activity found for this customer.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
         </div>
       </div>
 
-      {/* Account Activity Modal */}
-      {viewingAccountId && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)' }}>
-          <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 25px 60px -12px rgba(0,0,0,.4)', width: '100%', maxWidth: 920, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', border: '1px solid #E8E5DF' }}>
-            <div style={{ padding: '16px 24px', borderBottom: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: teal[50] }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <History size={20} color="#fff" />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontWeight: 700, color: ink }}>
-                    {accounts.find(a => a.id === viewingAccountId || a.code === viewingAccountId)?.name || viewingAccountId} Activity
-                  </h3>
-                  <p style={{ margin: '2px 0 0', fontSize: 11, color: inkSoft }}>
-                    Ledger Transactions for {customer.name}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setViewingAccountId(null)}
-                style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${hairline}`, background: paper, color: inkSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s ease' }}
-                onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
-              >
-                <X size={16} />
-              </button>
+      {isStatementModalOpen && statementPdfUrl && (
+        <div className="cp-modal-overlay" onClick={() => setIsStatementModalOpen(false)}>
+          <div className="cp-modal-card" onClick={e => e.stopPropagation()}>
+            <div className="cp-modal-head">
+              <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 2h9l5 5v15H6z" /><path d="M15 2v5h5" /></svg>Statement Preview</h3>
+              <button className="cp-modal-x" onClick={() => setIsStatementModalOpen(false)}><X size={15} /></button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-0">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-10">
-                  <tr style={{ background: teal[50], borderBottom: `1px solid ${hairline}` }}>
-                    <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Date</th>
-                    <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Description</th>
-                    <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest">Reference</th>
-                    <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest text-right">Debit</th>
-                    <th className="px-6 py-3 font-bold text-slate-500 uppercase text-[10px] tracking-widest text-right">Credit</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {accountTransactions.map((entry, idx) => {
-                    const isDebit = entry.debitAccountId === viewingAccountId;
-                    return (
-                      <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 text-slate-500 font-medium whitespace-nowrap text-[12px]">
-                          {format(parseISO(entry.date), 'MMM dd, yyyy')}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-bold text-slate-900 text-[12px]">{entry.description}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-[11px] font-medium text-slate-400">#{entry.referenceId || 'N/A'}</span>
-                        </td>
-                        <td className="px-6 py-4 text-right font-black text-emerald-600 finance-nums text-[12px]">
-                          {isDebit ? `${currency}${entry.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '-'}
-                        </td>
-                        <td className="px-6 py-4 text-right font-black text-rose-600 finance-nums text-[12px]">
-                          {!isDebit ? `${currency}${entry.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '-'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {accountTransactions.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">No transactions found for this account in the current context.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ padding: '14px 24px', borderTop: `1px solid ${hairline}`, background: teal[50], display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: 16 }}>
-                <span style={{ fontSize: 11, fontWeight: 700 }}>
-                  <span style={{ color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.1, marginRight: 6 }}>Total Debit:</span>
-                  <span style={{ color: teal[600], fontFamily: "'JetBrains Mono', monospace" }}>
-                    {currency}{accountTransactions
-                      .filter(t => t.debitAccountId === viewingAccountId)
-                      .reduce((sum, t) => sum + t.amount, 0)
-                      .toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </span>
-                <span style={{ fontSize: 11, fontWeight: 700 }}>
-                  <span style={{ color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.1, marginRight: 6 }}>Total Credit:</span>
-                  <span style={{ color: danger, fontFamily: "'JetBrains Mono', monospace" }}>
-                    {currency}{accountTransactions
-                      .filter(t => t.creditAccountId === viewingAccountId)
-                      .reduce((sum, t) => sum + t.amount, 0)
-                      .toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </span>
-              </div>
-              <button
-                onClick={() => setViewingAccountId(null)}
-                style={{ padding: '8px 18px', background: ink, color: '#fff', borderRadius: 9, fontWeight: 700, fontSize: 12, border: 'none', cursor: 'pointer', transition: 'all .15s ease' }}
-                onMouseEnter={e => e.currentTarget.style.background = teal[800]}
-                onMouseLeave={e => e.currentTarget.style.background = ink}
-              >
-                Close View
-              </button>
+            <div className="cp-modal-body"><iframe src={statementPdfUrl} title="Statement Preview" /></div>
+            <div className="cp-modal-foot">
+              <button className="cp-btn cp-btn-secondary" onClick={() => setIsStatementModalOpen(false)}>Close</button>
+              <a className="cp-btn cp-btn-primary" href={statementPdfUrl} download={`Statement_${customerDisplayName}_${format(new Date(), 'yyyy-MM-dd')}.pdf`} onClick={e => e.stopPropagation()}>
+                <Download size={14} /> Download PDF
+              </a>
             </div>
           </div>
         </div>
       )}
 
-      {/* Statement Preview Modal */}
-      {isStatementModalOpen && statementPdfUrl && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)' }}>
-          <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 25px 60px -12px rgba(0,0,0,.4)', width: '100%', maxWidth: 1100, height: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #E8E5DF' }}>
-            <div style={{ padding: '14px 22px', borderBottom: '1px solid #E8E5DF', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FAFAF8' }}>
-              <h3 style={{ margin: 0, fontWeight: 700, color: ink, display: 'flex', alignItems: 'center', gap: 8, fontSize: 15 }}>
-                <FileText size={17} style={{ color: teal[600] }} />
-                Statement Preview
-              </h3>
-              <button
-                onClick={() => setIsStatementModalOpen(false)}
-                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #E8E5DF', background: '#fff', color: inkSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s ease' }}
-              >
-                <X size={15} />
-              </button>
+      {portalCreds && (
+        <div className="cp-modal-overlay" onClick={() => setPortalCreds(null)}>
+          <div className="cp-modal-card cp-creds-card" onClick={e => e.stopPropagation()}>
+            <div className="cp-creds-head">
+              <h3>Portal Credentials</h3>
+              <p>Share with the customer. Password is shown only once.</p>
             </div>
-
-            <div className="flex-1" style={{ background: '#F5F4F0', padding: 14, overflow: 'hidden' }}>
-              <iframe
-                src={statementPdfUrl}
-                className="w-full h-full rounded-lg shadow-sm bg-white"
-                style={{ border: '1px solid #E8E5DF' }}
-                title="Statement Preview"
-              />
+            <div className="cp-creds-body">
+              <div className="cp-cred-row">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="cp-cred-label">Portal Email</div>
+                  <div className="cp-cred-val">{portalCreds.email}</div>
+                </div>
+                <button className="cp-copy-btn" onClick={() => copyCred('email')} title="Copy email">
+                  {copiedCred === 'email' ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+              <div className="cp-cred-row cp-amber">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="cp-cred-label">New Password</div>
+                  <div className="cp-cred-val">{portalCreds.password}</div>
+                </div>
+                <button className="cp-copy-btn" onClick={() => copyCred('password')} title="Copy password">
+                  {copiedCred === 'password' ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
             </div>
-
-            <div style={{ padding: '12px 22px', borderTop: '1px solid #E8E5DF', background: '#FAFAF8', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button
-                onClick={() => setIsStatementModalOpen(false)}
-                style={{ padding: '8px 16px', background: '#fff', border: '1px solid #E8E5DF', color: inkSoft, borderRadius: 8, fontWeight: 600, cursor: 'pointer', transition: 'all .15s ease', fontSize: 12.5 }}
-              >
-                Close
-              </button>
-              <a
-                href={statementPdfUrl}
-                download={`Statement_${customer.name}_${format(new Date(), 'yyyy-MM-dd')}.pdf`}
-                style={{ padding: '8px 16px', background: `linear-gradient(135deg, ${teal[500]}, ${teal[700]})`, color: '#fff', borderRadius: 8, fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 2px 8px rgba(15,84,76,0.3)', transition: 'all .15s ease', fontSize: 12.5 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Download size={15} />
-                Download PDF
-              </a>
+            <div className="cp-modal-foot">
+              <button className="cp-btn cp-btn-primary" onClick={() => setPortalCreds(null)}>Done</button>
             </div>
           </div>
         </div>
@@ -1778,3 +1518,5 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
     </div>
   );
 };
+
+export default CustomerWorkspace;

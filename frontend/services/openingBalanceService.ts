@@ -656,11 +656,25 @@ export function decideOpeningCashPost(args: {
   const amount = Number(args.openingBalance ?? 0);
   if (!Number.isFinite(amount) || amount <= 0) return { action: 'skip-not-loaded' };
   if (!args.loaded) return { action: 'skip-not-loaded' };
+  
+  // Enhanced duplicate detection: check for all opening balance entries (reconciled or not)
   const hasOpeningPost = (args.entries || []).some(
     (e) => (e as LedgerEntry).referenceId === OPENING_CASH_BALANCE_REFERENCE
   );
-  if (hasOpeningPost) return { action: 'skip-present' };
-  if ((args.entries || []).length > 0) return { action: 'warn-missing' };
+  
+  if (hasOpeningPost) {
+    // Additional check: if there are existing entries but no opening balance, warn instead of posting
+    if ((args.entries || []).length > 0) {
+      return { action: 'warn-missing' };
+    }
+    return { action: 'skip-present' };
+  }
+  
+  // Only warn if there are other transactions but no opening balance
+  if ((args.entries || []).length > 0) {
+    return { action: 'warn-missing' };
+  }
+  
   return { action: 'post' };
 }
 
@@ -738,6 +752,54 @@ export interface OpeningCashRepairResult {
  * total and links every reversed row id. The originals stay in history.
  * Safe to re-run: reports repaired:false once nothing outstanding remains.
  */
+export async function postOpeningBalanceAtomic(
+  openingBalance: number,
+  cashAccountId: string = '11110',
+  capitalAccountId: string = '31000',
+  reason?: string
+): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  try {
+    await dbService.executeAtomicOperation(['ledger', 'idempotencyKeys'], async (tx) => {
+      // Final check for duplicates within the transaction
+      const ledgerStore = tx.objectStore('ledger');
+      const existingEntries = await ledgerStore.getAll();
+      const hasExistingOpeningBalance = existingEntries.some(
+        (e) => (e as LedgerEntry).referenceId === OPENING_CASH_BALANCE_REFERENCE
+      );
+      
+      if (hasExistingOpeningBalance) {
+        throw new Error('Opening balance already exists');
+      }
+      
+      const entry: LedgerEntry = {
+        id: OPENING_CASH_BALANCE_ENTRY_ID,
+        date: new Date().toISOString(),
+        description: reason || 'System Initialization: Opening Cash Balance',
+        debitAccountId: cashAccountId,
+        creditAccountId: capitalAccountId,
+        amount: openingBalance,
+        referenceId: OPENING_CASH_BALANCE_REFERENCE,
+        reconciled: true,
+      };
+      
+      await ledgerStore.put(entry);
+      await tx.objectStore('idempotencyKeys').put({
+        id: generateId('IK-OPEN'),
+        scope: 'opening_balance',
+        sourceId: entry.id,
+        createdAt: entry.date,
+      });
+    });
+    
+    return { success: true, journalId: OPENING_CASH_BALANCE_ENTRY_ID };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error posting opening balance' 
+    };
+  }
+}
+
 export async function repairDuplicateOpeningCash(reason?: string): Promise<OpeningCashRepairResult> {
   const [ledger, accounts] = await Promise.all([
     dbService.getAll<LedgerEntry>('ledger'),

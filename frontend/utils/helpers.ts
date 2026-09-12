@@ -231,7 +231,7 @@ export const DEFAULT_PAYMENT_TERMS: Record<string, string> = {
   'Examination Account': 'Net 30'
 };
 
-export type PaymentTransactionType = 'invoice' | 'order' | 'quotation' | 'recurring' | 'other';
+export type PaymentTransactionType = 'invoice' | 'order' | 'quotation' | 'recurring' | 'purchase' | 'other';
 
 const SUB_ACCOUNT_PAYMENT_TERMS = 'Net 30';
 const QUOTATION_PAYMENT_TERMS = 'Net 7';

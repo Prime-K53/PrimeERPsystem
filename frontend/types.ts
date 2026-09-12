@@ -1284,6 +1284,7 @@ export interface Customer {
   category?: string;
   segment?: string;
   paymentTerms?: string;
+  billingCycle?: string;
   billingAddress?: string;
   shippingAddress?: string;
   notes?: string;
@@ -1300,7 +1301,18 @@ export interface Customer {
   companyName?: string;
   contactName?: string;
   currency?: string;
+  documents?: CustomerDocument[];
   [key: string]: any;
+}
+
+export interface CustomerDocument {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  uploadedBy?: string;
+  uploadedAt: string;
+  fileRef: string;
 }
 
 export interface PortalUser {

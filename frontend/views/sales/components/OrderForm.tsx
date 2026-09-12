@@ -8,7 +8,8 @@ import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useSales } from '../../../context/SalesContext';
 import { useInventory } from '../../../context/InventoryContext';
-import { CartItem, Item, Invoice, ProductVariant, Account, OrderItem, OrderPayment, BOMTemplate, AdjustmentSnapshot, Customer } from '../../../types';
+import { useProcurement } from '../../../context/ProcurementContext';
+import { CartItem, Item, Invoice, ProductVariant, Account, OrderItem, OrderPayment, BOMTemplate, AdjustmentSnapshot, Customer, Supplier } from '../../../types';
 import { generateCustomerId, generateNextId, getDefaultPaymentTermsForSegment, resolveCustomerPaymentPolicy, roundToCurrency } from '../../../utils/helpers';
 import { generateLocalId } from '../../../utils/idGeneration';
 import { pricingService, DynamicServicePricingResult } from '../../../services/pricingService';
@@ -153,6 +154,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const { invoices, recurringInvoices, accounts, ledger } = useFinance();
     const { quotations, customerPayments, customers, addCustomer } = useSales();
     const { inventory, marketAdjustments, updateReservedStock, addItem } = useInventory();
+    const { suppliers, addSupplier } = useProcurement();
     const { createOrder, orders } = useOrders();
     const { handlePreview } = useDocumentPreview();
     const navigate = useNavigate();
@@ -174,8 +176,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         customerName: '',
         customerId: '',
         subAccountName: 'Main',
-         salesAccountId: '41100',
-        items: [] as CartItem[],
+         salesAccountId: type === 'Purchase' ? '51100' : '41100',
+         items: [] as CartItem[],
         status: type === 'Invoice' ? 'Unpaid' : (type === 'Order' ? 'Pending' : 'Draft'),
         discount: 0,
         discountType: 'fixed',
@@ -222,16 +224,37 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const findCustomerByName = (name: string) => {
         const normalized = name.trim().toLowerCase();
         if (!normalized) return undefined;
+        if (type === 'Purchase') {
+            return (suppliers as any[]).find((s: any) => String(s.name || '').trim().toLowerCase() === normalized) as any;
+        }
         return customers.find(c => c.name.trim().toLowerCase() === normalized);
     };
 
-    const ensureCustomerExists = async (name: string): Promise<Customer | null> => {
+    const ensureCustomerExists = async (name: string): Promise<any> => {
         const normalizedName = name.trim();
         if (!normalizedName) return null;
 
         const existing = findCustomerByName(normalizedName);
         if (existing) {
             return existing;
+        }
+
+        if (type === 'Purchase') {
+            if (typeof addSupplier !== 'function') return null;
+            const newSupplier: any = {
+                id: generateNextId('SUP', (suppliers as any[]) || []),
+                supplier_code: generateNextId('SUP', (suppliers as any[]) || []),
+                name: normalizedName,
+                email: '',
+                phone: '',
+                address: '',
+                payment_terms_days: 30,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            const created = await addSupplier(newSupplier as Supplier);
+            return created as any;
         }
 
         if (typeof addCustomer !== 'function') return null;
@@ -257,7 +280,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const selectedCustomerObj = useMemo(() => {
         if (!formData.customerName) return null;
         return findCustomerByName(formData.customerName) || null;
-    }, [customers, formData.customerName]);
+    }, [customers, suppliers, formData.customerName, type]);
 
     const customerSubAccounts = useMemo(() => {
         if (!formData.customerName) return [];
@@ -326,12 +349,19 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     };
 
     const filteredInventory = useMemo(() => {
-        const base = inventory.filter((i: Item) => i.type !== 'Raw Material' && i.type !== 'Material' && i.type !== 'Service');
+        const isRawMaterial = (it: Item) => {
+            const t = String((it as any).type || '').toLowerCase();
+            const cls = String((it as any).classification || '').toLowerCase();
+            return t === 'raw material' || t === 'raw materials' || t === 'material' || t === 'materials' || cls === 'raw' || cls === 'raw_material' || cls === 'raw materials' || t.includes('raw material');
+        };
+        // Purchase Bills: ONLY Raw Materials (no Products, Stationery, Services / Printing)
+        // Sales flows: exclude Raw Materials / Materials and Services (sellable Products/Stationery only)
+        const base = inventory.filter((i: Item) => type === 'Purchase' ? isRawMaterial(i) : (!isRawMaterial(i) && i.type !== 'Service' && String((i as any).classification || '').toLowerCase() !== 'printing_service'));
         if (!itemSearch) return base;
         return base.filter((i: Item) =>
             (i.name.toLowerCase().includes(itemSearch.toLowerCase()) || i.sku.toLowerCase().includes(itemSearch.toLowerCase()))
         );
-    }, [inventory, itemSearch]);
+    }, [inventory, itemSearch, type]);
 
     const handleItemKeyDown = (e: React.KeyboardEvent, items: Item[], allItems: Item[]) => {
         if (e.key === 'ArrowDown') {
@@ -364,17 +394,23 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     }, [inventory, serviceSearch]);
 
     const filteredCustomers = useMemo(() => {
-        if (!customerSearch) return customers || [];
+        const isPurchaseMode = type === 'Purchase';
+        const source: any[] = isPurchaseMode ? (suppliers as any[] || []) : (customers as any[] || []);
+        if (!customerSearch) return source;
         const term = customerSearch.toLowerCase();
-        return (customers || []).filter((c: Customer) =>
+        return source.filter((c: any) =>
             c.name?.toLowerCase().includes(term) ||
             c.id?.toLowerCase().includes(term) ||
-            c.phone?.includes(term)
+            c.phone?.includes(term) ||
+            c.email?.toLowerCase().includes(term)
         );
-    }, [customers, customerSearch]);
+    }, [customers, suppliers, customerSearch, type]);
 
     const revenueAccounts = useMemo(() => {
         return (accounts as Account[]).filter(acc => acc.type === 'Revenue' || acc.code.startsWith('4'));
+    }, [accounts]);
+    const expenseAccounts = useMemo(() => {
+        return (accounts as Account[]).filter(acc => acc.type === 'Expense' || acc.code.startsWith('5'));
     }, [accounts]);
 
     const accountBalances = useMemo(() => {
@@ -418,6 +454,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const [priceUnlockReason, setPriceUnlockReason] = useState('');
     const isQuotation = type === 'Quotation';
     const isRecurring = type === 'Recurring';
+    const isPurchase = type === 'Purchase';
     const primaryActionLabel = isRecurring
         ? (isEditing
             ? 'Update Subscription'
@@ -716,7 +753,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             ? 'quotation'
             : type === 'Order'
                 ? 'order'
-                : 'invoice';
+                : type === 'Purchase'
+                    ? 'purchase'
+                    : 'invoice';
         const { paymentTerms, dueDate } = resolveCustomerPaymentPolicy({
             customer,
             subAccountName: formData.subAccountName,
@@ -845,20 +884,23 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     }, [analysis.adjustmentBreakdown]);
 
     useEffect(() => {
-        if (!initialData) {
-            let key = 'invoice';
-            let collection: any[] = invoices;
+            if (!initialData) {
+                let key = 'invoice';
+                let collection: any[] = invoices;
 
-            if (type === 'Quotation') {
-                key = 'quotation';
-                collection = quotations;
-            } else if (type === 'Recurring') {
-                key = 'REC';
-                collection = recurringInvoices;
-            } else if (type === 'Order') {
-                key = 'order';
-                collection = orders || [];
-            }
+                if (type === 'Quotation') {
+                    key = 'quotation';
+                    collection = quotations;
+                } else if (type === 'Recurring') {
+                    key = 'REC';
+                    collection = recurringInvoices;
+                } else if (type === 'Order') {
+                    key = 'order';
+                    collection = orders || [];
+                } else if (type === 'Purchase') {
+                    key = 'purchase';
+                    collection = invoices;
+                }
 
             setFormData((prev: any) => ({ ...prev, id: generateNextId(key, collection, companyConfig) }));
         } else {
@@ -869,7 +911,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 : [];
             const resolvedRecurringStatus = normalizeRecurringStatus(initialData.status);
             const fallbackId = initialData.id || generateNextId(
-                type === 'Quotation' ? 'quotation' : type === 'Recurring' ? 'REC' : type === 'Order' ? 'order' : 'invoice',
+                type === 'Quotation' ? 'quotation' : type === 'Recurring' ? 'REC' : type === 'Order' ? 'order' : type === 'Purchase' ? 'purchase' : 'invoice',
                 type === 'Quotation' ? quotations : type === 'Recurring' ? recurringInvoices : type === 'Order' ? (orders || []) : invoices,
                 companyConfig
             );
@@ -888,7 +930,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 customerPricingTier: initialData.customerPricingTier || '',
                 customerPricingSegment: editSegment,
                 subAccountName: initialData.subAccountName || 'Main',
-                 salesAccountId: initialData.salesAccountId || '41100',
+                 salesAccountId: initialData.salesAccountId || (type === 'Purchase' ? '51100' : '41100'),
                 items: normalizedItems,
                 status: isRecurring
                     ? resolvedRecurringStatus
@@ -1772,6 +1814,26 @@ const handleVariantSelect = async (variant: ProductVariant) => {
     const selectCustomer = async (name: string, customerId?: string) => {
         const normalizedName = name.trim();
         if (!normalizedName) return;
+        const isPurchaseMode = type === 'Purchase';
+        if (isPurchaseMode) {
+            const supplier = customerId ? (suppliers as any[]).find((s: any) => s.id === customerId) : (suppliers as any[]).find((s: any) => String(s.name || '').trim().toLowerCase() === normalizedName.toLowerCase());
+            const selectedName = supplier?.name || normalizedName;
+            setFormData({
+                ...formData,
+                customerName: selectedName,
+                customerId: supplier?.id || '',
+                subAccountName: 'Main',
+                billingAddress: supplier?.address || formData.billingAddress || '',
+                shippingAddress: supplier?.address || formData.shippingAddress || '',
+                customerPhone: supplier?.phone || formData.customerPhone || '',
+                customerEmail: supplier?.email || formData.customerEmail || '',
+                customerPricingTier: '',
+                customerPricingSegment: '',
+                items: formData.items
+            });
+            setCustomerPanelOpen(false);
+            return;
+        }
         const customer = customerId ? customers.find((c: any) => c.id === customerId) : findCustomerByName(normalizedName);
         const selectedName = customer?.name || normalizedName;
         const segment = customer?.segment || '';
@@ -2022,7 +2084,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 
                 {/* DOCKET SIDEBAR */}
                 <aside className="order-form-sidebar bg-[#FBF8F2] p-[20px_20px_14px] flex flex-col relative overflow-y-visible rounded-l-[14px] after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[1px] after:bg-[repeating-linear-gradient(#FEFDFB_50%,transparent_0%)] after:bg-[length:1px_14px] after:opacity-50">
-                    <div className="text-[10.5px] font-bold tracking-[1.6px] uppercase text-[#666F6C] mb-[4px]">Sales Flow</div>
+                    <div className="text-[10.5px] font-bold tracking-[1.6px] uppercase text-[#666F6C] mb-[4px]">{isPurchase ? 'Purchase Flow' : 'Sales Flow'}</div>
                     <div className="font-['DM_Serif_Display',serif] text-[27px] leading-[1.15] text-[#23282A] mb-[2px]">{type}</div>
                     <div className="font-['JetBrains_Mono',monospace] text-[13px] text-[#666F6C] tracking-[0.5px] mb-[12px]">#{formData.id}</div>
 
@@ -2039,7 +2101,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                     )}
 
                     <div className="docket-field mb-[10px] relative" ref={customerDropdownRef}>
-                        <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">Customer</label>
+                        <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">{isPurchase ? 'Supplier' : 'Customer'}</label>
                         <div className="relative">
                             <input
                                 type="text"
@@ -2047,7 +2109,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                 onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDropdown(true); }}
                                 onFocus={() => setShowCustomerDropdown(true)}
                                 onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
-                                placeholder="Search customer..."
+                                placeholder={isPurchase ? 'Search supplier...' : 'Search customer...'}
                                 className="w-full bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] text-[13px] text-[#23282A] outline-none focus:border-[#146b60] focus:bg-[#eef7f6] transition-colors placeholder:text-[#666F6C] pr-8"
                             />
                             <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#666F6C]" />
@@ -2071,7 +2133,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                         </div>
                                     </button>
                                 )) : customerSearch.trim() ? null : (
-                                    <div className="px-[10px] py-[8px] text-[13px] text-[#666F6C]">No customers found</div>
+                                    <div className="px-[10px] py-[8px] text-[13px] text-[#666F6C]">{type === 'Purchase' ? 'No suppliers found' : 'No customers found'}</div>
                                 )}
                                 {customerSearch.trim() && (
                                     <button
@@ -2079,26 +2141,45 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                         onMouseDown={async e => {
                                             e.preventDefault();
                                             const name = customerSearch.trim();
-                                            const newCustomer: Customer = {
-                                                id: generateCustomerId(customers),
-                                                name,
-                                                email: '',
-                                                phone: '',
-                                                balance: 0,
-                                                walletBalance: 0,
-                                                creditLimit: 0,
-                                                status: 'Active',
-                                                segment: 'Individual',
-                                                paymentTerms: getDefaultPaymentTermsForSegment('Individual'),
-                                            };
-                                            await addCustomer(newCustomer);
-                                            setCustomerSearch('');
-                                            setShowCustomerDropdown(false);
-                                            selectCustomer(name, newCustomer.id);
+                                            if (type === 'Purchase') {
+                                                const newSupplier: any = {
+                                                    id: generateNextId('SUP', (suppliers as any[]) || []),
+                                                    supplier_code: generateNextId('SUP', (suppliers as any[]) || []),
+                                                    name,
+                                                    email: '',
+                                                    phone: '',
+                                                    address: '',
+                                                    payment_terms_days: 30,
+                                                    status: 'active',
+                                                    created_at: new Date().toISOString(),
+                                                    updated_at: new Date().toISOString(),
+                                                };
+                                                const created = await addSupplier(newSupplier as any);
+                                                setCustomerSearch('');
+                                                setShowCustomerDropdown(false);
+                                                selectCustomer(name, (created as any)?.id || newSupplier.id);
+                                            } else {
+                                                const newCustomer: Customer = {
+                                                    id: generateCustomerId(customers),
+                                                    name,
+                                                    email: '',
+                                                    phone: '',
+                                                    balance: 0,
+                                                    walletBalance: 0,
+                                                    creditLimit: 0,
+                                                    status: 'Active',
+                                                    segment: 'Individual',
+                                                    paymentTerms: getDefaultPaymentTermsForSegment('Individual'),
+                                                };
+                                                await addCustomer(newCustomer);
+                                                setCustomerSearch('');
+                                                setShowCustomerDropdown(false);
+                                                selectCustomer(name, newCustomer.id);
+                                            }
                                         }}
                                         className="w-full text-left px-[10px] py-[8px] text-[13px] text-[#146b60] hover:bg-[#eef7f6] transition-colors font-medium border-t border-[#E4DFD1]/50"
                                     >
-                                        + Add New Customer "{customerSearch.trim()}"
+                                        + Add New {type === 'Purchase' ? 'Supplier' : 'Customer'} "{customerSearch.trim()}"
                                     </button>
                                 )}
                             </div>
@@ -2128,23 +2209,23 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                     </div>
 
                     <div className="docket-field mb-[10px]">
-                        <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">Invoice Status</label>
+                        <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">{isPurchase ? 'Purchase Status' : 'Invoice Status'}</label>
                         <select value={type === 'Invoice' ? 'Invoice' : type === 'Quotation' ? 'Quotation' : type}
                             readOnly
                             className="w-full bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] text-[13px] text-[#23282A] outline-none transition-colors">
-                            <option className="text-[#23282A]">{type === 'Invoice' ? 'Sales Invoice' : type === 'Quotation' ? 'Quotation' : type}</option>
+                            <option className="text-[#23282A]">{type === 'Invoice' ? 'Sales Invoice' : type === 'Quotation' ? 'Quotation' : type === 'Purchase' ? 'Purchase Bill' : type}</option>
                             <option className="text-[#23282A]">Proforma</option>
                             <option className="text-[#23282A]">Credit Note</option>
                         </select>
                     </div>
 
                     <div className="docket-field mb-[10px]">
-                        <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">Sales Account</label>
+                        <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">{isPurchase ? 'Purchase Account' : 'Sales Account'}</label>
                         <div className="flex gap-[6px]">
                             <select value={formData.salesAccountId}
                                 onChange={e => setFormData({ ...formData, salesAccountId: e.target.value })}
                                 className="flex-1 bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] text-[13px] text-[#23282A] outline-none focus:border-[#146b60] focus:bg-[#eef7f6] transition-colors">
-                                {revenueAccounts.map(acc => (
+                                {(isPurchase ? expenseAccounts : revenueAccounts).map(acc => (
                                     <option key={acc.id} value={acc.id} className="text-[#23282A]">{acc.name}</option>
                                 ))}
                             </select>
@@ -2156,7 +2237,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 
                     <div className="flex-1"></div>
                     <div className="text-[10.5px] text-[#666F6C] leading-[1.5] pt-[16px] border-t border-dashed border-[#E4DFD1]">
-                        Doc #{formData.id} &middot; issued from Sales Flow
+                        Doc #{formData.id} &middot; issued from {isPurchase ? 'Purchase' : 'Sales'} Flow
                     </div>
                 </aside>
 
@@ -2239,6 +2320,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                             Line Items
                         </div>
 
+                        {!isPurchase && (
                         <div className="flex items-center gap-[6px] px-[2px] mb-[11px]">
                             <button type="button" onClick={() => handleQuickService('Photocopy')}
                                 className="group inline-flex items-center gap-[6px] px-[10px] py-[5px] text-[11px] font-semibold text-[#666F6C] bg-white border border-[#E4DFD1] rounded-[6px] hover:border-[#72c0b7] hover:text-[#146b60] transition-all duration-200">
@@ -2256,7 +2338,8 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     <span>AI {type === 'Invoice' ? 'Invoice' : 'Quote'}</span>
                                 </button>
                             )}
-                        </div>
+                         </div>
+                        )}
 
                         <div className="search-row" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"8px"}}>
                             <div className="search-box" style={{position:"relative"}} ref={itemDropdownRef}>
@@ -2321,6 +2404,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     </div>
                                 )}
                             </div>
+                            {!isPurchase && (
                             <div className="search-box" style={{position:"relative"}} ref={serviceDropdownRef}>
                                 <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",fontSize:"11px",fontWeight:"700",textTransform:"uppercase",letterSpacing:"0.5px",color:"#146b60",background:"#FEFDFB",padding:"0 4px",zIndex:"1"}}>Services</span>
                                 <input type="text" placeholder="Search services..."
@@ -2360,6 +2444,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     </div>
                                 )}
                             </div>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-[8px] px-[2px] mb-[8px] text-[12px] font-medium text-[#23282A]">
@@ -2757,10 +2842,12 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Cost</span>
                                         <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",color:"#23282A"}}>{currency}{analysis.totalLineCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </div>
+                                    {!isPurchase && (
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px dashed #E4DFD1",fontSize:"12px"}}>
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Profit</span>
                                         <span style={{fontFamily:"JetBrains Mono,monospace",fontWeight:"600",color: analysis.totalProfit >= 0 ? "#146b60" : "#a03c3c"}}>{analysis.totalProfit >= 0 ? '' : '-'}{currency}{Math.abs(analysis.totalProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                     </div>
+                                    )}
                                     {formData.otherChargesEnabled && (
                                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px dashed #E4DFD1",fontSize:"12px"}}>
                                         <span style={{color:"#666F6C",fontWeight:"500"}}>Other Charges</span>
@@ -2816,7 +2903,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                         onClose={() => setSelectedProductForVariants(null)}
                     />
                 )}
-                {selectedServiceForCalculator && (
+                {!isPurchase && selectedServiceForCalculator && (
                     <ServiceCalculatorModal
                         service={selectedServiceForCalculator}
                         currencySymbol={currency}
@@ -2829,7 +2916,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                         }}
                     />
                 )}
-                {quickPrintModal.open && (
+                {!isPurchase && quickPrintModal.open && (
                     <QuickPrintModal
                         open={quickPrintModal.open}
                         onClose={() => setQuickPrintModal({ open: false, type: 'photocopy' })}

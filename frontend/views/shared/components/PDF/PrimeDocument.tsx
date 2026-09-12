@@ -1250,6 +1250,8 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           style={{
             width: templateSettings.logoWidth,
             marginBottom: alignment === 'right' ? 0 : 10,
+            // Statements and left-header documents pin the logo to the left margin
+            ...(alignment === 'left' ? { alignSelf: 'flex-start', marginLeft: 0 } : null),
           }}
         />
       )
@@ -1864,7 +1866,7 @@ if (type === 'POS_RECEIPT') {
             </>
           ) : (
             <>
-              <View style={s.headerLeft}>
+              <View style={[s.headerLeft, { alignItems: 'flex-start' }]}>
                 {renderBrandMark('left')}
                 <Text style={[s.title, titleStyle]}>{title}</Text>
                 {type !== 'FISCAL_REPORT' && (

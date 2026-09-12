@@ -80,12 +80,12 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
             <Text>on {(data as any).conversionDetails.date}</Text>
           </View>
         )}
-        {/* Header Section */}
-        <View style={s.headerContainer}>
+        {/* Header Section — company logo pinned to the left margin */}
+        <View style={[s.headerContainer, { alignItems: 'flex-start' }]}>
           {/* Left: Company logo only */}
-          <View style={s.companySide}>
+          <View style={[s.companySide, { alignItems: 'flex-start', paddingLeft: 0, marginLeft: 0 }]}>
             {logo ? (
-              <Image src={logo} style={{ marginBottom: 6, width: templateSettings.logoWidth }} />
+              <Image src={logo} style={{ marginBottom: 6, marginLeft: 0, paddingLeft: 0, width: templateSettings.logoWidth, alignSelf: 'flex-start' }} />
             ) : null}
             <Text style={{ fontSize: 8, color: '#64748b', fontStyle: 'italic', marginTop: 2 }}>Generated on: {new Date().toLocaleString('en-GB')}</Text>
           </View>

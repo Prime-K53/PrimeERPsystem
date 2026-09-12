@@ -43,6 +43,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
     balance: 0, walletBalance: 0, creditLimit: 0, notes: '', subAccounts: [] as any[],
     segment: initialSegment || 'Individual',
     paymentTerms: getDefaultPaymentTermsForSegment(initialSegment || 'Individual'),
+    billingCycle: 'Monthly',
     assignedSalesperson: '', creditHold: false, tags: [] as string[], avgPaymentDays: 0,
     leadSource: '', pipelineStage: 'New', leadScore: 0, nextFollowUpDate: '', estimatedDealValue: 0,
     referredById: '', referredByName: ''
@@ -83,6 +84,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
         notes: customer.notes || '', subAccounts: customer.subAccounts || [],
         segment: (customer.segment as string) || 'Individual',
         paymentTerms: customer.paymentTerms || getDefaultPaymentTermsForSegment(customer.segment || 'Individual'),
+        billingCycle: (customer as any).billingCycle || '',
         assignedSalesperson: customer.assignedSalesperson || '', creditHold: Boolean(customer.creditHold),
         tags: customer.tags || [], avgPaymentDays: customer.avgPaymentDays ?? 0,
         leadSource: (customer as any).leadSource || '', pipelineStage: (customer as any).pipelineStage || 'New',
@@ -96,6 +98,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
         name: '', contactName: '', companyName: '', phone: '', address: '', city: '', billingAddress: '', shippingAddress: '',
         balance: 0, walletBalance: 0, creditLimit: 0, notes: '', subAccounts: [],
         paymentTerms: getDefaultPaymentTermsForSegment('Individual'), segment: 'Individual',
+        billingCycle: 'Monthly',
         assignedSalesperson: '', creditHold: false, tags: [], avgPaymentDays: 0,
         leadSource: '', pipelineStage: 'New', leadScore: 0, nextFollowUpDate: '', estimatedDealValue: 0,
         referredById: '', referredByName: ''
@@ -162,6 +165,9 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
     if (useBillingForShipping) dataToSave.shippingAddress = dataToSave.billingAddress;
     if (!dataToSave.paymentTerms) {
       dataToSave.paymentTerms = getDefaultPaymentTermsForSegment(dataToSave.segment || 'Individual');
+    }
+    if (!(dataToSave as any).billingCycle) {
+      (dataToSave as any).billingCycle = 'Monthly';
     }
     const credentials = await onSave(dataToSave as Customer);
     onClose();
@@ -512,6 +518,17 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                           placeholder="0.00" style={{ ...inputStyle, paddingLeft: 28 }} />
                       </div>
                     </div>
+                    <div>
+                      <label style={labelStyle}>Billing Cycle</label>
+                      <select name="billingCycle" value={(formData as any).billingCycle || ''} onChange={handleChange} style={selectStyle}>
+                        <option value="">Select billing cycle</option>
+                        <option value="Weekly">Weekly</option>
+                        <option value="Monthly">Monthly</option>
+                        <option value="Termly">Termly</option>
+                        <option value="Quarterly">Quarterly</option>
+                        <option value="Annually">Annually</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div style={{
@@ -695,6 +712,11 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                         <input type="number" min={0} name="estimatedDealValue" value={formData.estimatedDealValue ?? 0} onChange={handleChange}
                           placeholder="0.00" style={{ ...inputStyle, paddingLeft: 28 }} />
                       </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Account Manager / Zone Agent</label>
+                      <input type="text" name="assignedSalesperson" value={formData.assignedSalesperson || ''} onChange={handleChange}
+                        placeholder="e.g. Grace Banda" style={inputStyle} />
                     </div>
                   </div>
                   <div style={{ marginBottom: 18 }}>

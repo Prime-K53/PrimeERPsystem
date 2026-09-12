@@ -139,11 +139,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   useEffect(() => {
     let cancelled = false;
+    let postingInProgress = false;
+    
     (async () => {
-        if (!user) return;
+        if (cancelled || postingInProgress) return;
+        postingInProgress = true;
+        
+        if (!user) {
+            postingInProgress = false;
+            return;
+        }
+        
         const state = useFinanceStore.getState();
         const openingBalance = Number(state.openingBalance ?? 0);
-        if (!Number.isFinite(openingBalance) || openingBalance <= 0) return;
+        if (!Number.isFinite(openingBalance) || openingBalance <= 0) {
+            postingInProgress = false;
+            return;
+        }
 
         // Fresh authoritative read: the hook snapshot may still hold the
         // empty pre-load array while fetching is in flight — deciding on it
@@ -154,15 +166,49 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         } catch {
             freshLedger = null;
         }
-        if (cancelled) return;
+        if (cancelled) {
+            postingInProgress = false;
+            return;
+        }
+        
         const latest = useFinanceStore.getState();
         const loaded = freshLedger !== null || !latest.isLoading;
-        if (!loaded) return; // load still in flight; isLoading flip re-triggers
+        if (!loaded) {
+            postingInProgress = false;
+            return; // load still in flight; isLoading flip re-triggers
+        }
+        
         const ledger = (freshLedger ?? latest.ledger ?? []) as any[];
+
+        // Enhanced duplicate detection: check for both reconciled and unreconciled entries
+        const hasOpeningBalance = ledger.some(
+            entry => entry.referenceId === 'OPENING_BALANCE'
+        );
+        
+        if (hasOpeningBalance) {
+            postingInProgress = false;
+            return;
+        }
+
+        // Only auto-post if this is a fresh load (empty ledger)
+        if (ledger.length > 0) {
+            if (!missingOpeningWarnedRef.current) {
+                missingOpeningWarnedRef.current = true;
+                logger.warn(
+                    'OPENING_BALANCE row missing on a non-empty ledger — refusing to auto-post equity. ' +
+                    'Set the opening cash balance explicitly in Settings if one is required.'
+                );
+            }
+            postingInProgress = false;
+            return;
+        }
 
         const { decideOpeningCashPost, OPENING_CASH_BALANCE_ENTRY_ID } = await import('../services/openingBalanceService');
         const decision = decideOpeningCashPost({ loaded: true, entries: ledger, openingBalance });
-        if (decision.action === 'skip-present' || decision.action === 'skip-not-loaded') return;
+        if (decision.action === 'skip-present' || decision.action === 'skip-not-loaded') {
+            postingInProgress = false;
+            return;
+        }
         if (decision.action === 'warn-missing') {
             if (!missingOpeningWarnedRef.current) {
                 missingOpeningWarnedRef.current = true;
@@ -171,19 +217,28 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     'Set the opening cash balance explicitly in Settings if one is required.'
                 );
             }
+            postingInProgress = false;
             return;
         }
-        // Deterministic id: even if two mounts/tabs race past the check,
-        // both puts land on the SAME row instead of duplicating.
-        await postJournalEntry([{
-            id: OPENING_CASH_BALANCE_ENTRY_ID,
-            description: 'System Initialization: Opening Cash Balance',
-            debitAccountId: gl.cashDrawerAccount || '11110',
-            creditAccountId: '31000',
-            amount: openingBalance,
-            referenceId: 'OPENING_BALANCE',
-            reconciled: true
-        }]);
+        
+        // Atomic posting using the new atomic function
+        try {
+            const { postOpeningBalanceAtomic } = await import('../services/openingBalanceService');
+            const result = await postOpeningBalanceAtomic(
+                openingBalance,
+                gl.cashDrawerAccount || '11110',
+                '31000',
+                'System Initialization: Opening Cash Balance'
+            );
+            
+            if (!result.success) {
+                logger.error('Failed to post opening balance:', result.error);
+            }
+        } catch (error) {
+            logger.error('Failed to post opening balance:', error);
+        } finally {
+            postingInProgress = false;
+        }
     })();
     return () => { cancelled = true; };
   }, [user, financeStore.openingBalance, financeStore.ledger.length, financeStore.isLoading]);

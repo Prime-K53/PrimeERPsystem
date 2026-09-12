@@ -152,6 +152,8 @@ const styles = StyleSheet.create({
     width: 150,
     height: 42,
     marginBottom: 10,
+    marginLeft: 0,
+    alignSelf: 'flex-start',
   }
 });
 

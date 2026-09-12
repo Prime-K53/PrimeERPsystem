@@ -232272,6 +232272,10 @@ var enrichDocumentCustomerData = (rawData, customers = []) => {
 var docStyles = StyleSheet.create({
   page: {
     padding: 40,
+    // Reserve clearance above the absolutely-positioned legal/security
+    // footer (bottom ~26px + ~60px content) so flowing body content breaks
+    // to the next page instead of printing underneath it.
+    paddingBottom: 100,
     fontFamily: "Helvetica",
     fontSize: 12,
     // 16px body
@@ -232810,7 +232814,8 @@ var docStyles = StyleSheet.create({
   companySide: {
     flexDirection: "column",
     textAlign: "left",
-    lineHeight: 1.2
+    lineHeight: 1.2,
+    alignItems: "flex-start"
   },
   statementSide: {
     alignItems: "flex-end",
@@ -233042,9 +233047,9 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
             data2.conversionDetails.date
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.headerContainer, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: docStyles.companySide, children: [
-            logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { marginBottom: 6, width: templateSettings.logoWidth } }) : null,
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.headerContainer, { alignItems: "flex-start" }], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(View, { style: [docStyles.companySide, { alignItems: "flex-start", paddingLeft: 0, marginLeft: 0 }], children: [
+            logo ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Image, { src: logo, style: { marginBottom: 6, marginLeft: 0, paddingLeft: 0, width: templateSettings.logoWidth, alignSelf: "flex-start" } }) : null,
             /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", fontStyle: "italic", marginTop: 2 }, children: [
               "Generated on: ",
               (/* @__PURE__ */ new Date()).toLocaleString("en-GB")
@@ -233394,7 +233399,7 @@ var CleanInvoiceTemplate = ({
     ] }, i2);
   };
   const isCancelled = isCancelledStatus(dataAny.status, dataAny);
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: { padding: 40, fontFamily: templateSettings.fontFamily }, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Page, { size: "A4", style: { padding: 40, paddingBottom: 100, fontFamily: templateSettings.fontFamily }, children: [
     channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PortalCopyWatermark, {}),
     isCancelled && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(CancelledWatermark, {}),
     /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 40 }, children: [
@@ -234145,7 +234150,9 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       src: logo,
       style: {
         width: templateSettings.logoWidth,
-        marginBottom: alignment === "right" ? 0 : 10
+        marginBottom: alignment === "right" ? 0 : 10,
+        // Statements and left-header documents pin the logo to the left margin
+        ...alignment === "left" ? { alignSelf: "flex-start", marginLeft: 0 } : null
       }
     }
   ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
@@ -234729,7 +234736,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
         ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.headerLeft, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.headerLeft, { alignItems: "flex-start" }], children: [
             renderBrandMark("left"),
             /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.title, titleStyle], children: title }),
             type !== "FISCAL_REPORT" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.infoText, children: [

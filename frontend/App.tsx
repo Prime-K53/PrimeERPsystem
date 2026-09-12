@@ -799,7 +799,7 @@ const AppLayout: React.FC = () => {
                 <Route path="/inventory" element={<Navigate to="/supply-chain/inventory" replace />} />
                 <Route path="/purchases" element={<Navigate to="/procurement/bills" replace />} />
                 <Route path="/purchases/grn" element={<Navigate to="/supply-chain/grn" replace />} />
-                <Route path="/purchases/new" element={<Navigate to="/procurement/bills" replace />} />
+                <Route path="/purchases/new" element={<Navigate to="/procurement/bills" replace state={{ action: 'create' }} />} />
                 <Route path="/purchases/subcontracting" element={<Navigate to="/procurement/subcontracting" replace />} />
                 <Route path="/pos" element={<Navigate to="/sales-flow/pos" replace />} />
                 <Route path="/sales/quotations" element={<Navigate to="/sales-flow/quotations" replace />} />
