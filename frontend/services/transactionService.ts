@@ -43,6 +43,7 @@ import {
 import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
 import { resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
+import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 
 const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'LG-REV-AR-'];
 
@@ -1503,7 +1504,7 @@ export const transactionService = {
                 quotation.paymentTerms = quotationPaymentTerms;
                 quotation.dueDate = quotationDueDate;
                 quotation.validUntil = quotationDueDate;
-                await store.put(quotation);
+                await store.put(ensureDocumentVerificationToken(quotation));
                 return { success: true };
             }
         );
@@ -2849,7 +2850,7 @@ export const transactionService = {
                     excessAmount: snapshot.walletDeposit > 0 ? snapshot.walletDeposit : undefined,
                     calculationVersion: snapshot.calculationVersion
                 };
-                await paymentStore.put(auditedPayment);
+                await paymentStore.put(ensureDocumentVerificationToken(auditedPayment));
 
                 // 4. Update Invoices
                 for (const allocation of validatedInvoiceAllocations) {
@@ -3300,6 +3301,29 @@ export const transactionService = {
                 if (invoice.verificationToken) return { token: String(invoice.verificationToken), issued: false };
                 const next = ensureInvoiceVerificationToken(invoice);
                 await invoiceStore.put(next);
+                return { token: String(next.verificationToken), issued: true };
+            }
+        );
+        return result;
+    },
+
+    /**
+     * Generic backfill accessor: returns the permanent verification token for
+     * any supported document record, issuing + persisting one first when the
+     * record predates tokens. Single non-data field through the normal store
+     * path (syncs like any other field); never regenerates. Used by
+     * Copy/View verification actions and on-open backfills.
+     */
+    async getOrIssueDocumentVerificationToken(storeName: string, id: string): Promise<{ token: string; issued: boolean }> {
+        const result = await dbService.executeAtomicOperation(
+            [storeName],
+            async (tx) => {
+                const store = tx.objectStore(storeName);
+                const record = await store.get(id);
+                if (!record) throw new Error(`Record #${id} not found in ${storeName}`);
+                if (record.verificationToken) return { token: String(record.verificationToken), issued: false };
+                const next = ensureDocumentVerificationToken(record);
+                await store.put(next);
                 return { token: String(next.verificationToken), issued: true };
             }
         );

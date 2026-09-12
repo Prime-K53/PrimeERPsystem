@@ -334,6 +334,11 @@ app.use('/api/portal', verifyPortalToken, portalRoutes);
 const portalVerifyRoutes = require('./routes/portalVerify.cjs');
 app.use('/api/public/invoices', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), portalVerifyRoutes);
 
+// Public generic document verification — same guarantees for every
+// supported document type (receipt, quotation, orders, delivery notes).
+const documentVerifyRoutes = require('./routes/documentVerify.cjs');
+app.use('/api/public/documents', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), documentVerifyRoutes);
+
 // Apply JWT verification to all /api routes (auth routes are skipped by verifyToken internally)
 app.use('/api', verifyToken);
 // Inject currency into requests

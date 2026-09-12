@@ -15,6 +15,7 @@ import { Supplier, PurchaseOrder, PurchaseOrderItem, GoodsReceipt, PurchaseInvoi
 import { getGLConfig, generateId, resolveAccountForPosting } from './transactions/_internal';
 import { ledgerService } from './ledgerService';
 import { logger } from './logger';
+import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 
 const SUPPLIER_STORE = 'suppliers';
 const PO_STORE = 'purchaseOrders';
@@ -115,8 +116,9 @@ export const procurementService = {
                 updated_at: new Date().toISOString(),
             };
 
-            await dbService.put(PO_STORE, order);
-            return order;
+            const withToken = ensureDocumentVerificationToken(order);
+            await dbService.put(PO_STORE, withToken);
+            return withToken;
         } catch (error) {
             logger.error('Failed to create purchase order', error);
             return null;

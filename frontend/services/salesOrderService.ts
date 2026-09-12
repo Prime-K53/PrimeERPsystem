@@ -1,5 +1,6 @@
 import { dbService } from './db.ts';
 import { generateNextId } from '../utils/helpers';
+import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import {
   SalesOrder,
   SalesOrderItem,
@@ -331,8 +332,9 @@ export const salesOrderService = {
     const canonical = canonicalizeOrder(order);
     const errors = validateOrder(canonical);
     if (errors.length > 0) throw new Error(errors.join('; '));
-    await dbService.put('salesOrders', canonical);
-    return canonical;
+    const withToken = ensureDocumentVerificationToken(canonical);
+    await dbService.put('salesOrders', withToken);
+    return withToken;
   },
 
   async update(id: string, patch: Partial<SalesOrder>) {

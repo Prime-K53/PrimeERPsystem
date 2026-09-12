@@ -18,6 +18,7 @@ import { logger } from './logger';
 import { transactionService } from './transactionService';
 import { repriceMasterInventoryFromAdjustments } from './masterInventoryPricingService';
 import { generateNextId } from '../utils/helpers';
+import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { generateNextSalesInvoiceNumber } from './documentNumberService';
 import { normalizeInventoryItemPricing } from '../utils/pricing';
 import { examinationJobService } from './examinationJobService.ts';
@@ -1147,7 +1148,7 @@ export const api = {
     getDeliveryNotes: () => handle(() => dbService.getAll<DeliveryNote>('deliveryNotes'), 'Finance.GetDeliveryNotes'),
     saveDeliveryNote: (n: DeliveryNote) => handle(() => {
       checkAuth(['Admin', 'Accountant', 'Clerk'], 'Finance.SaveDeliveryNote');
-      return dbService.put('deliveryNotes', n);
+      return dbService.put('deliveryNotes', ensureDocumentVerificationToken(n));
     }, 'Finance.SaveDeliveryNote'),
     deleteDeliveryNote: (id: string) => handle(() => {
       checkAuth(['Admin'], 'Finance.DeleteDeliveryNote');

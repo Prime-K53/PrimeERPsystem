@@ -3,12 +3,13 @@ import {
   X, CheckCircle, Clock, DollarSign, Printer, Edit2, Download,
   FileText, ArrowRight, History, Trash2,
   AlertTriangle, Send, Eye, Briefcase, Package, RefreshCw,
-  TrendingUp, Percent, Copy, ChevronRight
+  TrendingUp, Percent, Copy, ChevronRight, Link2, ExternalLink
 } from 'lucide-react';
 import { Quotation } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useSales } from '../../../context/SalesContext';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
+import { useDocumentVerificationLink } from '../../../hooks/useDocumentVerificationLink';
 import { AuditTimeline } from '../../shared/components/AuditTimeline';
 import TransactionPricingInsights from './TransactionPricingInsights';
 import { currencyService } from '../../../services/currencyService';
@@ -32,6 +33,7 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
   const { companyConfig, notify } = useAuth();
   const { quotations = [] } = useSales();
   const { handlePreview } = useDocumentPreview();
+  const { copyVerificationLink, openVerificationLink } = useDocumentVerificationLink();
   const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
   const quotation = useMemo(() =>
@@ -213,6 +215,14 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
                     <button onClick={() => onAction(quotation, 'download_pdf')}
                       style={{ width: '100%', padding: '10px 16px', border: `1.4px solid ${hairline}`, borderRadius: 9, cursor: 'pointer', background: paper, color: inkSoft, fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                       <Download size={16} /> Download PDF
+                    </button>
+                    <button onClick={() => copyVerificationLink('quotation', 'quotations', quotation.id, quotation.id)}
+                      style={{ width: '100%', padding: '10px 16px', border: `1.4px solid ${hairline}`, borderRadius: 9, cursor: 'pointer', background: paper, color: inkSoft, fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <Link2 size={16} /> Copy Verification Link
+                    </button>
+                    <button onClick={() => openVerificationLink('quotation', 'quotations', quotation.id, quotation.id)}
+                      style={{ width: '100%', padding: '10px 16px', border: `1.4px solid ${hairline}`, borderRadius: 9, cursor: 'pointer', background: paper, color: inkSoft, fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <ExternalLink size={16} /> View Verification
                     </button>
                     {quotation.status === 'Draft' && (
                       <button onClick={() => onAction(quotation, 'approve')}

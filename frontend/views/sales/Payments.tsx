@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { logger } from '../../services/logger';
-import { Banknote as PaymentIcon, Plus, Trash2, X, Search, Calendar, Eye, Mail, ArrowRight, AlertTriangle, Wallet, MoreVertical, Building2, Undo2, Printer, Edit2, FileText, Download, Loader2, ExternalLink, BarChart3, FileBarChart, RefreshCw } from 'lucide-react';
+import { Banknote as PaymentIcon, Plus, Trash2, X, Search, Calendar, Eye, Mail, ArrowRight, AlertTriangle, Wallet, MoreVertical, Building2, Undo2, Printer, Edit2, FileText, Download, Loader2, ExternalLink, BarChart3, FileBarChart, RefreshCw, Link2 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
@@ -11,6 +11,7 @@ import { OFFLINE_MODE, DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../constants';
 import { CustomerPayment, InvoiceAllocation, Sale, Invoice, SupplierPayment, PurchaseAllocation, LedgerEntry, WalletTransaction, Order, OrderPayment } from '../../types';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useHighlight } from '../../hooks/useHighlight';
+import { useDocumentVerificationLink } from '../../hooks/useDocumentVerificationLink';
 import { ClientModal } from './components/ClientModal';
 import { DocLink } from '../../components/DocLink';
 import { generateNextId, roundFinancial } from '../../utils/helpers';
@@ -314,6 +315,7 @@ const CustomerPaymentDetailPanel: React.FC<{
 }> = ({ payment, onClose, onDelete, onPurge, onEdit, onPreview, onStatement }) => {
     const { companyConfig, notify } = useAuth();
     const { ledger, accounts } = useFinance();
+    const { copyVerificationLink, openVerificationLink } = useDocumentVerificationLink();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'Details' | 'Accounting'>('Details');
     const currency = companyConfig.currencySymbol;
@@ -562,6 +564,22 @@ const CustomerPaymentDetailPanel: React.FC<{
                 >
                     <Edit2 size={14} /> Edit Details
                 </button>
+                {payment && (
+                    <>
+                        <button
+                            onClick={() => copyVerificationLink('receipt', 'customerPayments', payment.id, payment.id)}
+                            className="flex-1 min-w-[120px] bg-[#FEFDFB] border border-[#e4ddd1] text-[#5c6567] px-3 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#eef7f6] transition-all active:scale-95 shadow-sm"
+                        >
+                            <Link2 size={14} /> Copy Verification Link
+                        </button>
+                        <button
+                            onClick={() => openVerificationLink('receipt', 'customerPayments', payment.id, payment.id)}
+                            className="flex-1 min-w-[120px] bg-[#FEFDFB] border border-[#e4ddd1] text-[#5c6567] px-3 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#eef7f6] transition-all active:scale-95 shadow-sm"
+                        >
+                            <ExternalLink size={14} /> View Verification
+                        </button>
+                    </>
+                )}
                 {String(payment.status || '').toLowerCase() === 'voided' ? (
                     <button
                         onClick={() => {

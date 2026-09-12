@@ -46,6 +46,7 @@ interface FinanceContextType {
   deleteInvoice: (id: string) => Promise<void>;
   cancelInvoice: (id: string, reason: string) => Promise<void>;
   getInvoiceVerificationToken: (id: string) => Promise<string>;
+  getDocumentVerificationToken: (storeName: string, id: string) => Promise<string>;
   editInvoiceWithAdjustment: (invoice: Invoice) => Promise<any>;
   postInvoiceCorrection: (id: string) => Promise<any>;
   
@@ -466,6 +467,16 @@ const handleOpenInventory = async () => {
    */
   const getInvoiceVerificationToken = async (id: string): Promise<string> => {
       const { token } = await transactionService.getOrIssueInvoiceVerificationToken(id);
+      await financeStore.fetchFinanceData();
+      return token;
+  };
+
+  /**
+   * Generic version for every verifiable document type (receipt, quotation,
+   * orders, delivery notes). Same guarantees as the invoice variant.
+   */
+  const getDocumentVerificationToken = async (storeName: string, id: string): Promise<string> => {
+      const { token } = await transactionService.getOrIssueDocumentVerificationToken(storeName, id);
       await financeStore.fetchFinanceData();
       return token;
   };
@@ -1077,7 +1088,7 @@ const handleOpenInventory = async () => {
       recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory: handleOpenInventory, repairDuplicateOpeningCash,
       refreshAccounts: financeStore.fetchFinanceData,
       addAccount: financeStore.addAccount, updateAccount: financeStore.updateAccount, deleteAccount: financeStore.deleteAccount,
-      deleteInvoice, cancelInvoice, editInvoiceWithAdjustment, postInvoiceCorrection, getInvoiceVerificationToken, updateIncome: financeStore.updateIncome, deleteIncome: financeStore.deleteIncome,
+      deleteInvoice, cancelInvoice, editInvoiceWithAdjustment, postInvoiceCorrection, getInvoiceVerificationToken, getDocumentVerificationToken, updateIncome: financeStore.updateIncome, deleteIncome: financeStore.deleteIncome,
       toggleReconciled: financeStore.toggleReconciled, addRecurringInvoice: financeStore.addRecurringInvoice, deleteRecurringInvoice: financeStore.deleteRecurringInvoice, updateRecurringInvoice: financeStore.updateRecurringInvoice,
       addScheduledPayment: financeStore.addScheduledPayment, updateScheduledPayment: financeStore.updateScheduledPayment, 
       updateDeliveryNote: async (note: DeliveryNote) => {

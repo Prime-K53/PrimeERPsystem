@@ -1,5 +1,9 @@
 import QRCode from 'qrcode';
-import { buildInvoiceVerificationUrl } from './invoiceVerification';
+import {
+  buildDocumentVerificationUrl,
+  detectVerifiableDocumentType,
+  resolveVerifiableDocumentNumber,
+} from './documentVerification';
 
 const getCompanyNameFromStorage = () => {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'Prime ERP';
@@ -55,11 +59,15 @@ const resolveCreatedAt = (data: any) =>
   ).trim();
 
 export const buildSecurityQrPayload = (data: any, companyName?: string) => {
-  // Invoices carrying a verification token encode the verification URL
+  // Documents carrying a verification token encode the verification URL
   // (compact, QR-friendly, no sensitive data). Everything else keeps the
-  // legacy human-readable payload — including invoices that predate tokens.
-  const verificationUrl = data
-    ? buildInvoiceVerificationUrl({
+  // legacy human-readable payload — including documents that predate tokens.
+  // Invoice output is byte-identical to the original invoice implementation.
+  const docType = detectVerifiableDocumentType(data);
+  const verificationUrl = docType
+    ? buildDocumentVerificationUrl({
+      documentType: docType,
+      documentNumber: resolveVerifiableDocumentNumber(data, docType),
       invoiceNumber: data.invoiceNumber,
       number: data.number,
       verificationToken: (data as any).verificationToken,
