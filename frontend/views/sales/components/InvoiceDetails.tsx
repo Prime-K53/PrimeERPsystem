@@ -19,6 +19,7 @@ import TransactionPricingInsights from './TransactionPricingInsights';
 import AIDocumentSummarizer from '../../../components/ai/AIDocumentSummarizer';
 import { enrichInvoiceWithBatchPricing, findMatchingExaminationBatch } from '../../../utils/examinationInvoicePricing';
 import { currencyService } from '../../../services/currencyService';
+import { computePostEditCorrection } from '../../../services/transactions/_internal';
 
 interface InvoiceDetailsProps {
     invoice: Invoice;
@@ -45,7 +46,7 @@ const danger = '#b5493f';
 
 export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initialInvoice, onClose, onEdit, onAction, isSubscription = false }) => {
     const { companyConfig, auditLogs, notify, user } = useAuth();
-    const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment } = useFinance();
+    const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment, editInvoiceWithAdjustment, postInvoiceCorrection } = useFinance();
     const { customers = [] } = useSales();
     const { batches = [] } = useExamination();
     const { inventory = [] } = useInventoryStore();
@@ -138,20 +139,70 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
         setEditPrice(0);
     }, []);
 
+    // Drift between the commercial total and net posted AR (post-posting
+    // edit without a correction). Non-null means a correction is pending.
+    const postEditDrift = useMemo(() => {
+        if (!invoice?.id || invoice.status === 'Draft' || invoice.status === 'Cancelled' || invoice.status === 'Voided') return null;
+        const originals = (ledger || []).filter(e =>
+            e.referenceId === invoice.id && /^(LG-INV-AR|LG-QTN-INV-AR|LG-JO-INV-AR|LG-REV-AR)-/.test(String(e.id || ''))
+        );
+        if (originals.length === 0) return null;
+        const arAccounts = Array.from(new Set(originals.map(e => e.debitAccountId)));
+        const revenueAccounts = Array.from(new Set(originals.map(e => e.creditAccountId)));
+        if (arAccounts.length !== 1 || revenueAccounts.length !== 1) return null;
+        const priors = (ledger || [])
+            .filter(e => String(e.referenceId || '').startsWith(`${invoice.id}-POST-EDIT-CORRECTION`))
+            .map(e => ({ debitAccountId: e.debitAccountId, creditAccountId: e.creditAccountId, amount: e.amount, referenceId: e.referenceId }));
+        try {
+            return computePostEditCorrection({
+                invoiceId: invoice.id,
+                currentTotal: Number(invoice.totalAmount || 0),
+                originalArEntries: originals,
+                priorCorrections: priors,
+                arAccountId: arAccounts[0],
+                revenueAccountId: revenueAccounts[0],
+            });
+        } catch {
+            return null;
+        }
+    }, [ledger, invoice]);
+
+    const [isPostingCorrection, setIsPostingCorrection] = useState(false);
+    const handlePostCorrection = useCallback(async () => {
+        if (!invoice.id || !postEditDrift) return;
+        setIsPostingCorrection(true);
+        try {
+            await postInvoiceCorrection(invoice.id);
+        } finally {
+            setIsPostingCorrection(false);
+        }
+    }, [invoice.id, postEditDrift, postInvoiceCorrection]);
+
     const saveEditItem = useCallback(async (item: any) => {
         if (!invoice.id) return;
+        const oldLine = (invoice.items || []).find((it: any) => it.id === item.id);
         const updatedItems = (invoice.items || []).map(it =>
             it.id === item.id ? { ...it, quantity: editQty, price: editPrice } : it
         );
-        const updatedInvoice = { ...invoice, items: updatedItems };
+        // Delta method: only the edited line's contribution changes, so tax /
+        // discount policy on the invoice is preserved exactly. The controlled
+        // workflow journals any resulting AR/revenue delta automatically.
+        const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+        const oldExt = round2(Number(oldLine?.quantity || 0) * Number(oldLine?.price ?? oldLine?.unitPrice ?? 0));
+        const newExt = round2(Number(editQty || 0) * Number(editPrice || 0));
+        const updatedInvoice = { ...invoice, items: updatedItems, totalAmount: round2(Number(invoice.totalAmount || 0) - oldExt + newExt) };
         try {
-            await updateInvoice(updatedInvoice);
-            notify('success', 'Line item updated');
+            const result: any = await editInvoiceWithAdjustment(updatedInvoice);
+            if (result?.corrected) {
+                notify('success', `Line item updated with K${Number(result?.spec?.amount || 0).toLocaleString()} accounting correction`);
+            } else {
+                notify('success', 'Line item updated');
+            }
         } catch {
             notify('error', 'Failed to update line item');
         }
         cancelEditItem();
-    }, [invoice, editQty, editPrice, updateInvoice, notify, cancelEditItem]);
+    }, [invoice, editQty, editPrice, editInvoiceWithAdjustment, notify, cancelEditItem]);
 
     const handleAddComment = useCallback(() => {
         if (!newComment.trim()) return;
@@ -434,6 +485,24 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                         <p style={{ margin: '2px 0 0', fontSize: 18, fontWeight: 700, color: (balanceDue || 0) > 0.001 ? danger : hairline, fontFamily: "'JetBrains Mono', monospace" }}>{currency}{(balanceDue || 0).toLocaleString()}</p>
                     </div>
                 </div>
+
+                {postEditDrift && (
+                    <div style={{ margin: '0 0 12px', padding: '12px 14px', borderRadius: 10, background: '#fef6e7', border: '1.4px solid #eec27a', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <AlertTriangle size={16} color="#b97e2b" style={{ flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: ink }}>Posted total differs from accounting</div>
+                            <div style={{ fontSize: 12, color: inkSoft, marginTop: 2 }}>
+                                Invoice {currency}{Number(invoice.totalAmount || 0).toLocaleString()} vs net posted AR {currency}{Number(postEditDrift.netPostedAr || 0).toLocaleString()} — {postEditDrift.direction === 'reduction' ? 'reduction' : 'increase'} of {currency}{Number(postEditDrift.amount || 0).toLocaleString()} pending.
+                            </div>
+                        </div>
+                        <button
+                            onClick={handlePostCorrection}
+                            disabled={isPostingCorrection}
+                            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', cursor: isPostingCorrection ? 'default' : 'pointer', background: '#b97e2b', color: '#fff', fontSize: 12, fontWeight: 700, opacity: isPostingCorrection ? 0.7 : 1 }}>
+                            {isPostingCorrection ? 'Posting…' : `Post ${currency}${Number(postEditDrift.amount || 0).toLocaleString()} correction`}
+                        </button>
+                    </div>
+                )}
 
                 <div className="sales-tabs">
                     {['Overview', 'Financials', 'Payments', 'Comments', 'Activity'].map(tab => (

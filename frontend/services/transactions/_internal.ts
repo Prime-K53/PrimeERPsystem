@@ -759,6 +759,241 @@ export const calculateItemsCost = async (
     return roundToCurrency(totalCost);
 };
 
+/**
+ * True when the invoice carries only service lines (and at least one line).
+ * Uses the exact Service predicate shared by calculateItemsCost and
+ * resolveInventoryAccountFromItems so revenue routing agrees with COGS.
+ * Service-only invoices must credit 41200 Service Income, never 41100.
+ */
+export function isServiceOnlyInvoice(items: any[]): boolean {
+    if (!items || items.length === 0) return false;
+    return items.every((i: any) => i?.type === 'Service');
+}
+
+/**
+ * Active (posted) invoice statuses. Draft/Cancelled invoices must not
+ * contribute AR, revenue, COGS or inventory movements.
+ */
+export function isPostedInvoiceStatus(status: any): boolean {
+    return String(status || '') !== 'Draft' && String(status || '') !== 'Cancelled';
+}
+
+/**
+ * Revenue account selector for invoice AR postings.
+ * Explicit salesAccountId always wins (e.g. POS selector); service-only
+ * invoices fall back to 41200 Service Income, everything else to the
+ * default sales account (41100 Product Sales).
+ */
+export function resolveInvoiceRevenueAccount(invoice: any, defaultSalesAccount: string): string {
+    if (invoice?.salesAccountId) return invoice.salesAccountId;
+    if (isServiceOnlyInvoice(invoice?.items || [])) return '41200';
+    return defaultSalesAccount;
+}
+
+/**
+ * Lifecycle guard for invoice edits. Posted invoices (anything that already
+ * journalised AR/revenue/COGS) are immutable by bare edit:
+ * - cancelling must go through voidInvoice (full reversal), and
+ * - totals/lines changes require void-and-reissue or a correction journal.
+ * Settlement fields (paidAmount, Paid/Partial/Unpaid status) and draft edits
+ * always pass through. Throws a guidance Error otherwise.
+ */
+export function assertInvoiceEditable(existing: any, next: any): void {
+    if (!existing || String(existing.status || '') === 'Draft') return;
+    const nextStatus = String(next?.status || '');
+    if (nextStatus === 'Cancelled' || nextStatus === 'Voided') {
+        throw new Error(
+            `Invoice #${next?.id || existing?.id} has posted ledger entries and cannot be cancelled by edit. Use void/cancel with reversal instead.`
+        );
+    }
+    const totalsChanged = Math.abs(Number(existing.totalAmount || 0) - Number(next?.totalAmount || 0)) > 0.005;
+    if (totalsChanged || !sameInvoiceLines(existing.items, next?.items)) {
+        throw new Error(
+            `Invoice #${next?.id || existing?.id} totals/lines cannot be edited after posting (ledger already journalised ${Number(existing.totalAmount || 0).toFixed(2)}). Void and reissue, or post a correction, instead.`
+        );
+    }
+}
+
+export interface PostEditCorrectionSpec {
+    direction: 'reduction' | 'increase';
+    amount: number;
+    debitAccountId: string;
+    creditAccountId: string;
+    referenceId: string;
+    description: string;
+    originalAr: number;
+    netPostedAr: number;
+    currentTotal: number;
+}
+
+const POST_EDIT_CORRECTION_TAG = 'POST-EDIT-CORRECTION';
+
+export function postEditCorrectionBaseRef(invoiceId: string): string {
+    return `${invoiceId}-${POST_EDIT_CORRECTION_TAG}`;
+}
+
+export function isPostEditCorrectionRef(invoiceId: string, referenceId: any): boolean {
+    return String(referenceId || '').startsWith(postEditCorrectionBaseRef(invoiceId));
+}
+
+/**
+ * Compute the AR/revenue correction needed when a posted invoice's commercial
+ * total no longer matches its net posted AR.
+ *
+ * - originalArEntries: the original AR debit postings (LG-INV-AR and
+ *   conversion equivalents), referenceId === invoiceId.
+ * - priorCorrections: earlier POST-EDIT-CORRECTION entries for this invoice.
+ * - arAccountId / revenueAccountId: the resolved pair from the ORIGINAL
+ *   posting — the correction always reverses that same pair, never another
+ *   revenue account.
+ *
+ * Returns null when books already agree (|diff| < 0.005). Throws STOP when a
+ * prior correction touches a different account pair (manual reconciliation).
+ */
+export function computePostEditCorrection(args: {
+    invoiceId: string;
+    currentTotal: number;
+    originalArEntries: Array<{ debitAccountId: string; creditAccountId: string; amount: number }>;
+    priorCorrections: Array<{ debitAccountId: string; creditAccountId: string; amount: number; referenceId: string }>;
+    arAccountId: string;
+    revenueAccountId: string;
+}): PostEditCorrectionSpec | null {
+    const { invoiceId, currentTotal, originalArEntries, priorCorrections, arAccountId, revenueAccountId } = args;
+    const originalAr = roundToCurrency(originalArEntries.reduce((s, e) => s + Number(e.amount || 0), 0));
+    let netPostedAr = originalAr;
+    for (const c of priorCorrections) {
+        const amt = Number(c.amount || 0);
+        const touchesAr = c.debitAccountId === arAccountId || c.creditAccountId === arAccountId;
+        const touchesRevenue = c.debitAccountId === revenueAccountId || c.creditAccountId === revenueAccountId;
+        if (!touchesAr || !touchesRevenue) {
+            throw new Error(
+                `STOP: prior correction ${c.referenceId} for invoice #${invoiceId} touches an unexpected account pair. Manual reconciliation required — no automatic correction posted.`
+            );
+        }
+        // Reduction corrections credit AR; increase corrections debit AR.
+        netPostedAr = roundToCurrency(netPostedAr + (c.debitAccountId === arAccountId ? amt : -amt));
+    }
+    const diff = roundToCurrency(Number(currentTotal || 0) - netPostedAr);
+    if (Math.abs(diff) < 0.005) return null;
+    const baseRef = postEditCorrectionBaseRef(invoiceId);
+    const referenceId = priorCorrections.length === 0 ? baseRef : `${baseRef}-${priorCorrections.length + 1}`;
+    if (diff < 0) {
+        const amount = roundToCurrency(-diff);
+        return {
+            direction: 'reduction',
+            amount,
+            debitAccountId: revenueAccountId,
+            creditAccountId: arAccountId,
+            referenceId,
+            description: `POST-EDIT CORRECTION: Invoice #${invoiceId} adjusted ${originalAr.toFixed(2)} -> ${Number(currentTotal || 0).toFixed(2)} (Δ -${amount.toFixed(2)})`,
+            originalAr,
+            netPostedAr,
+            currentTotal: Number(currentTotal || 0),
+        };
+    }
+    const amount = roundToCurrency(diff);
+    return {
+        direction: 'increase',
+        amount,
+        debitAccountId: arAccountId,
+        creditAccountId: revenueAccountId,
+        referenceId,
+        description: `POST-EDIT CORRECTION: Invoice #${invoiceId} adjusted ${originalAr.toFixed(2)} -> ${Number(currentTotal || 0).toFixed(2)} (Δ +${amount.toFixed(2)})`,
+        originalAr,
+        netPostedAr,
+        currentTotal: Number(currentTotal || 0),
+    };
+}
+
+function sameInvoiceLines(a: any, b: any): boolean {
+    const norm = (items: any) => (items || []).map((it: any) => [
+        String(it?.id ?? it?.productId ?? it?.name ?? ''),
+        Number(it?.quantity ?? it?.qty ?? 0),
+        Number(it?.price ?? it?.unitPrice ?? it?.sellingPrice ?? 0),
+    ].join('|')).sort().join(';');
+    return norm(a) === norm(b);
+}
+
+export interface CogsLeg {
+    /** Resolved ledger account id to credit (11410/11420/11430 child). */
+    inventoryAccountId: string | null;
+    /** Canonical code for reporting/fallback. */
+    inventoryAccountCode: string;
+    /** Rounded leg amount. */
+    amount: number;
+}
+
+/**
+ * Split invoice COGS across inventory accounts by line cost.
+ *
+ * Each stocked line is costed with resolveItemUnitCost (the authoritative
+ * hierarchy: productionCostSnapshot → batch → FIFO → stored cost → variant)
+ * and classified with resolveInventoryAccountByItemType. Service lines are
+ * excluded (services never relieve inventory).
+ *
+ * This replaces majority-vote single-account posting so mixed invoices
+ * relieve each 114xx account for its own share (DR 51200 = Σ CR 114xx).
+ */
+export const calculateCogsLegsPerInventoryAccount = async (
+    items: any[],
+    inventorySource: any,
+    resolveId: (item: any) => string | undefined,
+    accounts: any[],
+    getFallbackInventoryAccountId: (() => string | null) | string | null,
+    fallbackInventorySource?: any
+): Promise<CogsLeg[]> => {
+    const byAccount = new Map<string, { code: string; amount: number }>();
+    for (const item of items || []) {
+        if (item?.type === 'Service') continue;
+        const itemId = resolveId(item);
+        if (!itemId) continue;
+        const invItem = await resolveInventoryRecord(itemId, inventorySource, fallbackInventorySource);
+        const unitCost = await resolveItemUnitCost(item, invItem);
+        const qty = Number(item?.quantity || 0);
+        if (!(qty > 0) || !(unitCost > 0)) continue;
+        const lineCost = unitCost * qty;
+        // Unknown/missing types keep the historical default bucket (11410),
+        // matching resolveInventoryAccountByItemType's documented behavior.
+        const resolvedId = resolveInventoryAccountByItemType(item?.type, accounts)
+            || resolveInventoryAccountByItemType('product', accounts);
+        // Lazy fallback: only resolved when a line genuinely cannot be
+        // classified (strict resolvers throw on broken COAs — never evaluate
+        // that path for healthy account charts).
+        const key = resolvedId || 'FALLBACK';
+        const code = codeOfAccountId(resolvedId, accounts) || '11410';
+        const prev = byAccount.get(key) || { code, amount: 0 };
+        prev.amount += lineCost;
+        byAccount.set(key, prev);
+    }
+    const legs: CogsLeg[] = [];
+    let fallbackId: string | null | undefined;
+    for (const [key, v] of byAccount) {
+        const amount = roundToCurrency(v.amount);
+        if (!(amount > 0)) continue;
+        let accountId: string | null = key === 'FALLBACK' ? null : key;
+        if (!accountId && key === 'FALLBACK') {
+            if (fallbackId === undefined) {
+                fallbackId = typeof getFallbackInventoryAccountId === 'function'
+                    ? getFallbackInventoryAccountId()
+                    : getFallbackInventoryAccountId;
+            }
+            accountId = fallbackId;
+        }
+        legs.push({
+            inventoryAccountId: accountId,
+            inventoryAccountCode: v.code,
+            amount,
+        });
+    }
+    return legs;
+};
+
+const codeOfAccountId = (id: string | null, accounts: any[]): string | null => {
+    if (!id) return null;
+    const found = (accounts || []).find((a: any) => a.id === id);
+    return found ? String(found.code || found.account_number || '') : null;
+};
+
 export const validateLedgerBalance = (entries: LedgerEntry[], context: string) => {
     const debitAccountSums: Record<string, number> = {};
     const creditAccountSums: Record<string, number> = {};

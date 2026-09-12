@@ -3,6 +3,7 @@ import { X, MoreVertical, Loader2, Copy, Check, KeyRound, User, Pencil, ReceiptT
 import { Customer } from '../../../types';
 import { adminLifecycle, type PortalCredentials } from '../../../services/adminPortalClient';
 import { getCustomerDisplayName, getCustomerContactName } from '../../../utils/customerDisplay';
+import { getPortalAccountState, portalStatusLabel } from '../../../utils/portalAccount';
 
 interface CustomerCardProps {
   customer: Customer;
@@ -367,9 +368,11 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
   onCreateInvoice, onCreateQuote, onStatement, onWhatsApp, onPortalUpdate,
 }) => {
   const [portalCreds, setPortalCreds] = useState<PortalCredentials | null>(null);
+  const [inviteCreds, setInviteCreds] = useState<{ email: string; code: string; expiresAt: string | null; customerId: string } | null>(null);
   const [portalBusy, setPortalBusy] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState<'email' | 'code' | 'customerId' | null>(null);
   const [phoneCopied, setPhoneCopied] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -380,7 +383,11 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
   const wallet = Number(customer.walletBalance || 0);
   const owing = outstanding > 0.5;
   const currencyCode = (customer.currency as string) || 'MWK';
-  const portalActive = Boolean(customer.portalUserId) && customer.portalStatus !== 'disabled';
+  // Only `active` portal accounts can sign in — `invited` accounts must
+  // activate with a code first (rotating their password never unlocks login).
+  const portalState = getPortalAccountState(customer);
+  const portalActive = portalState === 'active';
+  const portalInvited = portalState === 'invited';
   const portalEmail = customer.portalEmail || customer.email || '';
   const segmentLabel = customer.segment || (customer as any).customerType || 'School Account';
 
@@ -398,7 +405,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (menuOpen) setMenuOpen(false);
-        else if (!portalCreds) onClose();
+        else if (!portalCreds && !inviteCreds) onClose();
       }
     };
     document.addEventListener('mousedown', onDown);
@@ -456,6 +463,44 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
       }
     } catch (err: any) {
       setPortalError(err?.body?.error || err?.message || 'Failed to create portal account');
+    } finally {
+      setPortalBusy(false);
+    }
+  };
+
+  const copyInvite = async (field: 'email' | 'code' | 'customerId') => {
+    if (!inviteCreds) return;
+    try {
+      await navigator.clipboard.writeText(inviteCreds[field]);
+      setCopiedInvite(field);
+      setTimeout(() => setCopiedInvite(null), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  const handleSendInvite = async () => {
+    if (portalBusy || !customer.portalUserId) return;
+    setPortalBusy(true);
+    setPortalError(null);
+    try {
+      const result = await adminLifecycle.users.invite(customer.portalUserId as string);
+      if (result?.code) {
+        setInviteCreds({
+          email: result.user?.email || portalEmail,
+          code: result.code,
+          expiresAt: result.expires_at || null,
+          customerId: customer.id,
+        });
+        if (result.user) {
+          onPortalUpdate?.({
+            ...customer,
+            portalUserId: result.user.id || customer.portalUserId,
+            portalEmail: result.user.email || portalEmail,
+            portalStatus: result.user.status || 'invited',
+          });
+        }
+      }
+    } catch (err: any) {
+      setPortalError(err?.body?.error || err?.message || 'Failed to send invite code');
     } finally {
       setPortalBusy(false);
     }
@@ -644,11 +689,11 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
               Customer Portal
               <span className={`cc-status-pill${portalActive ? '' : ' off'}`}>
                 <span className="cc-status-dot" />
-                {portalActive ? 'Active' : 'Inactive'}
+                {portalStatusLabel(portalState)}
               </span>
             </div>
-            <div className="cc-email" title={portalActive ? portalEmail : undefined}>
-              {portalActive ? portalEmail : 'No portal account yet'}
+            <div className="cc-email" title={(portalActive || portalInvited) ? portalEmail : undefined}>
+              {(portalActive || portalInvited) ? portalEmail : 'No portal account yet'}
             </div>
           </div>
           {portalActive ? (
@@ -657,6 +702,13 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
                 ? <Loader2 size={12} className="cc-spin" />
                 : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>}
               Rotate password
+            </button>
+          ) : portalInvited ? (
+            <button className="cc-rotate-btn" onClick={handleSendInvite} disabled={portalBusy} title="Invited accounts must activate with a code before password sign-in works">
+              {portalBusy
+                ? <Loader2 size={12} className="cc-spin" />
+                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>}
+              Send invite
             </button>
           ) : (
             <button className="cc-rotate-btn" onClick={handleCreatePortal} disabled={portalBusy}>
@@ -742,6 +794,66 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
             </div>
             <div className="cc-creds-foot">
               <button onClick={() => setPortalCreds(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {inviteCreds && (
+        <div className="cc-creds-overlay" onClick={() => setInviteCreds(null)}>
+          <div className="cc-creds-card" onClick={(e) => e.stopPropagation()}>
+            <div className="cc-creds-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
+                <div style={{
+                  width: 42, height: 42, borderRadius: '50%',
+                  background: '#F4F0E4', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <KeyRound size={17} color="#153F37" />
+                </div>
+                <div>
+                  <h3>Invite Code Issued</h3>
+                  <p>
+                    Share all three with the customer. The account activates on first use.
+                    {inviteCreds.expiresAt ? ` Code expires ${new Date(inviteCreds.expiresAt).toLocaleString()}.` : ' This code does not expire.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="cc-creds-body">
+              <div className="cc-cred-row">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="cc-cred-label">Customer ID</div>
+                  <div className="cc-cred-val">{inviteCreds.customerId}</div>
+                </div>
+                <button className="cc-copy-btn" onClick={() => copyInvite('customerId')} title="Copy customer ID">
+                  {copiedInvite === 'customerId' ? <Check size={14} color="#1F5F53" /> : <Copy size={14} />}
+                </button>
+              </div>
+              <div className="cc-cred-row amber">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="cc-cred-label">Invite Code</div>
+                  <div className="cc-cred-val">{inviteCreds.code}</div>
+                </div>
+                <button className="cc-copy-btn" onClick={() => copyInvite('code')} title="Copy invite code">
+                  {copiedInvite === 'code' ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+              <div className="cc-cred-row">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="cc-cred-label">Portal Email (for sign-in after activation)</div>
+                  <div className="cc-cred-val">{inviteCreds.email}</div>
+                </div>
+                <button className="cc-copy-btn" onClick={() => copyInvite('email')} title="Copy portal email">
+                  {copiedInvite === 'email' ? <Check size={14} color="#1F5F53" /> : <Copy size={14} />}
+                </button>
+              </div>
+              <p className="cc-creds-hint">
+                The customer activates at <b>#/portal/activate</b> with Customer ID + code, then signs in at <b>#/portal/login</b>.
+              </p>
+            </div>
+            <div className="cc-creds-foot">
+              <button onClick={() => setInviteCreds(null)}>Done</button>
             </div>
           </div>
         </div>

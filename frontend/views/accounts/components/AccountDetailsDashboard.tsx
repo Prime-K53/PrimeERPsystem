@@ -309,6 +309,20 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
 
   return (
     <div style={modalOverlayStyle} onClick={onClose}>
+      <style>{`@media (max-width:640px){
+        .coa-dash-kpis{padding:0 14px !important;}
+        .coa-dash-kpis>div{padding:14px 0 0 !important;}
+        .coa-dash-tabs{padding:12px 14px 0 !important;overflow-x:auto;scrollbar-width:none;}
+        .coa-dash-tabs::-webkit-scrollbar{display:none;}
+        .coa-dash-tabs button{flex:none !important;}
+        .coa-dash-filters{padding:12px 14px !important;flex-wrap:wrap;}
+        .coa-dash-filters .coa-dash-search{flex:1 1 100% !important;}
+        .coa-dash-filters select{flex:1 !important;width:auto !important;min-width:0;}
+        .coa-dash-tablewrap{padding:0 14px !important;}
+        .coa-dash-table{min-width:620px;}
+        .coa-dash-details,.coa-dash-audit{padding:16px 14px !important;}
+        .coa-dash-grid{grid-template-columns:1fr !important;}
+      }`}</style>
       <div style={{ ...modalShell(800), height: '90vh' }} onClick={e => e.stopPropagation()}>
         <AccentStripe />
         <ModalHeader
@@ -337,12 +351,12 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
           </div>
         )}
 
-        <div style={{ padding: '0 28px' }}>
+        <div className="coa-dash-kpis" style={{ padding: '0 28px' }}>
           <KpiCards items={kpiItems} />
         </div>
 
         {/* Tabs */}
-        <div style={{ padding: '12px 28px 0', borderBottom: `1px solid ${hairline}`, background: paper, display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        <div className="coa-dash-tabs" style={{ padding: '12px 28px 0', borderBottom: `1px solid ${hairline}`, background: paper, display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           {tabs.map(tab => (
             <button
               key={tab.id}
@@ -367,8 +381,8 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
           {activeTab === 'ledger' && (
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
               {/* Filters */}
-              <div style={{ padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                <div style={{ flex: 1, position: 'relative' }}>
+              <div className="coa-dash-filters" style={{ padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                <div className="coa-dash-search" style={{ flex: 1, position: 'relative' }}>
                   <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
                   <input
                     type="text"
@@ -402,9 +416,9 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
               </div>
 
               {/* Table */}
-              <div style={{ flex: 1, overflow: 'auto', padding: '0 28px' }}>
+              <div className="coa-dash-tablewrap" style={{ flex: 1, overflow: 'auto', padding: '0 28px' }}>
                 <div style={tableCard}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                <table className="coa-dash-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                     <tr style={tableHeadRow}>
                       <th style={{ padding: '12px 16px', fontWeight: 700 }}>Date</th>
@@ -524,8 +538,8 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
 
           {/* DETAILS TAB */}
           {activeTab === 'details' && (
-            <div style={{ height: '100%', overflow: 'auto', padding: '20px 28px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="coa-dash-details" style={{ height: '100%', overflow: 'auto', padding: '20px 28px' }}>
+              <div className="coa-dash-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 {/* Account Info */}
                 <div style={{ background: teal[50], borderRadius: 12, padding: 16, border: `1px solid ${teal[100]}` }}>
                   <div style={sectionLabelStyle}><span>Account Information</span></div>
@@ -657,7 +671,7 @@ export const AccountDetailsDashboard: React.FC<AccountDetailsDashboardProps> = (
 
           {/* AUDIT TAB */}
           {activeTab === 'audit' && (
-            <div style={{ height: '100%', overflow: 'auto', padding: '20px 28px' }}>
+            <div className="coa-dash-audit" style={{ height: '100%', overflow: 'auto', padding: '20px 28px' }}>
               {auditLoading ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120, fontSize: 13, color: inkSoft }}>Loading audit trail...</div>
               ) : auditLogs.length === 0 ? (

@@ -142,7 +142,7 @@ const buildRecurringDraftFromTemplate = (item: RecurringInvoice): RecurringInvoi
 const Orders: React.FC = () => {
     const { refreshAllData } = useData();
     const { companyConfig, isOnline, notify, user } = useAuth();
-    const { invoices, recurringInvoices, addInvoice, updateInvoice, deleteInvoice, addRecurringInvoice, deleteRecurringInvoice, updateRecurringInvoice } = useFinance();
+    const { invoices, recurringInvoices, addInvoice, updateInvoice, deleteInvoice, cancelInvoice, editInvoiceWithAdjustment, addRecurringInvoice, deleteRecurringInvoice, updateRecurringInvoice } = useFinance();
     const { quotations, customers, addQuotation, updateQuotation, deleteQuotation, approveQuotation, convertQuotationToInvoice, jobOrders, addJobOrder, updateJobOrder, deleteJobOrder, convertJobOrderToInvoice, salesExchanges, deleteSalesExchange, approveSalesExchange, cancelSalesExchange, isLoading } = useSales();
     const { inventory } = useInventory();
     const { boms } = useProduction();
@@ -485,7 +485,10 @@ const Orders: React.FC = () => {
                     }
                 }
             } else if (activeView === 'Invoices') {
-                if (editingItem) await updateInvoice(data);
+                // Posted-invoice edits go through the controlled workflow so
+                // any AR/revenue delta is journalised as a separate LG-ADJ
+                // correction (original journal preserved).
+                if (editingItem) await editInvoiceWithAdjustment(data);
                 else await addInvoice(data);
             } else if (activeView === 'Subscriptions') {
                 if (editingItem) await updateRecurringInvoice(data);
@@ -1515,12 +1518,15 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                                 }
                             }
                         } else {
-                            selectedInvoiceIds.forEach(id => {
+                            // Route through the reversal lifecycle so AR, revenue,
+                            // COGS, inventory and payments are reversed (never a
+                            // bare status flip, which leaves ghost postings).
+                            for (const id of selectedInvoiceIds) {
                                 const inv = invoices.find(i => i.id === id);
-                                if (inv && inv.status !== 'Paid') {
-                                    updateInvoice({ ...inv, status: 'Cancelled' });
+                                if (inv && inv.status !== 'Paid' && inv.status !== 'Cancelled') {
+                                    await cancelInvoice(id, 'Bulk cancel from Orders');
                                 }
-                            });
+                            }
                         }
                         notify(`Successfully processed bulk cancel for ${selectedInvoiceIds.length} items`, "info");
                         setSelectedInvoiceIds([]);

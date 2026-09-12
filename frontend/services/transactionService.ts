@@ -32,12 +32,99 @@ import {
     createMultiCurrencyJournalEntry, calculatePaymentGainLoss,
     resolveItemUnitCost, resolveInventoryRecord, calculateItemsCost,
     validateLedgerBalance, distributePosRetainedAmounts, getIdempotencyKeys, resolveToAccountId,
-    resolveAccountForPosting, requireResolvedAccount, buildResolvedJournalLine, 
+    resolveAccountForPosting, requireResolvedAccount, buildResolvedJournalLine,
     loadAccountsFromStore, UnresolvedAccountError,
-    JournalLineInput, resolveInventoryAccountByItemType, resolveInventoryAccountFromItems
+    JournalLineInput, resolveInventoryAccountByItemType, resolveInventoryAccountFromItems,
+    calculateCogsLegsPerInventoryAccount,
+    isPostedInvoiceStatus, resolveInvoiceRevenueAccount, assertInvoiceEditable,
+    computePostEditCorrection, isPostEditCorrectionRef,
+    type PostEditCorrectionSpec
 } from './transactions/_internal';
 import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
 import { resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
+
+const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'LG-REV-AR-'];
+
+function isOriginalArPosting(invoiceId: string, entry: any): boolean {
+    if (String(entry?.referenceId || '') !== String(invoiceId)) return false;
+    return AR_POSTING_PREFIXES.some((p) => String(entry?.id || '').startsWith(p));
+}
+
+/**
+ * Shared post-edit correction writer used by postInvoiceEditCorrection and
+ * applyPostedInvoiceEdit. Reads the original AR postings + prior corrections,
+ * computes the delta via computePostEditCorrection, enforces idempotency and
+ * conflict-STOP, then journals one balanced LG-ADJ correction through the
+ * normal ledgerStore path (durable sync + OCC preserved).
+ */
+async function postEditCorrectionInTx(
+    tx: any,
+    opts: {
+        invoice: any;
+        currentTotal: number;
+        requireOriginals: boolean;
+        ledgerStore: any;
+        resolveAcct: (ref: string | undefined) => string;
+    }
+): Promise<{ posted: boolean; reason?: string; spec?: PostEditCorrectionSpec; entryId?: string }> {
+    const { invoice, currentTotal, requireOriginals, ledgerStore, resolveAcct } = opts;
+    const invoiceId = String(invoice.id);
+    const allLedger: any[] = await ledgerStore.getAll();
+    const originals = allLedger.filter((e) => isOriginalArPosting(invoiceId, e));
+    if (originals.length === 0) {
+        if (requireOriginals) {
+            throw new Error(`Invoice #${invoiceId} has no original AR posting to correct. Nothing posted, nothing to adjust.`);
+        }
+        return { posted: false, reason: 'no-original-posting' };
+    }
+    const arAccounts = Array.from(new Set(originals.map((e) => e.debitAccountId)));
+    const revenueAccounts = Array.from(new Set(originals.map((e) => e.creditAccountId)));
+    if (arAccounts.length !== 1 || revenueAccounts.length !== 1) {
+        throw new Error(
+            `STOP: original AR postings for invoice #${invoiceId} span multiple account pairs. Manual reconciliation required — no automatic correction posted.`
+        );
+    }
+    const arAccountId = resolveAcct(arAccounts[0]);
+    const revenueAccountId = resolveAcct(revenueAccounts[0]);
+    const priors = allLedger
+        .filter((e) => isPostEditCorrectionRef(invoiceId, e.referenceId))
+        .map((e) => ({ debitAccountId: e.debitAccountId, creditAccountId: e.creditAccountId, amount: e.amount, referenceId: e.referenceId }));
+    const spec = computePostEditCorrection({
+        invoiceId,
+        currentTotal,
+        originalArEntries: originals,
+        priorCorrections: priors,
+        arAccountId,
+        revenueAccountId,
+    });
+    if (!spec) return { posted: false, reason: 'in-agreement' };
+    const clash = priors.find((p) => String(p.referenceId) === spec.referenceId);
+    if (clash) {
+        const sameShape = Number(clash.amount) === Number(spec.amount)
+            && clash.debitAccountId === spec.debitAccountId
+            && clash.creditAccountId === spec.creditAccountId;
+        if (sameShape) return { posted: false, reason: 'already-corrected', spec };
+        throw new Error(
+            `STOP: a correction ${spec.referenceId} already exists with a different amount/structure. Manual reconciliation required — no duplicate correction posted.`
+        );
+    }
+    await reserveIdempotencyKey(tx, 'invoice_edit_correction', spec.referenceId);
+    const entry = {
+        id: generateId('LG-ADJ'),
+        date: new Date().toISOString(),
+        description: spec.description,
+        debitAccountId: spec.debitAccountId,
+        creditAccountId: spec.creditAccountId,
+        amount: spec.amount,
+        referenceId: spec.referenceId,
+        reconciled: false,
+        customerId: invoice.customerId,
+        customerName: invoice.customerName,
+    };
+    await ledgerStore.put(entry);
+    validateLedgerBalance([entry as any], `Post-edit correction ${spec.referenceId}`);
+    return { posted: true, spec, entryId: entry.id };
+}
 
 export const transactionService = {
     /**
@@ -846,26 +933,35 @@ export const transactionService = {
                 }
 
                 if (shouldDeduct) {
-                    const cogsTotal = await calculateItemsCost(
+                    // Split COGS across inventory accounts by line cost:
+                    // DR 51200 (total) = CR 11410 + CR 11420 + CR 11430.
+                    const cogsLegs = await calculateCogsLegsPerInventoryAccount(
                         sale.items || [],
                         inventory,
-                        (item) => item.parentId || item.id
+                        (item) => item.parentId || item.id,
+                        accounts,
+                        () => resolveAcct(gl.defaultInventoryAccount)
                     );
-                    if (cogsTotal > 0) {
-                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(sale.items || [], accounts) : null;
+                    const cogsEntries: LedgerEntry[] = [];
+                    for (const leg of cogsLegs) {
+                        if (!leg.inventoryAccountId) continue;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: sale.date,
                             description: `COGS - Sale #${sale.id}`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
-                            amount: Number(cogsTotal.toFixed(2)),
+                            creditAccountId: leg.inventoryAccountId,
+                            amount: leg.amount,
                             referenceId: sale.id,
                             reconciled: false,
                             customerId: sale.customerId,
                             customerName: sale.customerName
                         };
                         await ledgerStore.put(cogsEntry);
+                        cogsEntries.push(cogsEntry);
+                    }
+                    if (cogsEntries.length > 0) {
+                        validateLedgerBalance(cogsEntries, `COGS split - Sale #${sale.id}`);
                     }
                 }
 
@@ -1251,28 +1347,34 @@ export const transactionService = {
                     }
                 }
 
-                const refundCogsTotal = await calculateItemsCost(
+                const refundCogsLegs = await calculateCogsLegsPerInventoryAccount(
                     refund.items || [],
                     inventoryStore,
-                    (item) => item.itemId || item.id
+                    (item) => item.itemId || item.id,
+                    accounts,
+                    () => resolveAcct(getGLConfig().defaultInventoryAccount)
                 );
 
-                if (refundCogsTotal > 0) {
+                if (refundCogsLegs.length > 0) {
                     const gl = getGLConfig();
-                    const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(refund.items || [], accounts) : null;
-                    const cogsReversal: LedgerEntry = {
-                        id: generateId('LG-COGS-REV'),
-                        date: refund.date,
-                        description: `COGS Reversal - Refund #${refund.saleId || refund.id}`,
-                        debitAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
-                        creditAccountId: resolveAcct(gl.defaultCOGSAccount),
-                        amount: Number(refundCogsTotal.toFixed(2)),
-                        referenceId: refund.id,
-                        reconciled: false,
-                        customerId: refund.customerId,
-                        customerName: refund.customerName
-                    };
-                    await ledgerStore.put(cogsReversal);
+                    const reversalEntries: LedgerEntry[] = [];
+                    for (const leg of refundCogsLegs) {
+                        const cogsReversal: LedgerEntry = {
+                            id: generateId('LG-COGS-REV'),
+                            date: refund.date,
+                            description: `COGS Reversal - Refund #${refund.saleId || refund.id}`,
+                            debitAccountId: leg.inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
+                            creditAccountId: resolveAcct(gl.defaultCOGSAccount),
+                            amount: leg.amount,
+                            referenceId: refund.id,
+                            reconciled: false,
+                            customerId: refund.customerId,
+                            customerName: refund.customerName
+                        };
+                        await ledgerStore.put(cogsReversal);
+                        reversalEntries.push(cogsReversal);
+                    }
+                    validateLedgerBalance(reversalEntries, `COGS reversal split - Refund #${refund.saleId || refund.id}`);
                 }
 
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
@@ -1976,8 +2078,10 @@ export const transactionService = {
                 // 1. Save Invoice
                 await invoiceStore.put(invoice);
 
-                // 2. Update Inventory (Gated by fulfillment, not payment status)
-                const shouldDeduct = invoice.status !== 'Draft' && invoice.status !== 'Cancelled';
+                // 2. Update Inventory (Gated by fulfillment, not payment status).
+                // The same active-status gate controls AR/revenue/COGS below:
+                // Draft/Cancelled invoices post nothing.
+                const shouldDeduct = isPostedInvoiceStatus(invoice.status);
                 if (shouldDeduct) {
                     await this._executeDeductInventory(
                         inventoryStore,
@@ -2041,57 +2145,76 @@ export const transactionService = {
                 await invoiceStore.put(invoice);
 
                 if (shouldDeduct) {
-                    const cogsTotal = await calculateItemsCost(
+                    // Split COGS across inventory accounts by line cost so mixed
+                    // invoices relieve each 114xx account for its own share:
+                    // DR 51200 (total) = CR 11410 + CR 11420 + CR 11430.
+                    // (Block-scoped config: the AR section below declares its own.)
+                    const gl = getGLConfig();
+                    const cogsLegs = await calculateCogsLegsPerInventoryAccount(
                         invoice.items || [],
                         inventory,
-                        (item) => item.parentId || item.id
+                        (item) => item.parentId || item.id,
+                        accounts,
+                        () => resolveAcct(gl.defaultInventoryAccount)
                     );
-                    if (cogsTotal > 0) {
-                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(invoice.items || [], accounts) : null;
+                    const cogsEntries: LedgerEntry[] = [];
+                    for (const leg of cogsLegs) {
+                        if (!leg.inventoryAccountId) continue;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: invoice.date,
                             description: `COGS - Invoice #${invoice.id}`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
-                            amount: Number(cogsTotal.toFixed(2)),
+                            creditAccountId: leg.inventoryAccountId,
+                            amount: leg.amount,
                             referenceId: invoice.id,
                             reconciled: false,
                             customerId: invoice.customerId,
                             customerName: invoice.customerName
                         };
                         await ledgerStore.put(cogsEntry);
+                        cogsEntries.push(cogsEntry);
+                    }
+                    if (cogsEntries.length > 0) {
+                        validateLedgerBalance(cogsEntries, `COGS split - Invoice #${invoice.id}`);
                     }
                 }
 
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
                 // Independent balance mutation removed.
 
-                // 5. Create Ledger Entry
+                // 5. Create Ledger Entry — active invoices only. Draft/Cancelled
+                // invoices must not contribute AR or revenue (same gate as COGS).
                 const gl = getGLConfig();
 
                 // Debit AR
-                const arEntry: LedgerEntry = {
-                    id: generateId('LG-INV-AR'),
-                    date: invoice.date,
-                    description: `Invoice #${invoice.id}`,
-                    debitAccountId: resolveAcct(gl.accountsReceivable),
-                    creditAccountId: resolveAcct(invoice.salesAccountId || gl.defaultSalesAccount),
-                    amount: totalAmount,
-                    referenceId: invoice.id,
-                    reconciled: false,
-                    customerId: invoice.customerId,
-                    customerName: invoice.customerName
-                };
-                await ledgerStore.put(arEntry);
+                if (shouldDeduct) {
+                    // Service-only invoices credit 41200 Service Income; explicit
+                    // salesAccountId always wins (e.g. POS selector).
+                    const revenueAccountRef = resolveInvoiceRevenueAccount(invoice, gl.defaultSalesAccount);
+                    const arEntry: LedgerEntry = {
+                        id: generateId('LG-INV-AR'),
+                        date: invoice.date,
+                        description: `Invoice #${invoice.id}`,
+                        debitAccountId: resolveAcct(gl.accountsReceivable),
+                        creditAccountId: resolveAcct(revenueAccountRef),
+                        amount: totalAmount,
+                        referenceId: invoice.id,
+                        reconciled: false,
+                        customerId: invoice.customerId,
+                        customerName: invoice.customerName
+                    };
+                    await ledgerStore.put(arEntry);
+                }
 
                 // 6. If invoice is paid/partially paid on creation, create payment records
                 // SKIP if this invoice was converted from an order — the payment was already
                 // recorded against the order (see `LG-ORD-INIT` / `LG-ORD-PAY` ledger entries).
                 // Re-creating it here would double-count the same payment.
+                // SKIP for Draft/Cancelled invoices — they carry no AR to settle.
                 const convertedFromOrder = !!(invoice as any).sourceOrderId
                     || (invoice.conversionDetails && (invoice.conversionDetails as any).sourceType === 'order');
-                if (paidAmount > 0 && !convertedFromOrder) {
+                if (paidAmount > 0 && !convertedFromOrder && shouldDeduct) {
                     const allPayments = await customerPaymentsStore.getAll();
                     const paymentId = generateNextId('RCPT', allPayments);
                     const paymentMethod = invoice.paymentMethod || invoice.payment_method || 'Cash';
@@ -2328,7 +2451,7 @@ export const transactionService = {
                 }
 
                 // 3. Update Inventory (fulfillment-based — goods delivered)
-                const shouldDeductConv = invoiceData.status !== 'Draft' && invoiceData.status !== 'Cancelled';
+                const shouldDeductConv = isPostedInvoiceStatus(invoiceData.status);
                 if (shouldDeductConv) {
                     await this._executeDeductInventory(
                         inventoryStore,
@@ -2370,53 +2493,63 @@ export const transactionService = {
 
                 await invoiceStore.put(invoiceData);
 
-                // COGS entry (gated by delivery status)
+                // COGS entries split by inventory account (gated by active status)
                 if (shouldDeductConv) {
-                    const cogsTotal = await calculateItemsCost(
+                    const gl = getGLConfig();
+                    const cogsLegs = await calculateCogsLegsPerInventoryAccount(
                         invoiceData.items || [],
                         inventory,
-                        (item) => item.parentId || item.id
+                        (item) => item.parentId || item.id,
+                        accounts,
+                        () => resolveAcct(gl.defaultInventoryAccount)
                     );
-                    if (cogsTotal > 0) {
-                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(invoiceData.items || [], accounts) : null;
-                        const gl = getGLConfig();
+                    const cogsEntries: LedgerEntry[] = [];
+                    for (const leg of cogsLegs) {
+                        if (!leg.inventoryAccountId) continue;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: invoiceData.date,
                             description: `COGS - Invoice #${invoiceData.id}`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
-                            amount: Number(cogsTotal.toFixed(2)),
+                            creditAccountId: leg.inventoryAccountId,
+                            amount: leg.amount,
                             referenceId: invoiceData.id,
                             reconciled: false,
                             customerId: invoiceData.customerId,
                             customerName: invoiceData.customerName
                         };
                         await ledgerStore.put(cogsEntry);
+                        cogsEntries.push(cogsEntry);
+                    }
+                    if (cogsEntries.length > 0) {
+                        validateLedgerBalance(cogsEntries, `COGS split - Invoice #${invoiceData.id}`);
                     }
                 }
 
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
                 // Independent balance mutation removed.
 
-                // 6. Create Ledger Entry
+                // 6. Create Ledger Entry — active invoices only
                 const gl = getGLConfig();
                 const totalAmount = Number(invoiceData.totalAmount);
 
                 // Debit AR
-                const arEntry: LedgerEntry = {
-                    id: generateId('LG-QTN-INV-AR'),
-                    date: invoiceData.date,
-                    description: `Invoice #${invoiceData.id} from QTN #${quotationId}`,
-                    debitAccountId: resolveAcct(gl.accountsReceivable),
-                    creditAccountId: resolveAcct(invoiceData.salesAccountId || gl.defaultSalesAccount),
-                    amount: totalAmount,
-                    referenceId: invoiceData.id,
-                    reconciled: false,
-                    customerId: invoiceData.customerId,
-                    customerName: invoiceData.customerName
-                };
-                await ledgerStore.put(arEntry);
+                if (shouldDeductConv) {
+                    const revenueAccountRef = resolveInvoiceRevenueAccount(invoiceData, gl.defaultSalesAccount);
+                    const arEntry: LedgerEntry = {
+                        id: generateId('LG-QTN-INV-AR'),
+                        date: invoiceData.date,
+                        description: `Invoice #${invoiceData.id} from QTN #${quotationId}`,
+                        debitAccountId: resolveAcct(gl.accountsReceivable),
+                        creditAccountId: resolveAcct(revenueAccountRef),
+                        amount: totalAmount,
+                        referenceId: invoiceData.id,
+                        reconciled: false,
+                        customerId: invoiceData.customerId,
+                        customerName: invoiceData.customerName
+                    };
+                    await ledgerStore.put(arEntry);
+                }
 
                 return { success: true, id: invoiceData.id };
             }
@@ -2499,7 +2632,7 @@ export const transactionService = {
                     `Converted from [JobOrder] #[${jobOrderId}] on [${timestamp}] as accepted by [System]`;
 
                 // 3. Update Inventory (fulfillment-based — goods delivered)
-                const shouldDeductJob = invoiceData.status !== 'Draft' && invoiceData.status !== 'Cancelled';
+                const shouldDeductJob = isPostedInvoiceStatus(invoiceData.status);
                 if (shouldDeductJob) {
                     for (const item of invoiceData.items) {
                         const invItem = await resolveInventoryRecord(item.id, inventory, inventoryStore);
@@ -2538,52 +2671,63 @@ export const transactionService = {
 
                 await invoiceStore.put(invoiceData);
 
-                // COGS entry (gated by fulfillment status)
+                // COGS entries split by inventory account (gated by active status)
                 if (shouldDeductJob) {
-                    const cogsTotal = await calculateItemsCost(
+                    const gl = getGLConfig();
+                    const cogsLegs = await calculateCogsLegsPerInventoryAccount(
                         invoiceData.items || [],
                         inventory,
-                        (item) => item.parentId || item.id
+                        (item) => item.parentId || item.id,
+                        accounts,
+                        () => resolveAcct(gl.defaultInventoryAccount)
                     );
-                    if (cogsTotal > 0) {
-                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(invoiceData.items || [], accounts) : null;
+                    const cogsEntries: LedgerEntry[] = [];
+                    for (const leg of cogsLegs) {
+                        if (!leg.inventoryAccountId) continue;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: invoiceData.date,
                             description: `COGS - Invoice #${invoiceData.id} (from Job Order #${jobOrderId})`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
-                            amount: Number(cogsTotal.toFixed(2)),
+                            creditAccountId: leg.inventoryAccountId,
+                            amount: leg.amount,
                             referenceId: invoiceData.id,
                             reconciled: false,
                             customerId: invoiceData.customerId,
                             customerName: invoiceData.customerName
                         };
                         await ledgerStore.put(cogsEntry);
+                        cogsEntries.push(cogsEntry);
+                    }
+                    if (cogsEntries.length > 0) {
+                        validateLedgerBalance(cogsEntries, `COGS split - Invoice #${invoiceData.id}`);
                     }
                 }
 
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
                 // Independent balance mutation removed.
 
-                // 7. Create Ledger Entry
+                // 7. Create Ledger Entry — active invoices only
                 const gl = getGLConfig();
                 const totalAmount = Number(invoiceData.totalAmount);
 
                 // Debit AR
-                const arEntry: LedgerEntry = {
-                    id: generateId('LG-JO-INV-AR'),
-                    date: invoiceData.date,
-                    description: `Invoice #${invoiceData.id} (from Job Order #${jobOrderId})`,
-                    debitAccountId: resolveAcct(gl.accountsReceivable),
-                    creditAccountId: resolveAcct(invoiceData.salesAccountId || gl.defaultSalesAccount),
-                    amount: totalAmount,
-                    referenceId: invoiceData.id,
-                    reconciled: false,
-                    customerId: invoiceData.customerId,
-                    customerName: invoiceData.customerName
-                };
-                await ledgerStore.put(arEntry);
+                if (shouldDeductJob) {
+                    const revenueAccountRef = resolveInvoiceRevenueAccount(invoiceData, gl.defaultSalesAccount);
+                    const arEntry: LedgerEntry = {
+                        id: generateId('LG-JO-INV-AR'),
+                        date: invoiceData.date,
+                        description: `Invoice #${invoiceData.id} (from Job Order #${jobOrderId})`,
+                        debitAccountId: resolveAcct(gl.accountsReceivable),
+                        creditAccountId: resolveAcct(revenueAccountRef),
+                        amount: totalAmount,
+                        referenceId: invoiceData.id,
+                        reconciled: false,
+                        customerId: invoiceData.customerId,
+                        customerName: invoiceData.customerName
+                    };
+                    await ledgerStore.put(arEntry);
+                }
 
                 return { success: true, id: invoiceData.id };
             }
@@ -3119,8 +3263,101 @@ export const transactionService = {
             ['invoices'],
             async (tx) => {
                 const store = tx.objectStore('invoices');
+                const existing = await store.get(invoice.id);
+                // Posted invoices are immutable by bare edit (AR, revenue and
+                // COGS were already journalised): cancels must go through
+                // voidInvoice and total/line changes need void-and-reissue.
+                assertInvoiceEditable(existing, invoice);
                 await store.put(invoice);
                 return { success: true };
+            }
+        );
+        return result;
+    },
+
+    /**
+     * Explicit one-shot post-edit correction for a posted invoice whose
+     * commercial total drifted from its net posted AR (e.g. INV-P726/023:
+     * posted K592,000, now K575,500 → posts DR revenue / CR AR K16,500).
+     *
+     * - Original K592,000 journal is preserved untouched.
+     * - Exactly one correction per delta (idempotent; conflicts STOP).
+     * - Cancelled/Voided invoices are rejected (use voidInvoice instead);
+     *   drafts are rejected (nothing posted to correct).
+     * - AR/revenue only — never touches COGS or inventory.
+     */
+    async postInvoiceEditCorrection(invoiceId: string) {
+        const result = await dbService.executeAtomicOperation(
+            ['invoices', 'ledger', 'idempotencyKeys', 'accounts'],
+            async (tx) => {
+                const invoiceStore = tx.objectStore('invoices');
+                const ledgerStore = tx.objectStore('ledger');
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) throw new UnresolvedAccountError(ref || 'undefined');
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) throw new UnresolvedAccountError(ref);
+                    return resolved;
+                };
+                const invoice = await invoiceStore.get(invoiceId);
+                if (!invoice) throw new Error(`Invoice #${invoiceId} not found`);
+                const status = String(invoice.status || '');
+                if (status === 'Cancelled' || status === 'Voided') {
+                    throw new Error(`Invoice #${invoiceId} is ${status}: cancellation reversals go through voidInvoice, not the post-edit correction.`);
+                }
+                if (status === 'Draft') {
+                    throw new Error(`Invoice #${invoiceId} is a Draft: nothing is posted, so there is nothing to correct.`);
+                }
+                return postEditCorrectionInTx(tx, {
+                    invoice,
+                    currentTotal: Number(invoice.totalAmount || 0),
+                    requireOriginals: true,
+                    ledgerStore,
+                    resolveAcct,
+                });
+            }
+        );
+        return result;
+    },
+
+    /**
+     * Controlled posted-invoice edit (STEP 6 preferred workflow): persists the
+     * caller's next invoice state AND journals the resulting AR/revenue delta
+     * atomically, preserving the original journal plus a full audit trail.
+     * Drafts and non-accounting edits pass through with no correction.
+     */
+    async applyPostedInvoiceEdit(nextInvoice: any) {
+        const result = await dbService.executeAtomicOperation(
+            ['invoices', 'ledger', 'idempotencyKeys', 'accounts'],
+            async (tx) => {
+                const invoiceStore = tx.objectStore('invoices');
+                const ledgerStore = tx.objectStore('ledger');
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) throw new UnresolvedAccountError(ref || 'undefined');
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) throw new UnresolvedAccountError(ref);
+                    return resolved;
+                };
+                const existing = await invoiceStore.get(nextInvoice.id);
+                if (!existing) throw new Error(`Invoice #${nextInvoice.id} not found`);
+                const wasPosted = isPostedInvoiceStatus(existing.status);
+                await invoiceStore.put(nextInvoice);
+                if (!wasPosted) return { corrected: false, reason: 'unposted' as const };
+                const correction = await postEditCorrectionInTx(tx, {
+                    invoice: nextInvoice,
+                    currentTotal: Number(nextInvoice.totalAmount || 0),
+                    requireOriginals: false,
+                    ledgerStore,
+                    resolveAcct,
+                });
+                return { corrected: correction.posted, reason: correction.reason, spec: correction.spec, entryId: correction.entryId };
             }
         );
         return result;
@@ -3511,18 +3748,26 @@ export const transactionService = {
                     await paymentStore.put(payment);
                 }
 
-                // 4. Reverse COGS entry
-                const inventoryList = await inventoryStore.getAll();
-                const cogsTotal = await calculateItemsCost(sale.items || [], inventoryList, (item) => item.parentId || item.id);
-                if (cogsTotal > 0) {
-                    const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(sale.items || [], accounts) : null;
+                // 4. Reverse COGS entries — mirror the ACTUAL posted legs (same
+                // accounts, same amounts), never recompute from today's costs.
+                // Sales whose COGS was never posted (legacy gap) need no GL
+                // reversal here; only operational stock is restored above.
+                const allLedgerForCogs = await ledgerStore.getAll();
+                const postedCogsLegs = allLedgerForCogs.filter(l => {
+                    if (l.referenceId !== id) return false;
+                    const desc = String(l.description || '');
+                    if (!desc.includes('COGS')) return false;
+                    if (/reversal/i.test(desc)) return false;
+                    return true;
+                });
+                for (const leg of postedCogsLegs) {
                     const cogsReversal: LedgerEntry = {
                         id: generateId('LG-COGS-REV'),
                         date: new Date().toISOString(),
                         description: `COGS Reversal - Void Sale #${sale.id}`,
-                        debitAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
-                        creditAccountId: resolveAcct(gl.defaultCOGSAccount),
-                        amount: cogsTotal,
+                        debitAccountId: resolveAcct(leg.creditAccountId),
+                        creditAccountId: resolveAcct(leg.debitAccountId),
+                        amount: leg.amount,
                         referenceId: id,
                         reconciled: false,
                         customerId: sale.customerId,
@@ -4987,37 +5232,33 @@ export const transactionService = {
                         }
                     }
 
-                    const cogsTotal = await calculateItemsCost(
+                    const cogsLegs = await calculateCogsLegsPerInventoryAccount(
                         order.items || [],
                         inventoryStore,
-                        (item) => item.productId
+                        (item) => item.productId,
+                        accounts,
+                        () => resolveAcct(gl.defaultInventoryAccount)
                     );
-                    if (cogsTotal > 0) {
-                        const orderCartItems = (order.items || []).map((item: any) => ({
-                            id: item.productId,
-                            name: item.productName,
-                            price: item.unitPrice,
-                            quantity: item.quantity,
-                            type: item.type || 'Product',
-                            cost: item.productionCostSnapshot?.baseProductionCost || 0,
-                            variantId: item.variantId,
-                            adjustmentSnapshots: item.adjustmentSnapshots,
-                            transactionAdjustmentSnapshots: item.transactionAdjustmentSnapshots
-                        }));
-                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(orderCartItems, accounts) : null;
+                    const cogsEntries: LedgerEntry[] = [];
+                    for (const leg of cogsLegs) {
+                        if (!leg.inventoryAccountId) continue;
                         const cogsEntry: LedgerEntry = {
                             id: generateId('LG-COGS'),
                             date: order.orderDate,
                             description: `COGS - Order #${order.orderNumber}`,
                             debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
-                            amount: Number(cogsTotal.toFixed(2)),
+                            creditAccountId: leg.inventoryAccountId,
+                            amount: leg.amount,
                             referenceId: order.id,
                             reconciled: false,
                             customerId: order.customerId,
                             customerName: order.customerName
                         };
                         await ledgerStore.put(cogsEntry);
+                        cogsEntries.push(cogsEntry);
+                    }
+                    if (cogsEntries.length > 0) {
+                        validateLedgerBalance(cogsEntries, `COGS split - Order #${order.orderNumber}`);
                     }
 
                     // Process Market Adjustments for completed orders
@@ -5345,38 +5586,36 @@ export const transactionService = {
                         }
                     }
 
-                    const cogsTotal = await calculateItemsCost(
+                    const cogsLegs = await calculateCogsLegsPerInventoryAccount(
                         order.items || [],
                         inventoryStore,
-                        (item) => item.productId
+                        (item) => item.productId,
+                        accounts,
+                        () => resolveAcct(getGLConfig().defaultInventoryAccount)
                     );
-                    if (cogsTotal > 0) {
+                    const cogsEntries: LedgerEntry[] = [];
+                    {
                         const gl = getGLConfig();
-                        const orderCartItems = (order.items || []).map((item: any) => ({
-                            id: item.productId,
-                            name: item.productName,
-                            price: item.unitPrice,
-                            quantity: item.quantity,
-                            type: item.type || 'Product',
-                            cost: item.productionCostSnapshot?.baseProductionCost || 0,
-                            variantId: item.variantId,
-                            adjustmentSnapshots: item.adjustmentSnapshots,
-                            transactionAdjustmentSnapshots: item.transactionAdjustmentSnapshots
-                        }));
-                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(orderCartItems, accounts) : null;
-                        const cogsEntry: LedgerEntry = {
-                            id: generateId('LG-COGS'),
-                            date: new Date().toISOString(),
-                            description: `COGS - Order #${order.orderNumber}`,
-                            debitAccountId: resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
-                            amount: Number(cogsTotal.toFixed(2)),
-                            referenceId: order.id,
-                            reconciled: false,
-                            customerId: order.customerId,
-                            customerName: order.customerName
-                        };
-                        await ledgerStore.put(cogsEntry);
+                        for (const leg of cogsLegs) {
+                            if (!leg.inventoryAccountId) continue;
+                            const cogsEntry: LedgerEntry = {
+                                id: generateId('LG-COGS'),
+                                date: new Date().toISOString(),
+                                description: `COGS - Order #${order.orderNumber}`,
+                                debitAccountId: resolveAcct(gl.defaultCOGSAccount),
+                                creditAccountId: leg.inventoryAccountId,
+                                amount: leg.amount,
+                                referenceId: order.id,
+                                reconciled: false,
+                                customerId: order.customerId,
+                                customerName: order.customerName
+                            };
+                            await ledgerStore.put(cogsEntry);
+                            cogsEntries.push(cogsEntry);
+                        }
+                    }
+                    if (cogsEntries.length > 0) {
+                        validateLedgerBalance(cogsEntries, `COGS split - Order #${order.orderNumber}`);
                     }
 
                     // 3. Process Market Adjustments for completed orders

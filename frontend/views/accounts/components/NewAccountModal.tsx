@@ -226,6 +226,7 @@ export const NewAccountModal: React.FC<NewAccountModalProps> = ({
 
   return (
     <div style={modalOverlayStyle} onClick={onClose}>
+      <style>{`@media (max-width:560px){.coa-form-grid{grid-template-columns:1fr !important;}.coa-form-body{padding:18px 16px 4px !important;}}`}</style>
       <div style={modalShell(640)} onClick={e => e.stopPropagation()}>
         <AccentStripe />
         <ModalHeader
@@ -234,9 +235,9 @@ export const NewAccountModal: React.FC<NewAccountModalProps> = ({
           subtitle={parentAccount ? `Child of ${parentAccount.name} · Chart of accounts` : 'Chart of accounts — ledger reference'}
           onClose={onClose}
         />
-        <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
+        <div className="coa-form-body" style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
           <form id="coa-account-form" onSubmit={handleSubmit}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+            <div className="coa-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
               <div>
                 <label style={labelStyle}>Account Type <span style={{ color: danger, fontWeight: 700 }}>*</span></label>
                 <select
@@ -305,7 +306,7 @@ export const NewAccountModal: React.FC<NewAccountModalProps> = ({
               )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+            <div className="coa-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
               <div>
                 <label style={labelStyle}>
                   Account Number
@@ -360,7 +361,7 @@ export const NewAccountModal: React.FC<NewAccountModalProps> = ({
             </div>
 
             <div style={sectionLabelStyle}><span>Opening Balance</span></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
+            <div className="coa-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 18 }}>
               <div>
                 <label style={labelStyle}>Opening Balance</label>
                 <div style={{ position: 'relative' }}>

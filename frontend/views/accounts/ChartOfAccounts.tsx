@@ -61,6 +61,38 @@ const ACCOUNT_CATEGORY_CONFIG: Record<string, { label: string; color: string; ra
 
 const ACCOUNT_TYPE_ORDER: AccountType[] = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'];
 
+/* Small-device rules, scoped to this page (shared financeChrome stays untouched) */
+const COA_RESPONSIVE_CSS = `
+.coa-root .coa-ph > div{flex-wrap:wrap;row-gap:12px;}
+.coa-root .coa-ph > div > div:last-child{flex-wrap:wrap;row-gap:8px;}
+@media (max-width:900px){
+  .coa-root .coa-main{grid-template-columns:1fr !important;overflow:visible !important;}
+  .coa-root .coa-rail{flex-direction:row !important;overflow-x:auto;gap:8px !important;padding-bottom:6px;scrollbar-width:none;}
+  .coa-root .coa-rail::-webkit-scrollbar{display:none;}
+  .coa-root .coa-rail-label,.coa-root .coa-rail-total{display:none !important;}
+  .coa-root .coa-rail-link{flex:none !important;white-space:nowrap;border:1.4px solid #e4ddd1 !important;border-radius:999px !important;padding:7px 12px !important;font-size:12px !important;}
+  .coa-root .coa-content{overflow:visible !important;}
+}
+@media (max-width:640px){
+  .coa-root .coa-ph > div{padding:14px 14px 12px !important;}
+  .coa-root .coa-kpis > div{padding:14px 14px 0 !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:10px !important;}
+  .coa-root .coa-alert{margin:0 14px 4px !important;}
+  .coa-root .coa-controls{padding:12px 14px !important;}
+  .coa-root .coa-main{padding:0 14px 20px !important;gap:14px !important;}
+  .coa-root .coa-row{gap:8px !important;padding-top:10px !important;padding-bottom:10px !important;padding-left:calc(12px + var(--coa-depth,0)*14px) !important;padding-right:12px !important;}
+  .coa-root .coa-chev:empty{display:none;}
+  .coa-root .coa-code{min-width:0 !important;font-size:12px !important;}
+  .coa-root .coa-balance{min-width:0 !important;font-size:12.5px !important;}
+  .coa-root .coa-menu{margin-left:0 !important;}
+  .coa-root .coa-thead{gap:8px !important;padding:8px 12px !important;}
+  .coa-root .coa-th-spacer{width:8px !important;}
+  .coa-root .coa-th-code{width:auto !important;}
+  .coa-root .coa-th-bal{width:auto !important;flex:1 !important;text-align:right !important;padding-right:0 !important;}
+  .coa-root .coa-th-act{display:none !important;}
+  .coa-root .coa-footer{padding:12px 14px !important;}
+}
+`;
+
 const ChartOfAccounts: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -385,8 +417,8 @@ const ChartOfAccounts: React.FC = () => {
     return (
       <div key={account.id} className="relative">
         <div
-          className={`flex items-center gap-3 py-2.5 px-4 border-b cursor-pointer ${depth === 0 ? 'font-semibold' : ''}`}
-          style={{ borderColor: hairline, paddingLeft: `${depth * 1.5 + 1}rem`, transition: 'background .12s' }}
+          className={`flex items-center gap-3 py-2.5 px-4 border-b cursor-pointer coa-row ${depth === 0 ? 'font-semibold' : ''}`}
+          style={{ borderColor: hairline, paddingLeft: `${depth * 1.5 + 1}rem`, transition: 'background .12s', ['--coa-depth' as any]: depth }}
           onMouseEnter={e => e.currentTarget.style.background = teal[50]}
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           onClick={() => {
@@ -394,7 +426,7 @@ const ChartOfAccounts: React.FC = () => {
             setSelectedAccount(account);
           }}
         >
-          <div className="w-5 h-5 flex items-center justify-center flex-none">
+          <div className="w-5 h-5 flex items-center justify-center flex-none coa-chev">
             {hasChildren ? (
               <button
                 style={{ width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: inkSoft, border: 'none', background: 'transparent', cursor: 'pointer', borderRadius: 6 }}
@@ -406,7 +438,7 @@ const ChartOfAccounts: React.FC = () => {
               </button>
             ) : null}
           </div>
-          <span className="font-mono text-sm font-medium min-w-[5rem] flex-none" style={{ color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>
+          <span className="font-mono text-sm font-medium min-w-[5rem] flex-none coa-code" style={{ color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>
             {code}
           </span>
           <span className="text-sm flex-1 min-w-0 truncate" style={{ color: ink, fontWeight: depth === 0 ? 600 : 400 }}>
@@ -417,11 +449,11 @@ const ChartOfAccounts: React.FC = () => {
               Inactive
             </span>
           )}
-          <span className="font-mono text-sm flex-none min-w-[9rem] text-right" style={{ color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
+          <span className="font-mono text-sm flex-none min-w-[9rem] text-right coa-balance" style={{ color: ink, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(balance)}
           </span>
           {/* Quick Action Menu */}
-          <div className="relative flex-none ml-4" ref={isMenuOpen ? actionMenuRef : undefined}>
+          <div className="relative flex-none ml-4 coa-menu" ref={isMenuOpen ? actionMenuRef : undefined}>
             <button
               style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: inkSoft }}
               onMouseEnter={e => e.currentTarget.style.background = teal[50]}
@@ -543,8 +575,9 @@ const ChartOfAccounts: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col h-full" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
-      <PageHeader
+    <div className="flex flex-col h-full coa-root" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
+      <style>{COA_RESPONSIVE_CSS}</style>
+      <div className="coa-ph"><PageHeader
         icon={<BookOpen size={19} color="#fff" />}
         title="Chart of Accounts"
         subtitle="Ledger reference — accounts by code with trial balance"
@@ -571,12 +604,12 @@ const ChartOfAccounts: React.FC = () => {
             </button>
           )}
         </>}
-      />
+      /></div>
 
-      <KpiCards items={kpiItems} />
+      <div className="coa-kpis"><KpiCards items={kpiItems} /></div>
 
       {duplicateOpeningCash && duplicateOpeningCash.count > 1 && (
-        <div style={{ margin: '0 28px 4px', padding: '12px 16px', borderRadius: 12, background: '#fdeeee', border: `1.4px solid ${danger}55`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div className="coa-alert" style={{ margin: '0 28px 4px', padding: '12px 16px', borderRadius: 12, background: '#fdeeee', border: `1.4px solid ${danger}55`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 260px', fontSize: 12.5, color: ink }}>
             <b>Duplicate opening-cash rows detected:</b> {duplicateOpeningCash.count} posted OPENING_BALANCE entries
             (K{duplicateOpeningCash.correction.toLocaleString()} inflated Cash Drawer &amp; Owner&apos;s Capital after keeping the earliest row). History is preserved — repair posts one correcting journal.
@@ -609,7 +642,7 @@ const ChartOfAccounts: React.FC = () => {
       )}
 
       {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 28px' }}>
+      <div className="coa-controls" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 28px' }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
           <input
@@ -623,16 +656,17 @@ const ChartOfAccounts: React.FC = () => {
       </div>
 
       {/* Main Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '14rem 1fr', gap: 20, padding: '0 28px 28px', flex: 1, overflow: 'hidden' }}>
+      <div className="coa-main" style={{ display: 'grid', gridTemplateColumns: '14rem 1fr', gap: 20, padding: '0 28px 28px', flex: 1, overflow: 'hidden' }}>
         {/* Navigation Rail */}
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <div style={{ ...sectionLabelStyle, margin: '4px 0 10px' }}><span>Categories</span></div>
+        <nav className="coa-rail" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div className="coa-rail-label" style={{ ...sectionLabelStyle, margin: '4px 0 10px' }}><span>Categories</span></div>
           {ACCOUNT_TYPE_ORDER.map(type => {
             const config = ACCOUNT_CATEGORY_CONFIG[type];
             const count = groupedByType[type]?.accounts.length || 0;
             return (
               <a
                 key={type}
+                className="coa-rail-link"
                 href={`#${type.toLowerCase()}`}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', fontSize: 13, textDecoration: 'none',
@@ -658,13 +692,13 @@ const ChartOfAccounts: React.FC = () => {
               </a>
             );
           })}
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft }}>
+          <div className="coa-rail-total" style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft }}>
             <b style={{ fontWeight: 700, color: ink }}>{totalAccounts}</b> accounts total
           </div>
         </nav>
 
         {/* Main Content */}
-        <main style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <main className="coa-content" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {ACCOUNT_TYPE_ORDER.map(type => {
               const config = ACCOUNT_CATEGORY_CONFIG[type];
@@ -692,12 +726,12 @@ const ChartOfAccounts: React.FC = () => {
                   </div>
 
                   {/* Table Header */}
-                  <div style={{ ...tableHeadRow, display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
-                    <span style={{ width: 20, flexShrink: 0 }}></span>
-                    <span style={{ width: 80, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace" }}>Code</span>
+                  <div className="coa-thead" style={{ ...tableHeadRow, display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
+                    <span className="coa-th-spacer" style={{ width: 20, flexShrink: 0 }}></span>
+                    <span className="coa-th-code" style={{ width: 80, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace" }}>Code</span>
                     <span style={{ flex: 1 }}>Account</span>
-                    <span style={{ width: 144, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", paddingRight: 16 }}>Balance</span>
-                    <span style={{ width: 48, flexShrink: 0, textAlign: 'center', marginLeft: 16 }}>Actions</span>
+                    <span className="coa-th-bal" style={{ width: 144, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", paddingRight: 16 }}>Balance</span>
+                    <span className="coa-th-act" style={{ width: 48, flexShrink: 0, textAlign: 'center', marginLeft: 16 }}>Actions</span>
                   </div>
 
                   {/* Account List */}
@@ -722,7 +756,7 @@ const ChartOfAccounts: React.FC = () => {
       </div>
 
       {/* Footer */}
-      <footer style={{ padding: '14px 28px', borderTop: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft, background: paper }}>
+      <footer className="coa-footer" style={{ padding: '14px 28px', borderTop: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft, background: paper }}>
         Prime ERP · chart of accounts, {totalAccounts} accounts across {Object.values(groupedByType).filter(g => g.accounts.length > 0).length} categories. Balances shown in {companyConfig?.currencySymbol || currency}, current trial balance.
         {' '}Trial: Dr {formatCurrency(trialBalance.totalDebits)} = Cr {formatCurrency(trialBalance.totalCredits)}
         {trialBalance.isBalanced ? ' (balanced)' : ` (difference ${formatCurrency(trialBalance.difference)})`}.

@@ -19,6 +19,7 @@ import { hydrateCompanyPdfAssets } from '../../../utils/companyAssetUtils';
 import { downloadBlob } from '../../../utils/helpers';
 import type { Customer, CustomerDocument } from '../../../types';
 import { customerDocumentsService, formatCustomerDocSize } from '../../../services/customerDocumentsService';
+import { getPortalAccountState, portalStatusLabel } from '../../../utils/portalAccount';
 import { useSales } from '../../../context/SalesContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -505,6 +506,8 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
   const [portalError, setPortalError] = useState<string | null>(null);
   const [portalCreds, setPortalCreds] = useState<PortalCredentials | null>(null);
   const [copiedCred, setCopiedCred] = useState<'email' | 'password' | null>(null);
+  const [inviteCreds, setInviteCreds] = useState<{ email: string; code: string; expiresAt: string | null; customerId: string } | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState<'email' | 'code' | 'customerId' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [statementPdfUrl, setStatementPdfUrl] = useState<string | null>(null);
@@ -584,7 +587,11 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
   const movement = (canonicalLedger.closingBalance || 0) - (openingBalance || 0);
   const wallet = Number((customer as any).walletBalance || 0);
   const owing = (kpis.outstandingBalance || 0) > 0.5;
-  const portalActive = Boolean((customer as any).portalUserId) && (customer as any).portalStatus !== 'disabled';
+  // Only `active` portal accounts can sign in — `invited` accounts must
+  // activate with a code first (rotating their password never unlocks login).
+  const portalState = getPortalAccountState(customer as any);
+  const portalActive = portalState === 'active';
+  const portalInvited = portalState === 'invited';
   const portalEmail = (customer as any).portalEmail || customer.email || '';
   const totalDeposited = customerWalletTransactions.filter((t: any) => t.type === 'Deposit').reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
   const totalDeducted = customerWalletTransactions.filter((t: any) => t.type === 'Deduction').reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
@@ -772,6 +779,41 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
   const copyCred = async (field: 'email' | 'password') => {
     if (!portalCreds) return;
     try { await navigator.clipboard.writeText(portalCreds[field]); setCopiedCred(field); setTimeout(() => setCopiedCred(null), 1500); } catch { /* noop */ }
+  };
+
+  const copyInvite = async (field: 'email' | 'code' | 'customerId') => {
+    if (!inviteCreds) return;
+    try { await navigator.clipboard.writeText(inviteCreds[field]); setCopiedInvite(field); setTimeout(() => setCopiedInvite(null), 1500); } catch { /* noop */ }
+  };
+
+  const handleSendInvite = async () => {
+    const portalUserId = (customer as any).portalUserId;
+    if (portalBusy || !portalUserId) return;
+    setPortalBusy(true);
+    setPortalError(null);
+    try {
+      const result = await adminLifecycle.users.invite(portalUserId as string);
+      if (result?.code) {
+        setInviteCreds({
+          email: result.user?.email || portalEmail,
+          code: result.code,
+          expiresAt: result.expires_at || null,
+          customerId: customer.id,
+        });
+        if (result.user) {
+          updateCustomer({
+            ...customer,
+            portalUserId: result.user.id || portalUserId,
+            portalEmail: result.user.email || portalEmail,
+            portalStatus: result.user.status || 'invited',
+          } as any).catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      setPortalError(err?.body?.error || err?.message || 'Failed to send invite code');
+    } finally {
+      setPortalBusy(false);
+    }
   };
 
   const toggleCreditHold = async () => {
@@ -1039,15 +1081,24 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
               )}
               <div className="cp-info-row">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                <span className="cp-txt"><span className="cp-l">Customer portal</span><span className="cp-v">{portalActive ? (portalEmail || 'Active') : 'No account'}</span></span>
+                <span className="cp-txt"><span className="cp-l">Customer portal</span><span className="cp-v">{(portalActive || portalInvited) ? `${portalStatusLabel(portalState)}${portalEmail ? ` · ${portalEmail}` : ''}` : 'No account'}</span></span>
               </div>
             </div>
-            <button className="cp-rotate-btn" onClick={handleRegeneratePassword} disabled={portalBusy}>
-              {portalBusy
-                ? <RefreshCw size={12} className="cp-spin" />
-                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>}
-              {portalActive ? 'Rotate portal password' : 'Create portal account'}
-            </button>
+            {portalInvited ? (
+              <button className="cp-rotate-btn" onClick={handleSendInvite} disabled={portalBusy} title="Invited accounts must activate with a code before password sign-in works">
+                {portalBusy
+                  ? <RefreshCw size={12} className="cp-spin" />
+                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>}
+                Send invite
+              </button>
+            ) : (
+              <button className="cp-rotate-btn" onClick={handleRegeneratePassword} disabled={portalBusy}>
+                {portalBusy
+                  ? <RefreshCw size={12} className="cp-spin" />
+                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>}
+                {portalActive ? 'Rotate portal password' : 'Create portal account'}
+              </button>
+            )}
             {portalError && <p className="cp-portal-err">{portalError}</p>}
           </div>
 
@@ -1510,6 +1561,52 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
             </div>
             <div className="cp-modal-foot">
               <button className="cp-btn cp-btn-primary" onClick={() => setPortalCreds(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {inviteCreds && (
+        <div className="cp-modal-overlay" onClick={() => setInviteCreds(null)}>
+          <div className="cp-modal-card cp-creds-card" onClick={e => e.stopPropagation()}>
+            <div className="cp-creds-head">
+              <h3>Invite Code Issued</h3>
+              <p>
+                Share all three with the customer. The account activates on first use.
+                {inviteCreds.expiresAt ? ` Code expires ${new Date(inviteCreds.expiresAt).toLocaleString()}.` : ' This code does not expire.'}
+              </p>
+            </div>
+            <div className="cp-creds-body">
+              <div className="cp-cred-row">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="cp-cred-label">Customer ID</div>
+                  <div className="cp-cred-val">{inviteCreds.customerId}</div>
+                </div>
+                <button className="cp-copy-btn" onClick={() => copyInvite('customerId')} title="Copy customer ID">
+                  {copiedInvite === 'customerId' ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+              <div className="cp-cred-row cp-amber">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="cp-cred-label">Invite Code</div>
+                  <div className="cp-cred-val">{inviteCreds.code}</div>
+                </div>
+                <button className="cp-copy-btn" onClick={() => copyInvite('code')} title="Copy invite code">
+                  {copiedInvite === 'code' ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+              <div className="cp-cred-row">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="cp-cred-label">Portal Email (for sign-in after activation)</div>
+                  <div className="cp-cred-val">{inviteCreds.email}</div>
+                </div>
+                <button className="cp-copy-btn" onClick={() => copyInvite('email')} title="Copy portal email">
+                  {copiedInvite === 'email' ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+            </div>
+            <div className="cp-modal-foot">
+              <button className="cp-btn cp-btn-primary" onClick={() => setInviteCreds(null)}>Done</button>
             </div>
           </div>
         </div>

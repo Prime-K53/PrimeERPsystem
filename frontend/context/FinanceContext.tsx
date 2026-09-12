@@ -43,7 +43,10 @@ interface FinanceContextType {
   
   addInvoice: (invoice: Invoice) => Promise<string>;
   updateInvoice: (invoice: Invoice) => void;
-  deleteInvoice: (id: string) => Promise<void>; 
+  deleteInvoice: (id: string) => Promise<void>;
+  cancelInvoice: (id: string, reason: string) => Promise<void>;
+  editInvoiceWithAdjustment: (invoice: Invoice) => Promise<any>;
+  postInvoiceCorrection: (id: string) => Promise<any>;
   
   addExpense: (expense: Expense) => Promise<void>;
   approveExpense: (id: string) => Promise<void>;
@@ -406,6 +409,76 @@ const handleOpenInventory = async () => {
           notify(`Invoice #${invoice.id} updated successfully`, "success");
       } catch (err: any) {
           notify(`Invoice Update Error: ${err.message}`, "error");
+      }
+  };
+
+  /**
+   * Cancel an invoice through the full reversal lifecycle (voidInvoice):
+   * reverses AR, revenue, COGS, inventory and related payments.
+   * Unlike deleteInvoice this performs no confirm() so bulk flows can use it
+   * after their own single confirmation.
+   */
+  const cancelInvoice = async (id: string, reason: string) => {
+      try {
+          await transactionService.voidInvoice(id, reason);
+          await financeStore.fetchFinanceData();
+          addAuditLog({ action: 'VOID', entityType: 'Invoice', entityId: id, details: `Invoice ${id} cancelled with reversal (${reason}).` });
+          notify(`Invoice #${id} cancelled with full reversal`, "success");
+      } catch (err: any) {
+          notify(`Cancel Failed: ${err.message}`, "error");
+          throw err;
+      }
+  };
+
+  /**
+   * Controlled posted-invoice edit: persists the invoice AND journals any
+   * AR/revenue delta as a separate LG-ADJ correction (original journal
+   * preserved). Used by invoice edit flows instead of bare updateInvoice.
+   */
+  const editInvoiceWithAdjustment = async (invoice: Invoice) => {
+      try {
+          const result: any = await transactionService.applyPostedInvoiceEdit(invoice);
+          await financeStore.fetchFinanceData();
+          addAuditLog({
+              action: 'UPDATE', entityType: 'Invoice', entityId: invoice.id,
+              details: result?.corrected
+                  ? `Edited invoice for ${invoice.customerName} with K${Number(result?.spec?.amount || 0).toFixed(2)} post-edit correction (${result?.spec?.referenceId}).`
+                  : `Updated invoice for ${invoice.customerName}`,
+              newValue: invoice
+          });
+          if (result?.corrected) {
+              notify(`Invoice updated with K${Number(result?.spec?.amount || 0).toFixed(2)} accounting correction`, "success");
+          } else {
+              notify(`Invoice #${invoice.id} updated successfully`, "success");
+          }
+          return result;
+      } catch (err: any) {
+          notify(`Invoice Update Error: ${err.message}`, "error");
+          throw err;
+      }
+  };
+
+  /**
+   * Explicit one-shot post-edit correction (e.g. drift banner action):
+   * journals the AR/revenue delta without changing the invoice itself.
+   */
+  const postInvoiceCorrection = async (id: string) => {
+      try {
+          const result: any = await transactionService.postInvoiceEditCorrection(id);
+          await financeStore.fetchFinanceData();
+          if (result?.posted) {
+              addAuditLog({
+                  action: 'UPDATE', entityType: 'Invoice', entityId: id,
+                  details: `Posted K${Number(result?.spec?.amount || 0).toFixed(2)} post-edit correction (${result?.spec?.referenceId}).`
+              });
+              notify(`K${Number(result?.spec?.amount || 0).toFixed(2)} correction posted`, "success");
+          } else {
+              notify(`No correction needed (${result?.reason || 'in agreement'})`, "info");
+          }
+          return result;
+      } catch (err: any) {
+          notify(`Correction Failed: ${err.message}`, "error");
+          throw err;
       }
   };
 
@@ -992,7 +1065,7 @@ const handleOpenInventory = async () => {
       recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory: handleOpenInventory, repairDuplicateOpeningCash,
       refreshAccounts: financeStore.fetchFinanceData,
       addAccount: financeStore.addAccount, updateAccount: financeStore.updateAccount, deleteAccount: financeStore.deleteAccount,
-      deleteInvoice, updateIncome: financeStore.updateIncome, deleteIncome: financeStore.deleteIncome,
+      deleteInvoice, cancelInvoice, editInvoiceWithAdjustment, postInvoiceCorrection, updateIncome: financeStore.updateIncome, deleteIncome: financeStore.deleteIncome,
       toggleReconciled: financeStore.toggleReconciled, addRecurringInvoice: financeStore.addRecurringInvoice, deleteRecurringInvoice: financeStore.deleteRecurringInvoice, updateRecurringInvoice: financeStore.updateRecurringInvoice,
       addScheduledPayment: financeStore.addScheduledPayment, updateScheduledPayment: financeStore.updateScheduledPayment, 
       updateDeliveryNote: async (note: DeliveryNote) => {
