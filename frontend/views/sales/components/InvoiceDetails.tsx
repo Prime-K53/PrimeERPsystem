@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     X, CheckCircle, Clock, DollarSign, Printer, Edit2, Download,
@@ -20,6 +20,7 @@ import AIDocumentSummarizer from '../../../components/ai/AIDocumentSummarizer';
 import { enrichInvoiceWithBatchPricing, findMatchingExaminationBatch } from '../../../utils/examinationInvoicePricing';
 import { currencyService } from '../../../services/currencyService';
 import { computePostEditCorrection } from '../../../services/transactions/_internal';
+import { buildInvoiceVerificationUrl } from '../../../utils/invoiceVerification';
 
 interface InvoiceDetailsProps {
     invoice: Invoice;
@@ -46,7 +47,7 @@ const danger = '#b5493f';
 
 export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initialInvoice, onClose, onEdit, onAction, isSubscription = false }) => {
     const { companyConfig, auditLogs, notify, user } = useAuth();
-    const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment, editInvoiceWithAdjustment, postInvoiceCorrection } = useFinance();
+    const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment, editInvoiceWithAdjustment, postInvoiceCorrection, getInvoiceVerificationToken } = useFinance();
     const { customers = [] } = useSales();
     const { batches = [] } = useExamination();
     const { inventory = [] } = useInventoryStore();
@@ -166,6 +167,49 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
             return null;
         }
     }, [ledger, invoice]);
+
+    // Backfill the permanent verification token for pre-token invoices
+    // (single non-accounting field via the normal save path; idempotent).
+    useEffect(() => {
+        if (!invoice?.id || (invoice as any).verificationToken || !getInvoiceVerificationToken) return;
+        getInvoiceVerificationToken(invoice.id).catch(() => { /* offline-safe: QR keeps legacy payload until synced */ });
+    }, [invoice?.id]);
+
+    const verificationLinkFor = useCallback(async (): Promise<string | null> => {
+        if (!invoice?.id) return null;
+        try {
+            const token = await getInvoiceVerificationToken(invoice.id);
+            return buildInvoiceVerificationUrl({
+                invoiceNumber: (invoice as any).invoiceNumber || invoice.id,
+                verificationToken: token,
+            });
+        } catch {
+            return null;
+        }
+    }, [invoice, getInvoiceVerificationToken]);
+
+    const handleCopyVerificationLink = useCallback(async () => {
+        const url = await verificationLinkFor();
+        if (!url) {
+            notify('error', 'Verification link unavailable (invoice has no verification token yet)');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(url);
+            notify('success', 'Verification link copied');
+        } catch {
+            notify('error', 'Could not copy link');
+        }
+    }, [verificationLinkFor, notify]);
+
+    const handleViewVerification = useCallback(async () => {
+        const url = await verificationLinkFor();
+        if (!url) {
+            notify('error', 'Verification link unavailable (invoice has no verification token yet)');
+            return;
+        }
+        window.open(url, '_blank', 'noopener');
+    }, [verificationLinkFor, notify]);
 
     const [isPostingCorrection, setIsPostingCorrection] = useState(false);
     const handlePostCorrection = useCallback(async () => {
@@ -456,6 +500,14 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                         <button onClick={() => onEdit(invoice)}
                             style={{ padding: 6, borderRadius: 8, border: `1.4px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'flex' }}>
                             <Edit2 size={16} />
+                        </button>
+                        <button onClick={handleCopyVerificationLink} title="Copy verification link"
+                            style={{ padding: 6, borderRadius: 8, border: `1.4px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'flex' }}>
+                            <Link2 size={16} />
+                        </button>
+                        <button onClick={handleViewVerification} title="View verification"
+                            style={{ padding: 6, borderRadius: 8, border: `1.4px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'flex' }}>
+                            <ExternalLink size={16} />
                         </button>
                         <AIDocumentSummarizer docType="Invoice" data={invoice} label="" color="#8b5cf6" />
                         <button onClick={onClose}

@@ -38,6 +38,10 @@ export const enrichDocumentCustomerData = (rawData: any, customers: any[] = []) 
     inlineCustomer?.id,
   ].map(normalize).filter(Boolean);
   const candidateNames = [
+    // businessName is the primary customer/business identity (presentation
+    // mapping only). contactName is never part of this chain.
+    rawData?.businessName,
+    rawData?.business_name,
     rawData?.customerName,
     rawData?.customer_name,
     rawData?.clientName,
@@ -109,6 +113,8 @@ export const enrichDocumentCustomerData = (rawData: any, customers: any[] = []) 
     customer?.email
   );
   const resolvedName = pickText(
+    rawData?.businessName,
+    rawData?.business_name,
     rawData?.customerName,
     rawData?.customer_name,
     rawData?.clientName,
@@ -121,7 +127,7 @@ export const enrichDocumentCustomerData = (rawData: any, customers: any[] = []) 
   return {
     ...rawData,
     customerId: pickText(rawData?.customerId, rawData?.customer_id, rawData?.school_id, customer?.id),
-    customerName: pickText(rawData?.customerName, rawData?.customer_name, rawData?.clientName, rawData?.schoolName, customer?.name),
+    customerName: pickText(rawData?.businessName, rawData?.business_name, rawData?.customerName, rawData?.customer_name, rawData?.clientName, rawData?.schoolName, customer?.name),
     customerPhone: resolvedPhone,
     customerEmail: resolvedEmail,
     customerAddress: resolvedAddress,

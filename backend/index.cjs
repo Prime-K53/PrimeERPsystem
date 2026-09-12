@@ -328,6 +328,12 @@ const portalRoutes = require('./routes/portal.cjs');
 const { verifyPortalToken } = require('./middleware/portalAuth.cjs');
 app.use('/api/portal', verifyPortalToken, portalRoutes);
 
+// Public invoice QR verification — NO auth by design (customers scan the QR
+// without an account). Strictly read-only GET; failures are generic 404s so
+// invoice numbers cannot be enumerated. Registered before global verifyToken.
+const portalVerifyRoutes = require('./routes/portalVerify.cjs');
+app.use('/api/public/invoices', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), portalVerifyRoutes);
+
 // Apply JWT verification to all /api routes (auth routes are skipped by verifyToken internally)
 app.use('/api', verifyToken);
 // Inject currency into requests

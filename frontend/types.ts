@@ -1483,6 +1483,13 @@ export interface Invoice {
   originBatchId?: string;
   idempotencyKey?: string;
   lineItemsJson?: string;
+  /**
+   * Permanent public-verification token (cryptographically random hex).
+   * Issued once at creation/backfill, never regenerated; the invoice QR
+   * encodes a verification URL carrying this token. Persisted through the
+   * normal invoice save path so it syncs like any other invoice field.
+   */
+  verificationToken?: string;
   notes?: string;
   documentTitle?: string;
   materialTotal?: number;

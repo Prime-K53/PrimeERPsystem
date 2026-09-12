@@ -227,12 +227,17 @@ const SecurityFooter = ({
   legalFooterLine1,
   legalFooterLine2,
   fontScale = 1,
+  // Presentation only: when true the footer flows with the content (rendered
+  // once, after the final block) instead of repeating on every page.
+  // Default false preserves the exact legacy behavior for all other docs.
+  flowing = false,
 }: {
   data: Record<string, unknown>;
   companyName: string;
   legalFooterLine1: string;
   legalFooterLine2: string;
   fontScale?: number;
+  flowing?: boolean;
 }) => {
   const footerQrSize = 50;
   const documentNumber = String(
@@ -257,8 +262,21 @@ const SecurityFooter = ({
   );
   const qrCodeDataUrl = resolvePdfQrCodeSource(String(data?.securityQrCodeDataUrl || '').trim());
 
+  // Flowing mode must not reuse the absolute-positioned shared style:
+  // absolute elements anchor to their parent box and would overlay content.
+  const flowingStyle = {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    borderTopWidth: 0.5,
+    borderColor: '#e2e8f0',
+    paddingTop: 6,
+    width: '100%' as const,
+  };
+
   return (
-    <View style={s.securityFooter} fixed>
+    <View style={flowing ? flowingStyle : s.securityFooter} fixed={!flowing} wrap={false}>
       <View style={s.securityFooterText}>
         <Text style={[s.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>{legalFooterLine1}</Text>
         <Text style={[s.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>{legalFooterLine2}</Text>
@@ -1801,14 +1819,45 @@ if (type === 'POS_RECEIPT') {
       creator="Prime ERP System"
       keywords={`${type}, ERP, Business Document`}
     >
-      <Page size="A4" style={[s.page, pageStyle]}>
+      <Page size="A4" style={[s.page, pageStyle, type === 'INVOICE' ? { paddingBottom: 64 } : null]}>
         {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
+        {/* INVOICE pagination furniture (presentation only — dynamic page info
+            comes from React-PDF's render prop, never hard-coded). */}
+        {type === 'INVOICE' && (
+          <>
+            <Text
+              fixed
+              style={{ position: 'absolute', top: 24, left: 40, right: 40, textAlign: 'center', fontSize: 8, color: '#64748b' }}
+              render={({ pageNumber }: { pageNumber: number }) =>
+                pageNumber > 1
+                  ? `Invoice ${String(('invoiceNumber' in data && dataAny.invoiceNumber) || ('number' in data ? dataAny.number : 'INV'))} · ${resolvedRecipientName || ''} — continued`
+                  : ''
+              }
+            />
+            <Text
+              fixed
+              style={{ position: 'absolute', bottom: 38, left: 40, right: 40, textAlign: 'center', fontSize: 8, color: '#64748b' }}
+              render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
+                pageNumber < totalPages
+                  ? `${companyName} · Invoice ${String(('invoiceNumber' in data && dataAny.invoiceNumber) || ('number' in data ? dataAny.number : 'INV'))} · Computer-generated document. Verify authenticity using the QR code on the final page.`
+                  : ''
+              }
+            />
+            <Text
+              fixed
+              style={{ position: 'absolute', bottom: 24, left: 40, right: 40, textAlign: 'right', fontSize: 8, color: '#64748b' }}
+              render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
+                `Page ${pageNumber} of ${totalPages}`
+              }
+            />
+          </>
+        )}
         <View style={s.headerSection}>
           {isRightAligned ? (
             <>
               <View style={s.headerLeft}>
-                <Text style={[s.title, titleStyle]}>{title}</Text>
+                <Text style={[s.title, titleStyle, type === 'INVOICE' ? { fontSize: 22 * fontScale, height: 'auto' } : null]}>{title}</Text>
                 <View style={s.infoText}>
                   {type === 'INVOICE' ? (
                     <>
@@ -1958,7 +2007,7 @@ if (type === 'POS_RECEIPT') {
                   }
                   
                   return (
-                    <View key={i} style={s.row}>
+                    <View key={i} style={[s.row, type === 'INVOICE' ? { paddingVertical: 4 } : null]} wrap={type === 'INVOICE' ? false : undefined}>
                       <Text style={s.colQty}>{Number(item.qty)}</Text>
                       <Text style={s.colDesc}>{formattedDesc}</Text>
                       <Text style={s.colPrice}>{currency} {formatAmount(Number(item.price))}</Text>
@@ -1987,7 +2036,7 @@ if (type === 'POS_RECEIPT') {
                   
                   {/* Right Side: Summary Values */}
                   <View style={s.summaryRight}>
-                    <View style={s.summaryBox}>
+                    <View style={s.summaryBox} wrap={type === 'INVOICE' ? false : undefined}>
                       {(() => {
                         const itemsArr = ('items' in data ? data.items : []) as Array<Record<string, unknown>>;
                         const itemsSum = itemsArr.length > 0 ? itemsArr.reduce((s: number, i: Record<string, unknown>) => s + Number(i.total || 0), 0) : null;
@@ -2059,7 +2108,7 @@ if (type === 'POS_RECEIPT') {
                   const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
                   const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
                   return (
-                    <View style={{ marginTop: 15, padding: 8, backgroundColor: '#f0f9ff', borderRadius: 4, borderLeftWidth: 3, borderLeftColor: '#0ea5e9' }} wrap={false}>
+                    <View style={{ marginTop: type === 'INVOICE' ? 10 : 15, padding: 8, backgroundColor: '#f0f9ff', borderRadius: 4, borderLeftWidth: 3, borderLeftColor: '#0ea5e9' }} wrap={false}>
                       <Text style={{ fontSize: scaledFont(10), color: '#0369a1', lineHeight: 1.4 }}>
                         {'Your overall outstanding balance is '}
                         <Text style={{ fontWeight: 'bold' }}>{currency} {totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
@@ -2070,7 +2119,7 @@ if (type === 'POS_RECEIPT') {
                 })()}
 
                   {/* Thank You Note */}
-                  <View wrap={false} style={{ marginTop: 15, alignItems: 'center' }}>
+                  <View wrap={false} style={{ marginTop: type === 'INVOICE' ? 10 : 15, alignItems: 'center' }}>
                     <Text style={{ fontSize: scaledFont(12), color: '#334155' }}>
                       Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
                     </Text>
@@ -2539,7 +2588,7 @@ if (type === 'POS_RECEIPT') {
               <View
                 wrap={false}
                 style={{
-                  marginTop: 14,
+                  marginTop: type === 'INVOICE' ? 10 : 14,
                   padding: 10,
                   backgroundColor: '#f8fafc',
                   borderRadius: 6,
@@ -2610,19 +2659,41 @@ if (type === 'POS_RECEIPT') {
         {/* Standard Receipt Signature */}
 
 
-        {/* DYNAMIC CENTERED FOOTER (Movable) */}
-        <View style={s.footerContainer} wrap={false}>
-          <View style={s.footerLine} />
-        </View>
+        {/* DYNAMIC CENTERED FOOTER (Movable). Skipped for INVOICE: the
+            flowing security footer already carries its own top border, so
+            this rule would strike through content. */}
+        {type !== 'INVOICE' && (
+          <View style={s.footerContainer} wrap={false}>
+            <View style={s.footerLine} />
+          </View>
+        )}
 
-        {/* STATIC LEGAL FOOTER (Fixed at the bottom of every page) */}
-        <SecurityFooter
-          data={dataAny}
-          companyName={companyName}
-          legalFooterLine1={legalFooterLine1}
-          legalFooterLine2={legalFooterLine2}
-          fontScale={fontScale}
-        />
+        {/* STATIC LEGAL FOOTER (Fixed at the bottom of every page — except
+            INVOICE, which flows it once after the final content so the QR
+            security block appears only on the final page). */}
+        {type === 'INVOICE' ? (
+          <View wrap={false} style={{ marginTop: 10 }}>
+            <Text style={{ fontSize: 9 * fontScale, fontWeight: 'bold', color: '#334155', letterSpacing: 1.5, marginBottom: 4 }}>
+              DOCUMENT VERIFICATION
+            </Text>
+            <SecurityFooter
+              data={dataAny}
+              companyName={companyName}
+              legalFooterLine1={legalFooterLine1}
+              legalFooterLine2={legalFooterLine2}
+              fontScale={fontScale}
+              flowing
+            />
+          </View>
+        ) : (
+          <SecurityFooter
+            data={dataAny}
+            companyName={companyName}
+            legalFooterLine1={legalFooterLine1}
+            legalFooterLine2={legalFooterLine2}
+            fontScale={fontScale}
+          />
+        )}
       </Page>
     </Document>
   );

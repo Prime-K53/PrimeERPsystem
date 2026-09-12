@@ -45,6 +45,7 @@ import { CustomerAuthProvider } from './context/CustomerAuthContext';
 import CustomerLayout from './views/portal/CustomerLayout';
 import CustomerLogin from './views/portal/CustomerLogin';
 import CustomerActivate from './views/portal/CustomerActivate';
+import InvoiceVerify from './views/portal/InvoiceVerify';
 import CustomerForgotPassword from './views/portal/CustomerForgotPassword';
 import CustomerResetPassword from './views/portal/CustomerResetPassword';
 import { ToastProvider } from './views/portal/components/Toast';
@@ -1137,6 +1138,7 @@ const AppLayout: React.FC = () => {
 const PortalRoutes = (
   <React.Fragment>
     <Route path="/portal/login" element={<CustomerLogin />} />
+    <Route path="/verify/invoice/:invoiceNumber" element={<InvoiceVerify />} />
     <Route path="/portal/activate" element={<CustomerActivate />} />
     <Route path="/portal/forgot-password" element={<ToastProvider><CustomerForgotPassword /></ToastProvider>} />
     <Route path="/portal/reset-password" element={<ToastProvider><CustomerResetPassword /></ToastProvider>} />

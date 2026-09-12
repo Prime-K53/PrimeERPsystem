@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { buildInvoiceVerificationUrl } from './invoiceVerification';
 
 const getCompanyNameFromStorage = () => {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'Prime ERP';
@@ -54,6 +55,18 @@ const resolveCreatedAt = (data: any) =>
   ).trim();
 
 export const buildSecurityQrPayload = (data: any, companyName?: string) => {
+  // Invoices carrying a verification token encode the verification URL
+  // (compact, QR-friendly, no sensitive data). Everything else keeps the
+  // legacy human-readable payload — including invoices that predate tokens.
+  const verificationUrl = data
+    ? buildInvoiceVerificationUrl({
+      invoiceNumber: data.invoiceNumber,
+      number: data.number,
+      verificationToken: (data as any).verificationToken,
+    })
+    : null;
+  if (verificationUrl) return verificationUrl;
+
   const resolvedCompanyName = String(companyName || '').trim() || getCompanyNameFromStorage();
   const documentNumber = resolveDocumentNumber(data);
   const createdOn = formatSecurityTimestamp(resolveCreatedAt(data));
@@ -69,8 +82,9 @@ export const attachDocumentSecurity = async <T extends Record<string, any>>(data
   try {
     securityQrCodeDataUrl = await QRCode.toDataURL(payload, {
       errorCorrectionLevel: 'M',
-      margin: 1,
-      width: 96,
+      // Quiet zone + resolution for reliable phone-camera scanning in print.
+      margin: 2,
+      width: 192,
     });
   } catch (error) {
     console.warn('[documentSecurity] Failed to generate QR code data URL.', error);

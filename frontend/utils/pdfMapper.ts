@@ -275,6 +275,10 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             item.payment_terms
         ),
         clientName: resolveFirstText(
+            // businessName is the primary customer/business identity and
+            // takes precedence (presentation mapping only — no data change).
+            item.businessName,
+            item.business_name,
             item.customerName,
             item.customer_name,
             item.schoolName,

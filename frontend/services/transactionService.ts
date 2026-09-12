@@ -42,6 +42,7 @@ import {
 } from './transactions/_internal';
 import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
 import { resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
+import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
 
 const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'LG-REV-AR-'];
 
@@ -2075,7 +2076,8 @@ export const transactionService = {
                 const invoiceType = String(invoice.originModule || invoice.origin_module || '').toLowerCase() === 'examination' ? 'examination_invoice' : 'invoice';
                 assertInvoiceNumberFormat(invoice.id, getCompanyConfig(), invoiceType);
 
-                // 1. Save Invoice
+                // 1. Save Invoice (with its permanent, idempotent verification token)
+                invoice = ensureInvoiceVerificationToken(invoice);
                 await invoiceStore.put(invoice);
 
                 // 2. Update Inventory (Gated by fulfillment, not payment status).
@@ -2491,6 +2493,7 @@ export const transactionService = {
                     await marketAdjustmentTransactionsStore.put(adjTx);
                 }
 
+                invoiceData = ensureInvoiceVerificationToken(invoiceData);
                 await invoiceStore.put(invoiceData);
 
                 // COGS entries split by inventory account (gated by active status)
@@ -2669,6 +2672,7 @@ export const transactionService = {
                     await marketAdjustmentTransactionsStore.put(adjTx);
                 }
 
+                invoiceData = ensureInvoiceVerificationToken(invoiceData);
                 await invoiceStore.put(invoiceData);
 
                 // COGS entries split by inventory account (gated by active status)
@@ -3268,8 +3272,35 @@ export const transactionService = {
                 // COGS were already journalised): cancels must go through
                 // voidInvoice and total/line changes need void-and-reissue.
                 assertInvoiceEditable(existing, invoice);
+                // The verification token is append-only: a partial edit that
+                // omits it must never strip it from the stored record.
+                if (existing && existing.verificationToken && !invoice.verificationToken) {
+                    invoice.verificationToken = existing.verificationToken;
+                }
                 await store.put(invoice);
                 return { success: true };
+            }
+        );
+        return result;
+    },
+
+    /**
+     * Returns the invoice's permanent verification token, issuing and
+     * persisting one first when the invoice predates tokens (safe backfill:
+     * single non-accounting field through the normal invoice save path, so
+     * it syncs like any other invoice field; never regenerates).
+     */
+    async getOrIssueInvoiceVerificationToken(invoiceId: string): Promise<{ token: string; issued: boolean }> {
+        const result = await dbService.executeAtomicOperation(
+            ['invoices'],
+            async (tx) => {
+                const invoiceStore = tx.objectStore('invoices');
+                const invoice = await invoiceStore.get(invoiceId);
+                if (!invoice) throw new Error(`Invoice #${invoiceId} not found`);
+                if (invoice.verificationToken) return { token: String(invoice.verificationToken), issued: false };
+                const next = ensureInvoiceVerificationToken(invoice);
+                await invoiceStore.put(next);
+                return { token: String(next.verificationToken), issued: true };
             }
         );
         return result;
@@ -3348,6 +3379,9 @@ export const transactionService = {
                 const existing = await invoiceStore.get(nextInvoice.id);
                 if (!existing) throw new Error(`Invoice #${nextInvoice.id} not found`);
                 const wasPosted = isPostedInvoiceStatus(existing.status);
+                if (existing.verificationToken && !nextInvoice.verificationToken) {
+                    nextInvoice.verificationToken = existing.verificationToken;
+                }
                 await invoiceStore.put(nextInvoice);
                 if (!wasPosted) return { corrected: false, reason: 'unposted' as const };
                 const correction = await postEditCorrectionInTx(tx, {
