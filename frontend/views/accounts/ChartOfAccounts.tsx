@@ -29,17 +29,15 @@ import {
   computeHierarchicalRollup,
   computeTypeTotals,
   computeTrialBalance,
-  checkBalanceSheetEquation,
-  isPostedLedgerEntry,
 } from '../../services/accountingEngine';
 
 /* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
 import {
     teal, amber, paper, ink, inkSoft, hairline, danger,
     labelStyle, inputStyle, textareaStyle, selectStyle, sectionLabelStyle,
-    btnGhostStyle, btnPrimaryStyle, btnDangerStyle,
+    btnGhostStyle, btnPrimaryStyle,
     modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
-    PageHeader, KpiCards, GhostButton, PrimaryButton, EmptyState,
+    PageHeader, GhostButton, PrimaryButton, EmptyState,
     tableCard, tableHeadRow,
 } from './components/financeChrome';
 
@@ -75,8 +73,6 @@ const COA_RESPONSIVE_CSS = `
 }
 @media (max-width:640px){
   .coa-root .coa-ph > div{padding:14px 14px 12px !important;}
-  .coa-root .coa-kpis > div{padding:14px 14px 0 !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:10px !important;}
-  .coa-root .coa-alert{margin:0 14px 4px !important;}
   .coa-root .coa-controls{padding:12px 14px !important;}
   .coa-root .coa-main{padding:0 14px 20px !important;gap:14px !important;}
   .coa-root .coa-row{gap:8px !important;padding-top:10px !important;padding-bottom:10px !important;padding-left:calc(12px + var(--coa-depth,0)*14px) !important;padding-right:12px !important;}
@@ -103,7 +99,6 @@ const ChartOfAccounts: React.FC = () => {
     updateAccount,
     deleteAccount,
     fetchFinanceData,
-    repairDuplicateOpeningCash
   } = useFinance();
   const { checkPermission, notify, companyConfig } = useAuth();
 
@@ -139,11 +134,6 @@ const ChartOfAccounts: React.FC = () => {
     const abs = Math.abs(value);
     const formatted = `${currency}${abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     return value < 0 ? `(${formatted})` : formatted;
-  };
-
-  const formatMK = (n: number) => {
-    const abs = Math.abs(Math.round(n)).toLocaleString('en-US');
-    return n < 0 ? `(${currency} ${abs})` : `${currency} ${abs}`;
   };
 
   const filteredAccounts = useMemo(() => {
@@ -204,17 +194,6 @@ const ChartOfAccounts: React.FC = () => {
     return groups;
   }, [filteredAccounts, accounts, ownBalances]);
 
-  const totals = useMemo(() => {
-    const typeTotals = computeTypeTotals((accounts || []) as any[], ownBalances);
-    return {
-      assets: typeTotals.assets,
-      liabilities: typeTotals.liabilities,
-      equity: typeTotals.equity,
-      income: typeTotals.income,
-      expenses: typeTotals.expenses,
-    };
-  }, [accounts, ownBalances]);
-
   // Authoritative balance signal: the trial balance compares TOTAL posted
   // debits against TOTAL posted credits. A single account with only debits
   // or only credits (e.g. Sales with purely credit activity) is normal and
@@ -223,28 +202,6 @@ const ChartOfAccounts: React.FC = () => {
     return computeTrialBalance((accounts || []) as any[], (ledger || []) as any[]);
   }, [accounts, ledger]);
 
-  const balanceSheetCheck = useMemo(() => {
-    const typeTotals = computeTypeTotals((accounts || []) as any[], ownBalances);
-    return checkBalanceSheetEquation(typeTotals);
-  }, [accounts, ownBalances]);
-
-  // Duplicate opening-cash detection (mount-race auto-posts): posted
-  // OPENING_BALANCE rows beyond the earliest inflate Cash + Capital.
-  const duplicateOpeningCash = useMemo(() => {
-    const posted = (ledger || []).filter(
-      (e: any) => e.referenceId === 'OPENING_BALANCE' && isPostedLedgerEntry(e as any)
-    );
-    if (posted.length <= 1) return null;
-    const total = posted.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
-    const sorted = [...posted].sort((a: any, b: any) =>
-      String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''))
-    );
-    const kept = sorted[0];
-    const correction = total - (Number((kept as any).amount) || 0);
-    return { count: posted.length, total, correction };
-  }, [ledger]);
-
-  const isBalanced = trialBalance.isBalanced && balanceSheetCheck.balanced;
   const totalAccounts = Object.values(groupedByType).reduce((sum, g) => sum + g.accounts.length, 0);
 
   const toggleNode = (code: string) => {
@@ -560,20 +517,6 @@ const ChartOfAccounts: React.FC = () => {
     );
   };
 
-  const kpiItems = [
-    { label: 'Assets', value: formatMK(totals.assets), icon: BookOpen, color: teal[700], bg: teal[50] },
-    { label: 'Liabilities', value: formatMK(totals.liabilities), icon: BookOpen, color: amber[600], bg: amber[100] },
-    { label: 'Equity', value: formatMK(totals.equity), icon: BarChart3, color: teal[700], bg: teal[50] },
-    // Trial-balance status: total posted debits vs total posted credits.
-    // Never a per-account "N accounts out of balance" figure — an account
-    // with only debits or only credits is perfectly normal.
-    {
-      label: isBalanced ? 'Balanced' : 'Out of balance',
-      value: isBalanced ? `${totalAccounts} accounts` : `${formatMK(Math.abs(trialBalance.difference))} diff`,
-      icon: BookOpen, color: isBalanced ? teal[700] : danger, bg: isBalanced ? teal[50] : '#fdeeee'
-    },
-  ];
-
   return (
     <div className="flex flex-col h-full coa-root" style={{ background: paper, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>
       <style>{COA_RESPONSIVE_CSS}</style>
@@ -605,41 +548,6 @@ const ChartOfAccounts: React.FC = () => {
           )}
         </>}
       /></div>
-
-      <div className="coa-kpis"><KpiCards items={kpiItems} /></div>
-
-      {duplicateOpeningCash && duplicateOpeningCash.count > 1 && (
-        <div className="coa-alert" style={{ margin: '0 28px 4px', padding: '12px 16px', borderRadius: 12, background: '#fdeeee', border: `1.4px solid ${danger}55`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 260px', fontSize: 12.5, color: ink }}>
-            <b>Duplicate opening-cash rows detected:</b> {duplicateOpeningCash.count} posted OPENING_BALANCE entries
-            (K{duplicateOpeningCash.correction.toLocaleString()} inflated Cash Drawer &amp; Owner&apos;s Capital after keeping the earliest row). History is preserved — repair posts one correcting journal.
-          </div>
-          <button
-            onClick={() => setConfirmState({
-              open: true,
-              title: 'Repair duplicate opening cash',
-              message: `Post one correcting journal (DR Owner's Capital / CR Cash Drawer K${duplicateOpeningCash.correction.toLocaleString()}) reversing ${duplicateOpeningCash.count - 1} duplicate rows and keeping the earliest? Originals stay in history.`,
-              confirmText: 'Post correction',
-              type: 'danger',
-              onConfirm: async () => {
-                setConfirmState(s => ({ ...s, open: false }));
-                try {
-                  if (typeof repairDuplicateOpeningCash === 'function') {
-                    await repairDuplicateOpeningCash('duplicate opening-cash auto-posts (COA repair)');
-                  } else {
-                    notify('Repair action is unavailable in this build', 'error');
-                  }
-                } catch (err: any) {
-                  notify(err.message || 'Repair failed', 'error');
-                }
-              }
-            })}
-            style={{ ...btnDangerStyle }}
-          >
-            Review &amp; repair
-          </button>
-        </div>
-      )}
 
       {/* Controls */}
       <div className="coa-controls" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 28px' }}>
