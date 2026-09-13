@@ -1,9 +1,25 @@
 import { PricingBreakdownSnapshot } from '../types';
 import { resolveStoredRoundingDifference } from './pricing';
 import { roundMoney } from './roundingUtils';
+import {
+  resolveSaleLineDiscount,
+  resolveTransactionRootDiscount,
+} from './saleProfit';
 
 const PROFIT_MARGIN_LABEL = 'profit margin';
 const ROUNDING_LABEL = 'rounding';
+
+/**
+ * Money epsilon for staleness comparisons. Stored breakdowns and live lines
+ * are both money-rounded, so any genuine price/cost edit differs by at
+ * least K0.01 while float dust stays far below half a tambala.
+ */
+const STALENESS_EPSILON = 0.005;
+
+const toFiniteNumber = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
 
 const toFiniteAmount = (value: unknown): number | undefined => {
   const parsed = Number(value);
@@ -164,13 +180,56 @@ const toAdjustmentLines = (snapshots: any[] = []) => {
   }));
 };
 
+/**
+ * True when a persisted per-line pricing breakdown is BASE-PRICE POISONED
+ * and must be re-derived instead of trusted (INV-P726/023 drilling:
+ * K129,854 of phantom cost): the breakdown's unit cost literally equals the
+ * line's `basePrice` while that basePrice differs from the line CP.
+ * `basePrice` carries SELLING-price semantics at the dominant write site
+ * (OrderForm stamps basePrice = finalUnitPrice at add time), so a breakdown
+ * cost equal to it is selling price masquerading as cost.
+ *
+ * Deliberately narrow (selling-price drift alone does NOT trigger this —
+ * coherent breakdowns with their own economics stay trusted):
+ * - lines without `basePrice` are untouched (historical/CP rules apply);
+ * - lines whose basePrice equals their CP (variant path) are unaffected:
+ *   re-deriving from CP yields the identical number;
+ * - cost edits never trigger this: historical cost is immutable (a later
+ *   master-cost change must not rewrite history).
+ */
+export const isStalePricingBreakdown = (item: any): boolean => {
+  const existing = item?.pricingBreakdown as PricingBreakdownSnapshot | undefined;
+  if (!existing || typeof existing !== 'object') return false;
+
+  const storedUnitCost = toFiniteNumber(
+    (existing as any).costPrice ?? (existing as any).baseMaterialCost
+  );
+  const basePrice = toFiniteNumber(item?.basePrice);
+  if (storedUnitCost === undefined || basePrice === undefined) return false;
+  if (Math.abs(storedUnitCost - basePrice) > STALENESS_EPSILON) return false;
+  // Direct line CP only (never snapshot fallbacks): a snapshot-derived cost
+  // is a legitimate competing valuation, while a direct CP on the line is
+  // the sale's own economics and contradicts an SP-sourced breakdown cost.
+  // Lines with no direct CP keep legacy behavior (no evidence to contradict).
+  let directCP: number | undefined;
+  for (const candidate of [item?.cost, item?.cost_price, item?.costPrice, item?.unitCost]) {
+    const parsed = Number(candidate);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      directCP = parsed;
+      break;
+    }
+  }
+  if (directCP === undefined) return false;
+  return Math.abs(basePrice - directCP) > STALENESS_EPSILON;
+};
+
 export const buildPricingBreakdownSnapshot = (
   item: any
 ): PricingBreakdownSnapshot | undefined => {
   if (!item) return undefined;
 
   const existing = item.pricingBreakdown as PricingBreakdownSnapshot | undefined;
-  if (existing) {
+  if (existing && !isStalePricingBreakdown(item)) {
     const costPrice = roundMoney(existing.costPrice ?? existing.baseMaterialCost ?? 0);
     const sellingPrice = roundMoney(existing.sellingPrice ?? 0);
     const profitAmount = roundMoney(existing.profitAmount ?? (sellingPrice - costPrice));
@@ -213,12 +272,19 @@ export const buildPricingBreakdownSnapshot = (
   const resolvedProductionCost = Number.isFinite(productionSnapshotCost) && productionSnapshotCost > 0
     ? productionSnapshotCost
     : undefined;
+  // NOTE: `item.basePrice` is deliberately NOT a cost source. It carries
+  // selling-price semantics at the dominant write site (OrderForm stamps
+  // basePrice = finalUnitPrice when a line is added), so resolving cost from
+  // it prices material at selling price whenever the price later moves —
+  // the K129,854 INV-P726/023 divergence. CP aliases mirror saleProfit
+  // precedence (line CP first, snapshots before it preserved above).
   const baseMaterialCost = roundMoney(
     resolvedProductionCost
     ?? smartSnapshot?.baseCost
-    ?? item.basePrice
-    ?? item.cost_price
     ?? item.cost
+    ?? item.cost_price
+    ?? item.costPrice
+    ?? item.unitCost
     ?? 0
   );
   const explicitMarketAdjustmentTotal = [
@@ -370,10 +436,24 @@ export const aggregateMarketAdjustmentSnapshots = (items: any[] = []) => {
 };
 
 export const resolveTransactionPricingSummary = (transaction: any) => {
-  const normalizedItems = Array.isArray(transaction?.items)
-    ? transaction.items.map((item: any) => attachPricingBreakdown(item))
-    : [];
+  const rawItems = Array.isArray(transaction?.items) ? transaction.items : [];
+  // Stored root aggregates were computed from the lines at save time, so a
+  // stale/poisoned line means stale roots: fall back to re-derivation.
+  // Fresh lines (or none) keep the roots (examination batch authority,
+  // portal conversions, and the firewall invariant all depend on them).
+  const hasUnreliableLines = rawItems.some((item: any) => isStalePricingBreakdown(item));
+  const normalizedItems = rawItems.map((item: any) => attachPricingBreakdown(item));
   const derivedSummary = summarizePricingBreakdown(normalizedItems);
+  // Order-Form parity for the derived branch: the unallocated remainder of
+  // the document discount comes out of profit (POS, Order Form and the View
+  // Details modal all follow this rule via saleProfit). Cost is unaffected
+  // by discount in both views. Root-backed branches are untouched.
+  const unallocatedDiscount = Math.max(
+    0,
+    resolveTransactionRootDiscount(transaction)
+    - rawItems.reduce((sum: number, item: any) => sum + resolveSaleLineDiscount(item), 0)
+  );
+  const derivedProfit = roundMoney(derivedSummary.profitMarginTotal - unallocatedDiscount);
 
   const pickMetric = (rootValue: unknown, derivedValue: number) => {
     const parsedRoot = Number(rootValue);
@@ -426,15 +506,30 @@ export const resolveTransactionPricingSummary = (transaction: any) => {
     ? roundMoney(totalAmount - preRoundingTotal)
     : 0;
 
+  const useStoredRoots = !hasUnreliableLines;
+  const isSignificant = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && Math.abs(parsed) > 0.0001;
+  };
+  const rootMaterial = transaction?.materialTotal ?? transaction?.material_total;
   return {
     items: normalizedItems,
-    materialTotal: pickMetric(transaction?.materialTotal ?? transaction?.material_total, derivedSummary.materialTotal),
+    materialTotal: useStoredRoots && isSignificant(rootMaterial)
+      ? roundMoney(Number(rootMaterial))
+      : roundMoney(derivedSummary.materialTotal),
     adjustmentTotal: (
       rootSnapshots.length > 0 || hasRootRoundingSnapshots
         ? rootAdjustmentTotalFromSnapshots
         : pickMetric(transaction?.adjustmentTotal ?? transaction?.adjustment_total, derivedSummary.adjustmentTotal)
     ),
-    profitMarginTotal: pickMetric(transaction?.profitMarginTotal ?? transaction?.profit_margin_total ?? transaction?.profitAdjustment, derivedSummary.profitMarginTotal),
+    profitMarginTotal: (() => {
+      const rootProfit = transaction?.profitMarginTotal ?? transaction?.profit_margin_total ?? transaction?.profitAdjustment;
+      // Stored roots keep winning exactly as before (same nonzero test as
+      // pickMetric). Otherwise the Order-Form-parity derived profit applies,
+      // so discounted sales agree in both views.
+      if (useStoredRoots && isSignificant(rootProfit)) return roundMoney(Number(rootProfit));
+      return derivedProfit;
+    })(),
     roundingTotal: (
       hasRootRoundingSnapshots
         ? rootRoundingTotalFromSnapshots

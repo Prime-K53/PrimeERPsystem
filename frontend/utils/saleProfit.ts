@@ -139,7 +139,7 @@ export const calculateSaleProfit = (
   return roundMoney(linesProfit - Math.max(0, toNum(orderDiscount)));
 };
 
-const resolveTransactionRootDiscount = (transaction: { [key: string]: unknown } | null | undefined): number =>
+export const resolveTransactionRootDiscount = (transaction: { [key: string]: unknown } | null | undefined): number =>
   toNum(
     (transaction as Record<string, unknown> | null | undefined)?.discount ??
     (transaction as Record<string, unknown> | null | undefined)?.discountTotal ??
@@ -174,6 +174,7 @@ export default {
   resolveSaleLinePrice,
   resolveSaleLineCostPrice,
   resolveSaleLineDiscount,
+  resolveTransactionRootDiscount,
   isNettedLineTotal,
   resolveSaleLineRevenue,
   calculateLineProfit,
