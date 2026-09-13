@@ -85,17 +85,19 @@ const hexToRgb = (hex: string) => {
 // Disable hyphenation
 Font.registerHyphenationCallback(word => [word]);
 
-const renderQrImage = (qrCodeDataUrl?: string | null, size: number = 52) => {
+const renderQrImage = (qrCodeDataUrl?: string | null, size: number = 52, showCaption = true) => {
   const resolvedQrCode = resolvePdfQrCodeSource(qrCodeDataUrl);
   if (!resolvedQrCode) return null;
 
   // The QR encodes the public verification URL for tokened documents
-  // (legacy human-readable payload otherwise) — the caption tells the
-  // holder what scanning does.
+  // (legacy human-readable payload otherwise). The caption is rendered ONLY
+  // for the POS receipt; all other documents show the QR image alone.
   return (
     <View style={{ alignItems: 'center' }}>
       <Image src={resolvedQrCode} style={{ width: size, height: size }} />
-      <Text style={{ fontSize: Math.max(6, size * 0.13), color: '#475569', marginTop: 2, letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
+      {showCaption ? (
+        <Text style={{ fontSize: Math.max(6, size * 0.13), color: '#475569', marginTop: 2, letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
+      ) : null}
     </View>
   );
 };
@@ -202,7 +204,7 @@ const resolveFooterText = (config: CompanyConfig | null | undefined, paymentTerm
   if (configuredFooter) {
     return configuredFooter;
   }
-  return 'This is a computer-generated document. No signature required. For enquiries contact';
+  return 'This is a computer-generated document. Scan QR Code to Verify. For enquiries contact';
 };
 
 const buildFooterContactLine = (_config?: CompanyConfig | null) => {
@@ -313,7 +315,6 @@ const SecurityFooter = ({
         {!!qrCodeDataUrl ? (
           <View style={{ alignItems: 'center' }}>
             <Image src={qrCodeDataUrl} style={{ width: footerQrSize, height: footerQrSize }} />
-            <Text style={{ fontSize: 6.5, color: '#475569', marginTop: 2, letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
           </View>
         ) : null}
       </View>
@@ -434,7 +435,7 @@ const CleanInvoiceTemplate = ({
         {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
         {/* Header */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 40 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
            <View style={{ flex: 1 }}>
               {!!logo ? (
                 <Image src={logo} style={{ width: templateSettings.logoWidth, marginBottom: 10 }} />
@@ -800,7 +801,7 @@ const ModernInvoiceTemplate = ({
         </View>
 
         {/* Info Row: Number / Date */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 30, marginBottom: 40 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 30, marginBottom: 20 }}>
           <Text style={{ fontSize: 12 * fontScale, color: '#222222' }}>
             <Text style={{ fontWeight: 'bold' }}>{type === 'INVOICE' ? 'Invoice Number:' : 'Reference Number:'}</Text> {invoiceNumber}
           </Text>
@@ -938,7 +939,7 @@ const ModernInvoiceTemplate = ({
             
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginTop: 10, gap: 12 }}>
               <View>
-                {renderQrImage(qrCodeDataUrl, 56) || <View style={{ width: 56, height: 56, backgroundColor: '#eeeeee' }} />}
+                {renderQrImage(qrCodeDataUrl, 56, false) || <View style={{ width: 56, height: 56, backgroundColor: '#eeeeee' }} />}
               </View>
               <View style={{ justifyContent: 'center', flex: 1 }}>
                 <Text style={{ fontWeight: 'bold', fontSize: 11 * fontScale, color: '#111111', marginBottom: 4 }}>More Info:</Text>
@@ -1074,7 +1075,7 @@ const ProfessionalInvoiceTemplate = ({
         {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
         {/* Top Row */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 30 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
           <View style={{ alignItems: 'center', justifyContent: 'center' }}>
             {!!logo ? (
               <Image src={logo} style={{ width: templateSettings.logoWidth }} />
@@ -1409,7 +1410,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           </View>
 
-          <View style={[s.billingSection, { marginTop: 20 }]}>
+          <View style={[s.billingSection, { marginTop: 10 }]}>
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Customer</Text>
               <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{String(d.customerName)}</Text>
@@ -1628,7 +1629,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             identity={paginationIdentity(type, sp as unknown as Record<string, unknown>, resolvedRecipientName || '')}
             companyName={companyName}
           />
-          <View style={s.headerSection}>
+          <View style={[s.headerSection, { marginBottom: 10 }]}>
             <View style={s.headerLeft}>
               {renderBrandMark('left')}
             </View>
@@ -1716,7 +1717,10 @@ if (type === 'POS_RECEIPT') {
   const r = data as PosReceiptDoc;
   const isCancelled = isCancelledStatus(r.status, r);
 
-  const scale = 1;
+  // POS sizing follows the invoice template settings (bodyFontSize, like every
+  // other document via fontScale) plus a 30% uplift for receipt readability.
+  // The page already uses templateSettings.fontFamily, matching invoices.
+  const scale = 1.3 * (templateSettings.bodyFontSize / 12);
   const baseFontSize = 7.6 * scale;
   const largeFontSize = 10 * scale;
   const smallFontSize = 6.4 * scale;
@@ -1895,7 +1899,7 @@ if (type === 'POS_RECEIPT') {
         {paginated && paginationId && (
           <PaginationFurniture identity={paginationId} companyName={companyName} />
         )}
-        <View style={s.headerSection}>
+        <View style={[s.headerSection, { marginBottom: 10 }]}>
           {isRightAligned ? (
             <>
               <View style={s.headerLeft}>
@@ -2670,44 +2674,47 @@ if (type === 'POS_RECEIPT') {
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5 }}>Logistics Details</Text>
               <Text style={{ fontSize: 9, marginBottom: 3 }}>Driver Name: {('driverName' in data ? data.driverName : '____________________')}</Text>
-              <Text style={{ fontSize: 9 }}>Vehicle No: {('vehicleNo' in data ? data.vehicleNo : '____________________')}</Text>
-            </View>
-            <View style={{ flex: 1, alignItems: 'flex-end' }}>
-              {(() => {
-                // Recipient signature: render the stored data URL when it is
-                // a PDF-embeddable image (png/jpeg). Anything else (missing,
-                // malformed, or webp which react-pdf cannot embed) keeps the
-                // existing blank signature area — never a broken image.
-                const raw = String(dataAny.signatureDataUrl || (pod as any)?.signatureDataUrl || '');
-                const validated = normalizeSignatureDataUrl(raw);
-                const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || '').toLowerCase();
-                const renderable = validated && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg')
-                  ? validated
-                  : null;
-                return renderable ? (
-                  <View style={{ height: 40, width: 100, marginBottom: 5, alignItems: 'center', justifyContent: 'center' }}>
-                    <Image src={renderable} style={{ width: 100, height: 40, objectFit: 'contain' }} />
-                  </View>
-                ) : (
-                  <View style={{ height: 45 }} />
-                );
-              })()}
-              <View style={[s.sigLine, { width: 180 }]} />
-              <Text style={{ fontSize: 9 }}>Received By: {String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || '____________________')}</Text>
-              <Text style={{ fontSize: 7, color: '#666' }}>Stamp & Signature</Text>
-              {(() => {
-                const locStamp = (conversionDetails?.locationStamp || pod?.locationStamp) as Record<string, unknown> | undefined;
-                const lat = Number(locStamp?.lat);
-                const lng = Number(locStamp?.lng);
-                if (lat || lng) {
-                  return (
-                    <Text style={{ fontSize: 7, color: '#666', marginTop: 5 }}>
-                      GPS: {lat.toFixed(4)}, {lng.toFixed(4)}
-                    </Text>
-                  );
-                }
-                return null;
-              })()}
+              {/* Vehicle No and the customer signature line share one row. */}
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 16, marginTop: 8 }}>
+                <Text style={{ fontSize: 9 }}>Vehicle No: {('vehicleNo' in data ? data.vehicleNo : '____________________')}</Text>
+                <View style={{ flex: 1, alignItems: 'flex-start' }}>
+                  {(() => {
+                    // Recipient signature: render the stored data URL when it is
+                    // a PDF-embeddable image (png/jpeg). Anything else (missing,
+                    // malformed, or webp which react-pdf cannot embed) keeps the
+                    // existing blank signature area — never a broken image.
+                    const raw = String(dataAny.signatureDataUrl || (pod as any)?.signatureDataUrl || '');
+                    const validated = normalizeSignatureDataUrl(raw);
+                    const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || '').toLowerCase();
+                    const renderable = validated && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg')
+                      ? validated
+                      : null;
+                    return renderable ? (
+                      <View style={{ height: 40, width: 100, marginBottom: 5, alignItems: 'center', justifyContent: 'center' }}>
+                        <Image src={renderable} style={{ width: 100, height: 40, objectFit: 'contain' }} />
+                      </View>
+                    ) : (
+                      <View style={{ height: 45 }} />
+                    );
+                  })()}
+                  <View style={[s.sigLine, { width: 180 }]} />
+                  <Text style={{ fontSize: 9 }}>Received By: {String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || '____________________')}</Text>
+                  <Text style={{ fontSize: 7, color: '#666' }}>Stamp & Signature</Text>
+                  {(() => {
+                    const locStamp = (conversionDetails?.locationStamp || pod?.locationStamp) as Record<string, unknown> | undefined;
+                    const lat = Number(locStamp?.lat);
+                    const lng = Number(locStamp?.lng);
+                    if (lat || lng) {
+                      return (
+                        <Text style={{ fontSize: 7, color: '#666', marginTop: 5 }}>
+                          GPS: {lat.toFixed(4)}, {lng.toFixed(4)}
+                        </Text>
+                      );
+                    }
+                    return null;
+                  })()}
+                </View>
+              </View>
             </View>
           </View>
         )}

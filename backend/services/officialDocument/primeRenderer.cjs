@@ -233538,12 +233538,12 @@ var InvoiceInfoPanel = ({
   ] });
 };
 Font.registerHyphenationCallback((word) => [word]);
-var renderQrImage = (qrCodeDataUrl, size = 52) => {
+var renderQrImage = (qrCodeDataUrl, size = 52, showCaption = true) => {
   const resolvedQrCode = resolvePdfQrCodeSource(qrCodeDataUrl);
   if (!resolvedQrCode) return null;
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center" }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: resolvedQrCode, style: { width: size, height: size } }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: Math.max(6, size * 0.13), color: "#475569", marginTop: 2, letterSpacing: 0.5 }, children: "SCAN TO VERIFY" })
+    showCaption ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: Math.max(6, size * 0.13), color: "#475569", marginTop: 2, letterSpacing: 0.5 }, children: "SCAN TO VERIFY" }) : null
   ] });
 };
 var formatAmount2 = (amount) => {
@@ -233628,7 +233628,7 @@ var resolveFooterText = (config2, paymentTermsLabel, showPaymentTerms) => {
   if (configuredFooter) {
     return configuredFooter;
   }
-  return "This is a computer-generated document. No signature required. For enquiries contact";
+  return "This is a computer-generated document. Scan QR Code to Verify. For enquiries contact";
 };
 var buildFooterContactLine = (_config) => {
   return "Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,";
@@ -233691,10 +233691,7 @@ var SecurityFooter = ({
             paddingHorizontal: 0
           }
         ],
-        children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 6.5, color: "#475569", marginTop: 2, letterSpacing: 0.5 }, children: "SCAN TO VERIFY" })
-        ] }) : null
+        children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }) }) : null
       }
     )
   ] });
@@ -233790,7 +233787,7 @@ var CleanInvoiceTemplate = ({
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: { padding: 40, paddingBottom: 100, fontFamily: templateSettings.fontFamily }, children: [
     channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, {}),
     isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, {}),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 40 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
         !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth, marginBottom: 10 } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: accentColor, marginBottom: 8 }, children: companyName }),
         !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: "#64748b", lineHeight: 1.4 }, children: companyAddress }),
@@ -234100,7 +234097,7 @@ var ModernInvoiceTemplate = ({
         titleRest
       ] })
     ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 30, marginBottom: 40 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 30, marginBottom: 20 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 12 * fontScale, color: "#222222" }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Number:" : "Reference Number:" }),
         " ",
@@ -234235,7 +234232,7 @@ var ModernInvoiceTemplate = ({
           }
         ) : null,
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-start", marginTop: 10, gap: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: renderQrImage(qrCodeDataUrl, 56) || /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 56, height: 56, backgroundColor: "#eeeeee" } }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: renderQrImage(qrCodeDataUrl, 56, false) || /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 56, height: 56, backgroundColor: "#eeeeee" } }) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { justifyContent: "center", flex: 1 }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: 11 * fontScale, color: "#111111", marginBottom: 4 }, children: "More Info:" }),
             !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: "#333333", marginBottom: 2 }, children: companyPhone }),
@@ -234341,7 +234338,7 @@ var ProfessionalInvoiceTemplate = ({
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: { padding: 40, fontFamily: templateSettings.fontFamily, backgroundColor: "#ffffff" }, children: [
     channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, {}),
     isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, {}),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 30 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 15 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center", justifyContent: "center" }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: "#222222", fontSize: templateSettings.logoWidth * 0.4, fontWeight: "bold" }, children: companyName.charAt(0) }) }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { textAlign: "right", alignItems: "flex-end" }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 13 * fontScale, fontWeight: "bold", color: "#111111", marginBottom: 2 }, children: companyName }),
@@ -234622,7 +234619,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 20 }], children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 10 }], children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Customer" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(d3.customerName) }),
@@ -234820,7 +234817,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           companyName
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.headerSection, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.headerSection, { marginBottom: 10 }], children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.headerLeft, children: renderBrandMark("left") }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.headerLeft, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.title, titleStyle], children: "Supplier Payment Receipt" }),
@@ -234923,7 +234920,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   if (type === "POS_RECEIPT") {
     const r4 = data2;
     const isCancelled2 = isCancelledStatus(r4.status, r4);
-    const scale2 = 1;
+    const scale2 = 1.3 * (templateSettings.bodyFontSize / 12);
     const baseFontSize = 7.6 * scale2;
     const largeFontSize = 10 * scale2;
     const smallFontSize = 6.4 * scale2;
@@ -235073,7 +235070,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, {}),
         isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, {}),
         paginated && paginationId && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PaginationFurniture, { identity: paginationId, companyName }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.headerSection, children: isRightAligned ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.headerSection, { marginBottom: 10 }], children: isRightAligned ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.headerLeft, children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.title, titleStyle, type === "INVOICE" ? { fontSize: 22 * fontScale, height: "auto" } : null], children: title }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.infoText, children: type === "INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
@@ -235758,48 +235755,48 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Received By (Client)" })
           ] })
         ] }),
-        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.signatureBlock, { marginTop: 40 }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5 }, children: "Logistics Details" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
-              "Driver Name: ",
-              "driverName" in data2 ? data2.driverName : "____________________"
-            ] }),
+        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.signatureBlock, { marginTop: 40 }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5 }, children: "Logistics Details" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
+            "Driver Name: ",
+            "driverName" in data2 ? data2.driverName : "____________________"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", gap: 16, marginTop: 8 }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 }, children: [
               "Vehicle No: ",
               "vehicleNo" in data2 ? data2.vehicleNo : "____________________"
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
-            (() => {
-              const raw = String(dataAny.signatureDataUrl || pod?.signatureDataUrl || "");
-              const validated = normalizeSignatureDataUrl(raw);
-              const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || "").toLowerCase();
-              const renderable = validated && (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg") ? validated : null;
-              return renderable ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 40, width: 100, marginBottom: 5, alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: renderable, style: { width: 100, height: 40, objectFit: "contain" } }) }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 45 } });
-            })(),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.sigLine, { width: 180 }] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 }, children: [
-              "Received By: ",
-              String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || "____________________")
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: "#666" }, children: "Stamp & Signature" }),
-            (() => {
-              const locStamp = conversionDetails?.locationStamp || pod?.locationStamp;
-              const lat = Number(locStamp?.lat);
-              const lng = Number(locStamp?.lng);
-              if (lat || lng) {
-                return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7, color: "#666", marginTop: 5 }, children: [
-                  "GPS: ",
-                  lat.toFixed(4),
-                  ", ",
-                  lng.toFixed(4)
-                ] });
-              }
-              return null;
-            })()
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
+              (() => {
+                const raw = String(dataAny.signatureDataUrl || pod?.signatureDataUrl || "");
+                const validated = normalizeSignatureDataUrl(raw);
+                const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || "").toLowerCase();
+                const renderable = validated && (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg") ? validated : null;
+                return renderable ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 40, width: 100, marginBottom: 5, alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: renderable, style: { width: 100, height: 40, objectFit: "contain" } }) }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 45 } });
+              })(),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.sigLine, { width: 180 }] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 }, children: [
+                "Received By: ",
+                String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || "____________________")
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: "#666" }, children: "Stamp & Signature" }),
+              (() => {
+                const locStamp = conversionDetails?.locationStamp || pod?.locationStamp;
+                const lat = Number(locStamp?.lat);
+                const lng = Number(locStamp?.lng);
+                if (lat || lng) {
+                  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7, color: "#666", marginTop: 5 }, children: [
+                    "GPS: ",
+                    lat.toFixed(4),
+                    ", ",
+                    lng.toFixed(4)
+                  ] });
+                }
+                return null;
+              })()
+            ] })
           ] })
-        ] }),
+        ] }) }),
         !paginated && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.footerContainer, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.footerLine }) }),
         paginated ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
