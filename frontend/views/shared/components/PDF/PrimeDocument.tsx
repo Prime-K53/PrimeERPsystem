@@ -23,6 +23,12 @@ import {
 } from './templateSettings.ts';
 import { generateAccountSummary } from '../../../../utils/pdfMapper.ts';
 import { currencyService } from '../../../../services/currencyService';
+import {
+  PaginationFurniture,
+  VerificationLabel,
+  isPaginatedDocumentType,
+  paginationIdentity,
+} from './documentPagination.tsx';
 
 const formatPhone = (phone: string): string => {
   const digits = phone.replace(/\D/g, '');
@@ -1376,6 +1382,10 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
         <Page size="A4" style={[s.page, pageStyle]}>
           {channel === 'portal' && <PortalCopyWatermark />}
           {isCancelled && <CancelledWatermark />}
+          <PaginationFurniture
+            identity={paginationIdentity(type, d, resolvedRecipientName || '')}
+            companyName={companyName}
+          />
           {showConversionHistory && Boolean(d.isConverted) && !!cd && (
             <View style={[s.conversionBox, { position: 'absolute', top: 40, right: 40, zIndex: 10 }]}>
               <Text style={s.conversionTitle}>Conversion History</Text>
@@ -1451,13 +1461,17 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           </View>
 
-          <SecurityFooter
-            data={d}
-            companyName={companyName}
-            legalFooterLine1="This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
-            legalFooterLine2={`All exchanges are subject to ${companyName} Return & Exchange Policy.`}
-            fontScale={fontScale}
-          />
+          <View wrap={false} style={{ marginTop: 10 }}>
+            <VerificationLabel fontScale={fontScale} />
+            <SecurityFooter
+              data={d}
+              companyName={companyName}
+              legalFooterLine1="This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
+              legalFooterLine2={`All exchanges are subject to ${companyName} Return & Exchange Policy.`}
+              fontScale={fontScale}
+              flowing
+            />
+          </View>
         </Page>
       </Document>
     );
@@ -1476,6 +1490,10 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
         <Page size="A4" style={[s.page, pageStyle]}>
           {channel === 'portal' && <PortalCopyWatermark />}
           {isCancelled && <CancelledWatermark />}
+          <PaginationFurniture
+            identity={paginationIdentity(type, rc as unknown as Record<string, unknown>, resolvedRecipientName || '')}
+            companyName={companyName}
+          />
 
           <View style={s.headerSection}>
             <View style={s.headerLeft}>
@@ -1572,13 +1590,17 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               <Text style={[s.footerDetail, { fontSize: scaledFont(12) }]}>{companyContact}</Text>
             </View>
 
-          <SecurityFooter
-            data={rc}
-            companyName={companyName}
-            legalFooterLine1={resolveFooterText(config, '', false)}
-            legalFooterLine2={buildFooterContactLine(config)}
-            fontScale={fontScale}
-          />
+          <View wrap={false} style={{ marginTop: 10 }}>
+            <VerificationLabel fontScale={fontScale} />
+            <SecurityFooter
+              data={rc}
+              companyName={companyName}
+              legalFooterLine1={resolveFooterText(config, '', false)}
+              legalFooterLine2={buildFooterContactLine(config)}
+              fontScale={fontScale}
+              flowing
+            />
+          </View>
         </Page>
       </Document>
     );
@@ -1601,6 +1623,10 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
         <Page size="A4" style={[s.page, pageStyle]}>
           {channel === 'portal' && <PortalCopyWatermark />}
           {isCancelled && <CancelledWatermark />}
+          <PaginationFurniture
+            identity={paginationIdentity(type, sp as unknown as Record<string, unknown>, resolvedRecipientName || '')}
+            companyName={companyName}
+          />
           <View style={s.headerSection}>
             <View style={s.headerLeft}>
               {renderBrandMark('left')}
@@ -1670,13 +1696,17 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           </View>
 
-          <SecurityFooter
-            data={sp}
-            companyName={companyName}
-            legalFooterLine1="This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
-            legalFooterLine2={`Issued securely by ${companyName}.`}
-            fontScale={fontScale}
-          />
+          <View wrap={false} style={{ marginTop: 10 }}>
+            <VerificationLabel fontScale={fontScale} />
+            <SecurityFooter
+              data={sp}
+              companyName={companyName}
+              legalFooterLine1="This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
+              legalFooterLine2={`Issued securely by ${companyName}.`}
+              fontScale={fontScale}
+              flowing
+            />
+          </View>
         </Page>
       </Document>
     );
@@ -1834,6 +1864,11 @@ if (type === 'POS_RECEIPT') {
 
   const isCancelled = isCancelledStatus(dataAny.status, dataAny);
 
+  // Global pagination framing (shared document-layout capability; for
+  // INVOICE it reproduces the proven reference strings byte-identically).
+  const paginated = isPaginatedDocumentType(type);
+  const paginationId = paginated ? paginationIdentity(type, dataAny, resolvedRecipientName || '') : null;
+
   return (
     <Document
       title={`${title} - ${'number' in data ? data.number : ('receiptNumber' in data ? data.receiptNumber : ('clientName' in data ? data.clientName : 'DOC'))}`}
@@ -1845,36 +1880,10 @@ if (type === 'POS_RECEIPT') {
       <Page size="A4" style={[s.page, pageStyle, type === 'INVOICE' ? { paddingBottom: 64 } : null]}>
         {channel === 'portal' && <PortalCopyWatermark />}
         {isCancelled && <CancelledWatermark />}
-        {/* INVOICE pagination furniture (presentation only — dynamic page info
+        {/* Pagination furniture (presentation only — dynamic page info
             comes from React-PDF's render prop, never hard-coded). */}
-        {type === 'INVOICE' && (
-          <>
-            <Text
-              fixed
-              style={{ position: 'absolute', top: 24, left: 40, right: 40, textAlign: 'center', fontSize: 8, color: '#64748b' }}
-              render={({ pageNumber }: { pageNumber: number }) =>
-                pageNumber > 1
-                  ? `Invoice ${String(('invoiceNumber' in data && dataAny.invoiceNumber) || ('number' in data ? dataAny.number : 'INV'))} · ${resolvedRecipientName || ''} — continued`
-                  : ''
-              }
-            />
-            <Text
-              fixed
-              style={{ position: 'absolute', bottom: 38, left: 40, right: 40, textAlign: 'center', fontSize: 8, color: '#64748b' }}
-              render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
-                pageNumber < totalPages
-                  ? `${companyName} · Invoice ${String(('invoiceNumber' in data && dataAny.invoiceNumber) || ('number' in data ? dataAny.number : 'INV'))} · Computer-generated document. Verify authenticity using the QR code on the final page.`
-                  : ''
-              }
-            />
-            <Text
-              fixed
-              style={{ position: 'absolute', bottom: 24, left: 40, right: 40, textAlign: 'right', fontSize: 8, color: '#64748b' }}
-              render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
-                `Page ${pageNumber} of ${totalPages}`
-              }
-            />
-          </>
+        {paginated && paginationId && (
+          <PaginationFurniture identity={paginationId} companyName={companyName} />
         )}
         <View style={s.headerSection}>
           {isRightAligned ? (
@@ -2030,7 +2039,7 @@ if (type === 'POS_RECEIPT') {
                   }
                   
                   return (
-                    <View key={i} style={[s.row, type === 'INVOICE' ? { paddingVertical: 4 } : null]} wrap={type === 'INVOICE' ? false : undefined}>
+                    <View key={i} style={[s.row, paginated ? { paddingVertical: 4 } : null]} wrap={paginated ? false : undefined}>
                       <Text style={s.colQty}>{Number(item.qty)}</Text>
                       <Text style={s.colDesc}>{formattedDesc}</Text>
                       <Text style={s.colPrice}>{currency} {formatAmount(Number(item.price))}</Text>
@@ -2059,7 +2068,7 @@ if (type === 'POS_RECEIPT') {
                   
                   {/* Right Side: Summary Values */}
                   <View style={s.summaryRight}>
-                    <View style={s.summaryBox} wrap={type === 'INVOICE' ? false : undefined}>
+                    <View style={s.summaryBox} wrap={paginated ? false : undefined}>
                       {(() => {
                         const itemsArr = ('items' in data ? data.items : []) as Array<Record<string, unknown>>;
                         const itemsSum = itemsArr.length > 0 ? itemsArr.reduce((s: number, i: Record<string, unknown>) => s + Number(i.total || 0), 0) : null;
@@ -2682,23 +2691,21 @@ if (type === 'POS_RECEIPT') {
         {/* Standard Receipt Signature */}
 
 
-        {/* DYNAMIC CENTERED FOOTER (Movable). Skipped for INVOICE: the
-            flowing security footer already carries its own top border, so
-            this rule would strike through content. */}
-        {type !== 'INVOICE' && (
+        {/* DYNAMIC CENTERED FOOTER (Movable). Skipped for paginated
+            documents: the flowing security footer already carries its own
+            top border, so this rule would strike through content. */}
+        {!paginated && (
           <View style={s.footerContainer} wrap={false}>
             <View style={s.footerLine} />
           </View>
         )}
 
         {/* STATIC LEGAL FOOTER (Fixed at the bottom of every page — except
-            INVOICE, which flows it once after the final content so the QR
-            security block appears only on the final page). */}
-        {type === 'INVOICE' ? (
+            paginated documents, which flow it once after the final content
+            so the QR security block appears only on the final page). */}
+        {paginated ? (
           <View wrap={false} style={{ marginTop: 10 }}>
-            <Text style={{ fontSize: 9 * fontScale, fontWeight: 'bold', color: '#334155', letterSpacing: 1.5, marginBottom: 4 }}>
-              DOCUMENT VERIFICATION
-            </Text>
+            <VerificationLabel fontScale={fontScale} />
             <SecurityFooter
               data={dataAny}
               companyName={companyName}

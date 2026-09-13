@@ -10,6 +10,11 @@ import {
 } from './templateSettings.ts';
 import { resolvePdfQrCodeSource } from '../../../../utils/companyAssetUtils.ts';
 import { PortalCopyWatermark } from './PortalCopyWatermark.tsx';
+import {
+  PaginationFurniture,
+  VerificationLabel,
+  paginationIdentity,
+} from './documentPagination.tsx';
 
 // Format amount helper
 const formatAmount = (amount: number) => {
@@ -67,6 +72,11 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
     >
       <Page size="A4" style={[s.page, pageStyle]}>
         {channel === 'portal' && <PortalCopyWatermark />}
+        {/* Global pagination framing (shared capability; presentation only). */}
+        <PaginationFurniture
+          identity={paginationIdentity('ACCOUNT_STATEMENT', data as unknown as Record<string, unknown>, data.customerName || '')}
+          companyName={companyName}
+        />
         {isCancelled && (
           <View style={s.watermarkContainer} fixed>
             <Text style={s.watermarkText}>CANCELLED</Text>
@@ -154,24 +164,29 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           </View>
         ))}
 
-         {/* Security Footer */}
-         <View style={s.securityFooter} fixed>
-            <View style={s.securityFooterText}>
-              <Text style={[s.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
-                {buildFooterLine1(config)}
-              </Text>
-              <Text style={[s.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
-                {buildFooterLine2(config)}
-              </Text>
-            </View>
-           {(() => {
-             const qrUrl = resolvePdfQrCodeSource(String((data as any)?.securityQrCodeDataUrl || '').trim());
-             return qrUrl ? (
-               <View style={[s.securityQrPanel, { width: 58, alignItems: 'center', borderWidth: 0, backgroundColor: 'transparent', paddingVertical: 0, paddingHorizontal: 0 }]}>
-                 <Image src={qrUrl} style={{ width: 50, height: 50 }} />
-               </View>
-             ) : null;
-           })()}
+         {/* Security Footer — flows once after the final content so the QR
+             appears only on the final page (in-flow style: the shared
+             absolute footer style would overlay content when un-fixed). */}
+         <View wrap={false} style={{ marginTop: 10 }}>
+           <VerificationLabel fontScale={fontScale} />
+           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, borderTopWidth: 0.5, borderColor: '#e2e8f0', paddingTop: 6, width: '100%' }}>
+              <View style={s.securityFooterText}>
+                 <Text style={[s.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
+                   {buildFooterLine1(config)}
+                 </Text>
+                 <Text style={[s.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
+                   {buildFooterLine2(config)}
+                 </Text>
+              </View>
+             {(() => {
+               const qrUrl = resolvePdfQrCodeSource(String((data as any)?.securityQrCodeDataUrl || '').trim());
+               return qrUrl ? (
+                 <View style={[s.securityQrPanel, { width: 58, alignItems: 'center', borderWidth: 0, backgroundColor: 'transparent', paddingVertical: 0, paddingHorizontal: 0 }]}>
+                   <Image src={qrUrl} style={{ width: 50, height: 50 }} />
+                 </View>
+               ) : null;
+             })()}
+           </View>
          </View>
       </Page>
     </Document>
