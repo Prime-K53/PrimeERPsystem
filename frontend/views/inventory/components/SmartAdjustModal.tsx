@@ -151,6 +151,13 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
 
         try {
             const summaryReason = reason.trim() || `Smart stock adjustment (${adjustmentType})`;
+            // Idempotent bulk operation: one bulk id per Apply click, one
+            // deterministic per-item operation id. Retries converge instead of
+            // duplicating journals. Accounting intent is explicitly
+            // OPERATIONAL_ADJUSTMENT (COGS-based); opening balances must use
+            // the Opening Inventory workflow (openInventory -> 31000), never
+            // Smart Adjust (Sept-12 defect credited 42100 Interest Income).
+            const bulkId = `SMART-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
             for (const itemId of selectedItems) {
                 const item = itemById.get(itemId);
@@ -159,7 +166,10 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
                 const stockChange = getStockChange(item);
                 if (stockChange === 0) continue;
 
-                await updateStock(item.id, stockChange, selectedWarehouse, summaryReason, true);
+                await updateStock(item.id, stockChange, selectedWarehouse, summaryReason, true, undefined, {
+                    accountingReason: 'OPERATIONAL_ADJUSTMENT',
+                    operationId: `${bulkId}-${item.id}`,
+                });
             }
 
             setStep('success');

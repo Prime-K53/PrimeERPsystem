@@ -41,6 +41,11 @@ import {
     type PostEditCorrectionSpec
 } from './transactions/_internal';
 import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
+import {
+    resolveStockAdjustmentPosting,
+    assertNoInterestIncomeForInventoryMovement,
+    type StockAdjustmentReason,
+} from './inventoryAdjustmentAccounting';
 import { resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
@@ -3954,10 +3959,13 @@ export const transactionService = {
 
                 let entriesPosted = 0;
                 if (!withinTolerance) {
-                    // Post variance adjustment entries to GL for each child account
+                    // Valuation-sync GL (fail-closed, symmetric COGS):
+                    // - Surplus (physical > GL):  DR Inventory / CR COGS
+                    // - Shortage (physical < GL): DR COGS / CR Inventory
+                    // Never income (previously resolveAcct('42000') silently
+                    // returned 42100 Interest Income via parent fallback).
                     const gl = getGLConfig();
                     const cogsAccountId = resolveAcct(gl.defaultCOGSAccount);
-                    const otherIncomeAccountId = resolveAcct('42000');
                     const syncRef = `INV-SYNC-${new Date().toISOString().split('T')[0]}`;
 
                     for (const [childAccountId, details] of Object.entries(childDetails)) {
@@ -3969,11 +3977,19 @@ export const transactionService = {
                             date: new Date().toISOString(),
                             description: `Inventory Valuation Sync - ${details.variance > 0 ? 'Surplus' : 'Shortage'} (${childAccountId})`,
                             debitAccountId: childVariance > 0 ? childAccountId : cogsAccountId,
-                            creditAccountId: childVariance > 0 ? otherIncomeAccountId : childAccountId,
+                            creditAccountId: childVariance > 0 ? cogsAccountId : childAccountId,
                             amount: Math.abs(childVariance),
                             referenceId: syncRef,
+                            referenceType: 'inventory_valuation_sync',
+                            entryType: 'inventory_valuation_sync',
                             reconciled: true
                         };
+                        assertNoInterestIncomeForInventoryMovement({
+                            debitAccountId: entry.debitAccountId as string,
+                            creditAccountId: entry.creditAccountId as string,
+                            accounts,
+                            context: 'syncInventoryValuation',
+                        });
                         await ledgerStore.put(entry);
                         entriesPosted++;
                     }
@@ -4566,16 +4582,34 @@ export const transactionService = {
         );
     },
 
-    async adjustStock(params: { itemId: string, qtyChange: number, reason: string, warehouseId: string, notes?: string, variantId?: string }) {
+    async adjustStock(params: { itemId: string, qtyChange: number, reason: string, warehouseId: string, notes?: string, variantId?: string, accountingReason?: StockAdjustmentReason, operationId?: string, idempotencyKey?: string }) {
         try {
+            if (!Number.isFinite(params.qtyChange) || params.qtyChange === 0) {
+                return { success: false, error: 'Stock adjustment quantity must be non-zero' };
+            }
             const item = await dbService.get<any>('inventory', params.itemId);
             if (!item) return { success: false, error: 'Item not found' };
 
             let adjustmentCost = item.cost || 0;
+            // Semantic accounting intent: explicit reason required. Legacy
+            // callers that omit it are treated as OPERATIONAL_ADJUSTMENT
+            // (COGS-based, never income). Opening balances must go through
+            // openInventory() or pass accountingReason:'OPENING_BALANCE'.
+            const accountingReason: StockAdjustmentReason =
+                params.accountingReason || 'OPERATIONAL_ADJUSTMENT';
 
-            return dbService.executeAtomicOperation(
-                ['inventory', 'ledger', 'warehouseInventory', 'inventoryTransactions', 'accounts'],
+            return await dbService.executeAtomicOperation(
+                ['inventory', 'ledger', 'warehouseInventory', 'inventoryTransactions', 'accounts', 'idempotencyKeys'],
                 async (tx) => {
+                    // Idempotency: retried bulk operations converge instead of
+                    // duplicating journals. Explicit operationId wins; the
+                    // idempotencyKey alias is accepted for API symmetry.
+                    const operationScope = 'stock_adjustment';
+                    const operationSource = String(params.operationId || params.idempotencyKey || '').trim();
+                    if (operationSource) {
+                        await reserveIdempotencyKey(tx, operationScope, operationSource, `${operationScope}:${operationSource}`);
+                    }
+
                     const inventoryStore = tx.objectStore('inventory');
                     const ledgerStore = tx.objectStore('ledger');
                     const whStore = tx.objectStore('warehouseInventory');
@@ -4596,19 +4630,52 @@ export const transactionService = {
                         return resolved;
                     };
 
-                    const item = await inventoryStore.get(params.itemId);
-                    if (!item) throw new Error("Item not found");
+                    const storedItem = await inventoryStore.get(params.itemId);
+                    if (!storedItem) throw new Error("Item not found");
 
-                    if (params.variantId && item.variants) {
-                        const variantIndex = item.variants.findIndex(v => v.id === params.variantId);
+                    // FAIL-CLOSED ORDERING: resolve the full GL posting BEFORE
+                    // mutating inventory. If accounting configuration is
+                    // invalid, the inventory change is never applied and no
+                    // half-completed state is left behind.
+                    const itemTypeForPosting =
+                        (params.variantId && storedItem.variants
+                            ? storedItem.type
+                            : storedItem.type) as string | undefined;
+                    const isServiceItem = String(itemTypeForPosting || '').toLowerCase().includes('service');
+                    const variantCost = params.variantId && storedItem.variants
+                        ? storedItem.variants.find((v: any) => v.id === params.variantId)?.cost
+                        : undefined;
+                    const previewCost = Number(variantCost ?? storedItem.cost ?? 0);
+                    const previewAmount = Math.abs(params.qtyChange * previewCost);
+                    let posting: { debitAccountId: string; creditAccountId: string } | null = null;
+                    if (!isServiceItem && previewAmount > 0) {
+                        const gl = getGLConfig();
+                        posting = resolveStockAdjustmentPosting({
+                            reason: accountingReason,
+                            qtyChange: params.qtyChange,
+                            itemType: itemTypeForPosting,
+                            accounts,
+                            gl,
+                        });
+                        // Defence-in-depth: the resolved pair must never touch 42100.
+                        assertNoInterestIncomeForInventoryMovement({
+                            debitAccountId: posting.debitAccountId,
+                            creditAccountId: posting.creditAccountId,
+                            accounts,
+                            context: 'adjustStock',
+                        });
+                    }
+
+                    if (params.variantId && storedItem.variants) {
+                        const variantIndex = storedItem.variants.findIndex((v: any) => v.id === params.variantId);
                         if (variantIndex !== -1) {
-                            item.variants[variantIndex].stock = (item.variants[variantIndex].stock || 0) + params.qtyChange;
-                            adjustmentCost = item.variants[variantIndex].cost || item.cost || 0;
+                            storedItem.variants[variantIndex].stock = (storedItem.variants[variantIndex].stock || 0) + params.qtyChange;
+                            adjustmentCost = storedItem.variants[variantIndex].cost || storedItem.cost || 0;
                         }
                     }
 
-                    item.stock = (item.stock || 0) + params.qtyChange;
-                    await inventoryStore.put(item);
+                    storedItem.stock = (storedItem.stock || 0) + params.qtyChange;
+                    await inventoryStore.put(storedItem);
 
                     const warehouseId = params.warehouseId || 'WH-MAIN';
                     const whKey = [warehouseId, params.itemId].join('_');
@@ -4631,22 +4698,18 @@ export const transactionService = {
                         notes: params.notes || ''
                     });
 
-                    if (Math.abs(params.qtyChange * adjustmentCost) > 0) {
-                        const gl = getGLConfig();
-                        const inventoryAccountId = resolveInventoryAccountByItemType(item.type, accounts) || resolveAcct(gl.defaultInventoryAccount);
-                        // Stock adjustment GL:
-                        // - qtyChange > 0 (stock INCREASED, e.g. found stock): Debit Inventory, Credit Inventory Adjustment Gain (42000 Other Income)
-                        // - qtyChange < 0 (stock DECREASED, e.g. write-off/loss): Debit COGS/Inventory Loss, Credit Inventory
-                        const otherIncomeAccount = '42000';
-                        const otherIncomeAccountId = resolveAcct(otherIncomeAccount);
+                    // Services never carry inventory value: quantity moves, no GL.
+                    if (!isServiceItem && Math.abs(params.qtyChange * adjustmentCost) > 0 && posting) {
                         const entry: LedgerEntry = {
-                            id: generateId('LG-ADJ'),
+                            id: operationSource ? `LG-ADJ-${operationSource}` : generateId('LG-ADJ'),
                             date: new Date().toISOString(),
                             description: `Stock Adjustment: ${params.reason} (${params.notes || ''})`,
-                            debitAccountId: params.qtyChange > 0 ? inventoryAccountId : resolveAcct(gl.defaultCOGSAccount),
-                            creditAccountId: params.qtyChange > 0 ? otherIncomeAccountId : inventoryAccountId,
+                            debitAccountId: posting.debitAccountId,
+                            creditAccountId: posting.creditAccountId,
                             amount: Math.abs(params.qtyChange * adjustmentCost),
                             referenceId: params.itemId,
+                            referenceType: 'stock_adjustment',
+                            entryType: accountingReason === 'OPENING_BALANCE' ? 'opening_balance_adjustment' : 'stock_adjustment',
                             reconciled: false
                         };
                         await ledgerStore.put(entry);
@@ -4656,6 +4719,11 @@ export const transactionService = {
                 }
             );
         } catch (error: any) {
+            // Idempotent retry: the operation already posted — report success
+            // without duplicating inventory or ledger writes.
+            if (String(error?.message || '').includes('Duplicate financial request blocked')) {
+                return { success: true, idempotent: true };
+            }
             logger.error('[TransactionService] adjustStock error:', error);
             return { success: false, error: error.message || 'Unknown error' };
         }
@@ -4979,20 +5047,29 @@ export const transactionService = {
                     const gl = getGLConfig();
                     const firstItem = results.length > 0 ? await inventoryStore.get(results[0].itemId) : null;
                     const inventoryAccountId = accounts.length > 0 && firstItem ? resolveInventoryAccountByItemType(firstItem.type, accounts) : null;
-                    const otherIncomeAccountId = resolveAcct('42000');
-                    // Inventory reconciliation GL:
-                    // - totalVarianceCost > 0 (physical > GL): Debit Inventory, Credit Other Income (gain)
+                    // Reconciliation GL (fail-closed, symmetric COGS — never
+                    // income; previously resolveAcct('42000') silently
+                    // returned 42100 Interest Income via parent fallback):
+                    // - totalVarianceCost > 0 (physical > GL): Debit Inventory, Credit COGS (gain)
                     // - totalVarianceCost < 0 (physical < GL): Debit COGS (loss), Credit Inventory
                     const entry: LedgerEntry = {
                         id: generateId('LG-REC'),
                         date: new Date().toISOString(),
                         description: `Inventory Reconciliation Variance`,
                         debitAccountId: totalVarianceCost < 0 ? resolveAcct(gl.defaultCOGSAccount) : (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)),
-                        creditAccountId: totalVarianceCost < 0 ? (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)) : otherIncomeAccountId,
+                        creditAccountId: totalVarianceCost < 0 ? (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)) : resolveAcct(gl.defaultCOGSAccount),
                         amount: Math.abs(totalVarianceCost),
                         referenceId: 'RECONCILE',
+                        referenceType: 'inventory_reconciliation',
+                        entryType: 'inventory_reconciliation',
                         reconciled: true
                     };
+                    assertNoInterestIncomeForInventoryMovement({
+                        debitAccountId: entry.debitAccountId as string,
+                        creditAccountId: entry.creditAccountId as string,
+                        accounts,
+                        context: 'reconcileInventory',
+                    });
                     await ledgerStore.put(entry);
                 }
 

@@ -16,12 +16,17 @@ export const AuditorBridge: React.FC<{ drift: number, physical: number, ledger: 
         const isLedgerHigh = safeDrift > 0;
         const amount = Math.abs(safeDrift);
 
-        // Use system mapping for Inventory Asset and Other Income/Loss
+        // Use system mapping for Inventory Asset and offset account.
+        // FAIL-CLOSED: never silently fall back to 42100 Interest Income for
+        // found stock (Sept-12 defect: 42000 parent fallback selected 42100).
+        // Surplus (ledger too low / found stock): DR Inventory / CR COGS.
+        // Shortage (ledger too high): DR expense / CR Inventory.
         const gl = companyConfig?.glMapping || {};
          const invAssetAcc = gl.defaultInventoryAccount || '11400';
+         const cogsAcc = gl.defaultCOGSAccount || '51200';
          const correctionAcc = isLedgerHigh
              ? '52000' // Generic Maintenance/Expense if ledger too high
-             : gl.otherIncomeAccount || '42100'; // Other Income if ledger too low (found stock)
+             : cogsAcc; // COGS (gain) if ledger too low — never Interest Income
 
         const entries = [{
             description: `Logical drift correction: Inventory vs Ledger audit`,

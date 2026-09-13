@@ -53,7 +53,12 @@ const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({ isOpen, onC
         setIsSubmitting(true);
         try {
             // updateStock expects (itemId, qtyChange, locationId, reason, manualAdjustment)
-            await updateStock(item.id, stockChange, selectedWarehouse, reason || `Manual adjustment: ${adjustmentType}`, true);
+            // Explicit OPERATIONAL_ADJUSTMENT: COGS-based, never 42100.
+            // Opening balances must use openInventory(), not this modal.
+            await updateStock(item.id, stockChange, selectedWarehouse, reason || `Manual adjustment: ${adjustmentType}`, true, undefined, {
+                accountingReason: 'OPERATIONAL_ADJUSTMENT',
+                operationId: `MANUAL-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            });
             onClose();
             // Reset form
             setQuantity(0);

@@ -40,7 +40,12 @@ export const StockCountModal: React.FC<Props> = ({ open, items, onClose }) => {
     setSubmitting(true);
     try {
       const adjustments = countRows.filter(r => r.variance !== 0);
-      for (const row of adjustments) await updateStock(row.itemId, row.variance, selectedWarehouse, `Stock count adjustment (system: ${row.systemStock}, counted: ${row.countedStock})`, true);
+      // Explicit RECONCILIATION intent (COGS-based, never 42100).
+      const batchId = `COUNT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      for (const row of adjustments) await updateStock(row.itemId, row.variance, selectedWarehouse, `Stock count adjustment (system: ${row.systemStock}, counted: ${row.countedStock})`, true, undefined, {
+        accountingReason: 'RECONCILIATION',
+        operationId: `${batchId}-${row.itemId}`,
+      });
       notify?.('Stock count completed', 'success');
       setCompleted(true);
     } catch { notify?.('Count failed', 'error'); } finally { setSubmitting(false); }

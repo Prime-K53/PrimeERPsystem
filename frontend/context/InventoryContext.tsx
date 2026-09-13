@@ -42,7 +42,7 @@ interface InventoryContextType {
     processGoodsReceipt: (grn: GoodsReceipt) => Promise<void>;
     deleteGoodsReceipt: (id: string) => void;
 
-    updateStock: (itemId: string, quantityChange: number, locationId?: string, reason?: string, manualAdjustment?: boolean, variantId?: string) => Promise<void>;
+    updateStock: (itemId: string, quantityChange: number, locationId?: string, reason?: string, manualAdjustment?: boolean, variantId?: string, opts?: { accountingReason?: 'OPENING_BALANCE' | 'OPERATIONAL_ADJUSTMENT' | 'RECONCILIATION'; operationId?: string }) => Promise<void>;
     updateReservedStock: (itemId: string, reservedChange: number, reason?: string, variantId?: string) => void;
     transferStock: (itemId: string, fromLocationId: string, toLocationId: string, quantity: number, reason?: string) => void;
     getAvailableWithKits: (itemId: string) => number;
@@ -274,20 +274,29 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
     };
 
-    const updateStock = async (itemId: string, qty: number, loc: string = 'WH-MAIN', reason?: string, manualAdjustment: boolean = true, variantId?: string) => {
+    const updateStock = async (itemId: string, qty: number, loc: string = 'WH-MAIN', reason?: string, manualAdjustment: boolean = true, variantId?: string, opts?: { accountingReason?: 'OPENING_BALANCE' | 'OPERATIONAL_ADJUSTMENT' | 'RECONCILIATION'; operationId?: string }) => {
         const item = inventory.find(i => i.id === itemId);
         const oldStock = item?.stock || 0;
 
         try {
-            // ALWAYS use TransactionService for stock adjustments to ensure atomicity and ledger integrity
-            await transactionService.adjustStock({
+            // ALWAYS use TransactionService for stock adjustments to ensure atomicity and ledger integrity.
+            // Explicit accountingReason is authoritative: opening balances must
+            // use openInventory() (OPENING_BALANCE); all manual/smart/count
+            // adjustments default to OPERATIONAL_ADJUSTMENT / RECONCILIATION
+            // (COGS-based, never Interest Income 42100).
+            const result = await transactionService.adjustStock({
                 itemId,
                 qtyChange: qty,
                 reason: reason || (manualAdjustment ? 'Manual Adjustment' : 'System Adjustment'),
                 warehouseId: loc,
                 notes: reason,
-                variantId
+                variantId,
+                accountingReason: opts?.accountingReason || 'OPERATIONAL_ADJUSTMENT',
+                operationId: opts?.operationId,
             });
+            if (result && (result as any).success === false) {
+                throw new Error((result as any).error || 'Stock adjustment rejected by accounting validation');
+            }
 
             // Refresh to sync UI with DB changes
             await fetchInventory();
