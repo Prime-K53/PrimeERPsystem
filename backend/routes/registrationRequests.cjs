@@ -34,7 +34,7 @@ function mapServiceError(err) {
     return { status: 400, body: { error: message } };
   }
   if (err && err.code === 'DUPLICATE_PENDING_REQUEST') {
-    return { status: 409, body: { error: message } };
+    return { status: 409, body: { error: message, requestNumber: err.existingRequest?.request_number || null } };
   }
   if (err && err.code === 'DUPLICATE_CUSTOMER') {
     return { status: 409, body: { error: message } };
