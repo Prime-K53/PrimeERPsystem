@@ -20,6 +20,7 @@ jest.mock('../../services/portalAuthService.cjs', () => ({
 
 const authService = require('../../services/authService.cjs');
 const authRoutes = require('../../routes/auth.cjs');
+const { generateToken } = require('../../middleware/auth.cjs');
 
 const buildApp = () => {
   const app = express();
@@ -28,7 +29,14 @@ const buildApp = () => {
   return app;
 };
 
-describe('POST /api/auth/register — public registration hardening', () => {
+const tokenFor = (role) => generateToken({
+  id: `usr_${role}`,
+  username: `${role}@example.com`,
+  role,
+  email: `${role}@example.com`,
+});
+
+describe('POST /api/auth/register — admin-gated ERP user creation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     authService.registerUser.mockResolvedValue({
@@ -40,10 +48,44 @@ describe('POST /api/auth/register — public registration hardening', () => {
     });
   });
 
+  it('rejects an anonymous caller with 401 (no longer mints a Clerk JWT)', async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'newguy', email: 'newguy@example.com', password: 'secret123' });
+
+    expect(res.status).toBe(401);
+    expect(authService.registerUser).not.toHaveBeenCalled();
+    expect(res.body.token).toBeUndefined();
+  });
+
+  it('rejects an authenticated non-Admin (Clerk) with 403, not 401', async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('Authorization', `Bearer ${tokenFor('Clerk')}`)
+      .send({ username: 'newguy', email: 'newguy@example.com', password: 'secret123' });
+
+    expect(res.status).toBe(403);
+    expect(authService.registerUser).not.toHaveBeenCalled();
+  });
+
+  it('lets an authenticated Admin create a user', async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('Authorization', `Bearer ${tokenFor('Admin')}`)
+      .send({ username: 'newguy', email: 'newguy@example.com', password: 'secret123' });
+
+    expect(res.status).toBe(201);
+    expect(authService.registerUser).toHaveBeenCalledTimes(1);
+  });
+
   it('never forwards a client-supplied Admin role to the service', async () => {
     const app = buildApp();
     const res = await request(app)
       .post('/api/auth/register')
+      .set('Authorization', `Bearer ${tokenFor('Admin')}`)
       .send({
         username: 'newguy',
         email: 'newguy@example.com',
@@ -53,7 +95,6 @@ describe('POST /api/auth/register — public registration hardening', () => {
       });
 
     expect(res.status).toBe(201);
-    expect(authService.registerUser).toHaveBeenCalledTimes(1);
     const args = authService.registerUser.mock.calls[0][0];
     expect(args.role).toBeUndefined();
     expect(args.permissions).toBeUndefined();
@@ -63,6 +104,7 @@ describe('POST /api/auth/register — public registration hardening', () => {
     const app = buildApp();
     await request(app)
       .post('/api/auth/register')
+      .set('Authorization', `Bearer ${tokenFor('Admin')}`)
       .send({ username: 'plainuser', password: 'secret123' });
 
     expect(authService.registerUser.mock.calls[0][0]).toEqual({
@@ -75,6 +117,7 @@ describe('POST /api/auth/register — public registration hardening', () => {
     const app = buildApp();
     const res = await request(app)
       .post('/api/auth/register')
+      .set('Authorization', `Bearer ${tokenFor('Admin')}`)
       .send({ username: 'abc', password: '123' });
 
     expect(res.status).toBe(400);

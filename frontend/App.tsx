@@ -263,7 +263,10 @@ const PageLoader = () => (
 );
 
 const ProtectedRoute: React.FC<{ permission: string, children: React.ReactNode }> = ({ permission, children }) => {
-  const { checkPermission } = useAuth();
+  const { user, checkPermission } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
   if (!checkPermission(permission)) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
@@ -361,6 +364,39 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { companyConfig, isOnline, user, notify, logout } = useAuth();
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login', { replace: true });
+    }
+  }, [user, navigate]);
+
+  if (!user) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center overflow-hidden" style={{ background: '#F5F7F9' }}>
+        <div className="flex flex-col items-center gap-8 relative z-10">
+          <div
+            className="w-24 h-24 rounded-full flex items-center justify-center ring-1 ring-white/20 transition-all duration-500 hover:scale-105"
+            style={{
+              background: 'linear-gradient(to bottom right, #3b82f6, #4f46e5)',
+              boxShadow: '0 8px 32px rgba(59, 130, 246, 0.3)',
+            }}
+          >
+            <span className="text-white text-5xl font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.2)]">P</span>
+          </div>
+          <div className="text-center space-y-2">
+            <h1 className="text-4xl font-black tracking-tight animate-fade-in">
+              <span className="text-blue-600">Prime</span> <span className="text-green-600">ERP</span> <span className="text-blue-600">System</span>
+            </h1>
+            <p className="slate-400 font-bold uppercase tracking-[0.2em] text-[10px] animate-pulse">
+              Powered by AI
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const {
     isOpen,
     data,

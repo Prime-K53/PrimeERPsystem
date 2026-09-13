@@ -9,6 +9,7 @@ const customerRegistrationService = require('../services/customerRegistrationSer
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const { canUseHeaderAuth, getHeaderAuthUser } = require('../middleware/auth.cjs');
+const { isAdmin, normalize: normalizeRole } = require('../middleware/roles.cjs');
 const { BannerImageError, processBannerImage } = require('../services/bannerImageService.cjs');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -58,13 +59,23 @@ const verifyAdminAuth = async (req, res, next) => {
           });
           const sbUser = sbRes.data;
           if (sbUser && sbUser.id) {
+            // Resolve the role from the VERIFIED Supabase user metadata — never
+            // default it. The previous `role || 'Admin'` fallback promoted any
+            // Supabase session without a role claim (including portal
+            // customers) to Admin on this router. Admin (or super admin) maps
+            // to 'Admin'; an explicit non-Admin role is kept as-is so the
+            // staff gate below rejects it; a missing role is treated as a
+            // non-staff identity.
+            const meta = sbUser.user_metadata || {};
+            const isSuperAdmin = meta.is_super_admin === true;
+            const metaRole = normalizeRole(meta.role);
             req.user = {
               id: sbUser.id,
               username: sbUser.email || sbUser.id,
-              role: sbUser.user_metadata?.role || 'Admin',
+              role: (isSuperAdmin || (metaRole && isAdmin(metaRole))) ? 'Admin' : (metaRole || 'portal_customer'),
               email: sbUser.email,
-              isSuperAdmin: sbUser.user_metadata?.is_super_admin === true,
-              permissions: sbUser.user_metadata?.is_super_admin ? ['*'] : []
+              isSuperAdmin,
+              permissions: isSuperAdmin ? ['*'] : []
             };
             req.authMode = 'supabase';
             return next();
@@ -87,7 +98,22 @@ const verifyAdminAuth = async (req, res, next) => {
   return res.status(403).json({ error: 'Authentication required', message: 'Valid admin auth required' });
 };
 
-router.use(verifyAdminAuth);
+// Staff-only surface. Portal-customer JWTs share JWT_SECRET with staff JWTs,
+// and a Supabase session can resolve to any role, so prove a staff identity
+// here — before any handler runs — instead of relying on each route to
+// remember. `portal_customer`, `anonymous` and a missing/empty role are all
+// denied with 403 (an authenticated denial, never an authentication
+// failure). Registration-request routes keep their own narrower check.
+const requireStaffRole = (req, res, next) => {
+  const role = normalizeRole(req.user && req.user.role);
+  if (!req.user || !role || role === 'anonymous' || role === 'portal_customer') {
+    console.warn('[PortalAdmin] staff gate denied path=%s role=%s', req.originalUrl, role || 'none');
+    return res.status(403).json({ error: 'Access denied', message: 'Staff authorization required' });
+  }
+  next();
+};
+
+router.use(verifyAdminAuth, requireStaffRole);
 
 // Permanently deletes ALL cloud data (single-company architecture): every row
 // in every public table plus the caller's Supabase Auth user, so the same

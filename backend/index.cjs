@@ -697,7 +697,7 @@ async function startServer() {
     }
   };
 
-  app.get('/api/dashboard', injectFinancialYear, async (req, res) => {
+  app.get('/api/dashboard', requireRole('Admin', 'Manager', 'Cashier', 'Accountant', 'Viewer'), injectFinancialYear, async (req, res) => {
     const daysRaw = Number(req.query?.days);
     const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 120) : 30;
     const financialYearId = req.query?.financial_year_id || req.financialYearId || '';
@@ -1012,7 +1012,7 @@ async function startServer() {
     );
   });
 
-  app.delete('/api/sales/:id', injectFinancialYear, requireFyNotClosed, async (req, res) => {
+  app.delete('/api/sales/:id', requireRole('Admin', 'Manager', 'Cashier'), injectFinancialYear, requireFyNotClosed, async (req, res) => {
     const { id } = req.params;
     try {
       const row = await new Promise((resolve, reject) => {
@@ -2328,7 +2328,7 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
     }
   });
 
-  app.get('/api/suppliers/:id', async (req, res) => {
+  app.get('/api/suppliers/:id', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), async (req, res) => {
     try {
       const row = await procurement.getSupplierById(req.params.id);
       if (!row) return res.status(404).json({ error: 'Supplier not found' });
@@ -2385,7 +2385,7 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
     }
   });
 
-  app.get('/api/purchases/:id', async (req, res) => {
+  app.get('/api/purchases/:id', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), async (req, res) => {
     try {
       const po = await procurement.getPurchaseById(req.params.id);
       if (!po) return res.status(404).json({ error: 'Purchase order not found' });
@@ -3413,7 +3413,7 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
   });
 
   // --- Subjects Endpoints ---
-  app.get('/api/subjects', (req, res) => {
+  app.get('/api/subjects', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), (req, res) => {
     sq.getAll("SELECT * FROM subjects ORDER BY name", [], (err, rows) => {
       if (err) { console.error('[Subjects] GET error:', err); return res.status(500).json({ error: 'Failed to retrieve subjects' }); }
       res.json(rows);
@@ -3648,7 +3648,7 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
   });
 
 // 11. Delete Examination Batch
-app.delete('/api/examinations/batch/:batch_id', async (req, res) => {
+app.delete('/api/examinations/batch/:batch_id', requireRole('Admin'), async (req, res) => {
   const { batch_id } = req.params;
   try {
     await sq.run("DELETE FROM examination_bom_calculations WHERE batch_id = ?", [batch_id]);
@@ -3664,7 +3664,7 @@ app.delete('/api/examinations/batch/:batch_id', async (req, res) => {
 });
 
 // 13. Toggle Recurring Status
-app.post('/api/examinations/batch/:batch_id/recurring', (req, res) => {
+app.post('/api/examinations/batch/:batch_id/recurring', requireRole('Admin'), async (req, res) => {
   const { batch_id } = req.params;
   const { is_recurring } = req.body;
   sq.run("UPDATE examinations SET is_recurring = ? WHERE batch_id = ?", [is_recurring ? 1 : 0, batch_id], (err) => {
@@ -3674,7 +3674,7 @@ app.post('/api/examinations/batch/:batch_id/recurring', (req, res) => {
 });
 
 // 12. Get Invoice Details
-app.get('/api/invoices/:id/details', (req, res) => {
+app.get('/api/invoices/:id/details', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), (req, res) => {
   const { id } = req.params;
   sq.getAll(`SELECT class, SUM(candidates) as learner_count, AVG(charge_per_learner) as charge_per_learner, SUM(selling_price) as total
           FROM examinations 
@@ -4000,7 +4000,7 @@ app.get('/api/invoices/:id/details', (req, res) => {
     return ALLOWED_FILE_DIRS.some(allowed => realPath.startsWith(allowed));
   };
 
-  app.get('/api/read-file', (req, res) => {
+  app.get('/api/read-file', verifyToken, (req, res) => {
     const filePath = req.query.path;
     if (!filePath || typeof filePath !== 'string') {
       return res.status(400).json({ success: false, error: 'Missing path parameter' });
@@ -4051,7 +4051,7 @@ app.get('/api/invoices/:id/details', (req, res) => {
     }
   });
 
-  app.get('/api/serve-file', (req, res) => {
+  app.get('/api/serve-file', verifyToken, (req, res) => {
     const filePath = req.query.path;
     if (!filePath || typeof filePath !== 'string') {
       return res.status(400).json({ success: false, error: 'Missing path parameter' });

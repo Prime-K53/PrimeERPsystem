@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const axios = require('axios');
 const repo = require('./supabaseRepository.cjs');
+const { isAdmin: isAdminRole, normalize: normalizeRole } = require('../middleware/roles.cjs');
 
 const SALT_ROUNDS = 10;
 
@@ -102,13 +103,23 @@ const authenticateUser = async (usernameOrEmail, password) => {
     );
     if (!data?.user?.id) return null;
     const meta = data.user.user_metadata || {};
+    const isSuperAdmin = meta.is_super_admin === true;
+    const metaRole = normalizeRole(meta.role);
+    // NEVER default a missing role to Admin. A Supabase account created
+    // outside the ERP (e.g. an open public-signup account, which carries no
+    // role claim) previously resolved to Admin here and received a full ERP
+    // admin JWT from POST /api/auth/login. Admin now comes only from an
+    // explicit Admin role or the super-admin flag; other explicit roles pass
+    // through and are still constrained by requireRole on every endpoint; a
+    // role-less account is rejected as a staff identity.
+    if (!isSuperAdmin && !metaRole) return null;
     const staff = {
       id: data.user.id,
       username: data.user.email || data.user.id,
       email: data.user.email || null,
-      role: meta.role || 'Admin',
+      role: (isSuperAdmin || isAdminRole(metaRole)) ? 'Admin' : metaRole,
       permissions: Array.isArray(meta.permissions) ? meta.permissions : [],
-      is_super_admin: meta.is_super_admin === true,
+      is_super_admin: isSuperAdmin,
     };
     await upsertLocalStaffUser(staff);
     return staff;

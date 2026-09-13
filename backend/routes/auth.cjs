@@ -3,17 +3,22 @@ const router = express.Router();
 const crypto = require('crypto');
 const authService = require('../services/authService.cjs');
 const portalAuthService = require('../services/portalAuthService.cjs');
-const { generateToken, verifyToken } = require('../middleware/auth.cjs');
+const { generateToken, verifyToken, requireRole } = require('../middleware/auth.cjs');
 const { validateBody, userSchemas } = require('../middleware/validation.cjs');
 
 // Shared in-memory store for pending 2FA verification during login.
 // In production, use Redis or a database for multi-instance deployments.
 const pendingTwoFactorMap = new Map();
 
-router.post('/register', validateBody(userSchemas.publicRegister), async (req, res) => {
+// ERP user creation is an ADMINISTRATIVE operation. This route used to be
+// reachable without a token and minted a valid 'Clerk' JWT to any anonymous
+// caller; that token passes verifyToken and the Clerk read allow-lists on
+// every list endpoint (invoices, customers, suppliers, inventory, ...), i.e.
+// it handed protected ERP data to unauthenticated visitors. No client calls
+// this endpoint, so it is now gated to an already-authenticated Admin. The
+// client-supplied role/permissions are still ignored (see authService).
+router.post('/register', verifyToken, requireRole('Admin'), validateBody(userSchemas.publicRegister), async (req, res) => {
   try {
-    // Never trust client-supplied role/permissions on public registration.
-    // Self-registered accounts are always non-privileged Clerk users.
     const { username, email, password } = req.body;
     const user = await authService.registerUser({ username, email, password });
     const token = generateToken({ ...user });
