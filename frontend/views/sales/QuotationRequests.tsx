@@ -584,6 +584,8 @@ const { companyConfig } = useAuth();
     return { requests: activeRequests.length, converted, downloads: documents };
   }, [activeRequests, quotations.length, orders.length, paymentCount, tab]);
 
+  const currency = (companyConfig as any)?.currencySymbol || 'K';
+
    const money = useCallback((v: number) => `${currency}${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, [currency]);
 
    const exportCsv = useCallback(() => {
