@@ -273,10 +273,6 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
         onAction(invoice, 'email_invoice');
     }, [onAction, invoice, notify]);
 
-    const handlePrintInvoice = useCallback(() => {
-        handlePreview(invoice);
-    }, [handlePreview, invoice]);
-
     const handleStatusOverride = async (newStatus: string) => {
         setIsUpdatingStatus(true);
         try {
@@ -431,6 +427,14 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
         ...invoice,
         totalCustomerOutstanding,
     }), [invoice, totalCustomerOutstanding]);
+
+    const handlePrintInvoice = useCallback(() => {
+        // useDocumentPreview.handlePreview requires (type, rawData): a prior
+        // single-argument call passed the invoice as `type` and always failed
+        // document validation. Route through the secured pipeline so the QR
+        // encodes the verification URL (token ensured centrally).
+        handlePreview(isSubscription ? 'SUBSCRIPTION' : (isExaminationInvoice ? 'EXAMINATION_INVOICE' : 'INVOICE'), enrichedInvoice);
+    }, [handlePreview, invoice, isSubscription, isExaminationInvoice, enrichedInvoice]);
 
     return (
         <div className="sales-detail-backdrop" style={{ fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink }}>

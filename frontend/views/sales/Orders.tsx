@@ -147,7 +147,7 @@ const Orders: React.FC = () => {
     const { inventory } = useInventory();
     const { boms } = useProduction();
 
-    const { createDeliveryNote, checkAndApplyLateFees } = useFinance();
+    const { createDeliveryNote, checkAndApplyLateFees, getInvoiceVerificationToken } = useFinance();
     const { convertQuotationToWorkOrder, convertQuotationToJobTicket, convertOrderToJobTicket } = useSales();
     const { orders, cancelOrder, updateOrderStatus, recordPayment, createOrder, convertQuotationToOrder, deleteSalesOrder } = useOrders();
     const { confirm, ConfirmDialogComponent } = useConfirmDialog();
@@ -897,6 +897,17 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                 else if (activeView === 'Subscriptions') type = 'SUBSCRIPTION';
                 else if (activeView === 'Exchanges') type = 'SALES_EXCHANGE';
                 type = resolveDocumentType(item, type);
+
+                // Invoice QR hardening: the row object may predate verification
+                // tokens (or predate the on-open backfill refresh). Without a
+                // token the mapper omits it and the QR falls back to the legacy
+                // human-readable payload. Issue+persist first (normal save path).
+                if (type === 'INVOICE' && (item as any)?.id && !(item as any).verificationToken && getInvoiceVerificationToken) {
+                    try {
+                        const token = await getInvoiceVerificationToken(String((item as any).id));
+                        if (token) item = { ...(item as any), verificationToken: token };
+                    } catch { /* offline-safe: legacy payload until synced */ }
+                }
 
                 const enrichedItem = enrichDocumentCustomerData(item, customers);
                 const pdfData = mapToInvoiceData(enrichedItem, companyConfig, type);

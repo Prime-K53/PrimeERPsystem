@@ -485,7 +485,7 @@ const initialsOf = (name: string) =>
 
 export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, onBack, onEdit }) => {
   const navigate = useNavigate();
-  const { invoices, walletTransactions } = useFinance();
+  const { invoices, walletTransactions, getInvoiceVerificationToken } = useFinance();
   const { refreshAllData } = useData();
   useModuleRefresh(refreshAllData, { interval: REFRESH_INTERVAL });
   const { customers = [], customerPayments = [], updateCustomer } = useSales();
@@ -920,9 +920,18 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
     if (downloadingDoc) return;
     setDownloadingDoc(key);
     try {
+      // Invoice QR hardening: ensure the permanent verification token before
+      // mapping (pre-token records would otherwise fall back to legacy QR).
+      let source = inv;
+      if (inv?.id && !inv.verificationToken && getInvoiceVerificationToken) {
+        try {
+          const token = await getInvoiceVerificationToken(String(inv.id));
+          if (token) source = { ...inv, verificationToken: token };
+        } catch { /* offline-safe: legacy payload until synced */ }
+      }
       const config = await hydrateCompanyPdfAssets(getStoredCompanyConfig());
       const enriched = enrichDocumentCustomerData(
-        { ...inv, customerName: inv.customerName || customerDisplayName },
+        { ...source, customerName: source.customerName || customerDisplayName },
         customers as any
       );
       const mapped = mapToInvoiceData(enriched, config, 'INVOICE');
