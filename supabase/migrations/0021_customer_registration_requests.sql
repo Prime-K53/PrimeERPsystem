@@ -1,58 +1,45 @@
 -- ============================================================================
 -- 0021_customer_registration_requests.sql
--- Public portal customer-registration requests (approval-gated intake).
+-- Prime ERP / Portal
 --
--- Business rule:
---   Portal registration → Customer Registration Request (PENDING)
---   → ERP admin review → APPROVE → official CUST-XXXX customer + credentials.
+-- Customer Registration Requests
 --
--- A public registration MUST NEVER directly create:
---   - a `customers` row
---   - a `portal_users` row
---   - a JWT / refresh token / session
+-- FLOW:
+--   Public Portal Registration
+--        ↓
+--   PENDING customer_registration_requests row
+--        ↓
+--   ERP Admin Review
+--        ↓
+--   APPROVE
+--        ↓
+--   Official ERP customer + portal credentials
 --
--- Pending requests live EXCLUSIVELY in this table so they can never appear
--- in the Customer List, AR/debtors, customer selectors, statements, sales,
--- payments, reports, or accounting (all of which read `customers` only).
+-- IMPORTANT:
+--   This table is an application/intake table.
+--   It MUST NOT create customers, portal_users, sessions, JWTs,
+--   refresh tokens, passwords, or credentials.
 --
--- Design (single-company, no tenant_id, no multi-tenancy):
---   Same JSONB-envelope contract as every other portal lifecycle table
---   (0001 / 0005 / 0006 / 0007 / 0008): { id TEXT PK, data JSONB, created_at,
---   updated_at, version }. Domain fields are stored inside `data` and are
---   filtered with `data->>` PostgREST predicates (backend SQL→REST shim).
+-- ARCHITECTURE:
+--   Single company / single admin.
+--   NO tenant_id.
+--   NO organization_id.
+--   NO multi-tenancy.
 --
---   Domain fields written by the backend (customerRegistrationService):
---     id (creg_<timestamp>_<random>), request_number (CREG-YYYY-######),
---     company_name, contact_name, email (normalized lower/trim),
---     phone (normalized), tier, referred_by_code (UPPER or null),
---     referred_by_id, referred_by_name (server-resolved, null unless valid),
---     status (pending | approved | rejected | cancelled), note,
---     submitted_at, created_by, assigned_to, assigned_at,
---     reviewed_by, reviewed_at, admin_notes, linked_customer_id,
---     idempotency_key, deleted_at.
+-- STORAGE CONTRACT:
+--   { id TEXT PK, data JSONB, created_at, updated_at, version }
 --
---   NO password / password_hash / JWT / refresh-token / session material is
---   ever stored here. The request is an application, not an account.
---   Credentials are generated later, at approval, by the dedicated approval
---   phase (not this migration).
---
--- RLS design:
---   Rows are PRE-customer PII submitted by anonymous applicants (there is no
---   portal_users row yet, so no customer-isolation join is possible). The
---   table therefore gets NO permissive policy: RLS is enabled with zero
---   policies (default deny for direct PostgREST access, mirroring the
---   referral staff tables in 0006). All reads/writes go through the backend
---   service layer with the service-role key:
---     - public submission: POST /api/portal/registration-requests
---     - staff review:      GET/POST /api/portal/admin/registration-requests/*
---   Portal customers authenticate via the ERP backend (HS256 JWT) and never
---   reach PostgREST directly.
---
--- No foreign keys: the ERP envelope architecture does not use DB-level FKs
--- for document relationships (linked_customer_id is a logical reference).
+-- SECURITY:
+--   RLS enabled.
+--   ZERO permissive policies.
+--   All application access occurs through the backend service-role path.
 -- ============================================================================
 
--- ─── 1. TABLE CREATION (idempotent, envelope contract) ─────────────────────
+
+-- ============================================================================
+-- 1. TABLE
+-- ============================================================================
+
 CREATE TABLE IF NOT EXISTS public.customer_registration_requests (
     id TEXT PRIMARY KEY,
     data JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -61,92 +48,222 @@ CREATE TABLE IF NOT EXISTS public.customer_registration_requests (
     version INTEGER NOT NULL DEFAULT 0
 );
 
--- ─── 2. INDEXES (cover every `data->>` filter the app sends) ───────────────
--- Status queue (admin inbox filter).
+
+-- ============================================================================
+-- 2. INDEXES
+-- ============================================================================
+
+-- Admin pending/review queue.
 CREATE INDEX IF NOT EXISTS idx_creg_status
     ON public.customer_registration_requests ((data->>'status'));
 
--- Email lookup / duplicate detection. Expression matches the service-layer
--- normalization (lowercase + whitespace-stripped); raw unnormalized values
--- are never treated as authoritative.
-CREATE INDEX IF NOT EXISTS idx_creg_email
-    ON public.customer_registration_requests ((lower(replace((data->>'email'), ' ', ''))));
 
--- Phone lookup (non-unique; normalization strips country-code/punctuation
--- variants in the service layer, so the index is for search, not identity).
+-- Normalized email lookup.
+--
+-- Application normalization is lower-case + trim/remove whitespace.
+-- Keep the database expression aligned with the service-layer lookup.
+CREATE INDEX IF NOT EXISTS idx_creg_email
+    ON public.customer_registration_requests
+    ((lower(regexp_replace(COALESCE(data->>'email', ''), '\s+', '', 'g'))));
+
+
+-- Phone lookup.
 CREATE INDEX IF NOT EXISTS idx_creg_phone
     ON public.customer_registration_requests ((data->>'phone'));
 
--- Referral attribution filter.
+
+-- Referral attribution.
 CREATE INDEX IF NOT EXISTS idx_creg_referred_by_code
     ON public.customer_registration_requests ((data->>'referred_by_code'));
 
--- Admin inbox ordering.
+
+-- Admin queue ordering.
 CREATE INDEX IF NOT EXISTS idx_creg_created_at
     ON public.customer_registration_requests (created_at);
 
--- Approval linkage (request → official customer).
+
+-- Official customer linkage after approval.
 CREATE INDEX IF NOT EXISTS idx_creg_linked_customer
     ON public.customer_registration_requests ((data->>'linked_customer_id'));
 
--- Request-number lookup (public status endpoint + admin detail).
+
+-- Public request-status lookup.
 CREATE INDEX IF NOT EXISTS idx_creg_request_number
     ON public.customer_registration_requests ((data->>'request_number'));
 
--- Active-pending duplicate protection: at most one PENDING request per
--- normalized email. The service layer ALSO checks phone/business identity
--- in JS (same pattern as payment_requests ACTIVE_STATUSES per invoice),
--- because phone normalization cannot be expressed safely as a static
--- expression index.
+
+-- ============================================================================
+-- 3. ACTIVE-PENDING EMAIL UNIQUENESS
+-- ============================================================================
+--
+-- Only one PENDING registration may exist for a normalized email.
+--
+-- APPROVED / REJECTED / CANCELLED historical requests remain preserved and
+-- do not block a future registration.
+--
+-- This is a database-level safety net in addition to service-layer checks.
+-- ============================================================================
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_creg_pending_email
-    ON public.customer_registration_requests ((lower(replace((data->>'email'), ' ', ''))))
-    WHERE data->>'status' = 'pending';
+    ON public.customer_registration_requests
+    (
+        lower(
+            regexp_replace(
+                COALESCE(data->>'email', ''),
+                '\s+',
+                '',
+                'g'
+            )
+        )
+    )
+    WHERE data->>'status' = 'pending'
+      AND COALESCE(data->>'email', '') <> '';
 
--- Request numbers are globally unique (CREG-YYYY-######).
+
+-- ============================================================================
+-- 4. REQUEST NUMBER UNIQUENESS
+-- ============================================================================
+--
+-- CREG-YYYY-###### is the public/business identifier.
+-- NULL values remain allowed at the DB level for legacy/incomplete rows,
+-- while actual application-created requests must always supply a number.
+-- ============================================================================
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_creg_request_number
-    ON public.customer_registration_requests ((data->>'request_number'));
+    ON public.customer_registration_requests ((data->>'request_number'))
+    WHERE COALESCE(data->>'request_number', '') <> '';
 
--- ─── 3. updated_at TRIGGER (mirrors 0001 section-3 / 0008 pattern) ─────────
+
+-- ============================================================================
+-- 5. UPDATED_AT TRIGGER
+-- ============================================================================
+--
+-- Uses the existing canonical update_updated_at_column() function.
+-- ============================================================================
+
 DO $$
-DECLARE
-    t TEXT;
 BEGIN
-    FOREACH t IN ARRAY ARRAY['customer_registration_requests']
-    LOOP
-        EXECUTE format('DROP TRIGGER IF EXISTS trg_update_updated_at ON public.%I', t);
-        EXECUTE format(
-            'CREATE TRIGGER trg_update_updated_at BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column()',
-            t
-        );
-    END LOOP;
-END $$;
+    IF to_regclass('public.customer_registration_requests') IS NOT NULL THEN
 
--- ─── 4. RLS — staff/service-role controlled (NO permissive policy) ─────────
--- Intentionally no CREATE POLICY here: with RLS enabled and zero policies,
--- direct PostgREST access is denied by default. The backend service layer
--- (service-role key, bypasses RLS) performs all reads/writes. This mirrors
--- the referral staff-table treatment in 0006 and must NOT be relaxed to the
--- legacy `allow_all_* USING (true)` pattern from 0004/0005.
-ALTER TABLE public.customer_registration_requests ENABLE ROW LEVEL SECURITY;
+        DROP TRIGGER IF EXISTS trg_creg_update_updated_at
+            ON public.customer_registration_requests;
 
--- ─── 5. REALTIME PUBLICATION MEMBERSHIP (idempotent) ───────────────────────
--- Included so the future ERP admin review inbox can subscribe to new
--- submissions with the same conventions as quotation/payment requests.
-DO $$
-DECLARE
-    t TEXT;
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
-        FOREACH t IN ARRAY ARRAY['customer_registration_requests']
-        LOOP
-            BEGIN
-                EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
-            EXCEPTION WHEN duplicate_object THEN
-                NULL;
-            END;
-        END LOOP;
+        CREATE TRIGGER trg_creg_update_updated_at
+            BEFORE UPDATE
+            ON public.customer_registration_requests
+            FOR EACH ROW
+            EXECUTE FUNCTION public.update_updated_at_column();
+
     END IF;
 END $$;
+
+
+-- ============================================================================
+-- 6. ROW LEVEL SECURITY
+-- ============================================================================
+--
+-- CRITICAL:
+--   Do NOT create USING (true) / WITH CHECK (true) policies.
+--
+-- Anonymous/public users must NOT be able to read or write this table
+-- directly through PostgREST.
+--
+-- Backend service-role access bypasses RLS.
+-- ============================================================================
+
+ALTER TABLE public.customer_registration_requests
+    ENABLE ROW LEVEL SECURITY;
+
+
+-- ============================================================================
+-- 7. REALTIME PUBLICATION
+-- ============================================================================
+--
+-- Realtime is optional infrastructure for the ERP admin review queue.
+-- If Supabase Realtime exists, add this table to the publication.
+--
+-- No public database policy is created by this section.
+-- ============================================================================
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_publication
+        WHERE pubname = 'supabase_realtime'
+    ) THEN
+
+        BEGIN
+            ALTER PUBLICATION supabase_realtime
+                ADD TABLE public.customer_registration_requests;
+        EXCEPTION
+            WHEN duplicate_object THEN
+                NULL;
+        END;
+
+    END IF;
+END $$;
+
+
+-- ============================================================================
+-- 8. POST-MIGRATION VERIFICATION
+-- ============================================================================
+--
+-- These are READ-ONLY checks. They intentionally do not modify data.
+-- ============================================================================
+
+DO $$
+DECLARE
+    v_rls_enabled BOOLEAN;
+    v_policy_count INTEGER;
+    v_table_exists BOOLEAN;
+BEGIN
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'customer_registration_requests'
+    )
+    INTO v_table_exists;
+
+    IF NOT v_table_exists THEN
+        RAISE EXCEPTION
+            '0021 verification failed: customer_registration_requests missing';
+    END IF;
+
+
+    SELECT c.relrowsecurity
+    INTO v_rls_enabled
+    FROM pg_class c
+    JOIN pg_namespace n
+      ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'customer_registration_requests';
+
+    IF COALESCE(v_rls_enabled, FALSE) IS NOT TRUE THEN
+        RAISE EXCEPTION
+            '0021 verification failed: RLS is not enabled';
+    END IF;
+
+
+    SELECT COUNT(*)
+    INTO v_policy_count
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'customer_registration_requests';
+
+    IF v_policy_count <> 0 THEN
+        RAISE EXCEPTION
+            '0021 verification failed: expected ZERO RLS policies, found %',
+            v_policy_count;
+    END IF;
+
+
+    RAISE NOTICE
+        '0021 verification PASSED: table exists, RLS enabled, zero policies';
+END $$;
+
 
 -- ============================================================================
 -- End of 0021
