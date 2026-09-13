@@ -3,7 +3,7 @@ import { logger } from '@/services/logger';
 import {
      Item, Warehouse, Purchase, Sale, Quotation, JobOrder, CustomerPayment, BillOfMaterial, ProductionBatch, WorkOrder, WorkCenter, ProductionResource, Account, LedgerEntry, Invoice, RecurringInvoice, Expense, Income, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, User, ResourceAllocation, GoodsReceipt, UserRole, SMSCampaign, Subscriber, SMSTemplate, Cheque, Shipment, SubcontractOrder, MaintenanceLog, AuditLogEntry, SystemAlert, Reminder, ExamJob, ExamPaper, ExamPrintingBatch, School, Customer, Supplier, SupplierPayment, Order, PurchaseAllocation, VatTransaction, VatReturn, BOMTemplate, MarketAdjustment, MarketAdjustmentTransaction, UserGroup, MaterialCategory, WarehouseInventory, MaterialBatch, InventoryTransaction, MaterialReservation, RoundingLog, ExaminationJob, ExaminationJobSubject, ExaminationInvoiceGroup, ExaminationRecurringProfile, ExaminationInventoryDeduction, CustomerReceiptSnapshot, ExaminationBatchNotification, NotificationAuditLog,     SalesOrder, JobTicket, JobTicketSettings,
     TaxRate, FixedAsset, DepreciationEntry, AssetDisposal, OwnerEquityTransaction, Loan, LoanRepayment, AccrualEntry, IncomeSummaryEntry, PurchaseOrder, PurchaseInvoice, InterestIncomeEntry, Prepayment, PrepaymentAmortization, StaffAdvance, UtilityExpense, UtilityPayment, BankChargeEntry, PayrollEntry,
-    AssessmentContract, AssessmentContractItem, ContractAmendment
+    AssessmentContract, AssessmentContractItem, ContractAmendment, StatementSnapshot
 } from '../types';
 import type { Referral, ReferralReward } from '../types/referral';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
@@ -168,6 +168,7 @@ interface NexusDB extends DBSchema {
     incomeSummaryEntries: { key: string; value: IncomeSummaryEntry; };
     purchaseOrders: { key: string; value: PurchaseOrder; };
     purchaseInvoices: { key: string; value: PurchaseInvoice; };
+    statementSnapshots: { key: string; value: StatementSnapshot; };
     interestIncomeEntries: { key: string; value: InterestIncomeEntry; };
     prepayments: { key: string; value: Prepayment; };
     prepaymentAmortizations: { key: string; value: PrepaymentAmortization; };
@@ -181,7 +182,8 @@ interface NexusDB extends DBSchema {
 
 const DB_NAME = 'PrimeERP_Final_v3_Clean';
 // v55: register the `engagementPromotions` store (PromotionsAdmin / PromotionsPanel / promotionPlugin).
-const DB_VERSION = 55;
+// v56: register the `statementSnapshots` store (immutable verifiable statement snapshots).
+const DB_VERSION = 56;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -517,6 +519,11 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   referralReversals: 'referral_reversals',
   referralEventHistory: 'referral_event_history',
   portalAds: 'portal_ads',
+  // Canonical purchase orders sync to the existing purchase_orders table
+  // (previously unmapped, so canonical POs never reached the cloud and
+  // public verification fell back to the legacy purchases table).
+  purchaseOrders: 'purchase_orders',
+  statementSnapshots: 'statement_snapshots',
 
 };
 
@@ -606,6 +613,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'incomeSummaryEntries',
     'purchaseOrders',
     'purchaseInvoices',
+    'statementSnapshots',
     'interestIncomeEntries',
     'prepayments',
     'prepaymentAmortizations',

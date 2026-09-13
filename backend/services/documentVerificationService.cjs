@@ -7,12 +7,24 @@
  * 12-field allow-list).
  *
  * Supported types (stable number + persistent record + existing PDF):
- *   invoice, receipt, quotation, sales_order, purchase_order, delivery_note
+ *   invoice, receipt, quotation, sales_order, purchase_order, delivery_note,
+ *   supplier_payment, statement
+ *
+ * purchase_order reads the CANONICAL purchase_orders table first (the ERP
+ * record created by procurementService, synced through dbService); the
+ * legacy purchases table is a read fallback for documents issued before
+ * the canonical sync mapping existed.
+ *
+ * supplier_payment reads supplier_payments (official payment record; the
+ * ERP treats the record id as the official payment number). Only safe
+ * display fields are exposed — never account numbers, GL ids or user ids.
+ *
+ * statement reads statement_snapshots (immutable snapshots). The token
+ * identifies the exact snapshot/period — never live customer data, and the
+ * full transaction history is never exposed publicly.
  *
  * Intentionally NOT supported: credit_note (status pseudo-type on invoice
- * rows, no own number/store/PDF), debit_note (no infrastructure),
- * supplier_payment (no status field), statement (generated on the fly, no
- * persistent record to bind a token to).
+ * rows, no own number/store/PDF), debit_note (no infrastructure).
  *
  * READ-ONLY. Every failure maps to { ok:false } (generic 404 at the route).
  */
@@ -186,9 +198,8 @@ const REGISTRY = {
     }),
   },
   purchase_order: {
-    // Canonical purchaseOrders store has no Supabase table; the live
-    // `purchases` table is the verifiable source (documented limitation).
-    table: 'purchases',
+    // Canonical first (purchase_orders), legacy purchases as fallback.
+    tables: ['purchase_orders', 'purchases'],
     idFields: ['id', 'order_number', 'orderNumber'],
     statusOf: (o) => {
       const s = String(o.status || '').toLowerCase().trim();
@@ -206,6 +217,66 @@ const REGISTRY = {
       supplierName: String(o.supplierName || o.supplier_name || o.supplier_id || 'Supplier'),
       currency: String(o.currency || 'MWK'),
       total: Number(o.total_amount ?? o.total ?? o.totalAmount ?? 0),
+      status,
+    }),
+  },
+  supplier_payment: {
+    table: 'supplier_payments',
+    idFields: ['id', 'paymentNumber', 'paymentId'],
+    statusOf: (p) => {
+      const s = String(p.status || '').toLowerCase().trim();
+      if (['void', 'voided', 'cancelled', 'canceled'].includes(s)) return 'VOID';
+      if (['paid', 'cleared', 'completed'].includes(s)) return 'PAID';
+      if (['pending', 'processing'].includes(s)) return 'PENDING';
+      if (!s) return 'PAID';
+      return upper(s[0]) + s.slice(1);
+    },
+    terminalInvalid: (status) => status === 'VOID',
+    toSafe: (p, company, status) => ({
+      verified: true,
+      documentType: 'supplier_payment',
+      // Official payment number: explicit paymentNumber, else the payment
+      // record id (which the ERP treats as the official payment number).
+      paymentNumber: String(p.paymentNumber || p.paymentId || p.id || ''),
+      paymentDate: String(p.paymentDate || p.date || ''),
+      companyName: String(p.companyName || company),
+      supplierName: String(p.supplierName || p.supplier_name || 'Supplier'),
+      currency: String(p.currency || 'MWK'),
+      amount: Number(p.amount ?? p.amountPaid ?? 0),
+      // Safe display value only — never account numbers or GL references.
+      paymentMethod: String(p.paymentMethod || p.method || ''),
+      reference: String(p.reference || ''),
+      status,
+    }),
+  },
+  statement: {
+    table: 'statement_snapshots',
+    idFields: ['id', 'statementNumber'],
+    statusOf: (s) => {
+      const raw = String(s.status || 'VALID').toLowerCase().trim();
+      if (['void', 'voided', 'cancelled', 'canceled'].includes(raw)) return 'VOID';
+      if (raw === 'superseded') return 'SUPERSEDED';
+      return 'VALID';
+    },
+    // VOID and SUPERSEDED snapshots verify as authentic but terminal: the
+    // portal renders their dedicated states (never a green VERIFIED).
+    terminalInvalid: (status) => status !== 'VALID',
+    // Limited verification result: snapshot identity + frozen summary.
+    // The transaction history and customer contact data are NEVER exposed.
+    toSafe: (s, company, status) => ({
+      verified: true,
+      documentType: 'statement',
+      statementNumber: String(s.statementNumber || s.id || ''),
+      statementDate: String(s.statementDate || s.date || ''),
+      statementPeriodStart: String(s.periodStart || s.startDate || ''),
+      statementPeriodEnd: String(s.periodEnd || s.endDate || ''),
+      companyName: String(s.companyName || company),
+      customerName: String(s.customerName || s.clientName || 'Customer'),
+      currency: String(s.currency || 'MWK'),
+      openingBalance: Number(s.openingBalance ?? 0),
+      totalInvoiced: Number(s.totalInvoiced ?? 0),
+      totalReceived: Number(s.totalReceived ?? 0),
+      closingBalance: Number(s.closingBalance ?? s.finalBalance ?? 0),
       status,
     }),
   },
@@ -245,23 +316,30 @@ async function fetchDocumentRows(type, documentNumber, httpGet, axiosImpl) {
   }
   const get = httpGet || axiosImpl || axios;
   const entry = REGISTRY[type];
+  // Multi-table entries (purchase_order: canonical purchase_orders first,
+  // legacy purchases as fallback) query each table in order and merge.
+  const tables = entry.tables || [entry.table];
   const ors = entry.idFields.map((f) => `(data->>${f}.eq.${documentNumber})`);
   // Flat rows (sales_orders, delivery_notes) store fields at top level:
   // query both envelope and flat shapes in one round trip.
   const flatOrs = entry.idFields.map((f) => `${f}.eq.${documentNumber}`);
-  const { data } = await get(`${base}/rest/v1/${entry.table}`, {
-    params: { select: '*', or: `(${ors.join(',')})`, limit: 5 },
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-    timeout: 15000,
-  });
-  let rows = Array.isArray(data) ? data : [];
-  if (rows.length === 0) {
-    const flat = await get(`${base}/rest/v1/${entry.table}`, {
-      params: { select: '*', or: `(${flatOrs.join(',')})`, limit: 5 },
+  const rows = [];
+  for (const table of tables) {
+    const { data } = await get(`${base}/rest/v1/${table}`, {
+      params: { select: '*', or: `(${ors.join(',')})`, limit: 5 },
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       timeout: 15000,
     });
-    rows = Array.isArray(flat.data) ? flat.data : [];
+    if (Array.isArray(data)) rows.push(...data);
+    if (rows.length === 0) {
+      const flat = await get(`${base}/rest/v1/${table}`, {
+        params: { select: '*', or: `(${flatOrs.join(',')})`, limit: 5 },
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
+        timeout: 15000,
+      });
+      if (Array.isArray(flat.data)) rows.push(...flat.data);
+    }
+    if (rows.length > 0 && tables.length > 1) break;
   }
   return rows;
 }

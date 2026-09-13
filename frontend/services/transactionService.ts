@@ -4753,7 +4753,15 @@ export const transactionService = {
             ['purchases'],
             async (tx) => {
                 const store = tx.objectStore('purchases');
-                await store.put(purchase);
+                // Permanent verification identity: issued once at creation,
+                // preserved forever after (edits/prints/syncs never rotate).
+                // Single non-accounting field — posting logic untouched.
+                const existing = purchase?.id ? await store.get(purchase.id) : null;
+                const withIdentity = ensureDocumentVerificationToken(purchase as Purchase & { verificationToken?: string });
+                if (existing && (existing as any).verificationToken && !(withIdentity as any).verificationToken) {
+                    (withIdentity as any).verificationToken = (existing as any).verificationToken;
+                }
+                await store.put(withIdentity);
                 return { success: true };
             }
         );
@@ -6000,8 +6008,10 @@ export const transactionService = {
                     return resolved;
                 };
 
-                // 1. Save the payment
-                await paymentStore.put(payment);
+                // 1. Save the payment (with its permanent, idempotent
+                // verification token — single non-accounting field; all
+                // ledger/AP postings below are untouched).
+                await paymentStore.put(ensureDocumentVerificationToken({ ...(payment as any) }));
 
                 // 2. Update linked Purchase Orders
                 if (payment.allocations && payment.allocations.length > 0) {
@@ -6076,7 +6086,13 @@ export const transactionService = {
             ['supplierPayments'],
             async (tx) => {
                 const store = tx.objectStore('supplierPayments');
-                await store.put(payment);
+                // Never rotate or drop the verification identity on edit.
+                const existing = payment?.id ? await store.get(payment.id) : null;
+                const next = { ...(payment as any) };
+                if (existing && (existing as any).verificationToken && !next.verificationToken) {
+                    next.verificationToken = (existing as any).verificationToken;
+                }
+                await store.put(ensureDocumentVerificationToken(next));
                 return { success: true };
             }
         );

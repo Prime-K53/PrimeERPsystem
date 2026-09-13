@@ -296,7 +296,35 @@ router.post('/activate', async (req, res) => {
   }
 });
 
+/**
+ * LEGACY direct portal registration — TEMPORARY COMPATIBILITY STATE.
+ *
+ * Business rule (approval-gated intake): public registration MUST become
+ *   Portal registration → Customer Registration Request (PENDING)
+ *   → ERP admin review → APPROVE → official CUST-XXXX customer + credentials.
+ *
+ * This endpoint still creates an ACTIVE portal_users row and issues JWT +
+ * refresh token on submit, which BYPASSES that approval gate. It is kept
+ * functional ONLY because the separate portal frontend (Prime P on Desktop)
+ * still calls POST /api/portal/auth/register and has not been migrated yet
+ * (verified: no caller inside this ERP repo — no backend test and no ERP
+ * frontend code references this route; see backend/tests/* and
+ * frontend/services/*).
+ *
+ * New portal integrations MUST use POST /api/portal/registration-requests
+ * (backend/routes/registrationRequests.cjs), which creates exactly one
+ * PENDING request and issues NO credentials.
+ *
+ * Migration tracker: once the portal frontend submits registration requests
+ * instead, this route MUST be disabled (return 410 with migration guidance)
+ * or converted into a thin alias that creates a PENDING request. The
+ * `X-Portal-Register-Deprecated` response header and the
+ * PORTAL_REGISTER_LEGACY_USED audit event below exist so the remaining
+ * traffic is visible until then. DO NOT remove this comment without
+ * completing the portal migration.
+ */
 router.post('/register', async (req, res) => {
+  res.set('X-Portal-Register-Deprecated', 'true; use POST /api/portal/registration-requests');
   try {
     const { companyName, contactName, email, password, phone, tier, referredByCode } = req.body || {};
 
@@ -392,6 +420,28 @@ router.post('/register', async (req, res) => {
     const user = await portalAuthService.getPortalUserByEmail(normalizedEmail);
     if (user && user.id) {
       await portalAuthService.createSession(user.id, refreshToken, ip, ua);
+    }
+
+    // Visibility for the approval-gate migration: every legacy direct
+    // registration is logged (safe metadata only — never password/tokens)
+    // so remaining portal traffic can be tracked until the route is retired.
+    try {
+      const { auditService } = require('../auditService.cjs');
+      await auditService.logEvent({
+        userId: (user && user.id) || 'anonymous',
+        userRole: 'portal_customer',
+        action: 'PORTAL_REGISTER_LEGACY_USED',
+        entityType: 'portal_user',
+        entityId: (user && user.id) || normalizedEmail,
+        details: `Legacy direct portal registration for ${normalizedEmail} (bypasses approval gate; migrate to POST /api/portal/registration-requests)`,
+        ip: ip || null,
+        userAgent: ua || null,
+        httpMethod: req.method,
+        httpPath: req.originalUrl,
+        correlationId: req.correlationId || null,
+      });
+    } catch (auditErr) {
+      console.warn('[PortalAuth] Legacy-use audit skipped (best-effort):', auditErr.message);
     }
 
     res.status(201).json({

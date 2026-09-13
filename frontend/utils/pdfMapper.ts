@@ -2,6 +2,36 @@ import { ExaminationInvoiceSchema, FinancialDocSchema, LogisticsDocSchema, Prime
 import { bomService } from '../services/bomService';
 import { currencyService } from '../services/currencyService';
 import { inferSignatureInputMode, resolveSignatureDataUrl } from './signatureUtils';
+import { isSupportedDocumentType } from './documentVerification';
+
+/**
+ * Verifiable type implied by the mapper's own docType. An explicit,
+ * supported `documentType` on the source record always wins; otherwise the
+ * mapped type is stamped so QR routing never depends on fragile
+ * field-sniffing. Non-verifiable kinds (subscription, work orders,
+ * exchanges, fiscal reports) resolve to undefined and keep the legacy QR.
+ */
+const verifiableTypeForDocType = (docType: string): string | undefined => {
+    switch (docType) {
+        case 'INVOICE':
+        case 'EXAMINATION_INVOICE':
+            return 'invoice';
+        case 'QUOTATION':
+            return 'quotation';
+        case 'SALES_ORDER':
+        case 'ORDER':
+            return 'sales_order';
+        case 'PO':
+            return 'purchase_order';
+        case 'DELIVERY_NOTE':
+            return 'delivery_note';
+        case 'ACCOUNT_STATEMENT':
+        case 'ACCOUNT_STATEMENT_SUMMARY':
+            return 'statement';
+        default:
+            return undefined;
+    }
+};
 
 /**
  * Maps various document types (Invoice, Quotation, Subscription, Sales Order, Sales Exchange) 
@@ -266,8 +296,32 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
         return undefined;
     })();
 
+    // Verification identity passthrough (offline-safe, no network): the
+    // stable token + explicit verifiable type + official-number aliases are
+    // carried into the PDF payload so attachDocumentSecurity always sees the
+    // same identity the store holds. Records without a token (legacy docs,
+    // template previews, non-verifiable kinds) omit them and keep the
+    // legacy human-readable QR payload — backward compatible by design.
+    const sourceToken = typeof item.verificationToken === 'string' ? item.verificationToken.trim() : '';
+    const sourceDocType = typeof item.documentType === 'string' ? item.documentType.trim() : '';
+    const resolvedVerifiableType =
+        (sourceDocType && isSupportedDocumentType(sourceDocType) ? sourceDocType : undefined)
+        ?? verifiableTypeForDocType(docType);
+
     const baseData = {
         number: resolvedNumber,
+        ...(resolvedVerifiableType ? { documentType: resolvedVerifiableType } : {}),
+        ...(sourceToken ? { verificationToken: sourceToken } : {}),
+        quotationNumber: item.quotationNumber || item.quotation_id || undefined,
+        quotationId: item.quotationId || item.quotation_id || undefined,
+        order_number: item.order_number || undefined,
+        dnNumber: item.dnNumber || undefined,
+        deliveryNoteNumber: item.deliveryNoteNumber || undefined,
+        delivery_number: item.delivery_number || undefined,
+        receiptNumber: item.receiptNumber || undefined,
+        paymentId: item.paymentId || undefined,
+        paymentNumber: item.paymentNumber || undefined,
+        statementNumber: item.statementNumber || undefined,
         date: new Date(item.invoiceDate || item.invoice_date || item.orderDate || item.order_date || item.date || item.nextRunDate || item.created_at || item.issuedAt || item.issued_at || Date.now()).toLocaleDateString(),
         dueDate: normalizeDateInputValue(item.dueDate || item.due_date || item.due_at || item.validUntil || item.expiryDate || ''),
         paymentTerms: resolveFirstText(
@@ -398,6 +452,9 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             totalInvoiced: toNum(item.totalInvoiced ?? item.total_invoiced ?? statementTransactions.reduce((sum: number, txn: any) => sum + toNum(txn.debit), 0)),
             totalReceived: toNum(item.totalReceived ?? item.total_received ?? statementTransactions.reduce((sum: number, txn: any) => sum + toNum(txn.credit), 0)),
             finalBalance: toNum(item.finalBalance ?? item.closingBalance ?? item.closing_balance ?? 0),
+            status: item.status || undefined,
+            documentType: 'statement',
+            ...(sourceToken ? { verificationToken: sourceToken } : {}),
         };
         return StatementSchema.parse(statementData);
     }
@@ -420,7 +477,12 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             amountPaid: toNum(item.paidAmount || item.amountPaid || item.paid_amount || 0),
             totalAmount: toNum(item.totalAmount || item.total || item.total_amount || item.total_cost || 0),
             invoiceNumber: item.invoiceNumber || (docType === 'INVOICE' ? item.id : undefined),
-            orderNumber: item.orderNumber || (['ORDER', 'SALES_ORDER'].includes(docType) ? item.id : undefined),
+            orderNumber: item.orderNumber || (['ORDER', 'SALES_ORDER', 'PO'].includes(docType) ? item.id : undefined),
+            // Official-number aliases so detection never depends on the
+            // caller remembering which field its doc type uses. `order_number`
+            // presence alone routes to purchase_order (canonical PO field).
+            quotationNumber: item.quotationNumber || item.quotation_id || (docType === 'QUOTATION' ? item.id : undefined),
+            order_number: item.order_number || (docType === 'PO' ? item.id : undefined),
             status: resolvedFinancialStatus,
             isCancelled: isCancelledStatus(explicitStatus) || item.isCancelled === true || item.cancelled === true,
             walletBalance: toNum(item.walletBalance ?? item.wallet_balance ?? 0),
@@ -506,6 +568,9 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
 
         const logisticsData = {
             ...baseData,
+            // Delivery-note number aliases (canonical field is dnNumber).
+            dnNumber: item.dnNumber || item.deliveryNoteNumber || item.delivery_number || (docType === 'DELIVERY_NOTE' ? item.id : undefined),
+            deliveryNoteNumber: item.deliveryNoteNumber || item.dnNumber || undefined,
             status: item.status || undefined,
             technician: (item.technician || item.assignedTo) || undefined,
             receivedBy: (item.receivedBy || normalizedProof?.receivedBy) || undefined,

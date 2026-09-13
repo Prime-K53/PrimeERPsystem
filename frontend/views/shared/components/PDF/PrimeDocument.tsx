@@ -82,7 +82,15 @@ const renderQrImage = (qrCodeDataUrl?: string | null, size: number = 52) => {
   const resolvedQrCode = resolvePdfQrCodeSource(qrCodeDataUrl);
   if (!resolvedQrCode) return null;
 
-  return <Image src={resolvedQrCode} style={{ width: size, height: size }} />;
+  // The QR encodes the public verification URL for tokened documents
+  // (legacy human-readable payload otherwise) — the caption tells the
+  // holder what scanning does.
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Image src={resolvedQrCode} style={{ width: size, height: size }} />
+      <Text style={{ fontSize: Math.max(6, size * 0.13), color: '#475569', marginTop: 2, letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
+    </View>
+  );
 };
 
 // Format amount helper
@@ -296,7 +304,10 @@ const SecurityFooter = ({
         ]}
       >
         {!!qrCodeDataUrl ? (
-          <Image src={qrCodeDataUrl} style={{ width: footerQrSize, height: footerQrSize }} />
+          <View style={{ alignItems: 'center' }}>
+            <Image src={qrCodeDataUrl} style={{ width: footerQrSize, height: footerQrSize }} />
+            <Text style={{ fontSize: 6.5, color: '#475569', marginTop: 2, letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
+          </View>
         ) : null}
       </View>
     </View>
@@ -1576,8 +1587,17 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   if (type === 'SUPPLIER_PAYMENT') {
     const sp = data as SupplierPaymentDoc;
     const isCancelled = isCancelledStatus(sp.status, sp);
+    const spNumber = String((sp as any).paymentNumber || sp.paymentId);
+    // Display status mirrors the public verification mapping so the printed
+    // receipt and the portal always agree (Cleared/Paid -> PAID).
+    const spStatusDisplay = (() => {
+      const s = String((sp as any).status || '').toLowerCase().trim();
+      if (['void', 'voided', 'cancelled', 'canceled'].includes(s)) return 'VOID';
+      if (['paid', 'cleared', 'completed', ''].includes(s)) return 'PAID';
+      return String((sp as any).status).toUpperCase();
+    })();
     return (
-      <Document title={`Payment Voucher - ${sp.paymentId}`} author={companyName}>
+      <Document title={`Supplier Payment Receipt - ${spNumber}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
           {channel === 'portal' && <PortalCopyWatermark />}
           {isCancelled && <CancelledWatermark />}
@@ -1586,11 +1606,14 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               {renderBrandMark('left')}
             </View>
             <View style={s.headerLeft}>
-              <Text style={[s.title, titleStyle]}>Payment Voucher</Text>
+              <Text style={[s.title, titleStyle]}>Supplier Payment Receipt</Text>
               <View style={s.infoText}>
-                <Text>Voucher # : {sp.paymentId}</Text>
+                <Text>Payment Number : {spNumber}</Text>
                 <Text>Date : {sp.date}</Text>
+                <Text>Supplier : {sp.supplierName}</Text>
+                <Text>Amount : {currency} {formatAmount(sp.amountPaid)}</Text>
                 <Text>Method : {sp.paymentMethod}</Text>
+                <Text>Status : {spStatusDisplay}</Text>
               </View>
             </View>
           </View>

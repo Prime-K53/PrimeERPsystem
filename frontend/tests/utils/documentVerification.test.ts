@@ -25,7 +25,7 @@ const BASE = 'https://portal.primeerp.com';
 const TOK = 'a'.repeat(64);
 
 const CASES: Array<{
-  type: 'invoice' | 'receipt' | 'quotation' | 'sales_order' | 'purchase_order' | 'delivery_note';
+  type: 'invoice' | 'receipt' | 'quotation' | 'sales_order' | 'purchase_order' | 'delivery_note' | 'supplier_payment' | 'statement';
   slug: string;
   doc: any;
   number: string;
@@ -36,20 +36,38 @@ const CASES: Array<{
   { type: 'sales_order', slug: 'sales-order', doc: { orderNumber: 'SO-G001', verificationToken: TOK }, number: 'SO-G001' },
   { type: 'purchase_order', slug: 'purchase-order', doc: { order_number: 'PO-G001', verificationToken: TOK }, number: 'PO-G001' },
   { type: 'delivery_note', slug: 'delivery-note', doc: { dnNumber: 'DN-G001', verificationToken: TOK }, number: 'DN-G001' },
+  { type: 'supplier_payment', slug: 'supplier-payment', doc: { documentType: 'supplier_payment', paymentId: 'SPAY-G001', supplierName: 'Paper Supplier', verificationToken: TOK }, number: 'SPAY-G001' },
+  { type: 'statement', slug: 'statement', doc: { documentType: 'statement', statementNumber: 'STMT-G001', verificationToken: TOK }, number: 'STMT-G001' },
 ];
 
 describe('supported types', () => {
-  it('enables exactly the six real document types', () => {
+  it('enables exactly the eight real document types', () => {
     expect(SUPPORTED_DOCUMENT_TYPES).toEqual([
       'invoice', 'receipt', 'quotation', 'sales_order', 'purchase_order', 'delivery_note',
+      'supplier_payment', 'statement',
     ]);
   });
 
   it('resolves slugs both ways', () => {
     expect(documentTypeFromSlug('sales-order')).toBe('sales_order');
+    expect(documentTypeFromSlug('supplier-payment')).toBe('supplier_payment');
+    expect(documentTypeFromSlug('statement')).toBe('statement');
     expect(documentTypeFromSlug('invoice')).toBe('invoice');
     expect(documentTypeFromSlug('credit-note')).toBeNull();
     expect(documentTypeFromSlug('nope')).toBeNull();
+  });
+
+  it('never detects supplier payments or statements from bare text', () => {
+    // Bare PAY- numbers stay customer receipts; bare customer/ledger text
+    // with no official number field is not verifiable (fail closed).
+    expect(detectVerifiableDocumentType({ number: 'PAY-001' })).toBe('receipt');
+    expect(detectVerifiableDocumentType({ customerName: 'Acme', total: 100 })).toBeNull();
+    expect(detectVerifiableDocumentType({ id: 'CUST-001', balance: 50 })).toBeNull();
+    // Explicit type + SPAY-/STMT- prefixes route to the new types.
+    expect(detectVerifiableDocumentType({ documentType: 'supplier_payment' })).toBe('supplier_payment');
+    expect(detectVerifiableDocumentType({ paymentId: 'SPAY-001' })).toBe('supplier_payment');
+    expect(detectVerifiableDocumentType({ documentType: 'statement' })).toBe('statement');
+    expect(detectVerifiableDocumentType({ statementNumber: 'STMT-001' })).toBe('statement');
   });
 });
 
@@ -142,5 +160,49 @@ describe('invoice backward compatibility', () => {
     expect(expected).not.toBeNull();
     expect(viaQr.securityQrPayload).toBe(expected);
     expect(viaQr.securityQrPayload).toBe(buildInvoiceVerificationUrl(data));
+  });
+});
+
+describe('new types: supplier_payment + statement', () => {
+  it('tokened supplier payment QR payload is the verification URL exactly', async () => {
+    const data: any = {
+      documentType: 'supplier_payment',
+      paymentId: 'SPAY-P726/001',
+      supplierName: 'Paper Supplier',
+      date: '2026-09-12',
+      verificationToken: TOK,
+    };
+    const viaQr = await attachDocumentSecurity({ ...data }, 'Prime Printing Service');
+    const expected = buildDocumentVerificationUrl({ documentType: 'supplier_payment', documentNumber: 'SPAY-P726/001', verificationToken: TOK });
+    expect(expected).not.toBeNull();
+    expect(expected).toContain('/#/verify/supplier-payment/SPAY-P726%2F001?t=');
+    expect(viaQr.securityQrPayload).toBe(expected);
+  });
+
+  it('tokened statement QR payload is the verification URL exactly', async () => {
+    const data: any = {
+      documentType: 'statement',
+      statementNumber: 'STMT-P726-001',
+      date: '2026-09-12',
+      verificationToken: TOK,
+    };
+    const viaQr = await attachDocumentSecurity({ ...data }, 'Prime Printing Service');
+    const expected = buildDocumentVerificationUrl({ documentType: 'statement', documentNumber: 'STMT-P726-001', verificationToken: TOK });
+    expect(expected).not.toBeNull();
+    expect(expected).toContain('/#/verify/statement/STMT-P726-001?t=');
+    expect(viaQr.securityQrPayload).toBe(expected);
+  });
+
+  it('legacy payload preserved for untokened supplier payments and statements', async () => {
+    const sp = await attachDocumentSecurity(
+      { documentType: 'supplier_payment', paymentId: 'SPAY-OLD', supplierName: 'Old Supplier', date: '2026-01-01' } as any,
+      'Prime Printing Service'
+    );
+    expect(sp.securityQrPayload).toContain('Prime Printing Service, SPAY-OLD, created on');
+    const st = await attachDocumentSecurity(
+      { documentType: 'statement', statementNumber: 'STMT-OLD', customerName: 'Old School', date: '2026-01-01' } as any,
+      'Prime Printing Service'
+    );
+    expect(st.securityQrPayload).toContain('Prime Printing Service, STMT-OLD, created on');
   });
 });

@@ -1,9 +1,29 @@
 import { z } from 'zod';
 
-// Shared base for all Prime ERP documents 
+// Shared base for all Prime ERP documents
+// verificationToken + documentType (+ official-number aliases) are
+// optional passthrough fields: they survive zod parsing so the generic
+// QR path (attachDocumentSecurity -> buildSecurityQrPayload) always sees
+// the stable token + explicit type, no matter how many mapping layers the
+// payload passed through. They never render PII and never leave the PDF.
+const VerifiableDocFields = {
+  documentType: z.string().optional(),
+  verificationToken: z.string().optional(),
+  quotationNumber: z.string().optional(),
+  quotationId: z.string().optional(),
+  order_number: z.string().optional(),
+  dnNumber: z.string().optional(),
+  deliveryNoteNumber: z.string().optional(),
+  delivery_number: z.string().optional(),
+  receiptNumber: z.string().optional(),
+  paymentId: z.string().optional(),
+  paymentNumber: z.string().optional(),
+  statementNumber: z.string().optional(),
+};
 const BaseDocSchema = z.object({
   number: z.string().min(1, "Document number is required"),
   date: z.string().min(1, "Date is required"),
+  ...VerifiableDocFields,
   dueDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   clientName: z.string().min(1, "Client name is required"),
@@ -82,6 +102,7 @@ export const LogisticsDocSchema = BaseDocSchema.extend({
 
 // 3. Receipt Schema
 export const ReceiptSchema = z.object({
+  ...VerifiableDocFields,
   receiptNumber: z.string(),
   date: z.string(),
   customerName: z.string(),
@@ -103,18 +124,25 @@ export const ReceiptSchema = z.object({
 });
 
 // 3.5 Supplier Payment Schema
+// paymentNumber is the official public voucher number (defaults to the
+// payment record id — the ERP treats the id as the official number).
+// status drives the VERIFIED vs VOID presentation on the portal.
 export const SupplierPaymentSchema = z.object({
+  ...VerifiableDocFields,
   paymentId: z.string(),
+  paymentNumber: z.string().optional(),
   date: z.string(),
   supplierName: z.string(),
   amountPaid: z.number(),
   paymentMethod: z.string(),
+  status: z.string().optional(),
   appliedInvoices: z.array(z.string()), // IDs of bills being paid
   narrative: z.string().optional(),
 });
 
 // 3.6 POS Receipt Schema
 export const PosReceiptSchema = z.object({
+  ...VerifiableDocFields,
   receiptNumber: z.string(),
   date: z.string(),
   cashierName: z.string(),
@@ -149,7 +177,11 @@ export const PosReceiptSchema = z.object({
 });
 
 // 4. Statement Schema
+// Binds the PDF to ONE immutable statement snapshot (statementNumber +
+// verificationToken). The snapshot — never live ledger data — is what the
+// portal verifies.
 export const StatementSchema = z.object({
+  ...VerifiableDocFields,
   number: z.string().optional(),
   statementNumber: z.string().optional(),
   date: z.string(), // Issue date
@@ -173,10 +205,12 @@ export const StatementSchema = z.object({
   totalInvoiced: z.number(),
   totalReceived: z.number(),
   finalBalance: z.number(),
+  status: z.string().optional(),
 });
 
 // 6. Sales Exchange Schema
 export const SalesExchangeSchema = z.object({
+  ...VerifiableDocFields,
   exchangeNumber: z.string(),
   date: z.string(),
   customerName: z.string(),
@@ -197,6 +231,7 @@ export const SalesExchangeSchema = z.object({
 
 // 5. Fiscal Report Schema
 export const FiscalReportSchema = z.object({
+  ...VerifiableDocFields,
   reportName: z.string(),
   period: z.string(),
   currency: z.string(),

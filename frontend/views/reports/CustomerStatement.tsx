@@ -16,6 +16,9 @@ import {
 import { exportToCSV } from '../../utils/helpers';
 import { useDocumentStore } from '../../stores/documentStore';
 import { mapToInvoiceData } from '../../utils/pdfMapper';
+import { createStatementSnapshot, type CreateStatementSnapshotInput } from '../../services/statementService';
+import { buildDocumentVerificationUrl } from '../../utils/documentVerification';
+import type { StatementSnapshot } from '../../types';
 
 interface FilterState {
   customerId: string;
@@ -252,18 +255,20 @@ const CustomerStatement: React.FC = () => {
     if (!filters.customerId) return;
   };
 
-  const handlePreviewPDF = () => {
-    if (!selectedCustomer) return;
+  const [issuedSnapshot, setIssuedSnapshot] = useState<StatementSnapshot | null>(null);
+  const [issuing, setIssuing] = useState(false);
 
-    const statementData = {
-      date: format(new Date(), 'yyyy-MM-dd'),
+  const buildSnapshotInput = (): CreateStatementSnapshotInput | null => {
+    if (!selectedCustomer) return null;
+    return {
+      customerId: filters.customerId,
       customerName: selectedCustomer.companyName || selectedCustomer.name || 'Customer',
       customerCode: selectedCustomer.id || '',
       address: selectedCustomer.address || '',
       phone: selectedCustomer.phone || '',
       email: selectedCustomer.email || '',
-      startDate: filters.startDate,
-      endDate: filters.endDate,
+      periodStart: filters.startDate,
+      periodEnd: filters.endDate,
       currency,
       openingBalance: openingBalanceInPeriod,
       transactions: displayedTransactions.map(tx => ({
@@ -276,10 +281,64 @@ const CustomerStatement: React.FC = () => {
       })),
       totalInvoiced: totalDebit,
       totalReceived: totalCredit,
-      finalBalance: closingBalance,
+      closingBalance,
     };
+  };
 
-    safeOpenPreview('ACCOUNT_STATEMENT', statementData);
+  /**
+   * Issue an immutable statement snapshot (new number + token per
+   * generation; prior VALID snapshots for the same period are superseded).
+   * The snapshot — never live ledger data — is what the PDF/QR verifies.
+   */
+  const issueStatementSnapshot = async (): Promise<StatementSnapshot | null> => {
+    const input = buildSnapshotInput();
+    if (!input) return null;
+    setIssuing(true);
+    try {
+      const snapshot = await createStatementSnapshot(input, companyConfig);
+      setIssuedSnapshot(snapshot);
+      return snapshot;
+    } finally {
+      setIssuing(false);
+    }
+  };
+
+  const handlePreviewPDF = async () => {
+    if (!selectedCustomer) return;
+    const snapshot = await issueStatementSnapshot();
+    if (!snapshot) return;
+    // StatementSchema shape + explicit verifiable identity.
+    safeOpenPreview('ACCOUNT_STATEMENT', {
+      ...snapshot,
+      date: snapshot.statementDate,
+      documentType: 'statement',
+      startDate: snapshot.periodStart,
+      endDate: snapshot.periodEnd,
+      finalBalance: snapshot.closingBalance,
+    });
+  };
+
+  const statementVerificationUrl = issuedSnapshot?.verificationToken
+    ? buildDocumentVerificationUrl({
+      documentType: 'statement',
+      documentNumber: issuedSnapshot.statementNumber,
+      verificationToken: issuedSnapshot.verificationToken,
+    })
+    : null;
+
+  const handleCopyStatementLink = async () => {
+    if (!statementVerificationUrl) return;
+    try {
+      await navigator.clipboard.writeText(statementVerificationUrl);
+      alert('Verification link copied');
+    } catch {
+      alert('Could not copy link');
+    }
+  };
+
+  const handleOpenStatementVerification = () => {
+    if (!statementVerificationUrl) return;
+    window.open(statementVerificationUrl, '_blank', 'noopener');
   };
 
   const handleExportCSV = () => {
@@ -360,28 +419,26 @@ const CustomerStatement: React.FC = () => {
       return;
     }
     try {
+      // Email the frozen snapshot identity (number + QR), not live data.
+      const snapshot = await issueStatementSnapshot();
+      if (!snapshot) return;
       const statementData = {
-        date: format(new Date(), 'yyyy-MM-dd'),
+        date: snapshot.statementDate,
+        statementNumber: snapshot.statementNumber,
+        verificationToken: snapshot.verificationToken,
         customerName: selectedCustomer.companyName || selectedCustomer.name || 'Customer',
         customerCode: selectedCustomer.id || '',
         address: selectedCustomer.address || '',
         phone: selectedCustomer.phone || '',
         email: selectedCustomer.email || '',
-        startDate: filters.startDate,
-        endDate: filters.endDate,
+        startDate: snapshot.periodStart,
+        endDate: snapshot.periodEnd,
         currency,
-        openingBalance: openingBalanceInPeriod,
-        transactions: displayedTransactions.map(tx => ({
-          date: tx.date ? format(new Date(tx.date), 'yyyy-MM-dd') : '',
-          reference: tx.reference || tx.docNumber,
-          memo: tx.description,
-          debit: tx.debit,
-          credit: tx.credit,
-          runningBalance: tx.runningBalance,
-        })),
-        totalInvoiced: totalDebit,
-        totalReceived: totalCredit,
-        finalBalance: closingBalance,
+        openingBalance: snapshot.openingBalance,
+        transactions: snapshot.transactions,
+        totalInvoiced: snapshot.totalInvoiced,
+        totalReceived: snapshot.totalReceived,
+        finalBalance: snapshot.closingBalance,
       };
 
       const response = await fetch('/api/reports/customer-statement/email', {
@@ -389,8 +446,9 @@ const CustomerStatement: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: filters.customerId,
-          startDate: filters.startDate,
-          endDate: filters.endDate,
+          startDate: snapshot.periodStart,
+          endDate: snapshot.periodEnd,
+          statementNumber: snapshot.statementNumber,
           customerEmail: selectedCustomer.email,
           statementData,
         }),
@@ -589,11 +647,33 @@ const CustomerStatement: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={handlePreviewPDF}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-white text-xs font-bold hover:bg-slate-900 transition-all"
+            disabled={issuing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-white text-xs font-bold hover:bg-slate-900 transition-all disabled:opacity-60"
           >
             <Eye size={14} />
-            Preview PDF
+            {issuing ? 'Issuing…' : 'Preview PDF'}
           </button>
+          {issuedSnapshot && (
+            <span className="text-[11px] font-mono font-bold text-slate-600 bg-slate-100 rounded-lg px-2.5 py-2">
+              {issuedSnapshot.statementNumber}
+            </span>
+          )}
+          {statementVerificationUrl && (
+            <>
+              <button
+                onClick={handleCopyStatementLink}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition-all"
+              >
+                Copy Verification Link
+              </button>
+              <button
+                onClick={handleOpenStatementVerification}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition-all"
+              >
+                View Verification
+              </button>
+            </>
+          )}
           <button
             onClick={handlePrint}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition-all"

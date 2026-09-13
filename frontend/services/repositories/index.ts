@@ -129,6 +129,7 @@ const STORE_TO_TABLE: Record<string, string> = {
   discountRules: 'discount_rules',
   customerPricingTiers: 'customer_pricing_tiers',
   idempotencyKeys: 'idempotency_keys',
+  statementSnapshots: 'statement_snapshots',
 };
 
 const repoCache = new Map<string, BaseRepository<any>>();

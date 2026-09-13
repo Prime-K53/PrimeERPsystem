@@ -319,6 +319,14 @@ app.use('/api/portal/auth', (err, req, res, next) => {
 app.use('/api/portal/auth/refresh', portalRefreshLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 200 }));
 app.use('/api/portal/auth', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 100 }), portalAuthRoutes);
 
+// Public customer-registration requests (approval-gated intake) — anonymous
+// applicants submit WITHOUT a JWT, so this mounts BEFORE the authenticated
+// /api/portal chain and the global verifyToken. A submission creates exactly
+// one PENDING request and NEVER issues credentials. Rate-limited like the
+// other public verification endpoints.
+const registrationRequestRoutes = require('./routes/registrationRequests.cjs');
+app.use('/api/portal/registration-requests', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), registrationRequestRoutes);
+
 // Portal admin routes — registered before global verifyToken to avoid Supabase JWT collisions
 app.use('/api/portal/admin', portalAdminRoutes);
 

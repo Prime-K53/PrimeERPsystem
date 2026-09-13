@@ -33,9 +33,22 @@ const TABLES = {
   ],
   purchases: [
     { data: { id: 'PO-G001', order_number: 'PO-G001', order_date: '2026-09-06', supplierName: 'Paper Supplier', currency: 'MWK', total_amount: 90000, status: 'approved', verificationToken: TOK } },
+    { data: { id: 'PO-G003', order_number: 'PO-G003', order_date: '2026-09-06', supplierName: 'Legacy Supplier', currency: 'MWK', total_amount: 1000, status: 'approved', verificationToken: TOK } },
+  ],
+  purchase_orders: [
+    { id: 'PO-G002', data: { id: 'PO-G002', order_number: 'PO-G002', order_date: '2026-09-06', supplierName: 'Canonical Supplier', currency: 'MWK', total_amount: 120000, status: 'approved', verificationToken: TOK } },
+    { id: 'PO-G003', data: { id: 'PO-G003', order_number: 'PO-G003', order_date: '2026-09-06', supplierName: 'Canonical Supplier', currency: 'MWK', total_amount: 2000, status: 'approved', verificationToken: TOK } },
   ],
   delivery_notes: [
     { id: 'DN-G001', dnNumber: 'DN-G001', date: '2026-09-07', customerName: 'Delivered School', invoiceId: 'INV-G001', status: 'Delivered', verificationToken: TOK },
+  ],
+  supplier_payments: [
+    { id: 'SPAY-G001', data: { id: 'SPAY-G001', paymentNumber: 'SPAY-G001', paymentDate: '2026-09-10', supplierName: 'Paid Supplier', currency: 'MWK', amount: 25000, paymentMethod: 'Bank Transfer', accountId: '11110', glAccountId: '21110', reference: 'PO-G001', status: 'Cleared', verificationToken: TOK } },
+    { id: 'SPAY-G002', data: { id: 'SPAY-G002', paymentDate: '2026-09-10', supplierName: 'Void Supplier', currency: 'MWK', amount: 5000, paymentMethod: 'Cash', status: 'Voided', verificationToken: TOK } },
+  ],
+  statement_snapshots: [
+    { id: 'STMT-G001', data: { id: 'STMT-G001', statementNumber: 'STMT-G001', statementDate: '2026-09-12', periodStart: '2026-08-01', periodEnd: '2026-08-31', customerId: 'CUST-1', customerName: 'Stmt School', email: 'private@example.com', phone: '+265000', currency: 'MWK', openingBalance: 100, transactions: [{ date: '2026-08-05', reference: 'INV-1', debit: 500, credit: 0, runningBalance: 600 }], totalInvoiced: 500, totalReceived: 200, closingBalance: 400, status: 'VALID', verificationToken: TOK } },
+    { id: 'STMT-G002', data: { id: 'STMT-G002', statementNumber: 'STMT-G002', statementDate: '2026-08-12', periodStart: '2026-07-01', periodEnd: '2026-07-31', customerId: 'CUST-1', customerName: 'Stmt School', currency: 'MWK', openingBalance: 0, transactions: [], totalInvoiced: 0, totalReceived: 0, closingBalance: 0, status: 'SUPERSEDED', supersededBy: 'STMT-G001', verificationToken: TOK } },
   ],
 };
 
@@ -120,6 +133,55 @@ describe('generic document verification', () => {
     assert.equal(res.body.supplierName, 'Paper Supplier');
   });
 
+  it('purchase order verifies from the canonical purchase_orders table', async () => {
+    const res = await request(app).get(good('purchase_order', 'PO-G002', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.purchaseOrderNumber, 'PO-G002');
+    assert.equal(res.body.supplierName, 'Canonical Supplier');
+    assert.equal(res.body.total, 120000);
+  });
+
+  it('canonical purchase_orders wins over legacy purchases for the same number', async () => {
+    const res = await request(app).get(good('purchase_order', 'PO-G003', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.supplierName, 'Canonical Supplier');
+    assert.equal(res.body.total, 2000);
+  });
+
+  it('supplier payment verifies with safe payment shape', async () => {
+    const res = await request(app).get(good('supplier_payment', 'SPAY-G001', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.verified, true);
+    assert.equal(res.body.paymentNumber, 'SPAY-G001');
+    assert.equal(res.body.amount, 25000);
+    assert.equal(res.body.paymentMethod, 'Bank Transfer');
+    assert.equal(res.body.status, 'PAID');
+  });
+
+  it('voided supplier payment verifies as VOID', async () => {
+    const res = await request(app).get(good('supplier_payment', 'SPAY-G002', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.status, 'VOID');
+  });
+
+  it('statement verifies the snapshot summary only (no transactions, no contacts)', async () => {
+    const res = await request(app).get(good('statement', 'STMT-G001', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.verified, true);
+    assert.equal(res.body.statementNumber, 'STMT-G001');
+    assert.equal(res.body.closingBalance, 400);
+    assert.equal(res.body.status, 'VALID');
+    assert.ok(!('transactions' in res.body), 'transaction history must not be exposed');
+  });
+
+  it('superseded statement verifies as authentic with SUPERSEDED status (flat data.status contract)', async () => {
+    const res = await request(app).get(good('statement', 'STMT-G002', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.verified, true);
+    assert.equal(res.body.status, 'SUPERSEDED');
+    assert.equal(res.body.statementNumber, 'STMT-G002');
+  });
+
   it('delivery note verifies with reference', async () => {
     const res = await request(app).get(good('delivery_note', 'DN-G001', TOK));
     assert.equal(res.status, 200);
@@ -166,14 +228,18 @@ describe('generic document verification', () => {
     const allowed = new Set([
       'verified', 'documentType', 'invoiceNumber', 'invoiceDate', 'receiptNumber', 'receiptDate',
       'quotationNumber', 'quotationDate', 'orderNumber', 'orderDate', 'purchaseOrderNumber',
-      'deliveryNoteNumber', 'deliveryDate', 'companyName', 'customerName', 'supplierName',
+      'deliveryNoteNumber', 'deliveryDate', 'paymentNumber', 'paymentDate',
+      'statementNumber', 'statementDate', 'statementPeriodStart', 'statementPeriodEnd',
+      'companyName', 'customerName', 'supplierName',
       'currency', 'subtotal', 'tax', 'total', 'amount', 'amountPaid', 'balanceDue',
+      'openingBalance', 'totalInvoiced', 'totalReceived', 'closingBalance',
       'paymentMethod', 'reference', 'validUntil', 'status',
     ]);
-    const forbidden = ['password', 'email', 'phone', 'address', 'audit', 'journal', 'ledger', 'verificationToken', 'token', 'secret', 'supabase', 'user_id', 'sync'];
+    const forbidden = ['password', 'email', 'phone', 'address', 'audit', 'journal', 'ledger', 'verificationToken', 'token', 'secret', 'supabase', 'user_id', 'sync', 'accountid', 'glaccount', 'transactions', 'customerid', 'supersededby'];
     const cases = [
       ['invoice', 'INV-G001'], ['receipt', 'PAY-G001'], ['quotation', 'QTN-G001'],
       ['sales_order', 'SO-G001'], ['purchase_order', 'PO-G001'], ['delivery_note', 'DN-G001'],
+      ['supplier_payment', 'SPAY-G001'], ['statement', 'STMT-G001'],
     ];
     for (const [type, num] of cases) {
       const res = await request(app).get(good(type, num, TOK));

@@ -214,6 +214,11 @@ export const buildCustomerReceiptDoc = ({
   const narrative = snap.narrative || buildNarrative(adjustedSnap, resolvedCustomerName, currencySymbol, resolvedOrders);
 
   return {
+    // Verification identity: carried from the stored payment record so the
+    // receipt QR encodes the public verification URL. Untokened (legacy)
+    // records omit it and keep the legacy QR payload.
+    documentType: 'receipt',
+    ...((payment as any)?.verificationToken ? { verificationToken: String((payment as any).verificationToken) } : {}),
     receiptNumber: payment.id,
     date: toDisplayDate(payment.date),
     customerName: resolvedCustomerName,
@@ -309,12 +314,22 @@ export const buildSupplierPaymentDoc = (
   payment: SupplierPayment,
   supplierName: string
 ) => {
+  const record = payment as any;
   return {
+    // Verification identity: the stored payment's stable token + explicit
+    // type + official payment number. Untokened records omit the token and
+    // keep the legacy QR payload (backward compatible).
+    documentType: 'supplier_payment',
+    ...(record?.verificationToken ? { verificationToken: String(record.verificationToken) } : {}),
     paymentId: payment.id,
+    // The ERP treats the payment record id as the official payment number;
+    // an explicit paymentNumber (new records) takes precedence for display.
+    paymentNumber: String(record?.paymentNumber || payment.id),
     date: toDisplayDate(payment.date),
     supplierName,
     amountPaid: round2(payment.amount),
     paymentMethod: payment.paymentMethod,
+    status: String(record?.status || 'Cleared'),
     appliedInvoices: (payment.allocations || []).map((allocation: any) => allocation.purchaseId),
     narrative: payment.notes
   };

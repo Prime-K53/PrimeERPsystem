@@ -7,6 +7,7 @@ import { transactionService } from '../services/transactionService';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
 import { DEFAULT_ACCOUNTS } from '../constants';
 import { generateNextId } from '../utils/helpers';
+import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { customerNotificationService } from '../services/customerNotificationService';
 import { logger } from '../services/logger';
 import { isSupabaseConfigured } from '../services/cloudMode';
@@ -427,11 +428,14 @@ addInvoice: async (invoice) => {
       await api.finance.deleteCheque(id);
   },
   
-  recordSupplierPayment: async (payment) => {
-      const newPayment = { ...payment, id: payment.id || generateNextId('SP', get().supplierPayments) };
-      set(state => ({ supplierPayments: [...state.supplierPayments, newPayment] }));
-      await api.finance.recordSupplierPayment(newPayment);
-  },
+   recordSupplierPayment: async (payment) => {
+       // Issue the permanent verification token up-front so the in-memory
+       // record, the persisted row and the first voucher/QR all share it.
+       const base = { ...payment, id: payment.id || generateNextId('SP', get().supplierPayments) } as SupplierPayment & { verificationToken?: string };
+       const newPayment = ensureDocumentVerificationToken(base);
+       set(state => ({ supplierPayments: [...state.supplierPayments, newPayment] }));
+       await api.finance.recordSupplierPayment(newPayment);
+   },
   updateSupplierPayment: async (payment) => {
       set(state => ({ supplierPayments: state.supplierPayments.map(p => p.id === payment.id ? payment : p) }));
       await api.finance.updateSupplierPayment(payment);

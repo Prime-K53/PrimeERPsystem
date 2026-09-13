@@ -18,25 +18,30 @@ const TYPE_TITLES: Record<string, string> = {
   sales_order: 'sales order',
   purchase_order: 'purchase order',
   delivery_note: 'delivery note',
+  supplier_payment: 'supplier payment',
+  statement: 'statement',
 };
 
-const TERMINAL_STATUSES = ['VOID', 'CANCELLED'];
+const TERMINAL_STATUSES = ['VOID', 'CANCELLED', 'SUPERSEDED'];
 
 const fmtMoney = (currency: string, n: number) =>
   `${currency} ${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const NUMBER_KEYS = [
   'invoiceNumber', 'receiptNumber', 'quotationNumber', 'orderNumber',
-  'purchaseOrderNumber', 'deliveryNoteNumber',
+  'purchaseOrderNumber', 'deliveryNoteNumber', 'paymentNumber',
+  'statementNumber',
 ];
 const DATE_KEYS = [
   'invoiceDate', 'receiptDate', 'quotationDate', 'orderDate',
   'paymentDate', 'deliveryDate', 'creditNoteDate', 'debitNoteDate',
+  'statementDate',
 ];
 
 const SKIP_KEYS = new Set([
   'verified', 'documentType', 'companyName', ...NUMBER_KEYS, ...DATE_KEYS,
   'customerName', 'supplierName', 'status',
+  'statementPeriodStart', 'statementPeriodEnd',
 ]);
 
 function fieldRows(data: VerificationData): Array<[string, string]> {
@@ -47,6 +52,9 @@ function fieldRows(data: VerificationData): Array<[string, string]> {
   const rows: Array<[string, string]> = [];
   if (numberKey) rows.push(['Document Number', String(data[numberKey] ?? '')]);
   if (dateKey) rows.push(['Date', String(data[dateKey] ?? '')]);
+  if (data.statementPeriodStart !== undefined || data.statementPeriodEnd !== undefined) {
+    rows.push(['Statement Period', `${String(data.statementPeriodStart ?? '')} – ${String(data.statementPeriodEnd ?? '')}`]);
+  }
   rows.push([party, String(partyValue)]);
   for (const [key, value] of Object.entries(data)) {
     if (SKIP_KEYS.has(key) || value === undefined || value === null || value === '') continue;
@@ -169,12 +177,16 @@ export const DocumentVerify: React.FC<{ forcedType?: string; forcedNumber?: stri
 
   if (state.kind === 'terminal') {
     const d = state.data;
-    const cancelled = String(d.status || '').toUpperCase() === 'CANCELLED';
+    const upperStatus = String(d.status || '').toUpperCase();
+    const cancelled = upperStatus === 'CANCELLED';
+    const superseded = upperStatus === 'SUPERSEDED';
     return shell(
       <>
         {head(
-          cancelled ? '⊘ Cancelled document' : '⊘ Void document',
-          `This ${typeTitle} was issued by Prime Printing but has subsequently been ${cancelled ? 'cancelled' : 'voided'}.`
+          cancelled ? '⊘ Cancelled document' : superseded ? '⊘ Superseded document' : '⊘ Void document',
+          superseded
+            ? `This ${typeTitle} was issued by Prime Printing but has subsequently been superseded by a newer statement. Only the latest statement is current.`
+            : `This ${typeTitle} was issued by Prime Printing but has subsequently been ${cancelled ? 'cancelled' : 'voided'}.`
         )}
         <div>
           {fieldRows(d).slice(0, 3).map(([k, v]) => (

@@ -5,6 +5,7 @@ const router = express.Router();
 const repoCanonical = require('../services/supabaseCanonicalRepository.cjs');
 const portalAuthService = require('../services/portalAuthService.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
+const customerRegistrationService = require('../services/customerRegistrationService.cjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const { canUseHeaderAuth, getHeaderAuthUser } = require('../middleware/auth.cjs');
@@ -439,6 +440,96 @@ router.post('/requests/:id/complete-order', async (req, res) => {
   } catch (err) {
     console.error('[PortalAdmin] Complete order error:', err);
     res.status(400).json({ error: err.message || 'Failed to complete sales order' });
+  }
+});
+
+// ─── Customer Registration Requests (approval-gated intake) ─────────────────
+// Public portal applications live EXCLUSIVELY in
+// `customer_registration_requests` — never in `customers` — until a future
+// approval phase creates the official CUST-XXXX customer + credentials.
+// There is deliberately NO approve endpoint yet: customer/credential
+// creation belongs to the next dedicated implementation phase.
+//
+// Authorization: verifyAdminAuth (router-level) proves a valid staff JWT,
+// but portal_customer tokens share JWT_SECRET, so these routes additionally
+// reject non-staff roles. Recommended future role: Admin / Manager.
+function requireStaffForRegistration(req, res, next) {
+  const role = String(req.user && req.user.role ? req.user.role : '').toLowerCase();
+  if (!req.user || role === '' || role === 'anonymous' || role === 'portal_customer') {
+    return res.status(403).json({ error: 'Access denied', message: 'Staff authorization required' });
+  }
+  next();
+}
+
+router.get('/registration-requests', requireStaffForRegistration, async (req, res) => {
+  try {
+    const { status, search, referredByCode, referred_by_code, dateFrom, date_from, dateTo, date_to } = req.query || {};
+    const data = await customerRegistrationService.listRequests({
+      status: status || undefined,
+      search: search || undefined,
+      referredByCode: referredByCode || referred_by_code || undefined,
+      dateFrom: dateFrom || date_from || undefined,
+      dateTo: dateTo || date_to || undefined,
+    });
+    res.json(data.map(customerRegistrationService.toAdminDto));
+  } catch (err) {
+    console.error('[PortalAdmin] List registration requests error:', err);
+    res.status(500).json({ error: 'Failed to load registration requests' });
+  }
+});
+
+router.get('/registration-requests/:id', requireStaffForRegistration, async (req, res) => {
+  try {
+    const data = await customerRegistrationService.getRequestById(req.params.id);
+    if (!data) return res.status(404).json({ error: 'Registration request not found' });
+    res.json(customerRegistrationService.toAdminDto(data));
+  } catch (err) {
+    console.error('[PortalAdmin] Registration request detail error:', err);
+    res.status(500).json({ error: 'Failed to load registration request' });
+  }
+});
+
+router.post('/registration-requests/:id/reject', requireStaffForRegistration, async (req, res) => {
+  try {
+    const { admin_notes, adminNotes } = req.body || {};
+    const notes = admin_notes !== undefined ? admin_notes : adminNotes;
+    if (!notes || String(notes).trim() === '') {
+      return res.status(400).json({ error: 'admin_notes is required to reject a registration request' });
+    }
+    const data = await customerRegistrationService.rejectRequest(req.params.id, {
+      reviewedBy: req.user.id,
+      adminNotes: String(notes),
+      actor: { type: 'admin', id: req.user.id, name: req.user.username || req.user.email || 'ERP Staff', role: req.user.role },
+      context: requestContext(req),
+    });
+    res.json(customerRegistrationService.toAdminDto(data));
+  } catch (err) {
+    console.error('[PortalAdmin] Reject registration request error:', err);
+    const message = err.message || 'Failed to reject registration request';
+    const status = /not found/i.test(message) ? 404 : /Invalid registration request transition/.test(message) ? 409 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+router.post('/registration-requests/:id/approve', requireStaffForRegistration, async (req, res) => {
+  try {
+    const { admin_notes, adminNotes } = req.body || {};
+    const notes = admin_notes !== undefined ? admin_notes : adminNotes;
+    const data = await customerRegistrationService.approveRequest(req.params.id, {
+      reviewedBy: req.user.id,
+      adminNotes: notes !== undefined ? String(notes) : undefined,
+      actor: { type: 'admin', id: req.user.id, name: req.user.username || req.user.email || 'ERP Staff', role: req.user.role },
+      context: requestContext(req),
+    });
+    if (data && data.alreadyApproved) {
+      return res.status(409).json({ error: 'Registration request already approved', request: data.request, linkedCustomerId: data.linkedCustomerId });
+    }
+    res.json(data);
+  } catch (err) {
+    console.error('[PortalAdmin] Approve registration request error:', err);
+    const message = err.message || 'Failed to approve registration request';
+    const status = /not found/i.test(message) ? 404 : /Invalid registration request transition/.test(message) ? 409 : 400;
+    res.status(status).json({ error: message });
   }
 });
 

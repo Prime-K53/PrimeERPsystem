@@ -17,6 +17,8 @@ import { mapToInvoiceData } from '../../../utils/pdfMapper';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import { downloadBlob } from '../../../utils/helpers';
 import { attachDocumentSecurity } from '../../../utils/documentSecurity';
+import { ensureDocumentVerificationToken } from '../../../utils/documentVerification';
+import { dbService } from '../../../services/db';
 import { TableEmptyState } from '../../../components/EmptyState';
 
 const paper = '#FEFDFB';
@@ -315,7 +317,18 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
     const handleDownloadPDF = async (po: Purchase) => {
         try {
             notify("Preparing Purchase Order PDF...", "info");
-            const enriched = enrichPO(po);
+            // Stable verification identity (issued once, persisted for sync).
+            let tokened: any = po;
+            if (!(po as any)?.verificationToken) {
+                const withToken = ensureDocumentVerificationToken({ ...(po as any) });
+                try {
+                    await dbService.put('purchases', withToken as any);
+                } catch (err) {
+                    logger.warn('[PurchaseHistory] Token backfill persist failed:', err);
+                }
+                tokened = withToken;
+            }
+            const enriched = enrichPO(tokened);
             const pdfData = mapToInvoiceData(enriched, companyConfig, 'PO');
             const securedPdfData = await attachDocumentSecurity(pdfData, companyConfig?.companyName);
             await initializePrimePdfFonts();

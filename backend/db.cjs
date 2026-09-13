@@ -2209,6 +2209,47 @@ reorder_of TEXT,
       // the column migrations — SQLite re-prepares every trigger when a table is
       // renamed, so all columns referenced by triggers must exist first.
 
+      // Public portal customer-registration requests (approval-gated intake).
+      // Pending requests live EXCLUSIVELY here — never in `customers` — so
+      // they cannot leak into the Customer List, AR/debtors, selectors,
+      // statements, sales, payments, reports, or accounting. Local SQLite
+      // mirror of supabase/migrations/0021_customer_registration_requests.sql.
+      // No password / hash / token material is ever stored in this table.
+      db.run(`CREATE TABLE IF NOT EXISTS customer_registration_requests (
+        id TEXT PRIMARY KEY,
+        request_number TEXT UNIQUE NOT NULL,
+        company_name TEXT NOT NULL,
+        contact_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        phone TEXT,
+        tier TEXT,
+        referred_by_code TEXT,
+        referred_by_id TEXT,
+        referred_by_name TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'cancelled')),
+        note TEXT,
+        submitted_at TEXT,
+        created_by TEXT,
+        assigned_to TEXT,
+        assigned_at TEXT,
+        reviewed_by TEXT,
+        reviewed_at TEXT,
+        admin_notes TEXT,
+        linked_customer_id TEXT,
+        idempotency_key TEXT,
+        deleted_at TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_creg_status ON customer_registration_requests(status)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_creg_email ON customer_registration_requests(email)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_creg_phone ON customer_registration_requests(phone)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_creg_referred_by_code ON customer_registration_requests(referred_by_code)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_creg_created ON customer_registration_requests(created_at)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_creg_linked_customer ON customer_registration_requests(linked_customer_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_creg_request_number ON customer_registration_requests(request_number)`);
+      db.run(`CREATE UNIQUE INDEX IF NOT EXISTS uq_creg_pending_email ON customer_registration_requests(email) WHERE status = 'pending'`);
+
       // Portal document lifecycle — official quotations (backend-authoritative, customer read-only)
       db.run(`CREATE TABLE IF NOT EXISTS quotations (
         id TEXT PRIMARY KEY,

@@ -1,6 +1,9 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { logger } from '@/services/logger';
-import { X, FileText, Package, Ship, Landmark, ChevronRight, History as LucideHistory, Printer, Building2, Eye, Loader2, Download } from 'lucide-react';
+import { X, FileText, Package, Ship, Landmark, ChevronRight, History as LucideHistory, Printer, Building2, Eye, Loader2, Download, Link2, ExternalLink } from 'lucide-react';
+import { buildDocumentVerificationUrl, ensureDocumentVerificationToken } from '../../../utils/documentVerification';
+import { transactionService } from '../../../services/transactionService';
+import { dbService } from '../../../services/db';
 import { Purchase, LandingCostItem } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
@@ -72,6 +75,47 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
     const landingTotal = (purchase.landingCosts || []).reduce((s, c) => s + (c.amount || 0), 0);
     const isPaid = purchase.paymentStatus === 'Paid';
 
+    /**
+     * Permanent verification identity for this purchase order. Issued once
+     * (persisted through dbService so it syncs to purchase_orders); every
+     * later render reuses it — PDF regeneration, edits, prints and emails
+     * never rotate it. Presentation-only fields are never persisted.
+     */
+    const ensurePurchaseToken = async () => {
+        const existing = String((purchase as any)?.verificationToken || '').trim();
+        if (existing) return { ...purchaseWithVendor, verificationToken: existing };
+        const withToken = ensureDocumentVerificationToken({ ...(purchase as any) });
+        try {
+            await dbService.put('purchases', withToken as any);
+        } catch (err) {
+            logger.warn('[PurchaseOrderDetail] Token backfill persist failed (QR still uses in-memory token):', err);
+        }
+        return { ...purchaseWithVendor, verificationToken: String((withToken as any).verificationToken || '') };
+    };
+
+    const handleCopyVerificationLink = async () => {
+        try {
+            const { token } = await transactionService.getOrIssueDocumentVerificationToken('purchases', purchase.id);
+            const url = buildDocumentVerificationUrl({ documentType: 'purchase_order', documentNumber: purchase.id, verificationToken: token });
+            if (!url) throw new Error('unavailable');
+            await navigator.clipboard.writeText(url);
+            notify('Verification link copied', 'success');
+        } catch {
+            notify('Verification link unavailable', 'error');
+        }
+    };
+
+    const handleOpenVerification = async () => {
+        try {
+            const { token } = await transactionService.getOrIssueDocumentVerificationToken('purchases', purchase.id);
+            const url = buildDocumentVerificationUrl({ documentType: 'purchase_order', documentNumber: purchase.id, verificationToken: token });
+            if (!url) throw new Error('unavailable');
+            window.open(url, '_blank', 'noopener');
+        } catch {
+            notify('Verification link unavailable', 'error');
+        }
+    };
+
     const handleUpdateLandingCosts = (costs: LandingCostItem[]) => { updatePurchase({ ...purchase, landingCosts: costs }); };
     const handleEmail = () => { notify(`Email functionality for vendors is currently being updated.`, "info"); };
     const handleCancel = () => {
@@ -81,7 +125,8 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
     const handleDownloadPDF = async () => {
         try {
             notify("Preparing Purchase Order PDF...", "info");
-            const pdfData = mapToInvoiceData(purchaseWithVendor, companyConfig, 'PO');
+            const tokened = await ensurePurchaseToken();
+            const pdfData = mapToInvoiceData(tokened, companyConfig, 'PO');
             const securedPdfData = await attachDocumentSecurity(pdfData, companyConfig?.companyName);
             await initializePrimePdfFonts();
             const blob = await pdf(<PrimeDocument type="PO" data={securedPdfData} />).toBlob();
@@ -129,8 +174,10 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
                         </div>
                     </div>
                     <div style={{display:'flex',gap:8}}>
-                        <button onClick={()=>{onClose();handlePreview('PO',purchaseWithVendor);}} style={{padding:9,borderRadius:10,border:`1px solid ${teal[100]}`,background:teal[50],color:teal[600],cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background=teal[100];e.currentTarget.style.borderColor=teal[300]}} onMouseLeave={e=>{e.currentTarget.style.background=teal[50];e.currentTarget.style.borderColor=teal[100]}} title="Preview PDF"><Eye size={19}/></button>
+                        <button onClick={async ()=>{const tokened = await ensurePurchaseToken();onClose();handlePreview('PO',tokened);}} style={{padding:9,borderRadius:10,border:`1px solid ${teal[100]}`,background:teal[50],color:teal[600],cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background=teal[100];e.currentTarget.style.borderColor=teal[300]}} onMouseLeave={e=>{e.currentTarget.style.background=teal[50];e.currentTarget.style.borderColor=teal[100]}} title="Preview PDF"><Eye size={19}/></button>
                         <button onClick={handleDownloadPDF} style={{padding:9,borderRadius:10,border:`1px solid ${hairline}`,background:paper,color:inkSoft,cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background='#f5f4f0';e.currentTarget.style.borderColor='#d4cdc2'}} onMouseLeave={e=>{e.currentTarget.style.background=paper;e.currentTarget.style.borderColor=hairline}} title="Download PDF"><Download size={19}/></button>
+                        <button onClick={()=>{void handleCopyVerificationLink();}} style={{padding:9,borderRadius:10,border:`1px solid ${hairline}`,background:paper,color:inkSoft,cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background=teal[50];e.currentTarget.style.borderColor=teal[200]}} onMouseLeave={e=>{e.currentTarget.style.background=paper;e.currentTarget.style.borderColor=hairline}} title="Copy Verification Link"><Link2 size={19}/></button>
+                        <button onClick={()=>{void handleOpenVerification();}} style={{padding:9,borderRadius:10,border:`1px solid ${hairline}`,background:paper,color:inkSoft,cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background=teal[50];e.currentTarget.style.borderColor=teal[200]}} onMouseLeave={e=>{e.currentTarget.style.background=paper;e.currentTarget.style.borderColor=hairline}} title="View Verification"><ExternalLink size={19}/></button>
                         <AIDocumentSummarizer docType="Purchase Order" data={purchase} label="Summary" color="#1f8577" />
                         <button onClick={onClose} style={{padding:9,borderRadius:10,border:'1px solid transparent',background:'transparent',color:inkSoft,cursor:'pointer',display:'inline-flex',transition:'all .12s ease'}} onMouseEnter={e=>{e.currentTarget.style.background='#fdf2f2';e.currentTarget.style.color='#b5493f';e.currentTarget.style.borderColor='#f5c6c6'}} onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.color=inkSoft;e.currentTarget.style.borderColor='transparent'}}><X size={22}/></button>
                     </div>

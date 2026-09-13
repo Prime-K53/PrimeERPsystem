@@ -30,8 +30,16 @@ const resolveDocumentNumber = (data: any) =>
     data?.number
     || data?.invoiceNumber
     || data?.orderNumber
+    || data?.order_number
     || data?.receiptNumber
+    || data?.quotationNumber
+    || data?.quotationId
+    || data?.dnNumber
+    || data?.deliveryNoteNumber
+    || data?.delivery_number
+    || data?.paymentNumber
     || data?.paymentId
+    || data?.statementNumber
     || data?.exchangeNumber
     || data?.reportName
     || 'N/A'

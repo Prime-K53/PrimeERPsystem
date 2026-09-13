@@ -28,6 +28,7 @@ import {
     buildPosReceiptDoc,
     buildSupplierPaymentDoc
 } from '../../services/receiptCalculationService';
+import { createStatementSnapshot } from '../../services/statementService';
 
 /**
  * Customer Payment Hover Card
@@ -193,6 +194,7 @@ interface SupplierDetailPanelProps {
 const SupplierDetailPanel: React.FC<SupplierDetailPanelProps> = ({ payment, onClose, onVoid }) => {
     const { companyConfig } = useAuth();
     const { suppliers } = useProcurement();
+    const { copyVerificationLink, openVerificationLink } = useDocumentVerificationLink();
     const currency = companyConfig.currencySymbol;
 
     if (!payment) return null;
@@ -207,6 +209,20 @@ const SupplierDetailPanel: React.FC<SupplierDetailPanelProps> = ({ payment, onCl
                     <p className="text-[10px] font-mono font-bold text-[#5c6567] uppercase">{payment.id}</p>
                 </div>
                 <div className="flex gap-2">
+                    <button
+                        onClick={() => { void copyVerificationLink('supplier_payment', 'supplierPayments', payment.id, (payment as any).paymentNumber || payment.id); }}
+                        className="p-2 text-[#5c6567] hover:text-[#1f8577] rounded-lg hover:bg-[#eef7f6] transition-all"
+                        title="Copy Verification Link"
+                    >
+                        <Link2 size={18} />
+                    </button>
+                    <button
+                        onClick={() => { void openVerificationLink('supplier_payment', 'supplierPayments', payment.id, (payment as any).paymentNumber || payment.id); }}
+                        className="p-2 text-[#5c6567] hover:text-[#1f8577] rounded-lg hover:bg-[#eef7f6] transition-all"
+                        title="View Verification"
+                    >
+                        <ExternalLink size={18} />
+                    </button>
                     <button
                         onClick={() => { if (confirm("Void this supplier payment?")) onVoid(payment.id); }}
                         className="p-2 text-[#5c6567] hover:text-[#b5493f] rounded-lg hover:bg-[#fef2f2] transition-all"
@@ -614,6 +630,7 @@ const Payments: React.FC = () => {
     const { suppliers } = useProcurement();
     const { postJournalEntry, supplierPayments = [], recordSupplierPayment, updateSupplierPayment, voidSupplierPayment } = useFinance();
     const { purchases = [] } = useProcurement();
+    const { copyVerificationLink, openVerificationLink } = useDocumentVerificationLink();
     const { accounts: bankAccounts, fetchBankingData } = useBankingStore();
     const currency = companyConfig.currencySymbol;
     const location = useLocation();
@@ -807,22 +824,34 @@ const Payments: React.FC = () => {
             const totalDebits = entries.reduce((s, e) => s + e.debit, 0);
             const totalCredits = entries.reduce((s, e) => s + e.credit, 0);
 
+            // Freeze an immutable snapshot: the QR verifies THIS statement,
+            // never the customer's live balance.
+            const snapshot = await createStatementSnapshot({
+                customerId,
+                customerName,
+                periodStart: startDate,
+                periodEnd: endDate,
+                currency,
+                openingBalance,
+                transactions,
+                totalInvoiced: totalDebits,
+                totalReceived: totalCredits,
+                closingBalance: currentRunningBalance
+            }, companyConfig);
+
             setPreviewState({
                 isOpen: true,
                 type: 'ACCOUNT_STATEMENT',
                 data: {
-                    date: new Date().toLocaleDateString('en-GB'),
-                    customerName: customerName,
-                    startDate: new Date(startDate).toLocaleDateString('en-GB'),
-                    endDate: new Date(endDate).toLocaleDateString('en-GB'),
-                    currency: currency,
-                    openingBalance,
-                    transactions,
-                    totalInvoiced: totalDebits,
-                    totalReceived: totalCredits,
-                    finalBalance: currentRunningBalance
+                    ...snapshot,
+                    date: snapshot.statementDate,
+                    documentType: 'statement',
+                    startDate: snapshot.periodStart,
+                    endDate: snapshot.periodEnd,
+                    finalBalance: snapshot.closingBalance
                 }
             });
+            notify(`Statement ${snapshot.statementNumber} issued`, "success");
         } catch (err) {
             logger.error('Failed to generate statement:', err);
             notify("Failed to generate statement preview", "error");
@@ -2028,6 +2057,26 @@ const Payments: React.FC = () => {
                                                         title="View Voucher"
                                                     >
                                                         <Eye size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            void copyVerificationLink('supplier_payment', 'supplierPayments', payment.id, (payment as any).paymentNumber || payment.id);
+                                                        }}
+                                                        className="p-1.5 text-[#5c6567] hover:text-[#1f8577] rounded-lg transition-colors mr-1"
+                                                        title="Copy Verification Link"
+                                                    >
+                                                        <Link2 size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            void openVerificationLink('supplier_payment', 'supplierPayments', payment.id, (payment as any).paymentNumber || payment.id);
+                                                        }}
+                                                        className="p-1.5 text-[#5c6567] hover:text-[#1f8577] rounded-lg transition-colors mr-1"
+                                                        title="View Verification"
+                                                    >
+                                                        <ExternalLink size={14} />
                                                     </button>
                                                     <button
                                                         onClick={(e) => {

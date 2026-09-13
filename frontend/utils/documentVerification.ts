@@ -7,11 +7,22 @@
  *
  * Supported types (only documents with a stable number + persistent record
  * + existing PDF representation — see module docs per type):
- *   invoice, receipt, quotation, sales_order, purchase_order, delivery_note
+ *   invoice, receipt, quotation, sales_order, purchase_order, delivery_note,
+ *   supplier_payment, statement
+ *
+ * supplier_payment: official Supplier Payment voucher (supplierPayments
+ * store -> supplier_payments table). The ERP treats the payment record id
+ * as the official payment number (shown in every payment view, hover card
+ * and ledger description), with an optional explicit `paymentNumber`.
+ * Status comes from the payment's own status field (Cleared/Pending/
+ * Voided); voided payments verify as VOID.
+ *
+ * statement: immutable statement snapshot (statementSnapshots store ->
+ * statement_snapshots table). The QR verifies THAT snapshot (number +
+ * period + frozen totals), never live customer data.
  *
  * Intentionally NOT enabled: credit_note (pseudo-status on invoice rows, no
- * own number/store/PDF), debit_note (no infrastructure), supplier_payment
- * (no status field), statement (generated on the fly, no persistent record).
+ * own number/store/PDF), debit_note (no infrastructure).
  *
  * URL shape (HashRouter SPA):
  *   {base}/#/verify/{type-slug}/{documentNumber}?t={token}
@@ -26,7 +37,9 @@ export type VerifiableDocumentType =
   | 'quotation'
   | 'sales_order'
   | 'purchase_order'
-  | 'delivery_note';
+  | 'delivery_note'
+  | 'supplier_payment'
+  | 'statement';
 
 export const SUPPORTED_DOCUMENT_TYPES: VerifiableDocumentType[] = [
   'invoice',
@@ -35,6 +48,8 @@ export const SUPPORTED_DOCUMENT_TYPES: VerifiableDocumentType[] = [
   'sales_order',
   'purchase_order',
   'delivery_note',
+  'supplier_payment',
+  'statement',
 ];
 
 /** URL slug per type (matches the frontend verify routes). */
@@ -45,6 +60,8 @@ const TYPE_SLUGS: Record<VerifiableDocumentType, string> = {
   sales_order: 'sales-order',
   purchase_order: 'purchase-order',
   delivery_note: 'delivery-note',
+  supplier_payment: 'supplier-payment',
+  statement: 'statement',
 };
 
 const SLUG_TO_TYPE: Record<string, VerifiableDocumentType> = Object.fromEntries(
@@ -122,9 +139,16 @@ export function buildDocumentVerificationUrl(
  * Detect the document type of PDF payload data for QR routing.
  * Explicit `documentType` wins, then official number fields, then the
  * namespaced id prefixes from the existing numbering module (INV-/QTN-/
- * SO-/ORD-/PO-/DN-/PAY-). Returns null when the data is not a verifiable
- * document (legacy payload). A wrong guess is fail-closed: verification
- * looks the number up in that type's table and returns generic 404.
+ * SO-/ORD-/PO-/DN-/PAY-/SPAY-/STMT-). Returns null when the data is not a
+ * verifiable document (legacy payload). A wrong guess is fail-closed:
+ * verification looks the number up in that type's table and returns
+ * generic 404.
+ *
+ * Ambiguity rule: bare PAY- numbers stay customer receipts; supplier
+ * payments are detected ONLY via explicit documentType, the paymentNumber/
+ * paymentId + supplierName pairing, or the SPAY- prefix. Statements are
+ * detected ONLY via explicit documentType or a statementNumber field —
+ * never from customer/ledger text.
  */
 export function detectVerifiableDocumentType(data: any): VerifiableDocumentType | null {
   if (!data || typeof data !== 'object') return null;
@@ -135,7 +159,11 @@ export function detectVerifiableDocumentType(data: any): VerifiableDocumentType 
   if (data.orderNumber && String(data.orderNumber).startsWith('SO-')) return 'sales_order';
   if (data.order_number || (data.orderNumber && String(data.orderNumber).startsWith('PO-'))) return 'purchase_order';
   if (data.dnNumber || data.deliveryNoteNumber || data.delivery_number) return 'delivery_note';
-  const id = String(data.id || data.number || '');
+  if (data.statementNumber) return 'statement';
+  if ((data.paymentNumber || data.paymentId) && (data.supplierName || data.supplier_id || data.supplierId)) return 'supplier_payment';
+  const id = String(data.paymentNumber || data.paymentId || data.statementNumber || data.id || data.number || '');
+  if (/^STMT-/i.test(id)) return 'statement';
+  if (/^SPAY-/i.test(id)) return 'supplier_payment';
   if (/^INV-/i.test(id)) return 'invoice';
   if (/^QTN-/i.test(id)) return 'quotation';
   if (/^(SO-|ORD-)/i.test(id)) return 'sales_order';
@@ -160,6 +188,10 @@ export function resolveVerifiableDocumentNumber(data: any, type: VerifiableDocum
       return String(data?.order_number ?? data?.orderNumber ?? data?.number ?? data?.id ?? '').trim();
     case 'delivery_note':
       return String(data?.dnNumber ?? data?.deliveryNoteNumber ?? data?.delivery_number ?? data?.number ?? data?.id ?? '').trim();
+    case 'supplier_payment':
+      return String(data?.paymentNumber ?? data?.paymentId ?? data?.number ?? data?.id ?? '').trim();
+    case 'statement':
+      return String(data?.statementNumber ?? data?.number ?? data?.id ?? '').trim();
     default:
       return '';
   }

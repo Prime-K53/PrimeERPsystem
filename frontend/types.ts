@@ -1684,6 +1684,45 @@ export interface GoodsReceipt {
   [key: string]: any;
 }
 
+/**
+ * Immutable statement snapshot — the ONLY verifiable form of a customer
+ * statement. Generated from the ledger at issue time, frozen (frozen
+ * totals + frozen transaction list), and never mutated afterwards. Later
+ * customer activity does not alter it; corrections supersede it
+ * (status SUPERSEDED + supersededBy) and issue a new snapshot.
+ */
+export interface StatementSnapshotTransaction {
+  date: string;
+  reference: string;
+  memo?: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
+}
+
+export interface StatementSnapshot {
+  /** Stable identity — always equals statementNumber. */
+  id: string;
+  statementNumber: string;
+  statementDate: string;
+  periodStart: string;
+  periodEnd: string;
+  customerId: string;
+  customerName: string;
+  customerCode?: string;
+  currency: string;
+  openingBalance: number;
+  transactions: StatementSnapshotTransaction[];
+  totalInvoiced: number;
+  totalReceived: number;
+  closingBalance: number;
+  status: 'VALID' | 'SUPERSEDED' | 'VOID';
+  supersededBy?: string;
+  verificationToken?: string;
+  createdAt: string;
+  [key: string]: any;
+}
+
 export interface BOMComponent {
   id?: string;
   itemId: string;
