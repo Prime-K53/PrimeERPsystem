@@ -15,6 +15,7 @@ import {
 } from './schemas.ts';
 import { CompanyConfig } from '../../../../types.ts';
 import { resolvePdfLogoSource, resolvePdfQrCodeSource } from '../../../../utils/companyAssetUtils.ts';
+import { normalizeSignatureDataUrl } from '../../../../utils/signatureUtils.ts';
 import {
   getDefaultPaymentTermsLabel,
   getStoredCompanyConfig,
@@ -1815,6 +1816,15 @@ if (type === 'POS_RECEIPT') {
               <Text style={{ fontWeight: 'bold', textAlign: 'center', fontSize: mediumFontSize }}>Thank you for your business!</Text>
               <Text style={{ textAlign: 'center', fontSize: smallFontSize, marginTop: 6 * scale, color: '#999', textTransform: 'uppercase', letterSpacing: 0.6 * scale }}>Powered by Prime ERP</Text>
             </View>
+
+            {/* Compact verification QR only (thermal-printer friendly): the QR
+                encodes the receipt verification URL. Deliberately NOT the full
+                invoice-style security footer — QR + caption only. */}
+            {!!resolvePdfQrCodeSource(String((r as any).securityQrCodeDataUrl || '')) && (
+              <View style={{ marginTop: 10 * scale, borderTopWidth: 1, borderTopColor: '#000', borderTopStyle: 'dashed', paddingTop: 10 * scale, alignItems: 'center' }}>
+                {renderQrImage(String((r as any).securityQrCodeDataUrl || ''), 100 * scale)}
+              </View>
+            )}
           </View>
         </Page>
       </Document>
@@ -2663,11 +2673,25 @@ if (type === 'POS_RECEIPT') {
               <Text style={{ fontSize: 9 }}>Vehicle No: {('vehicleNo' in data ? data.vehicleNo : '____________________')}</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'flex-end' }}>
-              {Boolean(dataAny.signatureDataUrl || pod?.signatureDataUrl) ? (
-                <View style={{ height: 40, width: 100, marginBottom: 5 }} />
-              ) : (
-                <View style={{ height: 45 }} />
-              )}
+              {(() => {
+                // Recipient signature: render the stored data URL when it is
+                // a PDF-embeddable image (png/jpeg). Anything else (missing,
+                // malformed, or webp which react-pdf cannot embed) keeps the
+                // existing blank signature area — never a broken image.
+                const raw = String(dataAny.signatureDataUrl || (pod as any)?.signatureDataUrl || '');
+                const validated = normalizeSignatureDataUrl(raw);
+                const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || '').toLowerCase();
+                const renderable = validated && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg')
+                  ? validated
+                  : null;
+                return renderable ? (
+                  <View style={{ height: 40, width: 100, marginBottom: 5, alignItems: 'center', justifyContent: 'center' }}>
+                    <Image src={renderable} style={{ width: 100, height: 40, objectFit: 'contain' }} />
+                  </View>
+                ) : (
+                  <View style={{ height: 45 }} />
+                );
+              })()}
               <View style={[s.sigLine, { width: 180 }]} />
               <Text style={{ fontSize: 9 }}>Received By: {String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || '____________________')}</Text>
               <Text style={{ fontSize: 7, color: '#666' }}>Stamp & Signature</Text>

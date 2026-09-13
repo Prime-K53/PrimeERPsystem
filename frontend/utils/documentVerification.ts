@@ -202,3 +202,42 @@ export function ensureDocumentVerificationToken<T extends { verificationToken?: 
   if (!doc || doc.verificationToken) return doc;
   return { ...doc, verificationToken: generateVerificationToken() };
 }
+
+/**
+ * Local store backing each verifiable document type (single-company, no
+ * tenant scoping). Used by document-preparation paths to issue+persist the
+ * permanent verification token BEFORE mapping, so the QR always encodes the
+ * verification URL. Returns null for types with no directly stored record
+ * (e.g. POS_RECEIPT, which is represented by its linked receipt record).
+ */
+export function verificationStoreForDocType(docType: string): string | null {
+  switch (String(docType || '').toUpperCase()) {
+    case 'INVOICE':
+    case 'EXAMINATION_INVOICE':
+      return 'invoices';
+    case 'QUOTATION':
+      return 'quotations';
+    case 'ORDER':
+      return 'orders';
+    case 'SALES_ORDER':
+      return 'salesOrders';
+    case 'WORK_ORDER':
+      return 'jobOrders';
+    case 'DELIVERY_NOTE':
+      return 'deliveryNotes';
+    case 'PO':
+      return 'purchases';
+    case 'RECEIPT':
+      return 'customerPayments';
+    case 'SUPPLIER_PAYMENT':
+      return 'supplierPayments';
+    case 'SUBSCRIPTION':
+      return 'recurringInvoices';
+    case 'SALES_EXCHANGE':
+      return 'salesExchanges';
+    case 'ACCOUNT_STATEMENT':
+      return 'statementSnapshots';
+    default:
+      return null;
+  }
+}

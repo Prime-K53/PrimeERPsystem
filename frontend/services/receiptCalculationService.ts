@@ -247,6 +247,13 @@ export interface BuildPosReceiptDocInput {
   itemDescriptionFormatter?: (item: any) => string;
   footerMessage?: string;
   companyConfig?: any;
+  /**
+   * Official receipt backing this POS receipt (the customerPayments REC row
+   * created for the sale). When present, the POS QR encodes the existing
+   * receipt verification URL (/verify/receipt/<number>?t=<token>) — no
+   * second POS verification record is created.
+   */
+  receiptRef?: { receiptNumber: string; verificationToken?: string };
 }
 
 export const buildPosReceiptDoc = ({
@@ -255,7 +262,8 @@ export const buildPosReceiptDoc = ({
   customerName,
   itemDescriptionFormatter,
   footerMessage,
-  companyConfig
+  companyConfig,
+  receiptRef
 }: BuildPosReceiptDocInput) => {
   const totalPaid = round2(
     (sale.payments && sale.payments.length > 0)
@@ -269,7 +277,13 @@ export const buildPosReceiptDoc = ({
   const tax = round2(Number(sale.taxTotal || sale.taxDetails?.reduce((s: any, t: any) => s + (t.taxAmount || 0), 0) || 0));
 
   return {
-    receiptNumber: sale.id,
+    // Verification identity: the linked official receipt record's stable
+    // token + explicit type, so the POS QR encodes the public verification
+    // URL. POS sales without a linked receipt yet omit the token and keep
+    // the legacy QR payload (backward compatible).
+    documentType: 'receipt',
+    ...(receiptRef?.verificationToken ? { verificationToken: String(receiptRef.verificationToken) } : {}),
+    receiptNumber: receiptRef?.receiptNumber || sale.receiptNumber || sale.id,
     date: toDisplayDate(sale.date),
     cashierName: cashierName || 'Cashier',
     customerName: customerName || sale.customerName || 'Walk-in Customer',

@@ -1102,7 +1102,7 @@ export const transactionService = {
                         calculationVersion: snapshot.calculationVersion
                     };
 
-                    await customerPaymentsStore.put(custPayment);
+                    await customerPaymentsStore.put(ensureDocumentVerificationToken(custPayment as any));
                     tempPayments.push(custPayment);
                 }
 
@@ -1757,7 +1757,7 @@ export const transactionService = {
                         amountRetained: snapshot.amountRetained,
                         calculationVersion: snapshot.calculationVersion
                     };
-                    await customerPaymentsStore.put(custPayment);
+                    await customerPaymentsStore.put(ensureDocumentVerificationToken(custPayment as any));
 
                     let targetDebitAccount = gl.bankAccount;
                     if (paymentMethod === 'Wallet') {
@@ -2263,7 +2263,7 @@ export const transactionService = {
                         amountRetained: snapshot.amountRetained,
                         calculationVersion: snapshot.calculationVersion
                     };
-                    await customerPaymentsStore.put(custPayment);
+                    await customerPaymentsStore.put(ensureDocumentVerificationToken(custPayment as any));
 
                     let targetDebitAccount = gl.cashDrawerAccount;
                     if (paymentMethod === 'Wallet') {

@@ -43,6 +43,7 @@ import { buildRecurringDraftFromInvoice } from '../../utils/recurringConversion'
 import { buildCreditNoteDraftFromInvoice } from '../../utils/creditNoteDraft';
 import { enrichDocumentCustomerData } from '../../utils/documentCustomerData';
 import { attachDocumentSecurity } from '../../utils/documentSecurity';
+import { verificationStoreForDocType } from '../../utils/documentVerification';
 import { initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
 import { currencyService } from '../../services/currencyService';
 import { useConfirmDialog, ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
@@ -147,7 +148,7 @@ const Orders: React.FC = () => {
     const { inventory } = useInventory();
     const { boms } = useProduction();
 
-    const { createDeliveryNote, checkAndApplyLateFees, getInvoiceVerificationToken } = useFinance();
+    const { createDeliveryNote, checkAndApplyLateFees, getInvoiceVerificationToken, getDocumentVerificationToken } = useFinance();
     const { convertQuotationToWorkOrder, convertQuotationToJobTicket, convertOrderToJobTicket } = useSales();
     const { orders, cancelOrder, updateOrderStatus, recordPayment, createOrder, convertQuotationToOrder, deleteSalesOrder } = useOrders();
     const { confirm, ConfirmDialogComponent } = useConfirmDialog();
@@ -898,15 +899,24 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                 else if (activeView === 'Exchanges') type = 'SALES_EXCHANGE';
                 type = resolveDocumentType(item, type);
 
-                // Invoice QR hardening: the row object may predate verification
-                // tokens (or predate the on-open backfill refresh). Without a
-                // token the mapper omits it and the QR falls back to the legacy
-                // human-readable payload. Issue+persist first (normal save path).
-                if (type === 'INVOICE' && (item as any)?.id && !(item as any).verificationToken && getInvoiceVerificationToken) {
-                    try {
-                        const token = await getInvoiceVerificationToken(String((item as any).id));
-                        if (token) item = { ...(item as any), verificationToken: token };
-                    } catch { /* offline-safe: legacy payload until synced */ }
+                // Verification-QR hardening (all types): the row object may predate
+                // verification tokens (or predate an on-open backfill refresh).
+                // Without a token the mapper omits it and the QR falls back to
+                // the legacy human-readable payload. Issue+persist first
+                // (normal save path; never regenerates).
+                if ((item as any)?.id && !(item as any).verificationToken) {
+                    const backingStore = verificationStoreForDocType(type);
+                    if (backingStore) {
+                        try {
+                            const token =
+                                backingStore === 'invoices' && getInvoiceVerificationToken
+                                    ? await getInvoiceVerificationToken(String((item as any).id))
+                                    : getDocumentVerificationToken
+                                        ? await getDocumentVerificationToken(backingStore, String((item as any).id))
+                                        : null;
+                            if (token) item = { ...(item as any), verificationToken: token };
+                        } catch { /* offline-safe: legacy payload until synced */ }
+                    }
                 }
 
                 const enrichedItem = enrichDocumentCustomerData(item, customers);

@@ -625,7 +625,7 @@ const Payments: React.FC = () => {
     const { refreshAllData } = useData();
     const { companyConfig, notify, user, allUsers } = useAuth();
     const { customerPayments, addCustomerPayment, updateCustomerPayment, deleteCustomerPayment, permanentlyDeleteCustomerPayment, customers, sales, addCustomer, updateCustomer } = useSales();
-    const { invoices, updateInvoice } = useFinance();
+    const { invoices, updateInvoice, getDocumentVerificationToken } = useFinance();
     const { orders, recordPayment: recordOrderPayment, updateOrderStatus } = useOrders();
     const { suppliers } = useProcurement();
     const { postJournalEntry, supplierPayments = [], recordSupplierPayment, updateSupplierPayment, voidSupplierPayment } = useFinance();
@@ -724,14 +724,29 @@ const Payments: React.FC = () => {
 
     const handlePreviewReceipt = async (payment: CustomerPayment) => {
         try {
+            // Verification-QR hardening: the receipt QR must encode the
+            // official receipt record's verification URL. Ensure the payment's
+            // permanent token first (normal save path; never regenerates).
+            let tokenedPayment: any = payment;
+            if (payment?.id && !(payment as any).verificationToken && getDocumentVerificationToken) {
+                try {
+                    const token = await getDocumentVerificationToken('customerPayments', String(payment.id));
+                    if (token) tokenedPayment = { ...(payment as any), verificationToken: token };
+                } catch { /* offline-safe: legacy payload until synced */ }
+            }
             // Check if this payment is linked to a POS sale
-            const linkedSale = payment.reference ? sales.find(s => s.id === payment.reference) : null;
+            const linkedSale = tokenedPayment.reference ? sales.find(s => s.id === tokenedPayment.reference) : null;
 
             if (linkedSale) {
                 const cashierUser = allUsers?.find(u => u.id === linkedSale.cashierId);
                 const resolvedCashierName = cashierUser?.name || cashierUser?.fullName || cashierUser?.username || user?.name || 'Cashier';
                 const previewData = buildPosReceiptDoc({
                     sale: linkedSale,
+                    // The POS receipt is backed by this official receipt record.
+                    receiptRef: {
+                        receiptNumber: String(tokenedPayment.id),
+                        ...(tokenedPayment.verificationToken ? { verificationToken: String(tokenedPayment.verificationToken) } : {}),
+                    },
                     cashierName: resolvedCashierName,
                     customerName: linkedSale.customerName || 'Walk-in Customer',
                     footerMessage: companyConfig.transactionSettings?.pos?.receiptFooter || companyConfig.receiptFooter || ''
@@ -755,14 +770,14 @@ const Payments: React.FC = () => {
                     data: parsed.data
                 });
             } else {
-                const currentBalance = payment.customerId
-                    ? await paymentService.getCustomerOutstandingBalance(payment.customerId)
+                const currentBalance = tokenedPayment.customerId
+                    ? await paymentService.getCustomerOutstandingBalance(tokenedPayment.customerId)
                     : 0;
 
-                const appliedOrders = (payment as any).orderAllocations?.map((a: any) => a.orderId) || [];
+                const appliedOrders = (tokenedPayment as any).orderAllocations?.map((a: any) => a.orderId) || [];
                 const formattedData = buildCustomerReceiptDoc({
-                    payment,
-                    customerName: payment.customerName,
+                    payment: tokenedPayment,
+                    customerName: tokenedPayment.customerName,
                     currentBalance,
                     currencySymbol: currency,
                     appliedOrders
@@ -2033,11 +2048,20 @@ const Payments: React.FC = () => {
                                                 <td className="table-body-cell text-right font-bold text-[#23282A] finance-nums">{currency}{(payment.amount || 0).toLocaleString()}</td>
                                                 <td className="table-body-cell text-right">
                                                     <button
-                                                        onClick={(e) => {
+                                                        onClick={async (e) => {
                                                             e.stopPropagation();
                                                             const supplierName = suppliers.find(s => s.id === payment.supplierId)?.name || 'Unknown Supplier';
                                                             try {
-                                                                const supplierDoc = buildSupplierPaymentDoc(payment, supplierName);
+                                                                // Verification-QR hardening: ensure the voucher's
+                                                                // permanent token first (normal save path).
+                                                                let tokened: any = payment;
+                                                                if (payment?.id && !(payment as any).verificationToken && getDocumentVerificationToken) {
+                                                                    try {
+                                                                        const token = await getDocumentVerificationToken('supplierPayments', String(payment.id));
+                                                                        if (token) tokened = { ...(payment as any), verificationToken: token };
+                                                                    } catch { /* offline-safe */ }
+                                                                }
+                                                                const supplierDoc = buildSupplierPaymentDoc(tokened, supplierName);
                                                                 const parsed = SupplierPaymentSchema.safeParse(supplierDoc);
                                                                 if (!parsed.success) {
                                                                     const message = parsed.error.issues[0]?.message || 'Invalid supplier voucher payload';

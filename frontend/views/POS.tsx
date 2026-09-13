@@ -101,9 +101,40 @@ const POS: React.FC = () => {
   const getPosReceiptFooter = () =>
     companyConfig.transactionSettings?.pos?.receiptFooter || companyConfig.receiptFooter || '';
 
-  const buildValidatedPosReceipt = (sale: Sale) => {
+  /**
+   * Resolve the official receipt backing a POS sale (the customerPayments REC
+   * row created for it). The POS QR encodes that existing receipt's
+   * verification URL — no second POS verification record is created. For
+   * split payments the first REC row (by id) is used deterministically.
+   */
+  const resolvePosReceiptRef = async (sale: Sale): Promise<{ receiptNumber: string; verificationToken?: string }> => {
+    const fallback = { receiptNumber: (sale as any).receiptNumber || sale.id };
+    try {
+      const payments = await dbService.getAll<any>('customerPayments');
+      const linked = (payments || [])
+        .filter((p: any) => String(p?.reference || '') === String(sale.id))
+        .sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
+      if (linked.length === 0) return fallback;
+      const primary = linked[0];
+      if (!primary.verificationToken) {
+        try {
+          const { token } = await transactionService.getOrIssueDocumentVerificationToken('customerPayments', String(primary.id));
+          if (token) return { receiptNumber: String(primary.id), verificationToken: token };
+        } catch { /* offline-safe */ }
+      }
+      return primary.verificationToken
+        ? { receiptNumber: String(primary.id), verificationToken: String(primary.verificationToken) }
+        : { receiptNumber: String(primary.id) };
+    } catch {
+      return fallback;
+    }
+  };
+
+  const buildValidatedPosReceipt = async (sale: Sale) => {
+    const receiptRef = await resolvePosReceiptRef(sale);
     const receipt = buildPosReceiptDoc({
       sale,
+      receiptRef,
       cashierName: (() => {
         const cashierUser = allUsers?.find(u => u.id === sale.cashierId);
         return cashierUser?.name || cashierUser?.fullName || cashierUser?.username || user?.name || 'Cashier';
@@ -172,7 +203,7 @@ const POS: React.FC = () => {
     try {
       notify("Preparing Receipt PDF...", "info");
 
-      const pdfData = buildValidatedPosReceipt(sale);
+      const pdfData = await buildValidatedPosReceipt(sale);
       await initializePrimePdfFonts();
       const securedPdfData = await attachDocumentSecurity(pdfData, companyConfig?.companyName);
       const blob = await pdf(<PrimeDocument data={securedPdfData as PrimeDocData} type="POS_RECEIPT" />).toBlob();
@@ -1219,7 +1250,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
         read: false
       });
 
-      const previewData = buildValidatedPosReceipt(receiptSale);
+      const previewData = await buildValidatedPosReceipt(receiptSale);
 
       // Only show receipt preview if user has the toggle on
       if (autoPreviewReceipt) {
@@ -1507,8 +1538,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
             {/* Footer */}
             <div style={{ display: 'flex', gap: 10, padding: '14px 20px', borderTop: '1px solid #e4ddd1', background: '#eef7f6' }}>
               <button
-                onClick={() => {
-                  const receiptData = buildValidatedPosReceipt(quickReceiptSale);
+                onClick={async () => {
+                  const receiptData = await buildValidatedPosReceipt(quickReceiptSale);
                   setQuickReceiptSale(null);
                   setPreviewState({ isOpen: true, type: 'POS_RECEIPT', data: receiptData });
                 }}

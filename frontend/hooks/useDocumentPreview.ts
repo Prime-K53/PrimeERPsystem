@@ -7,6 +7,7 @@ import { useSales } from '../context/SalesContext';
 import { useFinance } from '../context/FinanceContext';
 import { mapToInvoiceData } from '../utils/pdfMapper';
 import { enrichDocumentCustomerData } from '../utils/documentCustomerData';
+import { verificationStoreForDocType } from '../utils/documentVerification';
 import { transactionService } from '../services/transactionService';
 import { PrimeDocument } from '../views/shared/components/PDF/PrimeDocument';
 import { PrimeDocData } from '../views/shared/components/PDF/schemas';
@@ -77,24 +78,30 @@ export const useDocumentPreview = () => {
 
       const mappedData = mapToInvoiceData(enrichedData, companyConfig, effectiveType, boms, inventory);
 
-      // Invoice QR hardening: a pre-token invoice record (or a stale object
-      // captured before the on-open backfill round-trip) would otherwise map
-      // without verificationToken and attachDocumentSecurity would fall back
-      // to the legacy human-readable QR. Issue+persist the permanent token
-      // first (normal invoice save path — syncs like any other field; never
-      // regenerates), so Preview/Print always encode the verification URL.
+      // Verification-QR hardening (all types): a pre-token record (or a stale
+      // object captured before an on-open backfill round-trip) would otherwise
+      // map without verificationToken and attachDocumentSecurity would fall
+      // back to the legacy human-readable QR. Issue+persist the permanent
+      // token first (normal store save path — syncs like any other field;
+      // never regenerates), so Preview/Print always encode the verification
+      // URL. POS_RECEIPT has no directly stored record (it is represented by
+      // its linked receipt record) and is resolved by its own flow.
       if (
-        (effectiveType === 'INVOICE' || effectiveType === 'EXAMINATION_INVOICE') &&
         (mappedData as any) &&
         !(mappedData as any).verificationToken &&
         (enrichedData as any)?.id
       ) {
-        try {
-          const { token } = await transactionService.getOrIssueInvoiceVerificationToken(
-            String((enrichedData as any).id)
-          );
-          if (token) (mappedData as any).verificationToken = token;
-        } catch { /* offline-safe: QR keeps legacy payload until synced */ }
+        const backingStore = verificationStoreForDocType(effectiveType);
+        if (backingStore) {
+          try {
+            const recordId = String((enrichedData as any).id);
+            const token =
+              backingStore === 'invoices'
+                ? (await transactionService.getOrIssueInvoiceVerificationToken(recordId)).token
+                : (await transactionService.getOrIssueDocumentVerificationToken(backingStore, recordId)).token;
+            if (token) (mappedData as any).verificationToken = token;
+          } catch { /* offline-safe: QR keeps legacy payload until synced */ }
+        }
       }
 
       if (openMode === 'print') {
