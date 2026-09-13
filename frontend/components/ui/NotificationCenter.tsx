@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell,
@@ -156,17 +157,41 @@ const NotificationCenter = React.forwardRef<HTMLDivElement, NotificationCenterPr
     fontFamily: "'Inter', system-ui, sans-serif",
   });
 
-  useEffect(() => {
-    if (!isOpen || !anchorEl) return;
+  const positionDropdown = useCallback(() => {
+    if (!anchorEl) return;
     const rect = anchorEl.getBoundingClientRect();
+    // Never let the panel overflow the viewport: the width shrinks on very
+    // narrow screens and the left edge is clamped on BOTH sides (the old
+    // code only guarded the left edge, so the panel could extend past the
+    // right viewport edge with its text clipped mid-word).
+    const panelWidth = Math.min(380, Math.max(280, window.innerWidth - 24));
+    const maxLeft = Math.max(12, window.innerWidth - panelWidth - 12);
+    const left = Math.min(Math.max(12, rect.right - panelWidth), maxLeft);
     const spaceBelow = window.innerHeight - rect.bottom;
     const openDown = spaceBelow >= 520 || spaceBelow >= rect.top;
+    const top = openDown
+      ? rect.bottom + 8
+      : Math.max(12, rect.top - 8 - 500);
     setDropdownStyle((prev) => ({
       ...prev,
-      top: openDown ? rect.bottom + 8 : rect.top - 8 - 500,
-      left: Math.max(12, rect.left + rect.width - 380),
+      width: `${panelWidth}px`,
+      top,
+      left,
     }));
-  }, [isOpen, anchorEl]);
+  }, [anchorEl]);
+
+  useEffect(() => {
+    if (!isOpen || !anchorEl) return;
+    positionDropdown();
+    // The anchor can move after open (layout shifts, scroll, resize) — the
+    // position was previously computed once and could go stale/detached.
+    window.addEventListener('scroll', positionDropdown, true);
+    window.addEventListener('resize', positionDropdown);
+    return () => {
+      window.removeEventListener('scroll', positionDropdown, true);
+      window.removeEventListener('resize', positionDropdown);
+    };
+  }, [isOpen, anchorEl, positionDropdown]);
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
@@ -183,12 +208,19 @@ const NotificationCenter = React.forwardRef<HTMLDivElement, NotificationCenterPr
     textAlign: 'center' as const,
   });
 
-  return (
+  // Rendered into document.body via portal: the app header bar carries
+  // `backdrop-filter`, which hijacks `position: fixed` (the filter becomes
+  // the containing block), so viewport coordinates computed from the bell
+  // rect would otherwise render offset by the header origin and clip past
+  // the right viewport edge. The portal restores true viewport positioning
+  // with zero visual or behavioral change.
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <motion.div
           ref={setRefs}
           key="nc-dropdown"
+          data-testid="notification-center-panel"
           variants={dropdownVariants}
           initial="hidden"
           animate="visible"
@@ -388,6 +420,7 @@ const NotificationCenter = React.forwardRef<HTMLDivElement, NotificationCenterPr
                       display: '-webkit-box',
                       WebkitLineClamp: 2,
                       WebkitBoxOrient: 'vertical',
+                      overflowWrap: 'break-word',
                     }}
                   >
                     {n.message}
@@ -480,7 +513,8 @@ const NotificationCenter = React.forwardRef<HTMLDivElement, NotificationCenterPr
           </div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 });
 

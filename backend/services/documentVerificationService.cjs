@@ -319,7 +319,11 @@ async function fetchDocumentRows(type, documentNumber, httpGet, axiosImpl) {
   // Multi-table entries (purchase_order: canonical purchase_orders first,
   // legacy purchases as fallback) query each table in order and merge.
   const tables = entry.tables || [entry.table];
-  const ors = entry.idFields.map((f) => `(data->>${f}.eq.${documentNumber})`);
+  // PostgREST `or` grammar: items are bare `field.op.value` separated by
+  // commas inside ONE outer paren pair — `(a.eq.1,b.eq.2)`. Wrapping each
+  // item in its own parens (`((a.eq.1),(b.eq.2))`) is a PGRST100 parse
+  // error (HTTP 400), which used to fail EVERY lookup at this layer.
+  const ors = entry.idFields.map((f) => `data->>${f}.eq.${documentNumber}`);
   // Flat rows (sales_orders, delivery_notes) store fields at top level:
   // query both envelope and flat shapes in one round trip.
   const flatOrs = entry.idFields.map((f) => `${f}.eq.${documentNumber}`);
