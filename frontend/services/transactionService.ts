@@ -3305,7 +3305,20 @@ export const transactionService = {
                 if (!invoice) throw new Error(`Invoice #${invoiceId} not found`);
                 if (invoice.verificationToken) return { token: String(invoice.verificationToken), issued: false };
                 const next = ensureInvoiceVerificationToken(invoice);
-                await invoiceStore.put(next);
+                try {
+                    await invoiceStore.put(next);
+                } catch (putErr) {
+                    // dbService.put persists to IndexedDB first, then enqueues
+                    // cloud sync. A sync-enqueue failure must not surface as a
+                    // missing token: the token is already stored locally —
+                    // re-read and return it so Copy/View links work offline.
+                    try {
+                        const reread = await invoiceStore.get(invoiceId);
+                        const recovered = String(reread?.verificationToken || '').trim();
+                        if (recovered) return { token: recovered, issued: true };
+                    } catch { /* fall through to the original put error */ }
+                    throw putErr;
+                }
                 return { token: String(next.verificationToken), issued: true };
             }
         );
@@ -3328,7 +3341,19 @@ export const transactionService = {
                 if (!record) throw new Error(`Record #${id} not found in ${storeName}`);
                 if (record.verificationToken) return { token: String(record.verificationToken), issued: false };
                 const next = ensureDocumentVerificationToken(record);
-                await store.put(next);
+                try {
+                    await store.put(next);
+                } catch (putErr) {
+                    // Same offline resilience as the invoice variant: the local
+                    // write lands before the cloud-sync enqueue, so recover the
+                    // just-issued token instead of reporting "no token".
+                    try {
+                        const reread = await store.get(id);
+                        const recovered = String(reread?.verificationToken || '').trim();
+                        if (recovered) return { token: recovered, issued: true };
+                    } catch { /* fall through to the original put error */ }
+                    throw putErr;
+                }
                 return { token: String(next.verificationToken), issued: true };
             }
         );

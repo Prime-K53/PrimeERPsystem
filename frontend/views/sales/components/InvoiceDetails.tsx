@@ -21,6 +21,7 @@ import { enrichInvoiceWithBatchPricing, findMatchingExaminationBatch } from '../
 import { currencyService } from '../../../services/currencyService';
 import { computePostEditCorrection } from '../../../services/transactions/_internal';
 import { buildInvoiceVerificationUrl } from '../../../utils/invoiceVerification';
+import { resolveVerificationBaseUrl } from '../../../utils/documentVerification';
 
 interface InvoiceDetailsProps {
     invoice: Invoice;
@@ -47,7 +48,7 @@ const danger = '#b5493f';
 
 export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initialInvoice, onClose, onEdit, onAction, isSubscription = false }) => {
     const { companyConfig, auditLogs, notify, user } = useAuth();
-    const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment, editInvoiceWithAdjustment, postInvoiceCorrection, getInvoiceVerificationToken } = useFinance();
+    const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment, editInvoiceWithAdjustment, postInvoiceCorrection, getInvoiceVerificationToken, getDocumentVerificationToken } = useFinance();
     const { customers = [] } = useSales();
     const { batches = [] } = useExamination();
     const { inventory = [] } = useInventoryStore();
@@ -170,28 +171,74 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
 
     // Backfill the permanent verification token for pre-token invoices
     // (single non-accounting field via the normal save path; idempotent).
+    // Subscriptions live in `recurringInvoices`, not `invoices` — query the
+    // backing store so backfill (and later link actions) never report
+    // "not found" for a record that exists under the other store.
     useEffect(() => {
-        if (!invoice?.id || (invoice as any).verificationToken || !getInvoiceVerificationToken) return;
-        getInvoiceVerificationToken(invoice.id).catch(() => { /* offline-safe: QR keeps legacy payload until synced */ });
-    }, [invoice?.id]);
+        if (!invoice?.id || (invoice as any).verificationToken) return;
+        const id = String(invoice.id);
+        if (isSubscription) {
+            if (!getDocumentVerificationToken) return;
+            getDocumentVerificationToken('recurringInvoices', id).catch(() => { /* offline-safe: QR keeps legacy payload until synced */ });
+        } else {
+            if (!getInvoiceVerificationToken) return;
+            getInvoiceVerificationToken(id).catch(() => { /* offline-safe: QR keeps legacy payload until synced */ });
+        }
+        // Intentionally keyed on id + token + subscription kind only (matching
+        // the original on-open backfill): context accessors re-create each
+        // render and must not retrigger issuance.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [invoice?.id, (invoice as any)?.verificationToken, isSubscription]);
 
     const verificationLinkFor = useCallback(async (): Promise<string | null> => {
         if (!invoice?.id) return null;
         try {
-            const token = await getInvoiceVerificationToken(invoice.id);
+            // Fast path: the in-memory record already carries the permanent
+            // token (post-backfill refresh or freshly created invoice). Use it
+            // directly so a transient IndexedDB/cloud divergence ("record not
+            // found" locally) can never surface as "no verification token".
+            const inMemoryToken = String((invoice as any).verificationToken || '').trim();
+            if (inMemoryToken) {
+                const direct = buildInvoiceVerificationUrl({
+                    invoiceNumber: (invoice as any).invoiceNumber || invoice.id,
+                    verificationToken: inMemoryToken,
+                });
+                if (direct) return direct;
+                // Base URL missing (production fail-closed) or malformed
+                // number: fall through to the issuance path so the failure
+                // reason stays consistent for the caller.
+            }
+            const id = String(invoice.id);
+            const token = isSubscription && getDocumentVerificationToken
+                ? await getDocumentVerificationToken('recurringInvoices', id)
+                : await getInvoiceVerificationToken(id);
+            const effective = String(token || inMemoryToken || '').trim();
+            if (!effective) return null;
             return buildInvoiceVerificationUrl({
                 invoiceNumber: (invoice as any).invoiceNumber || invoice.id,
-                verificationToken: token,
+                verificationToken: effective,
             });
         } catch {
             return null;
         }
-    }, [invoice, getInvoiceVerificationToken]);
+    }, [invoice, isSubscription, getInvoiceVerificationToken, getDocumentVerificationToken]);
+
+    const describeVerificationFailure = useCallback((): string => {
+        // Distinguish a fail-closed portal configuration (valid token, no
+        // public base) from a genuinely missing token so the message stops
+        // blaming the token when the deployment env is at fault.
+        try {
+            if (!resolveVerificationBaseUrl()) {
+                return 'Verification portal not configured (VITE_PUBLIC_PORTAL_URL missing)';
+            }
+        } catch { /* resolver is pure: treat as unavailable below */ }
+        return 'Verification link unavailable (invoice has no verification token yet)';
+    }, []);
 
     const handleCopyVerificationLink = useCallback(async () => {
         const url = await verificationLinkFor();
         if (!url) {
-            notify('error', 'Verification link unavailable (invoice has no verification token yet)');
+            notify('error', describeVerificationFailure());
             return;
         }
         try {
@@ -200,16 +247,16 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
         } catch {
             notify('error', 'Could not copy link');
         }
-    }, [verificationLinkFor, notify]);
+    }, [verificationLinkFor, notify, describeVerificationFailure]);
 
     const handleViewVerification = useCallback(async () => {
         const url = await verificationLinkFor();
         if (!url) {
-            notify('error', 'Verification link unavailable (invoice has no verification token yet)');
+            notify('error', describeVerificationFailure());
             return;
         }
         window.open(url, '_blank', 'noopener');
-    }, [verificationLinkFor, notify]);
+    }, [verificationLinkFor, notify, describeVerificationFailure]);
 
     const [isPostingCorrection, setIsPostingCorrection] = useState(false);
     const handlePostCorrection = useCallback(async () => {
