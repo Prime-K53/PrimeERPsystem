@@ -58,7 +58,7 @@ const GangRunEstimator: React.FC = () => {
 
     const handleApplyToOrder = () => {
         const wo = workOrders.find((w: any) => w.id === selectedWoId);
-        if (!wo) return;
+        if (!wo) { notify('Select a work order first', 'error'); return; }
 
         const note = `[IMPOSITION LOGIC]: Sheet Size: ${parentSize.w}x${parentSize.h}mm, Final Size: ${finalSize.w}x${finalSize.h}mm, Yield: ${result.bestYield} Up, Pull: ${result.sheetsNeeded} Sheets. Waste Factor: ${result.wastePercent.toFixed(1)}%.`;
         
@@ -97,11 +97,11 @@ const GangRunEstimator: React.FC = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '16px' }}>
                             <div>
                                 <label style={{ display: 'block', fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', marginBottom: '8px' }}>Width</label>
-                                <input type="number" style={{ width: '100%', padding: '12px', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', fontWeight: 700 }} value={parentSize.w} onChange={e => setParentSize({...parentSize, w: parseFloat(e.target.value)})}/>
+                                <input type="number" style={{ width: '100%', padding: '12px', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', fontWeight: 700 }} value={parentSize.w} onChange={e => setParentSize({...parentSize, w: parseFloat(e.target.value) || 0})}/>
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', marginBottom: '8px' }}>Height</label>
-                                <input type="number" style={{ width: '100%', padding: '12px', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', fontWeight: 700 }} value={parentSize.h} onChange={e => setParentSize({...parentSize, h: parseFloat(e.target.value)})}/>
+                                <input type="number" style={{ width: '100%', padding: '12px', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', fontWeight: 700 }} value={parentSize.h} onChange={e => setParentSize({...parentSize, h: parseFloat(e.target.value) || 0})}/>
                             </div>
                         </div>
                     </section>
@@ -113,11 +113,11 @@ const GangRunEstimator: React.FC = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '16px' }}>
                             <div>
                                 <label style={{ display: 'block', fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', marginBottom: '8px' }}>Final Width</label>
-                                <input type="number" style={{ width: '100%', padding: '12px', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', fontWeight: 700, color: '#1f8577' }} value={finalSize.w} onChange={e => setFinalSize({...finalSize, w: parseFloat(e.target.value)})}/>
+                                <input type="number" style={{ width: '100%', padding: '12px', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', fontWeight: 700, color: '#1f8577' }} value={finalSize.w} onChange={e => setFinalSize({...finalSize, w: parseFloat(e.target.value) || 0})}/>
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', marginBottom: '8px' }}>Final Height</label>
-                                <input type="number" style={{ width: '100%', padding: '12px', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', fontWeight: 700, color: '#1f8577' }} value={finalSize.h} onChange={e => setFinalSize({...finalSize, h: parseFloat(e.target.value)})}/>
+                                <input type="number" style={{ width: '100%', padding: '12px', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', fontWeight: 700, color: '#1f8577' }} value={finalSize.h} onChange={e => setFinalSize({...finalSize, h: parseFloat(e.target.value) || 0})}/>
                             </div>
                         </div>
                     </section>
@@ -127,22 +127,22 @@ const GangRunEstimator: React.FC = () => {
                         <div style={{ marginTop: '16px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <label style={{ fontSize: '11px', fontWeight: 700, color: '#5c6567' }}>Sheet Margin</label>
-                                <input type="number" style={{ width: '80px', padding: '8px', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '10px', textAlign: 'right', fontSize: '11px' }} value={margin} onChange={e => setMargin(parseFloat(e.target.value))}/>
+                                <input type="number" style={{ width: '80px', padding: '8px', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '10px', textAlign: 'right', fontSize: '11px' }} value={margin} onChange={e => setMargin(parseFloat(e.target.value) || 0)}/>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <label style={{ fontSize: '11px', fontWeight: 700, color: '#5c6567' }}>Gutter (Gap)</label>
-                                <input type="number" style={{ width: '80px', padding: '8px', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '10px', textAlign: 'right', fontSize: '11px' }} value={gutter} onChange={e => setGutter(parseFloat(e.target.value))}/>
+                                <input type="number" style={{ width: '80px', padding: '8px', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '10px', textAlign: 'right', fontSize: '11px' }} value={gutter} onChange={e => setGutter(parseFloat(e.target.value) || 0)}/>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <label style={{ fontSize: '11px', fontWeight: 700, color: '#5c6567' }}>Bleed Radius</label>
-                                <input type="number" style={{ width: '80px', padding: '8px', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '10px', textAlign: 'right', fontSize: '11px' }} value={bleed} onChange={e => setBleed(parseFloat(e.target.value))}/>
+                                <input type="number" style={{ width: '80px', padding: '8px', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '10px', textAlign: 'right', fontSize: '11px' }} value={bleed} onChange={e => setBleed(parseFloat(e.target.value) || 0)}/>
                             </div>
                         </div>
                     </section>
 
                     <section style={{ paddingTop: '24px', borderStyle: 'solid', borderColor: '#e4ddd1' }}>
                         <label style={{ display: 'block', fontWeight: 900, color: '#5c6567', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '12px' }}>Order Target</label>
-                        <input type="number" style={{ width: '100%', padding: '16px', background: '#0b3e39', color: '#fff', borderRadius: '16px', fontSize: '24px', fontWeight: 900, letterSpacing: '-.05em' }} value={targetQty} onChange={e => setTargetQty(parseInt(e.target.value))}/>
+                        <input type="number" style={{ width: '100%', padding: '16px', background: '#0b3e39', color: '#fff', borderRadius: '16px', fontSize: '24px', fontWeight: 900, letterSpacing: '-.05em' }} value={targetQty} onChange={e => setTargetQty(parseInt(e.target.value) || 0)}/>
                     </section>
                 </div>
 

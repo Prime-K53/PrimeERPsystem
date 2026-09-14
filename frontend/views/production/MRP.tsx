@@ -42,7 +42,10 @@ const MRP: React.FC = () => {
   // 2. Aggregate Required Materials (Recursive Logic Simulation)
   const materialDemand: Record<string, number> = {};
 
-  const explodeBOM = (bomId: string, multiplier: number) => {
+  const explodeBOM = (bomId: string, multiplier: number, visited: Set<string> = new Set()) => {
+      if (visited.has(bomId)) return;
+      const nextVisited = new Set(visited);
+      nextVisited.add(bomId);
       const bom = boms.find(b => b.id === bomId);
       if (!bom) return;
       
@@ -55,7 +58,7 @@ const MRP: React.FC = () => {
           // Check if this component itself has a BOM (Sub-assembly)
           const subBom = boms.find(b => b.productId === materialId);
           if (subBom) {
-              explodeBOM(subBom.id, comp.quantity * multiplier);
+              explodeBOM(subBom.id, comp.quantity * multiplier, nextVisited);
           }
       });
   };
@@ -72,7 +75,7 @@ const MRP: React.FC = () => {
       
       // LOGIC LINK: Calculate what's already in the pipeline (Inbound)
       const inboundQty = purchases
-        .filter(p => p.status === 'Ordered' || p.status === 'Partially Received')
+        .filter(p => p.status === 'Approved' || p.status === 'Partially Received')
         .reduce((sum, p) => {
             const line = p.items.find(li => li.itemId === matId);
             return sum + (line ? (line.quantity - (line.receivedQty || 0)) : 0);
@@ -108,6 +111,8 @@ const MRP: React.FC = () => {
   });
 
   const handleToggleSelect = (id: string) => {
+      const row = mrpReport.find(r => r.id === id);
+      if (!row || row.suggestedOrder <= 0) return;
       setSelectedItemIds(prev => 
           prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
       );
@@ -116,15 +121,25 @@ const MRP: React.FC = () => {
   const handleGeneratePOs = async () => {
       if (selectedItemIds.length === 0) return;
 
-      const itemsToOrder = mrpReport.filter(item => selectedItemIds.includes(item.id));
+      const itemsToOrder = mrpReport.filter(item => selectedItemIds.includes(item.id) && item.suggestedOrder > 0);
+      if (itemsToOrder.length === 0) return;
       const ordersBySupplier: Record<string, typeof itemsToOrder> = {};
       const stagedPurchases = [...purchases];
+      const skippedItems: string[] = [];
       
       itemsToOrder.forEach(item => {
-          const supId = item.preferredSupplierId || 'SUP-GENERIC';
+          const supId = item.preferredSupplierId || suppliers[0]?.id;
+          if (!supId) {
+              skippedItems.push(item.name || item.id);
+              return;
+          }
           if (!ordersBySupplier[supId]) ordersBySupplier[supId] = [];
           ordersBySupplier[supId].push(item);
       });
+
+      if (skippedItems.length > 0) {
+          notify(`Skipped ${skippedItems.length} item(s) with no supplier available: ${skippedItems.join(', ')}`, 'error');
+      }
 
       let ordersCreated = 0;
       for (const [supId, items] of Object.entries(ordersBySupplier)) {
@@ -132,8 +147,10 @@ const MRP: React.FC = () => {
               const invItem = inventory.find(inv => inv.id === i.id);
               return {
                   itemId: i.id,
+                  productId: i.id,
                   name: i.name,
                   quantity: Math.ceil(i.suggestedOrder),
+                  price: invItem?.cost || 0,
                   cost: invItem?.cost || 0,
                   receivedQty: 0
               };
@@ -226,8 +243,8 @@ const MRP: React.FC = () => {
                     <thead style={{ background: '#eef7f6', backdropFilter: 'blur(4px)', color: '#5c6567', fontWeight: 700, borderStyle: 'solid', borderColor: '#e4ddd1', position: 'sticky', top: 0, zIndex: 10 }}>
                         <tr>
                             <th style={{ width: '56px', paddingLeft: '16px', paddingTop: '8px', textAlign: 'center', borderStyle: 'solid', borderColor: '#e4ddd1', paddingRight: '16px', paddingBottom: '8px' }}>
-                                <button onClick={() => setSelectedItemIds(selectedItemIds.length === mrpReport.length ? [] : mrpReport.map(i => i.id))} style={{ color: '#5c6567', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>
-                                    {selectedItemIds.length > 0 && selectedItemIds.length === mrpReport.length ? <CheckSquare size={18}/> : <Square size={18}/>}
+                                <button onClick={() => { const orderableIds = mrpReport.filter(i => i.suggestedOrder > 0).map(i => i.id); setSelectedItemIds(selectedItemIds.length === orderableIds.length && orderableIds.length > 0 ? [] : orderableIds); }} style={{ color: '#5c6567', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>
+                                    {(() => { const orderableCount = mrpReport.filter(i => i.suggestedOrder > 0).length; return selectedItemIds.length > 0 && selectedItemIds.length === orderableCount ? <CheckSquare size={18}/> : <Square size={18}/>; })()}
                                 </button>
                             </th>
                             <th style={{ paddingLeft: '16px', paddingTop: '8px', borderStyle: 'solid', borderColor: '#e4ddd1', fontWeight: 700, paddingRight: '16px', paddingBottom: '8px' }}>Component Material</th>
@@ -292,7 +309,7 @@ const MRP: React.FC = () => {
                             </tr>
                         ))}
                         {mrpReport.length === 0 && (
-                            <tr><td colSpan={7} style={{ padding: '80px', textAlign: 'center', color: '#5c6567', fontWeight: 500, fontStyle: 'italic' }}>All production requirements are currently covered by available inventory and inbound shipments.</td></tr>
+                            <tr><td colSpan={7} style={{ padding: '80px', textAlign: 'center', color: boms.length === 0 ? '#b5493f' : '#5c6567', fontWeight: 500, fontStyle: 'italic' }}>{boms.length === 0 ? 'No BOM data available — define a Bill of Materials to run MRP.' : 'All production requirements are currently covered by available inventory and inbound shipments.'}</td></tr>
                         )}
                     </tbody>
                 </table>

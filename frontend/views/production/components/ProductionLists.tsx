@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, Trash2, Play, CheckCircle, Clock, AlertCircle, MoreHorizontal, Edit2, GripVertical, XCircle, FileText, Package, FileCheck, Recycle, ShieldCheck } from 'lucide-react';
+import { Eye, Trash2, Play, CheckCircle, Clock, AlertCircle, MoreHorizontal, Edit2, GripVertical, XCircle, FileText, Package, FileCheck, Recycle, ShieldCheck, PauseCircle } from 'lucide-react';
 import { BillOfMaterial, WorkOrder } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useInventory } from '../../../context/InventoryContext';
@@ -33,7 +33,7 @@ export const BOMList: React.FC<BOMListProps> = ({ boms, onDelete, onEdit }) => {
                                     src={product?.image} 
                                     alt={bom.productName} 
                                     className="w-full h-full object-cover"
-                                    fallback={<div className="w-full h-full flex items-center justify-center text-slate-300 font-bold text-lg">{bom.productName.charAt(0)}</div>}
+                                    fallback={<div className="w-full h-full flex items-center justify-center text-slate-300 font-bold text-lg">{bom.productName?.charAt(0) ?? '?'}</div>}
                                 />
                             </div>
                             <div className="min-w-0">
@@ -49,7 +49,7 @@ export const BOMList: React.FC<BOMListProps> = ({ boms, onDelete, onEdit }) => {
                         <div className="p-5 grid grid-cols-2 gap-4">
                             <div>
                                 <div className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">Materials</div>
-                                <div className="text-[13px] font-bold text-slate-700 finance-nums">{bom.components.length} <span className="text-[10px] text-slate-400 uppercase tracking-tight">Items</span></div>
+                                <div className="text-[13px] font-bold text-slate-700 finance-nums">{bom.components?.length ?? 0} <span className="text-[10px] text-slate-400 uppercase tracking-tight">Items</span></div>
                             </div>
                             <div>
                                 <div className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">Operations</div>

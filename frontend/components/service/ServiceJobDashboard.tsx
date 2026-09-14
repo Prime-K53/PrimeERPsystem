@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Layers, Clock, AlertTriangle, Search, DollarSign, CheckCircle, Play, Wrench } from 'lucide-react';
 import type { ServiceJob, ServiceJobStatus } from '../../types';
 import { serviceJobService } from '../../services/serviceJobService';
+import { useAuth } from '../../context/AuthContext';
+import { useConfirmDialog } from '../../components/ConfirmDialog';
 import ServiceJobCard from './ServiceJobCard';
 
 const KANBAN_COLUMNS: ServiceJobStatus[] = [
@@ -19,11 +21,17 @@ const STATUS_FILTERS: { label: string; value: ServiceJobStatus | 'ALL' }[] = [
 ];
 
 const ServiceJobDashboard: React.FC = () => {
+  const { user, notify } = useAuth();
+  const { confirm, ConfirmDialogComponent } = useConfirmDialog();
   const [jobs, setJobs] = useState<ServiceJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ServiceJobStatus | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newCustomer, setNewCustomer] = useState('');
+  const [newDesc, setNewDesc] = useState('');
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -66,7 +74,75 @@ const ServiceJobDashboard: React.FC = () => {
     }
   };
 
-  const handleAssign = (_job: ServiceJob) => {
+  const handleAssign = async (job: ServiceJob) => {
+    try {
+      const employeeId = user?.id || user?.username || 'system';
+      const employeeName = user?.fullName || user?.username || (user as { name?: string })?.name || employeeId;
+      const updated = await serviceJobService.assignEmployee(job.id, employeeId, employeeName);
+      if (!updated) {
+        const msg = 'Job not found';
+        setError(msg);
+        notify(msg, 'error');
+        return;
+      }
+      notify(`Job ${job.jobNumber} assigned to ${employeeName}`, 'success');
+      await fetchJobs();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to assign job';
+      setError(msg);
+      notify(msg, 'error');
+    }
+  };
+
+  const handleCreateJob = async () => {
+    if (!newTitle.trim()) {
+      notify('Title is required', 'error');
+      return;
+    }
+    try {
+      const createdBy = user?.username || user?.id || 'system';
+      await serviceJobService.createJob({
+        variantId: 'direct',
+        variantName: newTitle.trim(),
+        itemId: 'direct',
+        itemName: newTitle.trim(),
+        itemSku: 'DIRECT',
+        customerName: newCustomer.trim() || undefined,
+        notes: newDesc.trim() || undefined,
+        quantity: 1,
+        sourceType: 'direct',
+        createdBy,
+      });
+      notify('Job created', 'success');
+      setNewTitle('');
+      setNewCustomer('');
+      setNewDesc('');
+      setShowCreate(false);
+      await fetchJobs();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create job';
+      setError(msg);
+      notify(msg, 'error');
+    }
+  };
+
+  const handleDeleteJob = async (job: ServiceJob) => {
+    const ok = await confirm({
+      title: 'Delete Job',
+      message: `Are you sure you want to delete job ${job.jobNumber}?`,
+      type: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!ok) return;
+    try {
+      await serviceJobService.deleteJob(job.id);
+      notify('Job deleted', 'success');
+      await fetchJobs();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete job';
+      setError(msg);
+      notify(msg, 'error');
+    }
   };
 
   // Metrics
@@ -132,7 +208,55 @@ const ServiceJobDashboard: React.FC = () => {
             <p className="text-sm text-slate-500">Operational execution of service catalog items</p>
           </div>
         </div>
+        <button
+          onClick={() => setShowCreate(v => !v)}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all"
+        >
+          Create Job
+        </button>
       </div>
+
+      {showCreate && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input
+              type="text"
+              value={newTitle}
+              onChange={e => setNewTitle(e.target.value)}
+              placeholder="Title"
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+            />
+            <input
+              type="text"
+              value={newCustomer}
+              onChange={e => setNewCustomer(e.target.value)}
+              placeholder="Customer (optional)"
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+            />
+            <input
+              type="text"
+              value={newDesc}
+              onChange={e => setNewDesc(e.target.value)}
+              placeholder="Description (optional)"
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCreateJob}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all"
+            >
+              Save Job
+            </button>
+            <button
+              onClick={() => setShowCreate(false)}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Metrics */}
       <div className="grid grid-cols-7 gap-4">
@@ -222,6 +346,7 @@ const ServiceJobDashboard: React.FC = () => {
                       onAssign={handleAssign}
                       onReserveMaterials={handleReserveMaterials}
                       onCompleteJob={handleCompleteJob}
+                      onDelete={handleDeleteJob}
                     />
                   ))}
                   {!(groupedJobs[status] || []).length && (
@@ -247,6 +372,7 @@ const ServiceJobDashboard: React.FC = () => {
                     job={job}
                     onTransition={handleTransition}
                     onAssign={handleAssign}
+                    onDelete={handleDeleteJob}
                   />
                 ))}
               </div>
@@ -254,6 +380,7 @@ const ServiceJobDashboard: React.FC = () => {
           )}
         </>
       )}
+      <ConfirmDialogComponent />
     </div>
   );
 };

@@ -2,9 +2,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, Play, Pause, CheckCircle, AlertTriangle, 
-  Clock, Package, User, ChevronLeft, Maximize2, 
+  Package, ChevronLeft, Maximize2, 
   Terminal, ShieldAlert, Timer, Settings, Activity,
-  List, Hash, Filter, ArrowRight
+  Hash, Filter, ArrowRight
 } from 'lucide-react';
 import { useProduction } from '../../context/ProductionContext';
 import { useAuth } from '../../context/AuthContext';
@@ -14,7 +14,7 @@ import { format } from 'date-fns';
 const ShopFloorKiosk: React.FC = () => {
     const { workOrders = [] } = useProduction();
     const { user, notify, companyConfig } = useAuth();
-    const { updateWorkOrderStatus, logProductionStep, completeWorkOrder } = useProduction();
+    const { updateWorkOrderStatus, logProductionStep, completeWorkOrder, addMaintenanceLog } = useProduction();
     
     const [manualInput, setManualInput] = useState('');
     const [activeWo, setActiveWo] = useState<WorkOrder | null>(null);
@@ -47,19 +47,28 @@ const ShopFloorKiosk: React.FC = () => {
     }, [jobQueue, manualInput]);
 
     const handleSelectJob = (wo: WorkOrder) => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        setElapsed(0);
+        setIsPaused(false);
+        setOutputQty(1);
         setActiveWo(wo);
         if (wo.status === 'Scheduled') {
             updateWorkOrderStatus(wo.id, 'In Progress');
             logProductionStep({
-                id: '', workOrderId: wo.id, operationName: 'Job Start', timestamp: new Date().toISOString(),
-                action: 'Start', operatorId: user?.username || 'System'
+                id: '', workOrderId: wo.id, timestamp: new Date().toISOString(),
+                action: 'Start', user: user?.username || 'System', notes: 'Job Start'
             });
         }
         setManualInput('');
     };
 
     const handleManualSubmit = () => {
-        const found = jobQueue.find(wo => wo.id === manualInput.toUpperCase());
+        const lower = manualInput.trim().toLowerCase();
+        const found = jobQueue.find(wo =>
+            wo.id.toLowerCase().includes(lower) ||
+            wo.productName.toLowerCase().includes(lower) ||
+            (wo.customerName || '').toLowerCase().includes(lower)
+        );
         if (found) {
             handleSelectJob(found);
         } else {
@@ -78,6 +87,14 @@ const ShopFloorKiosk: React.FC = () => {
         return () => { if (timerRef.current) clearInterval(timerRef.current); };
     }, [activeWo, isPaused]);
 
+    useEffect(() => {
+        setActiveWo(prev => {
+            if (!prev) return prev;
+            const fresh = workOrders.find(w => w.id === prev.id);
+            return fresh ? fresh : prev;
+        });
+    }, [workOrders]);
+
     const formatTime = (sec: number) => {
         const hrs = Math.floor(sec / 3600);
         const mins = Math.floor((sec % 3600) / 60);
@@ -85,7 +102,7 @@ const ShopFloorKiosk: React.FC = () => {
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const handleComplete = () => {
+    const handleComplete = async () => {
         if (!activeWo) return;
         
         // Final check for uncompleted quantities if configured
@@ -94,9 +111,13 @@ const ShopFloorKiosk: React.FC = () => {
         }
 
         if (confirm("FINAL VERIFICATION: Has the output quantity been checked for QC compliance?")) {
-            completeWorkOrder(activeWo.id);
-            setActiveWo(null);
-            setElapsed(0);
+            try {
+                await completeWorkOrder(activeWo.id);
+                setActiveWo(null);
+                setElapsed(0);
+            } catch (err: any) {
+                notify(err?.message || "Failed to complete work order.", "error");
+            }
         }
     };
 
@@ -106,11 +127,11 @@ const ShopFloorKiosk: React.FC = () => {
         await logProductionStep({
             id: '',
             workOrderId: activeWo.id,
-            operationName: 'Output Log',
             timestamp: new Date().toISOString(),
             action: 'Complete',
             qtyProcessed: outputQty,
-            operatorId: user?.username || 'System'
+            user: user?.username || 'System',
+            notes: 'Output Log'
         });
         
         setShowLogOutput(false);
@@ -118,17 +139,25 @@ const ShopFloorKiosk: React.FC = () => {
         notify(`Logged ${outputQty} units produced`, "success");
     };
 
-    const handleLogFailure = () => {
+    const handleLogFailure = async () => {
         if (!activeWo) return;
         notify("Machine failure logged. Maintenance team notified.", "warning");
-        logProductionStep({
+        await logProductionStep({
             id: '',
             workOrderId: activeWo.id,
-            operationName: 'Machine Failure',
             timestamp: new Date().toISOString(),
             action: 'Stop',
-            operatorId: user?.username || 'System',
-            notes: 'Emergency machine failure reported from Terminal.'
+            user: user?.username || 'System',
+            notes: '[Machine Failure] Emergency machine failure reported from Terminal.'
+        });
+        await addMaintenanceLog({
+            id: '',
+            resourceId: activeWo.id,
+            date: new Date().toISOString(),
+            type: 'Breakdown',
+            description: `Machine failure reported from kiosk terminal for WO ${activeWo.id}.`,
+            performedBy: user?.username || 'System',
+            workOrderId: activeWo.id
         });
         setIsPaused(true);
     };

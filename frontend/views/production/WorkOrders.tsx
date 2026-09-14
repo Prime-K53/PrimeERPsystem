@@ -275,11 +275,27 @@ const WorkOrders: React.FC = () => {
         setShowAdvancedMenu(null);
     };
 
+    const filteredWorkOrders = useMemo(() => workOrders.filter(wo => {
+        if (filterType !== 'all') {
+            const isExamination = wo.source === 'examination';
+            if (filterType === 'examination' ? !isExamination : isExamination) return false;
+        }
+        if (searchTerm.trim()) {
+            const q = searchTerm.trim().toLowerCase();
+            return (wo.id?.toLowerCase().includes(q) || false) ||
+                   (wo.productName?.toLowerCase().includes(q) || false) ||
+                   (wo.customerName?.toLowerCase().includes(q) || false) ||
+                   (wo.status?.toLowerCase().includes(q) || false) ||
+                   (wo.assignedTo?.toLowerCase().includes(q) || false);
+        }
+        return true;
+    }), [workOrders, filterType, searchTerm]);
+
     const handleToggleSelectAll = () => {
-        if (selectedIds.length === workOrders.length) {
-            setSelectedIds([]);
+        if (filteredWorkOrders.length > 0 && filteredWorkOrders.every(wo => selectedIds.includes(wo.id))) {
+            setSelectedIds(prev => prev.filter(id => !filteredWorkOrders.some(wo => wo.id === id)));
         } else {
-            setSelectedIds(workOrders.map(wo => wo.id));
+            setSelectedIds(prev => [...new Set([...prev, ...filteredWorkOrders.map(wo => wo.id)])]);
         }
     };
 
@@ -468,23 +484,6 @@ const WorkOrders: React.FC = () => {
 
             <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
                 {(() => {
-                    // Filter work orders based on filterType
-                    const filteredWorkOrders = workOrders.filter(wo => {
-                        if (filterType !== 'all') {
-                            const isExamination = wo.source === 'examination';
-                            if (filterType === 'examination' ? !isExamination : isExamination) return false;
-                        }
-                        if (searchTerm.trim()) {
-                            const q = searchTerm.trim().toLowerCase();
-                            return (wo.id?.toLowerCase().includes(q) || false) ||
-                                   (wo.productName?.toLowerCase().includes(q) || false) ||
-                                   (wo.customerName?.toLowerCase().includes(q) || false) ||
-                                   (wo.status?.toLowerCase().includes(q) || false) ||
-                                   (wo.assignedTo?.toLowerCase().includes(q) || false);
-                        }
-                        return true;
-                    });
-
                     if (viewType === 'Kanban') {
                         return (
                             <WorkOrderKanban
@@ -593,7 +592,7 @@ const WorkOrders: React.FC = () => {
                                                 </div>
                                             </td>
                                             <td style={{ display: 'table', paddingLeft: '16px', paddingTop: '8px', textAlign: 'right', paddingRight: '16px', paddingBottom: '8px' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', opacity: 0.0, transition: 'all .15s ease', transitionDuration: '200ms' }}>
+                                                <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100" style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', transition: 'all .15s ease', transitionDuration: '200ms' }}>
                                                     {wo.status === 'Draft' && (
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); updateWorkOrderStatus(wo.id, 'Scheduled'); notify('Work order scheduled', 'info'); }}

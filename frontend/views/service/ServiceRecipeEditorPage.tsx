@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Plus, Trash2, Save, Layers, Search, Edit2, FileText,
-    Clock, DollarSign, Copy, AlertTriangle
+    Clock, DollarSign, Copy
 } from 'lucide-react';
 import type {
     ServiceRecipe, ServiceRecipeLine, ServiceResource,
@@ -128,9 +128,16 @@ const ServiceRecipeEditorPage: React.FC = () => {
                 totalCost: getResourceCost(line.resourceType, line.resourceId) * line.quantity,
             }));
 
+            const variantId = editingRecipe.variantId || 'default';
+            const validation = serviceRecipeService.validateRecipe({ ...editingRecipe, variantId, lines: recipeLines });
+            if (!validation.valid) {
+                showNotify(validation.errors.join('; ') || 'Invalid recipe', 'error');
+                return;
+            }
+
             const recipeToSave: ServiceRecipe = {
                 id: editingRecipe.id || '',
-                variantId: editingRecipe.variantId || '',
+                variantId,
                 version: editingRecipe.version || 1,
                 name: editingRecipe.name,
                 active: editingRecipe.active ?? true,
@@ -501,7 +508,7 @@ const ServiceRecipeEditorPage: React.FC = () => {
                                         costMethod: 'mixed',
                                         active: true,
                                         lines: [],
-                                        variantId: '',
+                                        variantId: 'default',
                                         version: 1,
                                         validFrom: new Date().toISOString(),
                                         createdAt: new Date().toISOString(),
@@ -562,7 +569,7 @@ const ServiceRecipeEditorPage: React.FC = () => {
                                                     costMethod: 'mixed',
                                                     active: true,
                                                     lines: [],
-                                                    variantId: '',
+                                                    variantId: 'default',
                                                     version: 1,
                                                     validFrom: new Date().toISOString(),
                                                     createdAt: new Date().toISOString(),

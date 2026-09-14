@@ -8,6 +8,7 @@ interface ServiceJobCardProps {
   onAssign: (job: ServiceJob) => void;
   onReserveMaterials?: (jobId: string) => void;
   onCompleteJob?: (jobId: string) => void;
+  onDelete?: (job: ServiceJob) => void;
 }
 
 const STATUS_STYLES: Record<ServiceJobStatus, { bg: string; text: string; icon: React.ReactNode }> = {
@@ -40,7 +41,7 @@ const isOverdue = (job: ServiceJob) => {
   return new Date(job.dueDate) < new Date();
 };
 
-const ServiceJobCard: React.FC<ServiceJobCardProps> = ({ job, onTransition, onAssign, onReserveMaterials, onCompleteJob }) => {
+const ServiceJobCard: React.FC<ServiceJobCardProps> = ({ job, onTransition, onAssign, onReserveMaterials, onCompleteJob, onDelete }) => {
   const style = STATUS_STYLES[job.status];
   const overdue = isOverdue(job);
   const pricing = job.pricingSnapshot;
@@ -196,6 +197,14 @@ const ServiceJobCard: React.FC<ServiceJobCardProps> = ({ job, onTransition, onAs
         >
           Assign
         </button>
+        {onDelete && (
+          <button
+            onClick={() => onDelete(job)}
+            className="px-2 py-1.5 text-[10px] font-semibold rounded-lg bg-red-50 hover:bg-red-100 text-red-600 transition-colors"
+          >
+            Delete
+          </button>
+        )}
       </div>
     </div>
   );

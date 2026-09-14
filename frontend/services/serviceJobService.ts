@@ -36,15 +36,6 @@ async function getPricingService(): Promise<any> {
   return _pricingService;
 }
 
-let _masterPricingService: any = null;
-async function getMasterPricingService(): Promise<any> {
-  if (!_masterPricingService) {
-    const mod = await import('./masterInventoryPricingService');
-    _masterPricingService = mod.masterInventoryPricingService;
-  }
-  return _masterPricingService;
-}
-
 let _inventoryItems: any[] | null = null;
 async function ensureInventoryCache(): Promise<any[]> {
   if (!_inventoryItems) {
@@ -235,28 +226,6 @@ class ServiceJobService {
       totalCost: 0,
       lines: [] as ServicePricingSnapshot['recipeCostBreakdown']['lines'],
     };
-
-    // Attempt to load pricing from centralized services
-    try {
-      const masterPricing = await getMasterPricingService();
-      const inventory = await ensureInventoryCache();
-
-      // Find the variant and item in inventory
-      const item = inventory.find((i: any) => i.id === input.itemId);
-      const variant = item?.variants?.find((v: any) => v.id === input.variantId);
-
-      if (item && variant) {
-        const result = await masterPricing.repriceVariant(item, variant, inventory, []);
-        if (result) {
-          costPrice = result.cost ?? result.costPrice ?? 0;
-          sellingPrice = result.price ?? result.sellingPrice ?? 0;
-          profitAmount = sellingPrice - costPrice;
-          profitMargin = costPrice > 0 ? (profitAmount / costPrice) * 100 : 0;
-          minimumMargin = variant.minimumMargin ?? item.minimumMargin ?? 0;
-          pricingSource = result.pricingSource ?? 'smart_pricing';
-        }
-      }
-    } catch { /* fall through */ }
 
     // Fallback: try direct pricing service
     if (costPrice === 0 && sellingPrice === 0) {

@@ -2,9 +2,9 @@
 import React, { useState } from 'react';
 import {
   Play, CheckCircle, AlertTriangle, Activity, Clock,
-  Package, ShieldAlert, Trash2, History, ShieldCheck,
-  ChevronRight, ArrowLeft, MoreVertical, Search, Filter,
-  Settings, User, Terminal, Cpu, Info
+  Package, ShieldAlert, History,
+  ChevronRight, ArrowLeft, Search,
+  Terminal, Cpu
 } from 'lucide-react';
 import { useProduction } from '../../context/ProductionContext';
 import { useInventory } from '../../context/InventoryContext';
@@ -13,10 +13,6 @@ import { WorkOrder } from '../../types';
 import { OfflineImage } from '../../components/OfflineImage';
 import { format } from 'date-fns';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
-
-const teal={50:'#eef7f6',100:'#d3ece9',200:'#a6d9d3',300:'#72c0b7',400:'#3fa294',500:'#1f8577',600:'#146b60',700:'#0f544c',800:'#0b3e39',900:'#082e2a'};
-const amber={100:'#fbead0',300:'#eec27a',500:'#d99a3f',600:'#b97e2b'};
-const paper='#FEFDFB',ink='#23282A',inkSoft='#5c6567',hairline='#e4ddd1',danger='#b5493f';
 
 const ShopFloor: React.FC = () => {
   const { workOrders, updateWorkOrderStatus, logProductionStep, completeWorkOrder, boms } = useProduction();
@@ -36,40 +32,30 @@ const ShopFloor: React.FC = () => {
   // Auto-select Paper/Toner for Examinations
   React.useEffect(() => {
     if (selectedWo?.id.startsWith('WO-EXAM-')) {
-        const paper = inventory.find(i => i.name.toLowerCase().includes('paper'));
+        const paper = inventory.find(i => String(i.name || '').toLowerCase().includes('paper'));
         if (paper) setSelectedWasteMaterial(paper.id);
     }
   }, [selectedWo, inventory]);
 
-  const activeJobs = workOrders.filter(wo => wo.status === 'In Progress' && (wo.productName.toLowerCase().includes(searchQuery.toLowerCase()) || wo.id.toLowerCase().includes(searchQuery.toLowerCase())));
-  const queueJobs = workOrders.filter(wo => wo.status === 'Scheduled' && (wo.productName.toLowerCase().includes(searchQuery.toLowerCase()) || wo.id.toLowerCase().includes(searchQuery.toLowerCase())));
+  // Re-sync selected job from live workOrders (logProductionStep updates quantityCompleted/logs)
+  React.useEffect(() => {
+    setSelectedWo(prev => {
+      if (!prev) return prev;
+      const fresh = workOrders.find(w => w.id === prev.id);
+      return fresh ? fresh : prev;
+    });
+  }, [workOrders]);
+
+  const activeJobs = workOrders.filter(wo => wo.status === 'In Progress' && (String(wo.productName || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || String(wo.id || '').toLowerCase().includes(String(searchQuery || '').toLowerCase())));
+  const queueJobs = workOrders.filter(wo => wo.status === 'Scheduled' && (String(wo.productName || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || String(wo.id || '').toLowerCase().includes(String(searchQuery || '').toLowerCase())));
 
   const handleStartJob = (wo: WorkOrder) => {
       updateWorkOrderStatus(wo.id, 'In Progress');
       logProductionStep({
-          id: '', workOrderId: wo.id, operationName: 'Production', timestamp: new Date().toISOString(),
-          action: 'Start', operatorId: user?.username || 'Operator'
+          id: '', workOrderId: wo.id, timestamp: new Date().toISOString(),
+          action: 'Start', user: user?.username || 'System', notes: 'Production'
       });
       setSelectedWo({...wo, status: 'In Progress'});
-  };
-
-  const handleFinishJob = (wo: WorkOrder) => {
-    setConfirmState({
-      open: true,
-      title: 'Finish Job',
-      message: 'Are you sure you want to finish this job? This will complete the production process.',
-      type: 'warning',
-      confirmText: 'Finish',
-      onConfirm: () => {
-        updateWorkOrderStatus(wo.id, 'Completed');
-        logProductionStep({
-            id: '', workOrderId: wo.id, operationName: 'Production', timestamp: new Date().toISOString(),
-            action: 'Complete', operatorId: user?.username || 'Operator'
-        });
-        completeWorkOrder(wo.id);
-        notify("Job completed successfully!", "success");
-      }
-    });
   };
 
   const handleLog = (type: 'Complete' | 'Log Waste') => {
@@ -90,16 +76,16 @@ const ShopFloor: React.FC = () => {
           const notes = `${wasteReason}: ${qtyInput} ${mat?.unit || 'Units'} of ${mat?.name}. ${noteInput} ${destructionCert ? `[CERT: ${destructionCert}]` : ''}`;
           
           logProductionStep({
-            id: '', workOrderId: selectedWo.id, operationName: 'Production', timestamp: new Date().toISOString(),
-            action: 'Log Waste', qtyProcessed: qtyInput, notes, operatorId: user?.username || 'Operator',
+            id: '', workOrderId: selectedWo.id, timestamp: new Date().toISOString(),
+            action: 'Log Waste', qtyProcessed: qtyInput, notes: notes ? `[Production] ${notes}` : 'Production', user: user?.username || 'System',
             materialId: selectedWasteMaterial, wasteDestroyed: true
           });
           
           notify("Scrap Logged & Security Chain Verified.", "success");
       } else {
           logProductionStep({
-            id: '', workOrderId: selectedWo.id, operationName: 'Production', timestamp: new Date().toISOString(),
-            action: 'Complete', qtyProcessed: qtyInput, notes: noteInput, operatorId: user?.username || 'Operator'
+            id: '', workOrderId: selectedWo.id, timestamp: new Date().toISOString(),
+            action: 'Complete', qtyProcessed: qtyInput, notes: noteInput ? `[Production] ${noteInput}` : 'Production', user: user?.username || 'System'
           });
 
           if (selectedWo.quantityCompleted + qtyInput >= selectedWo.quantityPlanned) {
@@ -215,7 +201,7 @@ const ShopFloor: React.FC = () => {
                         <h4 style={{ fontWeight: 700, color: '#23282A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{wo.productName}</h4>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
                           <div style={{ flex: 1, height: '4px', background: '#eef7f6', borderRadius: '9999px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', background: '#eef7f6', width: `${Math.min(100, (wo.quantityCompleted/wo.quantityPlanned)*100)}%` }} />
+                            <div style={{ height: '100%', background: '#eef7f6', width: `${wo.quantityPlanned > 0 ? Math.min(100, (wo.quantityCompleted/wo.quantityPlanned)*100) : 0}%` }} />
                           </div>
                           <span style={{ fontWeight: 700, color: '#5c6567' }}>{wo.quantityCompleted}/{wo.quantityPlanned}</span>
                         </div>
@@ -367,6 +353,16 @@ const ShopFloor: React.FC = () => {
                             })
                           )}
                         </select>
+                        <select
+                          style={{ width: '100%', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '6px', padding: '10px', fontWeight: 700, color: '#23282A', outline: 'none', marginTop: '12px' }}
+                          value={wasteReason}
+                          onChange={e => setWasteReason(e.target.value)}
+                        >
+                          <option value="Material Defect">Material Defect</option>
+                          <option value="Machine Error">Machine Error</option>
+                          <option value="Operator Error">Operator Error</option>
+                          <option value="Other">Other</option>
+                        </select>
 
                         {selectedWo.isConfidential ? (
                           <div style={{ marginTop: '12px', padding: '12px', background: '#fef2f2', borderRadius: '6px', border: '1.4px solid #e4ddd1', borderColor: '#b5493f' }}>
@@ -409,7 +405,7 @@ const ShopFloor: React.FC = () => {
                       </h3>
                     </div>
                     <div style={{ overflowY: 'auto', padding: '8px', marginTop: '4px' }}>
-                      {selectedWo.logs.slice().reverse().map((log, i) => (
+                      {(selectedWo.logs || []).slice().reverse().map((log, i) => (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderRadius: '6px', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <div className={`w-1.5 h-1.5 rounded-full ${
@@ -428,7 +424,7 @@ const ShopFloor: React.FC = () => {
                               {log.notes && <p style={{ color: '#5c6567', marginTop: '2px' }}>{log.notes}</p>}
                             </div>
                           </div>
-                          <span style={{ fontWeight: 500, color: '#5c6567' }}>{format(new Date(log.timestamp), 'HH:mm')}</span>
+                          <span style={{ fontWeight: 500, color: '#5c6567' }}>{isNaN(new Date(log.timestamp).getTime()) ? '—' : format(new Date(log.timestamp), 'HH:mm')}</span>
                         </div>
                       ))}
                     </div>

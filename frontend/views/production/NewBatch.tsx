@@ -96,12 +96,20 @@ const NewBatch: React.FC = () => {
   const totalBatchCost = totalMaterialCost + totalLaborCost;
   const unitCost = quantity > 0 ? totalBatchCost / quantity : 0;
 
+  const requirementsSignature = JSON.stringify(requirements.map(r => ({ id: (r as any).materialId || (r as any).itemId, qty: r.requiredQtyBase, ok: r.sufficient })));
+
+  useEffect(() => {
+    if (variants.length > 0 && !variants.some(v => v.id === variantId)) {
+      setVariantId(variants[0].id);
+    }
+  }, [variants, variantId]);
+
   useEffect(() => {
     const allSufficient = requirements.every(r => r.sufficient);
     const variantRequired = variants.length > 0;
     const variantSelected = !!selectedVariant;
     setCanProduce(allSufficient && quantity > 0 && !!selectedBom && (!variantRequired || variantSelected));
-  }, [requirements, quantity, selectedBom, variants, selectedVariant]);
+  }, [requirementsSignature, quantity, selectedBom, variants, selectedVariant]);
 
   const handleProduce = () => {
     if(!canProduce || !selectedBom) return;

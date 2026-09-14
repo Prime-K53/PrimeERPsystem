@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useInventory } from '../../context/InventoryContext';
 import { useAuth } from '../../context/AuthContext';
-import { BOMTemplate, Item } from '../../types';
+import { BOMTemplate, BOMComponent } from '../../types';
 import { dbService } from '../../services/db';
 import { repriceMasterInventoryFromAdjustments } from '../../services/masterInventoryPricingService';
 import { useConfirmDialog } from '../../components/ConfirmDialog';
@@ -314,8 +314,8 @@ const BOMRecipes: React.FC = () => {
                             </div>
 
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(1,1fr)', gap: '16px' }}>
-                                {templates.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase())).map(template => (
-                                    <div key={template.id} style={{ background: '#FEFDFB', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', padding: '20px', borderRadius: '16px', transition: 'all .15s ease' }}>
+                                {templates.filter(t => (t.name ?? '?').toLowerCase().includes(searchTerm.toLowerCase())).map(template => (
+                                    <div key={template.id} className="group" style={{ background: '#FEFDFB', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', padding: '20px', borderRadius: '16px', transition: 'all .15s ease' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
                                             <div>
                                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${template.type === 'Book' ? 'bg-blue-50 text-blue-600' :
@@ -326,7 +326,7 @@ const BOMRecipes: React.FC = () => {
                                                 </span>
                                                 <h4 style={{ fontWeight: 700, color: '#23282A', marginTop: '4px' }}>{template.name}</h4>
                                             </div>
-                                            <div style={{ display: 'flex', gap: '4px', opacity: 0.0, transition: 'opacity .15s ease' }}>
+                                            <div className="opacity-0 group-hover:opacity-100" style={{ display: 'flex', gap: '4px', transition: 'opacity .15s ease' }}>
                                                 <button onClick={() => setEditingTemplate(template)} style={{ padding: '6px', color: '#5c6567', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>
                                                     <Edit2 size={16} />
                                                 </button>
@@ -337,7 +337,7 @@ const BOMRecipes: React.FC = () => {
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '11px', color: '#5c6567' }}>
                                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Layers size={14} /> {template.components?.length || 0} Items</span>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={14} /> Updated {new Date(template.lastUpdated).toLocaleDateString()}</span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={14} /> Updated {template.lastUpdated ? new Date(template.lastUpdated).toLocaleDateString() : '—'}</span>
                                         </div>
                                     </div>
                                 ))}

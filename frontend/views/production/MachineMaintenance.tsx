@@ -1,16 +1,17 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {Activity, Thermometer, Zap, Wrench, AlertTriangle, CheckCircle, Clock, BarChart3, RotateCcw, Settings, PlayCircle, StopCircle, UserPlus, ClipboardList, Trash2, Sparkles, Loader2, X, MessageSquare
+import React, { useState, useEffect, useRef } from 'react';
+import {Activity, Thermometer, Zap, Wrench, AlertTriangle, Clock, RotateCcw, ClipboardList, Trash2, Sparkles, Loader2, X, MessageSquare
 } from 'lucide-react';
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, BarChart, Bar} from 'recharts';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip} from 'recharts';
 import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 
 import { useProduction } from '../../context/ProductionContext';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
-import { ProductionResource, MaintenanceLog } from '../../types';
+import { MaintenanceLog } from '../../types';
 import { generateAIResponse } from '../../services/geminiService';
+import { generateNextId } from '../../utils/helpers';
 
 const teal={50:'#eef7f6',100:'#d3ece9',200:'#a6d9d3',300:'#72c0b7',400:'#3fa294',500:'#1f8577',600:'#146b60',700:'#0f544c',800:'#0b3e39',900:'#082e2a'};
 const amber={100:'#fbead0',300:'#eec27a',500:'#d99a3f',600:'#b97e2b'};
@@ -47,6 +48,13 @@ const MachineMaintenance: React.FC = () => {
   const [reportWoId, setReportWoId] = useState('');
   const [reportDowntime, setReportDowntime] = useState('');
   const prevMachineIdRef = useRef(selectedMachineId);
+  const [chartData, setChartData] = useState<{time: string, temp: number}[]>([]);
+
+  useEffect(() => {
+    if (!resources.length) return;
+    if (selectedMachineId && resources.some(r => r.id === selectedMachineId)) return;
+    setSelectedMachineId(resources[0].id);
+  }, [resources, selectedMachineId]);
 
   const analyzeMachineAI = async () => {
     if (!selectedMachine || !currentData) return;
@@ -112,6 +120,9 @@ const MachineMaintenance: React.FC = () => {
 
   // Reset chart data when machine changes
   useEffect(() => {
+      if (prevMachineIdRef.current !== selectedMachineId) {
+          setChartData([]);
+      }
       prevMachineIdRef.current = selectedMachineId;
   }, [selectedMachineId]);
 
@@ -156,22 +167,22 @@ const MachineMaintenance: React.FC = () => {
   const handleServiceSchedule = () => {
       if (!selectedMachine) return;
       const mLog: MaintenanceLog = {
-          id: '',
+          id: generateNextId('MNT', maintenanceLogs || [], companyConfig),
           resourceId: selectedMachine.id,
           machineName: selectedMachine.name,
           type: 'Preventive',
-          date: currentData.nextMaintenance,
+          date: currentData?.nextMaintenance || new Date().toISOString(),
           status: 'Pending',
           notes: 'Routine service based on IoT wear indicators.'
       };
       addMaintenanceLog(mLog);
 
       addTask({
-          id: '',
+          id: generateNextId('TASK', [], companyConfig),
           title: `PREVENTIVE: ${selectedMachine.name}`,
           status: 'Pending',
           priority: 'Medium',
-          dueDate: currentData.nextMaintenance.split('T')[0],
+          dueDate: (currentData?.nextMaintenance?.split('T')[0]) || new Date().toISOString().split('T')[0],
           assignedTo: user?.id || '',
           relatedTo: { id: selectedMachine.id, name: selectedMachine.name, type: 'WorkOrder' },
           notes: `Routine service scheduled based on IoT indicators.`,
@@ -180,7 +191,6 @@ const MachineMaintenance: React.FC = () => {
       notify("Preventive service task scheduled.", "success");
   };
 
-  const [chartData, setChartData] = useState<{time: string, temp: number}[]>([]);
   useEffect(() => {
     if (!currentData) return;
     setChartData(prev => {
@@ -370,12 +380,12 @@ const MachineMaintenance: React.FC = () => {
                     </h3>
                     <div style={{ flex: 1, overflowY: 'auto', marginTop: '16px', scrollbarWidth: 'none' }}>
                         {(maintenanceLogs || []).filter(l => l.resourceId === selectedMachineId).map(log => (
-                            <div key={log.id} style={{ padding: '20px', borderRadius: '24px', background: 'rgba(0,0,0,.4)', border: '1.4px solid #e4ddd1', borderColor: '#0b3e39', fontSize: '11px', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>
+                            <div key={log.id} className="group" style={{ padding: '20px', borderRadius: '24px', background: 'rgba(0,0,0,.4)', border: '1.4px solid #e4ddd1', borderColor: '#0b3e39', fontSize: '11px', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                     <span style={{ fontWeight: 900, color: '#3fa294', textTransform: 'uppercase', letterSpacing: '.1em' }}>{log.type}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ color: '#5c6567', fontFamily: '"JetBrains Mono",monospace' }}>{new Date(log.date).toLocaleDateString()}</span>
-                                        <button onClick={() => deleteMaintenanceLog(log.id)} style={{ color: '#23282A', opacity: 0.0, transition: 'opacity .15s ease' }}><Trash2 size={12}/></button>
+                                        <span style={{ color: '#5c6567', fontFamily: '"JetBrains Mono",monospace' }}>{log.date ? new Date(log.date).toLocaleDateString() : '—'}</span>
+                                        <button onClick={() => deleteMaintenanceLog(log.id)} className="opacity-0 group-hover:opacity-100" style={{ color: '#23282A', transition: 'opacity .15s ease' }}><Trash2 size={12}/></button>
                                     </div>
                                 </div>
                                 <p style={{ color: '#5c6567', fontWeight: 500, lineHeight: 1.625 }}>{log.notes}</p>

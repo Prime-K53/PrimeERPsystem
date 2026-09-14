@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CalendarClock, AlertCircle, ChevronLeft, ChevronRight, Clock, GripVertical, Trash2, Lock, Zap } from 'lucide-react';
+import { CalendarClock, AlertCircle, ChevronLeft, ChevronRight, Clock, GripVertical, Trash2, Lock } from 'lucide-react';
 import { useProduction } from '../../context/ProductionContext';
 import { WorkOrder, ResourceAllocation } from '../../types';
 
@@ -35,7 +35,7 @@ const Scheduler: React.FC = () => {
   const pixelsPerHour = 100; // Width of one hour block
 
   // Drag State
-  const [draggedItem, setDraggedItem] = useState<{ type: 'new' | 'existing', id: string, duration?: number } | null>(null);
+  const [draggedItem, setDraggedItem] = useState<{ type: 'new' | 'existing', id: string, duration?: number, workOrderId?: string } | null>(null);
 
   // Filter Work Orders
   const activeOrders = useMemo(() => {
@@ -61,8 +61,8 @@ const Scheduler: React.FC = () => {
   };
 
   // Handlers
-  const handleDragStart = (e: React.DragEvent, type: 'new' | 'existing', id: string, duration: number = 1) => {
-      setDraggedItem({ type, id, duration });
+  const handleDragStart = (e: React.DragEvent, type: 'new' | 'existing', id: string, duration: number = 1, workOrderId?: string) => {
+      setDraggedItem({ type, id, duration, workOrderId });
       e.dataTransfer.effectAllowed = 'move';
       // Set ghost image if needed
   };
@@ -78,29 +78,38 @@ const Scheduler: React.FC = () => {
       const snappedX = Math.round(x / 25) * 25;
       
       const newStartTime = getTimeFromPosition(snappedX);
-      const durationHours = Math.max(1, Math.round((draggedItem.quantityPlanned || 50) / 50));
-      const newEndTime = new Date(newStartTime.getTime() + durationHours * 60 * 60 * 1000);
 
-      // Get current WO status — only schedule if currently Draft or In Progress
+      // 'existing' drags carry an allocation id — move the allocation
+      const existingAllocation = allocations.find(a => a.id === draggedItem.id);
+      if (existingAllocation) {
+          const linkedWo = workOrders.find(wo => wo.id === (draggedItem.workOrderId ?? existingAllocation.workOrderId));
+          const durationHours = draggedItem.duration ?? (linkedWo ? Math.max(1, Math.round((linkedWo.quantityPlanned || 50) / 50)) : 1);
+          const newEndTime = new Date(newStartTime.getTime() + durationHours * 60 * 60 * 1000);
+          moveAllocation(existingAllocation.id, newStartTime.toISOString(), newEndTime.toISOString(), resourceId);
+          setDraggedItem(null);
+          return;
+      }
+
+      // Only 'new' drags fall back to a work-order lookup
+      if (draggedItem.type !== 'new') return;
       const currentWo = workOrders.find(wo => wo.id === draggedItem.id);
       if (!currentWo) return;
 
-      if (draggedItem.type === 'new') {
-          // Only update status if transitioning forward
-          if (currentWo.status === 'Draft') {
-              updateWorkOrderStatus(draggedItem.id, 'Scheduled');
-          }
-          allocateResource({
-              id: `ALLOC-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`,
-              resourceId,
-              workOrderId: draggedItem.id,
-              startTime: newStartTime.toISOString(),
-              endTime: newEndTime.toISOString(),
-              status: 'Scheduled'
-          } as ResourceAllocation);
-      } else {
-          moveAllocation(draggedItem.id, newStartTime.toISOString(), newEndTime.toISOString(), resourceId);
+      const durationHours = draggedItem.duration ?? Math.max(1, Math.round((currentWo.quantityPlanned || 50) / 50));
+      const newEndTime = new Date(newStartTime.getTime() + durationHours * 60 * 60 * 1000);
+
+      // Only update status if transitioning forward
+      if (currentWo.status === 'Draft') {
+          updateWorkOrderStatus(draggedItem.id, 'Scheduled');
       }
+      allocateResource({
+          id: `ALLOC-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`,
+          resourceId,
+          workOrderId: draggedItem.id,
+          startTime: newStartTime.toISOString(),
+          endTime: newEndTime.toISOString(),
+          status: 'Scheduled'
+      } as ResourceAllocation);
       setDraggedItem(null);
   };
 
@@ -221,14 +230,11 @@ const Scheduler: React.FC = () => {
                                         const left = getPositionFromTime(alloc.startTime);
                                         const width = (new Date(alloc.endTime).getTime() - new Date(alloc.startTime).getTime()) / (1000 * 60 * 60) * pixelsPerHour;
 
-                                        // Priority Styling
-                                        const isUrgent = wo.customerName?.toLowerCase().includes('urgent') || wo.isConfidential; // Mock logic if priority not available on WO directly in this context
-                                        
                                         return (
                                             <div
                                                 key={alloc.id}
                                                 draggable
-                                                onDragStart={(e) => handleDragStart(e, 'existing', alloc.id, width/pixelsPerHour)}
+                                                onDragStart={(e) => handleDragStart(e, 'existing', alloc.id, width/pixelsPerHour, alloc.workOrderId)}
                                                 className={`absolute top-2 bottom-2 rounded-lg shadow-sm cursor-grab active:cursor-grabbing flex flex-col justify-center px-2 overflow-hidden hover:z-10 group
                                                     ${wo.isConfidential ? 'border-2 border-red-400' : 'border border-white/20'}
                                                 `}

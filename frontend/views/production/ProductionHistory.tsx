@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useProduction } from '../../context/ProductionContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useAuth } from '../../context/AuthContext';
@@ -12,6 +12,16 @@ const ProductionHistory: React.FC = () => {
   const { inventory = [] } = useInventory();
   const { companyConfig } = useAuth();
   const currency = companyConfig.currencySymbol;
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const statuses = useMemo(() => Array.from(new Set((batches || []).map((b: any) => b.status).filter(Boolean))), [batches]);
+  const filteredBatches = useMemo(() => (batches || []).filter((batch: any) => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch = !q || [batch.id, batch.productName, batch.customerName].some((v: any) => String(v || '').toLowerCase().includes(q));
+    const matchesStatus = !statusFilter || batch.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  }), [batches, search, statusFilter]);
 
   return (
     <div className="p-4 md:p-6 max-w-[1600px] mx-auto space-y-6">
@@ -21,6 +31,24 @@ const ProductionHistory: React.FC = () => {
       </div>
 
       <div className="prime-card" style={{ background: paper, borderRadius: 14, border: `1.4px solid ${hairline}`, overflow: 'hidden' }}>
+        <div className="flex flex-col md:flex-row gap-3 p-4" style={{ borderBottom: `1.4px solid ${hairline}`, background: '#eef7f6' }}>
+          <input
+            className="w-full md:flex-1 p-3 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white transition-colors text-[13px]"
+            placeholder="Search by batch ID, product, or customer..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            className="w-full md:w-48 p-3 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white transition-colors text-[13px]"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">All statuses</option>
+            {statuses.map((s: string) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead className="table-header sticky top-0 z-10 shadow-sm border-b border-slate-200">
@@ -35,14 +63,14 @@ const ProductionHistory: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100/50">
-              {(!batches || batches.length === 0) ? (
+              {(!filteredBatches || filteredBatches.length === 0) ? (
                 <tr>
                   <td colSpan={7} className="table-body-cell p-12 text-center text-slate-400">
-                    No production history found.
+                    {(!batches || batches.length === 0) ? 'No production history found.' : 'No batches match the current filters.'}
                   </td>
                 </tr>
               ) : (
-                batches.map((batch) => {
+                filteredBatches.map((batch) => {
                   const bom = boms.find(b => b.id === batch.bomId);
                   const product = inventory.find(i => i.id === bom?.productId);
 

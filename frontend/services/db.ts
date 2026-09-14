@@ -6,6 +6,7 @@ import {
     AssessmentContract, AssessmentContractItem, ContractAmendment, StatementSnapshot
 } from '../types';
 import type { Referral, ReferralReward } from '../types/referral';
+import type { ServiceRecipe, ServiceJob, ServiceResource, ServiceConsumptionRecord } from '../types';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
 import type { PortalAd } from '../types/ads';
 import { calculateCustomerPaymentSnapshot } from './receiptCalculationService';
@@ -177,13 +178,18 @@ interface NexusDB extends DBSchema {
     utilityPayments: { key: string; value: UtilityPayment; };
     bankChargeEntries: { key: string; value: BankChargeEntry; };
     payrollEntries: { key: string; value: PayrollEntry; };
+    serviceRecipes: { key: string; value: ServiceRecipe; };
+    serviceJobs: { key: string; value: ServiceJob; };
+    serviceResources: { key: string; value: ServiceResource; };
+    serviceConsumptions: { key: string; value: ServiceConsumptionRecord; };
 
 }
 
 const DB_NAME = 'PrimeERP_Final_v3_Clean';
 // v55: register the `engagementPromotions` store (PromotionsAdmin / PromotionsPanel / promotionPlugin).
 // v56: register the `statementSnapshots` store (immutable verifiable statement snapshots).
-const DB_VERSION = 56;
+// v57: register the `serviceRecipes`/`serviceJobs`/`serviceResources`/`serviceConsumptions` stores (service catalog execution).
+const DB_VERSION = 57;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -524,6 +530,10 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   // public verification fell back to the legacy purchases table).
   purchaseOrders: 'purchase_orders',
   statementSnapshots: 'statement_snapshots',
+  serviceRecipes: 'service_recipes',
+  serviceJobs: 'service_jobs',
+  serviceResources: 'service_resources',
+  serviceConsumptions: 'service_consumptions',
 
 };
 
@@ -622,6 +632,10 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'utilityPayments',
     'bankChargeEntries',
     'payrollEntries',
+    'serviceRecipes',
+    'serviceJobs',
+    'serviceResources',
+    'serviceConsumptions',
 
 ];
 

@@ -519,6 +519,7 @@ export const ProductionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             const newVal = {
                 ...wo,
                 status: 'Completed',
+                quantityCompleted: wo.quantityPlanned,
                 quantityWaste: totalWaste,
                 consumptionSnapshot
             } as WorkOrder;
@@ -560,6 +561,8 @@ export const ProductionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
                 await transactionService.cancelWorkOrder(id, actualReservationQty);
             }
+
+            await storeDeleteWorkOrder(id);
 
             // Refresh production data
             await fetchProductionData();
