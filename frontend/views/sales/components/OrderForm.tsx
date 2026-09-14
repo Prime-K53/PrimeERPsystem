@@ -2600,15 +2600,17 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <colgroup>
-                                        <col style={{width: '38%'}} />
+                                        <col style={{width: '6%'}} />
+                                        <col style={{width: '34%'}} />
                                         <col style={{width: '14%'}} />
-                                        <col style={{width: '22%'}} />
+                                        <col style={{width: '20%'}} />
                                         <col style={{width: '20%'}} />
                                         <col style={{width: '6%'}} />
                                     </colgroup>
                                     <thead>
                                         <tr className="text-[10.5px] font-bold text-[#0F3D3E] uppercase tracking-[0.7px] bg-[#eef7f6]">
-                                            <th className="px-[12px] py-[6px] text-left border-b border-[#E4DFD1]">Item</th>
+                                            <th className="px-[8px] py-[6px] text-center border-b border-[#E4DFD1]">Sn</th>
+                                            <th className="px-[12px] py-[6px] text-left border-b border-[#E4DFD1]">Description</th>
                                             <th className="px-[12px] py-[6px] text-center border-b border-[#E4DFD1]">Qty</th>
                                             <th className="px-[12px] py-[6px] text-right border-b border-[#E4DFD1]">Price</th>
                                             <th className="px-[12px] py-[6px] text-right border-b border-[#E4DFD1]">Amount</th>
@@ -2618,7 +2620,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     <tbody className="divide-y divide-[#E4DFD1]">
                                         {analysis.processedItems.length === 0 ? (
                                             <tr>
-                                                <td colSpan={5} className="px-[16px] py-[48px] text-center text-[#666F6C] text-[13px]">
+                                                <td colSpan={6} className="px-[16px] py-[48px] text-center text-[#666F6C] text-[13px]">
                                                     <FileText size={20} className="mx-auto mb-[10px] opacity-40" />
                                                     Press Enter to add the first item
                                                 </td>
@@ -2630,7 +2632,8 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                 const qty = Number(item.quantity) || 0;
                                                 return (
                                                     <tr key={idx} className="hover:bg-[#eef7f6] transition-colors border-b border-[#E4DFD1] last:border-b-0">
-                                                        <td data-label="Item" className="px-[12px] py-[4px] text-[13px] text-[#23282A] font-medium flex items-center gap-[6px]">
+                                                        <td data-label="Sn" className="px-[8px] py-[4px] text-[13px] text-[#666F6C] text-center">{idx + 1}</td>
+                                                        <td data-label="Description" className="px-[12px] py-[4px] text-[13px] text-[#23282A] font-medium flex items-center gap-[6px]">
                                                             {invItem?.image ? (
                                                                 <button onClick={e => { e.stopPropagation(); setPhotoViewItem(invItem); }} className="shrink-0 w-7 h-7 rounded border border-teal-200 bg-teal-50 hover:border-teal-400 hover:shadow-sm transition-all flex items-center justify-center" title="View Details">
                                                                     <Package size={14} className="text-emerald-700"/>

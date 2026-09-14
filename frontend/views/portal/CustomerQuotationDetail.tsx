@@ -402,15 +402,17 @@ const CustomerQuotationDetail: React.FC = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={{ ...th, textAlign: 'left' }}>Item</th>
+                <th style={{ ...th, textAlign: 'center', width: 44 }}>Sn</th>
+                <th style={{ ...th, textAlign: 'left' }}>Description</th>
                 <th style={thR}>Qty</th>
                 <th style={thR}>Price</th>
-                <th style={thR}>Total</th>
+                <th style={thR}>Amount</th>
               </tr>
             </thead>
             <tbody>
               {(quotation.items || []).map((item, i) => (
                 <tr key={i}>
+                  <td style={{ ...td, textAlign: 'center', color: '#8A94A6' }}>{i + 1}</td>
                   <td style={{ ...td, fontWeight: 600, color: '#1A202C' }}>{item.name}</td>
                   <td style={{ ...tdR, fontVariantNumeric: 'tabular-nums' }}>{item.quantity}</td>
                   <td style={{ ...tdR, fontFamily: "'JetBrains Mono', monospace" }}>{formatK(item.unitPrice || 0)}</td>

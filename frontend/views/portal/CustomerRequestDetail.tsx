@@ -353,15 +353,17 @@ const CustomerRequestDetail: React.FC = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '8px 14px', ...label }}>Item</th>
+                  <th style={{ textAlign: 'center', padding: '8px 8px', ...label, width: 44 }}>Sn</th>
+                  <th style={{ textAlign: 'left', padding: '8px 14px', ...label }}>Description</th>
                   <th style={{ textAlign: 'right', padding: '8px 14px', ...label, width: 80 }}>Qty</th>
                   <th style={{ textAlign: 'right', padding: '8px 14px', ...label, width: 110 }}>Price</th>
-                  <th style={{ textAlign: 'right', padding: '8px 14px', ...label, width: 110 }}>Total</th>
+                  <th style={{ textAlign: 'right', padding: '8px 14px', ...label, width: 110 }}>Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {(request.items || []).map((item, i) => (
                   <tr key={i} style={{ borderTop: i < (request.items || []).length - 1 ? '1px solid #F3F4F6' : 'none' }}>
+                    <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: 13, color: '#8A94A6' }}>{i + 1}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: '#1A202C', lineHeight: 1.4 }}>{item.name}</td>
                     <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#4A5568' }}>x{item.quantity}</td>
                     <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#4A5568', fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{formatK(item.unitPrice || 0)}</td>

@@ -192,6 +192,7 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
           <div className="space-y-6">
             <ItemizedTable
               columns={[
+                { header: 'Sn', accessor: '__sn', align: 'center' as const, width: '8%' },
                 { header: 'Description', accessor: 'name', wrapSafe: true },
                 { header: 'Qty', accessor: 'quantity', align: 'center' as const }
               ]}
@@ -406,8 +407,9 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
         };
         const columns = options.showPrices
           ? [
-            { header: 'Qty', accessor: 'quantity', align: 'center' as const, render: (_: any, item: any) => getQty(item) },
+            { header: 'Sn', accessor: '__sn', align: 'center' as const, width: '8%' },
             { header: 'Description', accessor: 'name', wrapSafe: true, render: (_: any, item: any) => getDesc(item) },
+            { header: 'Qty', accessor: 'quantity', align: 'center' as const, render: (_: any, item: any) => getQty(item) },
             { header: 'Price', accessor: 'unitPrice', isCurrency: true, render: (val: number, item: any) => {
               const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
               if (isQuickPhoto) {
@@ -417,13 +419,14 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
                 const unitPrice = sheets > 0 ? item.price / sheets : item.price;
                 return `${currency}${unitPrice.toFixed(2)}`;
               }
-              return `${currencySymbol}${Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+              return `${currency}${Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
             }},
-            { header: 'Total', accessor: 'total', isCurrency: true }
+            { header: 'Amount', accessor: 'total', isCurrency: true }
           ]
           : [
-            { header: 'Qty', accessor: 'quantity', align: 'center' as const, render: (_: any, item: any) => getQty(item) },
-            { header: 'Description', accessor: 'name', wrapSafe: true, render: (_: any, item: any) => getDesc(item) }
+            { header: 'Sn', accessor: '__sn', align: 'center' as const, width: '8%' },
+            { header: 'Description', accessor: 'name', wrapSafe: true, render: (_: any, item: any) => getDesc(item) },
+            { header: 'Qty', accessor: 'quantity', align: 'center' as const, render: (_: any, item: any) => getQty(item) }
           ];
 
         return (

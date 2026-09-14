@@ -431,15 +431,17 @@ const CustomerRequests: React.FC = () => {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: '#F8FAFC' }}>
-                        <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Item</th>
+                        <th style={{ textAlign: 'center', padding: '8px 8px', fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', width: 44 }}>Sn</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Description</th>
                         <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', width: 70 }}>Qty</th>
                         <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', width: 100 }}>Price</th>
-                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', width: 100 }}>Total</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', width: 100 }}>Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {detailRequest.items.map((item, i) => (
                         <tr key={i} style={{ borderTop: i > 0 ? '1px solid #F1F5F9' : 'none' }}>
+                          <td style={{ padding: '8px 8px', textAlign: 'center', fontSize: 13, color: '#8A94A6' }}>{i + 1}</td>
                           <td style={{ padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#1A202C' }}>{item.name}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: 13, color: '#4A5568' }}>x{item.quantity}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: 13, color: '#4A5568', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>K {Number(item.unitPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>

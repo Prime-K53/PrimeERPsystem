@@ -496,10 +496,11 @@ export const docStyles = StyleSheet.create({
   },
 
   // Column Widths
-  colQty: { width: 50, textAlign: 'left' },
+  colSn: { width: 32, textAlign: 'center' as const },
+  colQty: { width: 50, textAlign: 'right' as const },
   colDesc: { flex: 3 },
-  colPrice: { flex: 2, textAlign: 'right' },
-  colTotal: { flex: 2, textAlign: 'right' },
+  colPrice: { flex: 2, textAlign: 'right' as const },
+  colTotal: { flex: 2, textAlign: 'right' as const },
 
   // Signature blocks
   signatureBlock: {

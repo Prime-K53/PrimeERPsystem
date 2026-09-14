@@ -1117,15 +1117,17 @@ const { companyConfig } = useAuth();
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: teal[50] }}>
-                    <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Item</th>
+                    <th style={{ textAlign: 'center', padding: '8px 8px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', width: 40 }}>Sn</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Description</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Qty</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Unit Price</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Total</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Price</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(selectedRequest.items || []).map((item, idx) => (
                     <tr key={idx} style={{ borderTop: `1px solid ${hairline}` }}>
+                      <td style={{ padding: '8px 8px', textAlign: 'center', color: inkSoft }}>{idx + 1}</td>
                       <td style={{ padding: '8px 12px', fontWeight: 600, color: ink }}>{item.name}</td>
                       <td style={{ padding: '8px 12px', textAlign: 'right' }}>{item.quantity}</td>
                       <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>K {Number(item.unitPrice).toFixed(2)}</td>
@@ -1186,15 +1188,17 @@ const { companyConfig } = useAuth();
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: teal[50] }}>
-                    <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Item</th>
+                    <th style={{ textAlign: 'center', padding: '8px 8px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', width: 40 }}>Sn</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Description</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Qty</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Unit Price</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Total</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Price</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(selectedQuotation.items || []).map((item, idx) => (
                     <tr key={idx} style={{ borderTop: `1px solid ${hairline}` }}>
+                      <td style={{ padding: '8px 8px', textAlign: 'center', color: inkSoft }}>{idx + 1}</td>
                       <td style={{ padding: '8px 12px', fontWeight: 600, color: ink }}>{item.name}</td>
                       <td style={{ padding: '8px 12px', textAlign: 'right' }}>{item.quantity}</td>
                       <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>K {Number(item.unitPrice).toFixed(2)}</td>
@@ -1258,15 +1262,17 @@ const { companyConfig } = useAuth();
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: teal[50] }}>
-                    <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Item</th>
+                    <th style={{ textAlign: 'center', padding: '8px 8px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', width: 40 }}>Sn</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Description</th>
                     <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Qty</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Unit Price</th>
-                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Total</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Price</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase' }}>Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(selectedOrder.items || []).map((item, idx) => (
                     <tr key={idx} style={{ borderTop: `1px solid ${hairline}` }}>
+                      <td style={{ padding: '8px 8px', textAlign: 'center', color: inkSoft }}>{idx + 1}</td>
                       <td style={{ padding: '8px 12px', fontWeight: 600, color: ink }}>{item.name || item.productName || 'Item'}</td>
                       <td style={{ padding: '8px 12px', textAlign: 'right' }}>{item.quantity || item.totalQuantity || 0}</td>
                       <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>K {Number(item.unitPrice || item.price || 0).toFixed(2)}</td>
@@ -1434,15 +1440,17 @@ const RequestInbox: React.FC<PanelProps> = ({ requests, busy, onAction, cardStyl
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: teal[50] }}>
-                        <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Item</th>
+                        <th style={{ textAlign: 'center', padding: '8px 8px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 40 }}>Sn</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Description</th>
                         <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Qty</th>
-                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Unit Price</th>
-                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Total</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Price</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {state.items.map((item, idx) => (
                         <tr key={idx} style={{ borderTop: `1px solid ${hairline}` }}>
+                          <td style={{ padding: '8px 8px', textAlign: 'center', color: inkSoft }}>{idx + 1}</td>
                           <td style={{ padding: '8px 12px' }}>
                             {canEdit ? (
                               <input
@@ -1819,15 +1827,17 @@ const QuotationPanel: React.FC<QuotePanelProps> = ({ quotations, busy, onAction,
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: teal[50] }}>
-                        <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Item</th>
+                        <th style={{ textAlign: 'center', padding: '8px 8px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 40 }}>Sn</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Description</th>
                         <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Qty</th>
-                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Unit Price</th>
-                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Total</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Price</th>
+                        <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(q.items || []).map((item, idx) => (
                         <tr key={idx} style={{ borderTop: `1px solid ${hairline}` }}>
+                          <td style={{ padding: '8px 8px', textAlign: 'center', color: inkSoft }}>{idx + 1}</td>
                           <td style={{ padding: '8px 12px', fontWeight: 600, color: ink }}>{item.name}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right' }}>{item.quantity}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>K {Number(item.unitPrice).toFixed(2)}</td>
@@ -2312,15 +2322,17 @@ const VersionHistoryOverlay: React.FC<VersionOverlayProps> = ({ open, onClose, v
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead>
                           <tr style={{ background: '#f1f5f9' }}>
-                            <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 10, textTransform: 'uppercase', color: inkSoft }}>Item</th>
+                            <th style={{ textAlign: 'center', padding: '6px 8px', fontSize: 10, textTransform: 'uppercase', color: inkSoft, width: 36 }}>Sn</th>
+                            <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 10, textTransform: 'uppercase', color: inkSoft }}>Description</th>
                             <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 10, textTransform: 'uppercase', color: inkSoft }}>Qty</th>
                             <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 10, textTransform: 'uppercase', color: inkSoft }}>Price</th>
-                            <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 10, textTransform: 'uppercase', color: inkSoft }}>Total</th>
+                            <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 10, textTransform: 'uppercase', color: inkSoft }}>Amount</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(v.snapshot.items || []).map((it, i) => (
                             <tr key={i} style={{ borderTop: `1px solid ${hairline}` }}>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', color: inkSoft }}>{i + 1}</td>
                               <td style={{ padding: '6px 10px', fontWeight: 600, color: ink }}>{it.name}</td>
                               <td style={{ padding: '6px 10px', textAlign: 'right' }}>{it.quantity}</td>
                               <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>K {Number(it.unitPrice).toFixed(2)}</td>

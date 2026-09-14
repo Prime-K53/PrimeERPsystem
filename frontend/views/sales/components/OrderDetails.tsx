@@ -113,22 +113,24 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
                                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                             <thead>
                                                 <tr style={{ borderBottom: `1px solid ${hairline}`, background: teal[50] }}>
-                                                    <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: inkSoft }}>Qty</th>
+                                                    <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: inkSoft, width: 44 }}>Sn</th>
                                                     <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: inkSoft }}>Description</th>
+                                                    <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: inkSoft }}>Qty</th>
                                                     <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: inkSoft }}>Price</th>
-                                                    <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: inkSoft }}>Total</th>
+                                                    <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: inkSoft }}>Amount</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {order.items.map((item, idx) => (
                                                     <tr key={idx} style={{ borderBottom: `1px solid ${hairline}` }}>
-                                                        <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: ink }}>{item.quantity}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: inkSoft }}>{idx + 1}</td>
                                                         <td style={{ padding: '10px 16px' }}>
                                                             <div style={{ fontWeight: 600, color: ink }}>{item.productName}</div>
                                                             <div style={{ fontSize: 11, color: inkSoft, marginTop: 2 }}>
                                                                 <DocLink docNumber={item.productId} targetPage="/inventory" rowId={`item-${item.productId}`} currentPage={location.pathname} />
                                                             </div>
                                                         </td>
+                                                        <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: ink }}>{item.quantity}</td>
                                                         <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 500, color: ink }}>{currency}{(item.unitPrice || 0).toLocaleString()}</td>
                                                         <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, color: ink }}>{currency}{(item.subtotal || 0).toLocaleString()}</td>
                                                     </tr>

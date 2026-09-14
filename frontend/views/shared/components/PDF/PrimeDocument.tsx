@@ -419,6 +419,7 @@ const CleanInvoiceTemplate = ({
 
     return (
       <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e0e0e0', minHeight: 24, alignItems: 'center', paddingVertical: 4 }}>
+        <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#334155', textAlign: 'center' }}>{i + 1}</Text>
         <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155' }}>{formattedDesc}</Text>
         <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{qty}</Text>
         <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {unitPrice.toFixed(2)}</Text>
@@ -484,9 +485,10 @@ const CleanInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 20 }}>
           <View style={{ flexDirection: 'row', backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: 'center' }}>
+            <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'center' }}>Sn</Text>
             <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Description</Text>
             <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Qty</Text>
-            <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Unit Price</Text>
+            <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Price</Text>
             <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Amount</Text>
           </View>
           {items.map(renderRow)}
@@ -763,9 +765,10 @@ const ModernInvoiceTemplate = ({
 
     return (
       <View key={i} style={{ flexDirection: 'row', backgroundColor: bgColor, minHeight: 28, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 }}>
+        <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
         <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
-        <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{qty}</Text>
-        <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>
+        <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
+        <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>
             {currency} {unitPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}
         </Text>
         <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>
@@ -835,18 +838,20 @@ const ModernInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
           <View style={{ flexDirection: 'row', backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center' }}>
+            <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'center' }}>Sn</Text>
             <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Description</Text>
-            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Qty.</Text>
-            <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Unit Price</Text>
+            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Qty</Text>
+            <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Price</Text>
             <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Amount</Text>
           </View>
           {items.map(renderRow)}
           
           {/* Total Payment Gray Row */}
           <View style={{ flexDirection: 'row', backgroundColor: '#D9DEDE', paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', marginTop: 4 }}>
+            <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'center' }}>-</Text>
             <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#111111' }}>Total Payment</Text>
-            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111' }}>-</Text>
-            <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111' }}>-</Text>
+            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'right' }}>-</Text>
+            <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'right' }}>-</Text>
             <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#111111', textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
           </View>
         </View>
@@ -1059,6 +1064,7 @@ const ProfessionalInvoiceTemplate = ({
 
     return (
       <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#eeeeee', minHeight: 24, alignItems: 'center', paddingVertical: 5 }}>
+        <Text style={{ width: 30, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
         <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
         <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
         <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {unitPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
@@ -1137,10 +1143,11 @@ const ProfessionalInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
           <View style={{ flexDirection: 'row', borderBottomWidth: 1.5, borderBottomColor: '#222222', paddingBottom: 6 }}>
+            <Text style={{ width: 30, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>Sn</Text>
             <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase' }}>Description</Text>
             <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Qty</Text>
-            <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Unit</Text>
             <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Price</Text>
+            <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Amount</Text>
           </View>
           {items.map(renderRow)}
         </View>
@@ -1425,12 +1432,14 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View style={{ marginTop: 20 }}>
             <View style={s.tableHeader}>
+              <Text style={s.colSn}>Sn</Text>
               <Text style={s.colDesc}>Description</Text>
               <Text style={[s.colQty, { width: 60 }]}>Returned</Text>
               <Text style={[s.colQty, { width: 60 }]}>Replaced</Text>
             </View>
             {items.map((item: Record<string, unknown>, i: number) => (
               <View key={i} style={s.row}>
+                <Text style={[s.colSn, { fontSize: 10 }]}>{i + 1}</Text>
                 <Text style={[s.colDesc, { fontSize: 10 }]}>{String(item.desc || 'N/A')}</Text>
                 <Text style={[s.colQty, { width: 60, fontSize: 10 }]}>{Number(item.qtyReturned)}</Text>
                 <Text style={[s.colQty, { width: 60, fontSize: 10 }]}>{Number(item.qtyReplaced)}</Text>
@@ -2024,10 +2033,11 @@ if (type === 'POS_RECEIPT') {
               <View style={s.tableSectionTight}>
                 {/* 1. Restored Table Header with 2px border */}
                 <View style={s.tableHeader}>
-                  <Text style={s.colQty}>Qty</Text>
+                  <Text style={s.colSn}>Sn</Text>
                   <Text style={s.colDesc}>Description</Text>
+                  <Text style={s.colQty}>Qty</Text>
                   <Text style={s.colPrice}>Price</Text>
-                  <Text style={s.colTotal}>Total</Text>
+                  <Text style={s.colTotal}>Amount</Text>
                 </View>
 
                 {/* 2. Item Rows with consistent 13px spacing */}
@@ -2054,8 +2064,9 @@ if (type === 'POS_RECEIPT') {
                   
                   return (
                     <View key={i} style={[s.row, paginated ? { paddingVertical: 4 } : null]} wrap={paginated ? false : undefined}>
-                      <Text style={s.colQty}>{Number(item.qty)}</Text>
+                      <Text style={s.colSn}>{i + 1}</Text>
                       <Text style={s.colDesc}>{formattedDesc}</Text>
+                      <Text style={s.colQty}>{Number(item.qty)}</Text>
                       <Text style={s.colPrice}>{currency} {formatAmount(Number(item.price))}</Text>
                       <Text style={s.colTotal}>{currency} {formatAmount(Number(item.total))}</Text>
                     </View>
@@ -2210,12 +2221,14 @@ if (type === 'POS_RECEIPT') {
             {!isFinancial && (
               <>
                 <View style={s.tableHeader}>
+                  <Text style={s.colSn}>Sn</Text>
                   <Text style={s.colDesc}>Description / Instructions</Text>
                   <Text style={s.colQty}>Qty</Text>
                 </View>
 
                 {('items' in data ? data.items : []).map((item, i) => (
                   <View key={i} style={s.row}>
+                    <Text style={s.colSn}>{i + 1}</Text>
                     <Text style={s.colDesc}>{item.desc}</Text>
                     <Text style={s.colQty}>{item.qty}</Text>
                   </View>
@@ -2281,12 +2294,14 @@ if (type === 'POS_RECEIPT') {
             {/* Service Tasks */}
             <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: '#475569', textTransform: 'uppercase', letterSpacing: 1 }}>Production Checklist</Text>
             <View style={s.tableHeader}>
+              <Text style={s.colSn}>Sn</Text>
               <Text style={s.colDesc}>Service / Process Details</Text>
               <Text style={s.colQty}>Completion</Text>
             </View>
 
             {('items' in data ? data.items : []).map((item, i) => (
               <View key={i} style={s.row}>
+                <Text style={s.colSn}>{i + 1}</Text>
                 <Text style={s.colDesc}>{item.desc}</Text>
                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                   <View style={{ width: 12, height: 12, borderWidth: 1, borderColor: '#000', marginRight: 5 }} />
@@ -2304,12 +2319,14 @@ if (type === 'POS_RECEIPT') {
               DELIVERY ITEMS CHECKLIST
             </Text>
             <View style={s.tableHeader}>
+              <Text style={s.colSn}>Sn</Text>
               <Text style={s.colDesc}>Description</Text>
               <Text style={s.colQty}>Qty Shipped</Text>
             </View>
 
             {('items' in data ? data.items : []).map((item, i) => (
               <View key={i} style={s.row}>
+                <Text style={s.colSn}>{i + 1}</Text>
                 <Text style={s.colDesc}>{item.desc}</Text>
                 <Text style={s.colQty}>{item.qty}</Text>
               </View>
@@ -2563,18 +2580,20 @@ if (type === 'POS_RECEIPT') {
         {type === 'EXAMINATION_INVOICE' && (
           <View style={{ marginTop: 20 }}>
             <View style={s.tableHeader}>
-              <Text style={{ flex: 1, textAlign: 'center' }}>Qty</Text>
-              <Text style={{ flex: 3 }}>Class</Text>
+              <Text style={{ width: 32, textAlign: 'center' }}>Sn</Text>
+              <Text style={{ flex: 3 }}>Description</Text>
+              <Text style={{ flex: 1, textAlign: 'right' }}>Qty</Text>
               <Text style={{ flex: 1, textAlign: 'right' }}>Price</Text>
-              <Text style={{ flex: 1.5, textAlign: 'right' }}>Total</Text>
+              <Text style={{ flex: 1.5, textAlign: 'right' }}>Amount</Text>
             </View>
 
             {(('items' in data ? dataAny.items : []) as Array<Record<string, unknown>>).map((item: Record<string, unknown>, i: number) => (
               <View key={i} style={s.row}>
-                <Text style={{ flex: 1, textAlign: 'center', fontSize: 12 }}>{Number(item.qty)}</Text>
+                <Text style={{ width: 32, textAlign: 'center', fontSize: 12 }}>{i + 1}</Text>
                 <View style={{ flex: 3 }}>
                   <Text style={{ fontWeight: 'normal', fontSize: 12 }}>{String(item.desc)}</Text>
                 </View>
+                <Text style={{ flex: 1, textAlign: 'right', fontSize: 12 }}>{Number(item.qty)}</Text>
                 <Text style={{ flex: 1, textAlign: 'right', fontSize: 12 }}>{formatAmount(Number(item.price))}</Text>
                 <Text style={{ flex: 1.5, textAlign: 'right', fontSize: 12 }}>{formatAmount(Number(item.total))}</Text>
               </View>

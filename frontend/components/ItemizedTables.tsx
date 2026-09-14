@@ -7,7 +7,7 @@ interface Column {
   isCurrency?: boolean;
   width?: string; // e.g., '15%'
   wrapSafe?: boolean; // Enable word-wrapping for long descriptions
-  render?: (value: any, item: any) => React.ReactNode;
+  render?: (value: any, item: any, rowIndex?: number) => React.ReactNode;
 }
 
 interface ItemizedTableProps {
@@ -56,9 +56,9 @@ export const ItemizedTable: React.FC<ItemizedTableProps> = ({
           {data.map((row, rowIdx) => (
             <tr key={rowIdx} className="break-inside-avoid bg-white">
               {columns.map((col, colIdx) => {
-                const value = row[col.accessor];
+                const value = col.accessor === '__sn' ? rowIdx + 1 : row[col.accessor];
                 return (
-                  <td 
+                  <td
                     key={colIdx}
                     className={`
                       py-3 px-4 text-xs text-slate-700 bg-white
@@ -67,7 +67,7 @@ export const ItemizedTable: React.FC<ItemizedTableProps> = ({
                       ${col.wrapSafe ? 'text-wrap-safe' : ''}
                     `}
                   >
-                    {col.render ? col.render(value, row) : (
+                    {col.render ? col.render(value, row, rowIdx) : (
                       col.isCurrency ? `${currencySymbol}${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : value
                     )}
                   </td>

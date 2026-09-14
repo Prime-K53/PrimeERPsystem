@@ -67,15 +67,17 @@ const VersionHistoryModal: React.FC<Props> = ({ open, onClose, versions, loading
                           <table className="w-full text-left text-[12px]">
                             <thead className="bg-slate-50 text-slate-500">
                               <tr>
-                                <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider">Item</th>
+                                <th className="px-2 py-2 font-bold text-[10px] uppercase tracking-wider text-center w-10">Sn</th>
+                                <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider">Description</th>
                                 <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider text-right">Qty</th>
-                                <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider text-right">Unit Price</th>
-                                <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider text-right">Total</th>
+                                <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider text-right">Price</th>
+                                <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider text-right">Amount</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                               {(version.snapshot.items || []).map((item, i) => (
                                 <tr key={i} className="text-slate-700">
+                                  <td className="px-2 py-2 text-center text-slate-400">{i + 1}</td>
                                   <td className="px-3 py-2 font-medium text-slate-900">{item.name}</td>
                                   <td className="px-3 py-2 text-right">{item.quantity}</td>
                                   <td className="px-3 py-2 text-right" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{formatK(item.unitPrice || 0)}</td>

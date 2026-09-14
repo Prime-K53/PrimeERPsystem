@@ -628,11 +628,11 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                                     <thead>
                                                         <tr style={{ borderBottom: `1px solid ${hairline}`, background: teal[50] }}>
-                                                            <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 40 }}>#</th>
-                                                            <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Item / Description</th>
+                                                            <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 40 }}>Sn</th>
+                                                            <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Description</th>
                                                             <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 70 }}>Qty</th>
-                                                            <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 100 }}>Unit Price</th>
-                                                            <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 100 }}>Line Total</th>
+                                                            <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 100 }}>Price</th>
+                                                            <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 100 }}>Amount</th>
                                                             <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 90 }}>Actions</th>
                                                         </tr>
                                                     </thead>

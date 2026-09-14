@@ -29,7 +29,8 @@ const WorkOrder: React.FC<WorkOrderProps> = ({
   scheduledDate
 }) => {
   const columns = [
-    { header: 'Resource / Part Description', accessor: 'description', width: '70%', wrapSafe: true },
+    { header: 'Sn', accessor: '__sn', align: 'center' as const, width: '8%' },
+    { header: 'Description', accessor: 'description', width: '62%', wrapSafe: true },
     { header: 'Qty', accessor: 'quantity', align: 'center' as const, width: '15%' },
     { header: 'Unit', accessor: 'unit', align: 'center' as const, width: '15%' }
   ];

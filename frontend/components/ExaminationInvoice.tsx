@@ -236,25 +236,31 @@ const ExaminationInvoice: React.FC<ExaminationInvoiceProps> = ({
   // Legacy Mode (backward compatible)
   const columns = [
     {
+      header: 'Sn',
+      accessor: '__sn',
+      align: 'center' as const,
+      width: '8%',
+    },
+    {
       header: 'Description',
       accessor: 'description',
-      width: '40%',
+      width: '37%',
       wrapSafe: true,
       render: (value, item) => value ?? item?.name ?? item?.itemName ?? 'Item'
     },
     {
-      header: 'Units/Quantity',
+      header: 'Qty',
       accessor: 'units',
       align: 'center' as const,
-      width: '15%',
+      width: '12%',
       render: (value, item) => value ?? item?.quantity ?? item?.qty ?? 0
     },
     {
-      header: 'Rate',
+      header: 'Price',
       accessor: 'rate',
       isCurrency: true,
       align: 'right' as const,
-      width: '15%',
+      width: '13%',
       render: (value, item) => value ?? item?.unitPrice ?? item?.price ?? item?.cost ?? 0
     },
     {
@@ -262,14 +268,14 @@ const ExaminationInvoice: React.FC<ExaminationInvoiceProps> = ({
       accessor: 'surcharge',
       isCurrency: true,
       align: 'right' as const,
-      width: '15%'
+      width: '13%'
     },
     {
-      header: 'Total',
+      header: 'Amount',
       accessor: 'total',
       isCurrency: true,
       align: 'right' as const,
-      width: '15%'
+      width: '17%'
     }
   ];
 

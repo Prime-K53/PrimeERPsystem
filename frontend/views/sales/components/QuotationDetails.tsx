@@ -173,20 +173,22 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${hairline}` }}>
+                          <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, width: 44 }}>Sn</th>
+                          <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Description</th>
                           <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Qty</th>
-                          <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Item / Description</th>
-                          <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Unit Price</th>
-                          <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Total</th>
+                          <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Price</th>
+                          <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Amount</th>
                         </tr>
                       </thead>
                       <tbody>
                         {quotation.items?.map((item, idx) => (
                           <tr key={idx} style={{ borderBottom: `1px solid ${hairline}` }}>
-                            <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 700, color: ink }}>{item.quantity}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: inkSoft }}>{idx + 1}</td>
                             <td style={{ padding: '10px 16px' }}>
                               <p style={{ margin: 0, fontWeight: 600, color: ink }}>{item.name}</p>
                               {item.description && <p style={{ margin: '2px 0 0', fontSize: 11, color: inkSoft }}>{item.description}</p>}
                             </td>
+                            <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 700, color: ink }}>{item.quantity}</td>
                             <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: ink }}>{currency}{item.price.toLocaleString()}</td>
                             <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, color: ink }}>{currency}{(item.quantity * item.price).toLocaleString()}</td>
                           </tr>

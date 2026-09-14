@@ -375,15 +375,17 @@ const CustomerOrderDetail: React.FC = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={{ ...s.th, textAlign: 'left' }}>Item</th>
+                <th style={{ ...s.th, textAlign: 'center', width: 44 }}>Sn</th>
+                <th style={{ ...s.th, textAlign: 'left' }}>Description</th>
                 <th style={s.thRight}>Qty</th>
                 <th style={s.thRight}>Price</th>
-                <th style={s.thRight}>Total</th>
+                <th style={s.thRight}>Amount</th>
               </tr>
             </thead>
             <tbody>
               {(order.items || []).map((item, i) => (
                 <tr key={i}>
+                  <td style={{ ...s.td, textAlign: 'center', color: '#8A94A6' }}>{i + 1}</td>
                   <td style={{ ...s.td, fontWeight: 600, color: '#1A202C' }}>{item.name}</td>
                   <td style={{ ...s.tdRight, fontVariantNumeric: 'tabular-nums' }}>{item.quantity}</td>
                   <td style={{ ...s.tdRight, fontFamily: "'JetBrains Mono', monospace" }}>{formatK(item.unitPrice)}</td>

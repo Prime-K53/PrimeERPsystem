@@ -173,13 +173,15 @@ const CustomerInvoiceDetail: React.FC = () => {
             <h2 style={sectionTitleStyle}>Line Items</h2>
           </div>
           <div style={{ padding: '4px 18px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '10px 0', borderBottom: '1px solid #E9EDF3' }}>
-              <span style={{ flex: 1, ...labelStyle }}>Item</span>                  <span style={{ width: 48, textAlign: 'right', ...labelStyle }}>Qty</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '10px 0', borderBottom: '1px solid #E9EDF3' }}>
+              <span style={{ width: 36, textAlign: 'center', ...labelStyle }}>Sn</span>
+              <span style={{ flex: 1, ...labelStyle }}>Description</span>                  <span style={{ width: 48, textAlign: 'right', ...labelStyle }}>Qty</span>
                   <span style={{ width: 96, textAlign: 'right', ...labelStyle, fontVariantNumeric: 'tabular-nums' }}>Price</span>
-                  <span style={{ width: 110, textAlign: 'right', ...labelStyle, fontVariantNumeric: 'tabular-nums' }}>Total</span>
+                  <span style={{ width: 110, textAlign: 'right', ...labelStyle, fontVariantNumeric: 'tabular-nums' }}>Amount</span>
             </div>
             {(invoice.line_items || []).map((item, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '14px 0', borderBottom: i < (invoice.line_items || []).length - 1 ? '1px solid #F3F4F6' : 'none' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 0', borderBottom: i < (invoice.line_items || []).length - 1 ? '1px solid #F3F4F6' : 'none' }}>
+                <span style={{ width: 36, textAlign: 'center', fontSize: 13, color: '#8A94A6' }}>{i + 1}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#1A202C' }}>{item.item_name}</span>
                 </div>

@@ -232967,7 +232967,8 @@ var docStyles = StyleSheet.create({
     lineHeight: 1.125
   },
   // Column Widths
-  colQty: { width: 50, textAlign: "left" },
+  colSn: { width: 32, textAlign: "center" },
+  colQty: { width: 50, textAlign: "right" },
   colDesc: { flex: 3 },
   colPrice: { flex: 2, textAlign: "right" },
   colTotal: { flex: 2, textAlign: "right" },
@@ -233789,6 +233790,7 @@ var CleanInvoiceTemplate = ({
       }
     }
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#e0e0e0", minHeight: 24, alignItems: "center", paddingVertical: 4 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#334155", textAlign: "center" }, children: i2 + 1 }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155" }, children: formattedDesc }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: qty }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
@@ -233840,9 +233842,10 @@ var CleanInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 20 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: "center" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "center" }, children: "Sn" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Qty" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Unit Price" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Price" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Amount" })
       ] }),
       items.map(renderRow2)
@@ -234091,9 +234094,10 @@ var ModernInvoiceTemplate = ({
     }
     const bgColor = i2 % 2 !== 0 ? "#F5F5F5" : "transparent";
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: bgColor, minHeight: 28, alignItems: "center", paddingVertical: 6, paddingHorizontal: 4 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "center" }, children: i2 + 1 }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: qty }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: qty }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
         unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
@@ -234146,16 +234150,18 @@ var ModernInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: "center" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "center" }, children: "Sn" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Qty." }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Unit Price" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Qty" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Price" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Amount" })
       ] }),
       items.map(renderRow2),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: "#D9DEDE", paddingVertical: 8, paddingHorizontal: 4, alignItems: "center", marginTop: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111", textAlign: "center" }, children: "-" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#111111" }, children: "Total Payment" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111" }, children: "-" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111" }, children: "-" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111", textAlign: "right" }, children: "-" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111", textAlign: "right" }, children: "-" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#111111", textAlign: "right" }, children: [
           currency,
           " ",
@@ -234340,6 +234346,7 @@ var ProfessionalInvoiceTemplate = ({
       }
     }
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#eeeeee", minHeight: 24, alignItems: "center", paddingVertical: 5 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 30, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "center" }, children: i2 + 1 }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: qty }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
@@ -234405,10 +234412,11 @@ var ProfessionalInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: "#222222", paddingBottom: 6 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 30, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }, children: "Sn" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase" }, children: "Description" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Qty" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Unit" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Price" })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Price" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Amount" })
       ] }),
       items.map(renderRow2)
     ] }),
@@ -234653,11 +234661,13 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Returned" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Replaced" })
         ] }),
         items.map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.colSn, { fontSize: 10 }], children: i2 + 1 }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.colDesc, { fontSize: 10 }], children: String(item.desc || "N/A") }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReturned) }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReplaced) }),
@@ -235246,10 +235256,11 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         type !== "DELIVERY_NOTE" && type !== "WORK_ORDER" && type !== "ACCOUNT_STATEMENT" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
           isFinancial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableSectionTight, children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Qty" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Qty" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colPrice, children: "Price" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colTotal, children: "Total" })
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colTotal, children: "Amount" })
             ] }),
             ("items" in data2 ? dataAny.items : []).map((item, i2) => {
               const isService = item.category === "service" || item.type === "service" || item.isService === true;
@@ -235262,8 +235273,9 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
                 formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
               }
               return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.row, paginated ? { paddingVertical: 4 } : null], wrap: paginated ? false : void 0, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: Number(item.qty) }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: i2 + 1 }),
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: formattedDesc }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: Number(item.qty) }),
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: docStyles.colPrice, children: [
                   currency,
                   " ",
@@ -235404,10 +235416,12 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           ] }),
           !isFinancial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description / Instructions" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Qty" })
             ] }),
             ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: i2 + 1 }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: item.qty })
             ] }, i2))
@@ -235444,10 +235458,12 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1 }, children: "Production Checklist" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Service / Process Details" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Completion" })
           ] }),
           ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: i2 + 1 }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center" }, children: [
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 12, height: 12, borderWidth: 1, borderColor: "#000", marginRight: 5 } }),
@@ -235458,10 +235474,12 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold", marginBottom: 10 }, children: "DELIVERY ITEMS CHECKLIST" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Qty Shipped" })
           ] }),
           ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: i2 + 1 }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: item.qty })
           ] }, i2)),
@@ -235680,14 +235698,16 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         ] }),
         type === "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "center" }, children: "Qty" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Class" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, textAlign: "center" }, children: "Sn" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Qty" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.5, textAlign: "right" }, children: "Total" })
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.5, textAlign: "right" }, children: "Amount" })
           ] }),
           ("items" in data2 ? dataAny.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "center", fontSize: 12 }, children: Number(item.qty) }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, textAlign: "center", fontSize: 12 }, children: i2 + 1 }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 3 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "normal", fontSize: 12 }, children: String(item.desc) }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: Number(item.qty) }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.price)) }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.5, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.total)) })
           ] }, i2)),

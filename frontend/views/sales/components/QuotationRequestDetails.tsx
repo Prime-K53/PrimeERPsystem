@@ -223,15 +223,17 @@ export const QuotationRequestDetails: React.FC<QuotationRequestDetailsProps> = (
                         <table className="w-full text-xs">
                             <thead>
                                 <tr style={{ background: teal[50] }}>
-                                    <th className="text-left p-2 text-[10px] font-bold text-[#5c6567] uppercase">Item</th>
+                                    <th className="text-center p-2 text-[10px] font-bold text-[#5c6567] uppercase w-10">Sn</th>
+                                    <th className="text-left p-2 text-[10px] font-bold text-[#5c6567] uppercase">Description</th>
                                     <th className="text-right p-2 text-[10px] font-bold text-[#5c6567] uppercase">Qty</th>
                                     <th className="text-right p-2 text-[10px] font-bold text-[#5c6567] uppercase">Price</th>
-                                    <th className="text-right p-2 text-[10px] font-bold text-[#5c6567] uppercase">Total</th>
+                                    <th className="text-right p-2 text-[10px] font-bold text-[#5c6567] uppercase">Amount</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {(request.items || []).map((item, idx) => (
                                     <tr key={idx} className="border-t border-[#e4ddd1]">
+                                        <td className="p-2 text-center text-[#5c6567]">{idx + 1}</td>
                                         <td className="p-2 font-medium text-[#23282A]">{item.name}</td>
                                         <td className="p-2 text-right">{item.quantity}</td>
                                         <td className="p-2 text-right font-mono">{currency} {Number(item.unitPrice).toFixed(2)}</td>
@@ -241,7 +243,7 @@ export const QuotationRequestDetails: React.FC<QuotationRequestDetailsProps> = (
                             </tbody>
                             <tfoot>
                                 <tr className="border-t-2 border-[#e4ddd1] font-bold">
-                                    <td colSpan={3} className="p-2 text-right text-[#5c6567]">Subtotal</td>
+                                    <td colSpan={4} className="p-2 text-right text-[#5c6567]">Subtotal</td>
                                     <td className="p-2 text-right font-mono text-[#23282A]">{currency} {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                 </tr>
                             </tfoot>

@@ -262,11 +262,12 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
                                 <table style={{width:'100%',borderCollapse:'collapse',textAlign:'left'}}>
                                     <thead>
                                         <tr style={{background:`linear-gradient(135deg,${teal[50]},#FEFDFB)`}}>
-                                            <th style={{padding:'12px 20px',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em'}}>Item Identity</th>
+                                            <th style={{padding:'12px 12px',textAlign:'center',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em',width:44}}>Sn</th>
+                                            <th style={{padding:'12px 20px',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em'}}>Description</th>
                                             <th style={{padding:'12px 20px',textAlign:'center',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em'}}>Qty</th>
                                             <th style={{padding:'12px 20px',textAlign:'center',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em'}}>Status</th>
-                                            <th style={{padding:'12px 20px',textAlign:'right',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em'}}>Factory</th>
-                                            <th style={{padding:'12px 20px',textAlign:'right',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em'}}>Extended</th>
+                                            <th style={{padding:'12px 20px',textAlign:'right',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em'}}>Price</th>
+                                            <th style={{padding:'12px 20px',textAlign:'right',fontSize:10,fontWeight:700,color:teal[700],textTransform:'uppercase',letterSpacing:'.06em'}}>Amount</th>
                                         </tr>
                                     </thead>
                                     <tbody style={{divideY:`1px solid ${hairline}`}}>
@@ -274,6 +275,7 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
                                             const product=(inventory||[]).find(i=>i.id===item.itemId);
                                             return (
                                             <tr key={idx} style={{borderBottom:`1px solid ${hairline}`,transition:'background .12s',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background=teal[50]} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                                                <td style={{padding:'14px 12px',textAlign:'center',fontWeight:600,color:inkSoft,fontSize:13}}>{idx + 1}</td>
                                                 <td style={{padding:'14px 20px'}}>
                                                     <div style={{display:'flex',alignItems:'center',gap:14}}>
                                                         <div style={{width:50,height:50,borderRadius:14,background:teal[50],border:`1px solid ${teal[100]}`,overflow:'hidden',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',transition:'all .15s'}}>
