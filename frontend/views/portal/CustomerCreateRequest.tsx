@@ -126,10 +126,12 @@ const CustomerCreateRequest: React.FC = () => {
 
   const filteredCatalog = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const available = (catalog || []).filter(
-      (item: any) =>
-        String(item.status || '').toLowerCase() !== 'deleted'
-    );
+    // Sellable items only: archived / deactivated / deleted rows stay hidden
+    // even if a stale cached payload still carries them.
+    const available = (catalog || []).filter((item: any) => {
+      const s = String(item.status || '').toLowerCase();
+      return s === '' || s === 'active';
+    });
     if (!term) return available;
     return available.filter((item: any) =>
       `${item.name} ${item.sku || ''} ${item.category || ''}`.toLowerCase().includes(term)

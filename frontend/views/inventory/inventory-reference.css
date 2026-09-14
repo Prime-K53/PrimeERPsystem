@@ -245,6 +245,22 @@ h2.pp{ font-family:'Inter',sans-serif; font-weight:600; font-size:16px; margin:0
   overflow: visible;
 }
 
+/* Compact-list touch targets: the ⋮ trigger stays finger-friendly while the
+   stock steppers shrink back down (the global 44px mobile stepper would force
+   horizontal scrolling). `touch-action` kills double-tap-zoom tap delays. */
+.rpt-compact-list .action-menu-btn {
+  width: 40px;
+  height: 40px;
+  touch-action: manipulation;
+}
+.rpt-compact-list .pp-stepper button {
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  border-radius: 8px;
+  touch-action: manipulation;
+}
+
 @container rpt-compact (max-width: 639px) {
   .rpt-compact-list .pp-table {
     min-width: 0 !important;
@@ -264,6 +280,24 @@ h2.pp{ font-family:'Inter',sans-serif; font-weight:600; font-size:16px; margin:0
      avoid misaligned totals (customer list has no totals row). */
   .rpt-compact-list .pp-table tfoot {
     display: none;
+  }
+  /* Sticky Actions column — the ⋮ trigger can never be scrolled off-canvas,
+     so the row menu is always reachable on small devices. */
+  .rpt-compact-list .pp-table thead th:last-child,
+  .rpt-compact-list .pp-table tbody td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+  }
+  .rpt-compact-list .pp-table thead th:last-child {
+    background: var(--inv-paper-2);
+  }
+  .rpt-compact-list .pp-table tbody td:last-child {
+    background: var(--inv-paper);
+    box-shadow: -8px 0 12px -8px rgba(0, 0, 0, 0.18);
+  }
+  .rpt-compact-list .pp-table tbody tr.pp-row-warn td:last-child {
+    background: var(--inv-press-red-bg);
   }
 }
 

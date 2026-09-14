@@ -232,4 +232,15 @@ describe('Portal multi-variant pricing contract', () => {
     const line = JSON.parse(reqRow.items)[0];
     expect(line.unitPrice).toBe(0); // parent master IS 0 here — authoritative, not invented
   });
+
+  it('Test J — archived / inactive / deleted items are hidden from the catalog', async () => {
+    store.products.set('INV-ARCHIVED', { id: 'INV-ARCHIVED', name: 'Archived Widget', type: 'Product', status: 'Inactive', sellingPrice: 100 });
+    store.products.set('INV-DELETED', { id: 'INV-DELETED', name: 'Deleted Widget', type: 'Product', status: 'deleted', sellingPrice: 100 });
+    const catalog = await portalService.getCatalog();
+    const ids = catalog.map((c) => c.id);
+    expect(ids).not.toContain('INV-ARCHIVED');
+    expect(ids).not.toContain('INV-DELETED');
+    // Active siblings still served.
+    expect(ids).toEqual(expect.arrayContaining(['INV-TSHIRT', 'INV-SINGLE']));
+  });
 });

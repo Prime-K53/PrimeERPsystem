@@ -194,6 +194,10 @@ const OrdersInner: React.FC = () => {
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
+      // Sellable items only: archived / deactivated rows stay hidden even if a
+      // stale cached payload still carries them. Blank status counts as Active.
+      const s = String(p.status || '').toLowerCase();
+      if (s !== '' && s !== 'active') return false;
       const matchSearch = !q
         || p.name?.toLowerCase().includes(q)
         || p.sku?.toLowerCase().includes(q)

@@ -283,7 +283,13 @@ const portalService = {
     let catalogItems = await getAllFrom('products');
 
     if (!includeDeleted) {
-      catalogItems = catalogItems.filter((i) => String(i.status || '').toLowerCase() !== 'deleted');
+      // Portal customers only ever see sellable items: archived / deactivated
+      // (status 'Inactive') and soft-deleted rows stay hidden. A blank status
+      // (legacy rows synced before status tracking) counts as Active.
+      catalogItems = catalogItems.filter((i) => {
+        const s = String(i.status || '').toLowerCase();
+        return s === '' || s === 'active';
+      });
     }
 
     // Hide raw materials: only show printed products, stationery, and printing services

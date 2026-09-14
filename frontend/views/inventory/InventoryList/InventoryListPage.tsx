@@ -243,6 +243,25 @@ export const InventoryListPage: React.FC = () => {
     return () => document.removeEventListener('click', handleClickOutside);
   }, [openActionMenu]);
 
+  useEffect(() => {
+    if (!openActionMenu) return;
+    // The menu is position:fixed against the trigger rect — any scroll or
+    // resize would detach it from its row, so dismiss instead of leaving a
+    // stray floating menu (common on small touch devices). Scrolls inside the
+    // menu itself (tall menus scroll internally) are ignored.
+    const onScroll = (ev: Event) => {
+      if (ev.target instanceof HTMLElement && ev.target.closest('.action-dropdown-menu')) return;
+      setOpenActionMenu(null);
+    };
+    const onResize = () => setOpenActionMenu(null);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [openActionMenu]);
+
   const typeForTab: Record<string, string> = {
     raw: 'Raw Material',
     product: 'Product',
@@ -302,12 +321,15 @@ const handleProduce = useCallback((item: Item) => {
   }, [setActiveTab]);
 
   const toggleActionMenu = useCallback((id: string, e?: React.MouseEvent<HTMLButtonElement>) => {
-    // Capture the trigger button's rect so the menu can be rendered with fixed
-    // positioning (the .pp-panel overflow:hidden would otherwise clip/overlap it).
+    // Capture the trigger button's rect synchronously so the menu can be
+    // rendered with fixed positioning (the .pp-panel overflow:hidden would
+    // otherwise clip/overlap it). Reading it inside the state updater is
+    // unreliable on touch devices where the tap may resolve late.
+    const anchor = e?.currentTarget?.getBoundingClientRect() ?? null;
     setOpenActionMenu(prev =>
       prev && prev.id === id
         ? null
-        : { id, anchor: e?.currentTarget?.getBoundingClientRect() ?? null }
+        : { id, anchor }
     );
   }, []);
 
