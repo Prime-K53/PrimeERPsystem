@@ -2,6 +2,10 @@
 // All deps (react, @react-pdf/renderer, qrcode) are bundled — no external runtime deps.
 if (typeof globalThis.__PRIME_DOC_VITE_ENV__ === "undefined") {
   globalThis.__PRIME_DOC_VITE_ENV__ = { DEV: false, PROD: true, MODE: "production" };
+  try {
+    var __primePortalUrl = (typeof process !== "undefined" && process.env && process.env.VITE_PUBLIC_PORTAL_URL) || "";
+    if (__primePortalUrl) globalThis.__PRIME_DOC_VITE_ENV__.VITE_PUBLIC_PORTAL_URL = __primePortalUrl;
+  } catch { /* process.env unavailable — renderer stays fail-closed without a Portal origin */ }
 }
 if (typeof globalThis.__PRIME_DOC_IMPORT_META_URL__ === "undefined") {
   globalThis.__PRIME_DOC_IMPORT_META_URL__ = require("url").pathToFileURL(__filename).href;
@@ -231774,11 +231778,27 @@ var SLUG_TO_TYPE = Object.fromEntries(
 function isSupportedDocumentType(value2) {
   return typeof value2 === "string" && SUPPORTED_DOCUMENT_TYPES.includes(value2);
 }
+function isProductionBuild() {
+  try {
+    const env2 = __PRIME_DOC_VITE_ENV__;
+    if (env2?.PROD) return true;
+    if (typeof env2?.MODE === "string" && env2.MODE === "production") return true;
+  } catch {
+  }
+  try {
+    if (String(globalThis?.process?.env?.NODE_ENV || "").toLowerCase() === "production") return true;
+  } catch {
+  }
+  return false;
+}
 function resolveVerificationBaseUrl() {
   try {
     const fromEnv = String(__PRIME_DOC_VITE_ENV__?.VITE_PUBLIC_PORTAL_URL || "").trim();
     if (fromEnv) return fromEnv.replace(/\/+$/, "");
   } catch {
+  }
+  if (isProductionBuild()) {
+    return "";
   }
   if (typeof window !== "undefined" && window.location?.origin) {
     return String(window.location.origin).replace(/\/+$/, "");
@@ -235755,48 +235775,63 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Received By (Client)" })
           ] })
         ] }),
-        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.signatureBlock, { marginTop: 40 }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5 }, children: "Logistics Details" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
-            "Driver Name: ",
-            "driverName" in data2 ? data2.driverName : "____________________"
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", gap: 16, marginTop: 8 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 }, children: [
+        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.signatureBlock, { marginTop: 40, alignItems: "flex-start" }], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5 }, children: "Logistics Details" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
+              "Driver Name: ",
+              "driverName" in data2 ? data2.driverName : "____________________"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
               "Vehicle No: ",
               "vehicleNo" in data2 ? data2.vehicleNo : "____________________"
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
+            (() => {
+              const locStamp = conversionDetails?.locationStamp || pod?.locationStamp;
+              const lat = Number(locStamp?.lat);
+              const lng = Number(locStamp?.lng);
+              if (lat || lng) {
+                return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7, color: "#666", marginTop: 5 }, children: [
+                  "GPS: ",
+                  lat.toFixed(4),
+                  ", ",
+                  lng.toFixed(4)
+                ] });
+              }
+              return null;
+            })()
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { position: "relative", width: 180, height: 45, marginBottom: 5 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { position: "absolute", bottom: 0, left: 0, right: 0, borderTopWidth: 1, borderColor: "#000" } }),
               (() => {
                 const raw = String(dataAny.signatureDataUrl || pod?.signatureDataUrl || "");
                 const validated = normalizeSignatureDataUrl(raw);
                 const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || "").toLowerCase();
                 const renderable = validated && (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg") ? validated : null;
-                return renderable ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 40, width: 100, marginBottom: 5, alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: renderable, style: { width: 100, height: 40, objectFit: "contain" } }) }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 45 } });
-              })(),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.sigLine, { width: 180 }] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 }, children: [
-                "Received By: ",
-                String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || "____________________")
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: "#666" }, children: "Stamp & Signature" }),
-              (() => {
-                const locStamp = conversionDetails?.locationStamp || pod?.locationStamp;
-                const lat = Number(locStamp?.lat);
-                const lng = Number(locStamp?.lng);
-                if (lat || lng) {
-                  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7, color: "#666", marginTop: 5 }, children: [
-                    "GPS: ",
-                    lat.toFixed(4),
-                    ", ",
-                    lng.toFixed(4)
-                  ] });
-                }
-                return null;
+                return renderable ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Image,
+                  {
+                    src: renderable,
+                    style: {
+                      position: "absolute",
+                      bottom: 0,
+                      left: 0,
+                      width: 100,
+                      height: 40,
+                      objectFit: "contain"
+                    }
+                  }
+                ) : null;
               })()
-            ] })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 }, children: [
+              "Received By: ",
+              String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || "____________________")
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: "#666" }, children: "Stamp & Signature" })
           ] })
-        ] }) }),
+        ] }),
         !paginated && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.footerContainer, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.footerLine }) }),
         paginated ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),

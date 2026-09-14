@@ -2670,51 +2670,52 @@ if (type === 'POS_RECEIPT') {
 
         {/* Delivery Signature Block */}
         {type === 'DELIVERY_NOTE' && (
-          <View style={[s.signatureBlock, { marginTop: 40 }]}>
-            <View style={{ flex: 1 }}>
+          <View style={[s.signatureBlock, { marginTop: 40, alignItems: 'flex-start' }]}>
+            <View style={{ flex: 1, alignItems: 'flex-start' }}>
               <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5 }}>Logistics Details</Text>
               <Text style={{ fontSize: 9, marginBottom: 3 }}>Driver Name: {('driverName' in data ? data.driverName : '____________________')}</Text>
-              {/* Vehicle No and the customer signature line share one row. */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 16, marginTop: 8 }}>
-                <Text style={{ fontSize: 9 }}>Vehicle No: {('vehicleNo' in data ? data.vehicleNo : '____________________')}</Text>
-                <View style={{ flex: 1, alignItems: 'flex-start' }}>
-                  {(() => {
-                    // Recipient signature: render the stored data URL when it is
-                    // a PDF-embeddable image (png/jpeg). Anything else (missing,
-                    // malformed, or webp which react-pdf cannot embed) keeps the
-                    // existing blank signature area — never a broken image.
-                    const raw = String(dataAny.signatureDataUrl || (pod as any)?.signatureDataUrl || '');
-                    const validated = normalizeSignatureDataUrl(raw);
-                    const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || '').toLowerCase();
-                    const renderable = validated && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg')
-                      ? validated
-                      : null;
-                    return renderable ? (
-                      <View style={{ height: 40, width: 100, marginBottom: 5, alignItems: 'center', justifyContent: 'center' }}>
-                        <Image src={renderable} style={{ width: 100, height: 40, objectFit: 'contain' }} />
-                      </View>
-                    ) : (
-                      <View style={{ height: 45 }} />
-                    );
-                  })()}
-                  <View style={[s.sigLine, { width: 180 }]} />
-                  <Text style={{ fontSize: 9 }}>Received By: {String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || '____________________')}</Text>
-                  <Text style={{ fontSize: 7, color: '#666' }}>Stamp & Signature</Text>
-                  {(() => {
-                    const locStamp = (conversionDetails?.locationStamp || pod?.locationStamp) as Record<string, unknown> | undefined;
-                    const lat = Number(locStamp?.lat);
-                    const lng = Number(locStamp?.lng);
-                    if (lat || lng) {
-                      return (
-                        <Text style={{ fontSize: 7, color: '#666', marginTop: 5 }}>
-                          GPS: {lat.toFixed(4)}, {lng.toFixed(4)}
-                        </Text>
-                      );
-                    }
-                    return null;
-                  })()}
-                </View>
+              <Text style={{ fontSize: 9, marginBottom: 3 }}>Vehicle No: {('vehicleNo' in data ? data.vehicleNo : '____________________')}</Text>
+              {(() => {
+                const locStamp = (conversionDetails?.locationStamp || pod?.locationStamp) as Record<string, unknown> | undefined;
+                const lat = Number(locStamp?.lat);
+                const lng = Number(locStamp?.lng);
+                if (lat || lng) {
+                  return (
+                    <Text style={{ fontSize: 7, color: '#666', marginTop: 5 }}>
+                      GPS: {lat.toFixed(4)}, {lng.toFixed(4)}
+                    </Text>
+                  );
+                }
+                return null;
+              })()}
+            </View>
+            <View style={{ flex: 1, alignItems: 'flex-end' }}>
+              <View style={{ position: 'relative', width: 180, height: 45, marginBottom: 5 }}>
+                <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, borderTopWidth: 1, borderColor: '#000' }} />
+                {(() => {
+                  const raw = String(dataAny.signatureDataUrl || (pod as any)?.signatureDataUrl || '');
+                  const validated = normalizeSignatureDataUrl(raw);
+                  const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || '').toLowerCase();
+                  const renderable = validated && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg')
+                    ? validated
+                    : null;
+                  return renderable ? (
+                    <Image
+                      src={renderable}
+                      style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        width: 100,
+                        height: 40,
+                        objectFit: 'contain',
+                      }}
+                    />
+                  ) : null;
+                })()}
               </View>
+              <Text style={{ fontSize: 9 }}>Received By: {String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || '____________________')}</Text>
+              <Text style={{ fontSize: 7, color: '#666' }}>Stamp & Signature</Text>
             </View>
           </View>
         )}

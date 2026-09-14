@@ -96,12 +96,45 @@ export function generateVerificationToken(randomSource?: (bytes: Uint8Array) => 
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Public web origin used inside customer-facing QR codes. */
+/** True inside a production build (Vite PROD/MODE or Node NODE_ENV). */
+function isProductionBuild(): boolean {
+  try {
+    // NOTE: keep the `import.meta.env` member chain statically analyzable
+    // (no `?.` between import.meta and env). Vite substitutes it at serve/
+    // build time; an optional chain there defeats substitution and the lookup
+    // silently reads the native (empty) import.meta at runtime.
+    const env = (import.meta as any).env;
+    if (env?.PROD) return true;
+    if (typeof env?.MODE === 'string' && env.MODE === 'production') return true;
+  } catch { /* import.meta unavailable */ }
+  try {
+    if (String((globalThis as any)?.process?.env?.NODE_ENV || '').toLowerCase() === 'production') return true;
+  } catch { /* no process */ }
+  return false;
+}
+
+/**
+ * Public web origin used inside customer-facing QR codes.
+ *
+ * The Portal is the public verification surface, so this prefers the
+ * configured Portal origin (`VITE_PUBLIC_PORTAL_URL`). Production builds
+ * FAIL CLOSED when it is missing (return '') so new public QR codes can
+ * never silently point back at the private ERP origin; callers then fall
+ * back to the legacy human-readable QR payload. Local dev/test keep the
+ * running-app-origin fallback so offline work is unaffected.
+ */
 export function resolveVerificationBaseUrl(): string {
   try {
-    const fromEnv = String((import.meta as any)?.env?.VITE_PUBLIC_PORTAL_URL || '').trim();
+    // NOTE: same static-analyzability requirement as above — `import.meta.env`
+    // must stay a plain member chain so Vite injects the configured Portal
+    // origin. `(import.meta as any)?.env` bypasses injection and always falls
+    // through to the origin fallback below.
+    const fromEnv = String((import.meta as any).env?.VITE_PUBLIC_PORTAL_URL || '').trim();
     if (fromEnv) return fromEnv.replace(/\/+$/, '');
   } catch { /* import.meta unavailable */ }
+  if (isProductionBuild()) {
+    return '';
+  }
   if (typeof window !== 'undefined' && window.location?.origin) {
     return String(window.location.origin).replace(/\/+$/, '');
   }

@@ -57,7 +57,9 @@ function parseOr(or) {
     if (item.startsWith('(')) throw new Error('PGRST100');
     const m = item.match(/^(data->>)?([A-Za-z_]+)\.eq\.(.*)$/);
     if (!m) throw new Error('PGRST100');
-    return { field: m[2], value: m[3] };
+    let value = m[3];
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+    return { field: m[2], value };
   });
 }
 

@@ -63,7 +63,8 @@ function startStub() {
     }
     const or = url.searchParams.get('or') || '';
     const m = or.match(/eq\.([^,)]+)/);
-    const wanted = m ? decodeURIComponent(m[1]) : '';
+    let wanted = m ? decodeURIComponent(m[1]) : '';
+    if (wanted.startsWith('"') && wanted.endsWith('"')) wanted = wanted.slice(1, -1);
     const rows = TABLES[table].filter((r) => {
       const d = r.data || r;
       return Object.values(d).some((v) => String(v ?? '') === wanted);

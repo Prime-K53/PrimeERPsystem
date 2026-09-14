@@ -18,8 +18,41 @@ const { getCompanyConfig } = require('./companyConfigService.cjs');
 
 let rendererPromise = null;
 
+/**
+ * Server-side renderer environment propagation (public verification URLs).
+ *
+ * The renderer bundle (officialDocument/primeRenderer.cjs) is built with
+ * `import.meta.env` mapped to `globalThis.__PRIME_DOC_VITE_ENV__`, so the
+ * canonical verification URL builder inside the bundle reads the Portal
+ * origin from that global. This populates it from the server runtime
+ * environment BEFORE the bundle is required (the bundle banner only
+ * installs defaults while the global is still undefined).
+ *
+ * Canonical variable: VITE_PUBLIC_PORTAL_URL — the same name the browser
+ * build uses; backend/.env or the platform environment provides it. When
+ * it is absent the global simply carries no Portal origin and the bundled
+ * builder keeps its production fail-closed behavior (legacy QR payload,
+ * never an ERP-origin fallback). No verification logic is touched here.
+ */
+function ensureRendererEnv() {
+  const fromEnv = String(process.env.VITE_PUBLIC_PORTAL_URL || '').trim();
+  const existing = globalThis.__PRIME_DOC_VITE_ENV__;
+  if (existing && typeof existing === 'object') {
+    if (fromEnv) existing.VITE_PUBLIC_PORTAL_URL = fromEnv;
+    return existing;
+  }
+  globalThis.__PRIME_DOC_VITE_ENV__ = {
+    DEV: false,
+    PROD: true,
+    MODE: 'production',
+    ...(fromEnv ? { VITE_PUBLIC_PORTAL_URL: fromEnv } : {}),
+  };
+  return globalThis.__PRIME_DOC_VITE_ENV__;
+}
+
 function loadRenderer() {
   if (!rendererPromise) {
+    ensureRendererEnv();
     const bundlePath = path.resolve(__dirname, 'officialDocument', 'primeRenderer.cjs');
     rendererPromise = Promise.resolve()
       .then(() => require(bundlePath))
@@ -179,6 +212,7 @@ function buildContentDisposition(filename) {
 
 module.exports = {
   loadRenderer,
+  ensureRendererEnv,
   isRendererAvailable,
   getCompanyConfig,
   normalizeRecordForRenderer,
