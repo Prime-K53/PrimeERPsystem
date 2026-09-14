@@ -226,8 +226,8 @@ export const docStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   securityQrImage: {
-    width: 50,
-    height: 50,
+    width: 76,
+    height: 76,
   },
   tableSectionTight: {
     marginTop: 6,

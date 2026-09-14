@@ -232700,8 +232700,8 @@ var docStyles = StyleSheet.create({
     justifyContent: "center"
   },
   securityQrImage: {
-    width: 50,
-    height: 50
+    width: 76,
+    height: 76
   },
   tableSectionTight: {
     marginTop: 6
@@ -233519,7 +233519,7 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
             ] }),
             (() => {
               const qrUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
-              return qrUrl ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.securityQrPanel, { width: 58, alignItems: "center", borderWidth: 0, backgroundColor: "transparent", paddingVertical: 0, paddingHorizontal: 0 }], children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: qrUrl, style: { width: 50, height: 50 } }) }) : null;
+              return qrUrl ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.securityQrPanel, { width: 84, alignItems: "center", borderWidth: 0, backgroundColor: "transparent", paddingVertical: 0, paddingHorizontal: 0 }], children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: qrUrl, style: { width: 76, height: 76 } }) }) : null;
             })()
           ] })
         ] })
@@ -233671,7 +233671,7 @@ var SecurityFooter = ({
   // Default false preserves the exact legacy behavior for all other docs.
   flowing = false
 }) => {
-  const footerQrSize = 50;
+  const footerQrSize = 76;
   const documentNumber = String(
     data2.number || data2.invoiceNumber || data2.orderNumber || data2.receiptNumber || data2.paymentId || data2.exchangeNumber || data2.reportName || "N/A"
   ).trim() || "N/A";
@@ -235836,7 +235836,9 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
                     style: {
                       position: "absolute",
                       bottom: 0,
-                      left: 0,
+                      // Center the 100-wide signature over the 180-wide
+                      // signature line: (180 - 100) / 2 = 40.
+                      left: 40,
                       width: 100,
                       height: 40,
                       objectFit: "contain"
@@ -235930,9 +235932,11 @@ var attachDocumentSecurity = async (data2, companyName) => {
   try {
     securityQrCodeDataUrl = await import_qrcode.default.toDataURL(payload, {
       errorCorrectionLevel: "M",
-      // Quiet zone + resolution for reliable phone-camera scanning in print.
-      margin: 2,
-      width: 192
+      // 288px raster for the 76pt printed QR (~3.8px/pt, crisp in print) with
+      // a full 4-module quiet zone — required for reliable phone-camera
+      // scanning of dense verification URLs from paper or screen.
+      margin: 4,
+      width: 288
     });
   } catch (error51) {
     console.warn("[documentSecurity] Failed to generate QR code data URL.", error51);

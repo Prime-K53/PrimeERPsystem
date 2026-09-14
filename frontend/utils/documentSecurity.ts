@@ -98,9 +98,11 @@ export const attachDocumentSecurity = async <T extends Record<string, any>>(data
   try {
     securityQrCodeDataUrl = await QRCode.toDataURL(payload, {
       errorCorrectionLevel: 'M',
-      // Quiet zone + resolution for reliable phone-camera scanning in print.
-      margin: 2,
-      width: 192,
+      // 288px raster for the 76pt printed QR (~3.8px/pt, crisp in print) with
+      // a full 4-module quiet zone — required for reliable phone-camera
+      // scanning of dense verification URLs from paper or screen.
+      margin: 4,
+      width: 288,
     });
   } catch (error) {
     console.warn('[documentSecurity] Failed to generate QR code data URL.', error);

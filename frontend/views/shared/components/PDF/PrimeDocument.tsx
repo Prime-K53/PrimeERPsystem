@@ -256,7 +256,10 @@ const SecurityFooter = ({
   fontScale?: number;
   flowing?: boolean;
 }) => {
-  const footerQrSize = 50;
+  // Verification QR is printed large enough to scan reliably from paper or
+  // screen: ~100-char verification URLs need ~41x41 modules, which are too
+  // small to decode at the old 50pt size.
+  const footerQrSize = 76;
   const documentNumber = String(
     data.number
     || data.invoiceNumber
@@ -2724,7 +2727,9 @@ if (type === 'POS_RECEIPT') {
                       style={{
                         position: 'absolute',
                         bottom: 0,
-                        left: 0,
+                        // Center the 100-wide signature over the 180-wide
+                        // signature line: (180 - 100) / 2 = 40.
+                        left: 40,
                         width: 100,
                         height: 40,
                         objectFit: 'contain',

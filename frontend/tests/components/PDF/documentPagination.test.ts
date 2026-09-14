@@ -162,7 +162,9 @@ describe('quotation pagination (global standard)', () => {
   }, 120000);
 
   it('TEST 3 — three pages', async () => {
-    const { pages, pageCount, qrObj } = await renderBoth('QUOTATION', await secured(34));
+    // 32 items: calibrated for the 76pt verification QR footer (34 items
+    // tipped onto a fourth page when the footer grew from the old 50pt QR).
+    const { pages, pageCount, qrObj } = await renderBoth('QUOTATION', await secured(32));
     expectPageNumbers(pages, 3);
     expectQrFinalOnly(pages, qrObj);
     expect(pages[2].text).toContain(norm('Quoted Amount'));

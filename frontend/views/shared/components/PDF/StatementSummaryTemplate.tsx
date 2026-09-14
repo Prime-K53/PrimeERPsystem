@@ -181,8 +181,8 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
              {(() => {
                const qrUrl = resolvePdfQrCodeSource(String((data as any)?.securityQrCodeDataUrl || '').trim());
                return qrUrl ? (
-                 <View style={[s.securityQrPanel, { width: 58, alignItems: 'center', borderWidth: 0, backgroundColor: 'transparent', paddingVertical: 0, paddingHorizontal: 0 }]}>
-                   <Image src={qrUrl} style={{ width: 50, height: 50 }} />
+                  <View style={[s.securityQrPanel, { width: 84, alignItems: 'center', borderWidth: 0, backgroundColor: 'transparent', paddingVertical: 0, paddingHorizontal: 0 }]}>
+                    <Image src={qrUrl} style={{ width: 76, height: 76 }} />
                  </View>
                ) : null;
              })()}
