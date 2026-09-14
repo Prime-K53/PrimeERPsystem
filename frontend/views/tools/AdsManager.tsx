@@ -12,9 +12,10 @@ import {
   getImageDimensions,
   isConformantMeta,
   loadImageFile,
-  loadImageUrl,
+  nearestRatio,
   prepareBannerBlob,
   preparedBannerFile,
+  ratioLabel,
   validateBannerFile,
 } from '../../services/bannerImage'
 import { BannerCropModal } from '../../components/ui/BannerCropModal'
@@ -122,7 +123,7 @@ const toCanonical = (f: Partial<PortalAd>): PortalAd => ({
   aiPrompt: f.aiPrompt,
 })
 
-// Banners pasted as a plain URL bypass the 3:1 preparation pipeline, so they
+// Banners pasted as a plain URL bypass the 3:1 / 5:2 preparation pipeline, so they
 // carry no dimension metadata. Probe the actual asset so the API metadata the
 // portal receives always matches the real image; the portal can then decide
 // cover/contain without a runtime dimension probe. Failures are non-fatal —
@@ -223,11 +224,13 @@ export const AdsManager: React.FC = () => {
     /** Still-live blob URL for rendering inside the crop modal. */
     blobUrl: string
     sourceName: string
+    /** Ratio class the crop tool starts with (nearest accepted ratio). */
+    initialRatio?: number
     onDone: (blob: Blob, output: { width: number; height: number }) => void
   } | null>(null)
   const [urlPreviewStatus, setUrlPreviewStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [urlPreviewDims, setUrlPreviewDims] = useState<{ w: number; h: number } | null>(null)
-  // ad id → banner is 3:1 conformant (checked lazily for legacy banners)
+  // ad id → banner is 3:1 / 5:2 conformant (checked lazily for legacy banners)
   const [conformance, setConformance] = useState<Record<string, boolean>>({})
 
   const openNew = () => { setEditingId(null); setForm(emptyForm()); setActiveTab('Details'); setAdType('text'); setShowNew(true) }
@@ -357,9 +360,10 @@ export const AdsManager: React.FC = () => {
   }
 
   // ── Banner image pipeline: validate → crop/prepare → upload → preview ──
-  // Every banner is prepared as an exact 3:1 asset (1500 × 500 WebP) so the
-  // portal banner area never stretches or distorts it. Non-3:1 sources open
-  // the interactive crop tool; the backend re-validates on upload.
+  // Every banner is prepared as an exact 3:1 (1500 × 500) or 5:2 (1500 × 600)
+  // WebP asset so the portal banner area never stretches or distorts it.
+  // Sources matching neither ratio open the interactive crop tool (3:1 / 5:2
+  // selectable); the backend re-validates on upload.
 
   const applyUploadedBanner = (url: string, meta: any) =>
     setForm((p) => ({ ...p, imageUrl: url, imageMeta: meta }))
@@ -386,21 +390,23 @@ export const AdsManager: React.FC = () => {
         return
       }
       if (report.conformant) {
-        // Already 3:1 → prepare directly (resize + WebP), no crop needed.
-        const blob = await prepareBannerBlob(img)
+        // Already 3:1 or 5:2 → prepare directly (resize + WebP), no crop needed.
+        const targetRatio = report.ratioClass ?? nearestRatio(img.naturalWidth, img.naturalHeight)
+        const blob = await prepareBannerBlob(img, targetRatio)
         URL.revokeObjectURL(blobUrl) // done with the source
         const result = await doUpload(blob)
         applyUploadedBanner(result.url, result.meta)
         setNotify({
           kind: 'success',
-          text: `Banner prepared as 3:1 ${result.meta.format.toUpperCase()} (${result.meta.width} × ${result.meta.height} px) and uploaded.`,
+          text: `Banner prepared as ${ratioLabel(targetRatio)} ${result.meta.format.toUpperCase()} (${result.meta.width} × ${result.meta.height} px) and uploaded.`,
         })
       } else {
-        // Not 3:1 → interactive crop with safe-area guide.
+        // Neither 3:1 nor 5:2 → interactive crop with safe-area guide.
         setCropTarget({
           image: img,
           blobUrl,
           sourceName: file.name,
+          initialRatio: report.ratioClass ?? nearestRatio(img.naturalWidth, img.naturalHeight),
           onDone: async (blob, output) => {
             setUploadingImage(true)
             try {
@@ -408,7 +414,7 @@ export const AdsManager: React.FC = () => {
               applyUploadedBanner(result.url, result.meta)
               setNotify({
                 kind: 'success',
-                text: `Banner cropped to 3:1 (${output.width} × ${output.height} px), prepared as WebP and uploaded.`,
+                text: `Banner cropped to ${ratioLabel(nearestRatio(output.width, output.height))} (${output.width} × ${output.height} px), prepared as WebP and uploaded.`,
               })
             } catch (err: any) {
               setNotify({ kind: 'error', text: err?.message || 'Upload failed after cropping. Please try again.' })
@@ -425,15 +431,27 @@ export const AdsManager: React.FC = () => {
     }
   }
 
-  // Re-crop an existing (possibly legacy / non-3:1) banner asset.
+  // Re-crop an existing (possibly legacy / non-conformant) banner asset.
   const handleRecrop = async (ad: PortalAd) => {
     if (!ad.imageUrl) return
     setUploadingImage(true)
     try {
-      const img = await loadImageUrl(ad.imageUrl)
+      // Re-fetch the bytes so the crop modal gets a live blob URL to render
+      // (loadImageUrl alone returns only the element, leaving the modal stage
+      // blank). Same CORS requirement as the canvas read the modal performs.
+      const resp = await fetch(ad.imageUrl)
+      if (!resp.ok) throw new Error(`Could not load the banner image (HTTP ${resp.status})`)
+      const bytes = await resp.blob()
+      const { img, blobUrl } = await loadImageFile(
+        new File([bytes], ad.title || 'banner', { type: bytes.type || 'image/jpeg' })
+      )
       setCropTarget({
         image: img,
+        blobUrl,
         sourceName: ad.title || 'banner',
+        initialRatio: ad.imageMeta?.width && ad.imageMeta?.height
+          ? nearestRatio(ad.imageMeta.width, ad.imageMeta.height)
+          : nearestRatio(img.naturalWidth, img.naturalHeight),
         onDone: async (blob) => {
           setUploadingImage(true)
           try {
@@ -444,7 +462,7 @@ export const AdsManager: React.FC = () => {
               imageMeta: result.meta,
               updatedAt: new Date().toISOString(),
             } as PortalAd)
-            setNotify({ kind: 'success', text: 'Banner re-cropped to 3:1 and replaced.' })
+            setNotify({ kind: 'success', text: `Banner re-cropped to ${ratioLabel(nearestRatio(result.meta.width, result.meta.height))} and replaced.` })
             await load()
           } catch (err: any) {
             setNotify({ kind: 'error', text: err?.message || 'Re-crop failed. Please try again.' })
@@ -460,7 +478,7 @@ export const AdsManager: React.FC = () => {
     }
   }
 
-  // Flag legacy banners that do not conform to the 3:1 spec.
+  // Flag legacy banners that do not conform to the 3:1 / 5:2 spec.
   useEffect(() => {
     let cancelled = false
     const run = async () => {
@@ -542,8 +560,9 @@ export const AdsManager: React.FC = () => {
   }
 
   // Portal-style banner preview (mirrors CustomerDashboard carousel slide).
-  // The container enforces the SAME 3:1 ratio the customer portal uses, so
-  // the preview shows exactly the proportions customers see.
+  // The container follows the banner's own ratio class (3:1 or 5:2, from its
+  // prepared metadata) so the preview shows the proportions customers see —
+  // the portal renders the asset with object-fit cover and never stretches it.
   const BannerPreview = ({ ad, compact = false }: { ad: Partial<PortalAd>; compact?: boolean }) => {
     const title = ad.title || 'Your ad title'
     const subtitle = ad.subtitle || 'Your supporting message appears here.'
@@ -552,10 +571,13 @@ export const AdsManager: React.FC = () => {
     const ctaLabel = ad.ctaLabel || 'Order Now'
     const imageUrl = ad.imageUrl && String(ad.imageUrl).trim()
     const hasText = Boolean(String(ad.title || '').trim() || String(ad.subtitle || '').trim())
+    const previewRatio = ad.imageMeta?.width && ad.imageMeta?.height
+      ? nearestRatio(ad.imageMeta.width, ad.imageMeta.height)
+      : 3
 
     const frame: React.CSSProperties = {
       borderRadius: 14, overflow: 'hidden', position: 'relative',
-      aspectRatio: '3 / 1', minHeight: compact ? 84 : 96,
+      aspectRatio: `${previewRatio} / 1`, minHeight: compact ? 84 : 96,
       width: '100%',
     }
 
@@ -742,7 +764,7 @@ export const AdsManager: React.FC = () => {
         }}>
           <FileWarning size={16} style={{ flexShrink: 0 }} />
           <span style={{ flex: 1, minWidth: 220 }}>
-            {nonConformingAds.length} banner{nonConformingAds.length > 1 ? 's' : ''} don&apos;t match the 3:1 spec — they may appear cropped or distorted on the portal. Re-crop to fix.
+            {nonConformingAds.length} banner{nonConformingAds.length > 1 ? 's' : ''} don&apos;t match the 3:1 / 5:2 spec — they may appear cropped or distorted on the portal. Re-crop to fix.
           </span>
           <button onClick={() => setStatusFilter('all')} style={{ background: 'transparent', border: 'none', color: '#92400e', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
             Re-crop banners
@@ -823,12 +845,12 @@ export const AdsManager: React.FC = () => {
                       <StatusBadge status={status} />
                       {ad.imageUrl && conformance[ad.id] === false && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: amber[100], color: '#92400e' }}>
-                          <FileWarning size={11} /> Not 3:1
+                          <FileWarning size={11} /> Not 3:1/5:2
                         </span>
                       )}
                       {ad.imageUrl && conformance[ad.id] === true && isConformantMeta(ad.imageMeta) && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: teal[100], color: teal[700] }}>
-                          <ShieldCheck size={11} /> 3:1 &middot; {ad.imageMeta.width} × {ad.imageMeta.height}
+                          <ShieldCheck size={11} /> {ad.imageMeta?.width && ad.imageMeta?.height ? ratioLabel(nearestRatio(ad.imageMeta.width, ad.imageMeta.height)) : '3:1'} &middot; {ad.imageMeta.width} × {ad.imageMeta.height}
                         </span>
                       )}
                     </div>
@@ -854,7 +876,7 @@ export const AdsManager: React.FC = () => {
                       {status === 'active' ? <Pause size={13} /> : <Play size={13} />}
                     </button>
                     {ad.imageUrl && conformance[ad.id] === false && (
-                      <button title="Re-crop to 3:1" onClick={() => handleRecrop(ad)}
+                      <button title="Re-crop banner (3:1 / 5:2)" onClick={() => handleRecrop(ad)}
                         style={{ height: 32, padding: '0 10px', borderRadius: 8, border: 'none', cursor: 'pointer', background: amber[100], color: '#92400e', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 700, transition: 'transform .12s ease' }}
                         onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)' }}
                         onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
@@ -1129,7 +1151,7 @@ export const AdsManager: React.FC = () => {
                           {imageMode === 'upload' ? (
                             form.imageUrl ? (
                               <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `1.4px solid ${hairline}`, background: '#f8fafc' }}>
-                                <img src={form.imageUrl} alt="Banner preview" style={{ width: '100%', aspectRatio: '3 / 1', minHeight: 96, objectFit: 'cover', display: 'block' }} />
+                                <img src={form.imageUrl} alt="Banner preview" style={{ width: '100%', aspectRatio: `${form.imageMeta?.width && form.imageMeta?.height ? nearestRatio(form.imageMeta.width, form.imageMeta.height) : 3} / 1`, minHeight: 96, objectFit: 'cover', display: 'block' }} />
                                 <div style={{ position: 'absolute', right: 8, top: 8, display: 'flex', gap: 6 }}>
                                   <button type="button" onClick={() => setImageMode('url')} title="Replace image"
                                     style={{ width: 30, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(15,23,42,.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1143,7 +1165,7 @@ export const AdsManager: React.FC = () => {
                                 {form.imageMeta && (
                                   <div style={{ position: 'absolute', left: 8, bottom: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'rgba(15,23,42,.72)', color: '#fff' }}>
-                                      <ShieldCheck size={11} color={teal[300]} /> 3:1 prepared &middot; {form.imageMeta.width} × {form.imageMeta.height} &middot; {form.imageMeta.format.toUpperCase()} &middot; {formatBannerBytes(form.imageMeta.fileSize)}
+                                      <ShieldCheck size={11} color={teal[300]} /> {form.imageMeta.width && form.imageMeta.height ? ratioLabel(nearestRatio(form.imageMeta.width, form.imageMeta.height)) : '3:1'} prepared &middot; {form.imageMeta.width} × {form.imageMeta.height} &middot; {form.imageMeta.format.toUpperCase()} &middot; {formatBannerBytes(form.imageMeta.fileSize)}
                                     </span>
                                   </div>
                                 )}
@@ -1153,10 +1175,10 @@ export const AdsManager: React.FC = () => {
                                 <div style={{ marginBottom: 8, padding: '9px 12px', borderRadius: 9, background: teal[50], border: `1px solid ${teal[200]}`, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
                                   <ShieldCheck size={15} style={{ color: teal[600], flexShrink: 0, marginTop: 1 }} />
                                   <div style={{ fontSize: 11.5, color: teal[800], lineHeight: 1.55 }}>
-                                    <b>Recommended size: {BANNER_SPEC.recommendedWidth} × {BANNER_SPEC.recommendedHeight} px</b> &nbsp;&middot;&nbsp; <b>Aspect ratio: 3:1</b>
+                                    <b>Recommended: 1500 × 500 px (3:1)</b> or <b>1500 × 600 px (5:2)</b> &nbsp;&middot;&nbsp; <b>Aspect ratio: 3:1 or 5:2</b>
                                     <br />
-                                    Minimum {BANNER_SPEC.minWidth} × {BANNER_SPEC.minHeight} px &middot; WebP preferred (JPG/PNG accepted) &middot; up to 2 MB.
-                                    Images that aren&apos;t 3:1 open a crop tool — banners are never stretched.
+                                    Minimum 1200 × 400 px (3:1) or 1200 × 480 px (5:2) &middot; WebP preferred (JPG/PNG accepted) &middot; up to 2 MB.
+                                    Images that match neither ratio open a crop tool — banners are never stretched.
                                   </div>
                                 </div>
                                 <label
@@ -1299,7 +1321,7 @@ export const AdsManager: React.FC = () => {
                                           fontSize: 10, fontWeight: 700, padding: '3px 9px',
                                           borderRadius: 20, background: teal[600], color: '#fff',
                                         }}>
-                                          <ShieldCheck size={10} /> 3:1 ✓
+                                          <ShieldCheck size={10} /> {ratioLabel(nearestRatio(urlPreviewDims.w, urlPreviewDims.h))} ✓
                                         </span>
                                       ) : (
                                         <span style={{
@@ -1307,7 +1329,7 @@ export const AdsManager: React.FC = () => {
                                           fontSize: 10, fontWeight: 700, padding: '3px 9px',
                                           borderRadius: 20, background: amber[500], color: '#fff',
                                         }}>
-                                          <AlertTriangle size={10} /> Not 3:1 — may appear cropped
+                                          <AlertTriangle size={10} /> Not 3:1/5:2 — may appear cropped
                                         </span>
                                       )}
                                     </div>
@@ -1478,14 +1500,14 @@ export const AdsManager: React.FC = () => {
                     <>
                       <div style={sectionLabelStyle}><span>Live Preview</span></div>
                       <p style={{ fontSize: 12, color: inkSoft, margin: '0 0 14px', lineHeight: 1.5 }}>
-                        Exactly how this ad renders in the customer portal banner carousel — the preview uses the same 3:1 banner area as the portal.
+                        Exactly how this ad renders in the customer portal banner carousel — the preview follows the banner&apos;s own ratio class (3:1 or 5:2).
                       </p>
                       <BannerPreview ad={form} />
                       {form.imageMeta && aspectConformance(form.imageMeta.width, form.imageMeta.height) && (
                         <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 9, background: teal[50], border: `1px solid ${teal[200]}`, fontSize: 11.5, color: teal[800], fontWeight: 600 }}>
                           <ShieldCheck size={14} style={{ color: teal[600], flexShrink: 0 }} />
                           <span>
-                            3:1 compliant &middot; {form.imageMeta.width} × {form.imageMeta.height} px &middot; aspect {form.imageMeta.aspectRatio}:1
+                            {ratioLabel(nearestRatio(form.imageMeta.width, form.imageMeta.height))} compliant &middot; {form.imageMeta.width} × {form.imageMeta.height} px &middot; aspect {form.imageMeta.aspectRatio}:1
                             {form.imageMeta.format ? ` &middot; ${form.imageMeta.format.toUpperCase()}` : ''}
                             {typeof form.imageMeta.fileSize === 'number' ? ` &middot; ${formatBannerBytes(form.imageMeta.fileSize)}` : ''}
                           </span>
@@ -1494,7 +1516,7 @@ export const AdsManager: React.FC = () => {
                       {form.imageUrl && (!form.imageMeta || !aspectConformance(form.imageMeta.width, form.imageMeta.height)) && (
                         <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 9, background: '#fdf6e3', border: `1.4px solid ${amber[300]}`, fontSize: 11.5, color: '#92400e', fontWeight: 600 }}>
                           <FileWarning size={14} style={{ flexShrink: 0 }} />
-                          <span>This banner is not 3:1 compliant — re-crop it so it displays correctly on the portal.</span>
+                          <span>This banner is not 3:1 / 5:2 compliant — re-crop it so it displays correctly on the portal.</span>
                         </div>
                       )}
                       <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: '#f8fafc', border: `1px solid ${hairline}`, fontSize: 11.5, color: inkSoft, lineHeight: 1.6 }}>
@@ -1558,12 +1580,13 @@ export const AdsManager: React.FC = () => {
         </div>
       )}
 
-      {/* ── Interactive 3:1 crop tool ── */}
+      {/* ── Interactive crop tool (3:1 / 5:2) ── */}
       {cropTarget && (
         <BannerCropModal
           image={cropTarget.image}
           blobUrl={cropTarget.blobUrl}
           sourceName={cropTarget.sourceName}
+          initialRatio={cropTarget.initialRatio}
           onCancel={() => {
             URL.revokeObjectURL(cropTarget.blobUrl)
             setCropTarget(null)

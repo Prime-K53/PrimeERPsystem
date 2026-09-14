@@ -1,15 +1,19 @@
 // ─── bannerImageService unit tests ───────────────────────────────────────────
 // Verifies the customer_portal_banner preparation pipeline: every accepted
-// banner becomes an exact 3:1 WebP at 1500 × 500 (never stretched), while
-// unsuitable files are rejected with clear errors.
+// banner becomes an exact-ratio WebP (3:1 at 1500 × 500, or 5:2 at
+// 1500 × 600 — never stretched), while unsuitable files are rejected with
+// clear errors.
 
 const sharp = require('sharp');
 const crypto = require('crypto');
 const {
   BANNER_SPEC,
+  BANNER_RATIOS,
   BannerImageError,
   processBannerImage,
   largestFourToOneRegion,
+  largestRatioRegion,
+  nearestRatio,
 } = require('../../services/bannerImageService.cjs');
 
 /** Solid-color test image. */
@@ -62,6 +66,19 @@ describe('bannerImageService (customer_portal_banner)', () => {
       expect(BANNER_SPEC.outputFormat).toBe('webp');
     });
 
+    it('accepts 3:1 and 5:2 ratio classes', () => {
+      expect(BANNER_SPEC.acceptedRatios).toContain(3);
+      expect(BANNER_SPEC.acceptedRatios).toContain(2.5);
+      expect(BANNER_RATIOS).toEqual([
+        { ratio: 3, label: '3:1', width: 1500, height: 500, minWidth: 1200, minHeight: 400 },
+        { ratio: 2.5, label: '5:2', width: 1500, height: 600, minWidth: 1200, minHeight: 480 },
+      ]);
+      expect(nearestRatio(1500, 600)).toBe(2.5);
+      expect(nearestRatio(1500, 750)).toBe(2.5);
+      expect(nearestRatio(1600, 400)).toBe(3);
+      expect(largestRatioRegion(1200, 1200, 2.5)).toEqual({ width: 1200, height: 480 });
+    });
+
     it('largestFourToOneRegion finds the biggest 3:1 region without upscaling', () => {
       // Exact 3:1 sources — returned unchanged.
       expect(largestFourToOneRegion(1500, 500)).toEqual({ width: 1500, height: 500 });
@@ -77,7 +94,7 @@ describe('bannerImageService (customer_portal_banner)', () => {
     });
   });
 
-  describe('conforming uploads (already 3:1)', () => {
+  describe('conforming uploads (already an accepted ratio)', () => {
     it.each([
       [1500, 500, '1500 × 500 — exact recommended'],
       [1200, 400, '1200 × 400 — exact minimum'],
@@ -100,21 +117,44 @@ describe('bannerImageService (customer_portal_banner)', () => {
       // Never stretched: stored asset is exactly 3:1.
       expect(outMeta.width / outMeta.height).toBe(3);
     });
+
+    it.each([
+      [1500, 600, '1500 × 600 — exact recommended 5:2'],
+      [1200, 480, '1200 × 480 — exact minimum 5:2'],
+      [1250, 500, '1250 × 500 — exact 5:2 upscaled'],
+    ])('%s → prepared as exact 5:2 1500 × 600 WebP', async (w, h) => {
+      const { buffer, meta } = await processBannerImage(await makeSolid(w, h, 'jpeg'));
+      expect(meta.bannerType).toBe('customer_portal_banner');
+      expect(meta.format).toBe('webp');
+      expect(meta.width).toBe(1500);
+      expect(meta.height).toBe(600);
+      expect(meta.aspectRatio).toBe(2.5);
+      expect(meta.fileSize).toBe(buffer.length);
+      expect(buffer.length).toBeGreaterThan(0);
+      expect(buffer.length).toBeLessThanOrEqual(BANNER_SPEC.maxBytes);
+
+      const outMeta = await sharp(buffer).metadata();
+      expect(outMeta.format).toBe('webp');
+      expect(outMeta.width).toBe(1500);
+      expect(outMeta.height).toBe(600);
+      // Never stretched: stored asset is exactly 5:2.
+      expect(outMeta.width / outMeta.height).toBe(2.5);
+    });
   });
 
-  describe('non-conforming uploads (need a 3:1 crop)', () => {
-    it('1500 × 750 (too tall) → cropped to 1500 × 500, never stretched', async () => {
+  describe('non-conforming uploads (cropped to the nearest ratio class)', () => {
+    it('1500 × 750 (2:1, nearest 5:2) → cropped to 1500 × 600, never stretched', async () => {
       const { buffer, meta } = await processBannerImage(await makeSolid(1500, 750, 'jpeg'));
       expect(meta.width).toBe(1500);
-      expect(meta.height).toBe(500);
-      expect(meta.aspectRatio).toBe(3);
+      expect(meta.height).toBe(600);
+      expect(meta.aspectRatio).toBe(2.5);
     });
 
-    it('1200 × 1200 (square) → cropped to 3:1, never stretched', async () => {
+    it('1200 × 1200 (square, nearest 5:2) → cropped to 1500 × 600, never stretched', async () => {
       const { buffer, meta } = await processBannerImage(await makeSolid(1200, 1200, 'jpeg'));
       expect(meta.width).toBe(1500);
-      expect(meta.height).toBe(500);
-      expect(meta.aspectRatio).toBe(3);
+      expect(meta.height).toBe(600);
+      expect(meta.aspectRatio).toBe(2.5);
     });
 
     it('preserves content: crop window lands on the content band', async () => {
@@ -202,21 +242,23 @@ describe('bannerImageService (customer_portal_banner)', () => {
 
   describe('never stretches', () => {
     it.each([
-      [1500, 500],   // exact recommended 3:1
-      [1200, 400],   // exact minimum 3:1
-      [1800, 600],   // larger 3:1
-      [1500, 750],   // too tall — needs crop
-      [1200, 1200],  // square — needs crop
-      [1500, 600],   // approx 2.5:1 — needs crop
-      [2000, 667],   // approx 3:1 (within tolerance) — conformant
+      [1500, 500, 1500, 500],   // exact recommended 3:1
+      [1200, 400, 1500, 500],   // exact minimum 3:1
+      [1800, 600, 1500, 500],   // larger 3:1
+      [1500, 600, 1500, 600],   // exact recommended 5:2 — conformant
+      [1250, 500, 1500, 600],   // exact 5:2 — conformant
+      [1500, 750, 1500, 600],   // too tall — cropped to nearest 5:2
+      [1200, 1200, 1500, 600],  // square — cropped to nearest 5:2
+      [1600, 400, 1500, 500],   // 4:1 — cropped to nearest 3:1
+      [2000, 667, 1500, 500],   // approx 3:1 (within tolerance) — conformant
     ])(
-      '%s → output is exactly 3:1',
-      async (w, h) => {
+      '%s × %s → output is exactly the ratio class canvas',
+      async (w, h, outW, outH) => {
         const { buffer } = await processBannerImage(await makeSolid(w, h, 'jpeg'));
         const outMeta = await sharp(buffer).metadata();
-        expect(outMeta.width / outMeta.height).toBe(3);
-        expect(outMeta.width).toBe(1500);
-        expect(outMeta.height).toBe(500);
+        expect(outMeta.width).toBe(outW);
+        expect(outMeta.height).toBe(outH);
+        expect(outMeta.width / outMeta.height).toBe(outW / outH);
       }
     );
   });

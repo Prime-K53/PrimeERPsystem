@@ -1,17 +1,18 @@
 // ─── Customer Portal Banner Image Service ────────────────────────────────────
 // Canonical preparation pipeline for the `customer_portal_banner` type.
 //
-// The customer portal renders banners in a responsive 3:1 area. Every banner
-// uploaded through the ERP must therefore be prepared as an exact 3:1 asset so
-// the portal never stretches or distorts an image.
+// The customer portal renders banner assets with object-fit cover (never
+// stretched). Every banner uploaded through the ERP is therefore prepared as
+// an exact-ratio asset — 3:1 (1500 × 500) or 5:2 (1500 × 600) — so the portal
+// never stretches or distorts an image.
 //
 // Pipeline (server-side, defense-in-depth — the ERP UI also validates and
-// offers an interactive 3:1 crop before uploading):
+// offers an interactive 3:1 / 5:2 crop before uploading):
 //   1. Validate payload (bytes, real image, allowed format)
 //   2. Normalize EXIF orientation
-//   3. Crop to an exact 3:1 region — positioned intelligently (content-energy
-//      analysis) when the source is not 3:1
-//   4. Resize to the recommended 1500 × 500 px (WebP) — exact 3:1, no stretch
+//   3. Crop to the nearest accepted ratio class (3:1 or 5:2) — positioned
+//      intelligently (content-energy analysis) when the source matches neither
+//   4. Resize to that class's recommended canvas (WebP) — exact ratio, no stretch
 //   5. Return the optimized buffer + metadata for the ad record
 
 // Lazy-load sharp so a missing native binary doesn't crash the server at startup.
@@ -37,6 +38,8 @@ function getSharp() {
 const BANNER_SPEC = {
   bannerType: 'customer_portal_banner',
   targetRatio: 3,
+  /** Accepted aspect ratios (width / height): 3:1 and 5:2. */
+  acceptedRatios: [3, 2.5],
   recommendedWidth: 1500,
   recommendedHeight: 500,
   minWidth: 1200,
@@ -45,10 +48,17 @@ const BANNER_SPEC = {
   outputFormat: 'webp',
   outputQuality: 82,
   allowedFormats: ['webp', 'jpeg', 'png'],
-  // The ERP UI crops to exactly 3:1; anything within 2% of 3:1 is treated as
-  // conformant (covers rounding drift) and only normalized to exact 3:1.
+  // The ERP UI crops to exactly 3:1 or 5:2; anything within 2% of either ratio
+  // is treated as conformant (covers rounding drift) and only normalized to
+  // that class's exact canvas.
   aspectTolerance: 0.02,
 };
+
+/** Per-ratio output canvas + minimum size. 3:1 stays the default/primary class. */
+const BANNER_RATIOS = [
+  { ratio: 3, label: '3:1', width: 1500, height: 500, minWidth: 1200, minHeight: 400 },
+  { ratio: 2.5, label: '5:2', width: 1500, height: 600, minWidth: 1200, minHeight: 480 },
+];
 
 class BannerImageError extends Error {
   constructor(message, code, status = 400) {
@@ -59,18 +69,45 @@ class BannerImageError extends Error {
   }
 }
 
+/** Display label for an accepted ratio ('3:1' / '5:2'). */
+function ratioLabel(ratio) {
+  const found = BANNER_RATIOS.find((r) => r.ratio === ratio);
+  return found ? found.label : `${ratio}:1`;
+}
+
+/** Nearest accepted ratio class for arbitrary dimensions. */
+function nearestRatio(width, height) {
+  if (!width || !height) return BANNER_SPEC.targetRatio;
+  const ratio = width / height;
+  let best = BANNER_SPEC.targetRatio;
+  let bestDist = Infinity;
+  for (const r of BANNER_RATIOS) {
+    const dist = Math.abs(ratio - r.ratio);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = r.ratio;
+    }
+  }
+  return best;
+}
+
+/** Largest region of the given ratio class that fits inside a source without upscaling. */
+function largestRatioRegion(width, height, ratio = BANNER_SPEC.targetRatio) {
+  if (!width || !height) return null;
+  const r = width / height;
+  if (r >= ratio) {
+    let cropW = Math.round(height * ratio);
+    if (cropW > width) cropW = width;
+    return { width: cropW, height: Math.round(cropW / ratio) };
+  }
+  let cropH = Math.round(width / ratio);
+  if (cropH > height) cropH = height;
+  return { width: Math.round(cropH * ratio), height: cropH };
+}
+
 /** Largest 3:1 region that fits inside a source without upscaling. */
 function largestFourToOneRegion(width, height) {
-  if (!width || !height) return null;
-  const ratio = width / height;
-  if (ratio >= BANNER_SPEC.targetRatio) {
-    let cropW = Math.round(height * BANNER_SPEC.targetRatio);
-    if (cropW > width) cropW = width;
-    return { width: cropW, height: Math.round(cropW / BANNER_SPEC.targetRatio) };
-  }
-  let cropH = Math.round(width / BANNER_SPEC.targetRatio);
-  if (cropH > height) cropH = height;
-  return { width: Math.round(cropH * BANNER_SPEC.targetRatio), height: cropH };
+  return largestRatioRegion(width, height, BANNER_SPEC.targetRatio);
 }
 
 /**
@@ -78,7 +115,7 @@ function largestFourToOneRegion(width, height) {
  * The scan downscales to grayscale, computes per-line gradient energy (edges —
  * where logos, text and product shots live) and slides the crop window across
  * the line-energy array, picking the window that contains the most content.
- * Used as the intelligent fallback for non-3:1 uploads that bypass the UI crop.
+ * Used as the intelligent fallback for uploads that bypass the UI crop.
  *
  * @param {Buffer} inputBuffer original bytes (EXIF orientation applied inside)
  * @param {'x'|'y'} axis       'x' = window moves horizontally (cropping width)
@@ -184,12 +221,19 @@ async function processBannerImage(inputBuffer) {
   const srcW = needsSwap ? meta.height : meta.width;
   const srcH = needsSwap ? meta.width : meta.height;
 
-  // Minimum-size gate: even the largest possible 3:1 crop of this source must
-  // meet the minimum acceptable banner dimensions.
-  const region = largestFourToOneRegion(srcW, srcH);
-  if (!region || region.width < spec.minWidth || region.height < spec.minHeight) {
+  // Target ratio class: nearest accepted ratio (3:1 or 5:2).
+  const ratioClass = nearestRatio(srcW, srcH);
+  const classSpec = BANNER_RATIOS.find((r) => r.ratio === ratioClass) || BANNER_RATIOS[0];
+
+  // Minimum-size gate: the largest possible crop of this source in at least
+  // one accepted ratio class must meet that class's minimum dimensions.
+  const fitsSomeClass = BANNER_RATIOS.some((r) => {
+    const region = largestRatioRegion(srcW, srcH, r.ratio);
+    return !!region && region.width >= r.minWidth && region.height >= r.minHeight;
+  });
+  if (!fitsSomeClass) {
     throw new BannerImageError(
-      `Image is too small — the minimum acceptable banner is ${spec.minWidth} × ${spec.minHeight} px (3:1).`,
+      `Image is too small — the minimum acceptable banner is 1200 × 400 px (3:1) or 1200 × 480 px (5:2).`,
       'IMAGE_TOO_SMALL'
     );
   }
@@ -198,10 +242,10 @@ async function processBannerImage(inputBuffer) {
   const ratio = srcW / srcH;
   let cropW = srcW;
   let cropH = srcH;
-  if (ratio > spec.targetRatio + spec.aspectTolerance) {
-    cropW = Math.round(srcH * spec.targetRatio);
-  } else if (ratio < spec.targetRatio - spec.aspectTolerance) {
-    cropH = Math.round(srcW / spec.targetRatio);
+  if (ratio > ratioClass + spec.aspectTolerance) {
+    cropW = Math.round(srcH * ratioClass);
+  } else if (ratio < ratioClass - spec.aspectTolerance) {
+    cropH = Math.round(srcW / ratioClass);
   }
 
   let cropX = 0;
@@ -215,10 +259,10 @@ async function processBannerImage(inputBuffer) {
     cropY = Math.max(0, Math.min(bestY, srcH - cropH));
   }
 
-  // Final asset: exact 3:1, exactly the recommended canvas (no upscaling
-  // beyond the minimum acceptable source), WebP, metadata stripped.
-  const outW = spec.recommendedWidth;
-  const outH = spec.recommendedHeight;
+  // Final asset: exact ratio of its class, exactly the class's recommended
+  // canvas, WebP, metadata stripped.
+  const outW = classSpec.width;
+  const outH = classSpec.height;
 
   const sharp = getSharp();
   let pipeline = sharp(inputBuffer).rotate().extract({
@@ -261,4 +305,4 @@ async function processBannerImage(inputBuffer) {
   };
 }
 
-module.exports = { BANNER_SPEC, BannerImageError, processBannerImage, largestFourToOneRegion, bestCropOffset };
+module.exports = { BANNER_SPEC, BANNER_RATIOS, BannerImageError, processBannerImage, largestFourToOneRegion, largestRatioRegion, nearestRatio, ratioLabel, bestCropOffset };

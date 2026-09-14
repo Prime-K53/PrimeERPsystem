@@ -225,8 +225,47 @@ h2.pp{ font-family:'Inter',sans-serif; font-weight:600; font-size:16px; margin:0
   .dash-tab{ flex-shrink:0; }
 }
 
-/* Accessibility */
-.pp-btn:focus-visible,.pp-search:focus-visible,input:focus-visible,select:focus-visible,button:focus-visible{ outline:2px solid var(--inv-stamp); outline-offset:2px; }
+/* ============================================================
+   COMPACT-LIST MODE — mimic customer list table on small devices
+   Wraps master inventory pp-tables (.inv-table-wrap.rpt-compact-list).
+   Narrow containers keep a dense list and hide [data-collapse-mobile]
+   columns instead of horizontal-scroll or card-stacking.
+   (Same pattern as Clients.tsx clients-table-wrap + responsive-table.css)
+   ============================================================ */
+.inv-table-wrap {
+  overflow: auto;
+  container-type: inline-size;
+  container-name: rpt-compact;
+}
+
+/* Never turn a compact-list inventory table into a block scroller —
+   keep it a true table so container queries can collapse columns. */
+.rpt-compact-list .pp-table:not([data-mobile-cards="true"]) {
+  display: table;
+  overflow: visible;
+}
+
+@container rpt-compact (max-width: 639px) {
+  .rpt-compact-list .pp-table {
+    min-width: 0 !important;
+    width: 100%;
+  }
+  .rpt-compact-list .pp-table td,
+  .rpt-compact-list .pp-table th {
+    white-space: nowrap;
+  }
+  .rpt-compact-list .pp-table td[data-label="Name"],
+  .rpt-compact-list .pp-table td[data-label="Product"],
+  .rpt-compact-list .pp-table td[data-label="Service Name"] {
+    white-space: normal;
+    min-width: 0;
+  }
+  /* Totals row cells map to hidden columns — hide foot on narrow to
+     avoid misaligned totals (customer list has no totals row). */
+  .rpt-compact-list .pp-table tfoot {
+    display: none;
+  }
+}
 
 /* Action Dropdown Menu */
 .action-dropdown-container{ position:relative; display:inline-block; }
@@ -688,3 +727,6 @@ h2.pp{ font-family:'Inter',sans-serif; font-weight:600; font-size:16px; margin:0
   /* Status badge */
   .status-badge{ font-size:9px; padding:2px 6px; border-radius:6px; }
 }
+
+/* Accessibility */
+.pp-btn:focus-visible,.pp-search:focus-visible,input:focus-visible,select:focus-visible,button:focus-visible{ outline:2px solid var(--inv-stamp); outline-offset:2px; }

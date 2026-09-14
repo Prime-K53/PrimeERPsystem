@@ -1,7 +1,7 @@
 // ─── Customer Portal Banner Image Service (ERP side) ─────────────────────────
 // Mirrors the backend bannerImageService spec so the ERP UI can validate,
-// interactively crop to 3:1, and prepare a banner before it is uploaded.
-// The canonical 3:1 ratio is enforced on the actual asset — never by CSS
+// interactively crop to 3:1 or 5:2, and prepare a banner before it is uploaded.
+// The canonical ratios are enforced on the actual asset — never by CSS
 // stretching — and the server re-validates everything on upload.
 
 import type { PortalAdImageMeta } from '../types/ads';
@@ -9,6 +9,8 @@ import type { PortalAdImageMeta } from '../types/ads';
 export const BANNER_SPEC = {
   bannerType: 'customer_portal_banner',
   targetRatio: 3,
+  /** Accepted aspect ratios (width / height): 3:1 and 5:2. */
+  acceptedRatios: [3, 2.5],
   recommendedWidth: 1500,
   recommendedHeight: 500,
   minWidth: 1200,
@@ -19,6 +21,14 @@ export const BANNER_SPEC = {
   allowedMime: /^image\/(png|jpe?g|webp)$/i,
   aspectTolerance: 0.02, // UI crop rounding drift treated as conformant
 } as const;
+
+/** Per-ratio output canvas + minimum size. 3:1 stays the default/primary class. */
+export const BANNER_RATIOS = [
+  { ratio: 3, label: '3:1', width: 1500, height: 500, minWidth: 1200, minHeight: 400 },
+  { ratio: 2.5, label: '5:2', width: 1500, height: 600, minWidth: 1200, minHeight: 480 },
+] as const;
+
+export type BannerAcceptedRatio = (typeof BANNER_RATIOS)[number]['ratio'];
 
 export type BannerValidationErrorCode = 'TYPE' | 'SIZE' | 'SMALL' | 'LOAD';
 
@@ -32,18 +42,20 @@ export interface BannerValidationResult {
   height?: number;
   /** width / height of the source. */
   ratio?: number;
-  /** True when the source is already 3:1 (within tolerance) — no crop needed. */
+  /** True when the source is already 3:1 or 5:2 (within tolerance) — no crop needed. */
   conformant?: boolean;
-  /** True when the source must be cropped to 3:1 before upload. */
+  /** True when the source must be cropped to the target ratio class before upload. */
   needsCrop?: boolean;
-  /** Final prepared asset size (3:1). */
+  /** Ratio class the asset will be prepared as (matched class, else nearest). */
+  ratioClass?: BannerAcceptedRatio;
+  /** Final prepared asset size for the ratio class. */
   output?: { width: number; height: number };
 }
 
 export const BANNER_ERROR_MESSAGES: Record<BannerValidationErrorCode, string> = {
   TYPE: 'Unsupported file type. Accepted formats: WebP, JPG, PNG.',
   SIZE: 'Image is too large — the maximum size is 2 MB.',
-  SMALL: `Image is too small. Minimum acceptable: ${BANNER_SPEC.minWidth} × ${BANNER_SPEC.minHeight} px (3:1).`,
+  SMALL: `Image is too small. Minimum acceptable: ${BANNER_SPEC.minWidth} × ${BANNER_SPEC.minHeight} px (3:1) or 1200 × 480 px (5:2).`,
   LOAD: 'The file could not be read as an image.',
 };
 
@@ -59,43 +71,105 @@ export function validateBannerFile(file: File | null | undefined): BannerValidat
   return { ok: true };
 }
 
-/** True when width/height are 3:1 within the given tolerance (default spec). */
+/** True when width/height match 3:1 or 5:2 within the given tolerance (default spec). */
 export function aspectConformance(width: number, height: number, tolerance = BANNER_SPEC.aspectTolerance): boolean {
   if (!width || !height) return false;
-  return Math.abs(width / height - BANNER_SPEC.targetRatio) <= tolerance;
+  const ratio = width / height;
+  return BANNER_SPEC.acceptedRatios.some((t) => Math.abs(ratio - t) <= tolerance);
+}
+
+/** Display label for an accepted ratio ('3:1' / '5:2'). */
+export function ratioLabel(ratio: number): string {
+  const found = BANNER_RATIOS.find((r) => r.ratio === ratio);
+  if (found) return found.label;
+  return `${ratio}:1`;
+}
+
+/** Nearest accepted ratio class for arbitrary dimensions (used for crop default + output). */
+export function nearestRatio(width: number, height: number): BannerAcceptedRatio {
+  if (!width || !height) return BANNER_SPEC.targetRatio as BannerAcceptedRatio;
+  const ratio = width / height;
+  let best: BannerAcceptedRatio = BANNER_SPEC.targetRatio as BannerAcceptedRatio;
+  let bestDist = Infinity;
+  for (const r of BANNER_RATIOS) {
+    const dist = Math.abs(ratio - r.ratio);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = r.ratio;
+    }
+  }
+  return best;
+}
+
+/** Accepted ratio class the dimensions conform to, or null when neither matches. */
+export function matchedRatio(width: number, height: number, tolerance = BANNER_SPEC.aspectTolerance): BannerAcceptedRatio | null {
+  if (!width || !height) return null;
+  const ratio = width / height;
+  let best: BannerAcceptedRatio | null = null;
+  let bestDist = Infinity;
+  for (const r of BANNER_RATIOS) {
+    const dist = Math.abs(ratio - r.ratio);
+    if (dist <= tolerance && dist < bestDist) {
+      bestDist = dist;
+      best = r.ratio;
+    }
+  }
+  return best;
+}
+
+/** Recommended output canvas for a ratio class. */
+export function outputForRatio(ratio: number): { width: number; height: number } {
+  const found = BANNER_RATIOS.find((r) => r.ratio === ratio);
+  if (found) return { width: found.width, height: found.height };
+  return { width: BANNER_SPEC.recommendedWidth, height: BANNER_SPEC.recommendedHeight };
+}
+
+/**
+ * Largest region of the given ratio class that fits inside a source without
+ * upscaling, or null when the source has no usable dimensions.
+ */
+export function largestRatioRegion(width: number, height: number, ratio: number = BANNER_SPEC.targetRatio): { width: number; height: number } | null {
+  if (!width || !height || width <= 0 || height <= 0) return null;
+  if (width / height >= ratio) {
+    const cropW = Math.min(Math.round(height * ratio), width);
+    return { width: cropW, height: Math.round(cropW / ratio) };
+  }
+  const cropH = Math.min(Math.round(width / ratio), height);
+  return { width: Math.round(cropH * ratio), height: cropH };
 }
 
 /**
  * Largest 3:1 region that fits inside a source without upscaling, or null
  * when the source is too small to ever produce a valid banner.
+ * (Kept for backwards compatibility — prefers largestRatioRegion.)
  */
 export function largestFourToOneRegion(width: number, height: number): { width: number; height: number } | null {
-  if (!width || !height || width <= 0 || height <= 0) return null;
-  if (width / height >= BANNER_SPEC.targetRatio) {
-    const cropW = Math.min(Math.round(height * BANNER_SPEC.targetRatio), width);
-    return { width: cropW, height: Math.round(cropW / BANNER_SPEC.targetRatio) };
-  }
-  const cropH = Math.min(Math.round(width / BANNER_SPEC.targetRatio), height);
-  return { width: Math.round(cropH * BANNER_SPEC.targetRatio), height: cropH };
+  return largestRatioRegion(width, height, BANNER_SPEC.targetRatio);
 }
 
 /**
  * Structural validation of decoded image dimensions:
- * minimum size gate (even the largest possible 3:1 crop must meet the min),
- * conformance (already 3:1 or needs cropping), and the final output size.
+ * minimum size gate (the largest possible crop in at least one accepted ratio
+ * class must meet that class minimum), conformance (already 3:1/5:2 or needs
+ * cropping), and the final output size for the ratio class.
  */
 export function buildBannerValidation(width: number, height: number): BannerValidationResult {
   if (!width || !height) {
     return { ok: false, code: 'LOAD', error: BANNER_ERROR_MESSAGES.LOAD };
   }
-  const region = largestFourToOneRegion(width, height);
-  if (!region || region.width < BANNER_SPEC.minWidth || region.height < BANNER_SPEC.minHeight) {
+  const fits = BANNER_RATIOS.some((r) => {
+    const region = largestRatioRegion(width, height, r.ratio);
+    return !!region && region.width >= r.minWidth && region.height >= r.minHeight;
+  });
+  if (!fits) {
+    const smallest = BANNER_RATIOS[0];
     return {
       ok: false,
       code: 'SMALL',
-      error: `Image is too small (${width} × ${height} px). Minimum acceptable: ${BANNER_SPEC.minWidth} × ${BANNER_SPEC.minHeight} px (3:1).`,
+      error: `Image is too small (${width} × ${height} px). Minimum acceptable: ${smallest.minWidth} × ${smallest.minHeight} px (3:1) or ${BANNER_RATIOS[1].minWidth} × ${BANNER_RATIOS[1].minHeight} px (5:2).`,
     };
   }
+  const ratioClass = matchedRatio(width, height) ?? nearestRatio(width, height);
   return {
     ok: true,
     width,
@@ -103,15 +177,16 @@ export function buildBannerValidation(width: number, height: number): BannerVali
     ratio: width / height,
     conformant: aspectConformance(width, height),
     needsCrop: !aspectConformance(width, height),
-    output: { width: BANNER_SPEC.recommendedWidth, height: BANNER_SPEC.recommendedHeight },
+    ratioClass,
+    output: outputForRatio(ratioClass),
   };
 }
 
-/** Decode a selected file into an orientation-normalized HTMLImageElement.
+/** Decode an image blob into an orientation-normalized HTMLImageElement.
  *  Returns both the element and the still-live blob URL so the caller can
  *  display the image and revoke the URL when it is no longer needed.
  */
-export function loadImageFile(file: File): Promise<{ img: HTMLImageElement; blobUrl: string }> {
+export function loadImageFile(file: Blob): Promise<{ img: HTMLImageElement; blobUrl: string }> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -201,11 +276,15 @@ export function cropRectFromTransform(
 
 // ── Canvas processing ────────────────────────────────────────────────────────
 
-/** Renders a source crop region onto the final 1500 × 500 WebP canvas. */
-export function renderBannerCanvas(image: HTMLImageElement, src: { x: number; y: number; width: number; height: number }): HTMLCanvasElement {
+/** Renders a source crop region onto the final banner canvas (default 1500 × 500). */
+export function renderBannerCanvas(
+  image: HTMLImageElement,
+  src: { x: number; y: number; width: number; height: number },
+  output: { width: number; height: number } = { width: BANNER_SPEC.recommendedWidth, height: BANNER_SPEC.recommendedHeight },
+): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
-  canvas.width = BANNER_SPEC.recommendedWidth;
-  canvas.height = BANNER_SPEC.recommendedHeight;
+  canvas.width = output.width;
+  canvas.height = output.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas is not available in this browser');
   ctx.imageSmoothingEnabled = true;
@@ -230,18 +309,20 @@ export function canvasToWebPBlob(canvas: HTMLCanvasElement, quality = BANNER_SPE
 }
 
 /**
- * Prepares a conformant (already 3:1) source: crops to the largest 3:1 region
- * (a no-op for exact 3:1 sources, covers tiny rounding drift), scales to the
- * recommended 1500 × 500 canvas and encodes as WebP. Never stretches.
+ * Prepares a conformant (already 3:1 or 5:2) source: crops to the largest
+ * region of its ratio class (a no-op for exact-ratio sources, covers tiny
+ * rounding drift), scales to that class's recommended canvas and encodes as
+ * WebP. Never stretches.
  */
-export async function prepareBannerBlob(image: HTMLImageElement): Promise<Blob> {
-  const region = largestFourToOneRegion(image.naturalWidth, image.naturalHeight) || {
+export async function prepareBannerBlob(image: HTMLImageElement, ratio?: number): Promise<Blob> {
+  const ratioClass = ratio ?? matchedRatio(image.naturalWidth, image.naturalHeight) ?? nearestRatio(image.naturalWidth, image.naturalHeight);
+  const region = largestRatioRegion(image.naturalWidth, image.naturalHeight, ratioClass) || {
     width: image.naturalWidth,
     height: image.naturalHeight,
   };
   const offsetX = Math.max(0, Math.round((image.naturalWidth - region.width) / 2));
   const offsetY = Math.max(0, Math.round((image.naturalHeight - region.height) / 2));
-  const canvas = renderBannerCanvas(image, { x: offsetX, y: offsetY, width: region.width, height: region.height });
+  const canvas = renderBannerCanvas(image, { x: offsetX, y: offsetY, width: region.width, height: region.height }, outputForRatio(ratioClass));
   return canvasToWebPBlob(canvas);
 }
 
@@ -261,7 +342,7 @@ export function formatBannerBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-/** True when stored metadata describes a conformant 3:1 banner. */
+/** True when stored metadata describes a conformant (3:1 or 5:2) banner. */
 export function isConformantMeta(meta: PortalAdImageMeta | undefined | null): boolean {
   if (!meta || !meta.width || !meta.height) return false;
   return aspectConformance(meta.width, meta.height);

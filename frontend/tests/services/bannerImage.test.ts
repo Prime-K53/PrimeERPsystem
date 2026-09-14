@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  BANNER_RATIOS,
   BANNER_SPEC,
   aspectConformance,
   buildBannerValidation,
@@ -9,7 +10,12 @@ import {
   formatBannerBytes,
   isConformantMeta,
   largestFourToOneRegion,
+  largestRatioRegion,
+  matchedRatio,
+  nearestRatio,
+  outputForRatio,
   preparedBannerFile,
+  ratioLabel,
   validateBannerFile,
 } from '../../services/bannerImage';
 
@@ -26,6 +32,15 @@ describe('bannerImage (customer_portal_banner spec)', () => {
     expect(BANNER_SPEC.minHeight).toBe(400);
     expect(BANNER_SPEC.maxBytes).toBe(2 * 1024 * 1024);
     expect(BANNER_SPEC.outputFormat).toBe('webp');
+  });
+
+  it('accepts 3:1 and 5:2 ratio classes', () => {
+    expect(BANNER_SPEC.acceptedRatios).toContain(3);
+    expect(BANNER_SPEC.acceptedRatios).toContain(2.5);
+    expect(BANNER_RATIOS).toEqual([
+      { ratio: 3, label: '3:1', width: 1500, height: 500, minWidth: 1200, minHeight: 400 },
+      { ratio: 2.5, label: '5:2', width: 1500, height: 600, minWidth: 1200, minHeight: 480 },
+    ]);
   });
 
   describe('validateBannerFile', () => {
@@ -70,11 +85,50 @@ describe('bannerImage (customer_portal_banner spec)', () => {
       expect(aspectConformance(2000, 667)).toBe(true);   // within 2% tolerance
     });
 
-    it('rejects non-3:1 sources', () => {
-      expect(aspectConformance(1600, 400)).toBe(false);  // old 4:1 — must now be rejected
+    it('recognizes 5:2 sources', () => {
+      expect(aspectConformance(1500, 600)).toBe(true);   // exact recommended
+      expect(aspectConformance(1200, 480)).toBe(true);   // exact minimum
+      expect(aspectConformance(1250, 500)).toBe(true);   // exact 5:2
+      expect(aspectConformance(2000, 800)).toBe(true);   // larger 5:2
+    });
+
+    it('rejects sources matching neither ratio', () => {
+      expect(aspectConformance(1600, 400)).toBe(false);  // 4:1
       expect(aspectConformance(1500, 750)).toBe(false);  // 2:1
       expect(aspectConformance(1200, 1200)).toBe(false); // 1:1
       expect(aspectConformance(800, 150)).toBe(false);   // ~5.3:1
+    });
+  });
+
+  describe('ratio helpers', () => {
+    it('nearestRatio picks the closest accepted class', () => {
+      expect(nearestRatio(1500, 500)).toBe(3);
+      expect(nearestRatio(1500, 600)).toBe(2.5);
+      expect(nearestRatio(1500, 750)).toBe(2.5);   // 2:1 → nearer 5:2
+      expect(nearestRatio(1600, 400)).toBe(3);     // 4:1 → nearer 3:1
+      expect(nearestRatio(1200, 1200)).toBe(2.5);  // 1:1 → nearer 5:2
+    });
+
+    it('matchedRatio returns the conformant class or null', () => {
+      expect(matchedRatio(1500, 500)).toBe(3);
+      expect(matchedRatio(1500, 600)).toBe(2.5);
+      expect(matchedRatio(1200, 1200)).toBeNull();
+    });
+
+    it('ratioLabel renders 3:1 / 5:2', () => {
+      expect(ratioLabel(3)).toBe('3:1');
+      expect(ratioLabel(2.5)).toBe('5:2');
+    });
+
+    it('outputForRatio returns the class canvas', () => {
+      expect(outputForRatio(3)).toEqual({ width: 1500, height: 500 });
+      expect(outputForRatio(2.5)).toEqual({ width: 1500, height: 600 });
+    });
+
+    it('largestRatioRegion crops to the requested class', () => {
+      expect(largestRatioRegion(1500, 600, 2.5)).toEqual({ width: 1500, height: 600 });
+      expect(largestRatioRegion(1500, 500, 2.5)).toEqual({ width: 1250, height: 500 });
+      expect(largestRatioRegion(1200, 1200, 2.5)).toEqual({ width: 1200, height: 480 });
     });
   });
 
@@ -117,24 +171,46 @@ describe('bannerImage (customer_portal_banner spec)', () => {
       expect(r.conformant).toBe(true);
     });
 
-    it('requires a crop for 1500 × 750 (2:1)', () => {
+    it('accepts exact 5:2 1500 × 600 without cropping', () => {
+      const r = buildBannerValidation(1500, 600);
+      expect(r.ok).toBe(true);
+      expect(r.conformant).toBe(true);
+      expect(r.needsCrop).toBe(false);
+      expect(r.ratioClass).toBe(2.5);
+      expect(r.output).toEqual({ width: 1500, height: 600 });
+    });
+
+    it('accepts minimum 5:2 1200 × 480 without cropping', () => {
+      const r = buildBannerValidation(1200, 480);
+      expect(r.ok).toBe(true);
+      expect(r.conformant).toBe(true);
+      expect(r.ratioClass).toBe(2.5);
+    });
+
+    it('requires a crop for 1500 × 750 (2:1) targeting the nearest 5:2 class', () => {
       const r = buildBannerValidation(1500, 750);
       expect(r.ok).toBe(true);
       expect(r.conformant).toBe(false);
       expect(r.needsCrop).toBe(true);
+      expect(r.ratioClass).toBe(2.5);
+      expect(r.output).toEqual({ width: 1500, height: 600 });
     });
 
-    it('requires a crop for 1600 × 400 (old 4:1 — now non-conformant)', () => {
+    it('requires a crop for 1600 × 400 (4:1) targeting the nearest 3:1 class', () => {
       const r = buildBannerValidation(1600, 400);
-      expect(r.ok).toBe(true);   // large enough: largestRegion(1600,400)={1200,400} ≥ min
+      expect(r.ok).toBe(true);   // large enough: largestRegion(1600,400,3)={1200,400} ≥ min
       expect(r.conformant).toBe(false);
       expect(r.needsCrop).toBe(true);
+      expect(r.ratioClass).toBe(3);
+      expect(r.output).toEqual({ width: 1500, height: 500 });
     });
 
-    it('requires a crop for 1200 × 1200', () => {
+    it('requires a crop for 1200 × 1200 targeting the nearest 5:2 class', () => {
       const r = buildBannerValidation(1200, 1200);
       expect(r.ok).toBe(true);
       expect(r.needsCrop).toBe(true);
+      expect(r.ratioClass).toBe(2.5);
+      expect(r.output).toEqual({ width: 1500, height: 600 });
     });
 
     it('rejects a very small image (400 × 400) with a clear error', () => {
@@ -194,8 +270,9 @@ describe('bannerImage (customer_portal_banner spec)', () => {
   });
 
   describe('metadata helpers', () => {
-    it('isConformantMeta accepts 3:1 metadata only', () => {
+    it('isConformantMeta accepts 3:1 or 5:2 metadata only', () => {
       expect(isConformantMeta({ bannerType: 'customer_portal_banner', width: 1500, height: 500, aspectRatio: 3, format: 'webp', fileSize: 100 })).toBe(true);
+      expect(isConformantMeta({ bannerType: 'customer_portal_banner', width: 1500, height: 600, aspectRatio: 2.5, format: 'webp', fileSize: 100 })).toBe(true);
       expect(isConformantMeta({ bannerType: 'customer_portal_banner', width: 1600, height: 400, aspectRatio: 4, format: 'webp', fileSize: 100 })).toBe(false);
       expect(isConformantMeta(null)).toBe(false);
       expect(isConformantMeta(undefined)).toBe(false);

@@ -563,6 +563,10 @@ const handleProduce = useCallback((item: Item) => {
                 {searchFiltered.length === 0 ? (
                   <div className="pp-empty">No raw materials yet.</div>
                 ) : (
+                  <div className="inv-table-wrap sales-list-scroll rpt-compact-list" style={{ overflow: 'auto', containerType: 'inline-size' }}>
+                  {/* Compact-list responsive wrapper (mimics customer list table):
+                      narrow containers keep a dense list and hide data-collapse-mobile
+                      columns. No logic change. */}
                   <table className="pp-table">
                     <thead>
                       <tr>
@@ -571,18 +575,18 @@ const handleProduce = useCallback((item: Item) => {
                             onChange={() => handleTabSelectAll(searchFiltered)}
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                         </th>
-                        <th>SKU</th><th>Name</th><th>Unit</th><th className="num">Cost / Unit</th><th className="num">Stock</th><th className="num">Reorder At</th><th>Actions</th>
+                        <th data-collapse-mobile="">SKU</th><th>Name</th><th data-collapse-mobile="">Unit</th><th data-collapse-mobile="" className="num">Cost / Unit</th><th className="num">Stock</th><th data-collapse-mobile="" className="num">Reorder At</th><th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {searchFiltered.map((m, idx) => (
                         <tr key={`${m.id}-${idx}`} className={lowStock(m) ? 'pp-row-warn' : ''} onClick={() => handleViewItem(m)} style={{cursor:'pointer'}}>
-                          <td className="table-body-cell w-10 px-1 text-center" onClick={e => e.stopPropagation()}>
+                          <td data-label="" className="table-body-cell w-10 px-1 text-center" onClick={e => e.stopPropagation()}>
                             <input type="checkbox" checked={selectedIds.has(m.id)} onChange={() => toggleSelect(m.id)}
                               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                           </td>
-                          <td className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10, color:'#64748B'}}>{esc(m.sku)}</td>
-                          <td>
+                          <td data-label="SKU" data-collapse-mobile="" className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10, color:'#64748B'}}>{esc(m.sku)}</td>
+                          <td data-label="Name">
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               {esc(m.name)}
                               {(m as any).rawBomCategory ? (
@@ -596,19 +600,19 @@ const handleProduce = useCallback((item: Item) => {
                             </div>
                             {(m as Record<string, unknown>).supplierName ? <div className="pp-sub">{esc((m as Record<string, unknown>).supplierName)}</div> : ''}
                           </td>
-                          <td className="mono" style={{ fontFamily:'IBM Plex Mono,monospace' }}>{esc(m.unit || 'pcs')}</td>
-                          <td className="num mono" style={{ fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600 }}>{money(m.costPrice || m.cost || 0, currencySymbol)}</td>
-                          <td className="num mono" style={{ fontFamily:'IBM Plex Mono,monospace' }}>
+                          <td data-label="Unit" data-collapse-mobile="" className="mono" style={{ fontFamily:'IBM Plex Mono,monospace' }}>{esc(m.unit || 'pcs')}</td>
+                          <td data-label="Cost / Unit" data-collapse-mobile="" className="num mono" style={{ fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600 }}>{money(m.costPrice || m.cost || 0, currencySymbol)}</td>
+                          <td data-label="Stock" className="num mono" style={{ fontFamily:'IBM Plex Mono,monospace' }}>
                             <span className="pp-stepper">
                               <button onClick={e => { e.stopPropagation(); adjustStock(m, -1); }}>&minus;</button>
                               <span>{esc(m.stock)}</span>
                               <button onClick={e => { e.stopPropagation(); adjustStock(m, 1); }}>+</button>
                             </span>
                           </td>
-                          <td className="num mono" style={{ fontFamily:'IBM Plex Mono,monospace' }}>
+                          <td data-label="Reorder At" data-collapse-mobile="" className="num mono" style={{ fontFamily:'IBM Plex Mono,monospace' }}>
                             {m.reorderPoint != null ? esc(m.reorderPoint) : '\u2014'}
                           </td>
-                          <td className="actions" onClick={e => e.stopPropagation()}>
+                          <td data-label="Actions" className="actions" onClick={e => e.stopPropagation()}>
                             <div className="action-dropdown-container">
                               <button className="action-menu-btn" onClick={(e) => toggleActionMenu(m.id, e)}>
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -678,6 +682,7 @@ const handleProduce = useCallback((item: Item) => {
                       </tr>
                     </tfoot>
                   </table>
+                  </div>
                 )}
               </div>
             </>
@@ -721,6 +726,10 @@ const handleProduce = useCallback((item: Item) => {
                 {searchFiltered.length === 0 ? (
                   <div className="pp-empty">No products yet.</div>
                 ) : (
+                  <div className="inv-table-wrap sales-list-scroll rpt-compact-list" style={{ overflow: 'auto', containerType: 'inline-size' }}>
+                  {/* Compact-list responsive wrapper (mimics customer list table):
+                      narrow containers keep a dense list and hide data-collapse-mobile
+                      columns. No logic change. */}
                   <table className="pp-table">
                     <thead>
                       <tr>
@@ -729,7 +738,7 @@ const handleProduce = useCallback((item: Item) => {
                             onChange={() => handleTabSelectAll(searchFiltered)}
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                         </th>
-                        <th>SKU</th><th>Product</th><th>Variants</th><th className="num">Cost Price</th><th className="num">Selling Price</th><th className="num">Margin</th><th className="num">Stock</th><th>Actions</th>
+                        <th data-collapse-mobile="">SKU</th><th>Product</th><th data-collapse-mobile="">Variants</th><th data-collapse-mobile="" className="num">Cost Price</th><th className="num">Selling Price</th><th data-collapse-mobile="" className="num">Margin</th><th className="num">Stock</th><th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -747,11 +756,11 @@ const handleProduce = useCallback((item: Item) => {
                         return (
                           <React.Fragment key={p.id}>
                             <tr className={parentLow ? 'pp-row-warn' : ''} onClick={() => handleViewItem(p)} style={{cursor:'pointer'}}>
-                              <td className="table-body-cell w-10 px-1 text-center" onClick={e => e.stopPropagation()}>
+                              <td data-label="" className="table-body-cell w-10 px-1 text-center" onClick={e => e.stopPropagation()}>
                                 <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)}
                                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                               </td>
-                              <td className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10, color:'#64748B'}}>
+                              <td data-label="SKU" data-collapse-mobile="" className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10, color:'#64748B'}}>
                                 {hasVariants && (
                                   <button onClick={e => { e.stopPropagation(); toggleExpand(p.id); }} className="mr-1 text-slate-400 hover:text-slate-600 transition-colors" style={{background:'none', border:'none', cursor:'pointer', padding:0, verticalAlign:'middle'}}>
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{transform: isExpanded ? 'rotate(90deg)' : 'none', transition:'transform .15s'}}><polyline points="9 18 15 12 9 6"/></svg>
@@ -759,19 +768,19 @@ const handleProduce = useCallback((item: Item) => {
                                 )}
                                 {esc(p.sku)}
                               </td>
-                              <td>{esc(p.name)}</td>
-                              <td>{variantLabel}</td>
-                              <td className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentCp, currencySymbol)}</td>
-                              <td className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentSp, currencySymbol)}</td>
-                              <td className="num mono" style={{fontFamily:'IBM Plex Mono,monospace', fontWeight: 700, color: Number(parentMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{parentMargin}%</td>
-                              <td className="num mono" style={{fontFamily:'IBM Plex Mono,monospace'}}>
+                              <td data-label="Product">{esc(p.name)}</td>
+                              <td data-label="Variants" data-collapse-mobile="">{variantLabel}</td>
+                              <td data-label="Cost Price" data-collapse-mobile="" className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentCp, currencySymbol)}</td>
+                              <td data-label="Selling Price" className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentSp, currencySymbol)}</td>
+                              <td data-label="Margin" data-collapse-mobile="" className="num mono" style={{fontFamily:'IBM Plex Mono,monospace', fontWeight: 700, color: Number(parentMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{parentMargin}%</td>
+                              <td data-label="Stock" className="num mono" style={{fontFamily:'IBM Plex Mono,monospace'}}>
                                 <span className="pp-stepper">
                                   <button onClick={e => { e.stopPropagation(); adjustStock(p, -1); }}>&minus;</button>
                                   <span>{parentStockTotal}</span>
                                   <button onClick={e => { e.stopPropagation(); adjustStock(p, 1); }}>+</button>
                                 </span>
                               </td>
-                              <td className="actions" onClick={e => e.stopPropagation()}>
+                              <td data-label="Actions" className="actions" onClick={e => e.stopPropagation()}>
                                 <div className="action-dropdown-container">
                                   <button className="action-menu-btn" onClick={(e) => toggleActionMenu(p.id, e)}>
                                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -873,6 +882,7 @@ const handleProduce = useCallback((item: Item) => {
                       </tr>
                     </tfoot>
                   </table>
+                  </div>
                 )}
               </div>
             </>
@@ -916,6 +926,10 @@ const handleProduce = useCallback((item: Item) => {
                 {searchFiltered.length === 0 ? (
                   <div className="pp-empty">No stationery items yet.</div>
                 ) : (
+                  <div className="inv-table-wrap sales-list-scroll rpt-compact-list" style={{ overflow: 'auto', containerType: 'inline-size' }}>
+                  {/* Compact-list responsive wrapper (mimics customer list table):
+                      narrow containers keep a dense list and hide data-collapse-mobile
+                      columns. No logic change. */}
                   <table className="pp-table">
                     <thead>
                       <tr>
@@ -924,7 +938,7 @@ const handleProduce = useCallback((item: Item) => {
                             onChange={() => handleTabSelectAll(searchFiltered)}
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                         </th>
-                        <th>SKU</th><th>Product</th><th>Variants</th><th className="num">Cost Price</th><th className="num">Selling Price</th><th className="num">Margin</th><th className="num">Stock</th><th>Actions</th>
+                        <th data-collapse-mobile="">SKU</th><th>Product</th><th data-collapse-mobile="">Variants</th><th data-collapse-mobile="" className="num">Cost Price</th><th className="num">Selling Price</th><th data-collapse-mobile="" className="num">Margin</th><th className="num">Stock</th><th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -942,11 +956,11 @@ const handleProduce = useCallback((item: Item) => {
                         return (
                           <React.Fragment key={p.id}>
                             <tr className={parentLow ? 'pp-row-warn' : ''} onClick={() => handleViewItem(p)} style={{cursor:'pointer'}}>
-                              <td className="table-body-cell w-10 px-1 text-center" onClick={e => e.stopPropagation()}>
+                              <td data-label="" className="table-body-cell w-10 px-1 text-center" onClick={e => e.stopPropagation()}>
                                 <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)}
                                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                               </td>
-                              <td className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10, color:'#64748B'}}>
+                              <td data-label="SKU" data-collapse-mobile="" className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10, color:'#64748B'}}>
                                 {hasVariants && (
                                   <button onClick={e => { e.stopPropagation(); toggleExpand(p.id); }} className="mr-1 text-slate-400 hover:text-slate-600 transition-colors" style={{background:'none', border:'none', cursor:'pointer', padding:0, verticalAlign:'middle'}}>
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{transform: isExpanded ? 'rotate(90deg)' : 'none', transition:'transform .15s'}}><polyline points="9 18 15 12 9 6"/></svg>
@@ -954,19 +968,19 @@ const handleProduce = useCallback((item: Item) => {
                                 )}
                                 {esc(p.sku)}
                               </td>
-                              <td>{esc(p.name)}</td>
-                              <td>{variantLabel}</td>
-                              <td className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentCp, currencySymbol)}</td>
-                              <td className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentSp, currencySymbol)}</td>
-                              <td className="num mono" style={{fontFamily:'IBM Plex Mono,monospace', fontWeight: 700, color: Number(parentMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{parentMargin}%</td>
-                              <td className="num mono" style={{fontFamily:'IBM Plex Mono,monospace'}}>
+                              <td data-label="Product">{esc(p.name)}</td>
+                              <td data-label="Variants" data-collapse-mobile="">{variantLabel}</td>
+                              <td data-label="Cost Price" data-collapse-mobile="" className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentCp, currencySymbol)}</td>
+                              <td data-label="Selling Price" className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentSp, currencySymbol)}</td>
+                              <td data-label="Margin" data-collapse-mobile="" className="num mono" style={{fontFamily:'IBM Plex Mono,monospace', fontWeight: 700, color: Number(parentMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{parentMargin}%</td>
+                              <td data-label="Stock" className="num mono" style={{fontFamily:'IBM Plex Mono,monospace'}}>
                                 <span className="pp-stepper">
                                   <button onClick={e => { e.stopPropagation(); adjustStock(p, -1); }}>&minus;</button>
                                   <span>{parentStockTotal}</span>
                                   <button onClick={e => { e.stopPropagation(); adjustStock(p, 1); }}>+</button>
                                 </span>
                               </td>
-                              <td className="actions" onClick={e => e.stopPropagation()}>
+                              <td data-label="Actions" className="actions" onClick={e => e.stopPropagation()}>
                                 <div className="action-dropdown-container">
                                   <button className="action-menu-btn" onClick={(e) => toggleActionMenu(p.id, e)}>
                                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1063,6 +1077,7 @@ const handleProduce = useCallback((item: Item) => {
                       </tr>
                     </tfoot>
                   </table>
+                  </div>
                 )}
               </div>
             </>
@@ -1107,6 +1122,10 @@ const handleProduce = useCallback((item: Item) => {
                 {searchFiltered.length === 0 ? (
                   <div className="pp-empty">No service types yet.</div>
                 ) : (
+                  <div className="inv-table-wrap sales-list-scroll rpt-compact-list" style={{ overflow: 'auto', containerType: 'inline-size' }}>
+                  {/* Compact-list responsive wrapper (mimics customer list table):
+                      narrow containers keep a dense list and hide data-collapse-mobile
+                      columns. No logic change. */}
                   <table className="pp-table">
                     <thead>
                       <tr>
@@ -1115,23 +1134,23 @@ const handleProduce = useCallback((item: Item) => {
                             onChange={() => handleTabSelectAll(searchFiltered)}
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                         </th>
-                        <th>Service Code</th><th>Service Name</th><th>Category</th><th>Output Unit</th><th>BOM</th><th>Status</th><th>Action</th>
+                        <th data-collapse-mobile="">Service Code</th><th>Service Name</th><th data-collapse-mobile="">Category</th><th data-collapse-mobile="">Output Unit</th><th data-collapse-mobile="">BOM</th><th>Status</th><th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {searchFiltered.map((s, idx) => {
                         return (
                           <tr key={`${s.id}-${idx}`} onClick={() => handleViewItem(s)} style={{cursor:'pointer'}}>
-                            <td className="table-body-cell w-10 px-1 text-center" onClick={e => e.stopPropagation()}>
+                            <td data-label="" className="table-body-cell w-10 px-1 text-center" onClick={e => e.stopPropagation()}>
                               <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)}
                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                             </td>
-                            <td className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10, color:'#64748B'}}>{esc(s.serviceSku || s.sku)}</td>
-                            <td>{esc(s.name)}</td>
-                            <td>{esc(s.category || s.classification || '-')}</td>
-                            <td className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10}}>{esc(s.unit || 'pcs')}</td>
-                            <td className="text-xs text-slate-600 max-w-[200px] truncate" title={getBomSummary(s, allItems)}>{getBomSummary(s, allItems)}</td>
-                            <td>
+                            <td data-label="Service Code" data-collapse-mobile="" className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10, color:'#64748B'}}>{esc(s.serviceSku || s.sku)}</td>
+                            <td data-label="Service Name">{esc(s.name)}</td>
+                            <td data-label="Category" data-collapse-mobile="">{esc(s.category || s.classification || '-')}</td>
+                            <td data-label="Output Unit" data-collapse-mobile="" className="mono" style={{fontFamily:'IBM Plex Mono,monospace', fontSize:10}}>{esc(s.unit || 'pcs')}</td>
+                            <td data-label="BOM" data-collapse-mobile="" className="text-xs text-slate-600 max-w-[200px] truncate" title={getBomSummary(s, allItems)}>{getBomSummary(s, allItems)}</td>
+                            <td data-label="Status">
                               <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold ${
                                 s.status === 'Active' || !s.status ? 'bg-green-100 text-green-700 border border-green-200' :
                                 s.status === 'Inactive' ? 'bg-red-100 text-red-700 border border-red-200' :
@@ -1140,7 +1159,7 @@ const handleProduce = useCallback((item: Item) => {
                                 {s.status || 'Active'}
                               </span>
                             </td>
-                            <td className="actions" onClick={e => e.stopPropagation()}>
+                            <td data-label="Action" className="actions" onClick={e => e.stopPropagation()}>
                               <div className="action-dropdown-container">
                                 <button className="action-menu-btn" onClick={(e) => toggleActionMenu(s.id, e)}>
                                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1208,6 +1227,7 @@ const handleProduce = useCallback((item: Item) => {
                       </tr>
                     </tfoot>
                   </table>
+                  </div>
                 )}
               </div>
             </>

@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Crop, Check, Loader2, RotateCcw, X, ZoomIn, ZoomOut, ShieldCheck } from 'lucide-react';
 import {
-  BANNER_SPEC,
+  BANNER_RATIOS,
   aspectConformance,
   canvasToWebPBlob,
   clampPan,
   coverTransform,
   cropRectFromTransform,
+  nearestRatio,
+  outputForRatio,
+  ratioLabel,
   renderBannerCanvas,
 } from '../../services/bannerImage';
 
@@ -15,6 +18,8 @@ interface BannerCropModalProps {
   /** Still-live blob URL for displaying the image. Revoked by the parent after the modal closes. */
   blobUrl: string;
   sourceName: string;
+  /** Ratio class to start with — defaults to the nearest accepted ratio. */
+  initialRatio?: number;
   onCancel: () => void;
   onConfirm: (blob: Blob, output: { width: number; height: number }) => void;
 }
@@ -30,19 +35,22 @@ const SAFE_AREA_W = 0.9;
 const SAFE_AREA_H = 0.8;
 
 /**
- * Interactive 3:1 crop tool for customer portal banners.
+ * Interactive 3:1 / 5:2 crop tool for customer portal banners.
  *
- * A fixed 3:1 crop window sits over the image; the user drags the image to
- * position it and zooms with the slider / mouse-wheel. A safe-area guide
- * protects logos and text. The confirmed crop is rendered to an exact
- * 1500 × 500 WebP and returned to the caller for upload.
+ * A fixed-ratio crop window sits over the image; the user picks the target
+ * ratio class (3:1 or 5:2), drags the image to position it and zooms with the
+ * slider / mouse-wheel. A safe-area guide protects logos and text. The
+ * confirmed crop is rendered to that class's exact canvas (1500 × 500 for
+ * 3:1, 1500 × 600 for 5:2) as WebP and returned to the caller for upload.
  */
 export const BannerCropModal: React.FC<BannerCropModalProps> = ({
-  image, blobUrl, sourceName, onCancel, onConfirm,
+  image, blobUrl, sourceName, initialRatio, onCancel, onConfirm,
 }) => {
   const srcW = image.naturalWidth;
   const srcH = image.naturalHeight;
   const conformant = aspectConformance(srcW, srcH);
+  const [ratio, setRatio] = useState<number>(initialRatio ?? nearestRatio(srcW, srcH));
+  const output = outputForRatio(ratio);
 
   const stageRef = useRef<HTMLDivElement>(null);
   // Measured pixel size of the stage div.
@@ -53,7 +61,7 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
   // ── Crop window size ──────────────────────────────────────────────────────
-  // A 3:1 rectangle that fits inside the stage with 20 px padding each side.
+  // A fixed-ratio rectangle that fits inside the stage with 20 px padding each side.
   // Guard against small viewports (tablets in portrait, etc.)
   const windowSize = useMemo(() => {
     if (win.w <= 0 || win.h <= 0) return { w: 0, h: 0 };
@@ -61,13 +69,13 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
     const availH = Math.max(0, win.h - 40);
     if (availW <= 0 || availH <= 0) return { w: 0, h: 0 };
     let w = availW;
-    let h = w / BANNER_SPEC.targetRatio;
+    let h = w / ratio;
     if (h > availH) {
       h = availH;
-      w = h * BANNER_SPEC.targetRatio;
+      w = h * ratio;
     }
     return { w: Math.round(Math.max(60, w)), h: Math.round(Math.max(20, h)) };
-  }, [win]);
+  }, [win, ratio]);
 
   const minScale = useMemo(
     () => (windowSize.w > 0 && srcW > 0
@@ -179,7 +187,7 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
     setBusy(true);
     try {
       const rect = cropRectFromTransform(transform, srcW, srcH, windowSize.w, windowSize.h);
-      const canvas = renderBannerCanvas(image, rect);
+      const canvas = renderBannerCanvas(image, rect, output);
       const blob = await canvasToWebPBlob(canvas);
       onConfirm(blob, { width: canvas.width, height: canvas.height });
     } finally {
@@ -228,7 +236,7 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: teal[800], lineHeight: 1.3 }}>
-              Crop to 3:1 banner
+              Crop to {ratioLabel(ratio)} banner
             </h3>
             <p style={{
               margin: '2px 0 0', fontSize: 11, color: inkSoft,
@@ -236,7 +244,7 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
             }}>
               {sourceName} &middot; {srcW}&thinsp;×&thinsp;{srcH} px &middot; ratio{' '}
               {(srcW / srcH).toFixed(2)}:1
-              {conformant ? ' — already 3:1' : ' — needs a 3:1 crop'}
+              {conformant ? ` — already ${ratioLabel(ratio)}` : ` — needs a ${ratioLabel(ratio)} crop`}
             </p>
           </div>
           <button
@@ -251,9 +259,9 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
           </button>
         </div>
 
-        {/* Instruction */}
-        <div style={{ padding: '8px 20px 0', flexShrink: 0 }}>
-          <p style={{ margin: 0, fontSize: 11.5, color: inkSoft, display: 'flex', alignItems: 'flex-start', gap: 7, lineHeight: 1.5 }}>
+        {/* Instruction + ratio selector */}
+        <div style={{ padding: '8px 20px 0', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <p style={{ margin: 0, fontSize: 11.5, color: inkSoft, display: 'flex', alignItems: 'flex-start', gap: 7, lineHeight: 1.5, flex: '1 1 220px' }}>
             <ShieldCheck size={13} color={teal[600]} style={{ flexShrink: 0, marginTop: 2 }} />
             <span>
               <b style={{ color: ink }}>Drag</b> to reposition &middot;&nbsp;
@@ -261,6 +269,28 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
               Keep content inside the <b style={{ color: amber[500] }}>dashed safe area</b>
             </span>
           </p>
+          <div style={{ display: 'flex', gap: 4, padding: 3, background: '#f1f2f4', borderRadius: 8, flexShrink: 0 }} role="group" aria-label="Target aspect ratio">
+            {BANNER_RATIOS.map((r) => {
+              const isActive = ratio === r.ratio;
+              return (
+                <button
+                  key={r.label}
+                  type="button"
+                  onClick={() => setRatio(r.ratio)}
+                  aria-pressed={isActive}
+                  style={{
+                    padding: '5px 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                    fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+                    background: isActive ? '#fff' : 'transparent',
+                    color: isActive ? teal[700] : inkSoft,
+                    boxShadow: isActive ? '0 1px 4px rgba(0,0,0,.12)' : 'none',
+                  }}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* ── Stage ── */}
@@ -395,17 +425,17 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
           padding: '12px 20px 16px', borderTop: `1px solid ${hairline}`,
           background: '#f9f8f5', flexWrap: 'wrap', flexShrink: 0,
         }}>
-          {/* 3:1 live preview thumbnail */}
+          {/* Live crop preview thumbnail */}
           <div style={{ flexShrink: 0 }}>
             <div style={{
               fontSize: 9, fontWeight: 800, letterSpacing: '0.08em',
               textTransform: 'uppercase', color: teal[700], marginBottom: 5,
             }}>
-              Live crop preview
+              Live crop preview ({ratioLabel(ratio)})
             </div>
             <div style={{
               width: 280,
-              aspectRatio: '3 / 1',
+              aspectRatio: `${ratio} / 1`,
               borderRadius: 6, overflow: 'hidden',
               position: 'relative', background: '#080d1a',
               boxShadow: '0 4px 14px -4px rgba(0,0,0,.4)',
@@ -429,14 +459,14 @@ export const BannerCropModal: React.FC<BannerCropModalProps> = ({
               )}
             </div>
             <div style={{ fontSize: 9.5, color: inkSoft, marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}>
-              {BANNER_SPEC.recommendedWidth}&thinsp;×&thinsp;{BANNER_SPEC.recommendedHeight} px &middot; WebP
+              {output.width}&thinsp;×&thinsp;{output.height} px &middot; WebP
             </div>
           </div>
 
           <p style={{ flex: 1, margin: 0, fontSize: 11, color: inkSoft, lineHeight: 1.55, minWidth: 140 }}>
             Output will be rendered at exactly{' '}
-            <b style={{ color: ink }}>{BANNER_SPEC.recommendedWidth}&thinsp;×&thinsp;{BANNER_SPEC.recommendedHeight} px</b>{' '}
-            (3:1), encoded as optimised WebP.
+            <b style={{ color: ink }}>{output.width}&thinsp;×&thinsp;{output.height} px</b>{' '}
+            ({ratioLabel(ratio)}), encoded as optimised WebP.
           </p>
 
           <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', flexShrink: 0 }}>

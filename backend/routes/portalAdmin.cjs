@@ -1245,10 +1245,11 @@ router.post('/users/:id/invite', async (req, res) => {
 
 // ─── Portal Banner Ad Image Upload ─────────────────────────────────────────
 // Smart Operations Hub → Ads. Every banner is prepared for the customer
-// portal's 3:1 banner area by bannerImageService (validate → exact 3:1 crop
-// → 1500 × 500 WebP). The ERP UI performs an interactive 3:1 crop before
-// uploading; this endpoint enforces the same spec server-side (defense in
-// depth) so the stored asset is always a 3:1, never stretched.
+// portal banner area by bannerImageService (validate → exact-ratio crop to
+// the nearest accepted class, 3:1 or 5:2 → 1500 × 500 / 1500 × 600 WebP).
+// The ERP UI performs an interactive 3:1 / 5:2 crop before uploading; this
+// endpoint enforces the same spec server-side (defense in depth) so the
+// stored asset always matches an accepted ratio, never stretched.
 // The optimized image is stored in the PUBLIC Supabase Storage bucket
 // `prime-erp-public` (banner images are public marketing content shown to
 // every portal customer) and the stable public URL plus final metadata is
@@ -1279,7 +1280,7 @@ router.post('/ads/upload', (req, res, next) => {
       return res.status(400).json({ error: 'No image file provided' });
     }
 
-    // Validate → crop to exact 3:1 → optimize to 1500 × 500 WebP.
+    // Validate → crop to the nearest accepted ratio class → optimize to WebP.
     let prepared;
     try {
       prepared = await processBannerImage(req.file.buffer);
