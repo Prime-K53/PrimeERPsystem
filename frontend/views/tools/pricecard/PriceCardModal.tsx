@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/Dialog';
 import { toast } from '../../../components/Toast';
 import { logger } from '../../../services/logger';
 import { dbService } from '../../../services/db';
@@ -18,6 +17,8 @@ import {
   Share2,
   Tag,
   X,
+  ChevronRight,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { Customer, Item } from '../../../types';
 import {
@@ -35,6 +36,12 @@ import {
 } from '../../../services/priceCardService';
 import { PriceCardView } from './PriceCardView';
 import { downloadBlob, renderPriceCardPng, shareImageFile } from './priceCardImage';
+import {
+  teal, amber, paper, ink, inkSoft, hairline, danger,
+  labelStyle, inputStyle, selectStyle,
+  btnGhostStyle, btnPrimaryStyle,
+  modalOverlayStyle, modalShell, AccentStripe, ModalHeader, SectionLabel,
+} from './priceCardChrome';
 
 /**
  * PriceCardModal — fast "price asked → professional image" workflow (ERP only).
@@ -44,6 +51,10 @@ import { downloadBlob, renderPriceCardPng, shareImageFile } from './priceCardIma
  *
  * Informational only: previewing and generating never write sales,
  * quotations, orders, invoices, payments, ledger, stock, or balances.
+ *
+ * Chrome mirrors the Clients "Add Customer" modal (ClientModal.tsx):
+ * overlay, accent stripe, icon-tile serif header, styled controls,
+ * footer with step hint + ghost/gradient actions.
  */
 
 interface Props {
@@ -120,6 +131,14 @@ export const PriceCardModal: React.FC<Props> = ({ open, initialItem, onClose }) 
       .catch(() => { if (!cancelled) setCustomers([]); });
     return () => { cancelled = true; };
   }, [open, initialItem]);
+
+  /* ── Escape to close (mirrors Add Customer modal behaviour) ── */
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   const selectedCustomer = useMemo(
     () => customers.find((c) => String(c?.id) === customerId) ?? null,
@@ -251,216 +270,279 @@ export const PriceCardModal: React.FC<Props> = ({ open, initialItem, onClose }) 
 
   const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
-  return (
-    <Dialog open={open} onClose={onClose} title="Price Card">
-      <DialogContent className="max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>Price Card</DialogTitle>
-        </DialogHeader>
-        <p style={{ fontSize: 12.5, color: '#5c6567', margin: '0 0 14px' }}>
-          Professional price image for customers — informational only. Never creates a sale, quotation, or invoice.
-        </p>
+  if (!open) return null;
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
-          {/* ── controls ── */}
-          <div style={{ minWidth: 0 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Products ({lines.length}/{PRICE_CARD_MAX_LINES})
-            </label>
-            <div style={{ position: 'relative', marginTop: 6 }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#94a3b8' }} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name, SKU, category…"
-                disabled={lines.length >= PRICE_CARD_MAX_LINES}
-                style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1px solid #e4ddd1', borderRadius: 9, fontSize: 13, outline: 'none', background: '#fff' }}
-              />
-              {results.length > 0 && (
-                <div style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, top: '100%', marginTop: 4, background: '#fff', border: '1px solid #e4ddd1', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,.12)', overflow: 'hidden' }}>
-                  {results.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => addItem(item)}
-                      style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+  const footerHint = cardData
+    ? `${cardData.reference} · exports at 1080 × 1350 PNG · informational only`
+    : 'Informational only — never creates a sale, quotation, or invoice';
+
+  return (
+    <div style={modalOverlayStyle} onClick={onClose}>
+      <div style={modalShell(1020)} onClick={e => e.stopPropagation()}>
+        <AccentStripe />
+        <ModalHeader
+          icon={<Tag size={19} color="#fff" />}
+          title="New Price Card"
+          subtitle="Professional price image for customers — informational only · Never creates a sale, quotation, or invoice"
+          onClose={onClose}
+        />
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 30px 8px', minHeight: 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24 }}>
+            {/* ── controls ── */}
+            <div style={{ minWidth: 0 }}>
+              <SectionLabel>Products · {lines.length}/{PRICE_CARD_MAX_LINES}</SectionLabel>
+              <div style={{ position: 'relative', marginTop: 6 }}>
+                <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, SKU, category…"
+                  disabled={lines.length >= PRICE_CARD_MAX_LINES}
+                  style={{ ...inputStyle, paddingLeft: 34 }}
+                />
+                {results.length > 0 && (
+                  <div style={{
+                    position: 'absolute', zIndex: 40, left: 0, right: 0, top: '100%', marginTop: 4,
+                    borderRadius: 10, boxShadow: '0 16px 36px -12px rgba(0,0,0,.28)',
+                    background: paper, border: `1.4px solid ${hairline}`,
+                    maxHeight: 280, overflowY: 'auto', overflowX: 'hidden',
+                  }}>
+                    {results.map((item, idx) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => addItem(item)}
+                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                        style={{
+                          display: 'flex', width: '100%', alignItems: 'center', gap: 10,
+                          padding: '10px 14px', background: 'transparent', border: 'none',
+                          borderBottom: idx < results.length - 1 ? `1px solid ${hairline}` : 'none',
+                          cursor: 'pointer', textAlign: 'left', transition: 'background .1s ease',
+                        }}
+                      >
+                        <span style={{
+                          width: 28, height: 28, borderRadius: 6, flexShrink: 0,
+                          background: teal[100], color: teal[700],
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <Tag size={13} />
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
+                          <span style={{ display: 'block', fontSize: 11, color: inkSoft }}>{item.sku || item.category || ''}</span>
+                        </span>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: teal[700], whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono', monospace" }}>
+                          {formatPriceCardAmount(resolveStoredSellingPrice(item as any), currency)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+                {lines.map((line) => {
+                  const variants = Array.isArray(line.item.variants) ? line.item.variants : [];
+                  return (
+                    <div
+                      key={line.key}
+                      style={{ padding: 16, background: paper, border: `1px solid ${hairline}`, borderRadius: 12, position: 'relative', transition: 'border-color .15s ease' }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = teal[200]; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = hairline; }}
                     >
-                      <Tag size={13} style={{ color: '#0f544c', flexShrink: 0 }} />
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#23282a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
-                        <span style={{ display: 'block', fontSize: 11, color: '#8a9494' }}>{item.sku || item.category || ''}</span>
-                      </span>
-                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f544c', whiteSpace: 'nowrap' }}>
-                        {formatPriceCardAmount(resolveStoredSellingPrice(item as any), currency)}
-                      </span>
-                    </button>
+                      <button
+                        type="button" onClick={() => removeLine(line.key)} title="Remove" aria-label="Remove product"
+                        style={{ position: 'absolute', top: 10, right: 10, padding: 6, background: 'transparent', border: 'none', color: inkSoft, cursor: 'pointer', borderRadius: 6 }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = danger; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = inkSoft; }}
+                      >
+                        <X size={14} />
+                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingRight: 28 }}>
+                        <div style={{
+                          width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                          background: teal[100], color: teal[700],
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <Tag size={14} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: teal[800], whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{line.item.name}</div>
+                          <div style={{ fontSize: 11, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{line.item.sku || line.item.unit || ''}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+                        {variants.length > 0 && (
+                          <div style={{ flex: 1, minWidth: 140 }}>
+                            <select
+                              value={line.variantId ?? ''}
+                              onChange={(e) => updateLine(line.key, { variantId: e.target.value || undefined })}
+                              style={{ ...selectStyle, fontSize: 12.5, padding: '7px 30px 7px 10px' }}
+                            >
+                              <option value="">Standard</option>
+                              {variants.map((v: any) => (
+                                <option key={v.id} value={v.id}>{String(v.name ?? v.attribute ?? v.id)}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: teal[800] }}>Qty</span>
+                          <button type="button" onClick={() => updateLine(line.key, { quantity: Math.max(1, line.quantity - 1) })} aria-label="Decrease quantity"
+                            style={{ width: 26, height: 26, borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s ease' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
+                            <Minus size={13} />
+                          </button>
+                          <span style={{ minWidth: 26, textAlign: 'center', fontSize: 13, fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{line.quantity}</span>
+                          <button type="button" onClick={() => updateLine(line.key, { quantity: Math.min(999, line.quantity + 1) })} aria-label="Increase quantity"
+                            style={{ width: 26, height: 26, borderRadius: 7, border: `1px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s ease' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
+                            <Plus size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {lines.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: 32, border: `2px dashed ${teal[100]}`, borderRadius: 12, background: teal[50] }}>
+                    <ImageIcon size={28} style={{ margin: '0 auto 10', color: teal[200] }} />
+                    <p style={{ fontSize: 13, fontWeight: 700, color: teal[300], margin: 0 }}>No products added yet</p>
+                    <p style={{ fontSize: 11.5, color: inkSoft, margin: '6px 0 0' }}>Search and add up to {PRICE_CARD_MAX_LINES} products.</p>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: 18 }}>
+                <SectionLabel>Customer · Optional</SectionLabel>
+                <label style={labelStyle}>Price tier</label>
+                <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} style={selectStyle}>
+                  <option value="">Walk-in — standard price</option>
+                  {customers.map((c) => {
+                    const { displayName } = resolveCustomerDisplay(c as any);
+                    return <option key={c.id} value={c.id}>{displayName || c.name || c.id}</option>;
+                  })}
+                </select>
+                {selectedCustomer && (
+                  <div style={{ fontSize: 11.5, color: inkSoft, marginTop: 6, lineHeight: 1.5 }}>
+                    Prepared for <b style={{ color: teal[700] }}>{resolveCustomerDisplay(selectedCustomer as any).displayName}</b>. Tier pricing applies automatically when configured.
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowHistory((v) => !v)}
+                style={{ marginTop: 16, background: 'none', border: 'none', color: teal[700], fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0 }}
+              >
+                <History size={13} /> Recent price cards ({history.length})
+              </button>
+              {showHistory && (
+                <div style={{ marginTop: 8, border: `1.4px solid ${hairline}`, borderRadius: 10, overflow: 'hidden', background: paper }}>
+                  {history.length === 0 && <div style={{ padding: 12, fontSize: 12.5, color: inkSoft, textAlign: 'center' }}>No price cards generated yet on this device.</div>}
+                  {history.slice(0, 10).map((h, idx) => (
+                    <div key={h.reference} style={{ padding: '10px 14px', borderTop: idx > 0 ? `1px solid ${hairline}` : 'none', fontSize: 12.5 }}>
+                      <div style={{ fontWeight: 700, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{h.reference}</div>
+                      <div style={{ color: inkSoft, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.productNames.join(', ')}</div>
+                      <div style={{ color: inkSoft, fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>{formatPriceCardAmount(h.grandTotal, h.currency)} • {new Date(h.issuedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                    </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-              {lines.map((line) => {
-                const variants = Array.isArray(line.item.variants) ? line.item.variants : [];
-                return (
-                  <div key={line.key} style={{ border: '1px solid #e4ddd1', borderRadius: 10, padding: '8px 10px', background: '#FEFDFB' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#23282a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{line.item.name}</div>
-                        <div style={{ fontSize: 11, color: '#8a9494' }}>{line.item.sku || line.item.unit || ''}</div>
-                      </div>
-                      <button type="button" onClick={() => removeLine(line.key)} title="Remove" aria-label="Remove product" style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                      {variants.length > 0 && (
-                        <select
-                          value={line.variantId ?? ''}
-                          onChange={(e) => updateLine(line.key, { variantId: e.target.value || undefined })}
-                          style={{ flex: 1, minWidth: 120, padding: '6px 8px', border: '1px solid #e4ddd1', borderRadius: 8, fontSize: 12.5, background: '#fff' }}
-                        >
-                          <option value="">Standard</option>
-                          {variants.map((v: any) => (
-                            <option key={v.id} value={v.id}>{String(v.name ?? v.attribute ?? v.id)}</option>
-                          ))}
-                        </select>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 11.5, color: '#5c6567' }}>Qty</span>
-                        <button type="button" onClick={() => updateLine(line.key, { quantity: Math.max(1, line.quantity - 1) })} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid #e4ddd1', background: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Decrease quantity">
-                          <Minus size={13} />
-                        </button>
-                        <span style={{ minWidth: 26, textAlign: 'center', fontSize: 13, fontWeight: 700 }}>{line.quantity}</span>
-                        <button type="button" onClick={() => updateLine(line.key, { quantity: Math.min(999, line.quantity + 1) })} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid #e4ddd1', background: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Increase quantity">
-                          <Plus size={13} />
-                        </button>
+            {/* ── preview ── */}
+            <div style={{ minWidth: 0 }}>
+              <SectionLabel>Live Preview</SectionLabel>
+              <div style={{ background: teal[50], border: `1.4px solid ${hairline}`, borderRadius: 12, padding: 12, overflow: 'hidden' }}>
+                {building && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 48, color: teal[700], fontSize: 13, fontWeight: 600 }}>
+                    <Loader2 size={16} className="animate-spin" /> Loading price…
+                  </div>
+                )}
+                {!building && buildError && (
+                  <div style={{ padding: 16, fontSize: 13, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, lineHeight: 1.5 }}>{buildError}</div>
+                )}
+                {!building && !buildError && !cardData && (
+                  <div style={{ textAlign: 'center', padding: 48, border: `2px dashed ${teal[100]}`, borderRadius: 12, background: paper }}>
+                    <ImageIcon size={28} style={{ margin: '0 auto 10', color: teal[200] }} />
+                    <p style={{ fontSize: 13, fontWeight: 700, color: teal[300], margin: 0 }}>No preview yet</p>
+                    <p style={{ fontSize: 11.5, color: inkSoft, margin: '6px 0 0' }}>Add a product to see the customer-facing image.</p>
+                  </div>
+                )}
+                {cardData && (
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ width: 540 * PREVIEW_SCALE, height: 675 * PREVIEW_SCALE, overflow: 'hidden', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.18)', background: '#fff', flexShrink: 0 }}>
+                      <div style={{ width: 540, height: 675, transform: `scale(${PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
+                        <PriceCardView data={cardData} />
                       </div>
                     </div>
                   </div>
-                );
-              })}
-              {lines.length === 0 && (
-                <div style={{ fontSize: 12.5, color: '#8a9494', border: '1px dashed #e4ddd1', borderRadius: 10, padding: '14px 12px', textAlign: 'center' }}>
-                  Search and add up to {PRICE_CARD_MAX_LINES} products.
-                </div>
-              )}
-            </div>
-
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 14 }}>
-              Customer (optional)
-            </label>
-            <select
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              style={{ width: '100%', marginTop: 6, padding: '8px 10px', border: '1px solid #e4ddd1', borderRadius: 9, fontSize: 13, background: '#fff' }}
-            >
-              <option value="">Walk-in — standard price</option>
-              {customers.map((c) => {
-                const { displayName } = resolveCustomerDisplay(c as any);
-                return <option key={c.id} value={c.id}>{displayName || c.name || c.id}</option>;
-              })}
-            </select>
-            {selectedCustomer && (
-              <div style={{ fontSize: 11.5, color: '#8a9494', marginTop: 4 }}>
-                Prepared for {resolveCustomerDisplay(selectedCustomer as any).displayName}. Tier pricing applies automatically when configured.
+                )}
               </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={!cardData || generating}
-                style={{
-                  flex: 1, minWidth: 150, minHeight: 44, padding: '10px 16px', borderRadius: 10, border: 'none',
-                  background: !cardData || generating ? '#cbd5e1' : 'linear-gradient(155deg, #1f8577, #0f544c)',
-                  color: '#fff', fontSize: 14, fontWeight: 700, cursor: !cardData || generating ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                }}
-              >
-                {generating ? <Loader2 size={16} className="animate-spin" /> : null}
-                {generating ? 'Generating…' : 'Generate Image'}
-              </button>
-            </div>
-            {imageBlob && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  style={{ flex: 1, minWidth: 130, minHeight: 44, padding: '10px 14px', borderRadius: 10, border: '1.4px solid #0f544c', background: '#fff', color: '#0f544c', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
-                >
-                  <Download size={15} /> Download
-                </button>
-                <button
-                  type="button"
-                  onClick={handleShare}
-                  style={{ flex: 1, minWidth: 130, minHeight: 44, padding: '10px 14px', borderRadius: 10, border: '1.4px solid #e4ddd1', background: '#FEFDFB', color: '#23282a', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
-                >
-                  <Share2 size={15} /> {canNativeShare ? 'Share' : 'Share / Save'}
-                </button>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setShowHistory((v) => !v)}
-              style={{ marginTop: 14, background: 'none', border: 'none', color: '#5c6567', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            >
-              <History size={13} /> Recent price cards ({history.length})
-            </button>
-            {showHistory && (
-              <div style={{ marginTop: 8, border: '1px solid #e4ddd1', borderRadius: 10, overflow: 'hidden' }}>
-                {history.length === 0 && <div style={{ padding: 10, fontSize: 12.5, color: '#8a9494' }}>No price cards generated yet on this device.</div>}
-                {history.slice(0, 10).map((h) => (
-                  <div key={h.reference} style={{ padding: '8px 10px', borderBottom: '1px solid #f1ede4', fontSize: 12.5 }}>
-                    <div style={{ fontWeight: 700, color: '#23282a' }}>{h.reference}</div>
-                    <div style={{ color: '#5c6567', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.productNames.join(', ')}</div>
-                    <div style={{ color: '#8a9494', fontSize: 11.5 }}>{formatPriceCardAmount(h.grandTotal, h.currency)} • {new Date(h.issuedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* ── preview ── */}
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
-              Preview
-            </div>
-            <div style={{ background: '#f1ede4', borderRadius: 12, padding: 12, overflow: 'hidden' }}>
-              {building && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 40, color: '#5c6567', fontSize: 13 }}>
-                  <Loader2 size={16} className="animate-spin" /> Loading price…
-                </div>
-              )}
-              {!building && buildError && (
-                <div style={{ padding: 24, fontSize: 13, color: '#b91c1c', background: '#fef2f2', borderRadius: 10, lineHeight: 1.5 }}>{buildError}</div>
-              )}
-              {!building && !buildError && !cardData && (
-                <div style={{ padding: 40, fontSize: 13, color: '#8a9494', textAlign: 'center' }}>Add a product to see the preview.</div>
-              )}
               {cardData && (
-                <div style={{ overflow: 'hidden', borderRadius: 8, height: 675 * PREVIEW_SCALE, boxShadow: '0 8px 24px rgba(0,0,0,.18)' }}>
-                  <div style={{ transform: `scale(${PREVIEW_SCALE})`, transformOrigin: 'top left', width: 540, height: 675 }}>
-                    <PriceCardView data={cardData} />
-                  </div>
+                <div style={{ fontSize: 11, color: inkSoft, marginTop: 8, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace" }}>
+                  {cardData.reference} • exports at 1080 × 1350 PNG
                 </div>
               )}
             </div>
-            {cardData && (
-              <div style={{ fontSize: 11.5, color: '#8a9494', marginTop: 6, textAlign: 'center' }}>
-                {cardData.reference} • exports at 1080 × 1350 PNG
-              </div>
-            )}
+          </div>
+
+          {/* Hidden natural-size render used ONLY for pixel-accurate capture. */}
+          <div aria-hidden="true" style={{ position: 'fixed', left: -10000, top: 0, pointerEvents: 'none' }}>
+            {cardData ? <PriceCardView data={cardData} cardRef={captureRef} /> : <div ref={captureRef} />}
           </div>
         </div>
 
-        {/* Hidden natural-size render used ONLY for pixel-accurate capture. */}
-        <div aria-hidden="true" style={{ position: 'fixed', left: -10000, top: 0, pointerEvents: 'none' }}>
-          {cardData ? <PriceCardView data={cardData} cardRef={captureRef} /> : <div ref={captureRef} />}
+        {/* Footer — Add Customer language: amber-dot hint + ghost/gradient actions */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 14, padding: '16px 28px',
+          borderTop: `1px solid ${hairline}`, background: paper, flexShrink: 0, flexWrap: 'wrap',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: inkSoft, minWidth: 0 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: amber[500], flexShrink: 0 }} />
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{footerHint}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+            <button type="button" onClick={onClose}
+              style={btnGhostStyle}
+              onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+              onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
+              Cancel
+            </button>
+            {imageBlob && (
+              <button type="button" onClick={handleDownload}
+                style={btnGhostStyle}
+                onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+                onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
+                <Download size={14} /> Download
+              </button>
+            )}
+            {imageBlob ? (
+              <button type="button" onClick={handleShare}
+                style={btnPrimaryStyle}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 16px -6px rgba(15,84,76,.55)'; }}>
+                <Share2 size={14} /> {canNativeShare ? 'Share' : 'Share / Save'} <ChevronRight size={14} />
+              </button>
+            ) : (
+              <button type="button" onClick={handleGenerate} disabled={!cardData || generating}
+                style={{ ...btnPrimaryStyle, opacity: !cardData || generating ? 0.6 : 1, cursor: !cardData || generating ? 'not-allowed' : 'pointer' }}
+                onMouseEnter={e => { if (cardData && !generating) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; } }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 16px -6px rgba(15,84,76,.55)'; }}>
+                {generating ? <Loader2 size={14} className="animate-spin" /> : <ImageIcon size={14} />}
+                {generating ? 'Generating…' : 'Generate Image'} <ChevronRight size={14} />
+              </button>
+            )}
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 };

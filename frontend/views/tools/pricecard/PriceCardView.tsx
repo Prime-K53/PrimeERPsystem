@@ -43,7 +43,7 @@ const BrandHeader: React.FC<{ data: PriceCardData }> = ({ data }) => {
           src={logo}
           alt=""
           onError={() => setLogoOk(false)}
-          style={{ height: 44, width: 'auto', maxWidth: 220, objectFit: 'contain', margin: '0 auto 8px', display: 'block' }}
+          style={{ height: 72, width: 'auto', maxWidth: 260, objectFit: 'contain', margin: '0 auto 10px', display: 'block' }}
         />
       ) : null}
       <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: 2.5, color: TEAL }}>
