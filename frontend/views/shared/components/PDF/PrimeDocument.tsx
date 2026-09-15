@@ -259,68 +259,184 @@ const SecurityFooter = ({
   // Verification QR is printed large enough to scan reliably from paper or
   // screen: ~100-char verification URLs need ~41x41 modules, which are too
   // small to decode at the old 50pt size.
-  const footerQrSize = 76;
-  const documentNumber = String(
-    data.number
-    || data.invoiceNumber
-    || data.orderNumber
-    || data.receiptNumber
-    || data.paymentId
-    || data.exchangeNumber
-    || data.reportName
-    || 'N/A'
-  ).trim() || 'N/A';
-  const rawCreatedBy = data?.createdByName || data?.createdBy || data?.created_by || data?.cashierName || '';
-  const createdBy = String(rawCreatedBy).trim();
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(createdBy);
-  const displayCreatedBy = createdBy && !isUuid ? createdBy : 'System User';
-  const createdOn = formatSecurityTimestamp(
-    String(data?.createdAtIso
-    || data?.createdAt
-    || data?.created_at
-    || data?.date || '')
-  );
+  const footerQrSize = 72;
   const qrCodeDataUrl = resolvePdfQrCodeSource(String(data?.securityQrCodeDataUrl || '').trim());
+
+  // Document Authentication & Verification block — matches the approved
+  // reference: shield + title, digitally-generated line, official body copy,
+  // vertical divider, SCAN TO VERIFY pill + QR, bottom rule.
+  // Icons are drawn with Views (no icon font) so standard PDF fonts render
+  // identically everywhere. Bullet (•) is WinAnsi-safe.
+  const displayCompany = String(companyName || '').trim() || 'Prime Printing';
+  const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, '').trim() || displayCompany;
+  const titleColor = '#1e3a8a';
+  const shieldBlue = '#2563eb';
+  const shieldFill = '#dbeafe';
+
+  const headerRow = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <View
+        style={{
+          width: 22,
+          height: 24,
+          borderWidth: 1.8,
+          borderColor: shieldBlue,
+          backgroundColor: shieldFill,
+          borderRadius: 3,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <View
+          style={{
+            width: 9,
+            height: 5,
+            borderLeftWidth: 1.8,
+            borderBottomWidth: 1.8,
+            borderColor: shieldBlue,
+            transform: 'rotate(-45deg)',
+            marginTop: -2,
+          }}
+        />
+      </View>
+      <Text
+        style={{
+          fontSize: 10.5 * fontScale,
+          fontWeight: 'bold',
+          color: titleColor,
+          letterSpacing: 0.4,
+        }}
+      >
+        DOCUMENT AUTHENTICATION &amp; VERIFICATION
+      </Text>
+    </View>
+  );
+
+  const subRow = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+      <View
+        style={{
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          backgroundColor: '#10b981',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <View
+          style={{
+            width: 6,
+            height: 3.5,
+            borderLeftWidth: 1.2,
+            borderBottomWidth: 1.2,
+            borderColor: '#ffffff',
+            transform: 'rotate(-45deg)',
+            marginTop: -1,
+          }}
+        />
+      </View>
+      <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: '#2563eb' }}>
+        Digitally generated
+      </Text>
+      <Text style={{ fontSize: 8.5 * fontScale, color: '#64748b' }}>•</Text>
+      <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: '#059669' }}>
+        Verification available online
+      </Text>
+    </View>
+  );
+
+  const bodyCopy = (
+    <Text style={{ marginTop: 6, fontSize: 9 * fontScale, color: titleColor, lineHeight: 1.45 }}>
+      This is an official {shortCompany} document. It was electronically generated and is valid
+      without a handwritten signature. Scan the QR code to verify the document&apos;s authenticity
+      and confirm its current record.
+    </Text>
+  );
+
+  const qrColumn = (
+    <View style={{ width: footerQrSize + 18, alignItems: 'center' }}>
+      <View
+        style={{
+          backgroundColor: '#0b4da2',
+          borderRadius: 8,
+          paddingVertical: 4,
+          paddingHorizontal: 8,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 5,
+        }}
+      >
+        <View
+          style={{
+            width: 9,
+            height: 13,
+            borderWidth: 1,
+            borderColor: '#ffffff',
+            borderRadius: 2,
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            paddingBottom: 1.2,
+          }}
+        >
+          <View style={{ width: 2, height: 2, borderRadius: 1, backgroundColor: '#ffffff' }} />
+        </View>
+        <Text style={{ fontSize: 7.5 * fontScale, fontWeight: 'bold', color: '#ffffff', letterSpacing: 0.5 }}>
+          SCAN TO VERIFY
+        </Text>
+      </View>
+      <View style={{ marginTop: 6, alignItems: 'center' }}>
+        {!!qrCodeDataUrl ? (
+          <Image src={qrCodeDataUrl} style={{ width: footerQrSize, height: footerQrSize }} />
+        ) : (
+          <View style={{ width: footerQrSize, height: footerQrSize, backgroundColor: '#f1f5f9' }} />
+        )}
+      </View>
+    </View>
+  );
+
+  const contentRow = (
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <View style={{ flex: 1 }}>
+        {headerRow}
+        {subRow}
+        {bodyCopy}
+      </View>
+      <View style={{ width: 1, backgroundColor: '#cbd5e1', alignSelf: 'stretch' }} />
+      {qrColumn}
+    </View>
+  );
+
+  const bottomRule = (
+    <View style={{ marginTop: 8, height: 1, backgroundColor: '#dbeafe', width: '100%' }} />
+  );
 
   // Flowing mode must not reuse the absolute-positioned shared style:
   // absolute elements anchor to their parent box and would overlay content.
   const flowingStyle = {
-    flexDirection: 'row' as const,
-    justifyContent: 'space-between' as const,
-    alignItems: 'center' as const,
-    gap: 12,
+    flexDirection: 'column' as const,
+    gap: 0,
     borderTopWidth: 0.5,
     borderColor: '#e2e8f0',
-    paddingTop: 6,
+    paddingTop: 8,
     width: '100%' as const,
   };
 
-  return (
-    <View style={flowing ? flowingStyle : s.securityFooter} fixed={!flowing} wrap={false}>
-      <View style={s.securityFooterText}>
-        <Text style={[s.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>{legalFooterLine1}</Text>
-        <Text style={[s.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>{legalFooterLine2}</Text>
-      </View>
+  const fixedStyle = {
+    position: 'absolute' as const,
+    bottom: 26,
+    left: 40,
+    right: 40,
+    flexDirection: 'column' as const,
+    borderTopWidth: 0.5,
+    borderColor: '#e2e8f0',
+    paddingTop: 8,
+  };
 
-      <View
-        style={[
-          s.securityQrPanel,
-          {
-            width: footerQrSize + 8,
-            alignItems: 'center',
-            borderWidth: 0,
-            backgroundColor: 'transparent',
-            paddingVertical: 0,
-            paddingHorizontal: 0,
-          },
-        ]}
-      >
-        {!!qrCodeDataUrl ? (
-          <View style={{ alignItems: 'center' }}>
-            <Image src={qrCodeDataUrl} style={{ width: footerQrSize, height: footerQrSize }} />
-          </View>
-        ) : null}
-      </View>
+  return (
+    <View style={flowing ? flowingStyle : fixedStyle} fixed={!flowing} wrap={false}>
+      {contentRow}
+      {bottomRule}
     </View>
   );
 };
@@ -422,7 +538,7 @@ const CleanInvoiceTemplate = ({
 
     return (
       <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e0e0e0', minHeight: 24, alignItems: 'center', paddingVertical: 4 }}>
-        <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#334155', textAlign: 'center' }}>{i + 1}</Text>
+        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#334155', textAlign: 'center' }}>{i + 1}</Text>
         <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155' }}>{formattedDesc}</Text>
         <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{qty}</Text>
         <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {unitPrice.toFixed(2)}</Text>
@@ -488,7 +604,7 @@ const CleanInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 20 }}>
           <View style={{ flexDirection: 'row', backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: 'center' }}>
-            <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'center' }}>Sn</Text>
+            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'center' }}>SN</Text>
             <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Description</Text>
             <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Qty</Text>
             <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Price</Text>
@@ -768,7 +884,7 @@ const ModernInvoiceTemplate = ({
 
     return (
       <View key={i} style={{ flexDirection: 'row', backgroundColor: bgColor, minHeight: 28, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 }}>
-        <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
+        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
         <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
         <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
         <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>
@@ -841,7 +957,7 @@ const ModernInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
           <View style={{ flexDirection: 'row', backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center' }}>
-            <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'center' }}>Sn</Text>
+            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'center' }}>SN</Text>
             <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Description</Text>
             <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Qty</Text>
             <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Price</Text>
@@ -851,7 +967,7 @@ const ModernInvoiceTemplate = ({
           
           {/* Total Payment Gray Row */}
           <View style={{ flexDirection: 'row', backgroundColor: '#D9DEDE', paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', marginTop: 4 }}>
-            <Text style={{ width: 32, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'center' }}>-</Text>
+            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'center' }}>-</Text>
             <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#111111' }}>Total Payment</Text>
             <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'right' }}>-</Text>
             <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'right' }}>-</Text>
@@ -1067,7 +1183,7 @@ const ProfessionalInvoiceTemplate = ({
 
     return (
       <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#eeeeee', minHeight: 24, alignItems: 'center', paddingVertical: 5 }}>
-        <Text style={{ width: 30, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
+        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
         <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
         <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
         <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {unitPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
@@ -1146,7 +1262,7 @@ const ProfessionalInvoiceTemplate = ({
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
           <View style={{ flexDirection: 'row', borderBottomWidth: 1.5, borderBottomColor: '#222222', paddingBottom: 6 }}>
-            <Text style={{ width: 30, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>Sn</Text>
+            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>SN</Text>
             <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase' }}>Description</Text>
             <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Qty</Text>
             <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Price</Text>
@@ -1435,7 +1551,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View style={{ marginTop: 20 }}>
             <View style={s.tableHeader}>
-              <Text style={s.colSn}>Sn</Text>
+              <Text style={s.colSn}>SN</Text>
               <Text style={s.colDesc}>Description</Text>
               <Text style={[s.colQty, { width: 60 }]}>Returned</Text>
               <Text style={[s.colQty, { width: 60 }]}>Replaced</Text>
@@ -2036,7 +2152,7 @@ if (type === 'POS_RECEIPT') {
               <View style={s.tableSectionTight}>
                 {/* 1. Restored Table Header with 2px border */}
                 <View style={s.tableHeader}>
-                  <Text style={s.colSn}>Sn</Text>
+                  <Text style={s.colSn}>SN</Text>
                   <Text style={s.colDesc}>Description</Text>
                   <Text style={s.colQty}>Qty</Text>
                   <Text style={s.colPrice}>Price</Text>
@@ -2224,7 +2340,7 @@ if (type === 'POS_RECEIPT') {
             {!isFinancial && (
               <>
                 <View style={s.tableHeader}>
-                  <Text style={s.colSn}>Sn</Text>
+                  <Text style={s.colSn}>SN</Text>
                   <Text style={s.colDesc}>Description / Instructions</Text>
                   <Text style={s.colQty}>Qty</Text>
                 </View>
@@ -2297,7 +2413,7 @@ if (type === 'POS_RECEIPT') {
             {/* Service Tasks */}
             <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: '#475569', textTransform: 'uppercase', letterSpacing: 1 }}>Production Checklist</Text>
             <View style={s.tableHeader}>
-              <Text style={s.colSn}>Sn</Text>
+              <Text style={s.colSn}>SN</Text>
               <Text style={s.colDesc}>Service / Process Details</Text>
               <Text style={s.colQty}>Completion</Text>
             </View>
@@ -2322,7 +2438,7 @@ if (type === 'POS_RECEIPT') {
               DELIVERY ITEMS CHECKLIST
             </Text>
             <View style={s.tableHeader}>
-              <Text style={s.colSn}>Sn</Text>
+              <Text style={s.colSn}>SN</Text>
               <Text style={s.colDesc}>Description</Text>
               <Text style={s.colQty}>Qty Shipped</Text>
             </View>
@@ -2583,7 +2699,7 @@ if (type === 'POS_RECEIPT') {
         {type === 'EXAMINATION_INVOICE' && (
           <View style={{ marginTop: 20 }}>
             <View style={s.tableHeader}>
-              <Text style={{ width: 32, textAlign: 'center' }}>Sn</Text>
+              <Text style={{ width: 44, textAlign: 'center' }}>SN</Text>
               <Text style={{ flex: 3 }}>Description</Text>
               <Text style={{ flex: 1, textAlign: 'right' }}>Qty</Text>
               <Text style={{ flex: 1, textAlign: 'right' }}>Price</Text>
@@ -2592,7 +2708,7 @@ if (type === 'POS_RECEIPT') {
 
             {(('items' in data ? dataAny.items : []) as Array<Record<string, unknown>>).map((item: Record<string, unknown>, i: number) => (
               <View key={i} style={s.row}>
-                <Text style={{ width: 32, textAlign: 'center', fontSize: 12 }}>{i + 1}</Text>
+                <Text style={{ width: 44, textAlign: 'center', fontSize: 12 }}>{i + 1}</Text>
                 <View style={{ flex: 3 }}>
                   <Text style={{ fontWeight: 'normal', fontSize: 12 }}>{String(item.desc)}</Text>
                 </View>

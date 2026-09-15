@@ -232967,7 +232967,7 @@ var docStyles = StyleSheet.create({
     lineHeight: 1.125
   },
   // Column Widths
-  colSn: { width: 32, textAlign: "center" },
+  colSn: { width: 44, textAlign: "center" },
   colQty: { width: 50, textAlign: "right" },
   colDesc: { flex: 3 },
   colPrice: { flex: 2, textAlign: "right" },
@@ -233350,15 +233350,8 @@ function PaginationFurniture({
     )
   ] });
 }
-var verificationLabelStyle = {
-  fontSize: 9,
-  fontWeight: "bold",
-  color: "#334155",
-  letterSpacing: 1.5,
-  marginBottom: 4
-};
 function VerificationLabel({ fontScale = 1 }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { style: { ...verificationLabelStyle, fontSize: 9 * fontScale }, children: "DOCUMENT VERIFICATION" });
+  return null;
 }
 
 // views/shared/components/PDF/PortalCopyWatermark.tsx
@@ -233379,17 +233372,6 @@ var pickFirstText = (...values) => {
     if (normalized) return normalized;
   }
   return "";
-};
-var buildFooterLine1 = (config2) => {
-  return pickFirstText(
-    config2?.footer,
-    config2?.receiptFooter,
-    config2?.transactionSettings?.pos?.receiptFooter,
-    "This is a computer-generated document. No signature required. For enquiries contact"
-  );
-};
-var buildFooterLine2 = (config2) => {
-  return "Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,";
 };
 var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = "erp" }) => {
   const currency = data2.currency || "MWK";
@@ -233510,18 +233492,44 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.credit > 0 ? "#059669" : "#64748b" }, children: txn.credit > 0 ? formatAmount(txn.credit) : "-" }),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.3, fontSize: 9, textAlign: "right", fontWeight: "bold" }, children: formatAmount(txn.runningBalance) })
         ] }, i2)),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: { marginTop: 10, borderTopWidth: 0.5, borderColor: "#e2e8f0", paddingTop: 8, width: "100%" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(VerificationLabel, { fontScale }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, borderTopWidth: 0.5, borderColor: "#e2e8f0", paddingTop: 6, width: "100%" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: docStyles.securityFooterText, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: buildFooterLine1(config2) }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: [docStyles.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: buildFooterLine2(config2) })
-            ] }),
-            (() => {
-              const qrUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
-              return qrUrl ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: [docStyles.securityQrPanel, { width: 84, alignItems: "center", borderWidth: 0, backgroundColor: "transparent", paddingVertical: 0, paddingHorizontal: 0 }], children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: qrUrl, style: { width: 76, height: 76 } }) }) : null;
-            })()
-          ] })
+          (() => {
+            const qrUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
+            const displayCompany = pickFirstText(config2?.companyName, "Prime Printing");
+            const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, "").trim() || displayCompany;
+            const footerQrSize = 72;
+            return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "column" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", gap: 10 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 6 }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 22, height: 24, borderWidth: 1.8, borderColor: "#2563eb", backgroundColor: "#dbeafe", borderRadius: 3, alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 9, height: 5, borderLeftWidth: 1.8, borderBottomWidth: 1.8, borderColor: "#2563eb", transform: "rotate(-45deg)", marginTop: -2 } }) }),
+                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10.5 * fontScale, fontWeight: "bold", color: "#1e3a8a", letterSpacing: 0.4 }, children: "DOCUMENT AUTHENTICATION & VERIFICATION" })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", marginTop: 4, gap: 4 }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 12, height: 12, borderRadius: 6, backgroundColor: "#10b981", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 6, height: 3.5, borderLeftWidth: 1.2, borderBottomWidth: 1.2, borderColor: "#ffffff", transform: "rotate(-45deg)", marginTop: -1 } }) }),
+                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8.5 * fontScale, fontWeight: "bold", color: "#2563eb" }, children: "Digitally generated" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: "#64748b" }, children: "\u2022" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8.5 * fontScale, fontWeight: "bold", color: "#059669" }, children: "Verification available online" })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { marginTop: 6, fontSize: 9 * fontScale, color: "#1e3a8a", lineHeight: 1.45 }, children: [
+                    "This is an official ",
+                    shortCompany,
+                    " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record."
+                  ] })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 1, backgroundColor: "#cbd5e1", alignSelf: "stretch" } }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { backgroundColor: "#0b4da2", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 5 }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 9, height: 13, borderWidth: 1, borderColor: "#ffffff", borderRadius: 2, alignItems: "center", justifyContent: "flex-end", paddingBottom: 1.2 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 2, height: 2, borderRadius: 1, backgroundColor: "#ffffff" } }) }),
+                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7.5 * fontScale, fontWeight: "bold", color: "#ffffff", letterSpacing: 0.5 }, children: "SCAN TO VERIFY" })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 6, alignItems: "center" }, children: qrUrl ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: qrUrl, style: { width: footerQrSize, height: footerQrSize } }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: footerQrSize, height: footerQrSize, backgroundColor: "#f1f5f9" } }) })
+                ] })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 8, height: 1, backgroundColor: "#dbeafe", width: "100%" } })
+            ] });
+          })()
         ] })
       ] })
     }
@@ -233606,13 +233614,6 @@ var getStatusTone = (status) => {
   }
   return { border: "#ef4444", text: "#dc2626" };
 };
-var formatSecurityTimestamp = (value2) => {
-  const parsed = value2 ? new Date(value2) : /* @__PURE__ */ new Date();
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleString();
-  }
-  return String(value2 || "Unknown time");
-};
 var pickFirstText2 = (...values) => {
   for (const value2 of values) {
     const normalized = String(value2 ?? "").trim();
@@ -233671,50 +233672,160 @@ var SecurityFooter = ({
   // Default false preserves the exact legacy behavior for all other docs.
   flowing = false
 }) => {
-  const footerQrSize = 76;
-  const documentNumber = String(
-    data2.number || data2.invoiceNumber || data2.orderNumber || data2.receiptNumber || data2.paymentId || data2.exchangeNumber || data2.reportName || "N/A"
-  ).trim() || "N/A";
-  const rawCreatedBy = data2?.createdByName || data2?.createdBy || data2?.created_by || data2?.cashierName || "";
-  const createdBy = String(rawCreatedBy).trim();
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(createdBy);
-  const displayCreatedBy = createdBy && !isUuid ? createdBy : "System User";
-  const createdOn = formatSecurityTimestamp(
-    String(data2?.createdAtIso || data2?.createdAt || data2?.created_at || data2?.date || "")
-  );
+  const footerQrSize = 72;
   const qrCodeDataUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
-  const flowingStyle = {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    borderTopWidth: 0.5,
-    borderColor: "#e2e8f0",
-    paddingTop: 6,
-    width: "100%"
-  };
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: flowing ? flowingStyle : docStyles.securityFooter, fixed: !flowing, wrap: false, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.securityFooterText, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: legalFooterLine1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: "left" }], children: legalFooterLine2 })
-    ] }),
+  const displayCompany = String(companyName || "").trim() || "Prime Printing";
+  const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, "").trim() || displayCompany;
+  const titleColor = "#1e3a8a";
+  const shieldBlue = "#2563eb";
+  const shieldFill = "#dbeafe";
+  const headerRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 6 }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
       View,
       {
-        style: [
-          docStyles.securityQrPanel,
+        style: {
+          width: 22,
+          height: 24,
+          borderWidth: 1.8,
+          borderColor: shieldBlue,
+          backgroundColor: shieldFill,
+          borderRadius: 3,
+          alignItems: "center",
+          justifyContent: "center"
+        },
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          View,
           {
-            width: footerQrSize + 8,
-            alignItems: "center",
-            borderWidth: 0,
-            backgroundColor: "transparent",
-            paddingVertical: 0,
-            paddingHorizontal: 0
+            style: {
+              width: 9,
+              height: 5,
+              borderLeftWidth: 1.8,
+              borderBottomWidth: 1.8,
+              borderColor: shieldBlue,
+              transform: "rotate(-45deg)",
+              marginTop: -2
+            }
           }
-        ],
-        children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }) }) : null
+        )
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: {
+          fontSize: 10.5 * fontScale,
+          fontWeight: "bold",
+          color: titleColor,
+          letterSpacing: 0.4
+        },
+        children: "DOCUMENT AUTHENTICATION & VERIFICATION"
       }
     )
+  ] });
+  const subRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", marginTop: 4, gap: 4 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      View,
+      {
+        style: {
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          backgroundColor: "#10b981",
+          alignItems: "center",
+          justifyContent: "center"
+        },
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          View,
+          {
+            style: {
+              width: 6,
+              height: 3.5,
+              borderLeftWidth: 1.2,
+              borderBottomWidth: 1.2,
+              borderColor: "#ffffff",
+              transform: "rotate(-45deg)",
+              marginTop: -1
+            }
+          }
+        )
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, fontWeight: "bold", color: "#2563eb" }, children: "Digitally generated" }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: "#64748b" }, children: "\u2022" }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, fontWeight: "bold", color: "#059669" }, children: "Verification available online" })
+  ] });
+  const bodyCopy = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 6, fontSize: 9 * fontScale, color: titleColor, lineHeight: 1.45 }, children: [
+    "This is an official ",
+    shortCompany,
+    " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record."
+  ] });
+  const qrColumn = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          backgroundColor: "#0b4da2",
+          borderRadius: 8,
+          paddingVertical: 4,
+          paddingHorizontal: 8,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 5
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                width: 9,
+                height: 13,
+                borderWidth: 1,
+                borderColor: "#ffffff",
+                borderRadius: 2,
+                alignItems: "center",
+                justifyContent: "flex-end",
+                paddingBottom: 1.2
+              },
+              children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 2, height: 2, borderRadius: 1, backgroundColor: "#ffffff" } })
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.5 * fontScale, fontWeight: "bold", color: "#ffffff", letterSpacing: 0.5 }, children: "SCAN TO VERIFY" })
+        ]
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 6, alignItems: "center" }, children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: footerQrSize, height: footerQrSize, backgroundColor: "#f1f5f9" } }) })
+  ] });
+  const contentRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 10 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+      headerRow,
+      subRow,
+      bodyCopy
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 1, backgroundColor: "#cbd5e1", alignSelf: "stretch" } }),
+    qrColumn
+  ] });
+  const bottomRule = /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 8, height: 1, backgroundColor: "#dbeafe", width: "100%" } });
+  const flowingStyle = {
+    flexDirection: "column",
+    gap: 0,
+    borderTopWidth: 0.5,
+    borderColor: "#e2e8f0",
+    paddingTop: 8,
+    width: "100%"
+  };
+  const fixedStyle = {
+    position: "absolute",
+    bottom: 26,
+    left: 40,
+    right: 40,
+    flexDirection: "column",
+    borderTopWidth: 0.5,
+    borderColor: "#e2e8f0",
+    paddingTop: 8
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: flowing ? flowingStyle : fixedStyle, fixed: !flowing, wrap: false, children: [
+    contentRow,
+    bottomRule
   ] });
 };
 var CleanInvoiceTemplate = ({
@@ -233790,7 +233901,7 @@ var CleanInvoiceTemplate = ({
       }
     }
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#e0e0e0", minHeight: 24, alignItems: "center", paddingVertical: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#334155", textAlign: "center" }, children: i2 + 1 }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#334155", textAlign: "center" }, children: i2 + 1 }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155" }, children: formattedDesc }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: qty }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
@@ -233842,7 +233953,7 @@ var CleanInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 20 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "center" }, children: "Sn" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "center" }, children: "SN" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Qty" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Price" }),
@@ -234094,7 +234205,7 @@ var ModernInvoiceTemplate = ({
     }
     const bgColor = i2 % 2 !== 0 ? "#F5F5F5" : "transparent";
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: bgColor, minHeight: 28, alignItems: "center", paddingVertical: 6, paddingHorizontal: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "center" }, children: i2 + 1 }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "center" }, children: i2 + 1 }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: qty }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
@@ -234150,7 +234261,7 @@ var ModernInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "center" }, children: "Sn" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "center" }, children: "SN" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff" }, children: "Description" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Qty" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#ffffff", textAlign: "right" }, children: "Price" }),
@@ -234158,7 +234269,7 @@ var ModernInvoiceTemplate = ({
       ] }),
       items.map(renderRow2),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: "#D9DEDE", paddingVertical: 8, paddingHorizontal: 4, alignItems: "center", marginTop: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111", textAlign: "center" }, children: "-" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111", textAlign: "center" }, children: "-" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: "#111111" }, children: "Total Payment" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111", textAlign: "right" }, children: "-" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: "#111111", textAlign: "right" }, children: "-" }),
@@ -234346,7 +234457,7 @@ var ProfessionalInvoiceTemplate = ({
       }
     }
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#eeeeee", minHeight: 24, alignItems: "center", paddingVertical: 5 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 30, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "center" }, children: i2 + 1 }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "center" }, children: i2 + 1 }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333" }, children: formattedDesc }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: qty }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
@@ -234412,7 +234523,7 @@ var ProfessionalInvoiceTemplate = ({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: "#222222", paddingBottom: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 30, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }, children: "Sn" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }, children: "SN" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase" }, children: "Description" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Qty" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: "#666666", letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Price" }),
@@ -234661,7 +234772,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "SN" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Returned" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.colQty, { width: 60 }], children: "Replaced" })
@@ -235256,7 +235367,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         type !== "DELIVERY_NOTE" && type !== "WORK_ORDER" && type !== "ACCOUNT_STATEMENT" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
           isFinancial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableSectionTight, children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "SN" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Qty" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colPrice, children: "Price" }),
@@ -235416,7 +235527,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           ] }),
           !isFinancial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "SN" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description / Instructions" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Qty" })
             ] }),
@@ -235458,7 +235569,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1 }, children: "Production Checklist" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "SN" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Service / Process Details" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Completion" })
           ] }),
@@ -235474,7 +235585,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold", marginBottom: 10 }, children: "DELIVERY ITEMS CHECKLIST" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "Sn" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: "SN" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Qty Shipped" })
           ] }),
@@ -235698,14 +235809,14 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         ] }),
         type === "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, textAlign: "center" }, children: "Sn" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, textAlign: "center" }, children: "SN" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Qty" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.5, textAlign: "right" }, children: "Amount" })
           ] }),
           ("items" in data2 ? dataAny.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 32, textAlign: "center", fontSize: 12 }, children: i2 + 1 }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, textAlign: "center", fontSize: 12 }, children: i2 + 1 }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 3 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "normal", fontSize: 12 }, children: String(item.desc) }) }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: Number(item.qty) }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.price)) }),
@@ -235896,7 +236007,7 @@ var getCompanyNameFromStorage = () => {
     return "Prime ERP";
   }
 };
-var formatSecurityTimestamp2 = (value2) => {
+var formatSecurityTimestamp = (value2) => {
   const parsed = value2 ? new Date(value2) : /* @__PURE__ */ new Date();
   if (Number.isNaN(parsed.getTime())) return String(value2 || "Unknown time");
   return parsed.toLocaleString();
@@ -235922,7 +236033,7 @@ var buildSecurityQrPayload = (data2, companyName) => {
   if (verificationUrl) return verificationUrl;
   const resolvedCompanyName = String(companyName || "").trim() || getCompanyNameFromStorage();
   const documentNumber = resolveDocumentNumber(data2);
-  const createdOn = formatSecurityTimestamp2(resolveCreatedAt(data2));
+  const createdOn = formatSecurityTimestamp(resolveCreatedAt(data2));
   const createdBy = resolveCreatedBy(data2);
   return `${resolvedCompanyName}, ${documentNumber}, created on ${createdOn}, by ${createdBy}`;
 };

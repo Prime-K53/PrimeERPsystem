@@ -243,13 +243,15 @@ export const verificationLabelStyle = {
 };
 
 /**
- * Heading for the flowing final-page security block. The QR block itself
- * is rendered by the existing SecurityFooter (flowing mode) — unchanged.
+ * Deprecated: the DOCUMENT AUTHENTICATION & VERIFICATION header is now
+ * rendered inside the shared SecurityFooter (PrimeDocument) so every
+ * channel — fixed and flowing — matches the approved reference exactly.
+ * Kept as a null render so existing call sites
+ * (<VerificationLabel /> + <SecurityFooter />) produce a single block
+ * instead of a duplicated heading. Page-text assertions should target the
+ * SecurityFooter title ('DOCUMENT AUTHENTICATION & VERIFICATION').
  */
 export function VerificationLabel({ fontScale = 1 }: { fontScale?: number }) {
-  return (
-    <Text style={{ ...verificationLabelStyle, fontSize: 9 * fontScale }}>
-      DOCUMENT VERIFICATION
-    </Text>
-  );
+  void fontScale;
+  return null;
 }

@@ -164,30 +164,65 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           </View>
         ))}
 
-         {/* Security Footer — flows once after the final content so the QR
-             appears only on the final page (in-flow style: the shared
-             absolute footer style would overlay content when un-fixed). */}
-         <View wrap={false} style={{ marginTop: 10 }}>
-           <VerificationLabel fontScale={fontScale} />
-           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, borderTopWidth: 0.5, borderColor: '#e2e8f0', paddingTop: 6, width: '100%' }}>
-              <View style={s.securityFooterText}>
-                 <Text style={[s.securityFooterLine, { fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
-                   {buildFooterLine1(config)}
-                 </Text>
-                 <Text style={[s.securityFooterLine, { marginTop: 2, fontSize: 10 * fontScale, lineHeight: 1.4, textAlign: 'left' }]}>
-                   {buildFooterLine2(config)}
-                 </Text>
-              </View>
-             {(() => {
-               const qrUrl = resolvePdfQrCodeSource(String((data as any)?.securityQrCodeDataUrl || '').trim());
-               return qrUrl ? (
-                  <View style={[s.securityQrPanel, { width: 84, alignItems: 'center', borderWidth: 0, backgroundColor: 'transparent', paddingVertical: 0, paddingHorizontal: 0 }]}>
-                    <Image src={qrUrl} style={{ width: 76, height: 76 }} />
-                 </View>
-               ) : null;
-             })()}
-           </View>
-         </View>
+          {/* Security Footer — Document Authentication & Verification block,
+              matches the approved reference exactly (shield + title,
+              digitally-generated line, official body copy, SCAN TO VERIFY
+              pill + QR, bottom rule). Flows once after the final content. */}
+          <View wrap={false} style={{ marginTop: 10, borderTopWidth: 0.5, borderColor: '#e2e8f0', paddingTop: 8, width: '100%' }}>
+            <VerificationLabel fontScale={fontScale} />
+            {(() => {
+              const qrUrl = resolvePdfQrCodeSource(String((data as any)?.securityQrCodeDataUrl || '').trim());
+              const displayCompany = pickFirstText(config?.companyName, 'Prime Printing');
+              const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, '').trim() || displayCompany;
+              const footerQrSize = 72;
+              return (
+                <View style={{ flexDirection: 'column' }}>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ width: 22, height: 24, borderWidth: 1.8, borderColor: '#2563eb', backgroundColor: '#dbeafe', borderRadius: 3, alignItems: 'center', justifyContent: 'center' }}>
+                          <View style={{ width: 9, height: 5, borderLeftWidth: 1.8, borderBottomWidth: 1.8, borderColor: '#2563eb', transform: 'rotate(-45deg)', marginTop: -2 }} />
+                        </View>
+                        <Text style={{ fontSize: 10.5 * fontScale, fontWeight: 'bold', color: '#1e3a8a', letterSpacing: 0.4 }}>
+                          DOCUMENT AUTHENTICATION &amp; VERIFICATION
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                        <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#10b981', alignItems: 'center', justifyContent: 'center' }}>
+                          <View style={{ width: 6, height: 3.5, borderLeftWidth: 1.2, borderBottomWidth: 1.2, borderColor: '#ffffff', transform: 'rotate(-45deg)', marginTop: -1 }} />
+                        </View>
+                        <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: '#2563eb' }}>Digitally generated</Text>
+                        <Text style={{ fontSize: 8.5 * fontScale, color: '#64748b' }}>•</Text>
+                        <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: '#059669' }}>Verification available online</Text>
+                      </View>
+                      <Text style={{ marginTop: 6, fontSize: 9 * fontScale, color: '#1e3a8a', lineHeight: 1.45 }}>
+                        This is an official {shortCompany} document. It was electronically generated and is valid
+                        without a handwritten signature. Scan the QR code to verify the document&apos;s authenticity
+                        and confirm its current record.
+                      </Text>
+                    </View>
+                    <View style={{ width: 1, backgroundColor: '#cbd5e1', alignSelf: 'stretch' }} />
+                    <View style={{ width: footerQrSize + 18, alignItems: 'center' }}>
+                      <View style={{ backgroundColor: '#0b4da2', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <View style={{ width: 9, height: 13, borderWidth: 1, borderColor: '#ffffff', borderRadius: 2, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 1.2 }}>
+                          <View style={{ width: 2, height: 2, borderRadius: 1, backgroundColor: '#ffffff' }} />
+                        </View>
+                        <Text style={{ fontSize: 7.5 * fontScale, fontWeight: 'bold', color: '#ffffff', letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
+                      </View>
+                      <View style={{ marginTop: 6, alignItems: 'center' }}>
+                        {qrUrl ? (
+                          <Image src={qrUrl} style={{ width: footerQrSize, height: footerQrSize }} />
+                        ) : (
+                          <View style={{ width: footerQrSize, height: footerQrSize, backgroundColor: '#f1f5f9' }} />
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                  <View style={{ marginTop: 8, height: 1, backgroundColor: '#dbeafe', width: '100%' }} />
+                </View>
+              );
+            })()}
+          </View>
       </Page>
     </Document>
   );

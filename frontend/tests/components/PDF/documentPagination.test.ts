@@ -99,7 +99,7 @@ async function securedMapped(raw: any, target: any) {
 }
 
 const COMPACT = norm('Verify authenticity using the QR code on the final page');
-const VERIFY_LABEL = norm('DOCUMENT VERIFICATION');
+const VERIFY_LABEL = norm('DOCUMENT AUTHENTICATION & VERIFICATION');
 const CONTINUED = norm('continued');
 
 function expectPageNumbers(pages: Array<{ text: string }>, total: number) {
@@ -140,7 +140,10 @@ describe('quotation pagination (global standard)', () => {
   const secured = (n: number) => securedMapped(raw(n), 'QUOTATION');
 
   it('TEST 1 — one page: number, customer, total, QR, payload intact', async () => {
-    const data: any = await secured(4);
+    // 2 items: calibrated for the taller authentication & verification
+    // footer (4 items spilled onto a second page when the footer grew
+    // from the old QR-only block to the reference header + pill + QR).
+    const data: any = await secured(2);
     expect(data.securityQrPayload).toBe(buildSecurityQrPayload({ ...data, securityQrPayload: undefined, securityQrCodeDataUrl: undefined }, COMPANY));
     const { pages, pageCount, qrObj } = await renderBoth('QUOTATION', data);
     expectPageNumbers(pages, 1);
@@ -162,9 +165,9 @@ describe('quotation pagination (global standard)', () => {
   }, 120000);
 
   it('TEST 3 — three pages', async () => {
-    // 32 items: calibrated for the 76pt verification QR footer (34 items
-    // tipped onto a fourth page when the footer grew from the old 50pt QR).
-    const { pages, pageCount, qrObj } = await renderBoth('QUOTATION', await secured(32));
+    // 30 items: calibrated for the wider SN column + authentication &
+    // verification footer (32 items tipped onto a fourth page).
+    const { pages, pageCount, qrObj } = await renderBoth('QUOTATION', await secured(30));
     expectPageNumbers(pages, 3);
     expectQrFinalOnly(pages, qrObj);
     expect(pages[2].text).toContain(norm('Quoted Amount'));
@@ -177,7 +180,9 @@ describe('sales order pagination (global standard)', () => {
   const secured = (n: number) => securedMapped(raw(n), 'SALES_ORDER');
 
   it('TEST 1 — one page', async () => {
-    const data: any = await secured(4);
+    // 2 items: calibrated for the wider SN column (4 items spilled onto
+    // a second page).
+    const data: any = await secured(2);
     expectQrPayloadUrl(data, 'sales-order');
     const { pages, pageCount, qrObj } = await renderBoth('SALES_ORDER', data);
     expectPageNumbers(pages, 1);
@@ -198,7 +203,9 @@ describe('sales order pagination (global standard)', () => {
   }, 120000);
 
   it('TEST 3 — three pages', async () => {
-    const { pages, pageCount, qrObj } = await renderBoth('SALES_ORDER', await secured(34));
+    // 30 items: calibrated for the wider SN column + authentication &
+    // verification footer (32 items tipped onto a fourth page).
+    const { pages, pageCount, qrObj } = await renderBoth('SALES_ORDER', await secured(30));
     expectPageNumbers(pages, 3);
     expectQrFinalOnly(pages, qrObj);
   }, 120000);
@@ -217,7 +224,9 @@ describe('purchase order pagination (global standard)', () => {
   const secured = (n: number) => securedMapped(raw(n), 'PO');
 
   it('TEST 1 — one page', async () => {
-    const data: any = await secured(4);
+    // 3 items: calibrated for the wider SN column (4 items spilled onto
+    // a second page).
+    const data: any = await secured(3);
     expectQrPayloadUrl(data, 'purchase-order');
     const { pages, pageCount, qrObj } = await renderBoth('PO', data);
     expectPageNumbers(pages, 1);
@@ -234,7 +243,9 @@ describe('purchase order pagination (global standard)', () => {
   }, 120000);
 
   it('TEST 3 — three pages', async () => {
-    const { pages, pageCount, qrObj } = await renderBoth('PO', await secured(34));
+    // 32 items: calibrated for the wider SN column + authentication &
+    // verification footer (34 items tipped onto a fourth page).
+    const { pages, pageCount, qrObj } = await renderBoth('PO', await secured(32));
     expectPageNumbers(pages, 3);
     expectQrFinalOnly(pages, qrObj);
   }, 120000);
@@ -306,7 +317,9 @@ describe('subscription pagination (global standard)', () => {
   const secured = (n: number) => securedMapped(raw(n), 'SUBSCRIPTION');
 
   it('TEST 1 — one page', async () => {
-    const data: any = await secured(4);
+    // 3 items: calibrated for the wider SN column (4 items spilled onto
+    // a second page).
+    const data: any = await secured(3);
     const { pages, pageCount, qrObj } = await renderBoth('SUBSCRIPTION', data);
     expectPageNumbers(pages, 1);
     expectQrFinalOnly(pages, qrObj);
@@ -324,7 +337,9 @@ describe('subscription pagination (global standard)', () => {
   }, 120000);
 
   it('TEST 3 — three pages', async () => {
-    const { pages, pageCount, qrObj } = await renderBoth('SUBSCRIPTION', await secured(34));
+    // 30 items: calibrated for the wider SN column + authentication &
+    // verification footer (32 items tipped onto a fourth page).
+    const { pages, pageCount, qrObj } = await renderBoth('SUBSCRIPTION', await secured(30));
     expectPageNumbers(pages, 3);
     expectQrFinalOnly(pages, qrObj);
   }, 120000);

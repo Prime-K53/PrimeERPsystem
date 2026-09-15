@@ -496,7 +496,7 @@ export const docStyles = StyleSheet.create({
   },
 
   // Column Widths
-  colSn: { width: 32, textAlign: 'center' as const },
+  colSn: { width: 44, textAlign: 'center' as const },
   colQty: { width: 50, textAlign: 'right' as const },
   colDesc: { flex: 3 },
   colPrice: { flex: 2, textAlign: 'right' as const },
