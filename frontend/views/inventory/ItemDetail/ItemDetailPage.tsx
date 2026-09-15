@@ -6,6 +6,7 @@ import { useItemDetail } from './hooks/useItemDetail';
 import StockAdjustmentModal from '../components/StockAdjustmentModal';
 import { TransferStockModal } from '../InventoryList/modals/TransferStockModal';
 import { PrintLabelModal } from '../InventoryList/modals/PrintLabelModal';
+import { PriceCardModal } from '../components/pricecard/PriceCardModal';
 import { ItemModal } from '../../../components/items/ItemModal';
 import { useInventory } from '../../../context/InventoryContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -59,6 +60,7 @@ export const ItemDetailPage: React.FC = () => {
   const [isAdjustOpen, setIsAdjustOpen] = useState(false);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [printMode, setPrintMode] = useState<'barcode' | 'qrcode' | null>(null);
+  const [isPriceCardOpen, setIsPriceCardOpen] = useState(false);
 
   const ext = (item ?? {}) as Item & { classification?: string; productType?: string; averageMonthlyUsage?: number; brand?: string };
   const isRaw = useMemo(() => {
@@ -251,6 +253,9 @@ export const ItemDetailPage: React.FC = () => {
             <button className="qa-btn" onClick={onDuplicate} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 600, border: '1.4px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer' }}>
               <Copy size={13} /> Duplicate
             </button>
+            <button className="qa-btn" title="Generate a customer-facing price image" onClick={() => setIsPriceCardOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 600, border: '1.4px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer' }}>
+              <Tag size={13} /> Price Card
+            </button>
             <button className="qa-icon" title="Print Barcode" onClick={() => setPrintMode('barcode')} style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #e4ddd1', background: '#FEFDFB', color: '#5c6567', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <Printer size={14} />
             </button>
@@ -364,6 +369,8 @@ export const ItemDetailPage: React.FC = () => {
       <TransferStockModal open={isTransferOpen} item={item} onClose={() => setIsTransferOpen(false)} onSuccess={refresh} />
 
       <PrintLabelModal open={printMode !== null} items={[item]} mode={printMode || 'barcode'} onClose={() => setPrintMode(null)} />
+
+      <PriceCardModal open={isPriceCardOpen} initialItem={item} onClose={() => setIsPriceCardOpen(false)} />
     </div>
   );
 };

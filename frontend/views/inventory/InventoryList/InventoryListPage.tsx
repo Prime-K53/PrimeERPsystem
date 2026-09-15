@@ -23,6 +23,7 @@ import { ItemModal } from '../../../components/items/ItemModal';
 import { BulkEditModal } from './modals/BulkEditModal';
 import { AssignModal } from './modals/AssignModal';
 import { PrintLabelModal } from './modals/PrintLabelModal';
+import { PriceCardModal } from '../components/pricecard/PriceCardModal';
 import { ConfirmDialog, ConfirmDialogType } from '../../../components/ConfirmDialog';
 import { getFloatingMenuStyle } from '../../../utils/actionMenu';
 
@@ -119,6 +120,7 @@ export const InventoryListPage: React.FC = () => {
   const [assignMode, setAssignMode] = useState<'warehouse' | 'supplier'>('warehouse');
   const [isPrintOpen, setIsPrintOpen] = useState(false);
   const [printMode, setPrintMode] = useState<'barcode' | 'qrcode' | 'label'>('label');
+  const [priceCardItem, setPriceCardItem] = useState<Item | null>(null);
   const [isSmartAdjustOpen, setIsSmartAdjustOpen] = useState(false);
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
@@ -653,6 +655,10 @@ const handleProduce = useCallback((item: Item) => {
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                                     Duplicate
                                   </button>
+                                  <button className="action-dropdown-item" onClick={() => { setPriceCardItem(m); closeActionMenu(); }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+                                    Price Card
+                                  </button>
                                   <button className="action-dropdown-item" onClick={() => { handleViewItem(m); closeActionMenu(); }}>
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                     View Details
@@ -820,6 +826,10 @@ const handleProduce = useCallback((item: Item) => {
                                       <button className="action-dropdown-item" onClick={() => { handleDuplicate(p); closeActionMenu(); }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                                         Duplicate
+                                      </button>
+                                      <button className="action-dropdown-item" onClick={() => { setPriceCardItem(p); closeActionMenu(); }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+                                        Price Card
                                       </button>
 <button className="action-dropdown-item" onClick={() => { handleProduce(p); closeActionMenu(); }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
@@ -1021,6 +1031,10 @@ const handleProduce = useCallback((item: Item) => {
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                                         Duplicate
                                       </button>
+                                      <button className="action-dropdown-item" onClick={() => { setPriceCardItem(p); closeActionMenu(); }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+                                        Price Card
+                                      </button>
                                       <button className="action-dropdown-item" onClick={() => { handleViewItem(p); closeActionMenu(); }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                         View Details
@@ -1200,6 +1214,10 @@ const handleProduce = useCallback((item: Item) => {
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                                       Duplicate
                                     </button>
+                                    <button className="action-dropdown-item" onClick={() => { setPriceCardItem(s); closeActionMenu(); }}>
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+                                      Price Card
+                                    </button>
                                     <button className="action-dropdown-item" onClick={() => { handleViewItem(s); closeActionMenu(); }}>
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                       View Details
@@ -1260,6 +1278,7 @@ const handleProduce = useCallback((item: Item) => {
 
 {/* Modals */}
       <ItemModal open={isModalOpen} item={editingItem} onClose={() => { setIsModalOpen(false); setEditingItem(null); setModalSourceTab(null); }} onSave={handleSaveItem} allItems={allItems} sourceTab={modalSourceTab} />
+      <PriceCardModal open={priceCardItem !== null} initialItem={priceCardItem} onClose={() => setPriceCardItem(null)} />
       {adjustingItem && (
         <StockAdjustmentModal
           isOpen={isAdjustModalOpen}
