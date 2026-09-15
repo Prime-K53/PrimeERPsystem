@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, Calculator, MessageSquare, Gift, BadgePercent, Megaphone, HelpCircle } from 'lucide-react';
+import { TrendingUp, Calculator, MessageSquare, Gift, BadgePercent, Megaphone, HelpCircle, Tag } from 'lucide-react';
 import GenericHub from './GenericHub';
 
 const SmartOperationsHub: React.FC = () => {
@@ -24,6 +24,13 @@ const SmartOperationsHub: React.FC = () => {
       path: '/smart-operations/messages',
       icon: <MessageSquare />,
       color: 'bg-blue-50 text-blue-600'
+    },
+    {
+      label: 'Price Cards',
+      description: 'Professional WhatsApp-ready price images using live POS pricing.',
+      path: '/smart-operations/price-cards',
+      icon: <Tag />,
+      color: 'bg-teal-50 text-teal-600'
     },
     {
       label: 'Referrals',

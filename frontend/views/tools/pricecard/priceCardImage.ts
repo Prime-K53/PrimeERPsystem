@@ -1,5 +1,5 @@
 import html2canvas from 'html2canvas';
-import { logger } from '../../../../services/logger';
+import { logger } from '../../../services/logger';
 
 /**
  * priceCardImage — DOM → PNG capture for Price Cards (ERP only).

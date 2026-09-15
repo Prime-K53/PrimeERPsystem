@@ -212,6 +212,7 @@ const MarketAdjustments = lazyWithRetry('./views/tools/MarketAdjustments', () =>
 const SmartPricing = lazyWithRetry('./views/tools/SmartPricing', () => import('./views/tools/SmartPricing'));
 const SmartOperationsHub = lazyWithRetry('./views/SmartOperationsHub', () => import('./views/SmartOperationsHub'));
 const MarketingMessages = lazyWithRetry('./views/tools/MarketingMessages', () => import('./views/tools/MarketingMessages'));
+const PriceCards = lazyWithRetry('./views/tools/PriceCards', () => import('./views/tools/PriceCards'));
 const AdsManager = lazyWithRetry('./views/tools/AdsManager', () => import('./views/tools/AdsManager'));
 const FAQManager = lazyWithRetry('./views/tools/FAQManager', () => import('./views/tools/FAQManager'));
 const PromotionsAdmin = lazyWithRetry('./views/admin/PromotionsAdmin', () => import('./views/admin/PromotionsAdmin'));
@@ -979,6 +980,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/smart-operations/adjustments" element={<MarketAdjustments />} />
                   <Route path="/smart-operations/pricing" element={<SmartPricing />} />
                   <Route path="/smart-operations/messages" element={<MarketingMessages />} />
+                  <Route path="/smart-operations/price-cards" element={<PriceCards />} />
                   <Route path="/smart-operations/ads" element={<ProtectedRoute permission="admin.settings"><AdsManager /></ProtectedRoute>} />
                   <Route path="/smart-operations/faq" element={<ProtectedRoute permission="admin.settings"><FAQManager /></ProtectedRoute>} />
                   <Route path="/smart-operations/referrals" element={<ProtectedRoute permission="referrals.view"><Referrals /></ProtectedRoute>} />

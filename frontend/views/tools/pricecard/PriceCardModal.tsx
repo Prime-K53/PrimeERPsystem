@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../../components/Dialog';
-import { toast } from '../../../../components/Toast';
-import { logger } from '../../../../services/logger';
-import { dbService } from '../../../../services/db';
-import { useAuth } from '../../../../context/AuthContext';
-import { useInventory } from '../../../../context/InventoryContext';
-import { currencyService } from '../../../../services/currencyService';
-import { resolveStoredSellingPrice } from '../../../../utils/pricing';
-import { resolveCustomerDisplay } from '../../../../utils/customerDisplay';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/Dialog';
+import { toast } from '../../../components/Toast';
+import { logger } from '../../../services/logger';
+import { dbService } from '../../../services/db';
+import { useAuth } from '../../../context/AuthContext';
+import { useInventory } from '../../../context/InventoryContext';
+import { currencyService } from '../../../services/currencyService';
+import { resolveStoredSellingPrice } from '../../../utils/pricing';
+import { resolveCustomerDisplay } from '../../../utils/customerDisplay';
 import {
   Download,
   History,
@@ -19,7 +19,7 @@ import {
   Tag,
   X,
 } from 'lucide-react';
-import type { Customer, Item } from '../../../../types';
+import type { Customer, Item } from '../../../types';
 import {
   PRICE_CARD_MAX_LINES,
   PriceCardData,
@@ -32,7 +32,7 @@ import {
   loadPriceCardHistory,
   recordPriceCardHistory,
   type PriceCardBusiness,
-} from '../../../../services/priceCardService';
+} from '../../../services/priceCardService';
 import { PriceCardView } from './PriceCardView';
 import { downloadBlob, renderPriceCardPng, shareImageFile } from './priceCardImage';
 

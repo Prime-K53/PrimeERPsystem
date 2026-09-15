@@ -3,7 +3,7 @@ import {
   formatPriceCardAmount,
   formatPriceCardTimestamp,
   type PriceCardData,
-} from '../../../../services/priceCardService';
+} from '../../../services/priceCardService';
 
 /**
  * PriceCardView — the standalone Price Card composition (540 × 675 px,
