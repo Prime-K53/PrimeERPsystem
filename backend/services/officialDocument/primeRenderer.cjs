@@ -233588,7 +233588,7 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
                   /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { marginTop: 6, fontSize: 9 * fontScale, color: "#1e3a8a", lineHeight: 1.45 }, children: [
                     "This is an official ",
                     shortCompany,
-                    " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record."
+                    " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record. or contact us on +265 992 528 222"
                   ] })
                 ] }),
                 /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 1, backgroundColor: "#cbd5e1", alignSelf: "stretch" } }),
@@ -233830,7 +233830,7 @@ var SecurityFooter = ({
   const bodyCopy = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 6, fontSize: 9 * fontScale, color: titleColor, lineHeight: 1.45 }, children: [
     "This is an official ",
     shortCompany,
-    " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record."
+    " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record. or contact us on +265 992 528 222"
   ] });
   const qrColumn = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(

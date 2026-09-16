@@ -198,7 +198,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
                       <Text style={{ marginTop: 6, fontSize: 9 * fontScale, color: '#1e3a8a', lineHeight: 1.45 }}>
                         This is an official {shortCompany} document. It was electronically generated and is valid
                         without a handwritten signature. Scan the QR code to verify the document&apos;s authenticity
-                        and confirm its current record.
+                        and confirm its current record. or contact us on +265 992 528 222
                       </Text>
                     </View>
                     <View style={{ width: 1, backgroundColor: '#cbd5e1', alignSelf: 'stretch' }} />
