@@ -25,6 +25,7 @@ import { getPlaceholder } from '../../../constants/placeholders';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../../../utils/pricing';
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
 import { calculateLineProfit, resolveSaleLineCostPrice } from '../../../utils/saleProfit';
+import { isExpenseAccount, isIncomeAccount } from '../../../utils/accountType';
 import { roundMoney } from '../../../utils/roundingUtils';
 import { displayPrice } from '../../../services/pricingDisplayService';
 import { resolveCustomerPrice, getApplicableDiscounts, applyDiscounts, incrementDiscountUsage, getCustomerPricingTier } from '../../../services/customerPricingService';
@@ -407,10 +408,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     }, [customers, suppliers, customerSearch, type]);
 
     const revenueAccounts = useMemo(() => {
-        return (accounts as Account[]).filter(acc => acc.type === 'Revenue' || acc.code.startsWith('4'));
+        return (accounts as Account[]).filter(acc => isIncomeAccount(acc) || acc.code?.startsWith('4'));
     }, [accounts]);
     const expenseAccounts = useMemo(() => {
-        return (accounts as Account[]).filter(acc => acc.type === 'Expense' || acc.code.startsWith('5'));
+        return (accounts as Account[]).filter(acc => isExpenseAccount(acc) || acc.code?.startsWith('5'));
     }, [accounts]);
 
     const accountBalances = useMemo(() => {

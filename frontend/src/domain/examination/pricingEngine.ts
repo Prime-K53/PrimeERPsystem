@@ -148,8 +148,9 @@ export const calculateExaminationBatchPricing = (
     
     const totalFixedAdjustments = (effectiveAdjustments || []).reduce((sum, adj) => {
       if (normalizeAdjustmentType(adj.type) === 'FIXED') {
+        // Canonical Phase 3: FIXED is flat per class (never * totalPages).
         const val = Number(adj.value) || 0;
-        return sum + roundMoney(val * totalPages);
+        return sum + roundMoney(val);
       }
       return sum;
     }, 0);

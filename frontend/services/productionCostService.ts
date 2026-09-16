@@ -9,6 +9,13 @@ import { BillOfMaterial, BOMTemplate, Item, MarketAdjustment } from '../types';
 import { bomService } from './bomService';
 import { SafeFormulaEngine } from './formulaEngine';
 import { dbService } from './db';
+import {
+    getAdjustmentFlatAmount,
+    getAdjustmentPercent,
+    isMarketAdjustmentActive,
+    isPercentageAdjustment,
+    sortMarketAdjustments,
+} from '../utils/marketAdjustmentSemantics';
 
 export interface CostCalculationRequest {
   bomId?: string;
@@ -187,7 +194,9 @@ class ProductionCostService {
    */
   private async calculateAdjustments(baseAmount: number): Promise<CostCalculationResult['adjustments']> {
     const adjustments = await dbService.getAll<MarketAdjustment>('marketAdjustments');
-    const activeAdjustments = adjustments.filter(a => a.active ?? a.isActive);
+    const activeAdjustments = sortMarketAdjustments(
+        adjustments.filter(isMarketAdjustmentActive)
+    );
     
     let total = 0;
     const breakdown: { name: string; amount: number; type: string; value: number }[] = [];
@@ -195,12 +204,12 @@ class ProductionCostService {
     
     for (const adj of activeAdjustments) {
       let amount = 0;
-      const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+      const isPercentage = isPercentageAdjustment(adj.type);
       
       if (isPercentage) {
-        amount = baseAmount * ((adj.percentage || adj.value) / 100);
+        amount = baseAmount * (getAdjustmentPercent(adj) / 100);
       } else {
-        amount = adj.value;
+        amount = getAdjustmentFlatAmount(adj);
       }
       
       total += amount;

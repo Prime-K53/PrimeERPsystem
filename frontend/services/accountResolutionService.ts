@@ -155,12 +155,12 @@ interface ResolvedAccount {
    '42200': 'OTHER_INCOME',
    '4900': 'OTHER_INCOME',
    // Expenses
-   '5000': 'EXPENSE',
-   '5100': 'COGS',
-   '5110': 'PURCHASES',
-   '5120': 'COGS',
-   '51100': 'COGS',
-   '51200': 'COGS',
+    '5000': 'EXPENSE',
+    '5100': 'COGS',
+    '5110': 'PURCHASES',
+    '5120': 'COGS',
+    '51100': 'PURCHASES',
+    '51200': 'COGS',
    '51300': 'COGS',
    '5200': 'EXPENSE_OPERATING',
    '5210': 'EXPENSE_SALARIES',
@@ -220,7 +220,7 @@ interface ResolvedAccount {
     'PURCHASES': '51100',
     'FIXED_ASSET': '12100',
     'ACCUMULATED_DEPRECIATION': '12500',
-    'MOBILE_MONEY': '11210',
+    'MOBILE_MONEY': '11240',
    'OTHER_CURRENT_ASSET': '11510',
  };
 
@@ -393,7 +393,7 @@ class AccountResolutionService {
     }
 
     // Check inactive
-    if (!options.allowInactive && account.is_active === false || account.is_active === 0) {
+    if (!options.allowInactive && (account.is_active === false || account.is_active === 0)) {
       return null;
     }
 
@@ -454,7 +454,7 @@ class AccountResolutionService {
 
     // Check allow_posting flag
     const fullAccount = (await this.getAccounts()).find(a => a.id === accountId);
-    if (fullAccount && fullAccount.allow_posting === false || fullAccount?.allow_posting === 0) {
+    if (fullAccount && (fullAccount.allow_posting === false || fullAccount?.allow_posting === 0)) {
       // Group accounts (parents) should not allow posting
       return { valid: false, error: 'Account does not allow posting (group account)' };
     }

@@ -1,6 +1,11 @@
 import { attachPricingBreakdown, getMarketAdjustmentSnapshots } from '../utils/pricingBreakdown';
 import { roundMoney } from '../utils/roundingUtils';
 import { enrichInvoiceWithBatchPricing, findMatchingExaminationBatch } from '../utils/examinationInvoicePricing';
+import {
+  invoiceRevenueSign,
+  isRecognizedInvoiceStatus,
+  isRecognizedSale as isSharedRecognizedSale,
+} from '../utils/revenueRecognition';
 
 export type RevenueSource = 'POS' | 'ORDER_FORM' | 'EXAMINATION';
 
@@ -129,14 +134,9 @@ const getTransactionNumber = (transaction: any) => {
 };
 
 const isRecognizedSale = (sale: any) => {
-  const status = String(sale?.status || '').toLowerCase();
-  return (
-    status === 'paid' ||
-    status === 'completed' ||
-    status === 'partial' ||
-    status === 'partially paid' ||
-    status === 'overpaid'
-  );
+  // Canonical Phase 4 rule (utils/revenueRecognition): paid|completed|
+  // partial|partially paid|overpaid. Draft/Pending/Voided/Refunded excluded.
+  return isSharedRecognizedSale(sale);
 };
 
 const isPosMirrorInvoice = (invoice: any, recognizedSaleIds: Set<string>) => {
@@ -231,13 +231,16 @@ const createNormalizedLine = ({
   transaction,
   transactionType,
   item,
-  index
+  index,
+  sign = 1,
 }: {
   source: RevenueSource;
   transaction: any;
   transactionType: string;
   item: any;
   index: number;
+  /** Revenue sign: -1 for credit notes (backend P&L rule), +1 otherwise. */
+  sign?: 1 | -1;
 }): RevenueAnalysisLine => {
   const normalizedItem = attachPricingBreakdown(item);
   const breakdown = normalizedItem.pricingBreakdown;
@@ -321,6 +324,14 @@ const createNormalizedLine = ({
     revenue - materialCost - adjustmentTotal - profitMargin - roundingTotal - manualOverrideAmount
   );
 
+  // Credit notes (backend P&L rule) contribute every revenue-side metric negative.
+  const sRevenue = roundMoney(revenue * sign);
+  const sMaterialCost = roundMoney(materialCost * sign);
+  const sAdjustmentTotal = roundMoney(adjustmentTotal * sign);
+  const sRoundingTotal = roundMoney(roundingTotal * sign);
+  const sManualOverrideAmount = roundMoney(manualOverrideAmount * sign);
+  const sProfitMargin = roundMoney(profitMargin * sign);
+
   return {
     lineId: `${source}:${transaction?.id || 'TX'}:${normalizedItem?.id || normalizedItem?.itemId || index}:${index}`,
     source,
@@ -339,22 +350,23 @@ const createNormalizedLine = ({
       || `Line ${index + 1}`
     ),
     quantity,
-    revenue,
-    materialCost,
-    adjustmentTotal,
-    profitMargin,
-    roundingTotal,
-    manualOverrideAmount,
-    grossGain: roundMoney(revenue - materialCost),
-    reconciliationDelta,
-    adjustmentLines: buildAdjustmentLines(normalizedItem?.adjustmentSnapshots || [], quantity, adjustmentTotal)
+    revenue: sRevenue,
+    materialCost: sMaterialCost,
+    adjustmentTotal: sAdjustmentTotal,
+    profitMargin: sProfitMargin,
+    roundingTotal: sRoundingTotal,
+    manualOverrideAmount: sManualOverrideAmount,
+    grossGain: roundMoney(sRevenue - sMaterialCost),
+    reconciliationDelta: roundMoney(reconciliationDelta * sign),
+    adjustmentLines: buildAdjustmentLines(normalizedItem?.adjustmentSnapshots || [], quantity, sAdjustmentTotal)
   };
 };
 
 const normalizeGenericTransaction = (
   transaction: any,
   source: RevenueSource,
-  transactionType: string
+  transactionType: string,
+  sign: 1 | -1 = 1
 ): RevenueAnalysisLine[] => {
   const items = Array.isArray(transaction?.items) ? transaction.items : [];
   return items.map((item: any, index: number) =>
@@ -363,12 +375,15 @@ const normalizeGenericTransaction = (
       transaction,
       transactionType,
       item,
-      index
+      index,
+      sign
     })
   );
 };
 
 const buildExaminationLines = (invoice: any, batch: any): RevenueAnalysisLine[] => {
+  // Credit-note sign applies to examination lines too (backend P&L rule).
+  const sign = invoiceRevenueSign(invoice);
   const classes = Array.isArray(batch?.classes) ? batch.classes : [];
   if (classes.length > 0) {
     const enrichedInvoice = enrichInvoiceWithBatchPricing(invoice, batch);
@@ -378,7 +393,7 @@ const buildExaminationLines = (invoice: any, batch: any): RevenueAnalysisLine[] 
       status: invoice?.status || batch?.status || '',
       customerName: invoice?.customerName || batch?.school_name || batch?.schoolName || 'School',
       subAccountName: invoice?.subAccountName || invoice?.sub_account_name || batch?.subAccountName || batch?.sub_account_name || ''
-    }, 'EXAMINATION', 'Examination Invoice');
+    }, 'EXAMINATION', 'Examination Invoice', sign);
   }
 
   if (classes.length === 0) {
@@ -452,15 +467,16 @@ const buildExaminationLines = (invoice: any, batch: any): RevenueAnalysisLine[] 
         itemId: String(item?.id || item?.itemId || `EXM-ITEM-${index + 1}`),
         itemName: String(item?.name || item?.productName || item?.class_name || `Class ${index + 1}`),
         quantity: qty,
-        revenue,
-        materialCost,
-        adjustmentTotal,
-        profitMargin,
-        roundingTotal,
-        grossGain: roundMoney(revenue - materialCost),
-        reconciliationDelta: roundMoney(revenue - materialCost - adjustmentTotal - profitMargin - roundingTotal),
+        revenue: roundMoney(revenue * sign),
+        materialCost: roundMoney(materialCost * sign),
+        adjustmentTotal: roundMoney(adjustmentTotal * sign),
+        profitMargin: roundMoney(profitMargin * sign),
+        roundingTotal: roundMoney(roundingTotal * sign),
+        manualOverrideAmount: 0,
+        grossGain: roundMoney((revenue - materialCost) * sign),
+        reconciliationDelta: roundMoney((revenue - materialCost - adjustmentTotal - profitMargin - roundingTotal) * sign),
         adjustmentLines: Array.isArray(item?.adjustmentSnapshots)
-          ? buildAdjustmentLines(item.adjustmentSnapshots, qty, adjustmentTotal)
+          ? buildAdjustmentLines(item.adjustmentSnapshots, qty, roundMoney(adjustmentTotal * sign))
           : []
       };
     });
@@ -654,8 +670,9 @@ export const buildRevenueAnalysisDataset = ({
   );
 
   (Array.isArray(invoices) ? invoices : []).forEach((invoice: any) => {
-    const status = String(invoice?.status || '').toLowerCase();
-    if (status === 'cancelled' || status === 'draft') return;
+    // Canonical Phase 4 gate: excludes draft|cancelled|void|voided (any case).
+    // Credit notes pass the gate but carry negative revenue (see sign below).
+    if (!isRecognizedInvoiceStatus(invoice?.status)) return;
     if (isExaminationInvoice(invoice) || isPosMirrorInvoice(invoice, recognizedSaleIds)) return;
     extractOrderReferenceKeys(invoice).forEach((key) => orderKeysCoveredByInvoices.add(key));
   });
@@ -667,8 +684,8 @@ export const buildRevenueAnalysisDataset = ({
     });
 
   (Array.isArray(invoices) ? invoices : []).forEach((invoice: any) => {
-    const status = String(invoice?.status || '').toLowerCase();
-    if (status === 'cancelled' || status === 'draft') return;
+    if (!isRecognizedInvoiceStatus(invoice?.status)) return;
+    const sign = invoiceRevenueSign(invoice);
 
     if (isExaminationInvoice(invoice)) {
       const batch = findMatchingExaminationBatch(invoice, Array.isArray(batches) ? batches : []);
@@ -678,11 +695,11 @@ export const buildRevenueAnalysisDataset = ({
 
     if (isPosMirrorInvoice(invoice, recognizedSaleIds)) {
       // Treat POS mirror invoices as POS source for revenue analysis
-      lines.push(...normalizeGenericTransaction(invoice, 'POS', 'POS Invoice'));
+      lines.push(...normalizeGenericTransaction(invoice, 'POS', 'POS Invoice', sign));
       return;
     }
 
-    lines.push(...normalizeGenericTransaction(invoice, 'ORDER_FORM', 'Invoice'));
+    lines.push(...normalizeGenericTransaction(invoice, 'ORDER_FORM', 'Invoice', sign));
   });
 
   (Array.isArray(orders) ? orders : []).forEach((order: any) => {

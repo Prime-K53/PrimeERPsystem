@@ -22,6 +22,7 @@ import {
 import { dbService } from './db';
 import { examinationDb } from './examinationDb';
 import { isMarketAdjustmentActive } from '../utils/marketAdjustmentUtils';
+import { getAdjustmentSortKey } from '../utils/marketAdjustmentSemantics';
 import { generateNextId, roundToCurrency } from '../utils/helpers';
 import { generateNextSalesInvoiceNumber } from './documentNumberService';
 import { productionCostService } from './productionCostService';
@@ -497,9 +498,10 @@ class ExaminationJobService {
     return allAdjustments
       .filter(isMarketAdjustmentActive)
       .sort((a, b) => {
-        const sortA = Number(a.sortOrder || 0);
-        const sortB = Number(b.sortOrder || 0);
-        return sortA - sortB;
+        // Canonical order: sort_order ?? sortOrder, then name.
+        const order = getAdjustmentSortKey(a) - getAdjustmentSortKey(b);
+        if (order !== 0) return order;
+        return String(a.name || '').localeCompare(String(b.name || ''));
       });
   }
 
@@ -570,7 +572,10 @@ class ExaminationJobService {
       
       const adjName = adj.displayName || adj.name || adj.id;
       
-      // Calculate based on type
+      // Calculate based on type (additive on the base production cost).
+      // NOTE (canonical units, Phase 3): percentage applies to the base cost;
+      // FIXED here is intentionally a PER-LEARNER charge (e.g. binding, covers),
+      // scaled by learners at this call site — not a generic flat total.
       let calculatedAmount: number;
       if (adjustmentType === 'percentage') {
         // For percentage, apply to base production cost

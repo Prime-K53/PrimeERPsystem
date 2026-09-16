@@ -127,16 +127,17 @@ const normalizeAdjustments = (adjustments = []) => {
 const buildAdjustmentBreakdown = (materialCost, adjustments = []) => {
   const normalized = normalizeAdjustments(adjustments);
   const safeMaterialCost = clampNonNegative(materialCost);
-  let runningTotal = safeMaterialCost;
+  // Canonical Phase 3 semantics: ADDITIVE on the original base.
+  // (Previously sequential compounding on the running total, which made
+  // multi-percentage totals depend on sort order.)
   let totalAdjustment = 0;
 
   const rows = normalized.map((adj) => {
-    const baseAmount = runningTotal;
+    const baseAmount = safeMaterialCost;
     const amount = adj.type === 'FIXED'
       ? clampNonNegative(adj.value)
       : clampNonNegative(baseAmount * (adj.value / 100));
 
-    runningTotal = clampNonNegative(runningTotal + amount);
     totalAdjustment = clampNonNegative(totalAdjustment + amount);
 
     return {

@@ -510,73 +510,111 @@ function validateEnv() {
   console.log('[ENV] All required secrets present.');
 }
 
-// Helper function to post ledger entries for a sale
-async function postSaleLedgerEntries(saleId, totalAmount, materialTotal, customerId, customerName, userId) {
+// Helper function to post ledger entries for a sale (Phase 4 / C5+C6).
+// Balanced: DR AR total + DR COGS material
+//        === CR revenue (total-market-tax) + CR market + CR tax + CR inventory material.
+// Revenue account: explicit salesAccountId wins (validated), else 41100.
+// Never throws — ledger failures must not fail the sale (logged for reconciliation).
+async function postSaleLedgerEntries(saleId, totalAmount, materialTotal, customerId, customerName, userId, opts = {}) {
   try {
     const FinanceService = require('./services/financeService.cjs');
+    const { splitSaleLedgerAmounts, resolveSaleRevenueCode, resolveMarketLedgerAccount } = require('./services/marketLedgerSplit.cjs');
     const finance = new FinanceService();
-    
-    // Find AR and Revenue accounts
-    const arAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '11310' || a.name.toLowerCase().includes('accounts receivable')));
-    const revenueAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '41100' || a.name.toLowerCase().includes('sales')));
-    const cogsAccount = await finance.getAccounts().then(accounts => accounts.find(a => a.code === '51200' || a.name.toLowerCase().includes('cost of goods')));
-    
+
+    const accounts = await finance.getAccounts();
+    const matchCode = (code) => accounts.find(
+      (a) => String(a.account_number || a.code || '') === String(code)
+    );
+    const arAccount = matchCode(opts.arAccountCode || '11310');
+    const cogsAccount = matchCode(opts.cogsAccountCode || '51200');
+    // First postable INVENTORY-subtype account (11400 group itself never posts).
+    const inventoryAccount = accounts.find(
+      (a) => String(a.subtype || '').toUpperCase() === 'INVENTORY'
+        && a.allow_posting !== false && a.allow_posting !== 0
+        && a.is_active !== false && a.is_active !== 0
+    ) || matchCode(opts.inventoryAccountCode || '11410');
+    const taxAccount = matchCode('21210');
+
+    // C6: explicit revenue account wins when it resolves to a postable income
+    // account, else service-only items -> 41200, else 41100.
+    const wantedRevenueCode = resolveSaleRevenueCode({
+      salesAccountId: opts.revenueAccountCode || opts.salesAccountId,
+      items: opts.items,
+      defaultCode: '41100',
+    });
+    let revenueAccount = matchCode(wantedRevenueCode);
+    if (!revenueAccount || revenueAccount.allow_posting === false || revenueAccount.allow_posting === 0
+      || revenueAccount.is_active === false || revenueAccount.is_active === 0) {
+      console.warn(`[Ledger] Revenue account ${wantedRevenueCode} unusable for sale ${saleId}, falling back to 41100`);
+      revenueAccount = matchCode('41100');
+    }
+
     if (!arAccount || !revenueAccount) {
       console.warn('[Ledger] AR or Revenue account not found, skipping ledger posting for sale', saleId);
       return;
     }
-    
-    const now = new Date().toISOString();
-    const journalId = `JRN-${saleId}`;
-    
-    // Post AR debit
-    await finance.saveLedgerEntry({
-      account_id: arAccount.id,
-      entry_type: 'debit',
-      amount: totalAmount,
-      currency: 'USD',
-      description: `Sale #${saleId} - ${customerName}`,
-      reference_type: 'sale',
-      reference_id: saleId,
-      journal_id: journalId,
-      entry_date: now,
-      created_by: userId
-    });
-    
-    // Post Revenue credit
-    await finance.saveLedgerEntry({
-      account_id: revenueAccount.id,
-      entry_type: 'credit',
-      amount: totalAmount,
-      currency: 'USD',
-      description: `Sale #${saleId} - Revenue`,
-      reference_type: 'sale',
-      reference_id: saleId,
-      journal_id: journalId,
-      entry_date: now,
-      created_by: userId
-    });
-    
-    // Post COGS if we have material cost
-    if (materialTotal > 0 && cogsAccount) {
-      await finance.saveLedgerEntry({
-        account_id: cogsAccount.id,
-        entry_type: 'debit',
-        amount: materialTotal,
-        currency: 'USD',
-        description: `Sale #${saleId} - COGS`,
-        reference_type: 'sale',
-        reference_id: saleId,
-        journal_id: journalId,
-        entry_date: now,
-        created_by: userId
-      });
+
+    // Market leg only when a valid market account is configured (B2 rule).
+    let marketAccount = null;
+    try {
+      const { getCompanyConfig } = require('./services/companyConfigService.cjs');
+      const companyConfig = await getCompanyConfig();
+      const configured = opts.marketAccountCode
+        || companyConfig?.vat?.marketAdjustmentAccount
+        || companyConfig?.marketAdjustmentAccount
+        || null;
+      marketAccount = resolveMarketLedgerAccount(accounts, configured);
+    } catch (cfgErr) {
+      console.warn(`[Ledger] market account lookup skipped for sale ${saleId}:`, cfgErr?.message || cfgErr);
     }
-    
-    console.log(`[Ledger] Posted entries for sale #${saleId}`);
+
+    const split = splitSaleLedgerAmounts({
+      totalAmount,
+      taxAmount: opts.taxTotal,
+      marketAmount: marketAccount ? opts.marketTotal : 0,
+      materialTotal,
+    });
+    if (split.total <= 0) {
+      console.warn('[Ledger] zero-total sale, skipping ledger posting for sale', saleId);
+      return;
+    }
+
+    const currency = finance._normalizeCurrency
+      ? finance._normalizeCurrency(opts.currency || 'USD')
+      : (opts.currency || 'USD');
+    const entryDate = opts.saleDate || new Date().toISOString();
+    const journalId = `JRN-${saleId}`;
+    const post = (account_id, entry_type, amount, description) => finance.saveLedgerEntry({
+      account_id,
+      entry_type,
+      amount,
+      currency,
+      description,
+      reference_type: 'sale',
+      reference_id: saleId,
+      journal_id: journalId,
+      entry_date: entryDate,
+      created_by: userId
+    });
+
+    await post(arAccount.id, 'debit', split.total, `Sale #${saleId} - ${customerName}`);
+    await post(revenueAccount.id, 'credit', split.revenue, `Sale #${saleId} - Revenue`);
+    if (marketAccount && split.market > 0) {
+      await post(marketAccount.id, 'credit', split.market, `Sale #${saleId} - Market Adjustment`);
+    }
+    if (taxAccount && split.tax > 0) {
+      await post(taxAccount.id, 'credit', split.tax, `Sale #${saleId} - Tax`);
+    }
+    if (split.cogs > 0 && cogsAccount && inventoryAccount) {
+      await post(cogsAccount.id, 'debit', split.cogs, `Sale #${saleId} - COGS`);
+      await post(inventoryAccount.id, 'credit', split.inventory, `Sale #${saleId} - Inventory`);
+    } else if (split.cogs > 0) {
+      console.warn(`[Ledger] COGS/Inventory accounts missing for sale ${saleId}: material ${split.cogs} not posted`);
+    }
+
+    console.log(`[Ledger] Posted balanced entries for sale #${saleId} (revenue ${split.revenue}, market ${split.market}, tax ${split.tax}, cogs ${split.cogs})`);
   } catch (error) {
     console.error(`[Ledger] Error posting entries for sale #${saleId}:`, error);
-    throw error;
   }
 }
 
@@ -721,9 +759,13 @@ async function startServer() {
       }
 
       const today = new Date().toISOString().slice(0, 10);
-      const revenue = filteredSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
-      const todaySales = filteredSales.filter(s => s.date === today).reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
-      const outstandingInvoices = filteredInvoices.filter(i => String(i.status || '').toLowerCase() !== 'paid').length;
+      // Phase 4 / C2: revenue counts RECOGNIZED sales only (excludes
+      // Draft/Pending/Voided/Refunded — same rule as P&L + revenue analysis).
+      const { isRecognizedSale, isExcludedStatus } = require('./services/revenueRecognition.cjs');
+      const recognizedSales = filteredSales.filter((s) => isRecognizedSale(s));
+      const revenue = recognizedSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+      const todaySales = recognizedSales.filter(s => s.date === today).reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+      const outstandingInvoices = filteredInvoices.filter(i => String(i.status || '').toLowerCase() !== 'paid' && !isExcludedStatus(i.status)).length;
 
       const chartIndex = new Map();
       const recentSales = [...fySales].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
@@ -790,6 +832,9 @@ async function startServer() {
         profitMarginTotal: Number(row.profit_margin_total || 0),
         roundingTotal: Number(row.rounding_total || 0),
         otherCharges: Number(row.other_charges || 0),
+        currency: row.currency || 'USD',
+        taxTotal: Number(row.tax_total || 0),
+        salesAccountId: row.sales_account_id || null,
         status: row.status,
         paymentMethod: row.payment_method,
         source: row.source,
@@ -836,6 +881,11 @@ async function startServer() {
     const profitMarginTotal = Number(payload.profitMarginTotal ?? payload.profit_margin_total ?? 0);
     const roundingTotal = Number(payload.roundingTotal ?? payload.rounding_total ?? payload.roundingDifference ?? 0);
     const otherCharges = Number(payload.otherCharges || 0);
+    // Phase 4 / C5+C6: currency + tax leg + explicit revenue account (best-effort;
+    // older sales tables without these columns keep working — see UPDATE below).
+    const saleCurrency = payload.currency || payload.currencyCode || 'USD';
+    const taxTotal = Number(payload.taxTotal ?? payload.tax_total ?? payload.taxAmount ?? 0);
+    const salesAccountId = payload.salesAccountId || payload.sales_account_id || payload.revenueAccount || null;
     const subAccountName = payload.subAccountName || payload.sub_account_name || 'Main';
     
     const customerId = payload.customerId || payload.customer_id || 'walk-in';
@@ -882,8 +932,22 @@ async function startServer() {
             if (index >= items.length) {
               // All items inserted, now post ledger entries and update inventory
               try {
-                // Post ledger entries for the sale
-                postSaleLedgerEntries(id, totalAmount, materialTotal, customerId, customerName, req.user?.id || 'system');
+                // Best-effort persist of Phase 4 columns (no-op on legacy tables).
+                sq.run(
+                  'UPDATE sales SET currency = ?, tax_total = ?, sales_account_id = ? WHERE id = ?',
+                  [saleCurrency, taxTotal, salesAccountId, id],
+                  (updErr) => { if (updErr) console.warn('[Sales] Phase 4 columns not persisted (legacy table):', updErr.message); }
+                );
+                // Post ledger entries for the sale (balanced, dated, currency-aware)
+                postSaleLedgerEntries(id, totalAmount, materialTotal, customerId, customerName, req.user?.id || 'system', {
+                  saleDate: date,
+                  currency: saleCurrency,
+                  taxTotal,
+                  marketTotal: adjustmentTotal,
+                  marketAccountCode: payload.marketAccountId || payload.market_account_id || null,
+                  revenueAccountCode: salesAccountId,
+                  items: payload.items,
+                });
                 
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
                 // Independent balance mutation removed.
@@ -2020,6 +2084,7 @@ async function startServer() {
         line_items: body.line_items || [],
         notes: body.notes || null,
         document_title: body.document_title || null,
+        sales_account_id: body.sales_account_id || body.salesAccountId || null,
         created_by: req.user?.id || null,
       };
       const result = await repo.upsert('invoices', payload);
@@ -2040,7 +2105,7 @@ async function startServer() {
       const { body } = req;
       const fields = [];
       const params = [];
-      const allowed = ['customer_id', 'customer_name', 'subtotal', 'total_amount', 'currency', 'status', 'payment_method', 'paid_amount', 'due_date', 'invoice_number', 'other_charges', 'notes', 'document_title', 'line_items_json'];
+      const allowed = ['customer_id', 'customer_name', 'subtotal', 'total_amount', 'currency', 'status', 'payment_method', 'paid_amount', 'due_date', 'invoice_number', 'other_charges', 'notes', 'document_title', 'line_items_json', 'sales_account_id'];
       for (const field of allowed) {
         if (body[field] !== undefined) {
           fields.push(`${field} = ?`);

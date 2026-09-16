@@ -14,6 +14,7 @@ import { bomService } from '../../../services/bomService';
 import { pricingService, DynamicServicePricingResult } from '../../../services/pricingService';
 import { dbService } from '../../../services/db';
 import { calculateServicePrice } from '../../../utils/pricing/pricingEngine';
+import { isMarketAdjustmentActive } from '../../../utils/marketAdjustmentSemantics';
 import { normalizeStoredPricing, resolveStoredSellingPrice } from '../../../utils/pricing';
 import { getPlaceholder } from '../../../constants/placeholders';
 
@@ -339,7 +340,7 @@ export const ServiceCalculatorModal: React.FC<{
     const paper = useMemo(() => sp && sp.paperItemId ? inventory.find((i: any) => i.id === sp.paperItemId) : null, [sp, inventory]);
     const toner = useMemo(() => sp && sp.tonerItemId ? inventory.find((i: any) => i.id === sp.tonerItemId) : null, [sp, inventory]);
 
-    const normalizedAdjustments = useMemo(() => (marketAdjustments || []).filter((adj: any) => (adj.active ?? adj.isActive) && (!adj.applyToCategories?.length || adj.applyToCategories.includes(service.category))).map((adj: any) => ({ name: adj.name, type: adj.type, value: adj.value, percentage: adj.percentage ?? adj.value, calculatedAmount: adj.value, adjustmentId: adj.id, isActive: true })), [marketAdjustments, service.category]);
+    const normalizedAdjustments = useMemo(() => (marketAdjustments || []).filter((adj: any) => isMarketAdjustmentActive(adj) && (!adj.applyToCategories?.length || adj.applyToCategories.includes(service.category))).map((adj: any) => ({ name: adj.name, type: adj.type, value: adj.value, percentage: adj.percentage ?? adj.value, calculatedAmount: adj.value, adjustmentId: adj.id, isActive: true })), [marketAdjustments, service.category]);
 
     const resolveFinishingCost = useCallback((id: string): number => {
         if (!sp) return 0;

@@ -34,7 +34,10 @@ import cloudDb from '../services/cloudDb';
 import { isSupabaseConfigured } from '../services/cloudMode';
 import { getPlaceholder } from '../constants/placeholders';
 import { isPasswordProtectionEnabled, normalizeSecuritySettings, withNormalizedSecurityConfig } from '../utils/securitySettings';
-import { calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage } from '../utils/pricing';
+import {
+    calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage } from
+'../utils/pricing';
+import { derivePricingMode, isMarketPostingActive, isVatPostingActive } from '../utils/pricingMode';
 import {
     createSharedNumberingConfig,
     DEFAULT_SHARED_NUMBERING_RULE,
@@ -1510,36 +1513,34 @@ const Settings: React.FC = () => {
                             <div>
                                 <div style={sectionLabelStyle}><span style={{fontSize: 13, fontWeight: 700, color: teal[800]}}>Global Pricing Mode</span></div>
                                 <div style={{ padding: '24px', background: paper, border: `1px solid ${hairline}`, borderRadius: 12 }}>
-                                    <div style={{ display: 'flex', padding: '4px', borderRadius: 12, width: 'fit-content', border: `1px solid ${hairline}`, background: teal[50] }}>
-                                        <button 
-                                            onClick={() => setConfig({ 
-                                                ...config, 
-                                                vat: { ...(config.vat || { enabled: true, rate: 16.5, filingFrequency: 'Monthly' }), pricingMode: 'VAT' } 
-                                            })}
-                                            style={{
-                                                px: 24, py: 10, borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: 'none', transition: 'all .15s ease', display: 'flex', alignItems: 'center', gap: 8,
-                                                ...(config.vat?.pricingMode === 'VAT' ? { background: paper, color: teal[700], boxShadow: '0 1px 2px rgba(0,0,0,.05)' } : { background: 'transparent', color: inkSoft })
-                                            }}
-                                        >
-                                            {config.vat?.pricingMode === 'VAT' && <CheckCircle2 size={16} />}
-                                            VAT Mode
-                                        </button>
-                                        <button 
-                                            onClick={() => setConfig({ 
-                                                ...config, 
-                                                vat: { ...(config.vat || { enabled: true, rate: 16.5, filingFrequency: 'Monthly' }), pricingMode: 'MarketAdjustment' } 
-                                            })}
-                                            style={{
-                                                px: 24, py: 10, borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: 'none', transition: 'all .15s ease', display: 'flex', alignItems: 'center', gap: 8,
-                                                ...(config.vat?.pricingMode === 'MarketAdjustment' ? { background: paper, color: teal[700], boxShadow: '0 1px 2px rgba(0,0,0,.05)' } : { background: 'transparent', color: inkSoft })
-                                            }}
-                                        >
-                                            {config.vat?.pricingMode === 'MarketAdjustment' && <CheckCircle2 size={16} />}
-                                            Market Adjustment Mode
-                                        </button>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: ink }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isVatPostingActive(config.vat)}
+                                                onChange={e => {
+                                                    const next = { ...(config.vat || { enabled: true, rate: 16.5, filingFrequency: 'Monthly' }), applyVatOnSales: e.target.checked } as typeof config.vat;
+                                                    setConfig({ ...config, vat: { ...next, pricingMode: derivePricingMode(next) } });
+                                                }}
+                                                style={{ width: 18, height: 18, accentColor: teal[500], cursor: 'pointer' }}
+                                            />
+                                            Apply VAT on sales
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: ink }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isMarketPostingActive(config.vat)}
+                                                onChange={e => {
+                                                    const next = { ...(config.vat || { enabled: true, rate: 16.5, filingFrequency: 'Monthly' }), applyMarketAdjustmentsOnSales: e.target.checked } as typeof config.vat;
+                                                    setConfig({ ...config, vat: { ...next, pricingMode: derivePricingMode(next) } });
+                                                }}
+                                                style={{ width: 18, height: 18, accentColor: teal[500], cursor: 'pointer' }}
+                                            />
+                                            Apply market adjustments on sales
+                                        </label>
                                     </div>
                                     <p style={{ marginTop: 12, fontStyle: 'italic', fontWeight: 500, fontSize: 11, color: inkSoft }}>
-                                        * These features are mutually exclusive. Switching modes may affect how prices are calculated in the POS and Sales modules.
+                                        * VAT and market adjustments can now be combined on one sale (tax first, then market). Legacy mode setting is kept in sync automatically.
                                     </p>
                                 </div>
 

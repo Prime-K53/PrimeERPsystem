@@ -6,6 +6,7 @@ const examinationInvoiceAdapter = require('./examinationInvoiceAdapter.cjs');
 const { auditService } = require('../auditService.cjs');
 const { toNumericValue, pickPositiveNumber } = require('./examinationSharedUtils.cjs');
 const FinanceService = require('./financeService.cjs');
+const { resolveMarketLedgerAccount, splitInvoiceLedgerAmounts } = require('./marketLedgerSplit.cjs');
 
 const PAGES_PER_SHEET = pricingEngine.PAGES_PER_SHEET;
 const TONER_PAGES_PER_KG = pricingEngine.TONER_PAGES_PER_KG;
@@ -570,15 +571,22 @@ const writeAuditLog = async ({
 
 const postInvoiceLedger = async (invoiceId, invoiceData) => {
   const allAccounts = await repo.getAll('chart_of_accounts');
-  const arAccount = allAccounts.find(
-    (a) => String(a.data?.code || a.code || '') === '11310'
+  const findByCode = (code) => allAccounts.find(
+    (a) => String(a.data?.code || a.code || '') === code
+      || String(a.data?.account_number || a.account_number || '') === code
   );
-  const revenueAccount = allAccounts.find(
-    (a) => String(a.data?.code || a.code || '') === '41200'
-  );
-  const taxAccount = allAccounts.find(
-    (a) => String(a.data?.code || a.code || '') === '21210'
-  );
+  const arAccount = findByCode('11310');
+  // C6: honor an explicit sales account override (same rule as the frontend
+  // resolveInvoiceRevenueAccount); examination invoices default to 41200
+  // Service Income because they are service-only by definition.
+  const explicitRevenueId = String(
+    invoiceData?.sales_account_id || invoiceData?.salesAccountId || ''
+  ).trim();
+  const explicitRevenueAccount = explicitRevenueId
+    ? allAccounts.find((a) => String(a.id || '') === explicitRevenueId) || null
+    : null;
+  const revenueAccount = explicitRevenueAccount || findByCode('41200');
+  const taxAccount = findByCode('21210');
   if (!arAccount) {
     console.error(`[postInvoiceLedger] AR account 11310 not found for invoice ${invoiceId}`);
     return;
@@ -591,26 +599,61 @@ const postInvoiceLedger = async (invoiceId, invoiceData) => {
   if (totalAmount <= 0) return;
 
   const taxAmount = toNumericValue(invoiceData?.tax_amount) ?? 0;
-  const revenueAmount = taxAmount > 0 ? pricingEngine.roundCurrency(totalAmount - taxAmount) : totalAmount;
+  // Market portion embedded in the invoice total (mirrors POS adjustmentTotal).
+  const marketTotal = toNumericValue(
+    invoiceData?.adjustment_total ?? invoiceData?.market_adjustment_total ?? 0
+  ) ?? 0;
+
+  // Resolve the dedicated market-adjustment account from company config.
+  // Falls back to lump-to-revenue posting when unset/invalid (never blocks invoicing).
+  let marketAccount = null;
+  try {
+    const { getCompanyConfig } = require('./companyConfigService.cjs');
+    const companyConfig = await getCompanyConfig();
+    const configuredMarketAccount =
+      companyConfig?.vat?.marketAdjustmentAccount || companyConfig?.marketAdjustmentAccount || null;
+    marketAccount = resolveMarketLedgerAccount(allAccounts, configuredMarketAccount);
+  } catch (err) {
+    console.warn(`[postInvoiceLedger] market account lookup skipped for invoice ${invoiceId}: ${err?.message || err}`);
+    marketAccount = null;
+  }
+
+  const split = splitInvoiceLedgerAmounts({
+    totalAmount,
+    taxAmount,
+    // Only split when the account actually resolved — otherwise revenue keeps
+    // the full amount (B2 rule: never understate revenue without a credit leg).
+    marketAmount: marketAccount ? marketTotal : 0,
+  });
+  const revenueAmount = split.revenue;
+  const currency = invoiceData?.currency || 'USD';
 
   const finance = new FinanceService();
   const journalId = randomUUID();
   await finance.saveLedgerEntry({
-    account_id: arAccount.id, entry_type: 'debit', amount: totalAmount,
-    currency: invoiceData?.currency || 'USD', description: `Invoice #${invoiceId}`,
+    account_id: arAccount.id, entry_type: 'debit', amount: split.total,
+    currency, description: `Invoice #${invoiceId}`,
     reference_type: 'invoice', reference_id: String(invoiceId),
     journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
   });
+  if (marketAccount && split.market > 0) {
+    await finance.saveLedgerEntry({
+      account_id: marketAccount.id, entry_type: 'credit', amount: split.market,
+      currency, description: `Invoice #${invoiceId} Market Adjustment`,
+      reference_type: 'invoice', reference_id: String(invoiceId),
+      journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
+    });
+  }
   await finance.saveLedgerEntry({
     account_id: revenueAccount.id, entry_type: 'credit', amount: revenueAmount,
-    currency: invoiceData?.currency || 'USD', description: `Invoice #${invoiceId} Revenue`,
+    currency, description: `Invoice #${invoiceId} Revenue`,
     reference_type: 'invoice', reference_id: String(invoiceId),
     journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
   });
-  if (taxAccount && taxAmount > 0) {
+  if (taxAccount && split.tax > 0) {
     await finance.saveLedgerEntry({
-      account_id: taxAccount.id, entry_type: 'credit', amount: taxAmount,
-      currency: invoiceData?.currency || 'USD', description: `Invoice #${invoiceId} Tax`,
+      account_id: taxAccount.id, entry_type: 'credit', amount: split.tax,
+      currency, description: `Invoice #${invoiceId} Tax`,
       reference_type: 'invoice', reference_id: String(invoiceId),
       journal_id: journalId, entry_date: new Date().toISOString(), created_by: null
     });
@@ -731,12 +774,12 @@ const normalizeMarketAdjustmentMeta = (row, columns) => {
 const resolveEffectiveClassAdjustments = async () => {
   const columns = await getTableColumnSet('market_adjustments');
   const whereClauses = buildActiveMarketAdjustmentWhereClauses(columns);
-    const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
   const orderSql = buildMarketAdjustmentOrderSql(columns);
   const params = [];
   const adjustments = await runQuery(`
     SELECT * FROM market_adjustments
-    
+    ${whereSql}
     ${orderSql}
   `, params);
   return adjustments;
@@ -982,7 +1025,12 @@ const resolveMaterialOverridesFromOptions = async (options = {}, defaults = {}) 
 
 const buildClassAdjustmentBreakdown = (baseBomCost, totalPages, activeAdjustments = []) => {
   const safeBaseCost = pricingEngine.roundCurrency(toNumericValue(baseBomCost) ?? 0);
-  const safeTotalPages = Math.max(0, toNumericValue(totalPages) ?? 0);
+  // NOTE (canonical units, Phase 3): `totalPages` is kept for call compatibility
+  // but no longer scales FIXED adjustments. FIXED is a flat per-class amount
+  // (previously value * totalPages, which diverged from every other engine
+  // and from the "Fixed Amount" UI label). Per-page/per-learner scalings must
+  // live explicitly at their call sites.
+  void totalPages;
   const sortedAdjustments = sortAdjustmentsForPricing(activeAdjustments);
 
   const rows = sortedAdjustments.map((adjustment, index) => {
@@ -991,7 +1039,7 @@ const buildClassAdjustmentBreakdown = (baseBomCost, totalPages, activeAdjustment
       ? (toNumericValue(adjustment?.value) ?? 0)
       : (toNumericValue(adjustment?.percentage ?? adjustment?.value) ?? 0);
     const amount = adjustmentType === 'FIXED'
-      ? pricingEngine.roundCurrency(rawValue * safeTotalPages)
+      ? pricingEngine.roundCurrency(rawValue)
       : pricingEngine.roundCurrency(safeBaseCost * (rawValue / 100));
 
     return {
@@ -1771,6 +1819,8 @@ const ensureExaminationInvoiceSchema = async () => {
     await ensureColumnIfMissing('invoices', 'line_items_json', 'TEXT');
     await ensureColumnIfMissing('invoices', 'notes', 'TEXT');
     await ensureColumnIfMissing('invoices', 'updated_at', 'DATETIME');
+    // C6: explicit revenue-account override (frontend resolveInvoiceRevenueAccount).
+    await ensureColumnIfMissing('invoices', 'sales_account_id', 'TEXT');
 
     await runRun('CREATE INDEX IF NOT EXISTS idx_invoices_origin_batch ON invoices(origin_module, origin_batch_id)');
     await runRun('CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_idempotency_key ON invoices(idempotency_key)');
@@ -4256,10 +4306,10 @@ const examinationService = {
           school_id, customer_id, customer_name, sub_account_name,
           subtotal, total_amount, currency, status, due_date,
           invoice_number, origin_module, origin_batch_id, idempotency_key,
-          line_items_json, notes, document_title,
+          line_items_json, notes, document_title, sales_account_id,
           rounding_difference, rounding_method, adjustment_total, adjustment_snapshots_json,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
               persistedSchoolId,
               persistedCustomerId,
@@ -4277,6 +4327,7 @@ const examinationService = {
               lineItemsJson,
               invoiceNote,
               documentTitle,
+              options?.salesAccountId || batch.sales_account_id || null,
               toNumericValue(batch.rounding_adjustment_total) || 0,
               batch.rounding_method || 'nearest_50',
               toNumericValue(batch.calculated_adjustment_total) || 0,
@@ -4291,8 +4342,9 @@ const examinationService = {
       );
     } catch (error) {
       const message = String(error?.message || '');
-      // If error mentions document_title column missing, retry without it (backward compatibility)
-      if (message.toLowerCase().includes('no such column: document_title')) {
+      // Backward compatibility: retry without newer columns on legacy DBs.
+      if (message.toLowerCase().includes('no such column: document_title')
+        || message.toLowerCase().includes('no such column: sales_account_id')) {
         const invoiceResult = await runRun(
           `INSERT INTO invoices (
             school_id, customer_id, customer_name, sub_account_name,

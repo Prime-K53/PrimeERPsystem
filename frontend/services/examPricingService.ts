@@ -30,6 +30,14 @@ import {
     BOMTemplate
 } from '../types';
 import { SafeFormulaEngine } from './formulaEngine';
+import {
+    getAdjustmentFlatAmount,
+    getAdjustmentPercent,
+    isMarketAdjustmentActive,
+    isPercentageAdjustment,
+    normalizeMarketAdjustmentType,
+    sortMarketAdjustments,
+} from '../utils/marketAdjustmentSemantics';
 
 /**
  * Result of calculating a single class's costs
@@ -206,23 +214,23 @@ function applyMarketAdjustments(
     const snapshots: AdjustmentSnapshot[] = [];
     let total = 0;
 
-    // Filter adjustments
-    const activeAdjustments = marketAdjustments.filter(adj => {
-        const isActive = adj.active ?? adj.isActive ?? true;
+    // Filter adjustments (canonical Phase 3 semantics: shared active check, sorted)
+    const activeAdjustments = sortMarketAdjustments(marketAdjustments.filter(adj => {
+        const isActive = isMarketAdjustmentActive(adj);
         if (marketAdjustmentId) {
             return isActive && adj.id === marketAdjustmentId;
         }
         return isActive;
-    });
+    }));
 
     for (const adj of activeAdjustments) {
         let amount = 0;
 
-        if (adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage') {
-            const pct = adj.percentage || adj.value || 0;
+        if (isPercentageAdjustment(adj.type)) {
+            const pct = getAdjustmentPercent(adj);
             amount = baseCost * (pct / 100);
         } else {
-            amount = adj.value || 0;
+            amount = getAdjustmentFlatAmount(adj);
         }
 
         total += amount;
@@ -233,7 +241,7 @@ function applyMarketAdjustments(
 
         snapshots.push({
             name: adj.name || 'Unknown',
-            type: adj.type === 'percentage' ? 'PERCENT' : adj.type as 'PERCENTAGE' | 'FIXED' | 'PERCENT',
+            type: normalizeMarketAdjustmentType(adj.type),
             value: adj.value,
             percentage: adj.percentage,
             calculatedAmount: amount

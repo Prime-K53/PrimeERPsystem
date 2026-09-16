@@ -771,11 +771,14 @@ export function isServiceOnlyInvoice(items: any[]): boolean {
 }
 
 /**
- * Active (posted) invoice statuses. Draft/Cancelled invoices must not
- * contribute AR, revenue, COGS or inventory movements.
+ * Active (posted) invoice statuses. Draft/Cancelled/Void/Voided invoices must
+ * not contribute AR, revenue, COGS or inventory movements. Credit notes pass
+ * (they post negative revenue) — see utils/revenueRecognition.
+ * Case-insensitive (backend voids as 'Voided', UI as 'cancelled', etc.).
  */
 export function isPostedInvoiceStatus(status: any): boolean {
-    return String(status || '') !== 'Draft' && String(status || '') !== 'Cancelled';
+    const s = String(status || '').trim().toLowerCase();
+    return s !== 'draft' && s !== 'cancelled' && s !== 'void' && s !== 'voided';
 }
 
 /**
@@ -783,6 +786,8 @@ export function isPostedInvoiceStatus(status: any): boolean {
  * Explicit salesAccountId always wins (e.g. POS selector); service-only
  * invoices fall back to 41200 Service Income, everything else to the
  * default sales account (41100 Product Sales).
+ * (Canonical rule lives in utils/revenueRecognition; kept inline here to
+ * avoid a services<->utils import cycle.)
  */
 export function resolveInvoiceRevenueAccount(invoice: any, defaultSalesAccount: string): string {
     if (invoice?.salesAccountId) return invoice.salesAccountId;

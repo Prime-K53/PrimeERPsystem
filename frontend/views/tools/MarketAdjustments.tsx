@@ -9,12 +9,12 @@ import { useInventoryStore } from '../../stores/inventoryStore';
 import { repriceMasterInventoryFromAdjustments } from '../../services/masterInventoryPricingService';
 import { syncMarketAdjustmentsToBackend } from '../../services/examinationSyncService';
 import { currencyService } from '../../services/currencyService';
+import { isMarketAdjustmentActive } from '../../utils/marketAdjustmentSemantics';
+import { broadcastMarketAdjustmentsChanged } from '../../utils/marketAdjustmentUtils';
 
 const t = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39' };
 const amber = { 100: '#fbead0', 500: '#d99a3f' };
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1', danger = '#b5493f';
-
-const MARKET_ADJUSTMENTS_CHANGED_EVENT = 'market-adjustments:changed';
 
 const MarketAdjustments: React.FC = () => {
     const { notify, companyConfig } = useAuth();
@@ -32,8 +32,10 @@ const MarketAdjustments: React.FC = () => {
     const [formData, setFormData] = useState<Partial<MarketAdjustment>>({ name: '', type: 'PERCENTAGE', value: 0, description: '', category: 'general', adjustmentCategory: 'Custom', displayName: '', sortOrder: 0, active: true });
 
     const broadcastAdjustmentsChanged = (changeType: 'created' | 'updated' | 'deleted' | 'toggled', adjustmentId?: string) => {
-        if (typeof window === 'undefined') return;
-        window.dispatchEvent(new CustomEvent(MARKET_ADJUSTMENTS_CHANGED_EVENT, { detail: { changeType, adjustmentId: adjustmentId || null, timestamp: new Date().toISOString() } }));
+        // Single shared bus (Phase 5): ExaminationContext + pricing contexts
+        // listen to MARKET_ADJUSTMENTS_CHANGED_EVENT; dbService writes already
+        // emit primeerp:data-changed for the management list itself.
+        broadcastMarketAdjustmentsChanged(changeType, adjustmentId);
     };
 
     useEffect(() => {
@@ -112,7 +114,7 @@ const MarketAdjustments: React.FC = () => {
     };
 
     const toggleActive = async (adjustment: MarketAdjustment) => {
-        try { const currentActive = adjustment.active ?? adjustment.isActive ?? false; const updated = { ...adjustment, active: !currentActive, isActive: !currentActive }; await dbService.put('marketAdjustments', updated); await repriceMasterInventory(); await syncBackendAdjustments(); notify(`Adjustment ${updated.active ? 'activated' : 'deactivated'}`, 'success'); loadAdjustments(); refreshMarketAdjustments?.(); broadcastAdjustmentsChanged('toggled', adjustment.id); }
+        try { const currentActive = isMarketAdjustmentActive(adjustment); const updated = { ...adjustment, active: !currentActive, isActive: !currentActive }; await dbService.put('marketAdjustments', updated); await repriceMasterInventory(); await syncBackendAdjustments(); notify(`Adjustment ${updated.active ? 'activated' : 'deactivated'}`, 'success'); loadAdjustments(); refreshMarketAdjustments?.(); broadcastAdjustmentsChanged('toggled', adjustment.id); }
         catch (error) { logger.error('Error toggling adjustment:', error); notify('Failed to update adjustment', 'error'); }
     };
 
@@ -240,8 +242,8 @@ const MarketAdjustments: React.FC = () => {
                                                 <div style={{ fontSize: 11, color: t[500], fontWeight: 600 }}>{formatCurrency(stats.totalApplied)} total</div>
                                             </td>
                                             <td style={{ padding: '12px 16px' }}>
-                                                <button onClick={() => toggleActive(adj)} style={{ padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: (adj.active ?? adj.isActive) ? t[100] : hairline, color: (adj.active ?? adj.isActive) ? t[700] : inkSoft, transition: 'all .15s ease' }}>
-                                                    {(adj.active ?? adj.isActive) ? 'Active' : 'Inactive'}
+                                                <button onClick={() => toggleActive(adj)} style={{ padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', background: isMarketAdjustmentActive(adj) ? t[100] : hairline, color: isMarketAdjustmentActive(adj) ? t[700] : inkSoft, transition: 'all .15s ease' }}>
+                                                    {isMarketAdjustmentActive(adj) ? 'Active' : 'Inactive'}
                                                 </button>
                                             </td>
                                             <td style={{ padding: '12px 16px' }}>

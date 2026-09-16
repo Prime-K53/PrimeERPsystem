@@ -207,6 +207,14 @@ export interface VATConfig {
   marketAdjustmentAccount?: string;
   filingFrequency: 'Monthly' | 'Quarterly' | 'Annually';
   pricingMode: 'VAT' | 'MarketAdjustment';
+  /**
+   * Phase 5 / B10: independent posting switches. VAT and market adjustments
+   * compose (both legs can post on one sale(alw): tax first, then market).
+   * `undefined` preserves legacy behavior derived from `pricingMode`
+   * (see utils/pricingMode), so existing configs are unaffected.
+   */
+  applyVatOnSales?: boolean;
+  applyMarketAdjustmentsOnSales?: boolean;
 }
 
 export interface RoundingRulesConfig {

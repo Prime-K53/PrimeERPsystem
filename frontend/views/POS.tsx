@@ -32,6 +32,7 @@ import { customerNotificationService } from '../services/customerNotificationSer
 import { logger } from '../services/logger';
 
 import { generateNextId, roundToCurrency, formatNumber, downloadBlob } from '../utils/helpers';
+import { isIncomeAccount } from '../utils/accountType';
 import { attachDocumentSecurity } from '../utils/documentSecurity';
 import { initializePrimePdfFonts, resolvePrimeTemplateSettings, getStoredCompanyConfig } from './shared/components/PDF/templateSettings';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredRoundingDifference, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../utils/pricing';
@@ -1363,7 +1364,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
                 </button>
 <select value={selectedSalesAccountId} onChange={e => setSelectedSalesAccountId(e.target.value)}
                    className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#23282A] hover:border-[#a6d9d3] transition-all shadow-sm outline-none cursor-pointer">
-                 {(accounts || []).filter((a: any) => a.type === 'Revenue').map(acc => (
+                  {(accounts || []).filter((a: any) => isIncomeAccount(a)).map(acc => (
                    <option key={acc.id} value={acc.id}>{acc.name}</option>
                  ))}
                </select>

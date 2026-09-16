@@ -14,6 +14,7 @@ import {
   EffectiveMargin,
   PricingBreakdown
 } from './types';
+import { isMarketAdjustmentActive } from '../../../utils/marketAdjustmentSemantics';
 
 export const PRICING_ENGINE_VERSION = "1.0.0";
 
@@ -217,7 +218,7 @@ export async function calculateServicePrice(
   const basePricing = await calculateSellingPrice(inputWithDefaults);
 
   if (marketAdjustments && marketAdjustments.length > 0) {
-    const activeAdjustments = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+    const activeAdjustments = marketAdjustments.filter(isMarketAdjustmentActive);
     const serviceSnapshots = activeAdjustments.map((adj: any) => {
       const isPct = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
       const value = safeNumber(adj.value, 0);

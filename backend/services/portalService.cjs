@@ -11,6 +11,7 @@ const { customerFilter, withCustomerScope } = require('./portalScope.cjs');
 const customerLedger = require('./customerLedger.cjs');
 const companyConfigService = require('./companyConfigService.cjs');
 const paymentAllocationService = require('./paymentAllocationService.cjs');
+const { normalizeInvoiceLineItems, normalizeInvoiceRow } = require('./invoiceLineItemNormalization.cjs');
 
 const TICKET_ATTACHMENTS_DIR = path.join(__dirname, '..', 'storage', 'ticket-attachments');
 
@@ -821,40 +822,61 @@ const portalService = {
   },
 
   async getInvoiceById(invoiceId, customerId) {
+    // Cloud path: authoritative Supabase envelope. After the shared
+    // normalization fix, every status (unpaid/partial/paid) carries a
+    // consistent line_items array regardless of paidAmount.
     try {
       const cloud = await withCloudTimeout(supabaseStore.getInvoice(invoiceId, customerId), 5000, 'Cloud invoice');
       if (cloud) {
-        if (!cloud.items || cloud.items.length === 0) {
+        // Defensive re-normalization: if the cloud record was produced by
+        // an older code version with empty `items: []` shadowing
+        // `line_items_json`, ensure we still surface the persisted items.
+        // The shared helper treats empty arrays as missing and falls through.
+        if (!Array.isArray(cloud.line_items) || cloud.line_items.length === 0) {
+          const fallbackItems = normalizeInvoiceLineItems(cloud);
+          if (fallbackItems.length > 0) {
+            cloud.line_items = fallbackItems;
+            cloud.items = fallbackItems;
+          } else if (!cloud.items || cloud.items.length === 0) {
+            cloud.items = cloud.line_items || [];
+            cloud.line_items = cloud.items;
+          }
+        } else if (!cloud.items || cloud.items.length === 0) {
           cloud.items = cloud.line_items || [];
-          cloud.line_items = cloud.items;
+        }
+        // Ensure both aliases are normalized (quantity/unit_price/line_total etc.)
+        if (Array.isArray(cloud.line_items) && cloud.line_items.length > 0) {
+          const { mapInvoiceLineItems } = require('./invoiceLineItemNormalization.cjs');
+          cloud.line_items = mapInvoiceLineItems(cloud.line_items);
+          cloud.items = cloud.line_items;
         }
         return cloud;
       }
     } catch (err) {
       console.warn('[PortalService] Cloud invoice unavailable, using local:', err.message);
     }
+    // Local/Supabase fallback: handles legacy field names, JSON strings,
+    // empty-array shadowing, and snake_case customer_id.
     const invoice = await getOneById('invoices', invoiceId);
     if (!invoice) return null;
     const invoiceCustomerId = invoice.customerId || invoice.customer_id || null;
     if (customerId && String(invoiceCustomerId) !== String(customerId)) return null;
-    let lineItems = null;
-    if (Array.isArray(invoice.items)) {
-      lineItems = invoice.items;
-    } else if (typeof invoice.items === 'string') {
-      lineItems = parseJson(invoice.items, null);
-    }
-    if (!lineItems) {
-      if (Array.isArray(invoice.line_items)) {
-        lineItems = invoice.line_items;
-      } else if (typeof invoice.line_items === 'string') {
-        lineItems = parseJson(invoice.line_items, null);
-      } else if (invoice.line_items_json) {
-        lineItems = parseJson(invoice.line_items_json, []);
-      }
-    }
+
+    // Use shared normalization which checks items/line_items/lineItems/
+    // invoiceItems/lines/line_items_json etc. and correctly handles
+    // `items: []` as missing rather than as a valid empty result.
+    const lineItems = normalizeInvoiceLineItems(invoice);
+
+    // Also handle the SQLite flat column `line_items_json` string that
+    // `normalizeInvoiceLineItems` already checks, but keep parseJson fallback
+    // for any direct string not caught due to being stored outside `data`.
+    // The shared layer already handles it; this is just additional safety.
     invoice.line_items = Array.isArray(lineItems) ? lineItems : [];
     invoice.items = invoice.line_items;
+    // Preserve snake/camel aliases for portal UI (line_items is primary)
     delete invoice.line_items_json;
+    // Ensure every returned invoice has normalized line items even when
+    // paidAmount is 0 — never filter by payment status.
     return invoice;
   },
 

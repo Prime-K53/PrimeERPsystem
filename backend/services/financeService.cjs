@@ -314,10 +314,21 @@ class FinanceService {
       normalized.normal_balance = this._getNormalBalance(normalized.account_type);
     }
 
-    // Ensure boolean fields
-    normalized.is_active = normalized.is_active !== false && normalized.is_active !== 0;
-    normalized.is_system_account = normalized.is_system_account === true || normalized.is_system_account === 1;
-    normalized.allow_posting = normalized.allow_posting === true || normalized.allow_posting === 1;
+    // Ensure boolean fields (tolerant: handles true/1/"1"/"true"/"yes"/"on").
+    // Supabase/legacy callers send "true"/"false"/0/1 strings — strict === checks misclassify them.
+    const toBool = (v, defaultIfNull) => {
+      if (v === undefined || v === null || v === '') return defaultIfNull;
+      if (typeof v === 'boolean') return v;
+      if (typeof v === 'number') return v !== 0;
+      const s = String(v).trim().toLowerCase();
+      if (['1', 'true', 't', 'yes', 'y', 'on'].includes(s)) return true;
+      if (['0', 'false', 'f', 'no', 'n', 'off'].includes(s)) return false;
+      return defaultIfNull;
+    };
+    normalized.is_active = toBool(normalized.is_active, true);
+    normalized.is_system_account = toBool(normalized.is_system_account, false);
+    // Missing allow_posting means postable (schema/frontend default true) — never default to blocked.
+    normalized.allow_posting = toBool(normalized.allow_posting, true);
 
     return normalized;
   }
@@ -401,9 +412,15 @@ class FinanceService {
       subtype: data.subtype || null,
       parent_account_id: parentAccountId,
       normal_balance: data.normal_balance || this._getNormalBalance(accountType),
-      is_system_account: data.is_system_account ? 1 : 0,
-      allow_posting: data.allow_posting === true ? 1 : 0,
-      is_active: data.is_active !== false && data.is_active !== 0 ? 1 : 0,
+      is_system_account: data.is_system_account === undefined || data.is_system_account === null || data.is_system_account === ''
+        ? 0
+        : (data.is_system_account === true || data.is_system_account === 1 || String(data.is_system_account).toLowerCase() === 'true' || String(data.is_system_account) === '1' ? 1 : 0),
+      allow_posting: data.allow_posting === undefined || data.allow_posting === null || data.allow_posting === ''
+        ? 1
+        : (data.allow_posting === false || data.allow_posting === 0 || String(data.allow_posting).toLowerCase() === 'false' || String(data.allow_posting) === '0' ? 0 : 1),
+      is_active: data.is_active === undefined || data.is_active === null || data.is_active === ''
+        ? 1
+        : (data.is_active === false || data.is_active === 0 || String(data.is_active).toLowerCase() === 'false' || String(data.is_active) === '0' ? 0 : 1),
       opening_balance: data.opening_balance || 0,
       opening_balance_date: data.opening_balance_date || null,
       description: data.description || null,
@@ -560,13 +577,15 @@ class FinanceService {
       }
     }
 
-    // Convert booleans to integers for legacy columns
-    if (updates.is_system_account === true) updates.is_system_account = 1;
-    if (updates.is_system_account === false) updates.is_system_account = 0;
-    if (updates.allow_posting === true) updates.allow_posting = 1;
-    if (updates.allow_posting === false) updates.allow_posting = 0;
-    if (updates.is_active === true) updates.is_active = 1;
-    if (updates.is_active === false) updates.is_active = 0;
+    // Convert booleans to integers for legacy columns (tolerant of "true"/"false"/"1"/"0" strings)
+    const toInt01 = (v) => {
+      if (v === true || v === 1 || String(v).toLowerCase() === 'true' || String(v) === '1') return 1;
+      if (v === false || v === 0 || String(v).toLowerCase() === 'false' || String(v) === '0') return 0;
+      return v;
+    };
+    if (updates.is_system_account !== undefined) updates.is_system_account = toInt01(updates.is_system_account);
+    if (updates.allow_posting !== undefined) updates.allow_posting = toInt01(updates.allow_posting);
+    if (updates.is_active !== undefined) updates.is_active = toInt01(updates.is_active);
 
     updates.updated_at = new Date().toISOString();
 

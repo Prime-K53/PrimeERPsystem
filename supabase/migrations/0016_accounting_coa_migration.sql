@@ -666,17 +666,19 @@ WITH code_map AS (
     UNION ALL SELECT '4900', '42100'
     -- 1050, 1060, 4000 are NOT in this mapping (preserved as archives)
 )
-UPDATE public.ledger_entries
-SET debit_account_id = CASE
-    WHEN debit_account_id = cm.old_code THEN cm.new_code
-    ELSE debit_account_id
-END,
-credit_account_id = CASE
-    WHEN credit_account_id = cm.old_code THEN cm.new_code
-    ELSE credit_account_id
-END
+-- NOTE (Phase 5 fix): ledger_entries is a JSONB-envelope table
+-- (id, data, created_at, updated_at, version) — there are NO top-level
+-- debit_account_id / credit_account_id columns. Each row carries a single
+-- data->>'account_id' (+ data->>'entry_type' debit/credit). Remap the legacy
+-- 4-digit references inside the envelope instead.
+UPDATE public.ledger_entries e
+SET data = e.data
+  || CASE WHEN e.data->>'account_id' = cm.old_code
+      THEN jsonb_build_object('account_id', cm.new_code) ELSE '{}'::jsonb END
+  || CASE WHEN e.data->>'account_code' = cm.old_code
+      THEN jsonb_build_object('account_code', cm.new_code) ELSE '{}'::jsonb END
 FROM code_map cm
-WHERE debit_account_id = cm.old_code OR credit_account_id = cm.old_code;
+WHERE e.data->>'account_id' = cm.old_code OR e.data->>'account_code' = cm.old_code;
 
 -- Also update JSONB references in other tables that may contain account codes
 -- Search all tables for embedded account references
@@ -684,14 +686,17 @@ WHERE debit_account_id = cm.old_code OR credit_account_id = cm.old_code;
 -- The ledger_entries table is already handled above.
 -- Other tables with JSONB data containing account references should be updated separately.
 
--- ── 6. Add UNIQUE constraint on account_number after duplicates resolved ──
--- Only add after confirming no duplicates remain
-ALTER TABLE public.accounts ADD CONSTRAINT IF NOT EXISTS accounts_account_number_unique UNIQUE (data->>'account_number');
+-- ── 6. Uniqueness on account_number after duplicates resolved ──
+-- Only add after confirming no duplicates remain.
+-- NOTE (Phase 5 fix): expressions are not allowed in ADD CONSTRAINT UNIQUE;
+-- use a unique expression index instead (also valid on re-run).
+CREATE UNIQUE INDEX IF NOT EXISTS accounts_account_number_unique
+  ON public.accounts ((data->>'account_number'));
 
 -- ── 7. Create index for performance ──
 CREATE INDEX IF NOT EXISTS idx_accounts_account_number ON public.accounts ((data->>'account_number'));
-CREATE INDEX IF NOT EXISTS idx_ledger_debit_account ON public.ledger_entries (debit_account_id);
-CREATE INDEX IF NOT EXISTS idx_ledger_credit_account ON public.ledger_entries (credit_account_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_account_id ON public.ledger_entries ((data->>'account_id'));
+CREATE INDEX IF NOT EXISTS idx_ledger_entry_type ON public.ledger_entries ((data->>'entry_type'));
 
 -- ── 8. Mark unsafe legacy accounts as archived ──
 -- 1050 (Bank Account), 1060 (Mobile Money), 4000 (Sales parent) are preserved but inactive

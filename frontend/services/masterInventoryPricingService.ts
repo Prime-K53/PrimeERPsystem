@@ -3,6 +3,14 @@ import { dbService } from './db';
 import { pricingService } from './pricingService';
 import { calculateItemFinancials, resolveStoredCost } from '../utils/pricing';
 import { roundToCurrency } from '../utils/helpers';
+import {
+    getAdjustmentFlatAmount,
+    getAdjustmentPercent,
+    isMarketAdjustmentActive,
+    isPercentageAdjustment,
+    normalizeMarketAdjustmentType,
+    sortMarketAdjustments,
+} from '../utils/marketAdjustmentSemantics';
 
 export interface MasterInventoryRepriceResult {
     totalCandidates: number;
@@ -25,49 +33,46 @@ export interface ProductRecalculateResult {
 
 const DEFAULT_ROUNDING_METHOD: PricingRoundingMethod = 'ALWAYS_UP_50';
 
-const isAdjustmentActive = (adjustment: MarketAdjustment): boolean => {
-    return adjustment.active ?? adjustment.isActive ?? false;
-};
+// Canonical semantics (Phase 3): shared active check (missing flag => active).
+const isAdjustmentActive = (adjustment: MarketAdjustment): boolean =>
+    isMarketAdjustmentActive(adjustment);
 
-const isPercentageType = (type?: string): boolean => {
-    const normalized = String(type || '').toUpperCase();
-    return normalized === 'PERCENTAGE' || normalized === 'PERCENT';
-};
+const isPercentageType = (type?: string): boolean => isPercentageAdjustment(type);
 
+// Canonical snapshot type: only 'PERCENTAGE' | 'FIXED' on write
+// ('PERCENT' still reads as percentage everywhere).
 const toSnapshotType = (type?: string): AdjustmentSnapshot['type'] => {
-    const normalized = String(type || '').toUpperCase();
-    if (normalized === 'FIXED') return 'FIXED';
-    if (normalized === 'PERCENT') return 'PERCENT';
-    return 'PERCENTAGE';
+    return normalizeMarketAdjustmentType(type);
 };
 
 const getApplicableAdjustments = (
     itemCategory: string | undefined,
     allAdjustments: MarketAdjustment[]
 ): MarketAdjustment[] => {
-    return allAdjustments.filter((adj) => {
+    return sortMarketAdjustments(allAdjustments.filter((adj) => {
         if (!isAdjustmentActive(adj)) return false;
         const categories = adj.applyToCategories || [];
         if (categories.length === 0) return true;
         if (!itemCategory) return false;
         return categories.includes(itemCategory);
-    });
+    }));
 };
 
 const buildSnapshotsFromBaseCost = (
     baseCost: number,
     adjustments: MarketAdjustment[]
 ): AdjustmentSnapshot[] => {
-    return adjustments.map((adj) => {
+    // Additive on the original base (canonical Phase 3 semantics).
+    return sortMarketAdjustments(adjustments).map((adj) => {
         const amount = isPercentageType(adj.type)
-            ? baseCost * ((adj.percentage ?? adj.value ?? 0) / 100)
-            : (adj.value || 0);
+            ? baseCost * (getAdjustmentPercent(adj) / 100)
+            : getAdjustmentFlatAmount(adj);
 
         return {
             name: adj.name,
             type: toSnapshotType(adj.type),
             value: Number(adj.value || 0),
-            percentage: isPercentageType(adj.type) ? Number(adj.percentage ?? adj.value ?? 0) : undefined,
+            percentage: isPercentageType(adj.type) ? Number(getAdjustmentPercent(adj)) : undefined,
             calculatedAmount: roundToCurrency(amount)
         };
     });

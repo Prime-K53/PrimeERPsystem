@@ -255,6 +255,8 @@ const initDb = () => {
                 { name: 'line_items_json', type: 'TEXT' },
                 { name: 'notes', type: 'TEXT' },
                 { name: 'document_title', type: 'TEXT' },
+                // Phase 4 / C6: explicit revenue-account override.
+                { name: 'sales_account_id', type: 'TEXT' },
                 { name: 'updated_at', type: 'DATETIME' }
               ];
 
@@ -336,7 +338,11 @@ const initDb = () => {
                 { name: 'created_by', type: 'TEXT' },
                 { name: 'updated_by', type: 'TEXT' },
                 { name: 'void_reason', type: 'TEXT' },
-                { name: 'voided_at', type: 'DATETIME' }
+                { name: 'voided_at', type: 'DATETIME' },
+                // Phase 4 / C5+C6: currency + tax leg + explicit revenue account.
+                { name: 'currency', type: "TEXT DEFAULT 'USD'" },
+                { name: 'tax_total', type: 'REAL DEFAULT 0' },
+                { name: 'sales_account_id', type: 'TEXT' }
               ];
 
               columnsToAdd.forEach(col => {

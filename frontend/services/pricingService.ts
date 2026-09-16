@@ -11,6 +11,14 @@ import { SafeFormulaEngine } from './formulaEngine';
 import { dbService } from './db';
 import { API_BASE_URL } from '../config/api.js';
 import { safeFetch } from './safeFetch';
+import {
+    getAdjustmentFlatAmount,
+    getAdjustmentPercent,
+    isMarketAdjustmentActive,
+    isPercentageAdjustment,
+    normalizeMarketAdjustmentType,
+    sortMarketAdjustments,
+} from '../utils/marketAdjustmentSemantics';
 
 export interface PricingResult {
     price: number;
@@ -242,27 +250,31 @@ export const pricingService = {
         }
 
         // 3. Legacy path: apply market adjustments (used during transaction processing)
-        let calculatedPrice = cost > 0 ? cost : basePrice;
+        // Canonical Phase 3 semantics: ADDITIVE on the original base, sorted by
+        // sort_order (previously compounded on the running total, order-dependent).
+        const baseForAdjustments = cost > 0 ? cost : basePrice;
+        let calculatedPrice = baseForAdjustments;
         let transactionAdjustmentSnapshots: TransactionAdjustmentSnapshot[] = [];
 
-        marketAdjustments.forEach(adj => {
-            const isActive = adj.active ?? adj.isActive;
+        sortMarketAdjustments(marketAdjustments).forEach(adj => {
+            const isActive = isMarketAdjustmentActive(adj);
             const categoryMatch = !adj.applyToCategories || adj.applyToCategories.length === 0 || adj.applyToCategories.includes(item.category);
 
             if (isActive && categoryMatch) {
+                const adjType = normalizeMarketAdjustmentType(adj.type);
                 let amount = 0;
-                if (adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage') {
-                    const pct = adj.percentage || adj.value;
-                    amount = calculatedPrice * (pct / 100);
+                if (isPercentageAdjustment(adj.type)) {
+                    const pct = getAdjustmentPercent(adj);
+                    amount = baseForAdjustments * (pct / 100);
                 } else {
-                    amount = adj.value;
+                    amount = getAdjustmentFlatAmount(adj);
                 }
 
                 adjustmentTotal += amount;
 
                 adjustmentSnapshots.push({
                     name: adj.name,
-                    type: adj.type,
+                    type: adjType,
                     value: adj.value,
                     calculatedAmount: amount
                 });
@@ -274,13 +286,13 @@ export const pricingService = {
                     itemName: item.name,
                     variantId: variantId,
                     quantity: quantity,
-                    baseCost: calculatedPrice,
+                    baseCost: baseForAdjustments,
                     unitAdjustmentAmount: amount,
                     totalAdjustmentAmount: roundToCurrency(amount * quantity),
                     adjustmentId: adj.id,
                     timestamp: new Date().toISOString(),
                     name: adj.name,
-                    type: adj.type as 'PERCENTAGE' | 'FIXED' | 'PERCENT',
+                    type: adjType,
                     amount: roundToCurrency(amount * quantity),
                     value: adj.value,
                     calculatedAmount: amount,
@@ -291,7 +303,7 @@ export const pricingService = {
             }
         });
 
-        price = roundToCurrency(calculatedPrice + adjustmentTotal);
+        price = roundToCurrency(baseForAdjustments + adjustmentTotal);
 
         return {
             price,
@@ -459,23 +471,25 @@ export const pricingService = {
         const adjustmentSnapshots: any[] = [];
         let unitAdjustmentPerPage = 0;
 
-        marketAdjustments.forEach(adj => {
-            const isActive = adj.active ?? adj.isActive;
+        // Per-page unit: FIXED is flat per page here (unit-consistent).
+        sortMarketAdjustments(marketAdjustments).forEach(adj => {
+            const isActive = isMarketAdjustmentActive(adj);
             const categoryMatch = !adj.applyToCategories || adj.applyToCategories.length === 0 || adj.applyToCategories.includes(item.category);
             if (!isActive || !categoryMatch) return;
 
-            const isPercent = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
-            const pct = Number(adj.percentage ?? adj.value ?? 0);
+            const adjType = normalizeMarketAdjustmentType(adj.type);
+            const isPercent = isPercentageAdjustment(adj.type);
+            const pct = getAdjustmentPercent(adj);
             const adjPerPage = roundToCurrency(isPercent
                 ? unitCostPerPage * (pct / 100)
-                : (Number(adj.value) || 0));
+                : getAdjustmentFlatAmount(adj));
 
             unitAdjustmentPerPage = roundToCurrency(unitAdjustmentPerPage + adjPerPage);
 
             // Keep snapshots per copy for downstream quantity aggregation compatibility.
             adjustmentSnapshots.push({
                 name: adj.name,
-                type: adj.type,
+                type: adjType,
                 value: adj.value,
                 calculatedAmount: roundToCurrency(adjPerPage * safePages)
             });
@@ -561,31 +575,43 @@ export const pricingService = {
     /**
      * Generates an adjustment summary from transaction adjustment snapshots.
      * Groups adjustments by adjustment ID and calculates totals.
+     *
+     * Phase 5: entries are normalised to the adjustmentSnapshots shape
+     * ({name, type, value, calculatedAmount}) alongside the legacy keys
+     * ({adjustmentId, adjustmentName, totalAmount, itemCount}) so persisted
+     * sales stay readable by both old and new consumers (resolves the
+     * `_processMarketAdjustments` normalisation TODO).
      */
     generateAdjustmentSummary(
         snapshots: TransactionAdjustmentSnapshot[]
-    ): { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; }[] {
-        const summaryMap = new Map<string, { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; }>();
+    ): { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; name: string; type: string; value: number; calculatedAmount: number; }[] {
+        const summaryMap = new Map<string, { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; name: string; type: string; value: number; calculatedAmount: number; }>();
 
         snapshots.forEach(snap => {
             const key = snap.adjustmentId || snap.name;
             const existing = summaryMap.get(key);
             if (existing) {
                 existing.totalAmount += snap.totalAdjustmentAmount;
+                existing.calculatedAmount = roundToCurrency(existing.totalAmount);
                 existing.itemCount += 1;
             } else {
                 summaryMap.set(key, {
                     adjustmentId: snap.adjustmentId || '',
                     adjustmentName: snap.name,
                     totalAmount: snap.totalAdjustmentAmount,
-                    itemCount: 1
+                    itemCount: 1,
+                    name: snap.name,
+                    type: normalizeMarketAdjustmentType((snap as any).type),
+                    value: Number((snap as any).value ?? 0) || 0,
+                    calculatedAmount: snap.totalAdjustmentAmount,
                 });
             }
         });
 
         return Array.from(summaryMap.values()).map(s => ({
             ...s,
-            totalAmount: roundToCurrency(s.totalAmount)
+            totalAmount: roundToCurrency(s.totalAmount),
+            calculatedAmount: roundToCurrency(s.calculatedAmount)
         }));
     },
 
@@ -1024,14 +1050,16 @@ export const calculateAutoPrice = async ({
     let priceBeforeVat = markedUpPrice;
 
     // Apply market adjustments (if configured in companyConfig)
-    const activeAdjustments = marketAdjustments?.filter((adj: any) => adj.active ?? adj.isActive) || [];
+    const activeAdjustments = sortMarketAdjustments(
+        (marketAdjustments || []).filter((adj: any) => isMarketAdjustmentActive(adj))
+    );
     let totalMarketAdjustment = 0;
     for (const adj of activeAdjustments) {
-        const adjType = (adj.type || '').toUpperCase();
-        if (adjType === 'PERCENTAGE' || adjType === 'PERCENT') {
-            totalMarketAdjustment += markedUpPrice * ((adj.value || 0) / 100);
+        const adjType = normalizeMarketAdjustmentType(adj.type);
+        if (adjType === 'PERCENTAGE') {
+            totalMarketAdjustment += markedUpPrice * (getAdjustmentPercent(adj) / 100);
         } else {
-            totalMarketAdjustment += (adj.value || 0);
+            totalMarketAdjustment += getAdjustmentFlatAmount(adj);
         }
     }
     priceBeforeVat += totalMarketAdjustment;

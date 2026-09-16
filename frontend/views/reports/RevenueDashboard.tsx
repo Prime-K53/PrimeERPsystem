@@ -16,6 +16,8 @@ import {
   buildRevenueReportingSnapshot, matchesRevenueDateRange,
   type RevenueDateRange,
 } from '../../services/revenueReportingService';
+import { reconcileRevenueToGl, sumPostedIncomeCredits } from '../../utils/glReconciliation';
+import { isRecognizedInvoiceStatus } from '../../utils/revenueRecognition';
 import { currencyService } from '../../services/currencyService';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -29,7 +31,7 @@ const cardPad: React.CSSProperties = { ...cardBase, padding: 24 };
 const RevenueDashboard: React.FC = () => {
   const { companyConfig } = useAuth();
   const { sales = [], isLoading } = useSales();
-  const { invoices = [], expenses = [] } = useFinance();
+  const { invoices = [], expenses = [], ledger = [], accounts = [] } = useFinance();
   const { orders = [] } = useOrders();
   const { batches: examinationBatches = [] } = useExamination();
   const { refreshAllData } = useData();
@@ -58,8 +60,15 @@ const RevenueDashboard: React.FC = () => {
     [expenses, dateRange]);
 
   const outstandingReceivables = useMemo(() =>
-    (invoices || []).filter((invoice: any) => matchesRevenueDateRange(invoice?.date, dateRange)).filter((invoice: any) => !['cancelled', 'draft'].includes(String(invoice?.status || '').toLowerCase())).reduce((sum: number, invoice: any) => { const t = Number(invoice?.totalAmount || invoice?.total || 0); const p = Number(invoice?.paidAmount || 0); return sum + Math.max(0, t - p); }, 0),
+    (invoices || []).filter((invoice: any) => matchesRevenueDateRange(invoice?.date, dateRange)).filter((invoice: any) => isRecognizedInvoiceStatus(invoice?.status)).reduce((sum: number, invoice: any) => { const t = Number(invoice?.totalAmount || invoice?.total || 0); const p = Number(invoice?.paidAmount || 0); return sum + Math.max(0, t - p); }, 0),
     [invoices, dateRange]);
+
+  // Phase 5 / C1: GL reconciliation — posted income credits vs recognized
+  // document revenue (same PL-01 identity as run_reporting_reconciliation).
+  const glReconciliation = useMemo(() => {
+    const gl = sumPostedIncomeCredits(ledger as any[], accounts as any[], (date) => matchesRevenueDateRange(date, dateRange));
+    return { ...reconcileRevenueToGl(report.totals.revenue, gl.glRevenue), ...gl };
+  }, [ledger, accounts, report.totals.revenue, dateRange]);
 
   const netContribution = report.totals.profitMargin - operatingExpenses;
 
@@ -70,6 +79,7 @@ const RevenueDashboard: React.FC = () => {
     { label: 'Profit Markup', value: formatCurrency(report.totals.profitMargin), subtext: report.totals.revenue > 0 ? `${((report.totals.profitMargin / report.totals.revenue) * 100).toFixed(1)}% of revenue` : 'No revenue in range', icon: DollarSign, border: report.totals.profitMargin >= 0 ? teal[600] : '#b5493f', iconBg: teal[50], iconColor: teal[600], textColor: teal[700] },
     { label: 'Round Up / Down', value: `${report.totals.roundingTotal >= 0 ? '+' : ''}${formatCurrency(report.totals.roundingTotal)}`, subtext: 'Net rounding effect', icon: Activity, border: teal[600], iconBg: teal[50], iconColor: teal[600], textColor: teal[700] },
     { label: 'Outstanding AR', value: formatCurrency(outstandingReceivables), subtext: 'Open invoice exposure', icon: Wallet, border: '#d99a3f', iconBg: '#fbead0', iconColor: '#d99a3f', textColor: '#d99a3f' },
+    { label: 'GL Reconciliation', value: `${glReconciliation.delta >= 0 ? '+' : ''}${formatCurrency(glReconciliation.delta)}`, subtext: glReconciliation.withinTolerance ? `GL agrees (${glReconciliation.entryCount} income credits)` : `Review: docs ${formatCurrency(glReconciliation.documentRevenue)} vs GL ${formatCurrency(glReconciliation.glRevenue)}`, icon: Receipt, border: glReconciliation.withinTolerance ? teal[600] : '#b5493f', iconBg: glReconciliation.withinTolerance ? teal[50] : '#fef0ee', iconColor: glReconciliation.withinTolerance ? teal[600] : '#b5493f', textColor: glReconciliation.withinTolerance ? teal[700] : '#b5493f' },
   ];
 
   return (

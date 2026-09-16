@@ -15,6 +15,7 @@ import { useInventory } from '../../context/InventoryContext';
 import { useProcurement } from '../../context/ProcurementContext';
 import { useDocumentStore } from '../../stores/documentStore';
 import { AccountType, LedgerEntry, Account } from '../../types';
+import { isEquityAccount, isExpenseAccount, isIncomeAccount, isLiabilityAccount } from '../../utils/accountType';
 import { format, startOfYear, endOfYear, startOfMonth, endOfMonth, isWithinInterval, parseISO, isBefore, isAfter, differenceInDays } from 'date-fns';
 import { exportToCSV } from '../../services/excelService';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -613,7 +614,7 @@ const FinancialReports: React.FC = () => {
              const apId = gl?.accountsPayable || '21110';
              const invId = gl?.defaultInventoryAccount || '11400';
 
-            const isOperating = acc.type === 'Revenue' || acc.type === 'Expense' ||
+            const isOperating = isIncomeAccount(acc) || isExpenseAccount(acc) ||
                 acc.id === arId || acc.code === arId ||
                 acc.id === apId || acc.code === apId;
 
@@ -623,7 +624,7 @@ const FinancialReports: React.FC = () => {
                 activities.operating.push({ label: name, amount });
             } else if (isInvesting) {
                 activities.investing.push({ label: name, amount });
-            } else if (acc.type === 'Equity' || acc.type === 'Liability') {
+            } else if (isEquityAccount(acc) || isLiabilityAccount(acc)) {
                 activities.financing.push({ label: name, amount });
             } else {
                 activities.operating.push({ label: name, amount });
@@ -707,7 +708,7 @@ const FinancialReports: React.FC = () => {
         });
 
         const report = (accounts || [])
-            .filter(a => a.type === 'Revenue' || a.type === 'Expense')
+            .filter(a => isIncomeAccount(a) || isExpenseAccount(a))
             .map(acc => {
                 const actual = accountBalances.current[acc.id] || 0;
                 const budgetAmount = activeBudgets
@@ -745,7 +746,7 @@ const FinancialReports: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {budgetData.map(item => {
-                            const isFavorable = item.type === 'Revenue' ? item.variance >= 0 : item.variance <= 0;
+                            const isFavorable = isIncomeAccount(item) ? item.variance >= 0 : item.variance <= 0;
                             return (
                                 <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="py-4 px-2">

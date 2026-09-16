@@ -20,7 +20,7 @@ const CUSTOMER_KEYS = {
   sales_orders: ['customerId', 'customer_id'], // ERP frontend salesOrders store + backend shim
   orders: ['customerId'], // ERP frontend orders store only (ORD-XXXX entity)
   customer_payments: ['customerId'], // ERP frontend customerPayments store only
-  invoices: ['customerId'], // ERP frontend invoices store only
+  invoices: ['customerId', 'customer_id'], // ERP frontend (customerId) + backend shim (customer_id)
   quotations: ['customerId', 'customer_id'], // ERP frontend quotations store + backend shim
   customer_referrals: ['customer_id'], // backend referralService only
   referral_rewards: ['customer_id'], // backend referralService only

@@ -3,6 +3,8 @@ import { dbService } from './db';
 import { generateNextExaminationBatchNumber } from './documentNumberService';
 import { calculateBatchPricing, PricingSettings } from '../utils/examinationPricingCalculator';
 import { isExaminationDebugLoggingEnabled } from '../utils/debugFlags';
+import { isMarketAdjustmentActive } from '../utils/marketAdjustmentSemantics';
+import { broadcastMarketAdjustmentsChanged } from '../utils/marketAdjustmentUtils';
 import { examinationDb } from './examinationDb';
 import { newUlid } from '../utils/ulid';
 
@@ -326,10 +328,7 @@ const calculateLocalBatchState = async (
     inventory
   );
   const adjustments = explicitAdjustments || await getLocalAdjustments();
-  const activeAdjustments = adjustments.filter((adjustment: any) => {
-    const active = adjustment?.active ?? adjustment?.isActive ?? adjustment?.is_active ?? true;
-    return active === true || active === 1 || active === '1';
-  });
+  const activeAdjustments = adjustments.filter(isMarketAdjustmentActive);
   const pricing = calculateBatchPricing(batch as ExaminationBatch, settings, activeAdjustments);
   return { inventory, settings, activeAdjustments, pricing };
 };
@@ -733,21 +732,57 @@ export const examinationBatchService = {
     recalculation?: any;
   }> {
     const adjustments = Array.isArray(payload.adjustments) ? payload.adjustments : [];
-    await Promise.all(adjustments.map((adjustment) => dbService.put('marketAdjustments', {
-      id: String(adjustment.id || generateLocalId()),
-      name: String(adjustment.name || adjustment.displayName || 'Adjustment'),
-      displayName: String(adjustment.displayName || adjustment.name || 'Adjustment'),
-      type: String(adjustment.type || 'PERCENTAGE').toUpperCase() === 'FIXED' ? 'FIXED' : 'PERCENTAGE',
-      value: Number(adjustment.value ?? adjustment.percentage ?? 0) || 0,
-      percentage: Number(adjustment.percentage ?? adjustment.value ?? 0) || 0,
-      active: adjustment.active ?? adjustment.isActive ?? true
-    } as any)));
+    await Promise.all(adjustments.map((adjustment) => {
+      const active = Boolean(adjustment.active ?? adjustment.isActive ?? adjustment.is_active ?? true);
+      const sortOrder = Number(adjustment.sortOrder ?? adjustment.sort_order ?? 0) || 0;
+      return dbService.put('marketAdjustments', {
+        id: String(adjustment.id || generateLocalId()),
+        name: String(adjustment.name || adjustment.displayName || 'Adjustment'),
+        displayName: String(adjustment.displayName || adjustment.name || 'Adjustment'),
+        type: String(adjustment.type || 'PERCENTAGE').toUpperCase() === 'FIXED' ? 'FIXED' : 'PERCENTAGE',
+        value: Number(adjustment.value ?? adjustment.percentage ?? 0) || 0,
+        percentage: Number(adjustment.percentage ?? adjustment.value ?? 0) || 0,
+        // Canonical flags on write (Phase 5): every reader checks
+        // active ?? is_active ?? isActive, so keep all three in sync.
+        active,
+        isActive: active,
+        is_active: active ? 1 : 0,
+        sortOrder,
+        sort_order: sortOrder
+      } as any);
+    }));
+    // Parity with the server sync contract (examinationService
+    // syncMarketAdjustments): replaceMissing deactivates — never deletes —
+    // local rows absent from a non-empty payload.
+    let deactivated = 0;
+    if (payload.replaceMissing && adjustments.length > 0) {
+      const incomingIds = new Set(adjustments.map((a) => String(a.id || '')));
+      const existing = await dbService.getAll<MarketAdjustment>('marketAdjustments');
+      await Promise.all((existing || [])
+        .filter((row) => row?.id && !incomingIds.has(String(row.id)))
+        .map(async (row) => {
+          await dbService.put('marketAdjustments', {
+            ...row, active: false, isActive: false, is_active: 0,
+          } as any);
+          deactivated += 1;
+        }));
+    }
+    // Stable content checksum (was `offline-${Date.now()}-random`, which
+    // reported every sync as changed even with identical payloads).
+    const checksumSource = JSON.stringify(
+      adjustments.map((a) => [a.id, a.name, a.type, a.value, a.percentage, a.active ?? a.isActive]).sort()
+    );
+    let hash = 5381;
+    for (let i = 0; i < checksumSource.length; i += 1) {
+      hash = ((hash << 5) + hash + checksumSource.charCodeAt(i)) >>> 0;
+    }
+    broadcastMarketAdjustmentsChanged('synced');
     return {
       success: true,
       upserted: adjustments.length,
       changed: adjustments.length,
-      deactivated: 0,
-      checksum: `offline-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      deactivated,
+      checksum: `offline-${hash.toString(36)}`,
       item_count: adjustments.length
     };
   },

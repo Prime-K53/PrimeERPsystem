@@ -252,29 +252,34 @@ SET normal_balance = COALESCE(
 WHERE normal_balance IS NULL;
 
 -- is_system_account: from data.is_system_account (0/1 → false/true)
+-- NOTE: the column is added with DEFAULT FALSE, so `WHERE ... IS NULL` would
+-- match zero rows on a fresh apply. Backfill from the SOURCE instead, so the
+-- statement converges whether this is a first apply or an idempotent re-run.
 UPDATE public.chart_of_accounts
 SET is_system_account = CASE
-  WHEN (data->>'is_system_account')::int = 1 THEN TRUE
+  WHEN LOWER(NULLIF(data->>'is_system_account', '')) IN ('1', 'true', 't', 'yes', 'on') THEN TRUE
   ELSE FALSE
 END
-WHERE is_system_account IS NULL;
+WHERE data->>'is_system_account' IS NOT NULL;
 
 -- allow_posting: from data.allow_posting (0/1 → false/true), default TRUE
+-- NOTE: same DEFAULT-TRUE caveat as above — drive off the source column.
 UPDATE public.chart_of_accounts
 SET allow_posting = CASE
   WHEN data->>'allow_posting' IS NULL THEN TRUE
-  WHEN (data->>'allow_posting')::int = 1 THEN TRUE
+  WHEN LOWER(NULLIF(data->>'allow_posting', '')) IN ('1', 'true', 't', 'yes', 'on') THEN TRUE
   ELSE FALSE
 END
-WHERE allow_posting IS NULL;
+WHERE TRUE;
 
 -- opening_balance: from data.opening_balance
+-- NOTE: the column default (0) defeats `WHERE ... IS NULL` — source-driven.
 UPDATE public.chart_of_accounts
 SET opening_balance = COALESCE(
-  (data->>'opening_balance')::numeric,
+  NULLIF(data->>'opening_balance', '')::numeric,
   0
 )
-WHERE opening_balance IS NULL;
+WHERE data->>'opening_balance' IS NOT NULL;
 
 -- opening_balance_date: from data.opening_balance_date
 UPDATE public.chart_of_accounts

@@ -10,6 +10,7 @@ import {
     labelStyle, inputStyle, selectStyle, sectionLabelStyle,
     btnPrimaryStyle, tableCard,
 } from '../accounts/components/financeChrome';
+import { isAssetAccount, isIncomeAccount, isLiabilityAccount } from '../../utils/accountType';
 
 export const VatSettings: React.FC = () => {
     const { config, updateConfig, isLoading } = useVatStore();
@@ -24,8 +25,11 @@ export const VatSettings: React.FC = () => {
 
     const handleSave = async () => { await updateConfig(localConfig); setIsDirty(false); };
 
-    const liabAccts = accounts.filter(a => a.type === 'Liability');
-    const assetAccts = accounts.filter(a => a.type === 'Asset');
+    const liabAccts = accounts.filter(isLiabilityAccount);
+    const assetAccts = accounts.filter(isAssetAccount);
+    // INCOME covers both canonical `account_type: 'INCOME'` and legacy `type: 'Revenue'`
+    // (see utils/accountType). Keep the saved value visible even if inactive.
+    const incomeAccts = accounts.filter(a => isIncomeAccount(a) || a.id === localConfig.marketAdjustmentAccount);
 
     return (
         <div style={{ ...tableCard, padding: 24 }}>
@@ -99,7 +103,7 @@ export const VatSettings: React.FC = () => {
                         </label>
                         <select value={localConfig.marketAdjustmentAccount || ''} onChange={(e) => handleChange('marketAdjustmentAccount', e.target.value)} style={selectStyle}>
                             <option value="">Select revenue/other account</option>
-                            {accounts.filter(a => a.type === 'Revenue').map(a => (<option key={a.id} value={a.id}>{a.code} - {a.name}</option>))}
+                            {incomeAccts.map(a => (<option key={a.id} value={a.id}>{a.code || a.account_number} - {a.name}</option>))}
                         </select>
                         <p style={{ fontSize: 11, color: inkSoft, marginTop: 4 }}>Account for tracking market adjustments</p>
                     </div>

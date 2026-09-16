@@ -41,6 +41,8 @@ import {
     type PostEditCorrectionSpec
 } from './transactions/_internal';
 import { entryTouchesAccount, getNormalBalance, isPostedLedgerEntry } from './accountingEngine';
+import { decideMarketPosting } from './marketPosting';
+import { isMarketPostingActive, isVatPostingActive } from '../utils/pricingMode';
 import {
     resolveStockAdjustmentPosting,
     assertNoInterestIncomeForInventoryMovement,
@@ -266,7 +268,8 @@ export const transactionService = {
         adjustmentTransactions: MarketAdjustmentTransaction[];
         adjustmentSnapshots: any[];
         adjustmentTotal: number;
-        // TODO: normalise to adjustmentSnapshots — see cleanup tracker
+        // Normalised to the adjustmentSnapshots shape by
+        // pricingService.generateAdjustmentSummary (Phase 5).
         adjustmentSummary: any[];
     }> {
         const allTransactionSnapshots: TransactionAdjustmentSnapshot[] = [];
@@ -793,13 +796,37 @@ export const transactionService = {
                 const roundingDiff = Number(sale.roundingDifference || 0);
                 let revenueAmount = totalAmount - roundingDiff;
                 let taxAmount = 0;
-                let marketAdjustmentAmount = sale.adjustmentTotal || 0;
+                // Phase 5 / B10: VAT and market adjustments compose independently.
+                // Legacy configs without explicit flags fall back to pricingMode.
+                const isVatMode = isVatPostingActive(vatConfig);
+                const isMarketMode = isMarketPostingActive(vatConfig);
+                // B2: split to the market account ONLY when it resolves to a real
+                // postable account — otherwise the full amount stays in revenue
+                // (previously revenue was reduced with no offsetting credit).
+                const marketDecision = decideMarketPosting({
+                    isMarketMode,
+                    adjustmentTotal: (sale as any).adjustmentTotal,
+                    configuredAccountId: vatConfig?.marketAdjustmentAccount,
+                    resolveAccount: (id: string) => resolveAccountForPosting(id, accounts, accountOptions),
+                });
+                const marketAdjustmentAmount = marketDecision.marketAmount;
+                const marketAdjustmentAccountId = marketDecision.marketAccountId;
+                if (marketDecision.unpostedAmount > 0) {
+                    logger.warn(`Market adjustment ${marketDecision.unpostedAmount} kept in revenue for sale #${sale.id}: no valid marketAdjustmentAccount configured`);
+                    (sale as any).marketAdjustmentAccountId = null;
+                    (sale as any).marketAdjustmentUnposted = marketDecision.unpostedAmount;
+                    await salesStore.put(sale);
+                } else if (marketAdjustmentAccountId) {
+                    (sale as any).marketAdjustmentAccountId = marketAdjustmentAccountId;
+                    (sale as any).marketAdjustmentUnposted = 0;
+                    await salesStore.put(sale);
+                }
 
-                const isVatMode = vatConfig?.pricingMode === 'VAT';
-                const isMarketMode = vatConfig?.pricingMode === 'MarketAdjustment';
                 const paymentRatio = totalAmount > 0 ? Math.min(1, totalRetained / totalAmount) : 0;
                 const outstandingAmount = Math.max(0, toMoney(totalAmount - totalRetained));
 
+                // VAT leg posts first (tax on total - rounding); the market leg
+                // below then splits off revenue. Both may post on one sale.
                 if (isVatMode && vatConfig?.outputTaxAccount) {
                     const rate = vatConfig.rate || 17.5;
                     // Tax is typically calculated on the unrounded, unadjusted base.
@@ -860,10 +887,10 @@ export const transactionService = {
                     }
                 }
 
-                if (isMarketMode && marketAdjustmentAmount > 0) {
+                if (marketAdjustmentAccountId && marketAdjustmentAmount > 0) {
                     revenueAmount -= marketAdjustmentAmount;
 
-                    if (vatConfig?.marketAdjustmentAccount) {
+                    {
                         const paidMarket = roundToCurrency(marketAdjustmentAmount * paymentRatio);
                         const unpaidMarket = roundToCurrency(marketAdjustmentAmount - paidMarket);
 
@@ -873,7 +900,7 @@ export const transactionService = {
                                 date: sale.date,
                                 description: `Market Adjustment - Sale #${sale.id}`,
                                 debitAccountId: resolveAcct(gl.cashDrawerAccount),
-                                creditAccountId: resolveAcct(vatConfig.marketAdjustmentAccount),
+                                creditAccountId: resolveAcct(marketAdjustmentAccountId),
                                 amount: Number(paidMarket.toFixed(2)),
                                 referenceId: sale.id,
                                 reconciled: false,
@@ -889,7 +916,7 @@ export const transactionService = {
                                 date: sale.date,
                                 description: `Market Adjustment (AR) - Sale #${sale.id}`,
                                 debitAccountId: resolveAcct(gl.accountsReceivable),
-                                creditAccountId: resolveAcct(vatConfig.marketAdjustmentAccount),
+                                creditAccountId: resolveAcct(marketAdjustmentAccountId),
                                 amount: Number(unpaidMarket.toFixed(2)),
                                 referenceId: sale.id,
                                 reconciled: false,
@@ -1415,8 +1442,9 @@ export const transactionService = {
 
                         const adjustmentTotal = originalSale.adjustmentTotal || originalSale.marketAdjustmentApplied || 0;
                         if (adjustmentTotal > 0) {
+                            // Proportional share only — the revenue split happens below,
+                            // once we know whether a valid market account exists.
                             marketAdjustmentReturnAmount = adjustmentTotal * ratio;
-                            revenueReturnAmount -= marketAdjustmentReturnAmount;
                         }
 
                         // VAT Reversal
@@ -1458,21 +1486,38 @@ export const transactionService = {
                             await ledgerStore.put(taxEntry);
                         }
 
-                        // Market Adjustment Reversal
-                        if (marketAdjustmentReturnAmount > 0 && vatConfig?.marketAdjustmentAccount) {
-                            const marketEntry: LedgerEntry = {
-                                id: generateId('LG-MKT-REF'),
-                                date: refund.date,
-                                description: `Market Adjustment Reversal - Refund #${refund.id}`,
-                                debitAccountId: resolveAcct(vatConfig.marketAdjustmentAccount),
-                                creditAccountId: resolveAcct(targetCreditAccount),
-                                amount: Number(marketAdjustmentReturnAmount.toFixed(2)),
-                                referenceId: refund.id,
-                                reconciled: false,
-                                customerId: refund.customerId,
-                                customerName: refund.customerName
-                            };
-                            await ledgerStore.put(marketEntry);
+                        // Market Adjustment Reversal — mirror the sale: reverse through the
+                        // ORIGINAL sale's market account when present, else current config.
+                        // If neither resolves, the amount stays inside the revenue return
+                        // instead of being dropped.
+                        if (marketAdjustmentReturnAmount > 0) {
+                            const originalMarketAccountId =
+                                (originalSale as any)?.marketAdjustmentAccountId ||
+                                vatConfig?.marketAdjustmentAccount;
+                            const reversalDecision = decideMarketPosting({
+                                isMarketMode: true,
+                                adjustmentTotal: marketAdjustmentReturnAmount,
+                                configuredAccountId: originalMarketAccountId,
+                                resolveAccount: (id: string) => resolveAccountForPosting(id, accounts, accountOptions),
+                            });
+                            if (reversalDecision.marketAccountId && reversalDecision.marketAmount > 0) {
+                                revenueReturnAmount -= reversalDecision.marketAmount;
+                                const marketEntry: LedgerEntry = {
+                                    id: generateId('LG-MKT-REF'),
+                                    date: refund.date,
+                                    description: `Market Adjustment Reversal - Refund #${refund.id}`,
+                                    debitAccountId: resolveAcct(reversalDecision.marketAccountId),
+                                    creditAccountId: resolveAcct(targetCreditAccount),
+                                    amount: Number(reversalDecision.marketAmount.toFixed(2)),
+                                    referenceId: refund.id,
+                                    reconciled: false,
+                                    customerId: refund.customerId,
+                                    customerName: refund.customerName
+                                };
+                                await ledgerStore.put(marketEntry);
+                            } else {
+                                logger.warn(`Market reversal ${marketAdjustmentReturnAmount} kept in revenue return for refund #${refund.id}: no valid market account`);
+                            }
                         }
                     }
                 }

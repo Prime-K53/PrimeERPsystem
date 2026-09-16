@@ -21,11 +21,21 @@ interface JournalLine {
     description?: string;
 }
 
+// Optional split-line form for true multi-leg journals.
+// When `splits` is provided, balance is enforced as SUM(debit) === SUM(credit).
+export interface JournalSplit {
+    accountId: string;
+    debit?: number;
+    credit?: number;
+    description?: string;
+}
+
 interface CreateJournalEntryParams {
     date: string;
     description: string;
     reference?: string;
     lines: JournalLine[];
+    splits?: JournalSplit[];
     entryType?: string;
     createdBy?: string;
 }
@@ -34,15 +44,52 @@ export const ledgerService = {
     STORE_NAME: 'ledger',
 
     async createJournalEntry(params: CreateJournalEntryParams): Promise<{ id: string; entries: LedgerEntry[] } | null> {
-        const { date, description, reference, lines, entryType, createdBy } = params;
+        const { date, description, reference, lines, splits, entryType, createdBy } = params;
 
-        if (!lines || lines.length === 0) {
+        if ((!lines || lines.length === 0) && (!splits || splits.length === 0)) {
             logger.warn('No journal lines provided');
             return null;
         }
 
-        const totalDebit = lines.reduce((sum, l) => sum + (l.amount || 0), 0);
-        const totalCredit = lines.reduce((sum, l) => sum + (l.amount || 0), 0);
+        // Split-line journals: enforce SUM(debit) === SUM(credit).
+        if (splits && splits.length > 0) {
+            let splitDebit = 0;
+            let splitCredit = 0;
+            for (const s of splits) {
+                const d = Number(s.debit || 0);
+                const c = Number(s.credit || 0);
+                if (!s.accountId) throw new Error('Journal split is missing accountId');
+                if (!Number.isFinite(d) || !Number.isFinite(c)) throw new Error('Journal split amount is not a number');
+                if (d < 0 || c < 0) throw new Error('Journal split amounts must be >= 0');
+                if (d > 0 && c > 0) throw new Error('Journal split cannot be both debit and credit');
+                if (d === 0 && c === 0) throw new Error('Journal split amount must be > 0 on one side');
+                splitDebit += d;
+                splitCredit += c;
+            }
+            if (Math.abs(splitDebit - splitCredit) > 0.01) {
+                throw new Error(`Journal entry is not balanced: Debits ${splitDebit} != Credits ${splitCredit}`);
+            }
+        }
+
+        // Pair-line journals: each line is one Dr/Cr pair of the same amount,
+        // so balance is structural — validate what can actually be wrong.
+        const safeLines = lines || [];
+        let totalDebit = 0;
+        let totalCredit = 0;
+        for (const l of safeLines) {
+            const amount = Number(l.amount || 0);
+            if (!l.debitAccountId || !l.creditAccountId) {
+                throw new Error('Journal line is missing debit/credit account');
+            }
+            if (!Number.isFinite(amount) || amount <= 0) {
+                throw new Error(`Journal line amount must be > 0 (got ${String((l as JournalLine).amount)})`);
+            }
+            if (l.debitAccountId === l.creditAccountId) {
+                throw new Error(`Journal line posts to itself: ${l.debitAccountId}`);
+            }
+            totalDebit += amount;
+            totalCredit += amount;
+        }
 
         if (Math.abs(totalDebit - totalCredit) > 0.01) {
             throw new Error(`Journal entry is not balanced: Debits ${totalDebit} != Credits ${totalCredit}`);
@@ -50,17 +97,18 @@ export const ledgerService = {
 
         try {
             const entries: LedgerEntry[] = [];
+            const journalId = generateId('JE');
 
-            for (const line of lines) {
+            for (const line of safeLines) {
                 const entry: LedgerEntry = {
                     id: generateId('LG'),
                     date,
                     description: line.description || description,
                     debitAccountId: line.debitAccountId,
                     creditAccountId: line.creditAccountId,
-                    amount: line.amount,
+                    amount: Number(line.amount),
                     entryType,
-                    referenceId: reference,
+                    referenceId: reference || journalId,
                     reconciled: false,
                     customerId: undefined,
                     customerName: undefined,
@@ -68,6 +116,43 @@ export const ledgerService = {
                     created_by: createdBy,
                 };
                 entries.push(entry);
+            }
+
+            // Expand split-line journals into balanced Dr/Cr pairs so they fit
+            // the existing pair-based ledger store without losing balance.
+            if (splits && splits.length > 0) {
+                const debits = splits
+                    .filter((s) => Number(s.debit || 0) > 0)
+                    .map((s) => ({ accountId: s.accountId, amount: Number(s.debit || 0), description: s.description }));
+                const credits = splits
+                    .filter((s) => Number(s.credit || 0) > 0)
+                    .map((s) => ({ accountId: s.accountId, amount: Number(s.credit || 0), description: s.description }));
+                let di = 0;
+                let ci = 0;
+                let dRem = debits.length > 0 ? debits[0].amount : 0;
+                let cRem = credits.length > 0 ? credits[0].amount : 0;
+                while (di < debits.length && ci < credits.length) {
+                    const take = Math.min(dRem, cRem);
+                    entries.push({
+                        id: generateId('LG'),
+                        date,
+                        description: debits[di].description || credits[ci].description || description,
+                        debitAccountId: debits[di].accountId,
+                        creditAccountId: credits[ci].accountId,
+                        amount: Number(take.toFixed(2)),
+                        entryType,
+                        referenceId: reference || journalId,
+                        reconciled: false,
+                        customerId: undefined,
+                        customerName: undefined,
+                        created_at: new Date().toISOString(),
+                        created_by: createdBy,
+                    });
+                    dRem = Number((dRem - take).toFixed(2));
+                    cRem = Number((cRem - take).toFixed(2));
+                    if (dRem <= 0.005) { di += 1; dRem = di < debits.length ? debits[di].amount : 0; }
+                    if (cRem <= 0.005) { ci += 1; cRem = ci < credits.length ? credits[ci].amount : 0; }
+                }
             }
 
             await dbService.executeAtomicOperation(

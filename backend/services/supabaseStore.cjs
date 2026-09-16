@@ -37,10 +37,7 @@ async function cached(key, fetcher) {
   return value;
 }
 
-const num = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
+const { normalizeInvoiceLineItems, normalizeInvoiceRow, num } = require('./invoiceLineItemNormalization.cjs');
 
 // ─── Catalog (products) ────────────────────────────────────────────────
 
@@ -115,93 +112,74 @@ async function getCustomer(customerId) {
 }
 
 // ─── Invoices ───────────────────────────────────────────────────────────
-
-function resolveStoreItemName(x) {
-  if (!x) return '';
-  const candidates = [
-    x.description,
-    x.desc,
-    x.item_description,
-    x.itemDescription,
-    x.item_name,
-    x.itemName,
-    x.name,
-    x.productName,
-    x.product_name,
-    x.title,
-    x.label,
-  ];
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim().length > 0) {
-      return c.trim();
-    }
-  }
-  return '';
-}
-
-function mapInvoiceLineItems(items) {
-  if (!Array.isArray(items)) return [];
-  return items.map((it) => {
-    const x = it || {};
-    const resolvedName = resolveStoreItemName(x);
-    const qty = num(x.quantity ?? x.qty);
-    const unitPrice = num(x.unitPrice ?? x.unit_price ?? x.price ?? x.selling_price);
-    const lineTotal = num(x.subtotal ?? x.lineTotalNet ?? x.line_total ?? x.subTotal ?? x.total ?? (qty * unitPrice));
-    return {
-      ...x,
-      item_name: resolvedName || x.item_name || x.name || x.productName || 'Item',
-      name: resolvedName || x.name || x.productName || 'Item',
-      productName: resolvedName || x.productName || x.name || 'Item',
-      description: resolvedName || x.description || '',
-      quantity: qty,
-      unit_price: unitPrice,
-      line_total: lineTotal,
-    };
-  });
-}
-
-function mapInvoiceLineItemsWithFallback(d) {
-  const rawItems = d.items || d.line_items;
-  if (Array.isArray(rawItems)) return mapInvoiceLineItems(rawItems);
-  if (typeof rawItems === 'string') {
-    try { return mapInvoiceLineItems(JSON.parse(rawItems)); } catch { return []; }
-  }
-  if (d.line_items_json) {
-    try { return mapInvoiceLineItems(JSON.parse(d.line_items_json)); } catch { return []; }
-  }
-  return [];
-}
+// Delegates to the shared normalization layer so every payment status and
+// legacy field shape (items / line_items / lineItems / lines / invoiceItems /
+// line_items_json etc.) maps to a consistent portal structure. The layer treats
+// an empty array as "no items" and falls through to the next candidate, fixing
+// the unpaid-invoice bug where `items: []` shadowed the real data in
+// `line_items_json`/`line_items`.
 
 function mapInvoice(row) {
-  const d = (row && typeof row.data === 'object' && row.data) ? row.data : {};
-  const status = d.status || (num(d.paidAmount) > 0 ? 'partial' : 'unpaid');
-  const lineItems = mapInvoiceLineItemsWithFallback(d);
-  return {
-    id: row.id,
-    invoice_number: d.invoice_number || d.invoiceNumber || row.id,
-    customer_name: d.customerName || '',
-    total_amount: num(d.totalAmount ?? d.total ?? d.total_amount),
-    paid_amount: num(d.paidAmount ?? d.paid_amount),
-    status: String(status),
-    due_date: d.dueDate || d.due_date || null,
-    created_at: d.date || d.created_at || null,
-    currency: d.currency || 'MWK',
-    subtotal: num(d.subtotal ?? d.materialTotal ?? d.total ?? d.total_amount),
-    other_charges: num(d.otherCharges ?? d.other_charges),
-    notes: d.notes || null,
-    document_title: d.documentTitle || null,
-    line_items: lineItems,
-    items: lineItems,
-    paymentTerms: d.paymentTerms || d.payment_terms || null,
-    payment_terms: d.paymentTerms || d.payment_terms || null,
-    _customerId: d.customerId || null,
+  const normalized = normalizeInvoiceRow(row);
+  // Preserve the exact shape portalService and the portal UI expect, while
+  // keeping the normalized line items. The shared layer already handles
+  // empty-array fallback, legacy keys, quantity/unit_price/line_total
+  // preservation, and customerId vs customer_id.
+  const result = {
+    id: normalized.id,
+    invoice_number: normalized.invoice_number,
+    customer_name: normalized.customer_name,
+    total_amount: normalized.total_amount,
+    paid_amount: normalized.paid_amount,
+    status: normalized.status,
+    due_date: normalized.due_date,
+    created_at: normalized.created_at,
+    currency: normalized.currency,
+    subtotal: normalized.subtotal,
+    other_charges: normalized.other_charges,
+    notes: normalized.notes,
+    document_title: normalized.document_title,
+    line_items: normalized.line_items,
+    items: normalized.items,
+    paymentTerms: normalized.paymentTerms,
+    payment_terms: normalized.payment_terms,
+    _customerId: normalized._customerId,
   };
+  // Also expose _customerId fallback for snake_case so auth does not falsely
+  // reject backend-created invoices (customer_id).
+  if (!result._customerId && normalized._raw) {
+    const raw = normalized._raw;
+    result._customerId = raw.customerId ?? raw.customer_id ?? null;
+  }
+  return result;
+}
+
+// Keep legacy helpers exported for backward compatibility (tests may import them)
+// but they now delegate to the shared layer.
+function mapInvoiceLineItems(items) {
+  const { mapInvoiceLineItems: sharedMap } = require('./invoiceLineItemNormalization.cjs');
+  return sharedMap(items);
+}
+function mapInvoiceLineItemsWithFallback(d) {
+  const { normalizeInvoiceLineItems: sharedNorm } = require('./invoiceLineItemNormalization.cjs');
+  return sharedNorm(d);
 }
 
 async function listInvoices(customerId) {
   if (!customerId) return [];
   return cached(`invoices:${customerId}`, async () => {
-    const rows = await request('invoices', { select: 'id,data', 'data->>customerId': 'eq.' + customerId, limit: 1000 }, { timeout: 20000 });
+    // Handle both ERP frontend (customerId) and backend shim (customer_id) spellings.
+    // The PostgREST `or` clause mirrors portalScope.customerFilter('invoices', …)
+    // but is inlined here because this module uses raw axios, not repo.
+    const rows = await request(
+      'invoices',
+      {
+        select: 'id,data',
+        or: `(data->>customerId.eq.${customerId},data->>customer_id.eq.${customerId})`,
+        limit: 1000,
+      },
+      { timeout: 20000 }
+    );
     if (!rows || rows.length === 0) return [];
     return rows
       .map((row) => mapInvoice(row))

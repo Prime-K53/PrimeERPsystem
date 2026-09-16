@@ -34,7 +34,7 @@ const CARD_CSS = `
 }
 @keyframes ccFadeIn{from{opacity:0;} to{opacity:1;}}
 .cc-card{
-  width:420px; max-width:100%;
+  width:588px; max-width:100%;
   max-height:calc(100vh - 96px);
   overflow-y:auto;
   background:#FBFAF6;

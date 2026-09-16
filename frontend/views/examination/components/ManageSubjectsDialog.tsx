@@ -9,6 +9,7 @@ import { useInventory } from '../../../context/InventoryContext';
 import { examinationBatchService } from '../../../services/examinationBatchService';
 import OverrideDialog from './OverrideDialog';
 import { calculateLocalClassPreviewBase, calculateRoundedClassPreview } from '../../../utils/examinationClassPricing';
+import { isMarketAdjustmentActive } from '../../../utils/marketAdjustmentSemantics';
 import { ConfirmDialog, ConfirmDialogType } from '../../../components/ConfirmDialog';
 
 interface ManageSubjectsDialogProps {
@@ -301,10 +302,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
   const effectiveAdjustments = useMemo(() => {
     const hasBackendAdjustments = Array.isArray(backendAdjustments) && backendAdjustments.length > 0;
     const source = hasBackendAdjustments ? backendAdjustments : marketAdjustments;
-    return (source || []).filter((adjustment: any) => {
-      const activeValue = adjustment?.active ?? adjustment?.isActive ?? adjustment?.is_active;
-      return activeValue === true || activeValue === 1 || activeValue === '1';
-    });
+    return (source || []).filter(isMarketAdjustmentActive);
   }, [backendAdjustments, marketAdjustments]);
 
   const expectedFeePerLearner = useMemo(() => {

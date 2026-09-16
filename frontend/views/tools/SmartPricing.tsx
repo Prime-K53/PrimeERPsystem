@@ -11,6 +11,7 @@ import { normalizeInventoryItemPricing } from '../../utils/pricing';
 import { calculateProfit, calculateMarkup, validateMinimumMarkup, buildPricingSnapshot } from '../../services/pricingValidationService';
 import { currencyService } from '../../services/currencyService';
 import { calculateMaterialCosts } from '../../utils/pricingEngineShared';
+import { isMarketAdjustmentActive } from '../../utils/marketAdjustmentSemantics';
 import html2canvas from 'html2canvas';
 
 const defaultFinishingOptions: FinishingOption[] = [
@@ -72,7 +73,7 @@ const SmartPricing: React.FC = () => {
                     dbService.getAll<BOMTemplate>('bomTemplates'),
                 ]);
                 setInventory(inv.map(normalizeInventoryItemPricing));
-                setMarketAdjustments(adjustments.filter(adj => adj.active ?? adj.isActive ?? false));
+                setMarketAdjustments(adjustments.filter(isMarketAdjustmentActive));
                 setBOMTemplates(templates);
 
                 if (companyConfig?.productionSettings?.finishingOptions?.length > 0) {

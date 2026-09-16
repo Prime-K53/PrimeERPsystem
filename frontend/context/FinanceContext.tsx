@@ -9,6 +9,7 @@ import { transactionService } from '../services/transactionService';
 import { openInventory } from '../services/openingBalanceService';
 import { dbService } from '../services/db';
 import { roundFinancial, generateNextId, formatNumber } from '../utils/helpers';
+import { isEquityAccount, isExpenseAccount, isIncomeAccount, isLiabilityAccount, normalizeAccountType } from '../utils/accountType';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
 import { isBefore, isWithinInterval, parseISO } from 'date-fns';
 import { logger } from '../services/logger';
@@ -576,15 +577,15 @@ const handleOpenInventory = async () => {
           const debitAcc = financeStore.accounts.find(a => a.id === l.debitAccountId || a.code === l.debitAccountId);
           const creditAcc = financeStore.accounts.find(a => a.id === l.creditAccountId || a.code === l.creditAccountId);
 
-          if (debitAcc) balances[debitAcc.id] += l.amount * ((debitAcc.type === 'Asset' || debitAcc.type === 'Expense') ? 1 : -1);
-          if (creditAcc) balances[creditAcc.id] += l.amount * ((creditAcc.type === 'Asset' || creditAcc.type === 'Expense') ? -1 : 1);
+          if (debitAcc) balances[debitAcc.id] += l.amount * (['ASSET', 'EXPENSE'].includes(normalizeAccountType(debitAcc)) ? 1 : -1);
+          if (creditAcc) balances[creditAcc.id] += l.amount * (['ASSET', 'EXPENSE'].includes(normalizeAccountType(creditAcc)) ? -1 : 1);
       });
 
-      const plAccounts = financeStore.accounts.filter(a => a.type === 'Revenue' || a.type === 'Expense');
+      const plAccounts = financeStore.accounts.filter(a => isIncomeAccount(a) || isExpenseAccount(a));
       plAccounts.forEach(acc => {
           const bal = balances[acc.id];
           if (Math.abs(bal) > 0.005) {
-              const isRevenue = acc.type === 'Revenue';
+              const isRevenue = isIncomeAccount(acc);
               entries.push({
                   description: `MEC RESET: Zero out ${acc.name} (${normalizedMonth})`,
                   debitAccountId: isRevenue ? acc.id : (gl.retainedEarningsAccount || '3000'),
@@ -823,19 +824,19 @@ const handleOpenInventory = async () => {
               if (isWithinInterval(d, { start: parseISO(startDate), end: parseISO(endDate) })) {
                   const debitAcc = financeStore.accounts.find(a => a.id === l.debitAccountId || a.code === l.debitAccountId);
                   const creditAcc = financeStore.accounts.find(a => a.id === l.creditAccountId || a.code === l.creditAccountId);
-                  if (debitAcc) balances[debitAcc.id] += l.amount * ((debitAcc.type === 'Asset' || debitAcc.type === 'Expense') ? 1 : -1);
-                  if (creditAcc) balances[creditAcc.id] += l.amount * ((creditAcc.type === 'Asset' || creditAcc.type === 'Expense') ? -1 : 1);
+                  if (debitAcc) balances[debitAcc.id] += l.amount * (['ASSET', 'EXPENSE'].includes(normalizeAccountType(debitAcc)) ? 1 : -1);
+                  if (creditAcc) balances[creditAcc.id] += l.amount * (['ASSET', 'EXPENSE'].includes(normalizeAccountType(creditAcc)) ? -1 : 1);
               }
           });
 
-          const plAccounts = financeStore.accounts.filter(a => a.type === 'Revenue' || a.type === 'Expense');
+          const plAccounts = financeStore.accounts.filter(a => isIncomeAccount(a) || isExpenseAccount(a));
           const entries: Omit<LedgerEntry, 'id' | 'date'>[] = [];
           let netIncome = 0;
 
           plAccounts.forEach(acc => {
               const bal = balances[acc.id];
               if (Math.abs(bal) > 0.001) {
-                  const isRevenue = acc.type === 'Revenue';
+                  const isRevenue = isIncomeAccount(acc);
                   netIncome += isRevenue ? bal : -bal;
                   
                   // Reset account to zero
