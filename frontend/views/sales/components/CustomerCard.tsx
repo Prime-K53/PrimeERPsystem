@@ -19,7 +19,7 @@ interface CustomerCardProps {
 }
 
 const CARD_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+/* Fonts match the customer list (Clients.tsx): Inter body + DM Serif Display headings. */
 
 .cc-overlay{
   position:fixed; inset:0; z-index:9999;
@@ -28,7 +28,7 @@ const CARD_CSS = `
   background:rgba(28,35,33,0.45);
   backdrop-filter:blur(6px) saturate(1.1);
   -webkit-backdrop-filter:blur(6px) saturate(1.1);
-  font-family:'Space Grotesk',sans-serif;
+  font-family:'Inter',sans-serif;
   color:#1C2321;
   animation:ccFadeIn .18s ease;
 }
@@ -74,14 +74,14 @@ const CARD_CSS = `
   background:#F4F0E4;
   color:#153F37;
   display:flex;align-items:center;justify-content:center;
-  font-family:'Fraunces',serif;
+  font-family:'DM Serif Display','Georgia',serif;
   font-weight:700;
   font-size:16px;
   box-shadow:0 0 0 3px rgba(244,240,228,.22);
 }
 .cc-name-wrap{min-width:0; flex:1;}
 .cc-name{
-  font-family:'Fraunces',serif;
+  font-family:'DM Serif Display','Georgia',serif;
   font-weight:600;
   font-size:19px;
   line-height:1.22;
@@ -150,7 +150,7 @@ const CARD_CSS = `
   background:transparent;
   border:none;
   border-bottom:1px solid #E9E5D8;
-  font-family:'Space Grotesk',sans-serif;
+  font-family:'Inter',sans-serif;
   font-size:12.5px; font-weight:500;
   color:#1C2321;
   cursor:pointer;
@@ -203,8 +203,8 @@ const CARD_CSS = `
 .cc-stat .cc-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
 .cc-stat .cc-label{font-size:11px; color:#726F63;}
 .cc-stat .cc-icon{width:14px;height:14px; color:#726F63; opacity:.7;}
-.cc-stat .cc-amount{font-family:'Fraunces',serif; font-weight:600; font-size:23px; line-height:1.1; color:#1C2321;}
-.cc-stat .cc-amount .cc-code{font-family:'Space Grotesk',sans-serif; font-size:11.5px; font-weight:500; color:#726F63; margin-right:4px; vertical-align:2px;}
+.cc-stat .cc-amount{font-family:'JetBrains Mono',monospace; font-weight:600; font-size:23px; line-height:1.1; color:#1C2321;}
+.cc-stat .cc-amount .cc-code{font-family:'Inter',sans-serif; font-size:11.5px; font-weight:500; color:#726F63; margin-right:4px; vertical-align:2px;}
 .cc-stat.cc-due .cc-amount{color:#C0392B;}
 .cc-stat.cc-due.cc-paid .cc-amount{color:#15803D;}
 .cc-stat.cc-wallet .cc-amount{color:#15803D;}
@@ -236,7 +236,7 @@ const CARD_CSS = `
   width:28px;height:28px; border-radius:50%;
   background:#E4EEEA; color:#1F5F53;
   display:flex;align-items:center;justify-content:center;
-  font-family:'Fraunces',serif; font-weight:700; font-size:12px; flex:none;
+  font-family:'DM Serif Display','Georgia',serif; font-weight:700; font-size:12px; flex:none;
 }
 .cc-sub-name{font-size:12.5px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .cc-sub-pill{font-size:10px; font-weight:500; padding:4px 10px; border-radius:100px; background:#E4EEEA; color:#1F5F53; border:1px solid transparent; flex:none;}
@@ -311,7 +311,7 @@ const CARD_CSS = `
   backdrop-filter:blur(6px) saturate(1.1);
   -webkit-backdrop-filter:blur(6px) saturate(1.1);
   padding:40px 20px;
-  font-family:'Space Grotesk',sans-serif;
+  font-family:'Inter',sans-serif;
   color:#1C2321;
 }
 .cc-creds-card{
@@ -330,7 +330,7 @@ const CARD_CSS = `
   background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 2px, transparent 2px 26px);
   pointer-events:none;
 }
-.cc-creds-head h3{margin:0; font-family:'Fraunces',serif; font-size:17px; font-weight:600; position:relative;}
+.cc-creds-head h3{margin:0; font-family:'DM Serif Display','Georgia',serif; font-size:17px; font-weight:600; position:relative;}
 .cc-creds-head p{margin:4px 0 0; font-size:12px; color:rgba(244,240,228,.75); line-height:1.45; position:relative;}
 .cc-creds-body{padding:16px 22px 18px; display:flex; flex-direction:column; gap:8px;}
 .cc-cred-row{
@@ -341,7 +341,7 @@ const CARD_CSS = `
 .cc-cred-row.amber{background:#FBF3E2; border-color:#EAD9B8;}
 .cc-cred-label{font-size:10px; font-weight:600; letter-spacing:.06px; text-transform:uppercase; color:#726F63; margin-bottom:2px;}
 .cc-cred-row.amber .cc-cred-label{color:#A8631E;}
-.cc-cred-val{font-size:13px; font-weight:600; color:#1C2321; font-family:'Space Grotesk',monospace; overflow:hidden; text-overflow:ellipsis;}
+.cc-cred-val{font-size:13px; font-weight:600; color:#1C2321; font-family:'JetBrains Mono',monospace; overflow:hidden; text-overflow:ellipsis;}
 .cc-copy-btn{
   flex:none; width:32px; height:32px; border-radius:8px;
   border:1px solid #DEDACB; background:#FBFAF6;
