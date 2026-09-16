@@ -31,6 +31,12 @@ import { displayPrice } from '../../../services/pricingDisplayService';
 import { resolveCustomerPrice, getApplicableDiscounts, applyDiscounts, incrementDiscountUsage, getCustomerPricingTier } from '../../../services/customerPricingService';
 import { calculateItemTax } from '../../../services/taxRateService';
 import { getFifoUnitCost } from '../../../services/fifoCostService';
+import {
+  buildQuickPhotocopyServiceDetails,
+  calculateBillableSheets,
+  calculateTotalPages,
+  getQuickPhotocopyPricePerSheet,
+} from '../../../services/quickPhotocopyService';
 
 import { ItemModal } from '../../../components/items/ItemModal';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
@@ -1328,16 +1334,19 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
     const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number) => {
         const isPhotocopy = printType === 'photocopy';
-        const pricePerPage = isPhotocopy 
-          ? (companyConfig.transactionSettings?.pos?.photocopyPrice ?? 2.00)
+        // Quick Photocopy price is ALWAYS per physical sheet from Settings (never divided).
+        const pricePerPage = isPhotocopy
+          ? getQuickPhotocopyPricePerSheet(companyConfig)
           : (companyConfig.transactionSettings?.pos?.typePrintingPrice ?? 5.00);
 
         const costPerPage = isPhotocopy
           ? calculatePhotocopyCostPerPage(inventory)
           : calculateTypePrintingCostPerPage(inventory);
 
-        const totalPages = pagesPerCopy * quantity;
-        const totalSheets = isPhotocopy ? quantity * Math.ceil(pagesPerCopy / 2) : totalPages;
+        const totalPages = isPhotocopy
+          ? calculateTotalPages(pagesPerCopy, quantity)
+          : pagesPerCopy * quantity;
+        const totalSheets = isPhotocopy ? calculateBillableSheets(pagesPerCopy, quantity) : totalPages;
         const materialCost = costPerPage * totalPages;
         const unitCostPerCopy = totalPages > 0 ? materialCost : 0;
 
@@ -1346,9 +1355,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         const newItem: CartItem = {
           id: `QUICK-${isPhotocopy ? 'PHOTO' : 'PRINT'}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           itemId: isPhotocopy ? 'SVC-PHOTOCOPY' : 'SVC-TYPE-PRINT',
-          name: isPhotocopy ? 'Photocopy' : 'Type & Printing',
+          name: isPhotocopy ? 'Quick Photocopy' : 'Type & Printing',
           sku: isPhotocopy ? 'QUICK-PHOTO' : 'QUICK-PRINT',
-          desc: isPhotocopy ? 'Photocopy' : 'Type & Printing',
+          desc: isPhotocopy ? 'Quick Photocopy' : 'Type & Printing',
           price: pricePerPage,
           cost: materialCost / totalSheets,
           cost_price: materialCost / totalSheets,
@@ -1364,12 +1373,26 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
           priceLocked: true,
           lockedUnitPricePerCopy: finalPrice,
           lockedUnitCostPerCopy: unitCostPerCopy,
-          serviceDetails: {
-            pages: pagesPerCopy,
-            copies: quantity,
-            pinningCost: pinningCost,
-            pinningCount: pinningCount
-          }
+          ...(isPhotocopy
+            ? {
+                billableSheets: totalSheets,
+                qpPages: pagesPerCopy,
+                qpCopies: quantity,
+              }
+            : {}),
+          serviceDetails: isPhotocopy
+            ? {
+                ...buildQuickPhotocopyServiceDetails(pagesPerCopy, quantity, pricePerPage, {
+                  pinningCost,
+                  pinningCount,
+                }),
+              }
+            : {
+                pages: pagesPerCopy,
+                copies: quantity,
+                pinningCost: pinningCost,
+                pinningCount: pinningCount,
+              },
         } as CartItem;
 
         setFormData((prev: any) => ({

@@ -230687,10 +230687,12 @@ var BaseDocSchema = external_exports.object({
       lng: external_exports.number()
     }).optional()
   }).optional(),
+  // passthrough preserves QP markers (serviceDetails/billableSheets) for
+  // delivery-note page display; required desc/qty still validated.
   items: external_exports.array(external_exports.object({
     desc: external_exports.string(),
     qty: external_exports.number()
-  })).default([])
+  }).passthrough()).default([])
 });
 var FinancialDocSchema = BaseDocSchema.extend({
   invoiceNumber: external_exports.string().optional(),
@@ -230700,7 +230702,7 @@ var FinancialDocSchema = BaseDocSchema.extend({
     qty: external_exports.number(),
     price: external_exports.number(),
     total: external_exports.number()
-  })),
+  }).passthrough()),
   subtotal: external_exports.number(),
   discount: external_exports.number().default(0),
   roundingDifference: external_exports.number().optional(),
@@ -230794,7 +230796,7 @@ var PosReceiptSchema = external_exports.object({
     qty: external_exports.number(),
     price: external_exports.number(),
     total: external_exports.number()
-  })),
+  }).passthrough()),
   subtotal: external_exports.number(),
   discount: external_exports.number().default(0),
   tax: external_exports.number().default(0),
@@ -232156,7 +232158,11 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
       explicitConversionDetails || inferredConversionDetails || item.status === "Converted" || item.status === "Accepted" || item.status === "Completed" || item.notes && item.notes.includes("Converted from") || item.instructions && item.instructions.includes("Converted from") || item.proofOfDelivery && item.proofOfDelivery.locationStamp
     ),
     conversionDetails: explicitConversionDetails || parsedConversionDetails || inferredConversionDetails,
+    // Preserve QP markers for delivery-note page display (BaseDoc passthrough
+    // strips unknown on parse, but PrimeDocument delivery branch now reads
+    // them when present pre-parse; mapped desc already shows pages).
     items: ensureItems(item.items, "items").map((i2) => ({
+      ...i2 && typeof i2 === "object" ? i2 : {},
       desc: buildServiceDescription(i2) || (isJobOrder ? item.jobTitle : "N/A"),
       qty: toNum(i2.quantity || i2.qty || item.totalQuantity)
     }))
@@ -232215,7 +232221,12 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
   if (docType === "INVOICE" || docType === "EXAMINATION_INVOICE" || docType === "SALES_ORDER" || docType === "PO" || docType === "QUOTATION" || docType === "ORDER" || docType === "SUBSCRIPTION") {
     const financialData = {
       ...baseData,
+      // Preserve QP billing markers (id/sku/serviceDetails/billableSheets)
+      // via passthrough so PrimeDocument can display pages ("50 pages")
+      // while financial qty stays billable sheets. Required desc/qty/
+      // price/total still validated; extras survive via .passthrough().
       items: ensureItems(item.items, "line items").map((i2) => ({
+        ...i2 && typeof i2 === "object" ? i2 : {},
         desc: buildServiceDescription(i2),
         qty: toNum(i2.quantity || i2.qty, 1),
         price: toNum(i2.price || i2.unitPrice || i2.cost),
@@ -233354,6 +233365,68 @@ function VerificationLabel({ fontScale = 1 }) {
   return null;
 }
 
+// services/quickPhotocopyService.ts
+var QUICK_PHOTOCOPY_ITEM_ID = "SVC-PHOTOCOPY";
+var QUICK_PHOTOCOPY_SKU = "QUICK-PHOTO";
+var QUICK_PHOTOCOPY_ID_PREFIX = "QUICK-PHOTO";
+var toPositiveInt = (v3, fallback = 1) => {
+  const n5 = Math.floor(Number(v3));
+  if (!Number.isFinite(n5) || n5 < 1) return fallback;
+  return n5;
+};
+var toNonNegativeNumber = (v3, fallback = 0) => {
+  const n5 = Number(v3);
+  if (!Number.isFinite(n5) || n5 < 0) return fallback;
+  return n5;
+};
+function isQuickPhotocopyItem(item) {
+  if (!item || typeof item !== "object") return false;
+  const id = String(item.id ?? "");
+  const sku = String(item.sku ?? "");
+  const itemId = String(item.itemId ?? item.productId ?? "");
+  const isPhotocopyIdentity = id.startsWith(QUICK_PHOTOCOPY_ID_PREFIX) || sku === QUICK_PHOTOCOPY_SKU || itemId === QUICK_PHOTOCOPY_ITEM_ID;
+  if (!isPhotocopyIdentity) return false;
+  if (item.serviceDetails && typeof item.serviceDetails === "object") return true;
+  if (typeof item.billableSheets === "number" && Number.isFinite(item.billableSheets)) return true;
+  if (typeof item.qpPages === "number") return true;
+  return false;
+}
+function getQuickPhotocopyPagesPerCopy(item) {
+  if (!item) return 1;
+  const v3 = item?.serviceDetails?.pages ?? item?.pagesOverride ?? item?.pages ?? item?.qpPages ?? 1;
+  return toPositiveInt(v3, 1);
+}
+function getQuickPhotocopyCopies(item) {
+  if (!item) return 1;
+  const v3 = item?.serviceDetails?.copies ?? item?.qpCopies ?? 1;
+  return toPositiveInt(v3, 1);
+}
+function getQuickPhotocopyUnitPrice(item) {
+  if (!item) return 0;
+  const v3 = item?.serviceDetails?.pricePerSheet ?? item?.price ?? item?.unitPrice ?? item?.unit_price ?? 0;
+  return toNonNegativeNumber(v3, 0);
+}
+function getQuickPhotocopyTotals(item) {
+  const pagesPerCopy = getQuickPhotocopyPagesPerCopy(item);
+  const copies = getQuickPhotocopyCopies(item);
+  const unitPrice = getQuickPhotocopyUnitPrice(item);
+  const rawSheets = item?.billableSheets ?? item?.serviceDetails?.billableSheets ?? null;
+  const billableSheets = typeof rawSheets === "number" && Number.isFinite(rawSheets) && rawSheets >= 0 ? Math.floor(rawSheets) : copies * Math.ceil(pagesPerCopy / 2);
+  const totalPages = pagesPerCopy * copies;
+  return {
+    pagesPerCopy,
+    copies,
+    totalPages,
+    billableSheets,
+    unitPrice,
+    lineTotal: billableSheets * unitPrice
+  };
+}
+function formatQuickPhotocopyQty(totalPages) {
+  const n5 = toPositiveInt(totalPages, 1);
+  return `${n5} pages`;
+}
+
 // views/shared/components/PDF/PortalCopyWatermark.tsx
 var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
 var PortalCopyWatermark = () => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.portalWatermarkContainer, fixed: true, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.portalWatermarkText, children: "PORTAL COPY" }) });
@@ -233883,15 +233956,15 @@ var CleanInvoiceTemplate = ({
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
-    const isQuickPhoto = (item.id?.startsWith("QUICK-") || item.sku === "QUICK-PHOTO") && item.serviceDetails;
-    if (isQuickPhoto) {
-      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
-      const copies = item.serviceDetails.copies || item.qty || 1;
-      const sheets = Math.ceil(pages / 2) * copies;
-      qty = sheets;
-      unitPrice = sheets > 0 ? item.price / sheets : item.price;
-      total = item.price;
-      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photo"} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+    const isQP = isQuickPhotocopyItem(item);
+    if (isQP) {
+      const qp = getQuickPhotocopyTotals(item);
+      qty = formatQuickPhotocopyQty(qp.totalPages);
+      unitPrice = qp.unitPrice;
+      const storedTotal = Number(item.total);
+      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : qp.lineTotal;
+      const baseName = item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photocopy";
+      formattedDesc = `${baseName} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
@@ -233907,7 +233980,8 @@ var CleanInvoiceTemplate = ({
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
         currency,
         " ",
-        unitPrice.toFixed(2)
+        unitPrice.toFixed(2),
+        isQP ? "/sheet" : ""
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: "#334155", textAlign: "right" }, children: [
         currency,
@@ -234186,15 +234260,15 @@ var ModernInvoiceTemplate = ({
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
-    const isQuickPhoto = (item.id?.startsWith("QUICK-") || item.sku === "QUICK-PHOTO") && item.serviceDetails;
-    if (isQuickPhoto) {
-      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
-      const copies = item.serviceDetails.copies || item.qty || 1;
-      const sheets = Math.ceil(pages / 2) * copies;
-      qty = sheets;
-      unitPrice = sheets > 0 ? item.price / sheets : item.price;
-      total = item.price;
-      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photo"} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+    const isQP = isQuickPhotocopyItem(item);
+    if (isQP) {
+      const qp = getQuickPhotocopyTotals(item);
+      qty = formatQuickPhotocopyQty(qp.totalPages);
+      unitPrice = qp.unitPrice;
+      const storedTotal = Number(item.total);
+      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : qp.lineTotal;
+      const baseName = item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photocopy";
+      formattedDesc = `${baseName} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
@@ -234211,7 +234285,8 @@ var ModernInvoiceTemplate = ({
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
-        unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
+        unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 }),
+        isQP ? "/sheet" : ""
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
@@ -234439,15 +234514,15 @@ var ProfessionalInvoiceTemplate = ({
     let qty = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
-    const isQuickPhoto = (item.id?.startsWith("QUICK-") || item.sku === "QUICK-PHOTO") && item.serviceDetails;
-    if (isQuickPhoto) {
-      const pages = item.serviceDetails.pages || item.pagesOverride || 1;
-      const copies = item.serviceDetails.copies || item.qty || 1;
-      const sheets = Math.ceil(pages / 2) * copies;
-      qty = sheets;
-      unitPrice = sheets > 0 ? item.price / sheets : item.price;
-      total = item.price;
-      formattedDesc = `${item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photo"} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
+    const isQP = isQuickPhotocopyItem(item);
+    if (isQP) {
+      const qp = getQuickPhotocopyTotals(item);
+      qty = formatQuickPhotocopyQty(qp.totalPages);
+      unitPrice = qp.unitPrice;
+      const storedTotal = Number(item.total);
+      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : qp.lineTotal;
+      const baseName = item.name || item.productName || item.product_name || item.itemName || item.desc || "Quick Photocopy";
+      formattedDesc = `${baseName} \u2014 ${currency}${unitPrice.toFixed(2)}/sheet`;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
@@ -234463,7 +234538,8 @@ var ProfessionalInvoiceTemplate = ({
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
         " ",
-        unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })
+        unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 }),
+        isQP ? "/sheet" : ""
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: "#333333", textAlign: "right" }, children: [
         currency,
@@ -235374,6 +235450,27 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colTotal, children: "Amount" })
             ] }),
             ("items" in data2 ? dataAny.items : []).map((item, i2) => {
+              const isQPDefault = isQuickPhotocopyItem(item);
+              if (isQPDefault) {
+                const qp = getQuickPhotocopyTotals(item);
+                const qpName = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "Quick Photocopy");
+                return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.row, paginated ? { paddingVertical: 4 } : null], wrap: paginated ? false : void 0, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: i2 + 1 }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: `${qpName} \u2014 ${currency}${qp.unitPrice.toFixed(2)}/sheet` }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: formatQuickPhotocopyQty(qp.totalPages) }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: docStyles.colPrice, children: [
+                    currency,
+                    " ",
+                    formatAmount2(qp.unitPrice),
+                    "/sheet"
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: docStyles.colTotal, children: [
+                    currency,
+                    " ",
+                    formatAmount2(Number(item.total) > 0 ? Number(item.total) : qp.lineTotal)
+                  ] })
+                ] }, i2);
+              }
               const isService = item.category === "service" || item.type === "service" || item.isService === true;
               const useSimplifiedFormat = isService && (type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" || type === "QUOTATION");
               let formattedDesc = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "");
@@ -235589,11 +235686,15 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: "Description" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: "Qty Shipped" })
           ] }),
-          ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: i2 + 1 }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: item.qty })
-          ] }, i2)),
+          ("items" in data2 ? data2.items : []).map((item, i2) => {
+            const isQPDN = isQuickPhotocopyItem(item);
+            const qpDN = isQPDN ? getQuickPhotocopyTotals(item) : null;
+            return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: i2 + 1 }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: isQPDN && qpDN ? formatQuickPhotocopyQty(qpDN.totalPages) : item.qty })
+            ] }, i2);
+          }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.remarksBox, children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.remarksTitle, children: "Receiver's Remarks" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: "#666" }, children: String(dataAny.notes || pod?.remarks || pod?.notes || "Please note any discrepancies or comments regarding the delivery here...") })

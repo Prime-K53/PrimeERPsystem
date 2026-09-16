@@ -44,13 +44,19 @@ const BaseDocSchema = z.object({
       lng: z.number()
     }).optional()
   }).optional(),
+  // passthrough preserves QP markers (serviceDetails/billableSheets) for
+  // delivery-note page display; required desc/qty still validated.
   items: z.array(z.object({
     desc: z.string(),
     qty: z.number(),
-  })).default([]),
+  }).passthrough()).default([]),
 });
 
-// 1. Financial (Invoice/PO) adds Price logic 
+// 1. Financial (Invoice/PO) adds Price logic
+// passthrough preserves Quick Photocopy billing markers (serviceDetails,
+// billableSheets, qpPages/qpCopies, id/sku) so the renderer can display
+// customer-facing pages ("50 pages") while financial qty stays billable
+// sheets. Required fields still validated; extra fields are preserved.
 export const FinancialDocSchema = BaseDocSchema.extend({
   invoiceNumber: z.string().optional(),
   orderNumber: z.string().optional(),
@@ -59,7 +65,7 @@ export const FinancialDocSchema = BaseDocSchema.extend({
     qty: z.number(),
     price: z.number(),
     total: z.number(),
-  })),
+  }).passthrough()),
   subtotal: z.number(),
   discount: z.number().default(0),
   roundingDifference: z.number().optional(),
@@ -141,6 +147,7 @@ export const SupplierPaymentSchema = z.object({
 });
 
 // 3.6 POS Receipt Schema
+// passthrough preserves QP markers for receipt desc formatting (pages).
 export const PosReceiptSchema = z.object({
   ...VerifiableDocFields,
   receiptNumber: z.string(),
@@ -152,7 +159,7 @@ export const PosReceiptSchema = z.object({
     qty: z.number(),
     price: z.number(),
     total: z.number(),
-  })),
+  }).passthrough()),
   subtotal: z.number(),
   discount: z.number().default(0),
   tax: z.number().default(0),

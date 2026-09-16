@@ -41,6 +41,14 @@ import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAd
 import { PrintingPOSIntegrator, isPrintingService, createProductionJobsFromSale } from '../components/printing/PrintingPOSIntegrator';
 import { usePrintingStore } from '../stores/printingStore';
 import { getCustomerDisplayName } from '../utils/customerDisplay';
+import {
+  buildQuickPhotocopyServiceDetails,
+  calculateBillableSheets,
+  calculateTotalPages,
+  getQuickPhotocopyPricePerSheet,
+  getQuickPhotocopyTotals,
+  isQuickPhotocopyItem,
+} from '../services/quickPhotocopyService';
 
 const POS: React.FC = () => {
   const { companyConfig, user, allUsers, notify, addAlert, updateCompanyConfig } = useAuth();
@@ -170,6 +178,15 @@ const POS: React.FC = () => {
   }, []);
 
   const formatServiceDescription = (lineItem: any) => {
+    // Quick Photocopy: always show pages + per-sheet price so the receipt
+    // communicates "50 pages → K150/sheet → K3,750" (financial total stays
+    // sheets × price; desc is display only).
+    if (isQuickPhotocopyItem(lineItem)) {
+      const qp = getQuickPhotocopyTotals(lineItem);
+      const cur = companyConfig?.currencySymbol || 'K';
+      const base = String(lineItem?.name || lineItem?.desc || 'Quick Photocopy');
+      return `${base} (${qp.totalPages} pages @ ${cur}${qp.unitPrice.toFixed(2)}/sheet)`;
+    }
     // If it already has a detailed description (like from Quick Print), use it
     if (lineItem?.desc) return lineItem.desc;
 
@@ -514,16 +531,21 @@ const POS: React.FC = () => {
 const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number) => {
         const isPhotocopy = printType === 'photocopy';
         const isServiceItem = !!quickPrintModal.serviceItemId;
+        // Quick Photocopy price is ALWAYS per physical sheet from Settings (never divided).
         const pricePerPage = isPhotocopy
-          ? (companyConfig.transactionSettings?.pos?.photocopyPrice ?? 2.00)
+          ? getQuickPhotocopyPricePerSheet(companyConfig)
           : (companyConfig.transactionSettings?.pos?.typePrintingPrice ?? 5.00);
 
         const costPerPage = isPhotocopy
           ? calculatePhotocopyCostPerPage(inventory)
           : calculateTypePrintingCostPerPage(inventory);
 
-        const totalPages = pagesPerCopy * quantity;
-        const totalSheets = isPhotocopy ? quantity * Math.ceil(pagesPerCopy / 2) : totalPages;
+        // Billing: billableSheets = copies × ceil(pagesPerCopy / 2). Financial
+        // total stays billableSheets × pricePerSheet (via QuickPrintModal `total`).
+        const totalPages = isPhotocopy
+          ? calculateTotalPages(pagesPerCopy, quantity)
+          : pagesPerCopy * quantity;
+        const totalSheets = isPhotocopy ? calculateBillableSheets(pagesPerCopy, quantity) : totalPages;
         const materialCost = costPerPage * totalPages;
 
         const finalPrice = total;
@@ -532,9 +554,9 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
         const quickItem: CartItem = {
           id: `QUICK-${isPhotocopy ? 'PHOTO' : 'PRINT'}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           itemId: isPhotocopy ? 'SVC-PHOTOCOPY' : (quickPrintModal.serviceItemId || 'SVC-TYPE-PRINT'),
-          name: isPhotocopy ? 'Photocopy' : (quickPrintModal.serviceName || 'Type & Printing'),
+          name: isPhotocopy ? 'Quick Photocopy' : (quickPrintModal.serviceName || 'Type & Printing'),
           sku: isPhotocopy ? 'QUICK-PHOTO' : (quickPrintModal.serviceItemId ? `SVC-PRINT-${quickPrintModal.serviceItemId.slice(-6)}` : 'QUICK-PRINT'),
-          desc: isPhotocopy ? 'Photocopy' : (quickPrintModal.serviceName || 'Type & Printing'),
+          desc: isPhotocopy ? 'Quick Photocopy' : (quickPrintModal.serviceName || 'Type & Printing'),
           price: pricePerPage,
           cost: materialCost / totalSheets,
           cost_price: materialCost / totalSheets,
@@ -550,12 +572,29 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           priceLocked: true,
           lockedUnitPricePerCopy: finalPrice,
           lockedUnitCostPerCopy: unitCostPerCopy,
-          serviceDetails: {
-            pages: pagesPerCopy,
-            copies: quantity,
-            pinningCost: pinningCost,
-            pinningCount: pinningCount
-          }
+          // Preserve both concepts explicitly: pages (customer request) +
+          // billableSheets (billing quantity). quantity stays sheets so the
+          // existing quantity × price financial path is unchanged.
+          ...(isPhotocopy
+            ? {
+                billableSheets: totalSheets,
+                qpPages: pagesPerCopy,
+                qpCopies: quantity,
+              }
+            : {}),
+          serviceDetails: isPhotocopy
+            ? {
+                ...buildQuickPhotocopyServiceDetails(pagesPerCopy, quantity, pricePerPage, {
+                  pinningCost,
+                  pinningCount,
+                }),
+              }
+            : {
+                pages: pagesPerCopy,
+                copies: quantity,
+                pinningCost: pinningCost,
+                pinningCount: pinningCount,
+              },
     } as CartItem;
 
         // Add to cart (stapling cost is included in item price)

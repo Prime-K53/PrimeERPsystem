@@ -10,6 +10,11 @@ import PurchaseOrder from '../components/PurchaseOrder';
 import { currencyService } from '../services/currencyService';
 import { calculateLedger, calculateAging } from './ledgerUtils';
 import { getCustomerDisplayName } from './customerDisplay';
+import {
+  formatQuickPhotocopyQty,
+  getQuickPhotocopyTotals,
+  isQuickPhotocopyItem,
+} from '../services/quickPhotocopyService';
 
 export type DocumentType = 'Invoice' | 'Quotation' | 'Delivery Note' | 'Statement' | 'Receipt' | 'Examination Invoice' | 'Subscription Invoice' | 'Work Order' | 'Purchase Order';
 
@@ -194,7 +199,15 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
               columns={[
                 { header: 'Sn', accessor: '__sn', align: 'center' as const, width: '8%' },
                 { header: 'Description', accessor: 'name', wrapSafe: true },
-                { header: 'Qty', accessor: 'quantity', align: 'center' as const }
+                {
+                  header: 'Qty',
+                  accessor: 'quantity',
+                  align: 'center' as const,
+                  render: (_: any, dnItem: any) =>
+                    isQuickPhotocopyItem(dnItem)
+                      ? formatQuickPhotocopyQty(getQuickPhotocopyTotals(dnItem).totalPages)
+                      : dnItem.quantity,
+                }
               ]}
               data={normalized.items}
             />
@@ -385,23 +398,20 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
         );
 
       default: // Invoice or Quotation
+        // Quick Photocopy: strict detection (photocopy only, never QUICK-PRINT
+        // or normal products). Display Qty as pages ("50 pages"), Price as
+        // per-sheet (never divided), Amount stays sheets × price via `total`.
         const getQty = (item: any) => {
-          const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
-          if (isQuickPhoto) {
-            const pages = item.serviceDetails.pages || item.pagesOverride || 1;
-            const copies = item.serviceDetails.copies || item.quantity || 1;
-            return Math.ceil(pages / 2) * copies;
+          if (isQuickPhotocopyItem(item)) {
+            const qp = getQuickPhotocopyTotals(item);
+            return formatQuickPhotocopyQty(qp.totalPages);
           }
           return item.quantity;
         };
         const getDesc = (item: any) => {
-          const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
-          if (isQuickPhoto) {
-            const pages = item.serviceDetails.pages || item.pagesOverride || 1;
-            const copies = item.serviceDetails.copies || item.quantity || 1;
-            const sheets = Math.ceil(pages / 2) * copies;
-            const unitPrice = sheets > 0 ? item.price / sheets : item.price;
-            return `${item.name} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+          if (isQuickPhotocopyItem(item)) {
+            const qp = getQuickPhotocopyTotals(item);
+            return `${item.name} — ${currency}${qp.unitPrice.toFixed(2)}/sheet`;
           }
           return item.name;
         };
@@ -411,13 +421,9 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
             { header: 'Description', accessor: 'name', wrapSafe: true, render: (_: any, item: any) => getDesc(item) },
             { header: 'Qty', accessor: 'quantity', align: 'center' as const, render: (_: any, item: any) => getQty(item) },
             { header: 'Price', accessor: 'unitPrice', isCurrency: true, render: (val: number, item: any) => {
-              const isQuickPhoto = (item.id?.startsWith('QUICK-') || item.sku === 'QUICK-PHOTO') && item.serviceDetails;
-              if (isQuickPhoto) {
-                const pages = item.serviceDetails.pages || item.pagesOverride || 1;
-                const copies = item.serviceDetails.copies || item.quantity || 1;
-                const sheets = Math.ceil(pages / 2) * copies;
-                const unitPrice = sheets > 0 ? item.price / sheets : item.price;
-                return `${currency}${unitPrice.toFixed(2)}`;
+              if (isQuickPhotocopyItem(item)) {
+                const qp = getQuickPhotocopyTotals(item);
+                return `${currency}${qp.unitPrice.toFixed(2)}/sheet`;
               }
               return `${currency}${Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
             }},

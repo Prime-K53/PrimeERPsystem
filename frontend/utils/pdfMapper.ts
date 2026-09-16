@@ -395,7 +395,11 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             (item.proofOfDelivery && item.proofOfDelivery.locationStamp)
         ),
         conversionDetails: explicitConversionDetails || parsedConversionDetails || inferredConversionDetails,
+        // Preserve QP markers for delivery-note page display (BaseDoc passthrough
+        // strips unknown on parse, but PrimeDocument delivery branch now reads
+        // them when present pre-parse; mapped desc already shows pages).
         items: ensureItems(item.items, 'items').map((i: any) => ({
+            ...(i && typeof i === 'object' ? i : {}),
             desc: buildServiceDescription(i) || (isJobOrder ? item.jobTitle : 'N/A'),
             qty: toNum(i.quantity || i.qty || item.totalQuantity),
         }))
@@ -462,7 +466,12 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
     if (docType === 'INVOICE' || docType === 'EXAMINATION_INVOICE' || docType === 'SALES_ORDER' || docType === 'PO' || docType === 'QUOTATION' || docType === 'ORDER' || docType === 'SUBSCRIPTION') {
         const financialData = {
             ...baseData,
+            // Preserve QP billing markers (id/sku/serviceDetails/billableSheets)
+            // via passthrough so PrimeDocument can display pages ("50 pages")
+            // while financial qty stays billable sheets. Required desc/qty/
+            // price/total still validated; extras survive via .passthrough().
             items: ensureItems(item.items, 'line items').map((i: any) => ({
+                ...(i && typeof i === 'object' ? i : {}),
                 desc: buildServiceDescription(i),
                 qty: toNum(i.quantity || i.qty, 1),
                 price: toNum(i.price || i.unitPrice || i.cost),

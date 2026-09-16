@@ -11,6 +11,10 @@ import { displayPrice } from '../../../services/pricingDisplayService';
 import { calculateLineProfit, calculateSaleProfit } from '../../../utils/saleProfit';
 import { resolveItemAdjustmentSnapshots, getMarketAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
 import { getCustomerDisplayName } from '../../../utils/customerDisplay';
+import {
+  getQuickPhotocopyTotals,
+  isQuickPhotocopyItem,
+} from '../../../services/quickPhotocopyService';
 
 const B7 = '#2563EB';
 const B6 = '#1D4ED8';
@@ -305,10 +309,22 @@ const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta
     const lineProfit = useMemo(() => calculateLineProfit(item), [item]);
 
     const isPrintType = serviceDetails && (item.pages || serviceDetails.pages);
-    const totalPages = isPrintType ? (serviceDetails.pages || item.pages || 1) * (serviceDetails.copies || item.quantity || 1) : 0;
-    const isPhotocopy = item.unit === 'sheet';
-    const sheetCount = isPhotocopy ? Math.ceil((serviceDetails.pages || item.pages || 1) / 2) * (serviceDetails.copies || item.quantity || 1) : 0;
-    const perUnit = isPrintType ? (isPhotocopy ? item.price / sheetCount : item.price / totalPages) : 0;
+    const isQuickPhotocopy = isQuickPhotocopyItem(item);
+    // Quick Photocopy: billing is sheets × pricePerSheet; display is pages.
+    // item.price is ALWAYS per-sheet (never divided). item.quantity is sheets.
+    const qpTotals = isQuickPhotocopy ? getQuickPhotocopyTotals(item) : null;
+    const totalPages = isQuickPhotocopy && qpTotals
+      ? qpTotals.totalPages
+      : (isPrintType ? (serviceDetails.pages || item.pages || 1) * (serviceDetails.copies || item.quantity || 1) : 0);
+    const isPhotocopy = isQuickPhotocopy || item.unit === 'sheet';
+    const sheetCount = isQuickPhotocopy && qpTotals
+      ? qpTotals.billableSheets
+      : (isPhotocopy ? Math.ceil((serviceDetails.pages || item.pages || 1) / 2) * (serviceDetails.copies || item.quantity || 1) : 0);
+    // QP per-unit is the stored per-sheet price (never item.price / sheets).
+    // Other print services keep their existing per-page derivation untouched.
+    const perUnit = isQuickPhotocopy && qpTotals
+      ? qpTotals.unitPrice
+      : (isPrintType ? (isPhotocopy ? item.price / sheetCount : item.price / totalPages) : 0);
 
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: `1px dotted ${LINE}` }}>

@@ -293,7 +293,10 @@ export const buildPosReceiptDoc = ({
       const itemDiscount = round2(Number(item.discount || 0));
       const discountedPrice = qty > 0 && itemDiscount > 0 ? round2((originalPrice * qty - itemDiscount) / qty) : originalPrice;
       const total = round2(qty * discountedPrice);
+      // Preserve QP markers via passthrough so receipt desc can show pages.
+      // Financial qty stays billable sheets; desc carries "50 pages @ K/sheet".
       return {
+        ...(item && typeof item === 'object' ? item : {}),
         desc: itemDescriptionFormatter ? itemDescriptionFormatter(item) : (item.name || item.productName || 'Item'),
         qty,
         price: discountedPrice,
