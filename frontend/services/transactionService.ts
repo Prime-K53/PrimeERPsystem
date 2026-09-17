@@ -151,34 +151,9 @@ export const transactionService = {
     ) {
         const timestamp = new Date().toISOString();
 
-        // Pre-check stock availability for all items (atomic within transaction)
-        const config = getCompanyConfig();
-        const allowNegative = config?.inventorySettings?.allowNegativeStock === true;
-        const checkStock = async (itemId: string, qty: number) => {
-            const invItem = await resolveInventoryRecord(itemId, inventorySnapshot, inventoryStore);
-            // Non-stock items (Product/Service) carry no inventory: never
-            // availability-checked, never deducted.
-            if (!invItem || !isInventoryBearingItem(invItem)) return invItem;
-            if (!allowNegative && (invItem.stock || 0) < qty) {
-                throw new Error(`Insufficient stock for "${invItem.name}": need ${qty}, have ${invItem.stock || 0}`);
-            }
-            return invItem;
-        };
-
-        // Check snapshots (BOM materials)
-        for (const snap of snapshots) {
-            if (!snap.bomBreakdown) continue;
-            for (const comp of snap.bomBreakdown) {
-                await checkStock(comp.materialId, comp.quantity);
-            }
-        }
-        // Check items
-        for (const item of items) {
-            const hasSnapshot = snapshots.some(s => s.itemId === (item.parentId || item.id));
-            if (!hasSnapshot && item.type !== 'Service') {
-                await checkStock(item.id, item.quantity);
-            }
-        }
+        // Sales are never blocked on stock availability — not every item
+        // carries stock. Deduction below may push stock negative; low-stock
+        // is surfaced as a warning in the UI, never as a hard error.
 
         // 1. Deduct Materials from BOM Snapshots (stock-bearing components only)
         for (const snap of snapshots) {
@@ -3534,13 +3509,28 @@ export const transactionService = {
 
                 const invoice = await invoiceStore.get(id);
                 if (!invoice) throw new Error("Invoice not found");
-                if (invoice.status === 'Cancelled' || invoice.status === 'Voided') {
+                if (invoice.status === 'Cancelled' || invoice.status === 'Voided' || (invoice.status as string) === 'Void') {
                     throw new Error('Invoice is already voided/cancelled');
                 }
 
-                // 1. Reverse Inventory
+                // Reversals must mirror the original postings exactly — even when a
+                // referenced account has since been deactivated or removed from the
+                // CoA (e.g. legacy pre-migration codes). Fall back to the stored
+                // account id so a void can never fail closed on stale references.
+                const resolveAcctLenient = (ref: string | undefined): string => {
+                    if (!ref) throw new UnresolvedAccountError(ref || 'undefined');
+                    try {
+                        return resolveAcct(ref);
+                    } catch {
+                        return ref;
+                    }
+                };
+
+                // 1. Reverse Inventory (lines may key stock by id, productId or itemId)
                 for (const item of invoice.items) {
-                    const invItem = await inventoryStore.get(item.id);
+                    const invItem = await inventoryStore.get(item.id)
+                        || (item.productId ? await inventoryStore.get(item.productId) : null)
+                        || (item.itemId ? await inventoryStore.get(item.itemId) : null);
                     if (invItem) {
                         invItem.stock = (invItem.stock || 0) + item.quantity;
                         await inventoryStore.put(invItem);
@@ -3615,8 +3605,8 @@ export const transactionService = {
                             id: generateId('LG-REV'),
                             date: new Date().toISOString(),
                             description: `VOID: Payment #${payment.id} - Invoice ${id} voided`,
-                            debitAccountId: resolveAcct(originalCreditAccount),
-                            creditAccountId: resolveAcct(originalDebitAccount),
+                            debitAccountId: resolveAcctLenient(originalCreditAccount),
+                            creditAccountId: resolveAcctLenient(originalDebitAccount),
                             amount: retainedAmount,
                             referenceId: payment.id,
                             reconciled: false,
@@ -3684,8 +3674,8 @@ export const transactionService = {
                         id: generateId('LG-REV'),
                         date: new Date().toISOString(),
                         description: `REVERSAL: ${entry.description}`,
-                        debitAccountId: resolveAcct(entry.creditAccountId),
-                        creditAccountId: resolveAcct(entry.debitAccountId),
+                        debitAccountId: resolveAcctLenient(entry.creditAccountId),
+                        creditAccountId: resolveAcctLenient(entry.debitAccountId),
                         amount: entry.amount,
                         reconciled: false
                     };

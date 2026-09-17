@@ -87,8 +87,44 @@ const ShippingManager: React.FC = () => {
     const { deliveryNotes, employees = [], fetchFinanceData } = useFinance();
     const { shipments, customers, fetchSalesData } = useSales();
     const { handlePreview } = useDocumentPreview();
-    const [searchTerm, setSearchTerm] = useState('');
+    // Deep link from invoice "View delivery note" (?dn= / ?query=). Must not
+    // require a Router context (unit tests render this view standalone), so
+    // read the URL directly instead of useSearchParams().
+    const readDeepLinkedDnId = () => {
+        try {
+            const fromSearch = new URLSearchParams(window.location.search || '');
+            const s = fromSearch.get('dn') || fromSearch.get('query');
+            if (s && s.trim()) return s.trim();
+            const hash = window.location.hash || '';
+            const qIdx = hash.indexOf('?');
+            if (qIdx >= 0) {
+                const hp = new URLSearchParams(hash.slice(qIdx + 1));
+                return ((hp.get('dn') || hp.get('query')) || '').trim();
+            }
+        } catch { /* ignore — no deep link */ }
+        return '';
+    };
+    const [searchTerm, setSearchTerm] = useState(readDeepLinkedDnId);
+    const [deepLinkedDnId, setDeepLinkedDnId] = useState(readDeepLinkedDnId);
     const [activeTab, setActiveTab] = useState<'Pipeline' | 'Active' | 'History'>('Pipeline');
+
+    // When opened via "View delivery note" from an invoice, pre-fill the
+    // search so the linked note is visible immediately. Listens to hash
+    // changes because the app uses HashRouter.
+    useEffect(() => {
+        const syncFromUrl = () => {
+            const id = readDeepLinkedDnId();
+            if (id) {
+                setDeepLinkedDnId(id);
+                setSearchTerm(id);
+                setActiveTab('Pipeline');
+            }
+        };
+        syncFromUrl();
+        window.addEventListener('hashchange', syncFromUrl);
+        return () => window.removeEventListener('hashchange', syncFromUrl);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const signatureUploadInputRef = useRef<HTMLInputElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -129,10 +165,23 @@ const ShippingManager: React.FC = () => {
         deliveryNotes.filter(dn => dn.status === 'Pending'), 
     [deliveryNotes]);
 
-    const filteredDeliveries = pendingDeliveries.filter(dn => 
-        (dn.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (dn.id || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredDeliveries = pendingDeliveries.filter(dn => {
+        const q = searchTerm.toLowerCase();
+        if (!q) return true;
+        return (dn.customerName || '').toLowerCase().includes(q) ||
+            (dn.id || '').toLowerCase().includes(q) ||
+            (dn.invoiceId || '').toLowerCase().includes(q);
+    });
+
+    const deepLinkedDeliveryNote = useMemo(() => {
+        if (!deepLinkedDnId) return null;
+        const q = deepLinkedDnId.toLowerCase();
+        return (deliveryNotes || []).find(dn =>
+            (dn.id || '').toLowerCase() === q ||
+            (dn.id || '').toLowerCase().includes(q) ||
+            (dn.invoiceId || '').toLowerCase() === q
+        ) || null;
+    }, [deliveryNotes, deepLinkedDnId]);
 
     const filteredShipments = useMemo(() => {
         let list = shipments || [];
@@ -652,6 +701,29 @@ const ShippingManager: React.FC = () => {
             </header>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }} className="md:!p-10">
+                {deepLinkedDeliveryNote && (
+                    <div style={{ marginBottom: 12, padding: '12px 16px', borderRadius: 12, background: teal[50], border: `1px solid ${teal[200]}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <Truck size={16} color={teal[700]} />
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: ink }}>Delivery note {deepLinkedDeliveryNote.id}</div>
+                            <div style={{ fontSize: 11, color: inkSoft }}>
+                                {deepLinkedDeliveryNote.customerName || ''} · Status: {deepLinkedDeliveryNote.status || 'Pending'}
+                                {deepLinkedDeliveryNote.invoiceId ? ` · Invoice ${deepLinkedDeliveryNote.invoiceId}` : ''}
+                            </div>
+                        </div>
+                        <button onClick={() => handlePreview('DELIVERY_NOTE', deepLinkedDeliveryNote)} style={{ ...btnGhostStyle, padding: '8px 14px', fontSize: 11 }}>
+                            <Eye size={14} /> Preview
+                        </button>
+                        <button onClick={() => void handleDownloadPDF(deepLinkedDeliveryNote)} style={{ ...btnGhostStyle, padding: '8px 14px', fontSize: 11 }}>
+                            <Download size={14} /> Download
+                        </button>
+                        {deepLinkedDeliveryNote.status === 'Pending' && (
+                            <button onClick={() => handleOpenDispatch(deepLinkedDeliveryNote)} style={{ ...btnPrimaryStyle, padding: '8px 14px', fontSize: 11 }}>
+                                <Navigation size={13} /> Dispatch
+                            </button>
+                        )}
+                    </div>
+                )}
                 {activeTab === 'Pipeline' && (
                     <div style={{ background: paper, borderRadius: 14, border: `1px solid ${hairline}`, boxShadow: '0 1px 3px rgba(0,0,0,.04)', overflow: 'hidden' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>

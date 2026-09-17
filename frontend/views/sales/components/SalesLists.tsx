@@ -1000,7 +1000,7 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
                     </button>
                     <div className="my-1 border-t border-[#e4ddd1]"></div>
                     <div className="my-1 border-t border-[#e4ddd1]"></div>
-                    <button onClick={() => { setOpenMenuId(null); navigate(`/fiscal-reports/ledgers?query=${inv.id}`); }} className="w-full px-4 py-2 text-xs font-bold text-[#23282A] hover:bg-[#f5f2ed] flex items-center gap-3 transition-colors"><HistoryIcon size={14} className="text-[#5c6567]" /> Audit Ledger Entries</button>
+                    <button onClick={() => { setOpenMenuId(null); navigate(`/fiscal-reports/ledgers?query=${encodeURIComponent(inv.id)}`); }} className="w-full px-4 py-2 text-xs font-bold text-[#23282A] hover:bg-[#f5f2ed] flex items-center gap-3 transition-colors"><HistoryIcon size={14} className="text-[#5c6567]" /> Audit Ledger Entries</button>
                     <button onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(inv, 'analyze_profit'); }} className="w-full px-4 py-2 text-xs font-bold text-[#0f544c] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"><TrendingUp size={14} /> Analyze Profit</button>
 
                     {isOverdue && (

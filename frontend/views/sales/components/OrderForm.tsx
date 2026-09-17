@@ -30,6 +30,7 @@ import { roundMoney } from '../../../utils/roundingUtils';
 import { displayPrice } from '../../../services/pricingDisplayService';
 import { resolveCustomerPrice, getApplicableDiscounts, applyDiscounts, incrementDiscountUsage, getCustomerPricingTier } from '../../../services/customerPricingService';
 import { calculateItemTax } from '../../../services/taxRateService';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { getFifoUnitCost } from '../../../services/fifoCostService';
 import {
   buildQuickPhotocopyServiceDetails,
@@ -2393,7 +2394,10 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                 const variantPrices = hasVariants ? item.variants.map((v: any) => Number(resolveStoredSellingPrice(v) || 0)) : [];
                                                 const minPrice = hasVariants ? Math.min(...variantPrices) : 0;
                                                 const stock = item.stock || 0;
-                                                const isStockTracked = item.type === 'Stationery' || item.type === 'Raw Material';
+                                                // Sales are never blocked on stock — not every item
+                                                // carries stock. The level hint below is informational
+                                                // only and shows solely for stock-bearing items.
+                                                const isStockTracked = isInventoryBearingItem(item);
                                                 return (
                                                     <button
                                                         key={item.id}
@@ -2473,10 +2477,19 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 
                         <div className="flex items-center gap-[8px] px-[2px] mb-[8px] text-[12px] font-medium text-[#23282A]">
                             <span className="text-[#666F6C]">Units left: <span className="font-medium text-[#23282A]">
-                                {formData.items.length > 0 ? `${Math.min(...formData.items.map((i: any) => {
-                                    const inv = inventory.find((inv: Item) => inv.id === (i.parentId || i.id));
-                                    return inv?.stock ?? 0;
-                                }))}` : '—'}
+                                {(() => {
+                                    // Sales are never blocked on stock — not every item
+                                    // carries stock. Only stock-bearing lines count here;
+                                    // non-stock sales show '—' instead of a misleading 0.
+                                    const stockedLevels = (formData.items || []).map((i: any) => {
+                                        const inv = inventory.find((invItem: Item) => invItem.id === (i.parentId || i.id));
+                                        const source: any = (i as any)?.type ? i : inv;
+                                        if (!isInventoryBearingItem(source)) return null;
+                                        return Number(inv?.stock ?? (i as any)?.stock ?? 0);
+                                    }).filter((v: any) => v !== null) as number[];
+                                    if (stockedLevels.length === 0) return '—';
+                                    return `${Math.min(...stockedLevels)}`;
+                                })()}
                             </span></span>
                             <span className="text-[#E4DFD1]">|</span>
                             <a href="#" className="text-[#146b60] hover:text-[#23282A] hover:underline" onClick={e => { e.preventDefault(); const match = itemSearch.trim() ? inventory.find((i: Item) => i.name.toLowerCase().includes(itemSearch.toLowerCase()) || i.sku.toLowerCase().includes(itemSearch.toLowerCase())) : null; setItemHistoryItemId(match?.id); setShowItemHistory(true); }}>
@@ -2654,6 +2667,11 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                 const invItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
                                                 const stock = invItem?.stock ?? 0;
                                                 const qty = Number(item.quantity) || 0;
+                                                // Sales are never blocked on stock — flag over-level
+                                                // quantities only for stock-bearing lines, never for
+                                                // non-stock items (services, products without stock).
+                                                const lineSource: any = (item as any)?.type ? item : invItem;
+                                                const isStockedLine = isInventoryBearingItem(lineSource);
                                                 return (
                                                     <tr key={idx} className="hover:bg-[#eef7f6] transition-colors border-b border-[#E4DFD1] last:border-b-0">
                                                         <td data-label="Sn" className="px-[8px] py-[4px] text-[13px] text-[#666F6C] text-center">{idx + 1}</td>
@@ -2675,7 +2693,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                                 : <input
                                                                     type="number"
                                                                     min={1}
-                                                                    className={`w-16 text-center text-sm border border-gray-200 rounded px-1.5 py-1 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-colors ${qty > stock && stock > 0 ? 'text-red-600' : ''}`}
+                                                                    className={`w-16 text-center text-sm border border-gray-200 rounded px-1.5 py-1 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-colors ${isStockedLine && qty > stock && stock > 0 ? 'text-red-600' : ''}`}
                                                                     value={qty}
                                                                     onChange={e => handleQuantityChange(idx, parseFloat(e.target.value) || 0)}
                                                                     disabled={isPriceLocked}

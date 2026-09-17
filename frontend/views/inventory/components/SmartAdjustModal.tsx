@@ -1,5 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { logger } from '@/services/logger';
+import { useAuth } from '../../../context/AuthContext';
+import { backgroundSyncService } from '../../../services/backgroundSyncService';
+import {
+    SMART_ADJUST_MAX_ITEMS,
+    decideSmartAdjustApply,
+    getSmartAdjustDelta,
+    partitionSmartAdjustTargets,
+    readSmartAdjustSyncSnapshot,
+    resolveSmartAdjustTargets,
+    type SmartAdjustApplyDecision,
+    type SmartAdjustSyncSnapshot,
+} from '../InventoryList/services/smartAdjustSafety';
 import {
     Sparkles,
     Loader2,
@@ -85,8 +97,122 @@ const btnPrimaryStyle: React.CSSProperties = {
     transition: 'all .15s ease'
 };
 
+const money = (n: number): string => {
+    const v = Math.round((Number(n) || 0) * 100) / 100;
+    return `K${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+interface ReviewStepProps {
+    review: SmartAdjustApplyDecision;
+    adjustmentType: 'ADD' | 'REMOVE' | 'SET';
+    quantity: number;
+    syncPending: number;
+    largeAck: boolean;
+    onToggleLargeAck: () => void;
+    onBack: () => void;
+    onConfirm: () => void;
+    applying: boolean;
+}
+
+/**
+ * Explicit bulk confirmation. Nothing mutates from this screen except the
+ * Confirm Adjustment button, which re-validates everything first.
+ */
+const ReviewStep: React.FC<ReviewStepProps> = ({
+    review, adjustmentType, quantity, syncPending, largeAck, onToggleLargeAck, onBack, onConfirm, applying,
+}) => {
+    const impact = review.impact!;
+    const confirmDisabled = applying || (review.requiresLargeImpactAck && !largeAck);
+    const summary: Array<[string, string]> = [
+        ['Type', adjustmentType === 'ADD' ? 'Increase stock' : adjustmentType === 'REMOVE' ? 'Reduce stock' : 'Set quantity'],
+        ['Quantity', String(quantity)],
+        ['Selected items', String(review.eligible.length + review.ineligible.length)],
+        ['Inventory-bearing items', String(review.eligible.length)],
+        ['Non-stock items (excluded)', String(review.ineligible.length)],
+        ['Estimated inventory value change', `${impact.totalValueChange < 0 ? '−' : '+'}${money(impact.totalValueChange)}`],
+        ['Inventory accounts', impact.accountCodes.length > 0 ? impact.accountCodes.join(', ') : '—'],
+    ];
+    return (
+        <div>
+            <div style={{ ...{ display: 'flex', alignItems: 'center', gap: 10, margin: '26px 0 14px' }, margin: '4px 0 14px' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: ink }}>Review stock adjustment</span>
+            </div>
+            <p style={{ fontSize: 12.5, color: inkSoft, margin: '0 0 14px', lineHeight: 1.55 }}>
+                This adjustment will change stock quantities and may create accounting entries.
+                Nothing has been changed yet.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                {summary.map(([label, value]) => (
+                    <div key={label} style={{ padding: '9px 12px', background: paper, borderRadius: 9, border: `1px solid ${hairline}` }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.05 }}>{label}</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: ink, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+                    </div>
+                ))}
+            </div>
+            {syncPending > 0 && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 9, background: amber[100], color: ink, fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+                    <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span>{syncPending} inventory operation{syncPending !== 1 ? 's are' : ' is'} still syncing. These figures were computed from local state.</span>
+                </div>
+            )}
+            <div style={{ fontSize: 12, fontWeight: 700, color: ink, margin: '0 0 8px' }}>Items to adjust ({impact.lines.length})</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
+                {impact.lines.map(line => (
+                    <div key={line.itemId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', borderRadius: 9, border: `1px solid ${hairline}`, background: paper, fontSize: 12 }}>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, color: ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.name}</div>
+                            <div style={{ color: inkSoft, fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }}>{line.sku}</div>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums', color: inkSoft }}>
+                            {line.previousStock} → {line.previousStock + line.delta}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            {review.ineligible.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: ink, margin: '0 0 8px' }}>
+                        Excluded — not adjusted ({review.ineligible.length})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
+                        {review.ineligible.map(({ item, reason }) => (
+                            <div key={String(item.id)} style={{ padding: '8px 12px', borderRadius: 9, border: `1px solid ${hairline}`, background: '#f8fafc', fontSize: 12, color: inkSoft }}>
+                                <span style={{ fontWeight: 700, color: ink }}>{String(item.name || item.id)}</span>
+                                {' '}— {reason === 'unknown-type' ? 'unknown item type, fails closed' : `non-stock type (${String((item as { type?: unknown }).type || '—')})`}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+            {review.requiresLargeImpactAck && (
+                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 9, border: `1.4px solid ${amber[500]}`, background: '#fffbeb', fontSize: 12.5, color: ink, cursor: 'pointer', marginBottom: 14, lineHeight: 1.5 }}>
+                    <input type="checkbox" checked={largeAck} onChange={onToggleLargeAck} style={{ marginTop: 3 }} />
+                    <span>
+                        Large impact review. I have checked every line above and confirm this bulk
+                        adjustment of {money(impact.totalAbsValue)} is intended.
+                    </span>
+                </label>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4 }}>
+                <button type="button" onClick={onBack} style={btnGhostStyle}>Back</button>
+                <button
+                    type="button"
+                    onClick={onConfirm}
+                    disabled={confirmDisabled}
+                    style={{ ...btnPrimaryStyle, opacity: confirmDisabled ? 0.5 : 1, cursor: confirmDisabled ? 'not-allowed' : 'pointer' }}
+                >
+                    {applying ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={14} />}
+                    Confirm adjustment
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, onSuccess, items }) => {
     const { updateStock, warehouses } = useInventory();
+    const { checkPermission } = useAuth();
+    const canBulkAdjust = typeof checkPermission === 'function' ? checkPermission('inventory.adjust') : false;
 
     const [applying, setApplying] = useState(false);
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
@@ -94,22 +220,29 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
     const [quantity, setQuantity] = useState<number>(0);
     const [reason, setReason] = useState<string>('');
     const [selectedWarehouse, setSelectedWarehouse] = useState<string>('WH-MAIN');
-    const [step, setStep] = useState<'preview' | 'applying' | 'success'>('preview');
+    const [step, setStep] = useState<'preview' | 'review' | 'applying' | 'success'>('preview');
+    const [review, setReview] = useState<SmartAdjustApplyDecision | null>(null);
+    const [largeAck, setLargeAck] = useState(false);
+    const [blockMessage, setBlockMessage] = useState<string | null>(null);
+    const [syncPending, setSyncPending] = useState(0);
 
     useEffect(() => {
         if (!isOpen) return;
 
-        const lowStockIds = items
-            .filter(item => (item.stock || 0) <= (item.minStockLevel || 0))
-            .map(item => item.id);
-
-        setSelectedItems(lowStockIds.length > 0 ? lowStockIds : items.map(item => item.id));
+        // Containment (2026-09-17 incident): never infer selection. No
+        // auto-select-all, no low-stock auto-select — the operator must
+        // explicitly tick every row that enters a bulk operation.
+        setSelectedItems([]);
         setAdjustmentType('ADD');
         setQuantity(0);
         setReason('');
         setSelectedWarehouse(warehouses[0]?.id || 'WH-MAIN');
         setStep('preview');
         setApplying(false);
+        setReview(null);
+        setLargeAck(false);
+        setBlockMessage(null);
+        setSyncPending(0);
     }, [isOpen, items, warehouses]);
 
     const itemById = useMemo(() => {
@@ -123,22 +256,30 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
         [selectedItems, itemById]
     );
 
-    const getStockChange = (item: Item): number => {
-        if (adjustmentType === 'SET') {
-            return quantity - (item.stock || 0);
-        }
-        if (adjustmentType === 'REMOVE') {
-            return -Math.abs(quantity);
-        }
-        return Math.abs(quantity);
-    };
+    const getStockChange = (item: Item): number => getSmartAdjustDelta(item, adjustmentType, quantity);
 
-    const projectedNetChange = selectedItemRows.reduce((sum, item) => sum + getStockChange(item), 0);
-    const projectedNegativeStock = selectedItemRows.some(item => (item.stock || 0) + getStockChange(item) < 0);
+    // Eligibility partition of the explicit selection (preview display).
+    const partition = useMemo(
+        () => partitionSmartAdjustTargets(selectedItemRows.map(item => ({ item }))),
+        [selectedItemRows]
+    );
+
+    // Projections cover eligible (stock-bearing) rows only — non-stock rows
+    // never mutate, so they contribute no delta.
+    const projectedNetChange = partition.eligible.reduce((sum, item) => sum + getStockChange(item), 0);
+    const projectedNegativeStock = partition.eligible.some(item => (item.stock || 0) + getStockChange(item) < 0);
     const hasValidQuantity = adjustmentType === 'SET' ? quantity >= 0 : quantity > 0;
+    const canContinue = canBulkAdjust && selectedItems.length > 0 && hasValidQuantity;
 
-    const handleApplyAdjustments = async () => {
-        if (selectedItems.length === 0 || !hasValidQuantity) return;
+    const readSync = async (): Promise<SmartAdjustSyncSnapshot> =>
+        readSmartAdjustSyncSnapshot({
+            getSyncState: () => backgroundSyncService.getState(),
+            isOnline: () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false),
+        });
+
+    const handleContinueToReview = async () => {
+        setBlockMessage(null);
+        if (!canBulkAdjust || selectedItems.length === 0 || !hasValidQuantity) return;
 
         const dateValidation = validateDateInFY(getDefaultDate());
         if (dateValidation) {
@@ -146,12 +287,35 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
             return;
         }
 
+        const sync = await readSync();
+        setSyncPending(sync.pending);
+        const decision = decideSmartAdjustApply({
+            items,
+            selectedIds: selectedItems,
+            type: adjustmentType,
+            quantity,
+            confirmed: false,
+            largeImpactAcked: largeAck,
+            hasAdjustPermission: canBulkAdjust,
+            sync,
+        });
+        if (decision.code === 'NOT_CONFIRMED' || decision.code === 'LARGE_IMPACT_UNACKNOWLEDGED') {
+            setReview(decision);
+            setStep('review');
+            return;
+        }
+        // Any other non-ok outcome is a hard block: show it, mutate nothing.
+        setBlockMessage(decision.message);
+    };
+
+    const handleConfirmAdjustment = async () => {
+        if (!review || applying) return;
         setApplying(true);
         setStep('applying');
 
         try {
             const summaryReason = reason.trim() || `Smart stock adjustment (${adjustmentType})`;
-            // Idempotent bulk operation: one bulk id per Apply click, one
+            // Idempotent bulk operation: one bulk id per confirmed Apply, one
             // deterministic per-item operation id. Retries converge instead of
             // duplicating journals. Accounting intent is explicitly
             // OPERATIONAL_ADJUSTMENT (COGS-based); opening balances must use
@@ -159,11 +323,29 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
             // Smart Adjust (Sept-12 defect credited 42100 Interest Income).
             const bulkId = `SMART-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-            for (const itemId of selectedItems) {
-                const item = itemById.get(itemId);
-                if (!item) continue;
+            // Re-decide at confirm time against fresh sync state: the review
+            // snapshot may be stale, and only eligible items ever proceed.
+            const sync = await readSync();
+            setSyncPending(sync.pending);
+            const decision = decideSmartAdjustApply({
+                items,
+                selectedIds: selectedItems,
+                type: adjustmentType,
+                quantity,
+                confirmed: true,
+                largeImpactAcked: largeAck,
+                hasAdjustPermission: canBulkAdjust,
+                sync,
+            });
+            if (!decision.ok || !decision.impact) {
+                setReview(decision.code === 'NOT_CONFIRMED' || decision.code === 'LARGE_IMPACT_UNACKNOWLEDGED' ? decision : null);
+                setBlockMessage(decision.message);
+                setStep(decision.impact ? 'review' : 'preview');
+                return;
+            }
 
-                const stockChange = getStockChange(item);
+            for (const item of decision.eligible) {
+                const stockChange = getSmartAdjustDelta(item, adjustmentType, quantity);
                 if (stockChange === 0) continue;
 
                 await updateStock(item.id, stockChange, selectedWarehouse, summaryReason, true, undefined, {
@@ -254,7 +436,9 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
                                 Smart Stock Adjust
                             </h1>
                             <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>
-                                Bulk inventory updates &mdash; {selectedItemRows.length} items selected
+                                Bulk inventory updates &mdash; {selectedItems.length} selected
+                                {partition.eligible.length > 0 && ` · ${partition.eligible.length} stock-bearing`}
+                                {partition.ineligible.length > 0 && ` · ${partition.ineligible.length} excluded`}
                             </p>
                         </div>
                     </div>
@@ -287,6 +471,18 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
                                 <p style={{ fontSize: 16, fontWeight: 700, color: ink, margin: '0 0 6px' }}>Stock Adjustments Applied</p>
                                 <p style={{ fontSize: 13.5, color: inkSoft }}>Inventory stock levels have been updated</p>
                             </div>
+                        ) : step === 'review' && review && review.impact ? (
+                            <ReviewStep
+                                review={review}
+                                adjustmentType={adjustmentType}
+                                quantity={quantity}
+                                syncPending={syncPending}
+                                largeAck={largeAck}
+                                onToggleLargeAck={() => setLargeAck(v => !v)}
+                                onBack={() => { setStep('preview'); setBlockMessage(null); }}
+                                onConfirm={handleConfirmAdjustment}
+                                applying={applying}
+                            />
                         ) : (
                             <>
                                 {/* KPI Cards */}
@@ -313,6 +509,37 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
                                         <p style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 700, color: ink, fontVariantNumeric: 'tabular-nums' }}>{projectedNetChange.toFixed(2)}</p>
                                     </div>
                                 </div>
+
+                                {!canBulkAdjust && (
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 9, background: '#fef2f2', border: '1.4px solid #fecaca', color: ink, fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>
+                                        <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2, color: danger }} />
+                                        <span>Bulk stock adjustment requires the Adjust Stock permission. Nothing can be applied from this screen.</span>
+                                    </div>
+                                )}
+                                {canBulkAdjust && selectedItems.length === 0 && (
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 9, background: teal[50], border: `1px solid ${teal[200]}`, color: ink, fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>
+                                        <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2, color: teal[600] }} />
+                                        <span>Select at least one inventory item before applying an adjustment. Tick rows below — nothing is pre-selected.</span>
+                                    </div>
+                                )}
+                                {blockMessage && (
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 9, background: '#fef2f2', border: '1.4px solid #fecaca', color: ink, fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>
+                                        <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2, color: danger }} />
+                                        <span>{blockMessage}</span>
+                                    </div>
+                                )}
+                                {partition.eligible.length > SMART_ADJUST_MAX_ITEMS && (
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 9, background: '#fef2f2', border: '1.4px solid #fecaca', color: ink, fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>
+                                        <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2, color: danger }} />
+                                        <span>Bulk adjustment limit exceeded. Select at most {SMART_ADJUST_MAX_ITEMS} stock-bearing items, or perform the adjustments in controlled batches.</span>
+                                    </div>
+                                )}
+                                {partition.ineligible.length > 0 && selectedItems.length > 0 && (
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 9, background: '#f8fafc', border: `1px solid ${hairline}`, color: inkSoft, fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>
+                                        <Package size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                                        <span>{partition.ineligible.length} selected item{partition.ineligible.length !== 1 ? 's are' : ' is'} not stock-bearing and will be excluded — only Raw Material and Stationery can be adjusted.</span>
+                                    </div>
+                                )}
 
                                 <div style={sectionLabelStyle}><span>Configuration</span></div>
 
@@ -415,6 +642,7 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
                                                 const change = getStockChange(item);
                                                 const resultingStock = (item.stock || 0) + change;
                                                 const isSelected = selectedItems.includes(item.id);
+                                                const excluded = partition.ineligible.some(e => e.item.id === item.id);
                                                 return (
                                                     <div
                                                         key={`${item.id}-${idx}`}
@@ -431,6 +659,9 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                                                                     <h4 style={{ fontWeight: 700, color: ink, margin: 0, fontSize: 13 }}>{item.name}</h4>
                                                                     <span style={{ padding: '2px 8px', borderRadius: 6, background: teal[50], color: teal[700], fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.05 }}>{item.sku}</span>
+                                                                    {isSelected && excluded && (
+                                                                        <span style={{ padding: '2px 8px', borderRadius: 6, background: '#f1f5f9', color: inkSoft, fontSize: 10, fontWeight: 700 }}>excluded — non-stock</span>
+                                                                    )}
                                                                 </div>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 12.5 }}>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -443,9 +674,13 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
                                                                         ) : (
                                                                             <TrendingDown size={13} style={{ color: danger }} />
                                                                         )}
-                                                                        <span style={{ fontVariantNumeric: 'tabular-nums', color: resultingStock < 0 ? danger : inkSoft }}>
-                                                                            New: {resultingStock.toFixed(2)} {item.unit}
-                                                                        </span>
+                                                                        {isSelected && excluded ? (
+                                                                            <span style={{ color: inkSoft }}>Not adjusted</span>
+                                                                        ) : (
+                                                                            <span style={{ fontVariantNumeric: 'tabular-nums', color: resultingStock < 0 ? danger : inkSoft }}>
+                                                                                New: {resultingStock.toFixed(2)} {item.unit}
+                                                                            </span>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -492,18 +727,18 @@ const SmartAdjustModal: React.FC<SmartAdjustModalProps> = ({ isOpen, onClose, on
                                 onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
                                 Cancel
                             </button>
-                            <button type="button" onClick={handleApplyAdjustments}
-                                disabled={applying || selectedItems.length === 0 || !hasValidQuantity}
+                            <button type="button" onClick={handleContinueToReview}
+                                disabled={applying || !canContinue}
                                 style={{
                                     ...btnPrimaryStyle,
-                                    opacity: (applying || selectedItems.length === 0 || !hasValidQuantity) ? 0.5 : 1,
-                                    cursor: (applying || selectedItems.length === 0 || !hasValidQuantity) ? 'not-allowed' : 'pointer'
+                                    opacity: (applying || !canContinue) ? 0.5 : 1,
+                                    cursor: (applying || !canContinue) ? 'not-allowed' : 'pointer'
                                 }}
-                                onMouseEnter={e => { if (!applying && selectedItems.length > 0 && hasValidQuantity) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; } }}
+                                onMouseEnter={e => { if (!applying && canContinue) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; } }}
                                 onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 16px -6px rgba(15,84,76,.55)'; }}
                             >
                                 <Sparkles size={14} />
-                                Apply Stock Adjustments
+                                Continue to review
                             </button>
                         </div>
                     </div>

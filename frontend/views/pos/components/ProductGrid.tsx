@@ -225,7 +225,6 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                             key={item.id}
                             onMouseEnter={() => setActiveIndex(idx)}
                             onClick={() => handleItemClick(item)}
-                            disabled={item.stock <= 0 && item.type === 'Stationery' && !item.isVariantParent}
                             style={{
                                 width: '100%',
                                 display: 'grid',
@@ -237,8 +236,8 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                                 border: 'none',
                                 borderBottom: `1px solid ${LINE}`,
                                 background: activeIndex === idx ? B100 : 'transparent',
-                                cursor: item.stock <= 0 && item.type === 'Stationery' && !item.isVariantParent ? 'not-allowed' : 'pointer',
-                                opacity: item.stock <= 0 && item.type === 'Stationery' && !item.isVariantParent ? 0.5 : 1,
+                                cursor: 'pointer',
+                                opacity: 1,
                                 fontFamily: "'Inter','DM Sans',sans-serif",
                                 transition: '.1s'
                             }}
@@ -278,7 +277,6 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                 key={item.id}
                 onMouseEnter={() => setActiveIndex(idx)}
                 onClick={() => handleItemClick(item)}
-                disabled={item.stock <= 0 && item.type === 'Stationery' && !item.isVariantParent}
                 style={{
                     position: 'relative',
                     background: activeIndex === idx ? B100 : '#fff',
@@ -286,8 +284,8 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                     borderRadius: 10,
                     padding: viewMode === 'Small' ? 8 : 10,
                     textAlign: 'left',
-                    cursor: item.stock <= 0 && item.type === 'Stationery' && !item.isVariantParent ? 'not-allowed' : 'pointer',
-                    opacity: item.stock <= 0 && item.type === 'Stationery' && !item.isVariantParent ? 0.6 : 1,
+                    cursor: 'pointer',
+                    opacity: 1,
                     fontFamily: "'Inter','DM Sans',sans-serif",
                     display: 'flex',
                     flexDirection: 'column',
@@ -366,11 +364,6 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                         </span>
                     </div>
                 </div>
-                {item.stock <= 0 && item.type === 'Stationery' && !item.isVariantParent && (
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(0.5px)', borderRadius: 10 }}>
-                        <span style={{ background: RED, color: '#fff', padding: '2px 8px', borderRadius: 4, fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Out of Stock</span>
-                    </div>
-                )}
             </button>
         ));
     };

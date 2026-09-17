@@ -565,13 +565,12 @@ const OrdersInner: React.FC = () => {
                       {hasVariants ? (
                         <button
                           onClick={() => setVariantModalProduct(product)}
-                          disabled={!inStock}
                           style={{
                             flex: 1, padding: '9px 14px', borderRadius: 9, border: '1px solid #E9EDF3',
                             background: '#fff',
-                            color: !inStock ? '#94A3B8' : '#0F2C59',
+                            color: '#0F2C59',
                             fontSize: 12, fontWeight: 700,
-                            cursor: !inStock ? 'not-allowed' : 'pointer',
+                            cursor: 'pointer',
                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                             transition: 'all .15s ease',
                           }}
@@ -583,14 +582,14 @@ const OrdersInner: React.FC = () => {
                         return (
                           <button
                             onClick={() => handleAdd(product)}
-                            disabled={!inStock || isAdded}
+                            disabled={isAdded}
                             style={{
                               flex: 1, padding: '9px 14px', borderRadius: 9, border: 'none',
-                              background: isAdded ? '#059669' : !inStock ? '#E2E8F0' : TEAL_GRADIENT,
-                              color: !inStock ? '#94A3B8' : '#fff', fontSize: 12, fontWeight: 700,
-                              cursor: !inStock || isAdded ? 'not-allowed' : 'pointer',
+                              background: isAdded ? '#059669' : TEAL_GRADIENT,
+                              color: '#fff', fontSize: 12, fontWeight: 700,
+                              cursor: isAdded ? 'not-allowed' : 'pointer',
                               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                              boxShadow: inStock && !isAdded ? '0 4px 14px -4px rgba(15,84,76,0.55)' : 'none',
+                              boxShadow: !isAdded ? '0 4px 14px -4px rgba(15,84,76,0.55)' : 'none',
                               transition: 'all .15s ease',
                             }}
                           >
@@ -880,25 +879,23 @@ const OrdersInner: React.FC = () => {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {detailProduct.variants!.map((variant) => {
                       const attrs = variantAttributes(variant);
-                      const vOut = variant.stock <= 0;
                       const vPrice = Number(variant.sellingPrice || detailProduct.unitPrice || detailProduct.price || 0);
                       const vShown = promoPrice(vPrice, mPromo);
                       return (
                         <button
                           key={variant.id}
-                          onClick={() => { if (!vOut) handleAdd(detailProduct, variant); }}
-                          disabled={vOut}
+                          onClick={() => { handleAdd(detailProduct, variant); }}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 12,
                             padding: '12px 14px', borderRadius: 12,
-                            border: vOut ? '1px solid #F1F5F9' : '1px solid #E9EDF3',
-                            background: vOut ? '#F9FAFB' : '#fff',
-                            cursor: vOut ? 'not-allowed' : 'pointer',
+                            border: '1px solid #E9EDF3',
+                            background: '#fff',
+                            cursor: 'pointer',
                             textAlign: 'left', transition: 'all .15s ease',
-                            opacity: vOut ? 0.5 : 1,
+                            opacity: 1,
                           }}
-                          onMouseEnter={(e) => { if (!vOut) e.currentTarget.style.borderColor = '#0F2C59'; }}
-                          onMouseLeave={(e) => { if (!vOut) e.currentTarget.style.borderColor = '#E9EDF3'; }}
+                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0F2C59'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E9EDF3'; }}
                         >
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{variant.name}</div>
@@ -914,14 +911,12 @@ const OrdersInner: React.FC = () => {
                               {formatK(vShown)}
                             </div>
                             <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>
-                              {vOut ? 'Out of stock' : `${variant.stock} in stock`}
+                              {`${variant.stock ?? 0} in stock`}
                             </div>
                           </div>
-                          {!vOut && (
                             <div style={{ width: 28, height: 28, borderRadius: 8, background: TEAL_GRADIENT, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               <Plus size={14} />
                             </div>
-                          )}
                         </button>
                       );
                     })}
@@ -934,14 +929,13 @@ const OrdersInner: React.FC = () => {
                 {!mHasVariants && (
                   <button
                     onClick={() => { handleAdd(detailProduct); setDetailProduct(null); }}
-                    disabled={!mInStock}
                     style={{
                       flex: 1, padding: '12px 16px', borderRadius: 11, border: 'none',
-                      background: !mInStock ? '#E2E8F0' : TEAL_GRADIENT,
-                      color: !mInStock ? '#94A3B8' : '#fff', fontSize: 13, fontWeight: 700,
-                      cursor: !mInStock ? 'not-allowed' : 'pointer',
+                      background: TEAL_GRADIENT,
+                      color: '#fff', fontSize: 13, fontWeight: 700,
+                      cursor: 'pointer',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                      boxShadow: mInStock ? '0 6px 16px -6px rgba(15,84,76,.55)' : 'none',
+                      boxShadow: '0 6px 16px -6px rgba(15,84,76,.55)',
                       fontFamily: F,
                     }}
                   >
@@ -1000,7 +994,6 @@ const OrdersInner: React.FC = () => {
             <div style={{ padding: '4px 20px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {variantModalProduct.variants!.map((variant) => {
                 const attrs = variantAttributes(variant);
-                const isOutOfStock = variant.stock <= 0;
                 const vPrice = Number(variant.sellingPrice || variantModalProduct.unitPrice || variantModalProduct.price || 0);
                 // Align with the card + detail modal: show the promo-adjusted price.
                 const vShown = promoPrice(vPrice, promoForProduct(variantModalProduct));
@@ -1008,26 +1001,23 @@ const OrdersInner: React.FC = () => {
                   <button
                     key={variant.id}
                     onClick={() => {
-                      if (!isOutOfStock) {
                         handleAdd(variantModalProduct, variant);
                         setVariantModalProduct(null);
-                      }
                     }}
-                    disabled={isOutOfStock}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '12px 14px', borderRadius: 12,
-                      border: isOutOfStock ? '1px solid #F1F5F9' : '1px solid #E9EDF3',
-                      background: isOutOfStock ? '#F9FAFB' : '#fff',
-                      cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                      border: '1px solid #E9EDF3',
+                      background: '#fff',
+                      cursor: 'pointer',
                       textAlign: 'left', transition: 'all .15s ease',
-                      opacity: isOutOfStock ? 0.5 : 1,
+                      opacity: 1,
                     }}
                     onMouseEnter={(e) => {
-                      if (!isOutOfStock) e.currentTarget.style.borderColor = '#0F2C59';
+                      e.currentTarget.style.borderColor = '#0F2C59';
                     }}
                     onMouseLeave={(e) => {
-                      if (!isOutOfStock) e.currentTarget.style.borderColor = '#E9EDF3';
+                      e.currentTarget.style.borderColor = '#E9EDF3';
                     }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -1044,14 +1034,12 @@ const OrdersInner: React.FC = () => {
                         {formatK(vShown)}
                       </div>
                       <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>
-                        {isOutOfStock ? 'Out of stock' : `${variant.stock} in stock`}
+                        {`${variant.stock ?? 0} in stock`}
                       </div>
                     </div>
-                    {!isOutOfStock && (
                       <div style={{ width: 28, height: 28, borderRadius: 8, background: TEAL_GRADIENT, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Plus size={14} />
                       </div>
-                    )}
                   </button>
                 );
               })}

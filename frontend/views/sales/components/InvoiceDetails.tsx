@@ -20,6 +20,7 @@ import AIDocumentSummarizer from '../../../components/ai/AIDocumentSummarizer';
 import { enrichInvoiceWithBatchPricing, findMatchingExaminationBatch } from '../../../utils/examinationInvoicePricing';
 import { currencyService } from '../../../services/currencyService';
 import { computePostEditCorrection } from '../../../services/transactions/_internal';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { buildInvoiceVerificationUrl } from '../../../utils/invoiceVerification';
 import { resolveVerificationBaseUrl } from '../../../utils/documentVerification';
 
@@ -48,7 +49,7 @@ const danger = '#b5493f';
 
 export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initialInvoice, onClose, onEdit, onAction, isSubscription = false }) => {
     const { companyConfig, auditLogs, notify, user } = useAuth();
-    const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment, editInvoiceWithAdjustment, postInvoiceCorrection, getInvoiceVerificationToken, getDocumentVerificationToken } = useFinance();
+    const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment, editInvoiceWithAdjustment, postInvoiceCorrection, getInvoiceVerificationToken, getDocumentVerificationToken, cancelInvoice } = useFinance();
     const { customers = [] } = useSales();
     const { batches = [] } = useExamination();
     const { inventory = [] } = useInventoryStore();
@@ -91,7 +92,7 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
     const [showAllocationModal, setShowAllocationModal] = useState(false);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-    const isCancelled = invoice.status === 'Cancelled';
+    const isCancelled = invoice.status === 'Cancelled' || (invoice.status as string) === 'Voided' || (invoice.status as string) === 'Void';
     const balanceDue = isCancelled ? 0 : (invoice.totalAmount || 0) - (invoice.paidAmount || 0);
     const totalAmountDisplay = isCancelled ? 0 : (invoice.totalAmount || 0);
     const paidAmountDisplay = isCancelled ? 0 : (invoice.paidAmount || 0);
@@ -339,10 +340,16 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                 };
                 await addCustomerPayment(payment);
                 notify(`Payment record ${paymentId} generated and posted to Ledger.`, "success");
+            } else if (newStatus === 'Cancelled') {
+                if (isCancelled) return;
+                if (!window.confirm(`VOID INVOICE: This will reverse all ledger entries and return items to inventory. Continue?`)) return;
+                await cancelInvoice(invoice.id, 'Voided from invoice full details');
             } else {
                 await updateInvoice({ ...invoice, status: newStatus as Invoice['status'] });
                 notify(`Invoice status manually updated to ${newStatus}`, "info");
             }
+        } catch (err: any) {
+            notify(err?.message || 'Void failed', 'error');
         } finally {
             setIsUpdatingStatus(false);
         }
@@ -694,7 +701,10 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                                             const stockLevel = invItem ? Number(invItem.stock || 0) : null;
                                                             const reservedLevel = invItem ? Number(invItem.reserved || 0) : null;
                                                             const availableLevel = stockLevel != null && reservedLevel != null ? Math.max(0, stockLevel - reservedLevel) : null;
-                                                            const isLowStock = availableLevel !== null && invItem?.minStockLevel != null && availableLevel <= Number(invItem.minStockLevel);
+                                                            // Sales are never blocked on stock — not every item
+                                                            // carries stock. Flag low levels only for
+                                                            // stock-bearing items; informational only.
+                                                            const isLowStock = availableLevel !== null && invItem && isInventoryBearingItem(invItem) && invItem?.minStockLevel != null && availableLevel <= Number(invItem.minStockLevel);
                                                             const isEditing = editingItemId === item.id;
                                                             const isExpanded = expandedItems.has(item.id || `idx-${idx}`);
                                                             const hasDetail = hasBom || hasPricingBreakdown || availableLevel !== null;
@@ -822,7 +832,7 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                                                                             {[
                                                                                                 { label: 'On Hand', value: stockLevel },
                                                                                                 { label: 'Reserved', value: reservedLevel, color: '#d97706' },
-                                                                                                { label: 'Available', value: availableLevel, color: availableLevel <= (invItem.minStockLevel || 0) ? '#dc2626' : '#059669' },
+                                                                                                { label: 'Available', value: availableLevel, color: (invItem && isInventoryBearingItem(invItem) && invItem.minStockLevel != null && availableLevel <= Number(invItem.minStockLevel)) ? '#dc2626' : '#059669' },
                                                                                                 { label: 'Min Level', value: invItem.minStockLevel },
                                                                                             ].map((row, ri) => (
                                                                                                 <div key={ri} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${hairline}`, fontSize: 11 }}>
@@ -929,7 +939,7 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                             </span>
                                         </div>
                                         <p style={{ margin: '0 0 4px', fontSize: 10, color: inkSoft }}>{new Date(linkedDeliveryNote.date).toLocaleDateString()}</p>
-                                        <button onClick={() => navigate('/supply-chain/delivery-notes/' + encodeURIComponent(linkedDeliveryNote.id))}
+                                        <button onClick={() => { onClose(); navigate('/supply-chain/shipping?dn=' + encodeURIComponent(linkedDeliveryNote.id)); }}
                                             style={{ width: '100%', padding: '6px 12px', borderRadius: 6, border: `1px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                                             View delivery note <ExternalLink size={11} />
                                         </button>
@@ -942,7 +952,7 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                             <FileText size={14} color={teal[600]} /> Source quotation
                                         </h3>
                                         <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 700, color: teal[600] }}>{quotationRef}</p>
-                                        <button onClick={() => navigate('/sales-flow/quotations/' + encodeURIComponent(quotationRef))}
+                                        <button onClick={() => { onClose(); navigate('/sales-flow/quotations/' + encodeURIComponent(quotationRef)); }}
                                             style={{ width: '100%', padding: '6px 12px', borderRadius: 6, border: `1px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                                             View quotation <ExternalLink size={11} />
                                         </button>

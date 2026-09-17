@@ -66,17 +66,13 @@ class InventoryTransactionService {
         return { success: false, error: `Item "${item.name || itemId}" is type "${item.type || 'unknown'}" and does not support stock operations` };
       }
 
-      const companyConfig = JSON.parse(localStorage.getItem('nexus_company_config') || '{}');
-      const allowNegative = companyConfig?.inventorySettings?.allowNegativeStock === true;
       const warehouseInventoryList = await dbService.getAll<WarehouseInventory>('warehouseInventory');
       let currentQuantity = item.stock || 0;
       if (warehouseId) {
         const whInv = warehouseInventoryList.find(w => w.itemId === itemId && w.warehouseId === warehouseId);
         currentQuantity = whInv?.quantity || 0;
       }
-      if (!allowNegative && currentQuantity < quantity) {
-        return { success: false, error: `Insufficient stock. Available: ${currentQuantity}, Requested: ${quantity}` };
-      }
+      // Sales are never blocked on stock availability — deduction may go negative.
 
       const transactionDate = new Date().toISOString();
 
@@ -86,9 +82,7 @@ class InventoryTransactionService {
         if (!batch) {
           return { success: false, error: 'Batch not found' };
         }
-        if (batch.remainingQuantity < quantity) {
-          return { success: false, error: `Insufficient batch quantity. Available: ${batch.remainingQuantity}, Requested: ${quantity}` };
-        }
+        // Batch deduction is best-effort too — never blocks a sale.
         const updatedBatch = {
           ...batch,
           remainingQuantity: batch.remainingQuantity - quantity,
@@ -312,16 +306,14 @@ class InventoryReservationService {
 
       const trulyAvailable = availableQuantity - totalReserved;
 
-      const companyConfig = JSON.parse(localStorage.getItem('nexus_company_config') || '{}');
-      const allowNegative = companyConfig?.inventorySettings?.allowNegativeStock === true;
-
+      // Reservations never block — stock is informational only.
       return {
         available: trulyAvailable,
-        canReserve: allowNegative || trulyAvailable >= quantity
+        canReserve: true
       };
     } catch (error) {
       logger.error('[InventoryReservationService] Error checking availability:', error);
-      return { available: 0, canReserve: false };
+      return { available: 0, canReserve: true };
     }
   }
 
@@ -332,16 +324,7 @@ class InventoryReservationService {
       const { workOrderId, materialId, materialName, quantity, unitCost, warehouseId } = request;
 
       try {
-        const { available, canReserve } = await this.checkAvailability(materialId, quantity, warehouseId);
-
-        if (!canReserve) {
-          results.push({
-            success: false,
-            available,
-            error: `Insufficient stock. Available: ${available}, Requested: ${quantity}`
-          });
-          continue;
-        }
+        // Never blocks on stock — reservation is best-effort.
 
         if (quantity <= 0) {
           results.push({
@@ -496,26 +479,9 @@ class InventoryReservationService {
   }
 
   async checkSalesOrderAvailability(items: { productId: string; quantity: number }[]): Promise<{ available: boolean; unavailable: { productId: string; available: number; requested: number }[] }> {
-    const unavailable: { productId: string; available: number; requested: number }[] = [];
-    const inventory = await dbService.getAll<any>('inventory');
-
-    for (const item of items) {
-      const invItem = inventory.find(i => i.id === item.productId);
-      if (!invItem) {
-        unavailable.push({ productId: item.productId, available: 0, requested: item.quantity });
-        continue;
-      }
-
-      const reservations = await this.getActiveReservationsForMaterial(item.productId);
-      const totalReserved = reservations.reduce((sum, r) => sum + r.quantityReserved, 0);
-      const available = (invItem.stock || 0) - (invItem.reserved || invItem.reservedStock || 0) - totalReserved;
-
-      if (available < item.quantity) {
-        unavailable.push({ productId: item.productId, available, requested: item.quantity });
-      }
-    }
-
-    return { available: unavailable.length === 0, unavailable };
+    // Sales are never blocked on stock — items without inventory records or
+    // with low stock are still sellable. Always report available.
+    return { available: true, unavailable: [] };
   }
 
   async createSalesOrderReservations(
@@ -526,12 +492,7 @@ class InventoryReservationService {
 
     for (const item of items) {
       try {
-        const { available, canReserve } = await this.checkAvailability(item.productId, item.quantity, item.warehouseId);
-
-        if (!canReserve) {
-          results.push({ productId: item.productId, success: false, error: `Insufficient stock. Available: ${available}, Requested: ${item.quantity}` });
-          continue;
-        }
+        // Best-effort reservation — never blocks on stock.
 
         const reservation = {
           id: `SO-RES-${salesOrderId}-${item.productId}`,

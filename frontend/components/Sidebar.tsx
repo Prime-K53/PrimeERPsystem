@@ -316,6 +316,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
             { label: 'Balance Sheet', path: '/fiscal-reports/financials?type=BalanceSheet', icon: <Scale size={14} /> },
             { label: 'Cash Flow', path: '/fiscal-reports/financials?type=CashFlow', icon: <Activity size={14} /> },
             { label: 'Trial Balance', path: '/fiscal-reports/financials?type=TrialBalance', icon: <FileCheck size={14} /> },
+            { label: 'Ledger Explorer', path: '/fiscal-reports/ledgers', icon: <History size={14} /> },
             { label: 'Budget Analysis', path: '/fiscal-reports/financials?type=Budget', icon: <Target size={14} /> },
             { label: 'Aged Receivables', path: '/fiscal-reports/financials?type=AgedAR', icon: <History size={14} /> },
             { label: 'Aged Payables', path: '/fiscal-reports/financials?type=AgedAP', icon: <FileText size={14} /> },

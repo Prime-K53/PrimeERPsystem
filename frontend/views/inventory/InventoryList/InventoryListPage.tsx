@@ -93,7 +93,8 @@ const BOM_CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
 export const InventoryListPage: React.FC = () => {
   const navigate = useNavigate();
   const { addItem, updateItem, deleteItem, warehouses } = useInventory();
-  const { companyConfig, notify } = useAuth();
+  const { companyConfig, notify, checkPermission } = useAuth();
+  const canBulkAdjust = typeof checkPermission === 'function' ? checkPermission('inventory.adjust') : false;
   const currencySymbol = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
   const {
@@ -522,14 +523,17 @@ const handleProduce = useCallback((item: Item) => {
               warehouses={warehouseIds}
             />
             <div className="flex gap-2 ml-auto">
+              {canBulkAdjust && (
               <button
                 type="button"
                 onClick={() => setIsSmartAdjustOpen(true)}
+                title={selectedIds.size > 0 ? `Review bulk adjustment for ${selectedIds.size} selected item(s)` : 'Select items first, then review a bulk adjustment'}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition-all"
               >
                 <Sparkles size={14} />
                 Smart Adjust
               </button>
+              )}
               <button
                 type="button"
                 onClick={() => setIsInsightsOpen(true)}
@@ -1293,7 +1297,7 @@ const handleProduce = useCallback((item: Item) => {
         isOpen={isSmartAdjustOpen}
         onClose={() => setIsSmartAdjustOpen(false)}
         onSuccess={() => { refresh(); clearSelection(); }}
-        items={selectedItems.length > 0 ? selectedItems : allItems}
+        items={selectedItems}
       />
       {isInsightsOpen && (
         <SmartStockInsights

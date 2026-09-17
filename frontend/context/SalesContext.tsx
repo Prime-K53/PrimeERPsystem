@@ -439,18 +439,8 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }
             }
 
-            // Fast pre-check: stock availability (definitive atomic check happens inside processSale)
-            const stockItems = (sale.items || []).filter((i: any) => i.type !== 'Service');
-            const allowNegative = companyConfig?.inventorySettings?.allowNegativeStock === true;
-            if (!allowNegative && stockItems.length > 0) {
-                const { available, unavailable } = await inventoryReservationService.checkSalesOrderAvailability(
-                    stockItems.map((i: any) => ({ productId: i.id || i.productId, quantity: i.quantity }))
-                );
-                if (!available) {
-                    const details = unavailable.map(u => `"${u.productId}": need ${u.requested}, have ${u.available}`).join('; ');
-                    return { success: false, message: `Insufficient stock: ${details}` };
-                }
-            }
+            // Stock availability never blocks a sale — not every item carries
+            // stock. Low stock is informational only; deduction may go negative.
 
             await api.sales.createSale(saleToProcess);
 
@@ -1329,17 +1319,8 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                             id: order.id || salesOrderService.generateProvisionalOrderId(salesStore.salesOrders, 'SO')
                         };
 
-                        // Check availability before confirming
-                        if (orderToSave.status === 'Confirmed') {
-                            const { available, unavailable } = await inventoryReservationService.checkSalesOrderAvailability(
-                                (orderToSave.items || []).map(i => ({ productId: i.productId, quantity: i.quantity }))
-                            );
-                            if (!available) {
-                                const details = unavailable.map(u => `"${u.productId}": need ${u.requested}, have ${u.available}`).join('; ');
-                                notify(`Cannot confirm — insufficient stock: ${details}`, 'error');
-                                return;
-                            }
-                        }
+                        // Sales orders confirm regardless of stock — not every item
+                        // carries stock. Reservation below is best-effort.
 
                         await salesStore.addSalesOrder(orderToSave);
 
@@ -1375,16 +1356,8 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                             await inventoryReservationService.releaseSalesOrderReservations(order.id);
                         }
 
-                        // Reserve inventory if newly confirmed
+                        // Reserve inventory if newly confirmed (best-effort, never blocks confirmation)
                         if (order.status === 'Confirmed' && oldVal && oldVal.status !== 'Confirmed') {
-                            const { available, unavailable } = await inventoryReservationService.checkSalesOrderAvailability(
-                                (order.items || []).map(i => ({ productId: i.productId, quantity: i.quantity }))
-                            );
-                            if (!available) {
-                                const details = unavailable.map(u => `"${u.productId}": need ${u.requested}, have ${u.available}`).join('; ');
-                                notify(`Cannot confirm — insufficient stock: ${details}`, 'error');
-                                return;
-                            }
                             await inventoryReservationService.createSalesOrderReservations(
                                 order.id,
                                 (order.items || []).map(i => ({

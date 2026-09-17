@@ -151,6 +151,7 @@ const Expenses = lazyWithRetry('./views/accounts/Expenses', () => import('./view
 const IncomeView = lazyWithRetry('./views/accounts/Income', () => import('./views/accounts/Income'));
 const ChartOfAccounts = lazyWithRetry('./views/accounts/ChartOfAccounts', () => import('./views/accounts/ChartOfAccounts'));
 const FinancialReports = lazyWithRetry('./views/accounts/FinancialReports', () => import('./views/accounts/FinancialReports'));
+const LedgerExplorer = lazyWithRetry('./views/accounts/LedgerExplorer', () => import('./views/accounts/LedgerExplorer'));
 const Reconciliation = lazyWithRetry('./views/accounts/Reconciliation', () => import('./views/accounts/Reconciliation'));
 const Budgets = lazyWithRetry('./views/accounts/Budgets', () => import('./views/accounts/Budgets'));
 const Banking = lazyWithRetry('./views/accounts/banking-v2', () => import('./views/accounts/banking-v2'));
@@ -955,6 +956,7 @@ const AppLayout: React.FC = () => {
                 <Route element={<ErrorBoundary name="Fiscal Reports"><Outlet /></ErrorBoundary>}>
                   <Route path="/fiscal-reports" element={<FiscalReportsHub />} />
                   <Route path="/fiscal-reports/financials" element={<ProtectedRoute permission="accounts.view"><FinancialReports /></ProtectedRoute>} />
+                  <Route path="/fiscal-reports/ledgers" element={<ProtectedRoute permission="accounts.view"><LedgerExplorer /></ProtectedRoute>} />
                   <Route path="/fiscal-reports/reconciliation" element={<ProtectedRoute permission="accounts.view"><Reconciliation /></ProtectedRoute>} />
                   <Route path="/fiscal-reports/budgets" element={<ProtectedRoute permission="accounts.view"><Budgets /></ProtectedRoute>} />
                   <Route path="/fiscal-reports/vat" element={<Navigate to="/fiscal-reports" replace />} />
