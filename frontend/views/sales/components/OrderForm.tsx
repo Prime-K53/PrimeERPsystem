@@ -36,7 +36,9 @@ import {
   buildQuickPhotocopyServiceDetails,
   calculateBillableSheets,
   calculateTotalPages,
+  getQuickPhotocopyLineDisplay,
   getQuickPhotocopyPricePerSheet,
+  isQuickPhotocopyItem,
 } from '../../../services/quickPhotocopyService';
 
 import { ItemModal } from '../../../components/items/ItemModal';
@@ -2672,6 +2674,10 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                 // non-stock items (services, products without stock).
                                                 const lineSource: any = (item as any)?.type ? item : invItem;
                                                 const isStockedLine = isInventoryBearingItem(lineSource);
+                                                // Shared compact QP display (name stays plain, qty shows
+                                                // entered pages, rate appears exactly once). Applies to
+                                                // Quick Photocopy only; QUICK-PRINT keeps legacy cells.
+                                                const qpDisplay = isQuickPhotocopyItem(item) ? getQuickPhotocopyLineDisplay(item, currency) : null;
                                                 return (
                                                     <tr key={idx} className="hover:bg-[#eef7f6] transition-colors border-b border-[#E4DFD1] last:border-b-0">
                                                         <td data-label="Sn" className="px-[8px] py-[4px] text-[13px] text-[#666F6C] text-center">{idx + 1}</td>
@@ -2689,7 +2695,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                         </td>
                                                         <td data-label="Qty" className="px-2 py-1 text-center text-sm text-slate-800">
                                                             {item.id?.startsWith('QUICK-')
-                                                                ? (() => { const pages = item.serviceDetails?.pages || item.pagesOverride || 1; const copies = item.serviceDetails?.copies || 1; const sheets = Math.ceil(pages / 2) * copies; return `${sheets} ${sheets === 1 ? 'sheet' : 'sheets'}`; })()
+                                                                ? (qpDisplay ? qpDisplay.qty : (() => { const pages = item.serviceDetails?.pages || item.pagesOverride || 1; const copies = item.serviceDetails?.copies || 1; const sheets = Math.ceil(pages / 2) * copies; return `${sheets} ${sheets === 1 ? 'sheet' : 'sheets'}`; })())
                                                                 : <input
                                                                     type="number"
                                                                     min={1}
@@ -2701,7 +2707,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                         </td>
                                                         <td data-label="Price" className="px-2 py-1 text-right text-sm text-slate-800">
                                                             {item.id?.startsWith('QUICK-')
-                                                                ? (() => { const sheets = Math.ceil((item.serviceDetails?.pages || 1) / 2) * (item.serviceDetails?.copies || 1); return `${currency}${((item.price || 0) / sheets).toFixed(2)}/sheet`; })()
+                                                                ? (qpDisplay ? qpDisplay.rate : (() => { const sheets = Math.ceil((item.serviceDetails?.pages || 1) / 2) * (item.serviceDetails?.copies || 1); return `${currency}${((item.price || 0) / sheets).toFixed(2)}/sheet`; })())
                                                                 : <input
                                                                     type="number"
                                                                     min={0}

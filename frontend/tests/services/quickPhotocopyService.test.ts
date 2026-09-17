@@ -7,6 +7,7 @@ import {
   formatQuickPhotocopyPriceLabel,
   formatQuickPhotocopyQty,
   getQuickPhotocopyDocumentLine,
+  getQuickPhotocopyLineDisplay,
   getQuickPhotocopyPricePerSheet,
   getQuickPhotocopyTotals,
   isQuickPhotocopyItem,
@@ -102,7 +103,7 @@ describe('Quick Photocopy billing-unit', () => {
     const t = getQuickPhotocopyTotals(item);
     expect(t.totalPages).toBe(50);
     expect(t.billableSheets).toBe(25);
-    expect(formatQuickPhotocopyQty(t.totalPages)).toBe('50 pages');
+    expect(formatQuickPhotocopyQty(t.totalPages)).toBe('50 pgs');
   });
   it('amount is based on 25 sheets, not 50 pages', () => {
     const item = makeQPItem(50, 1);
@@ -118,15 +119,14 @@ describe('Quick Photocopy billing-unit', () => {
   });
 
   // Documents 16-22
-  it('document line shows 50 pages, K150/sheet, K3,750', () => {
+  it('document line shows 50 pgs, K 150.00/sht, K3,750', () => {
     const item = makeQPItem(50, 1);
     const line = getQuickPhotocopyDocumentLine(item, 'K');
-    expect(line.qtyLabel).toBe('50 pages');
-    expect(line.priceLabel).toContain('150');
-    expect(line.priceLabel).toContain('/sheet');
+    expect(line.qtyLabel).toBe('50 pgs');
+    expect(line.priceLabel).toBe('K 150.00/sht');
     expect(line.amount).toBe(3750);
   });
-  it('POS receipt shows 50 pages, K150/sheet, K3,750', () => {
+  it('POS receipt shows plain name; qty/rate compose 50 pgs, K 150.00/sht, K3,750', () => {
     const qp = makeQPItem(50, 1);
     const sale: any = {
       id: 'SALE-QP-TEST',
@@ -139,15 +139,19 @@ describe('Quick Photocopy billing-unit', () => {
       paymentMethod: 'Cash',
       payments: [{ method: 'Cash', amount: 3750 }],
     };
-    const desc = `${qp.name} (${50} pages @ K${(150).toFixed(2)}/sheet)`;
+    // Production receipt desc is the plain item name (rate lives only in
+    // the qty × rate line composed by the receipt template).
     const receipt: any = buildPosReceiptDoc({
       sale,
       cashierName: 'Cashier',
-      itemDescriptionFormatter: () => desc,
+      itemDescriptionFormatter: (lineItem: any) =>
+        getQuickPhotocopyLineDisplay(lineItem, 'K').name,
     });
-    expect(receipt.items[0].desc).toContain('50 pages');
-    expect(receipt.items[0].desc).toContain('150');
-    expect(receipt.items[0].desc).toContain('/sheet');
+    expect(receipt.items[0].desc).toBe('Quick Photocopy');
+    expect(receipt.items[0].desc).not.toContain('/sht');
+    expect(receipt.items[0].desc).not.toContain('/sheet');
+    const display = getQuickPhotocopyLineDisplay(qp, 'K');
+    expect(`${display.qty} x ${display.rate}`).toBe('50 pgs x K 150.00/sht');
     expect(receipt.items[0].total).toBe(3750);
     expect(receipt.totalAmount).toBe(3750);
   });
@@ -201,9 +205,9 @@ describe('Quick Photocopy billing-unit', () => {
     };
     expect(isQuickPhotocopyItem(qpPrint)).toBe(false);
   });
-  it('price label never hard-codes K150 (uses configured value)', () => {
-    expect(formatQuickPhotocopyPriceLabel(175, 'K')).toContain('175');
-    expect(formatQuickPhotocopyPriceLabel(200, 'K')).toContain('200');
-    expect(formatQuickPhotocopyPriceLabel(150, 'K')).toContain('150');
+  it('price label uses compact "/sht" form with existing 2-decimal convention', () => {
+    expect(formatQuickPhotocopyPriceLabel(175, 'K')).toBe('K 175.00/sht');
+    expect(formatQuickPhotocopyPriceLabel(200, 'K')).toBe('K 200.00/sht');
+    expect(formatQuickPhotocopyPriceLabel(150, 'K')).toBe('K 150.00/sht');
   });
 });

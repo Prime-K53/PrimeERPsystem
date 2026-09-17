@@ -31,7 +31,9 @@ import {
   paginationIdentity,
 } from './documentPagination.tsx';
 import {
+  formatQuickPhotocopyPriceLabel,
   formatQuickPhotocopyQty,
+  getQuickPhotocopyLineDisplay,
   getQuickPhotocopyTotals,
   isQuickPhotocopyItem,
 } from '../../../../services/quickPhotocopyService';
@@ -524,17 +526,17 @@ const CleanInvoiceTemplate = ({
     let total = item.total;
 
     // Quick Photocopy only (never QUICK-PRINT/normal). Display Qty as pages
-    // ("50 pages"), Price as stored per-sheet (never divided), Amount as
+    // ("13 pgs"), Price as stored per-sheet (never divided), Amount as
     // stored total (history preserved; equals sheets × price for new lines).
     const isQP = isQuickPhotocopyItem(item);
     if (isQP) {
-      const qp = getQuickPhotocopyTotals(item);
-      qty = formatQuickPhotocopyQty(qp.totalPages);
-      unitPrice = qp.unitPrice;
+      const display = getQuickPhotocopyLineDisplay(item, currency);
+      qty = display.qty;
+      unitPrice = display.unitPrice;
       const storedTotal = Number(item.total);
-      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : qp.lineTotal;
-      const baseName = item.name || item.productName || item.product_name || item.itemName || item.desc || 'Quick Photocopy';
-      formattedDesc = `${baseName} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : display.amount;
+      // Rate appears exactly once (Price column) — never in the name.
+      formattedDesc = display.name;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
@@ -549,7 +551,7 @@ const CleanInvoiceTemplate = ({
         <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#334155', textAlign: 'center' }}>{i + 1}</Text>
         <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155' }}>{formattedDesc}</Text>
         <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{qty}</Text>
-        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {unitPrice.toFixed(2)}{isQP ? '/sheet' : ''}</Text>
+        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toFixed(2)}`}</Text>
         <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {total.toFixed(2)}</Text>
       </View>
     );
@@ -870,16 +872,16 @@ const ModernInvoiceTemplate = ({
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
 
-    // Quick Photocopy only: Qty "50 pages", Price per-sheet (never divided).
+    // Quick Photocopy only: Qty "13 pgs", Price per-sheet (never divided).
     const isQP = isQuickPhotocopyItem(item);
     if (isQP) {
-      const qp = getQuickPhotocopyTotals(item);
-      qty = formatQuickPhotocopyQty(qp.totalPages);
-      unitPrice = qp.unitPrice;
+      const display = getQuickPhotocopyLineDisplay(item, currency);
+      qty = display.qty;
+      unitPrice = display.unitPrice;
       const storedTotal = Number(item.total);
-      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : qp.lineTotal;
-      const baseName = item.name || item.productName || item.product_name || item.itemName || item.desc || 'Quick Photocopy';
-      formattedDesc = `${baseName} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : display.amount;
+      // Rate appears exactly once (Price column) — never in the name.
+      formattedDesc = display.name;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
@@ -897,7 +899,7 @@ const ModernInvoiceTemplate = ({
         <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
         <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
         <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>
-            {currency} {unitPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}{isQP ? '/sheet' : ''}
+            {isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
         </Text>
         <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>
             {currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}
@@ -1172,16 +1174,16 @@ const ProfessionalInvoiceTemplate = ({
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
 
-    // Quick Photocopy only: Qty "50 pages", Price per-sheet (never divided).
+    // Quick Photocopy only: Qty "13 pgs", Price per-sheet (never divided).
     const isQP = isQuickPhotocopyItem(item);
     if (isQP) {
-      const qp = getQuickPhotocopyTotals(item);
-      qty = formatQuickPhotocopyQty(qp.totalPages);
-      unitPrice = qp.unitPrice;
+      const display = getQuickPhotocopyLineDisplay(item, currency);
+      qty = display.qty;
+      unitPrice = display.unitPrice;
       const storedTotal = Number(item.total);
-      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : qp.lineTotal;
-      const baseName = item.name || item.productName || item.product_name || item.itemName || item.desc || 'Quick Photocopy';
-      formattedDesc = `${baseName} — ${currency}${unitPrice.toFixed(2)}/sheet`;
+      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : display.amount;
+      // Rate appears exactly once (Price column) — never in the name.
+      formattedDesc = display.name;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
@@ -1196,7 +1198,7 @@ const ProfessionalInvoiceTemplate = ({
         <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
         <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
         <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
-        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {unitPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}{isQP ? '/sheet' : ''}</Text>
+        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}</Text>
         <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
       </View>
     );
@@ -1911,15 +1913,21 @@ if (type === 'POS_RECEIPT') {
                 <Text style={{ flex: 3, fontWeight: 'bold', fontSize: baseFontSize }}>Description</Text>
                 <Text style={{ flex: 1, fontWeight: 'bold', fontSize: baseFontSize, textAlign: 'right' }}>Total</Text>
               </View>
-              {r.items.map((item: any, i: number) => (
-                <View key={i} style={{ marginBottom: 6 * scale }}>
-                  <Text style={{ fontSize: mediumFontSize, fontWeight: 'normal' }}>{item.desc}</Text>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 * scale }}>
-                    <Text style={{ fontSize: baseFontSize, color: '#444' }}>{item.qty} x {formatAmount(item.price)}</Text>
-                    <Text style={{ fontSize: mediumFontSize }}>{formatAmount(item.total)}</Text>
+              {r.items.map((item: any, i: number) => {
+                // Quick Photocopy: name stays plain; qty shows entered pages
+                // ("13 pgs") and the rate appears exactly once ("K 150.00/sht").
+                // Row structure/columns are unchanged.
+                const receiptQP = isQuickPhotocopyItem(item) ? getQuickPhotocopyLineDisplay(item, currency) : null;
+                return (
+                  <View key={i} style={{ marginBottom: 6 * scale }}>
+                    <Text style={{ fontSize: mediumFontSize, fontWeight: 'normal' }}>{receiptQP ? receiptQP.name : item.desc}</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 * scale }}>
+                      <Text style={{ fontSize: baseFontSize, color: '#444' }}>{receiptQP ? `${receiptQP.qty} x ${receiptQP.rate}` : `${item.qty} x ${formatAmount(item.price)}`}</Text>
+                      <Text style={{ fontSize: mediumFontSize }}>{formatAmount(item.total)}</Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
 
             <View style={{ borderTopWidth: 1, borderTopColor: '#000', borderTopStyle: 'dashed', paddingTop: 8 * scale, gap: 3 * scale }}>
@@ -2173,18 +2181,19 @@ if (type === 'POS_RECEIPT') {
                 {/* For Invoice, Order, Quotation: Service items show simplified format */}
                 {/* For POS: All items show standard format */}
                 {(('items' in data ? dataAny.items : []) as Array<Record<string, unknown>>).map((item: Record<string, unknown>, i: number) => {
-                  // Quick Photocopy first (strict photocopy only): Qty "50 pages",
+                  // Quick Photocopy first (strict photocopy only): Qty "13 pgs",
                   // Price per-sheet (never divided), Amount stored total.
+                  // Rate appears exactly once (Price column) — never in the name.
                   const isQPDefault = isQuickPhotocopyItem(item);
                   if (isQPDefault) {
                     const qp = getQuickPhotocopyTotals(item);
-                    const qpName = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Quick Photocopy');
+                    const qpDisplay = getQuickPhotocopyLineDisplay(item, currency);
                     return (
                       <View key={i} style={[s.row, paginated ? { paddingVertical: 4 } : null]} wrap={paginated ? false : undefined}>
                         <Text style={s.colSn}>{i + 1}</Text>
-                        <Text style={s.colDesc}>{`${qpName} — ${currency}${qp.unitPrice.toFixed(2)}/sheet`}</Text>
-                        <Text style={s.colQty}>{formatQuickPhotocopyQty(qp.totalPages)}</Text>
-                        <Text style={s.colPrice}>{currency} {formatAmount(qp.unitPrice)}/sheet</Text>
+                        <Text style={s.colDesc}>{qpDisplay.name}</Text>
+                        <Text style={s.colQty}>{qpDisplay.qty}</Text>
+                        <Text style={s.colPrice}>{qpDisplay.rate}</Text>
                         <Text style={s.colTotal}>{currency} {formatAmount(Number(item.total) > 0 ? Number(item.total) : qp.lineTotal)}</Text>
                       </View>
                     );
@@ -2470,7 +2479,7 @@ if (type === 'POS_RECEIPT') {
             </View>
 
             {('items' in data ? data.items : []).map((item: any, i: number) => {
-              // Quick Photocopy delivery: show pages ("50 pages"), not sheets.
+              // Quick Photocopy delivery: show pages ("13 pgs"), not sheets.
               const isQPDN = isQuickPhotocopyItem(item);
               const qpDN = isQPDN ? getQuickPhotocopyTotals(item) : null;
               return (

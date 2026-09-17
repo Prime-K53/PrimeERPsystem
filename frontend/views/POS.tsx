@@ -45,8 +45,8 @@ import {
   buildQuickPhotocopyServiceDetails,
   calculateBillableSheets,
   calculateTotalPages,
+  getQuickPhotocopyLineDisplay,
   getQuickPhotocopyPricePerSheet,
-  getQuickPhotocopyTotals,
   isQuickPhotocopyItem,
 } from '../services/quickPhotocopyService';
 
@@ -178,14 +178,12 @@ const POS: React.FC = () => {
   }, []);
 
   const formatServiceDescription = (lineItem: any) => {
-    // Quick Photocopy: always show pages + per-sheet price so the receipt
-    // communicates "50 pages → K150/sheet → K3,750" (financial total stays
-    // sheets × price; desc is display only).
+    // Quick Photocopy: the receipt template renders qty ("13 pgs") and rate
+    // ("K 150.00/sht") in their own columns, so the description stays the
+    // plain item name — the rate must not be repeated here.
     if (isQuickPhotocopyItem(lineItem)) {
-      const qp = getQuickPhotocopyTotals(lineItem);
       const cur = companyConfig?.currencySymbol || 'K';
-      const base = String(lineItem?.name || lineItem?.desc || 'Quick Photocopy');
-      return `${base} (${qp.totalPages} pages @ ${cur}${qp.unitPrice.toFixed(2)}/sheet)`;
+      return getQuickPhotocopyLineDisplay(lineItem, cur).name;
     }
     // If it already has a detailed description (like from Quick Print), use it
     if (lineItem?.desc) return lineItem.desc;

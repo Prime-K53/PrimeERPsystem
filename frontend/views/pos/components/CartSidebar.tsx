@@ -12,6 +12,7 @@ import { calculateLineProfit, calculateSaleProfit } from '../../../utils/salePro
 import { resolveItemAdjustmentSnapshots, getMarketAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
 import { getCustomerDisplayName } from '../../../utils/customerDisplay';
 import {
+  getQuickPhotocopyLineDisplay,
   getQuickPhotocopyTotals,
   isQuickPhotocopyItem,
 } from '../../../services/quickPhotocopyService';
@@ -265,7 +266,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
     );
 };
 
-const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta: number, isAbsolute?: boolean) => void, updatePrice: (id: string, newPrice: number) => void, removeFromCart: (id: string) => void }> = ({ item, updateQuantity, updatePrice, removeFromCart }) => {
+export const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta: number, isAbsolute?: boolean) => void, updatePrice: (id: string, newPrice: number) => void, removeFromCart: (id: string) => void }> = ({ item, updateQuantity, updatePrice, removeFromCart }) => {
     const { companyConfig } = useAuth();
     const currency = companyConfig.currencySymbol;
     const serviceDetails = item.serviceDetails;
@@ -325,6 +326,9 @@ const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta
     const perUnit = isQuickPhotocopy && qpTotals
       ? qpTotals.unitPrice
       : (isPrintType ? (isPhotocopy ? item.price / sheetCount : item.price / totalPages) : 0);
+    // Shared compact display: name stays plain, qty shows entered pages
+    // ("13 pgs"), rate appears exactly once ("K 150.00/sht").
+    const qpDisplay = isQuickPhotocopy ? getQuickPhotocopyLineDisplay(item, currency) : null;
 
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: `1px dotted ${LINE}` }}>
@@ -340,9 +344,13 @@ const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta
 
             <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600, color: INK }}>
                 <span className="truncate">
-                    {isPrintType ? `${totalPages} pages ${item.name}` : item.name}
+                    {qpDisplay ? qpDisplay.name : (isPrintType ? `${totalPages} pages ${item.name}` : item.name)}
                 </span>
-                {isPrintType ? (
+                {qpDisplay ? (
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 400, color: SOFT, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                        {qpDisplay.qty} @ {qpDisplay.rate}
+                    </span>
+                ) : isPrintType ? (
                     <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 400, color: SOFT, fontSize: 11.5, whiteSpace: 'nowrap' }}>
                         @{currency}{formatNumber(perUnit)}/{isPhotocopy ? 'sheet' : 'page'}
                     </span>

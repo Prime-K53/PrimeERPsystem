@@ -199,26 +199,77 @@ export function getQuickPhotocopyTotals(item: any): {
   };
 }
 
-/** Customer-facing quantity label: "50 pages" (never sheets). */
+/** Customer-facing quantity label: "13 pgs" (entered pages, never sheets). */
 export function formatQuickPhotocopyQty(totalPages: number): string {
   const n = toPositiveInt(totalPages, 1);
-  return `${n} pages`;
+  return `${n} pgs`;
 }
 
-/** Customer-facing unit-price label: "K150/sheet" (price never divided). */
+/** Customer-facing unit-price label: "K 150.00/sht" (price never divided). */
 export function formatQuickPhotocopyPriceLabel(unitPrice: number, currencySymbol: string): string {
   const cur = currencySymbol || 'K';
   const n = toNonNegativeNumber(unitPrice, 0);
   // Keep existing 2-decimal ERP formatting for consistency.
-  return `${cur}${n.toFixed(2)}/sheet`;
+  return `${cur} ${n.toFixed(2)}/sht`;
+}
+
+/**
+ * Display name for a Quick Photocopy line: plain "Quick Photocopy".
+ * Strips a legacy render-time rate suffix (" — .../sheet" / " — .../sht")
+ * if one was ever persisted on the record. Display only — never mutates.
+ */
+export function resolveQuickPhotocopyDisplayName(item: any): string {
+  const raw = String(
+    item?.name ??
+    item?.productName ??
+    item?.product_name ??
+    item?.itemName ??
+    item?.desc ??
+    item?.description ??
+    'Quick Photocopy'
+  );
+  const stripped = raw.replace(/\s+—\s+.*\/(sheet|sht)\s*$/i, '').trim();
+  return stripped || 'Quick Photocopy';
+}
+
+/**
+ * Single composition point for the Quick Photocopy line-item display,
+ * shared by Order Form, POS and generated documents:
+ * - name: "Quick Photocopy" (never carries the rate)
+ * - qty: "13 pgs" (entered pages, never sheets)
+ * - rate: "K 150.00/sht" (shown exactly once, in the rate column)
+ * - amount: billableSheets × pricePerSheet (unchanged math)
+ */
+export function getQuickPhotocopyLineDisplay(
+  item: any,
+  currencySymbol: string
+): {
+  name: string;
+  qty: string;
+  rate: string;
+  amount: number;
+  totalPages: number;
+  billableSheets: number;
+  unitPrice: number;
+} {
+  const t = getQuickPhotocopyTotals(item);
+  return {
+    name: resolveQuickPhotocopyDisplayName(item),
+    qty: formatQuickPhotocopyQty(t.totalPages),
+    rate: formatQuickPhotocopyPriceLabel(t.unitPrice, currencySymbol),
+    amount: t.lineTotal,
+    totalPages: t.totalPages,
+    billableSheets: t.billableSheets,
+    unitPrice: t.unitPrice,
+  };
 }
 
 /**
  * Document line display for QP. Billing stays sheets×price; display shows pages.
- * - qtyLabel: "50 pages"
- * - priceLabel: "K150.00/sheet"
+ * - qtyLabel: "50 pgs"
+ * - priceLabel: "K 150.00/sht"
  * - amount: 25 × 150 = 3750
- * - descSuffix: " — K150.00/sheet" appended to item name where desc allows it.
+ * The rate lives ONLY in priceLabel — never append it to the item name.
  */
 export function getQuickPhotocopyDocumentLine(
   item: any,

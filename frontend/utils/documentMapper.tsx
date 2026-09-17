@@ -12,6 +12,7 @@ import { calculateLedger, calculateAging } from './ledgerUtils';
 import { getCustomerDisplayName } from './customerDisplay';
 import {
   formatQuickPhotocopyQty,
+  getQuickPhotocopyLineDisplay,
   getQuickPhotocopyTotals,
   isQuickPhotocopyItem,
 } from '../services/quickPhotocopyService';
@@ -399,8 +400,9 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
 
       default: // Invoice or Quotation
         // Quick Photocopy: strict detection (photocopy only, never QUICK-PRINT
-        // or normal products). Display Qty as pages ("50 pages"), Price as
+        // or normal products). Display Qty as pages ("13 pgs"), Price as
         // per-sheet (never divided), Amount stays sheets × price via `total`.
+        // Rate appears exactly once (Price column) — never in the name.
         const getQty = (item: any) => {
           if (isQuickPhotocopyItem(item)) {
             const qp = getQuickPhotocopyTotals(item);
@@ -410,8 +412,7 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
         };
         const getDesc = (item: any) => {
           if (isQuickPhotocopyItem(item)) {
-            const qp = getQuickPhotocopyTotals(item);
-            return `${item.name} — ${currency}${qp.unitPrice.toFixed(2)}/sheet`;
+            return getQuickPhotocopyLineDisplay(item, currency).name;
           }
           return item.name;
         };
@@ -422,8 +423,7 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
             { header: 'Qty', accessor: 'quantity', align: 'center' as const, render: (_: any, item: any) => getQty(item) },
             { header: 'Price', accessor: 'unitPrice', isCurrency: true, render: (val: number, item: any) => {
               if (isQuickPhotocopyItem(item)) {
-                const qp = getQuickPhotocopyTotals(item);
-                return `${currency}${qp.unitPrice.toFixed(2)}/sheet`;
+                return getQuickPhotocopyLineDisplay(item, currency).rate;
               }
               return `${currency}${Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
             }},
