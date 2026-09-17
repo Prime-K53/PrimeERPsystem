@@ -25,6 +25,7 @@ import { AssignModal } from './modals/AssignModal';
 import { PrintLabelModal } from './modals/PrintLabelModal';
 import { ConfirmDialog, ConfirmDialogType } from '../../../components/ConfirmDialog';
 import { getFloatingMenuStyle } from '../../../utils/actionMenu';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 
 function money(n: number, symbol = '$'): string {
   n = Number(n) || 0;
@@ -771,7 +772,8 @@ const handleProduce = useCallback((item: Item) => {
                         const parentCp = p.costPrice || p.cost || 0;
                         const parentSp = p.sellingPrice || p.price || 0;
                         const parentMargin = parentCp > 0 ? ((parentSp - parentCp) / parentCp * 100).toFixed(1) : '0.0';
-                        const parentLow = lowStock(p);
+                        // Products are non-stock: never low-stock highlighted.
+                        const parentLow = isInventoryBearingItem(p) && lowStock(p);
                         const isMenuOpen = openActionMenu?.id === p.id;
                         const parentStockTotal = hasVariants ? variants.reduce((s: number, v: any) => s + num(v.stock), 0) : num(p.stock);
                         const variantLabel = hasVariants ? `${variants.length} variant${variants.length !== 1 ? 's' : ''}` : 'standard';
@@ -795,12 +797,9 @@ const handleProduce = useCallback((item: Item) => {
                               <td data-label="Cost Price" data-collapse-mobile="" className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentCp, currencySymbol)}</td>
                               <td data-label="Selling Price" className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(parentSp, currencySymbol)}</td>
                               <td data-label="Margin" data-collapse-mobile="" className="num mono" style={{fontFamily:'IBM Plex Mono,monospace', fontWeight: 700, color: Number(parentMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{parentMargin}%</td>
+                              {/* Products are non-stock (produced to order via BOM): no stepper, no quantity. */}
                               <td data-label="Stock" className="num mono" style={{fontFamily:'IBM Plex Mono,monospace'}}>
-                                <span className="pp-stepper">
-                                  <button onClick={e => { e.stopPropagation(); adjustStock(p, -1); }}>&minus;</button>
-                                  <span>{parentStockTotal}</span>
-                                  <button onClick={e => { e.stopPropagation(); adjustStock(p, 1); }}>+</button>
-                                </span>
+                                <span style={{ color: '#94a3b8', fontSize: 12 }}>Not stocked</span>
                               </td>
                               <td data-label="Actions" className="actions" onClick={e => e.stopPropagation()}>
                                 <div className="action-dropdown-container">
@@ -829,15 +828,7 @@ const handleProduce = useCallback((item: Item) => {
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                         View Details
                                       </button>
-                                      <div className="action-dropdown-divider"></div>
-                                      <button className="action-dropdown-item" onClick={() => { handleOpenAdjustStock(p); closeActionMenu(); }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                                        Adjust Stock
-                                      </button>
-                                      <button className="action-dropdown-item" onClick={() => { handleTransferStock(p); closeActionMenu(); }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-                                        Transfer Stock
-                                      </button>
+                                      {/* Non-stock Product: no Adjust/Transfer Stock actions. */}
                                       <div className="action-dropdown-divider"></div>
                                       <button className="action-dropdown-item" onClick={() => { handlePrintBarcode(p); closeActionMenu(); }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M2 15h20"/><path d="M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/><rect x="7" y="9" width="2" height="6"/><rect x="11" y="9" width="2" height="6"/><rect x="15" y="9" width="2" height="6"/></svg>
@@ -876,11 +867,7 @@ const handleProduce = useCallback((item: Item) => {
                                   <td className="num mono text-xs" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(vSp, currencySymbol)}</td>
                                   <td className="num mono text-xs" style={{fontFamily:'IBM Plex Mono,monospace', fontWeight: 700, color: Number(vMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{vMargin}%</td>
                                   <td className="num mono text-xs" style={{fontFamily:'IBM Plex Mono,monospace'}}>
-                                    <span className="pp-stepper" style={{fontSize:12}}>
-                                      <button onClick={e => { e.stopPropagation(); adjustStock({...p, stock: v.stock, id: v.id || p.id}, -1); }}>&minus;</button>
-                                      <span>{esc(v.stock ?? 0)}</span>
-                                      <button onClick={e => { e.stopPropagation(); adjustStock({...p, stock: v.stock, id: v.id || p.id}, 1); }}>+</button>
-                                    </span>
+                                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Not stocked</span>
                                   </td>
                                   <td></td>
                                 </tr>
@@ -899,7 +886,8 @@ const handleProduce = useCallback((item: Item) => {
                         <td className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(searchFiltered.reduce((s,i) => s + (i.costPrice || i.cost || 0), 0), currencySymbol)}</td>
                         <td className="num mono" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(searchFiltered.reduce((s,i) => s + (i.sellingPrice || i.price || 0), 0), currencySymbol)}</td>
                         <td></td>
-                        <td className="num mono" style={{fontFamily:'IBM Plex Mono,monospace'}}>{searchFiltered.reduce((s,i) => s + num(i.stock), 0)}</td>
+                        {/* Products are non-stock: no summed stock quantity. */}
+                        <td className="num mono" style={{fontFamily:'IBM Plex Mono,monospace', color:'#94a3b8'}}>—</td>
                         <td></td>
                       </tr>
                     </tfoot>
@@ -1204,11 +1192,7 @@ const handleProduce = useCallback((item: Item) => {
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                       View Details
                                     </button>
-                                    <div className="action-dropdown-divider"></div>
-                                    <button className="action-dropdown-item" onClick={() => { handleOpenAdjustStock(s); closeActionMenu(); }}>
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                                      Adjust Stock
-                                    </button>
+                                    {/* Non-stock Service: no Adjust Stock action. */}
                                     <div className="action-dropdown-divider"></div>
                                     <button className="action-dropdown-item" onClick={() => { handlePrintBarcode(s); closeActionMenu(); }}>
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M2 15h20"/><path d="M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/><rect x="7" y="9" width="2" height="6"/><rect x="11" y="9" width="2" height="6"/><rect x="15" y="9" width="2" height="6"/></svg>

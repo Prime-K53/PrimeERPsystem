@@ -140,28 +140,33 @@ describe('Inventory ↔ GL Reconciliation', () => {
       const accounts = CANONICAL_ACCOUNTS;
       const items = MOCK_INVENTORY_ITEMS;
 
+      // Authoritative eligibility (Prime Printing): only Raw Material /
+      // Stationery are stock-bearing. Product lines carry no inventory
+      // value even though the legacy type map would place them in 11410.
       let merchandiseValue = 0;
       let rawMaterialsValue = 0;
 
       for (const item of items) {
         const value = item.stock * item.cost;
-        if (item.type === 'Product') merchandiseValue += value;
-        else if (item.type === 'Raw Material') rawMaterialsValue += value;
+        if (item.type === 'Raw Material' || item.type === 'Stationery') rawMaterialsValue += value;
+        else if (item.type === 'Product') merchandiseValue += 0;
       }
 
-      expect(merchandiseValue).toBeGreaterThan(0);
+      expect(merchandiseValue).toBe(0);
       expect(rawMaterialsValue).toBeGreaterThan(0);
     });
   });
 
   describe('7. Inventory Reconciliation Idempotency', () => {
     it('re-running reconciliation should not create additional adjustment', () => {
-      // Simulate: physical = GL, so no adjustment needed
+      // Simulate: physical = GL, so no adjustment needed.
+      // Stock-bearing fixture (Raw Material → 11420): Product lines are
+      // non-stock under the eligibility rule and would value at 0.
       const accounts = CANONICAL_ACCOUNTS;
       const ledgerEntries = [
-        { id: '1', debitAccountId: 'acc-11410', creditAccountId: null, amount: 800, referenceId: 'INIT' },
+        { id: '1', debitAccountId: 'acc-11420', creditAccountId: null, amount: 800, referenceId: 'INIT' },
       ];
-      const items = [{ id: 'FG-001', type: 'Product', stock: 100, cost: 8.00 }];
+      const items = [{ id: 'RM-001', type: 'Raw Material', stock: 100, cost: 8.00 }];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
 
@@ -174,9 +179,9 @@ describe('Inventory ↔ GL Reconciliation', () => {
     it('should detect existing reconciliation', () => {
       const accounts = CANONICAL_ACCOUNTS;
       const ledgerEntries = [
-        { id: '1', debitAccountId: 'acc-11410', creditAccountId: null, amount: 800, referenceId: 'INVENTORY-OPENING-RECONCILIATION' },
+        { id: '1', debitAccountId: 'acc-11420', creditAccountId: null, amount: 800, referenceId: 'INVENTORY-OPENING-RECONCILIATION' },
       ];
-      const items = [{ id: 'FG-001', type: 'Product', stock: 100, cost: 8.00 }];
+      const items = [{ id: 'RM-001', type: 'Raw Material', stock: 100, cost: 8.00 }];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
 
@@ -188,9 +193,9 @@ describe('Inventory ↔ GL Reconciliation', () => {
   describe('9. Physical Inventory = GL Inventory After Reconciliation', () => {
     it('should show zero variance after reconciliation', () => {
       const accounts = CANONICAL_ACCOUNTS;
-      const items = [{ id: 'FG-001', type: 'Product', stock: 100, cost: 8.00 }];
+      const items = [{ id: 'RM-001', type: 'Raw Material', stock: 100, cost: 8.00 }];
       const ledgerEntries = [
-        { id: '1', debitAccountId: 'acc-11410', creditAccountId: null, amount: 800, referenceId: 'INIT' },
+        { id: '1', debitAccountId: 'acc-11420', creditAccountId: null, amount: 800, referenceId: 'INIT' },
       ];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
@@ -224,7 +229,7 @@ describe('Inventory ↔ GL Reconciliation', () => {
   describe('12. Zero Inventory', () => {
     it('should handle zero inventory items', () => {
       const accounts = CANONICAL_ACCOUNTS;
-      const items = [{ id: 'FG-001', type: 'Product', stock: 0, cost: 8.00 }];
+      const items = [{ id: 'RM-001', type: 'Raw Material', stock: 0, cost: 8.00 }];
       const ledgerEntries = [];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
@@ -238,6 +243,8 @@ describe('Inventory ↔ GL Reconciliation', () => {
       const accounts = CANONICAL_ACCOUNTS;
       const items = [
         { id: 'RM-001', type: 'Raw Material', stock: 50, cost: 10.00 },
+        // Product is non-stock under the eligibility rule: excluded with
+        // NON_STOCK_TYPE, contributes no merchandise value.
         { id: 'FG-001', type: 'Product', stock: 20, cost: 25.00 },
       ];
       const ledgerEntries = [];
@@ -245,18 +252,18 @@ describe('Inventory ↔ GL Reconciliation', () => {
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
 
       expect(result.rawMaterialsValue).toBe(500); // 50 * 10
-      expect(result.merchandiseValue).toBe(500); // 20 * 25
-      expect(result.physicalInventoryValue).toBe(1000);
+      expect(result.merchandiseValue).toBe(0);
+      expect(result.physicalInventoryValue).toBe(500);
     });
   });
 
   describe('14. Partial Inventory Reconciliation', () => {
     it('should only reconcile the difference', () => {
       const accounts = CANONICAL_ACCOUNTS;
-      const items = [{ id: 'FG-001', type: 'Product', stock: 100, cost: 10.00 }];
+      const items = [{ id: 'RM-001', type: 'Raw Material', stock: 100, cost: 10.00 }];
       // GL already has 500, physical is 1000, so diff is 500
       const ledgerEntries = [
-        { id: '1', debitAccountId: 'acc-11410', creditAccountId: null, amount: 500, referenceId: 'INIT' },
+        { id: '1', debitAccountId: 'acc-11420', creditAccountId: null, amount: 500, referenceId: 'INIT' },
       ];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
@@ -270,11 +277,11 @@ describe('Inventory ↔ GL Reconciliation', () => {
   describe('15. Existing Legitimate GL Balance Preserved', () => {
     it('should not reverse existing COGS entries', () => {
       const accounts = CANONICAL_ACCOUNTS;
-      const items = [{ id: 'FG-001', type: 'Product', stock: 50, cost: 10.00 }];
+      const items = [{ id: 'RM-001', type: 'Raw Material', stock: 50, cost: 10.00 }];
       // GL has 500 from legitimate purchase, physical is also 500
       const ledgerEntries = [
-        { id: '1', debitAccountId: 'acc-11410', creditAccountId: null, amount: 500, referenceId: 'PURCHASE-001' },
-        { id: '2', debitAccountId: 'acc-51200', creditAccountId: 'acc-11410', amount: 200, referenceId: 'SALE-001' },
+        { id: '1', debitAccountId: 'acc-11420', creditAccountId: null, amount: 500, referenceId: 'PURCHASE-001' },
+        { id: '2', debitAccountId: 'acc-51200', creditAccountId: 'acc-11420', amount: 200, referenceId: 'SALE-001' },
       ];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
@@ -288,9 +295,9 @@ describe('Inventory ↔ GL Reconciliation', () => {
   describe('16. Re-running Reconciliation Produces No Additional Adjustment', () => {
     it('should produce zero variance when already reconciled', () => {
       const accounts = CANONICAL_ACCOUNTS;
-      const items = [{ id: 'FG-001', type: 'Product', stock: 100, cost: 8.00 }];
+      const items = [{ id: 'RM-001', type: 'Raw Material', stock: 100, cost: 8.00 }];
       const ledgerEntries = [
-        { id: '1', debitAccountId: 'acc-11410', creditAccountId: null, amount: 800, referenceId: 'INVENTORY-OPENING-RECONCILIATION' },
+        { id: '1', debitAccountId: 'acc-11420', creditAccountId: null, amount: 800, referenceId: 'INVENTORY-OPENING-RECONCILIATION' },
       ];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
@@ -302,17 +309,22 @@ describe('Inventory ↔ GL Reconciliation', () => {
   describe('17. Diagnostic Utility', () => {
     it('should identify unclassified items', () => {
       const accounts = CANONICAL_ACCOUNTS;
+      // Unknown types are fail-safe non-stock (NON_STOCK_TYPE), never
+      // inventory — so they value at 0 and are not "unclassified" (the
+      // UNMAPPED bucket is reserved for eligible-but-unmappable types,
+      // of which none exist while every eligible type maps to 11420).
       const items = [{ id: 'UNKNOWN-001', type: 'Unknown', stock: 10, cost: 5.00 }];
       const ledgerEntries = [];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
 
-      expect(result.unclassifiedItems.length).toBe(1);
+      expect(result.unclassifiedItems.length).toBe(0);
+      expect(result.physicalInventoryValue).toBe(0);
     });
 
     it('should identify negative inventory', () => {
       const accounts = CANONICAL_ACCOUNTS;
-      const items = [{ id: 'NEG-001', type: 'Product', stock: -5, cost: 10.00 }];
+      const items = [{ id: 'NEG-001', type: 'Raw Material', stock: -5, cost: 10.00 }];
       const ledgerEntries = [];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
@@ -322,7 +334,7 @@ describe('Inventory ↔ GL Reconciliation', () => {
 
     it('should identify zero-cost items', () => {
       const accounts = CANONICAL_ACCOUNTS;
-      const items = [{ id: 'ZERO-001', type: 'Product', stock: 10, cost: 0 }];
+      const items = [{ id: 'ZERO-001', type: 'Raw Material', stock: 10, cost: 0 }];
       const ledgerEntries = [];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
@@ -334,16 +346,17 @@ describe('Inventory ↔ GL Reconciliation', () => {
       const accounts = CANONICAL_ACCOUNTS;
       const items = [
         { id: 'RM-001', type: 'Raw Material', stock: 10, cost: 5.00 },
+        // Product is non-stock: 20 × 10 contributes nothing.
         { id: 'FG-001', type: 'Product', stock: 20, cost: 10.00 },
       ];
       const ledgerEntries = [];
 
       const result = computeInventoryReconciliation(items, accounts, ledgerEntries);
 
-      expect(result.physicalInventoryValue).toBe(250); // 50 + 200
+      expect(result.physicalInventoryValue).toBe(50);
       expect(result.glInventoryValue).toBe(0);
-      expect(result.variance).toBe(250);
-      expect(result.merchandiseValue).toBe(200);
+      expect(result.variance).toBe(50);
+      expect(result.merchandiseValue).toBe(0);
       expect(result.rawMaterialsValue).toBe(50);
     });
   });

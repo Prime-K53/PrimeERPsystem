@@ -48,7 +48,7 @@ import {
     assertNoInterestIncomeForInventoryMovement,
     type StockAdjustmentReason,
 } from './inventoryAdjustmentAccounting';
-import { resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
+import { isInventoryBearingItem, resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 
@@ -156,7 +156,10 @@ export const transactionService = {
         const allowNegative = config?.inventorySettings?.allowNegativeStock === true;
         const checkStock = async (itemId: string, qty: number) => {
             const invItem = await resolveInventoryRecord(itemId, inventorySnapshot, inventoryStore);
-            if (!allowNegative && invItem && (invItem.stock || 0) < qty && invItem.type !== 'Service') {
+            // Non-stock items (Product/Service) carry no inventory: never
+            // availability-checked, never deducted.
+            if (!invItem || !isInventoryBearingItem(invItem)) return invItem;
+            if (!allowNegative && (invItem.stock || 0) < qty) {
                 throw new Error(`Insufficient stock for "${invItem.name}": need ${qty}, have ${invItem.stock || 0}`);
             }
             return invItem;
@@ -177,12 +180,12 @@ export const transactionService = {
             }
         }
 
-        // 1. Deduct Materials from BOM Snapshots
+        // 1. Deduct Materials from BOM Snapshots (stock-bearing components only)
         for (const snap of snapshots) {
             if (!snap.bomBreakdown) continue;
             for (const comp of snap.bomBreakdown) {
                 const matItem = await resolveInventoryRecord(comp.materialId, inventorySnapshot, inventoryStore);
-                if (matItem) {
+                if (matItem && isInventoryBearingItem(matItem)) {
                     const previousQuantity = matItem.stock || 0;
                     const newQuantity = previousQuantity - comp.quantity;
                     matItem.stock = newQuantity;
@@ -209,35 +212,40 @@ export const transactionService = {
             }
         }
 
-        // 2. Deduct Finished Products (Items without BOM snapshots)
+        // 2. Deduct stock-bearing items without BOM snapshots.
+        // Product/Service lines are non-stock: never deducted here (their
+        // raw-material cost was captured at production/consumption time).
+        // When the line carries no type, the stored record's type governs.
         for (const item of items) {
             const hasSnapshot = snapshots.some(s => s.itemId === (item.parentId || item.id));
-            if (!hasSnapshot && item.type !== 'Service') {
-                const invItem = await resolveInventoryRecord(item.id, inventorySnapshot, inventoryStore);
-                if (invItem && invItem.type !== 'Service') {
-                    const previousQuantity = invItem.stock || 0;
-                    const newQuantity = previousQuantity - item.quantity;
-                    invItem.stock = newQuantity;
-                    await inventoryStore.put(invItem);
+            if (hasSnapshot) continue;
+            const invItem = await resolveInventoryRecord(item.id, inventorySnapshot, inventoryStore);
+            if (!invItem) continue;
+            const eligibilityProbe = item?.type ? item : invItem;
+            if (!isInventoryBearingItem(eligibilityProbe)) continue;
+            {
+                const previousQuantity = invItem.stock || 0;
+                const newQuantity = previousQuantity - item.quantity;
+                invItem.stock = newQuantity;
+                await inventoryStore.put(invItem);
 
-                    // Create audit trail record
-                    const transaction = {
-                        id: generateId('TXN'),
-                        itemId: item.id,
-                        type: 'OUT',
-                        quantity: -item.quantity,
-                        previousQuantity,
-                        newQuantity,
-                        unitCost: invItem.cost || 0,
-                        totalCost: -(item.quantity * (invItem.cost || 0)),
-                        reference: referenceType,
-                        referenceId,
-                        reason: `${referenceType} Sale`,
-                        performedBy,
-                        timestamp
-                    };
-                    await inventoryTransactionsStore.put(transaction);
-                }
+                // Create audit trail record
+                const transaction = {
+                    id: generateId('TXN'),
+                    itemId: item.id,
+                    type: 'OUT',
+                    quantity: -item.quantity,
+                    previousQuantity,
+                    newQuantity,
+                    unitCost: invItem.cost || 0,
+                    totalCost: -(item.quantity * (invItem.cost || 0)),
+                    reference: referenceType,
+                    referenceId,
+                    reason: `${referenceType} Sale`,
+                    performedBy,
+                    timestamp
+                };
+                await inventoryTransactionsStore.put(transaction);
             }
         }
     },
@@ -4454,16 +4462,27 @@ export const transactionService = {
 
                 const gl = getGLConfig();
                 let totalValue = 0;
+                // Non-stock (Product/Service) receipt value: never inventory —
+                // booked to Purchases so payables stay whole.
+                let nonStockValue = 0;
 
                 // Calculate landed cost allocation if landing costs exist on the GRN
                 const landingCostTotal = grn.landingCosts?.reduce((s: number, c: any) => s + (c.amount || 0), 0) || 0;
                 const grnTotalPurchaseValue = grn.items.reduce((s: number, i: any) => s + ((i.cost || 0) * (i.quantityReceived || 0)), 0);
 
-                // 1. Update Inventory Stock and Cost (before saving GRN to get accurate totalValue)
+                // 1. Update Inventory Stock and Cost (before saving GRN to get accurate totalValue).
+                // Eligibility-first: only Raw Material / Stationery lines are
+                // stock-bearing. Product/Service lines accrue no stock/WAC/
+                // batch/audit/inventory value; their purchase value is tracked
+                // separately for the Purchases (expense) leg below.
                 const timestamp = new Date().toISOString();
                 for (const item of grn.items) {
                     const invItem = await inventoryStore.get(item.itemId);
-                    if (invItem) {
+                    if (invItem && !isInventoryBearingItem(invItem)) {
+                        nonStockValue += (item.cost || 0) * (item.quantityReceived || 0);
+                        continue;
+                    }
+                    if (invItem && isInventoryBearingItem(invItem)) {
                         const oldStock = invItem.stock || 0;
                         const newStock = oldStock + item.quantityReceived;
 
@@ -4543,7 +4562,10 @@ export const transactionService = {
                         relatedPurchase = po;
                         poAmount = po.total || po.totalAmount || 0;
 
-                        // Reverse the PO AP entry since we're now recording actual GRN
+                        // Reverse the PO AP entry since we're now recording actual GRN.
+                        // Must mirror approvePurchaseOrder's debit account: the
+                        // eligible-items inventory account, else Purchases for
+                        // non-stock procurements.
                         if (po.status === 'Approved') {
                             const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(po.items || [], accounts) : null;
                             // Reverse PO AP entry
@@ -4552,7 +4574,7 @@ export const transactionService = {
                                 date: grn.date,
                                 description: `PO Reversal on GRN - ${po.id}`,
                                 debitAccountId: resolveAcct(gl.accountsPayable),
-                                creditAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
+                                creditAccountId: inventoryAccountId || resolveAcct(gl.purchasesAccount || '51100'),
                                 amount: poAmount,
                                 referenceId: grn.id,
                                 reconciled: false,
@@ -4582,8 +4604,12 @@ export const transactionService = {
                 // 3. Save GRN
                 await grnStore.put(grn);
 
-                // 4. Create Actual GRN Ledger Entry
+                // 4. Create Actual GRN Ledger Entries.
+                // Stock-bearing value → DR Inventory / CR AP. Non-stock
+                // (Product/Service) value → DR Purchases / CR AP so the
+                // payable stays whole without capitalizing non-inventory.
                 const totalAmount = totalValue;
+                const grnTotalValue = totalValue + nonStockValue;
 
                 const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(grn.items || [], accounts) : null;
 
@@ -4592,7 +4618,7 @@ export const transactionService = {
                     id: generateId('LG-GRN-INV'),
                     date: grn.date,
                     description: `Goods Receipt #${grn.id}${relatedPurchase ? ` (PO: ${relatedPurchase.id})` : ''}`,
-                    debitAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
+                    debitAccountId: inventoryAccountId || resolveAcct(gl.purchasesAccount || '51100'),
                     creditAccountId: resolveAcct(gl.accountsPayable),
                     amount: totalAmount,
                     referenceId: grn.id,
@@ -4601,19 +4627,34 @@ export const transactionService = {
                 };
                 await ledgerStore.put(inventoryEntry);
 
+                if (nonStockValue > 0.005) {
+                    const nonStockEntry: LedgerEntry = {
+                        id: generateId('LG-GRN-EXP'),
+                        date: grn.date,
+                        description: `Goods Receipt (non-stock) #${grn.id}${relatedPurchase ? ` (PO: ${relatedPurchase.id})` : ''}`,
+                        debitAccountId: resolveAcct(gl.purchasesAccount || '51100'),
+                        creditAccountId: resolveAcct(gl.accountsPayable),
+                        amount: nonStockValue,
+                        referenceId: grn.id,
+                        reconciled: false,
+                        supplierId: grn.supplierId || relatedPurchase?.supplierId
+                    };
+                    await ledgerStore.put(nonStockEntry);
+                }
+
                 // 5. Update Supplier Balance with actual GRN amount
                 const supplierId = grn.supplierId || relatedPurchase?.supplierId;
                 if (supplierId) {
                     const supplier = await supplierStore.get(supplierId);
                     if (supplier) {
-                        supplier.balance = (supplier.balance || 0) + totalAmount;
+                        supplier.balance = (supplier.balance || 0) + grnTotalValue;
                         await supplierStore.put(supplier);
                     }
                 }
 
                 // 6. Handle variance if GRN amount differs from PO amount
-                if (relatedPurchase && Math.abs(totalAmount - poAmount) > 0.01) {
-                    const variance = totalAmount - poAmount;
+                if (relatedPurchase && Math.abs(grnTotalValue - poAmount) > 0.01) {
+                    const variance = grnTotalValue - poAmount;
                     // Variance accounting (proper): the difference between PO commitment and actual
                     // GRN value goes to a Purchase Price Variance account (Purchases = 51100),
                     // NOT to COGS. COGS is for goods already sold.
@@ -4624,7 +4665,7 @@ export const transactionService = {
                     const varianceEntry: LedgerEntry = {
                         id: generateId('LG-GRN-VAR'),
                         date: grn.date,
-                        description: `GRN Variance - ${grn.id} (Actual: ${totalAmount.toFixed(2)} vs PO: ${poAmount.toFixed(2)})`,
+                        description: `GRN Variance - ${grn.id} (Actual: ${grnTotalValue.toFixed(2)} vs PO: ${poAmount.toFixed(2)})`,
                         debitAccountId: variance > 0 ? purchasesAccountId : apAccountId,
                         creditAccountId: variance > 0 ? apAccountId : purchasesAccountId,
                         amount: Math.abs(variance),
@@ -4659,6 +4700,14 @@ export const transactionService = {
             }
             const item = await dbService.get<any>('inventory', params.itemId);
             if (!item) return { success: false, error: 'Item not found' };
+
+            // Authoritative eligibility: only Raw Material / Stationery
+            // support stock operations. Product/Service adjustments are
+            // rejected before any mutation or posting (fail-safe, no state
+            // change) per the existing {success, error} convention.
+            if (!isInventoryBearingItem(item)) {
+                return { success: false, error: `Item "${item.name || params.itemId}" is type "${item.type || 'unknown'}" and does not support stock operations` };
+            }
 
             let adjustmentCost = item.cost || 0;
             // Semantic accounting intent: explicit reason required. Legacy
@@ -4843,6 +4892,13 @@ export const transactionService = {
                     const whStore = tx.objectStore('warehouseInventory');
                     const auditStore = tx.objectStore('inventoryTransactions');
 
+                    // Eligibility-first: only stock-bearing items can move
+                    // between warehouses. Checked before any write.
+                    const item = await invStore.get(itemId);
+                    if (item && !isInventoryBearingItem(item)) {
+                        throw new Error(`Item "${item.name || itemId}" is type "${item.type || 'unknown'}" and does not support stock operations`);
+                    }
+
                     const sourceWhKey = [fromWarehouseId, itemId].join('_');
                     const sourceWh = await whStore.get(sourceWhKey);
                     if (sourceWh) {
@@ -4860,7 +4916,6 @@ export const transactionService = {
                         await whStore.put({ id: destWhKey, itemId, warehouseId: toWarehouseId, quantity, reserved: 0 });
                     }
 
-                    const item = await invStore.get(itemId);
                     if (item) {
                         item.stock = (item.stock || 0);
                         await invStore.put(item);
@@ -4940,13 +4995,14 @@ export const transactionService = {
                 const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(purchase.items || [], accounts) : null;
 
                 // 1. Post AP Ledger Entry for Purchase Order
-                // Debit: PO Receiving Account (or Inventory Account if direct)
-                // Credit: Accounts Payable
+                // Debit: PO Receiving Account (or Inventory Account if direct).
+                // Non-stock procurements (no eligible lines) debit Purchases
+                // (expense) — never an inventory account.
                 const apEntry: LedgerEntry = {
                     id: generateId('LG-PO-AP'),
                     date: new Date().toISOString(),
                     description: `PO Commitment - ${purchase.id}`,
-                    debitAccountId: inventoryAccountId || resolveAcct(gl.defaultInventoryAccount),
+                    debitAccountId: inventoryAccountId || resolveAcct(gl.purchasesAccount || '51100'),
                     creditAccountId: resolveAcct(gl.accountsPayable),
                     amount: totalAmount,
                     referenceId: purchase.id,
@@ -5105,30 +5161,42 @@ export const transactionService = {
                     return resolved;
                 };
 
+                // Eligibility-first: reconciliation only touches stock-bearing
+                // items. Non-stock rows (Product/Service) are ignored here and
+                // excluded from the variance cost below.
+                const eligibleResults: typeof results = [];
                 for (const res of results) {
                     const item = await inventoryStore.get(res.itemId);
+                    if (item && isInventoryBearingItem(item)) eligibleResults.push(res);
+                }
+                if (eligibleResults.length === 0) return { success: true };
+
+                let eligibleVarianceCost = 0;
+                for (const res of eligibleResults) {
+                    const item = await inventoryStore.get(res.itemId);
                     if (item) {
+                        eligibleVarianceCost += res.variance * (item.cost || 0);
                         item.stock = (item.stock || 0) + res.variance;
                         await inventoryStore.put(item);
                     }
                 }
 
-                if (Math.abs(totalVarianceCost) > 0.01) {
+                if (Math.abs(eligibleVarianceCost) > 0.01) {
                     const gl = getGLConfig();
-                    const firstItem = results.length > 0 ? await inventoryStore.get(results[0].itemId) : null;
+                    const firstItem = eligibleResults.length > 0 ? await inventoryStore.get(eligibleResults[0].itemId) : null;
                     const inventoryAccountId = accounts.length > 0 && firstItem ? resolveInventoryAccountByItemType(firstItem.type, accounts) : null;
                     // Reconciliation GL (fail-closed, symmetric COGS — never
                     // income; previously resolveAcct('42000') silently
                     // returned 42100 Interest Income via parent fallback):
-                    // - totalVarianceCost > 0 (physical > GL): Debit Inventory, Credit COGS (gain)
-                    // - totalVarianceCost < 0 (physical < GL): Debit COGS (loss), Credit Inventory
+                    // - eligibleVarianceCost > 0 (physical > GL): Debit Inventory, Credit COGS (gain)
+                    // - eligibleVarianceCost < 0 (physical < GL): Debit COGS (loss), Credit Inventory
                     const entry: LedgerEntry = {
                         id: generateId('LG-REC'),
                         date: new Date().toISOString(),
                         description: `Inventory Reconciliation Variance`,
-                        debitAccountId: totalVarianceCost < 0 ? resolveAcct(gl.defaultCOGSAccount) : (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)),
-                        creditAccountId: totalVarianceCost < 0 ? (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)) : resolveAcct(gl.defaultCOGSAccount),
-                        amount: Math.abs(totalVarianceCost),
+                        debitAccountId: eligibleVarianceCost < 0 ? resolveAcct(gl.defaultCOGSAccount) : (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)),
+                        creditAccountId: eligibleVarianceCost < 0 ? (inventoryAccountId || resolveAcct(gl.defaultInventoryAccount)) : resolveAcct(gl.defaultCOGSAccount),
+                        amount: Math.abs(eligibleVarianceCost),
                         referenceId: 'RECONCILE',
                         referenceType: 'inventory_reconciliation',
                         entryType: 'inventory_reconciliation',
@@ -5194,7 +5262,9 @@ export const transactionService = {
                 wo.endDate = new Date().toISOString();
                 await woStore.put(wo);
 
-                // 2. Consume Materials (BOM)
+                // 2. Consume Materials (BOM) — stock-bearing inputs only.
+                // Non-stock materials carry no inventory value: no stock
+                // movement, no consumption posting.
                 // Note: `reserved` is NOT decremented here because
                 // `inventoryReservationService.consumeReservation()` already handles
                 // the reserved-field update before this method is called.
@@ -5202,7 +5272,7 @@ export const transactionService = {
                 let totalMaterialCost = 0;
                 for (const mat of consumedMaterials) {
                     const item = await invStore.get(mat.materialId);
-                    if (item) {
+                    if (item && isInventoryBearingItem(item)) {
                         item.stock = (item.stock || 0) - mat.quantity;
                         await invStore.put(item);
 
@@ -5223,9 +5293,12 @@ export const transactionService = {
                     }
                 }
 
-                // 3. Add finished product to stock (if it's a stocked item), update weighted avg cost
+                // 3. Production output: only a stock-bearing item is added to
+                // stock. A Product is produced against orders/BOM without
+                // being stored as inventory, so its output accrues no stock
+                // and no weighted-average cost.
                 const product = await invStore.get(wo.productId);
-                if (product && product.type !== 'Service') {
+                if (product && isInventoryBearingItem(product)) {
                     const oldStock = product.stock || 0;
                     const qtyProduced = wo.quantityPlanned || 0;
                     product.stock = oldStock + qtyProduced;
@@ -5338,8 +5411,13 @@ export const transactionService = {
                     return resolved;
                 };
 
-                // 1. Update Inventory
+                // 1. Update Inventory — stock-bearing items only. Waste of a
+                // non-stock item carries no inventory value: fail safe with
+                // no mutation and no posting.
                 const item = await inventoryStore.get(materialId);
+                if (item && !isInventoryBearingItem(item)) {
+                    return { success: false, error: `Item "${item.name || materialId}" is type "${item.type || 'unknown'}" and does not support stock operations` };
+                }
                 if (item) {
                     item.stock = (item.stock || 0) - quantity;
                     await inventoryStore.put(item);
@@ -5408,9 +5486,11 @@ export const transactionService = {
                 // 1. Save Order
                 await orderStore.put(order);
 
-                // 2. Reserve Stock
+                // 2. Reserve Stock — stock-bearing items only. Non-stock
+                // (Product/Service) order lines reserve nothing.
                 for (const item of order.items) {
                     const invItem = await inventoryStore.get(item.productId);
+                    if (invItem && !isInventoryBearingItem(invItem)) continue;
                     if (invItem) {
                         if (item.variantId && invItem.variants) {
                             const vIdx = invItem.variants.findIndex(v => v.id === item.variantId);
@@ -5425,9 +5505,12 @@ export const transactionService = {
 
                 // 3. Status-based processing
                 if (order.status === 'Fulfilled' || order.status === 'Completed') {
-                    // Deduct actual stock immediately if created as Completed
+                    // Deduct actual stock immediately if created as Completed —
+                    // stock-bearing lines only. Product/Service lines hold no
+                    // stock, so nothing is deducted for them.
                     for (const item of order.items) {
                         const invItem = await inventoryStore.get(item.productId);
+                        if (invItem && !isInventoryBearingItem(invItem)) continue;
                         if (invItem) {
                             // Rule: Use snapshot quantities for deduction if available
                             const qtyToDeduct = item.productionCostSnapshot?.components?.reduce((sum: number, c: any) => sum + (c.quantity || 0), 0) || item.quantity;

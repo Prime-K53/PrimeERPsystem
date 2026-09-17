@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Item, Purchase, Sale, InventoryTransaction, AuditLogEntry, ProductionBatch, WorkOrder, Supplier } from '../../../../types';
 import * as itemDetailService from '../services/itemDetailService';
+import { isInventoryBearingItem } from '../../../../utils/inventoryNormalization';
 
 export function useItemDetail(itemId: string | undefined) {
   const [item, setItem] = useState<Item | null>(null);
@@ -71,7 +72,9 @@ export function useItemDetail(itemId: string | undefined) {
     return allItems[itemIndex + 1];
   }, [itemIndex, allItems]);
 
-  const stockCalc = useMemo(() => item ? itemDetailService.getItemStockCalculations(item) : null, [item]);
+  // Stock calculations only exist for stock-bearing items (Raw Material /
+  // Stationery). Product/Service detail shows the tab's not-available state.
+  const stockCalc = useMemo(() => (item && isInventoryBearingItem(item) ? itemDetailService.getItemStockCalculations(item) : null), [item]);
   const pricingCalc = useMemo(() => item ? itemDetailService.getItemPricing(item) : null, [item]);
 
   const handleSave = useCallback(async (updated: Item) => {

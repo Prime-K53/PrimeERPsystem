@@ -13,6 +13,7 @@ import { isItemBomRelevant, syncBomRelevantInventoryToBackend } from '../service
 import { logger } from '../services/logger';
 import { syncAllItemStockWithWarehouses } from '../services/inventorySyncService';
 import { checkAndSendLowStockAlerts } from '../services/lowStockAlertService';
+import { isInventoryBearingItem } from '../utils/inventoryNormalization';
 
 interface InventoryContextType {
     inventory: Item[];
@@ -343,7 +344,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const transferStock = async (id: string, f: string, t: string, q: number, reason?: string) => {
         try {
-            await transactionService.transferStock(id, f, t, q);
+            const result = await transactionService.transferStock(id, f, t, q);
+            if (result && (result as any).success === false) {
+                throw new Error((result as any).error || 'Stock transfer rejected');
+            }
             await fetchInventory();
             addAuditLog({
                 action: 'UPDATE',
@@ -501,7 +505,12 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         try {
             let totalVarianceCost = 0;
 
-            for (const res of results) {
+            // Only stock-bearing items participate in reconciliation.
+            const eligibleResults = results.filter((res) => {
+                const item = inventory.find(i => i.id === res.itemId);
+                return item ? isInventoryBearingItem(item) : false;
+            });
+            for (const res of eligibleResults) {
                 const item = inventory.find(i => i.id === res.itemId);
                 if (!item) continue;
                 const costPerUnit = item.cost || 0;
@@ -509,12 +518,12 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }
 
             // Use atomic transaction service
-            await transactionService.reconcileInventory(results, totalVarianceCost);
+            await transactionService.reconcileInventory(eligibleResults, totalVarianceCost);
 
             // Refresh data
             await fetchInventory();
 
-            notify(`Inventory reconciled. ${results.length} variances adjusted.`, "success");
+            notify(`Inventory reconciled. ${eligibleResults.length} variances adjusted.`, "success");
         } catch (err: any) {
             notify(`Reconciliation Failed: ${err.message}`, "error");
         }

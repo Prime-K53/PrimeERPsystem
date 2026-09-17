@@ -72,10 +72,13 @@ function simulateOpeningInventory(items: any[]): any[] {
     const value = stock * cost;
     const type = (item.type || '').toLowerCase();
 
+    // Authoritative eligibility (Prime Printing): only Raw Material /
+    // Stationery are stock-bearing. Product / finished-good lines are
+    // produced via BOM without being stocked — never opened as inventory,
+    // even though the legacy type map would place them in 11410.
+    // 11430 stays zero while no stocked finished goods exist.
     let accountCode: string | null = null;
-    if (type === 'product' || type === 'finished good' || type === 'finished goods') {
-      accountCode = '11410';
-    } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
+    if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
       accountCode = '11420';
     }
     if (!accountCode) continue;
@@ -117,10 +120,10 @@ function simulateGoodsReceipt(items: any[], ledgerEntries: any[]): any[] {
     const value = stock * cost;
     const type = (item.type || '').toLowerCase();
 
+    // Eligibility-first: Product / finished-good receipts are non-stock
+    // (produced via BOM) — never debited to inventory.
     let accountCode: string | null = null;
-    if (type === 'product' || type === 'finished good' || type === 'finished goods') {
-      accountCode = '11410';
-    } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
+    if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
       accountCode = '11420';
     }
     if (!accountCode) continue;
@@ -154,15 +157,16 @@ function simulateSale(item: any, saleQty: number, ledgerEntries: any[]): any[] {
   const revenueValue = saleQty * (item.sellingPrice || item.price || cost * 1.5);
   const type = (item.type || '').toLowerCase();
 
+  // Only stock-bearing sales relieve inventory. Product/Service sales post
+  // revenue with no COGS inventory leg (costs captured at production time).
   let inventoryAccountCode: string | null = null;
-  if (type === 'product' || type === 'finished good' || type === 'finished goods') {
-    inventoryAccountCode = '11410';
-  } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
+  if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
     inventoryAccountCode = '11420';
   }
-  if (!inventoryAccountCode) return newEntries;
 
-  const inventoryAccount = CANONICAL_ACCOUNTS.find(a => a.account_number === inventoryAccountCode);
+  const inventoryAccount = inventoryAccountCode
+    ? CANONICAL_ACCOUNTS.find(a => a.account_number === inventoryAccountCode)
+    : undefined;
   const cogsAccount = CANONICAL_ACCOUNTS.find(a => a.account_number === '51200');
   const salesAccount = CANONICAL_ACCOUNTS.find(a => a.account_number === '41100');
   const cashAccount = CANONICAL_ACCOUNTS.find(a => a.account_number === '11110');
@@ -206,10 +210,9 @@ function simulateStockAdjustment(item: any, adjustmentQty: number, ledgerEntries
   const adjustmentValue = Math.abs(adjustmentQty) * cost;
   const type = (item.type || '').toLowerCase();
 
+  // Non-stock adjustments are rejected in production (fail-safe, no posting).
   let inventoryAccountCode: string | null = null;
-  if (type === 'product' || type === 'finished good' || type === 'finished goods') {
-    inventoryAccountCode = '11410';
-  } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
+  if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
     inventoryAccountCode = '11420';
   }
   if (!inventoryAccountCode) return newEntries;
@@ -257,10 +260,9 @@ function simulateReturn(item: any, returnQty: number, ledgerEntries: any[]): any
   const revenueValue = returnQty * (item.sellingPrice || item.price || cost * 1.5);
   const type = (item.type || '').toLowerCase();
 
+  // Returns of non-stock lines reverse revenue only (no inventory leg).
   let inventoryAccountCode: string | null = null;
-  if (type === 'product' || type === 'finished good' || type === 'finished goods') {
-    inventoryAccountCode = '11410';
-  } else if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
+  if (type === 'material' || type === 'raw material' || type === 'raw' || type === 'consumable' || type === 'stationery') {
     inventoryAccountCode = '11420';
   }
   if (!inventoryAccountCode) return newEntries;
@@ -325,7 +327,7 @@ function getGLBalance(accountId: string, ledgerEntries: any[]): number {
 describe('End-to-End Accounting Simulation', () => {
 
   describe('Step 1: Opening Inventory', () => {
-    it('should create opening inventory journal entries', () => {
+    it('should create opening inventory journal entries (Product excluded as non-stock)', () => {
       const items = [
         { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00 },
         { id: 'INV-MAT-001', name: 'Paper', type: 'Raw Material', stock: 100, cost: 5.00 },
@@ -337,10 +339,11 @@ describe('End-to-End Accounting Simulation', () => {
       const rawMaterialsBalance = getGLBalance('ACC-11420', ledgerEntries);
       const equityBalance = getGLBalance('ACC-31000', ledgerEntries);
 
-      expect(merchandiseBalance).toBe(500); // 50 * 10
+      // Product is produced via BOM without being stocked: no 11410 line.
+      expect(merchandiseBalance).toBe(0);
       expect(rawMaterialsBalance).toBe(500); // 100 * 5
-      expect(equityBalance).toBe(-1000); // Credit to equity (CREDIT normal balance = negative)
-      expect(ledgerEntries.length).toBe(2);
+      expect(equityBalance).toBe(-500); // Credit to equity (CREDIT normal balance = negative)
+      expect(ledgerEntries.length).toBe(1);
     });
 
     it('should have balanced debits and credits', () => {
@@ -373,7 +376,7 @@ describe('End-to-End Accounting Simulation', () => {
   });
 
   describe('Step 3: Receive/Purchase Inventory', () => {
-    it('should create GRN entries: DR Inventory / CR AP', () => {
+    it('should create GRN entries: DR Inventory / CR AP (non-stock receipts excluded)', () => {
       const items = [
         { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00 },
         { id: 'INV-MAT-001', name: 'Paper', type: 'Raw Material', stock: 100, cost: 5.00 },
@@ -390,16 +393,18 @@ describe('End-to-End Accounting Simulation', () => {
       const rawMaterialsBalance = getGLBalance('ACC-11420', allEntries);
       const apBalance = getGLBalance('ACC-21110', allEntries);
 
-      expect(merchandiseBalance).toBe(500 + 160); // 50*10 + 20*8
+      // Product opening (500) and Product receipt (160) are non-stock:
+      // never debited to inventory, never credited to AP as inventory.
+      expect(merchandiseBalance).toBe(0);
       expect(rawMaterialsBalance).toBe(500 + 600); // 100*5 + 50*12
-      expect(apBalance).toBe(-760); // Credit to AP
+      expect(apBalance).toBe(-600); // stocked receipt only
     });
   });
 
   describe('Step 4: Sell Inventory', () => {
     it('should create COGS and Revenue entries', () => {
       const items = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00, sellingPrice: 15.00 },
+        { id: 'INV-STA-001', name: 'Pen Set', type: 'Stationery', stock: 50, cost: 10.00, sellingPrice: 15.00 },
         { id: 'INV-MAT-001', name: 'Paper', type: 'Raw Material', stock: 100, cost: 5.00 },
       ];
 
@@ -407,19 +412,32 @@ describe('End-to-End Accounting Simulation', () => {
       const allEntries = simulateSale(items[0], 10, openingEntries);
 
       const cogsBalance = getGLBalance('ACC-51200', allEntries);
-      const inventoryBalance = getGLBalance('ACC-11410', allEntries);
+      const inventoryBalance = getGLBalance('ACC-11420', allEntries);
       const revenueBalance = getGLBalance('ACC-41100', allEntries);
       const cashBalance = getGLBalance('ACC-11110', allEntries);
 
       expect(cogsBalance).toBe(100); // 10 * 10
-      expect(inventoryBalance).toBe(500 - 100); // 500 - 100
+      expect(inventoryBalance).toBe(1000 - 100); // (50*10 + 100*5) - 100
       expect(revenueBalance).toBe(-150); // 10 * 15 (CREDIT account = negative)
       expect(cashBalance).toBe(150); // 10 * 15
     });
 
+    it('should post revenue with no COGS for non-stock Product sales', () => {
+      const product = { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00, sellingPrice: 15.00 };
+
+      const openingEntries = simulateOpeningInventory([product]);
+      const allEntries = simulateSale(product, 10, openingEntries);
+
+      // No inventory leg for a non-stock sale — revenue still posts.
+      expect(getGLBalance('ACC-51200', allEntries)).toBe(0);
+      expect(getGLBalance('ACC-11410', allEntries)).toBe(0);
+      expect(getGLBalance('ACC-41100', allEntries)).toBe(-150);
+      expect(getGLBalance('ACC-11110', allEntries)).toBe(150);
+    });
+
     it('should have balanced entries after sale', () => {
       const items = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00, sellingPrice: 15.00 },
+        { id: 'INV-STA-001', name: 'Pen Set', type: 'Stationery', stock: 50, cost: 10.00, sellingPrice: 15.00 },
       ];
 
       const openingEntries = simulateOpeningInventory(items);
@@ -435,13 +453,13 @@ describe('End-to-End Accounting Simulation', () => {
   describe('Step 5: Stock Adjustment', () => {
     it('should create adjustment entries for stock increase', () => {
       const items = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00 },
+        { id: 'INV-STA-001', name: 'Pen Set', type: 'Stationery', stock: 50, cost: 10.00 },
       ];
 
       const openingEntries = simulateOpeningInventory(items);
       const allEntries = simulateStockAdjustment(items[0], 5, openingEntries);
 
-      const inventoryBalance = getGLBalance('ACC-11410', allEntries);
+      const inventoryBalance = getGLBalance('ACC-11420', allEntries);
       const cogsBalance = getGLBalance('ACC-51200', allEntries);
 
       expect(inventoryBalance).toBe(550); // 50*10 + 5*10
@@ -450,13 +468,13 @@ describe('End-to-End Accounting Simulation', () => {
 
     it('should create adjustment entries for stock decrease', () => {
       const items = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00 },
+        { id: 'INV-STA-001', name: 'Pen Set', type: 'Stationery', stock: 50, cost: 10.00 },
       ];
 
       const openingEntries = simulateOpeningInventory(items);
       const allEntries = simulateStockAdjustment(items[0], -5, openingEntries);
 
-      const inventoryBalance = getGLBalance('ACC-11410', allEntries);
+      const inventoryBalance = getGLBalance('ACC-11420', allEntries);
       const cogsBalance = getGLBalance('ACC-51200', allEntries);
 
       expect(inventoryBalance).toBe(450); // 50*10 - 5*10
@@ -467,14 +485,14 @@ describe('End-to-End Accounting Simulation', () => {
   describe('Step 6: Return', () => {
     it('should reverse COGS and revenue for returns', () => {
       const items = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00, sellingPrice: 15.00 },
+        { id: 'INV-STA-001', name: 'Pen Set', type: 'Stationery', stock: 50, cost: 10.00, sellingPrice: 15.00 },
       ];
 
       const openingEntries = simulateOpeningInventory(items);
       const saleEntries = simulateSale(items[0], 10, openingEntries);
       const allEntries = simulateReturn(items[0], 3, saleEntries);
 
-      const inventoryBalance = getGLBalance('ACC-11410', allEntries);
+      const inventoryBalance = getGLBalance('ACC-11420', allEntries);
       const cogsBalance = getGLBalance('ACC-51200', allEntries);
       const revenueBalance = getGLBalance('ACC-41100', allEntries);
       const cashBalance = getGLBalance('ACC-11110', allEntries);
@@ -491,7 +509,7 @@ describe('End-to-End Accounting Simulation', () => {
   describe('Step 7: Final Reconciliation', () => {
     it('should show zero variance after all transactions', () => {
       const items = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00, sellingPrice: 15.00 },
+        { id: 'INV-STA-001', name: 'Pen Set', type: 'Stationery', stock: 50, cost: 10.00, sellingPrice: 15.00 },
         { id: 'INV-MAT-001', name: 'Paper', type: 'Raw Material', stock: 100, cost: 5.00 },
       ];
 
@@ -502,9 +520,9 @@ describe('End-to-End Accounting Simulation', () => {
       let result = computeInventoryReconciliation(items, CANONICAL_ACCOUNTS, ledgerEntries);
       expect(result.variance).toBe(0);
 
-      // Step 3: Purchase more
+      // Step 3: Purchase more (stocked Stationery)
       const newItems = [
-        { id: 'INV-PRD-002', name: 'Notebook', type: 'Product', stock: 20, cost: 8.00 },
+        { id: 'INV-STA-002', name: 'Pen Refill', type: 'Stationery', stock: 20, cost: 8.00 },
       ];
       ledgerEntries = simulateGoodsReceipt(newItems, ledgerEntries);
 
@@ -518,13 +536,13 @@ describe('End-to-End Accounting Simulation', () => {
       ledgerEntries = simulateReturn(items[0], 3, ledgerEntries);
 
       // Step 7: Recalculate
-      // Physical inventory: Book has 50-10+5-3=42 units * 10 = 420, plus Notebook 20*8=160
-      // But the simulation doesn't update stock quantities in the items array,
-      // so we need to use the GL-reflecting quantities
+      // Physical inventory: Pen Set 50-10+5+3=48 units * 10 = 480,
+      // Paper 100*5=500, plus Refill 20*8=160 → 1140. The simulation
+      // threads GL quantities, so mirror them here.
       const updatedItems = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 48, cost: 10.00 },
+        { id: 'INV-STA-001', name: 'Pen Set', type: 'Stationery', stock: 48, cost: 10.00 },
         { id: 'INV-MAT-001', name: 'Paper', type: 'Raw Material', stock: 100, cost: 5.00 },
-        { id: 'INV-PRD-002', name: 'Notebook', type: 'Product', stock: 20, cost: 8.00 },
+        { id: 'INV-STA-002', name: 'Pen Refill', type: 'Stationery', stock: 20, cost: 8.00 },
       ];
 
       result = computeInventoryReconciliation(updatedItems, CANONICAL_ACCOUNTS, ledgerEntries);
@@ -536,13 +554,13 @@ describe('End-to-End Accounting Simulation', () => {
 
     it('should correctly calculate all GL balances after full pipeline', () => {
       const items = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00, sellingPrice: 15.00 },
+        { id: 'INV-STA-001', name: 'Pen Set', type: 'Stationery', stock: 50, cost: 10.00, sellingPrice: 15.00 },
       ];
 
       // Full pipeline
       let ledgerEntries = simulateOpeningInventory(items);
       ledgerEntries = simulateGoodsReceipt(
-        [{ id: 'INV-PRD-002', name: 'Notebook', type: 'Product', stock: 20, cost: 8.00 }],
+        [{ id: 'INV-STA-002', name: 'Pen Refill', type: 'Stationery', stock: 20, cost: 8.00 }],
         ledgerEntries
       );
       ledgerEntries = simulateSale(items[0], 10, ledgerEntries);
@@ -551,25 +569,28 @@ describe('End-to-End Accounting Simulation', () => {
 
       // Verify key account balances
       const inventory11410 = getGLBalance('ACC-11410', ledgerEntries);
+      const inventory11420 = getGLBalance('ACC-11420', ledgerEntries);
       const cogs51200 = getGLBalance('ACC-51200', ledgerEntries);
       const revenue41100 = getGLBalance('ACC-41100', ledgerEntries);
       const cash11110 = getGLBalance('ACC-11110', ledgerEntries);
       const ap21110 = getGLBalance('ACC-21110', ledgerEntries);
       const equity31000 = getGLBalance('ACC-31000', ledgerEntries);
 
-      // Opening: DR 11410=500, CR 31000=500
-      // GRN: DR 11410=160, CR 21110=160
-      // Sale: DR 51200=100, CR 11410=100; DR 11110=150, CR 41100=150
-      // Adjustment: DR 11410=50, CR 51200=50
-      // Return: DR 11410=30, CR 51200=30; DR 41100=45, CR 11110=45
-      // 11410: 500+160-100+50+30 = 640
+      // Opening: DR 11420=500, CR 31000=500
+      // GRN: DR 11420=160, CR 21110=160
+      // Sale: DR 51200=100, CR 11420=100; DR 11110=150, CR 41100=150
+      // Adjustment: DR 11420=50, CR 51200=50
+      // Return: DR 11420=30, CR 51200=30; DR 41100=45, CR 11110=45
+      // 11410: 0 (no merchandise — non-stock Product never posts here)
+      // 11420: 500+160-100+50+30 = 640
       // 51200: 100-50-30 = 20
       // 41100: 150-45 = 105
       // 11110: 150-45 = 105
       // 21110: -160
       // 31000: -500
 
-      expect(inventory11410).toBe(640);
+      expect(inventory11410).toBe(0);
+      expect(inventory11420).toBe(640);
       expect(cogs51200).toBe(20);
       expect(revenue41100).toBe(-105);
       expect(cash11110).toBe(105);
@@ -581,6 +602,7 @@ describe('End-to-End Accounting Simulation', () => {
   describe('Step 8: Diagnostic Verification', () => {
     it('should identify all inventory items correctly', () => {
       const items = [
+        // Product is non-stock: excluded from every bucket.
         { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00 },
         { id: 'INV-MAT-001', name: 'Paper', type: 'Raw Material', stock: 100, cost: 5.00 },
         { id: 'INV-STA-001', name: 'Pen', type: 'Stationery', stock: 200, cost: 2.00 },
@@ -589,16 +611,16 @@ describe('End-to-End Accounting Simulation', () => {
       const ledgerEntries = simulateOpeningInventory(items);
       const result = computeInventoryReconciliation(items, CANONICAL_ACCOUNTS, ledgerEntries);
 
-      expect(result.merchandiseValue).toBe(500);
+      expect(result.merchandiseValue).toBe(0);
       expect(result.rawMaterialsValue).toBe(900); // 100*5 + 200*2
-      expect(result.physicalInventoryValue).toBe(1400);
-      expect(result.glInventoryValue).toBe(1400);
+      expect(result.physicalInventoryValue).toBe(900);
+      expect(result.glInventoryValue).toBe(900);
       expect(result.variance).toBe(0);
     });
 
     it('should detect missing opening inventory', () => {
       const items = [
-        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00 },
+        { id: 'INV-MAT-001', name: 'Paper', type: 'Raw Material', stock: 50, cost: 10.00 },
       ];
 
       const ledgerEntries: any[] = []; // No opening inventory
@@ -607,6 +629,19 @@ describe('End-to-End Accounting Simulation', () => {
       expect(result.physicalInventoryValue).toBe(500);
       expect(result.glInventoryValue).toBe(0);
       expect(result.variance).toBe(500);
+    });
+
+    it('should carry no inventory for non-stock Product lines', () => {
+      const items = [
+        { id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10.00 },
+      ];
+
+      const ledgerEntries: any[] = []; // No opening inventory
+      const result = computeInventoryReconciliation(items, CANONICAL_ACCOUNTS, ledgerEntries);
+
+      expect(result.physicalInventoryValue).toBe(0);
+      expect(result.glInventoryValue).toBe(0);
+      expect(result.variance).toBe(0);
     });
   });
 });

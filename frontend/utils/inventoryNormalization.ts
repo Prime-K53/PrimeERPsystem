@@ -98,6 +98,7 @@ export const INVENTORY_GL_CODES = {
 /** Reasons an item contributes no inventory value (always reported, never silent). */
 export type InventoryExclusionReason =
   | 'SERVICE_ITEM'
+  | 'NON_STOCK_TYPE'
   | 'DELETED_ITEM'
   | 'NEGATIVE_STOCK'
   | 'ZERO_COST'
@@ -161,10 +162,55 @@ function rawClassificationOf(item: any): unknown {
 }
 
 /**
+ * AUTHORITATIVE INVENTORY-ELIGIBILITY RULE (Prime Printing business model).
+ *
+ * Only Raw Material and Stationery are stock-bearing inventory items.
+ * Product (produced from Raw Materials through BOM/production, never
+ * stocked) and Service (no stock quantity, no inventory asset) are NOT
+ * inventory-eligible.
+ *
+ * Derived SOLELY from the authoritative item type — never from whether a
+ * record happens to contain stock/quantity/cost fields, an ID prefix
+ * (e.g. `FG-`), or an inventory account mapping.
+ *
+ * Raw Material → true | Stationery → true | Product → false | Service → false
+ */
+export function isInventoryBearingItem(item: any): boolean {
+  if (!item) return false;
+  const tokens = [tokenizeInventoryType(rawTypeOf(item)), tokenizeInventoryType(rawClassificationOf(item))].filter(Boolean);
+  if (tokens.length === 0) return false;
+  if (tokens.some((t) => t.includes('service'))) return false;
+  return tokens.some((t) =>
+    t.includes('stationery') ||
+    t.includes('stationaries') ||
+    t.includes('raw') ||
+    t.includes('material') ||
+    t.includes('consumable')
+  );
+}
+
+/**
+ * Inventory account for one item, eligibility-first.
+ *
+ * Invariant: non-stock items (Product/Service/...) resolve to NO account,
+ * carry NO inventory value, and have NO applicable stock — even if a legacy
+ * mapping would otherwise place them in an inventory account (e.g. 11410).
+ */
+export function getInventoryAccountForItem(item: any): string | null {
+  if (!isInventoryBearingItem(item)) return null;
+  return resolveInventoryGLAccountCode(item);
+}
+
+/**
  * Canonical GL mapping for one inventory item.
  * Returns the 5-digit code, or null when the item must NOT post to
  * inventory (services) or cannot be mapped (unmapped type — reported, never
  * silently defaulted to 11410).
+ *
+ * NOTE: this is the type→account map only. Consumers that decide whether an
+ * item participates in inventory at all MUST gate on isInventoryBearingItem()
+ * (or getInventoryAccountForItem()) first — a mapping result alone must never
+ * make a non-stock Product/Service inventory-bearing.
  *
  * Mapping (checked against raw type first, then classification):
  * - service-like           → null (SERVICE_ITEM, excluded upstream)
@@ -247,6 +293,12 @@ export function classifyInventoryItem(rawItem: any): ClassifiedInventoryItem {
   } else if (isInventoryServiceItem(rawItem)) {
     included = false;
     exclusionReason = 'SERVICE_ITEM';
+  } else if (!isInventoryBearingItem(rawItem)) {
+    // Prime Printing rule: Product (and any other non Raw/Stationery type)
+    // is never stock-bearing, even when legacy fields carry qty/cost or a
+    // legacy mapping would place it in an inventory account (e.g. 11410).
+    included = false;
+    exclusionReason = 'NON_STOCK_TYPE';
   } else if (quantity < 0) {
     included = false;
     exclusionReason = 'NEGATIVE_STOCK';

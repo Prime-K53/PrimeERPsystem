@@ -5,6 +5,7 @@ import { useSalesStore } from '../../stores/salesStore';
 import { useAuth } from '../../context/AuthContext';
 import { currencyService } from '../../services/currencyService';
 import { dbService } from '../../services/db';
+import { isInventoryBearingItem } from '../../utils/inventoryNormalization';
 import type { Item, Sale as SaleType } from '../../types';
 import './inventory-reference.css';
 
@@ -91,17 +92,23 @@ export const InventoryReports: React.FC = () => {
 
   const activeItems = useMemo(() => inventory.filter((i: Item) => i.status !== 'Inactive') as Item[], [inventory]);
 
+  // Authoritative eligibility: only Raw Material / Stationery are
+  // stock-bearing. Every stock-derived aggregate below (valuation, low/out
+  // of stock, warehouse splits, revenue potential) is computed over stocked
+  // items; record counts still census all active items.
+  const stockedItems = useMemo(() => activeItems.filter((i: Item) => isInventoryBearingItem(i)) as Item[], [activeItems]);
+
   const totalValue = useMemo(() =>
-    activeItems.reduce((s, i) => s + (i.costPrice || 0) * Math.max(i.stock || 0, 0), 0),
-    [activeItems]);
+    stockedItems.reduce((s, i) => s + (i.costPrice || 0) * Math.max(i.stock || 0, 0), 0),
+    [stockedItems]);
 
   const lowStockItems = useMemo(() =>
-    activeItems.filter((i: Item) => (i.reorderPoint ?? 0) > 0 && (i.stock ?? 0) <= (i.reorderPoint ?? 0)),
-    [activeItems]);
+    stockedItems.filter((i: Item) => (i.reorderPoint ?? 0) > 0 && (i.stock ?? 0) <= (i.reorderPoint ?? 0)),
+    [stockedItems]);
 
   const outOfStock = useMemo(() =>
-    activeItems.filter((i: Item) => (i.stock ?? 0) === 0 && (i.reorderPoint ?? 0) > 0),
-    [activeItems]);
+    stockedItems.filter((i: Item) => (i.stock ?? 0) === 0 && (i.reorderPoint ?? 0) > 0),
+    [stockedItems]);
 
   const valuationByCategory = useMemo(() => {
     const map = new Map<string, { count: number; value: number; cost: number }>();
@@ -110,7 +117,7 @@ export const InventoryReports: React.FC = () => {
       const entry = map.get(cat) || { count: 0, value: 0, cost: 0 };
       entry.count++;
       entry.cost += i.costPrice || 0;
-      entry.value += (i.costPrice || 0) * Math.max(i.stock || 0, 0);
+      if (isInventoryBearingItem(i)) entry.value += (i.costPrice || 0) * Math.max(i.stock || 0, 0);
       map.set(cat, entry);
     });
     return Array.from(map.entries()).sort((a, b) => b[1].value - a[1].value);
@@ -118,7 +125,7 @@ export const InventoryReports: React.FC = () => {
 
   const valuationByWarehouse = useMemo(() => {
     const map = new Map<string, { count: number; value: number }>();
-    activeItems.forEach((i: Item) => {
+    stockedItems.forEach((i: Item) => {
       const locs = i.locationStock || [];
       if (locs.length === 0) {
         const entry = map.get('Unassigned') || { count: 0, value: 0 };
@@ -137,11 +144,11 @@ export const InventoryReports: React.FC = () => {
       }
     });
     return Array.from(map.entries()).sort((a, b) => b[1].value - a[1].value);
-  }, [activeItems, warehouses]);
+  }, [stockedItems, warehouses]);
 
   const totalPotentialRevenue = useMemo(() =>
-    activeItems.reduce((s, i) => s + (i.sellingPrice || 0) * Math.max(i.stock || 0, 0), 0),
-    [activeItems]);
+    stockedItems.reduce((s, i) => s + (i.sellingPrice || 0) * Math.max(i.stock || 0, 0), 0),
+    [stockedItems]);
 
   const grossProfitPotential = totalPotentialRevenue - totalValue;
 

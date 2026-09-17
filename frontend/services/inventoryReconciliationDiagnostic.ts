@@ -6,7 +6,8 @@
  * hierarchy (11400 → 11410/11420/11430).
  *
  * Reports:
- *  - physicalInventoryValue       — total stock × cost across all active items
+ *  - physicalInventoryValue       — stock × cost across stock-bearing items
+ *    (Raw Material / Stationery only; Product/Service carry no inventory)
  *  - glInventoryValue            — sum of GL balances for 11410/11420/11430
  *  - variance                    — physical − GL (positive = GL is understated)
  *  - merchandiseValue / rawMaterialsValue / finishedGoodsValue — physical by type
@@ -24,6 +25,7 @@ import { isPostedLedgerEntry } from './accountingEngine';
 import {
   reconcileInventoryValuation,
   formatInventoryReconciliation,
+  isInventoryBearingItem,
   resolveInventoryCostPerUnit,
   resolveInventoryQuantity,
   type InventoryValuationReconciliation,
@@ -83,11 +85,16 @@ export async function computeInventoryReconciliation(): Promise<InventoryReconci
     const isActive = String(item.status || 'Active').toLowerCase() !== 'inactive';
     if (isActive) activeItemCount++; else inactiveItemCount++;
 
+    // Authoritative eligibility: only stock-bearing items (Raw Material /
+    // Stationery) contribute physical inventory value. Product/Service rows
+    // are record census only — their legacy qty×cost is not inventory.
+    const eligible = isInventoryBearingItem(item);
+
     // Canonical economics: quantity × cost (never Selling Price), every
     // historical cost representation supported.
     const qty = resolveInventoryQuantity(item);
     const cost = resolveInventoryCostPerUnit(item);
-    const value = qty * cost;
+    const value = eligible ? qty * cost : 0;
 
     if (qty < 0) {
       diagnostics.push({
@@ -113,12 +120,12 @@ export async function computeInventoryReconciliation(): Promise<InventoryReconci
     }
 
     physicalInventoryValue += value;
-    totalUnits += qty;
+    if (eligible) totalUnits += qty;
 
     const type = String(item.type || 'product').toLowerCase();
     if (!byType[type]) byType[type] = { physical: 0, units: 0, itemCount: 0 };
     byType[type].physical += value;
-    byType[type].units += qty;
+    if (eligible) byType[type].units += qty;
     byType[type].itemCount++;
   }
 

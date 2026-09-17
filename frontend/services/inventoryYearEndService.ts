@@ -16,6 +16,7 @@
 import { dbService } from './db';
 import { logger } from './logger';
 import { roundFinancial } from '../utils/helpers';
+import { isInventoryBearingItem } from '../utils/inventoryNormalization';
 
 export interface InventoryYearEndIssue {
   severity: 'error' | 'warning' | 'info';
@@ -88,8 +89,11 @@ export async function checkInventoryYearEnd(fiscalYear: number): Promise<Invento
       });
     }
 
-    // 4) GL inventory balance vs items book value
-    const totalStockValue = items.reduce((s, i) => s + roundFinancial((i.stock || 0) * (i.cost || 0)), 0);
+    // 4) GL inventory balance vs items book value (stock-bearing items
+    // only: Raw Material / Stationery — Product/Service carry no inventory).
+    const totalStockValue = items
+        .filter((i) => isInventoryBearingItem(i))
+        .reduce((s, i) => s + roundFinancial((i.stock || 0) * (i.cost || 0)), 0);
     // Sum inventory GL debits - credits for default inventory account (11400)
     let ledgerInventoryTotal = 0;
     const invAcctPrefixes = ['11400', '11410', '11420', '11430'];

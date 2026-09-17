@@ -14,6 +14,7 @@ import { InventoryTab } from './tabs/InventoryTab';
 import { PricingTab } from './tabs/PricingTab';
 import { SuppliersTab } from './tabs/SuppliersTab';
 import { AttachmentsTab } from './tabs/AttachmentsTab';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import type { Item } from '../../../types';
 import '../inventory-reference.css';
 
@@ -72,8 +73,11 @@ export const ItemDetailPage: React.FC = () => {
   }, [item]);
 
   const isStockTracked = useMemo(() => {
-    const t = item?.type || '';
-    return t === 'Raw Material' || t === 'Stationery';
+    // Authoritative eligibility: only Raw Material / Stationery are
+    // stock-bearing. Covers legacy aliases (Material, consumable) and
+    // classification variants; never inferred from stock/qty/cost fields.
+    if (!item) return false;
+    return isInventoryBearingItem(item);
   }, [item]);
 
   const handleEditSave = useCallback(async (updated: Item) => {
@@ -104,13 +108,13 @@ export const ItemDetailPage: React.FC = () => {
 
   // KPI data
   const kpis = useMemo(() => {
-    if (!item || !stockCalc || !pricingCalc) return [];
-    const cur = stockCalc.currentStock;
-    const avail = stockCalc.available;
-    const reserved = stockCalc.reserved;
-    const value = stockCalc.inventoryValue;
+    if (!item || !pricingCalc) return [];
+    const cur = stockCalc?.currentStock ?? 0;
+    const avail = stockCalc?.available ?? 0;
+    const reserved = stockCalc?.reserved ?? 0;
+    const value = stockCalc?.inventoryValue ?? 0;
 
-    if (isStockTracked) {
+    if (isStockTracked && stockCalc) {
       const common = [
         { label: 'Current Stock', value: String(cur), sub: `${avail} available`, color: cur === 0 ? '#DC2626' : cur <= (item.minStockLevel || 0) ? '#D97706' : '#16A34A' },
         { label: 'Available', value: String(avail), sub: `${((avail / (cur || 1)) * 100).toFixed(0)}% of stock`, color: '#2563EB' },
@@ -140,12 +144,12 @@ export const ItemDetailPage: React.FC = () => {
 
   // AI insights
   const aiInsights = useMemo(() => {
-    if (!item || !stockCalc || !pricingCalc) return [];
+    if (!item || !pricingCalc) return [];
     const insights: { text: string; severity: 'high' | 'med' | 'low' | 'ok' }[] = [];
-    const cur = stockCalc.currentStock;
+    const cur = stockCalc?.currentStock ?? 0;
     const reorder = item.reorderPoint || item.minStockLevel || 0;
 
-    if (isStockTracked) {
+    if (isStockTracked && stockCalc) {
       if (cur <= 0) insights.push({ text: 'Item is out of stock. Urgent reorder needed.', severity: 'high' });
       else if (reorder > 0 && cur <= reorder) insights.push({ text: `Stock level (${cur}) is at or below reorder point (${reorder}).`, severity: 'med' });
       else insights.push({ text: 'Stock level is healthy.', severity: 'ok' });
@@ -158,7 +162,13 @@ export const ItemDetailPage: React.FC = () => {
 
       if (isRaw && !item.preferredSupplierId) insights.push({ text: 'No preferred supplier assigned.', severity: 'low' });
     } else {
-      insights.push({ text: 'Stock tracking is not enabled for this item type.', severity: 'low' });
+      const isService = String((item as any)?.type || '').toLowerCase().includes('service');
+      insights.push({
+        text: isService
+          ? 'This is a non-stock service.'
+          : 'This is a non-stock product produced against orders/BOM.',
+        severity: 'low',
+      });
     }
 
     if (!pricingCalc.sellingPrice && !isRaw) insights.push({ text: 'No selling price configured.', severity: 'high' });
@@ -280,7 +290,7 @@ export const ItemDetailPage: React.FC = () => {
 
         {/* ── TAB NAV ── */}
         <div className="item-tab-bar">
-          {TABS.map(tab => {
+          {TABS.filter((tab) => tab.id !== 'inventory' || isStockTracked).map(tab => {
             const showTab = TABS.some(t => t.id === tab.id);
             if (!showTab) return null;
             return (
@@ -305,7 +315,7 @@ export const ItemDetailPage: React.FC = () => {
             </div>
           }>
             {activeTab === 'overview' && <OverviewTab item={item} />}
-            {activeTab === 'inventory' && <InventoryTab item={item} stockCalc={stockCalc} />}
+            {activeTab === 'inventory' && isStockTracked && <InventoryTab item={item} stockCalc={stockCalc} />}
             {activeTab === 'warehouses' && <WarehousesTab item={item} />}
             {activeTab === 'pricing' && <PricingTab item={item} />}
             {activeTab === 'procurement' && <PurchaseHistoryTab purchases={purchases} itemId={item.id || ''} />}

@@ -2,7 +2,7 @@ import { logger } from './logger';
 import { InventoryTransaction, MaterialBatch, WarehouseInventory } from '../types';
 import { dbService } from './db';
 import { generateOpaqueId } from '../utils/idGeneration';
-import { resolveInventoryCostPerUnit } from '../utils/inventoryNormalization';
+import { isInventoryBearingItem, resolveInventoryCostPerUnit } from '../utils/inventoryNormalization';
 
 export interface InventoryDeductionRequest {
   itemId: string;
@@ -60,6 +60,10 @@ class InventoryTransactionService {
       const item = await dbService.get<any>('inventory', itemId);
       if (!item) {
         return { success: false, error: 'Item not found' };
+      }
+      // Authoritative eligibility: Product/Service lines hold no stock.
+      if (!isInventoryBearingItem(item)) {
+        return { success: false, error: `Item "${item.name || itemId}" is type "${item.type || 'unknown'}" and does not support stock operations` };
       }
 
       const companyConfig = JSON.parse(localStorage.getItem('nexus_company_config') || '{}');
@@ -145,6 +149,11 @@ class InventoryTransactionService {
       const item = await dbService.get<any>('inventory', itemId);
       if (!item) {
         return { success: false, error: 'Item not found' };
+      }
+      // Authoritative eligibility: Product/Service output is produced
+      // without being stored as inventory — no stock to add.
+      if (!isInventoryBearingItem(item)) {
+        return { success: false, error: `Item "${item.name || itemId}" is type "${item.type || 'unknown'}" and does not support stock operations` };
       }
 
       let currentQuantity = item.stock || 0;

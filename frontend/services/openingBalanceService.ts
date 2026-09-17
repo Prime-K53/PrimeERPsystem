@@ -5,6 +5,7 @@ import { roundToCurrency } from '../utils/helpers';
 import { normalizeInventoryItems } from '../utils/inventoryNormalization';
 import {
   classifyInventoryItem,
+  isInventoryBearingItem,
   resolveInventoryCostPerUnit,
   resolveInventoryGLAccountCode,
   resolveInventoryQuantity,
@@ -124,6 +125,18 @@ export async function computeOpeningInventoryDiagnostic(
 
     if (stock < 0) negativeInventoryItems.push(item);
     if (cost <= 0 && stock > 0) zeroCostItems.push(item);
+
+    // Authoritative eligibility: only Raw Material / Stationery are valued
+    // as inventory. Non-stock items (Product/...) are never bucketed, even
+    // when a legacy mapping would place them in 11410. Truly unmappable
+    // types are still surfaced for review.
+    if (!isInventoryBearingItem(item)) {
+      if (!resolveInventoryGLAccountCode(item)) {
+        missingAccountMapping.push(item);
+        unclassifiedItems.push(item);
+      }
+      continue;
+    }
 
     // Canonical GL mapping (shared with opening posting and COGS relief).
     const accountCode = resolveInventoryGLAccountCode(item);

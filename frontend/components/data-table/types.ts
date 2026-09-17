@@ -38,6 +38,8 @@ export interface RowAction<T> {
   primary?: boolean;
   danger?: boolean;
   onSelect: (row: T) => void;
+  /** Optional per-row visibility (e.g. hide stock actions for non-stock items). */
+  hidden?: (row: T) => boolean;
 }
 
 export interface DetailField {

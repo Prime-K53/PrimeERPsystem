@@ -2,6 +2,7 @@ import React from 'react';
 import { AlertTriangle, XCircle, Archive, Thermometer, Hash, Layers, Beaker, Printer, Package } from 'lucide-react';
 import type { Item } from '../../../../types';
 import { getStockHealth } from '../services/inventoryListService';
+import { isInventoryBearingItem } from '../../../../utils/inventoryNormalization';
 
 interface Props {
   item: Item;
@@ -23,9 +24,12 @@ export const RowIndicators: React.FC<Props> = ({ item }) => {
     batchControlled?: unknown;
   };
 
+  // Stock-health badges apply to stock-bearing items only (Raw Material /
+  // Stationery). Product/Service rows never show Out/Low Stock.
+  const stocked = isInventoryBearingItem(item);
   const indicators: { icon: React.ReactNode; label: string; show: boolean; color: string }[] = [
-    { icon: <XCircle size={12} />, label: 'Out of Stock', show: stock <= 0 && status !== 'Inactive', color: '#DC2626' },
-    { icon: <AlertTriangle size={12} />, label: 'Low Stock', show: stock > 0 && minStock > 0 && stock <= minStock, color: '#D97706' },
+    { icon: <XCircle size={12} />, label: 'Out of Stock', show: stocked && stock <= 0 && status !== 'Inactive', color: '#DC2626' },
+    { icon: <AlertTriangle size={12} />, label: 'Low Stock', show: stocked && stock > 0 && minStock > 0 && stock <= minStock, color: '#D97706' },
     { icon: <Archive size={12} />, label: 'Inactive', show: status === 'Inactive', color: '#94A3B8' },
     { icon: <Package size={12} />, label: 'Recipe Missing', show: (item.productType === 'MANUFACTURED' || t.printingServiceType) && !item.serviceRecipeId, color: '#DC2626' },
     { icon: <Layers size={12} />, label: 'Supplier Missing', show: !item.preferredSupplierId, color: '#D97706' },

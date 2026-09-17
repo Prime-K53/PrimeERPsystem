@@ -33,12 +33,13 @@ describe('Opening Inventory Service', () => {
       const ledgerEntries = [];
       const result = await computeOpeningInventoryDiagnostic(MOCK_INVENTORY_ITEMS, CANONICAL_ACCOUNTS, ledgerEntries);
 
-      expect(result.merchandiseValue).toBe(500); // Product: 50 * 10
+      // Product is non-stock under the eligibility rule: no 11410 value.
+      expect(result.merchandiseValue).toBe(0);
       expect(result.rawMaterialsValue).toBe(900); // Raw Material: 100 * 5 + Stationery: 200 * 2
       expect(result.finishedGoodsValue).toBe(0);
-      expect(result.physicalInventoryValue).toBe(1400); // 500 + 900
+      expect(result.physicalInventoryValue).toBe(900);
       expect(result.glInventoryValue).toBe(0);
-      expect(result.variance).toBe(1400);
+      expect(result.variance).toBe(900);
     });
 
     it('should detect existing opening entries', async () => {
@@ -80,12 +81,13 @@ describe('Opening Inventory Service', () => {
       ];
       const result = await computeOpeningInventoryDiagnostic(items, CANONICAL_ACCOUNTS, []);
 
-      expect(result.physicalInventoryValue).toBe(50); // 5 * 10
+      // Neither Services nor (non-stock) Products carry inventory value.
+      expect(result.physicalInventoryValue).toBe(0);
     });
   });
 
   describe('2. Account Mapping', () => {
-    it('should resolve product to 11410', () => {
+    it('should resolve product to 11410 (legacy type map; eligibility gates usage)', () => {
       const result = resolveInventoryAccountByItemType('product', CANONICAL_ACCOUNTS);
       expect(result).toBe('ACC-11410');
     });
@@ -98,6 +100,18 @@ describe('Opening Inventory Service', () => {
     it('should resolve stationery to 11420', () => {
       const result = resolveInventoryAccountByItemType('stationery', CANONICAL_ACCOUNTS);
       expect(result).toBe('ACC-11420');
+    });
+
+    it('should give Product/Service no inventory account under the eligibility rule', async () => {
+      const { getInventoryAccountForItem, isInventoryBearingItem } = await import('../../utils/inventoryNormalization');
+      expect(isInventoryBearingItem({ type: 'Raw Material' })).toBe(true);
+      expect(isInventoryBearingItem({ type: 'Stationery' })).toBe(true);
+      expect(isInventoryBearingItem({ type: 'Product' })).toBe(false);
+      expect(isInventoryBearingItem({ type: 'Service' })).toBe(false);
+      expect(getInventoryAccountForItem({ type: 'Raw Material' })).toBe('11420');
+      expect(getInventoryAccountForItem({ type: 'Stationery' })).toBe('11420');
+      expect(getInventoryAccountForItem({ type: 'Product' })).toBe(null);
+      expect(getInventoryAccountForItem({ type: 'Service' })).toBe(null);
     });
   });
 
@@ -129,10 +143,11 @@ describe('Opening Inventory Service', () => {
       ];
       const result = await computeOpeningInventoryDiagnostic(items, CANONICAL_ACCOUNTS, []);
 
-      expect(result.physicalInventoryValue).toBe(250); // 50 + 200
+      // FG-001 is a non-stock Product: no merchandise value under the rule.
+      expect(result.physicalInventoryValue).toBe(50);
       expect(result.glInventoryValue).toBe(0);
-      expect(result.variance).toBe(250);
-      expect(result.merchandiseValue).toBe(200);
+      expect(result.variance).toBe(50);
+      expect(result.merchandiseValue).toBe(0);
       expect(result.rawMaterialsValue).toBe(50);
     });
   });
@@ -146,10 +161,11 @@ describe('Opening Inventory Service', () => {
 
       const result = await computeOpeningInventoryDiagnostic(productionItems, CANONICAL_ACCOUNTS, []);
 
-      expect(result.merchandiseValue).toBe(500); // Product: 50 * 10
+      // material:'product' is non-stock: merchandise stays 0 under the rule.
+      expect(result.merchandiseValue).toBe(0);
       expect(result.rawMaterialsValue).toBe(500); // Raw Material: 100 * 5
-      expect(result.physicalInventoryValue).toBe(1000);
-      expect(result.variance).toBe(1000);
+      expect(result.physicalInventoryValue).toBe(500);
+      expect(result.variance).toBe(500);
     });
 
     it('should normalize production-shaped items and include all active items', async () => {
@@ -160,7 +176,10 @@ describe('Opening Inventory Service', () => {
 
       const result = await computeOpeningInventoryDiagnostic(productionItems, CANONICAL_ACCOUNTS, []);
 
-      expect(result.physicalInventoryValue).toBe(1000); // Both items (diagnostic doesn't filter by status)
+      // prod-002 is Deleted AND non-stock (material 'product'): only the
+      // stock-bearing prod-001 values. (The diagnostic still does not filter
+      // by status; the exclusion here is by item type.)
+      expect(result.physicalInventoryValue).toBe(500);
     });
 
     it('should return zero values for empty production inventory', async () => {

@@ -4,8 +4,10 @@
  * Regression tests for the receivables/inventory/COGS posting rules:
  * 1. Draft/Cancelled invoices post nothing (AR, revenue, COGS, inventory)
  * 2. Service-only invoices credit 41200 Service Income (never 41100)
- * 3. Mixed invoices split COGS across 11410/11420/11430 by line cost
- *    (DR 51200 total = CR 11410 + CR 11420 + CR 11430)
+ * 3. Only stock-bearing lines (Raw Material / Stationery) relieve inventory:
+ *    Product/Service/Finished-Good/unknown lines carry no inventory value,
+ *    so COGS has one leg per stocked account (DR 51200 total = Σ credits).
+ *    11430 stays zero while no stocked finished goods exist.
  * 4. Services never relieve inventory
  * 5. Posted invoices are immutable by bare edit (cancel/total/lines guard)
  *
@@ -81,22 +83,18 @@ describe('service revenue routing (41200)', () => {
 // ─── 3. COGS split across inventory accounts ───────────────────────────
 
 describe('calculateCogsLegsPerInventoryAccount', () => {
-  it('splits mixed Stationery/Product invoices by line cost', async () => {
+  it('relieves only the stock-bearing line of a mixed Stationery/Product invoice', async () => {
     const items = [
       { id: 'CHALK', type: 'Stationery', quantity: 40, cost: 2800 },
+      // Product is produced via BOM without being stocked: no inventory leg,
+      // even though the legacy type map would place it in 11410.
       { id: 'JOURNAL', type: 'Product', quantity: 12, cost: 3173.5 },
     ];
     const legs = await calculateCogsLegsPerInventoryAccount(items, INVENTORY, byId(''), ACCOUNTS, null);
-    expect(legs).toHaveLength(2);
-    const byCode = Object.fromEntries(legs.map((l) => [l.inventoryAccountCode, l]));
-    // Stationery -> 11420 Raw Materials; Product -> 11410 Merchandise
-    expect(byCode['11420'].amount).toBeCloseTo(112000, 2);
-    expect(byCode['11410'].amount).toBeCloseTo(38082, 2);
-    expect(byCode['11420'].inventoryAccountId).toBe('ACC-11420');
-    expect(byCode['11410'].inventoryAccountId).toBe('ACC-11410');
-    // DR 51200 total must equal the sum of inventory credits
-    const total = legs.reduce((s, l) => s + l.amount, 0);
-    expect(total).toBeCloseTo(150082, 2);
+    expect(legs).toHaveLength(1);
+    expect(legs[0].inventoryAccountCode).toBe('11420');
+    expect(legs[0].amount).toBeCloseTo(112000, 2);
+    expect(legs[0].inventoryAccountId).toBe('ACC-11420');
   });
 
   it('never relieves inventory for service lines', async () => {
@@ -105,11 +103,17 @@ describe('calculateCogsLegsPerInventoryAccount', () => {
     expect(legs).toEqual([]);
   });
 
+  it('never relieves inventory for product lines', async () => {
+    const items = [{ id: 'JOURNAL', type: 'Product', quantity: 12, cost: 3173.5 }];
+    const legs = await calculateCogsLegsPerInventoryAccount(items, INVENTORY, byId(''), ACCOUNTS, null);
+    expect(legs).toEqual([]);
+  });
+
   it('skips zero-cost and zero-quantity lines', async () => {
-    const noCostInventory = [{ id: 'FREE', name: 'Free sample', type: 'Product', stock: 10, cost: 0 }];
+    const noCostInventory = [{ id: 'FREE', name: 'Free sample', type: 'Stationery', stock: 10, cost: 0 }];
     const items = [
       { id: 'CHALK', type: 'Stationery', quantity: 0, cost: 2800 },
-      { id: 'FREE', type: 'Product', quantity: 12, cost: 0 },
+      { id: 'FREE', type: 'Stationery', quantity: 12, cost: 0 },
     ];
     const legs = await calculateCogsLegsPerInventoryAccount(items, noCostInventory, byId(''), ACCOUNTS, null);
     expect(legs).toEqual([]);
@@ -117,30 +121,25 @@ describe('calculateCogsLegsPerInventoryAccount', () => {
 
   it('falls back to the inventory master cost when the line carries none', async () => {
     // Same hierarchy as calculateItemsCost: line snapshot first, master cost next.
-    const items = [{ id: 'JOURNAL', type: 'Product', quantity: 12, cost: 0 }];
+    const items = [{ id: 'CHALK', type: 'Stationery', quantity: 12, cost: 0 }];
     const legs = await calculateCogsLegsPerInventoryAccount(items, INVENTORY, byId(''), ACCOUNTS, null);
     expect(legs).toHaveLength(1);
-    expect(legs[0].inventoryAccountCode).toBe('11410');
-    expect(legs[0].amount).toBeCloseTo(12 * 3173.5, 2);
+    expect(legs[0].inventoryAccountCode).toBe('11420');
+    expect(legs[0].amount).toBeCloseTo(12 * 2800, 2);
   });
 
-  it('keeps unknown types in the historical default bucket (11410)', async () => {
+  it('keeps unknown types out of inventory (fail-safe non-stock)', async () => {
     const items = [{ id: 'ODD', type: 'Mystery', quantity: 3, cost: 1000 }];
     const legs = await calculateCogsLegsPerInventoryAccount(
       items, [{ id: 'ODD', cost: 1000 }], byId(''), ACCOUNTS, null
     );
-    expect(legs).toHaveLength(1);
-    expect(legs[0].inventoryAccountCode).toBe('11410');
-    expect(legs[0].amount).toBeCloseTo(3000, 2);
+    expect(legs).toEqual([]);
   });
 
-  it('resolves finished goods to 11430', async () => {
+  it('finished goods carry no inventory value while non-stock (11430 stays zero)', async () => {
     const items = [{ id: 'BOOK', type: 'Finished Good', quantity: 4, cost: 1500 }];
     const legs = await calculateCogsLegsPerInventoryAccount(items, INVENTORY, byId(''), ACCOUNTS, null);
-    expect(legs).toHaveLength(1);
-    expect(legs[0].inventoryAccountCode).toBe('11430');
-    expect(legs[0].inventoryAccountId).toBe('ACC-11430');
-    expect(legs[0].amount).toBeCloseTo(6000, 2);
+    expect(legs).toEqual([]);
   });
 
   it('returns no legs for empty invoices', async () => {

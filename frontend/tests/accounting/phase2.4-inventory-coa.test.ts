@@ -48,22 +48,32 @@ describe('Phase 2.4: Inventory ↔ COA Integration + Hierarchical Balance Rollup
     });
 
     it('should resolve from dominant item type', () => {
+      // Eligibility-first: Product lines are non-stock and never select an
+      // inventory account, so the single eligible material line governs.
       const items = [
         { type: 'product' },
         { type: 'product' },
         { type: 'material' },
       ];
       const result = resolveInventoryAccountFromItems(items, accounts);
-      expect(result).toBe('acc-11410');
+      expect(result).toBe('acc-11420');
     });
 
     it('should ignore service items', () => {
       const items = [
         { type: 'Service' },
-        { type: 'product' },
+        { type: 'raw material' },
       ];
       const result = resolveInventoryAccountFromItems(items, accounts);
-      expect(result).toBe('acc-11410');
+      expect(result).toBe('acc-11420');
+    });
+
+    it('should return null when no line is stock-bearing', () => {
+      const result = resolveInventoryAccountFromItems(
+        [{ type: 'product' }, { type: 'Service' }],
+        accounts
+      );
+      expect(result).toBeNull();
     });
   });
 

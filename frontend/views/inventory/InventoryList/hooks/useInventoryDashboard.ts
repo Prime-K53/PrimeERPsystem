@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { Item } from '../../../../types';
+import { isInventoryBearingItem } from '../../../../utils/inventoryNormalization';
 
 export interface DashboardKpi {
   label: string;
@@ -72,13 +73,17 @@ export function useInventoryDashboard(allItems: Item[], warehouses: { id: string
     const stationery = allItems.filter(i => (i.type || i.classification) === 'Stationery');
     const printingServices = allItems.filter(i => i.type === 'Service' || (i as Item & { classification?: string }).classification === 'Printing Service');
 
-    const totalStock = allItems.reduce((s, i) => s + num(i.stock), 0);
-    const totalValue = allItems.reduce((s, i) => s + num(i.stock) * (i.costPrice || i.cost || 0), 0);
+    // Authoritative eligibility: only Raw Material / Stationery are
+    // stock-bearing. Product/Service rows carry no inventory stock/value,
+    // so every stock/value aggregate below is computed over stocked items.
+    const stockedItems = allItems.filter(i => isInventoryBearingItem(i));
+    const totalStock = stockedItems.reduce((s, i) => s + num(i.stock), 0);
+    const totalValue = stockedItems.reduce((s, i) => s + num(i.stock) * (i.costPrice || i.cost || 0), 0);
     const activeItems = allItems.filter(i => i.status !== 'Inactive' && i.status !== 'Pending');
     const inactiveItems = allItems.filter(i => i.status === 'Inactive');
-    const lowStockItems = allItems.filter(i => i.reorderPoint != null && num(i.stock) <= num(i.reorderPoint));
-    const outOfStockItems = allItems.filter(i => num(i.stock) <= 0);
-    const reorderItems = allItems.filter(i => i.reorderPoint != null && num(i.stock) <= num(i.reorderPoint) && num(i.stock) > 0);
+    const lowStockItems = stockedItems.filter(i => i.reorderPoint != null && num(i.stock) <= num(i.reorderPoint));
+    const outOfStockItems = stockedItems.filter(i => num(i.stock) <= 0);
+    const reorderItems = stockedItems.filter(i => i.reorderPoint != null && num(i.stock) <= num(i.reorderPoint) && num(i.stock) > 0);
     const categories = new Set(allItems.map(i => i.category).filter(Boolean));
     const warehouseIds = new Set<string>();
     allItems.forEach(i => {
@@ -90,19 +95,21 @@ export function useInventoryDashboard(allItems: Item[], warehouses: { id: string
 
     const catBreakdown: CategoryBreakdown[] = [
       { label: 'Raw Materials', items: rawMaterials.length, value: rawMaterials.reduce((s, m) => s + num(m.stock) * (m.costPrice || m.cost || 0), 0), color: categoryColors[0] },
-      { label: 'Products', items: products.length, value: products.reduce((s, p) => s + num(p.stock) * (p.costPrice || p.cost || 0), 0), color: categoryColors[1] },
+      // Products are non-stock (produced to order via BOM): item count is
+      // shown, inventory value is not applicable.
+      { label: 'Products', items: products.length, value: 0, color: categoryColors[1] },
       { label: 'Stationery', items: stationery.length, value: stationery.reduce((s, p) => s + num(p.stock) * (p.costPrice || p.cost || 0), 0), color: categoryColors[2] },
       { label: 'Printing Svc', items: printingServices.length, value: printingServices.length, color: categoryColors[4] },
     ];
 
     const warehouseStock: WarehouseStock[] = warehouses.length > 0
     ? warehouses.map(w => {
-        const stock = allItems.reduce((s, i) => {
+        const stock = stockedItems.reduce((s, i) => {
           const ls = (i.locationStock || []);
           const match = ls.find((l: { warehouseId: string }) => l.warehouseId === w.id);
           return s + (match ? num(match.quantity) : 0);
         }, 0);
-        const value = allItems.reduce((s, i) => {
+        const value = stockedItems.reduce((s, i) => {
           const ls = (i.locationStock || []);
           const match = ls.find((l: { warehouseId: string }) => l.warehouseId === w.id);
           return s + (match ? num(match.quantity) * (i.costPrice || i.cost || 0) : 0);
@@ -123,9 +130,9 @@ export function useInventoryDashboard(allItems: Item[], warehouses: { id: string
       kpis: [
         { label: 'Total Items', value: String(allItems.length), sub: `${activeItems.length} active · ${inactiveItems.length} inactive`, color: '#2563EB', icon: 'Package' },
         { label: 'Total Value', value: money(totalValue, currencySymbol), sub: 'Cost value across all items', color: '#059669', icon: 'DollarSign' },
-        { label: 'Stock on Hand', value: String(totalStock), sub: `${allItems.length} items tracked`, color: '#7C3AED', icon: 'Layers' },
+        { label: 'Stock on Hand', value: String(totalStock), sub: `${stockedItems.length} stock-bearing items tracked`, color: '#7C3AED', icon: 'Layers' },
         { label: 'Low Stock', value: String(lowStockItems.length), sub: `${reorderItems.length} need reorder`, color: '#D97706', icon: 'AlertTriangle' },
-        { label: 'Out of Stock', value: String(outOfStockItems.length), sub: `${((outOfStockItems.length / allItems.length) * 100).toFixed(1)}% of total`, color: '#DC2626', icon: 'XCircle' },
+        { label: 'Out of Stock', value: String(outOfStockItems.length), sub: stockedItems.length > 0 ? `${((outOfStockItems.length / stockedItems.length) * 100).toFixed(1)}% of stocked items` : 'No stocked items', color: '#DC2626', icon: 'XCircle' },
         { label: 'Reorder Required', value: String(reorderItems.length), sub: `${reorderItems.length} items below reorder point`, color: '#F97316', icon: 'ShoppingCart' },
         { label: 'Active Items', value: String(activeItems.length), sub: `${((activeItems.length / allItems.length) * 100).toFixed(0)}% of inventory`, color: '#16A34A', icon: 'CheckCircle' },
         { label: 'Inactive Items', value: String(inactiveItems.length), sub: `${((inactiveItems.length / allItems.length) * 100).toFixed(1)}% of inventory`, color: '#64748B', icon: 'Archive' },

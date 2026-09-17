@@ -100,7 +100,9 @@ describe('computeInventoryReconciliation', () => {
   it('computes physical value from stock × cost', async () => {
     mockDb.getAll.mockImplementation(async (store: string) => {
       if (store === 'inventory') return [
-        makeItem({ id: 'I-1', cost: 10, stock: 100, type: 'Product' }),
+        // Stock-bearing fixtures only: Product lines are non-stock under
+        // the eligibility rule (value 0), so both fixtures are Raw Material.
+        makeItem({ id: 'I-1', cost: 10, stock: 100, type: 'Raw Material' }),
 
 makeItem({ id: 'I-2', cost: 5, stock: 200, type: 'Raw Material' }),
       ];
@@ -114,19 +116,43 @@ makeItem({ id: 'I-2', cost: 5, stock: 200, type: 'Raw Material' }),
     });
 
     const result = await computeInventoryReconciliation();
-    // I-1: 100 × 10 = 1000 (product → merchandise)
+    // I-1: 100 × 10 = 1000 (raw material)
     // I-2: 200 × 5 = 1000 (raw material)
     expect(result.physicalInventoryValue).toBe(2000);
-    expect(result.merchandiseValue).toBe(1000);
-    expect(result.rawMaterialsValue).toBe(1000);
+    expect(result.merchandiseValue).toBe(0);
+    expect(result.rawMaterialsValue).toBe(2000);
     expect(result.totalUnits).toBe(300);
+    expect(result.itemCount).toBe(2);
+  });
+
+  it('excludes Product lines from physical value (non-stock)', async () => {
+    mockDb.getAll.mockImplementation(async (store: string) => {
+      if (store === 'inventory') return [
+        makeItem({ id: 'I-1', cost: 10, stock: 100, type: 'Product' }),
+        makeItem({ id: 'I-2', cost: 5, stock: 200, type: 'Raw Material' }),
+      ];
+      if (store === 'accounts') return [
+        makeAccount({ id: 'acc-11410', code: '11410', name: 'Merchandise Inventory', parent_account_id: null }),
+        makeAccount({ id: 'acc-11420', code: '11420', name: 'Raw Materials', parent_account_id: null }),
+        makeAccount({ id: 'acc-11400', code: '11400', name: 'Inventory', parent_account_id: null, allow_posting: false }),
+      ];
+      if (store === 'ledger') return [];
+      return [];
+    });
+
+    const result = await computeInventoryReconciliation();
+    // Product I-1 contributes 0; only the Raw Material values.
+    expect(result.physicalInventoryValue).toBe(1000);
+    expect(result.merchandiseValue).toBe(0);
+    expect(result.rawMaterialsValue).toBe(1000);
+    expect(result.totalUnits).toBe(200);
     expect(result.itemCount).toBe(2);
   });
 
   it('computes GL balance for merchandise inventory account', async () => {
     mockDb.getAll.mockImplementation(async (store: string) => {
       if (store === 'inventory') return [
-        makeItem({ id: 'I-1', cost: 10, stock: 100, type: 'Product' }),
+        makeItem({ id: 'I-1', cost: 10, stock: 100, type: 'Raw Material' }),
       ];
       if (store === 'accounts') return [
         makeAccount({ id: 'acc-11410', code: '11410', name: 'Merchandise Inventory', parent_account_id: null }),
@@ -173,6 +199,7 @@ makeItem({ id: 'I-2', cost: 5, stock: 200, type: 'Raw Material' }),
       if (store === 'accounts') return [
         { id: 'acc-11410', code: '11410', account_number: '11410', name: 'Merchandise Inventory', account_type: 'ASSET', type: 'Asset', allow_posting: true, is_active: true, parent_account_id: 'acc-11400' },
         { id: 'acc-11420', code: '11420', account_number: '11420', name: 'Raw Materials', account_type: 'ASSET', type: 'Asset', allow_posting: true, is_active: true, parent_account_id: 'acc-11400' },
+        { id: 'acc-11430', code: '11430', account_number: '11430', name: 'Finished Goods', account_type: 'ASSET', type: 'Asset', allow_posting: true, is_active: true, parent_account_id: 'acc-11400' },
         { id: 'acc-11400', code: '11400', account_number: '11400', name: 'Inventory', account_type: 'ASSET', type: 'Asset', allow_posting: false, is_active: true, parent_account_id: null },
       ];
       if (store === 'ledger') return ledgerEntries;
@@ -181,15 +208,13 @@ makeItem({ id: 'I-2', cost: 5, stock: 200, type: 'Raw Material' }),
 
     const result = await computeInventoryReconciliation();
     // Debug: print actual values
-    // Children: 11410 = 500, 11420 = 0 → sum = 500
-    // Parent 11400 should roll up to 500 via computeHierarchicalBalances
-    // Both product and finished-good types map to 11410 (Merchandise Inventory)
-    // so the same K500 ledger entry is counted under both merchandise and finished-goods GL values.
-    // The diagnostic reports the mapped GL per type, not per COA leaf.
+    // Children: 11410 = 500, 11420 = 0, 11430 = 0 → sum = 500.
+    // Finished goods map to 11430 (distinct from 11410 merchandise), so the
+    // K500 merchandise GRN is counted under 11410 only.
     expect(result.glMerchandiseValue).toBe(500);
     expect(result.glRawMaterialsValue).toBe(0);
-    expect(result.glFinishedGoodsValue).toBe(500);
-    expect(result.glTotalChildrenValue).toBe(1000);
+    expect(result.glFinishedGoodsValue).toBe(0);
+    expect(result.glTotalChildrenValue).toBe(500);
     expect(result.glInventoryValue).toBe(500);
   });
 
@@ -251,8 +276,8 @@ makeItem({ id: 'I-2', cost: 5, stock: 200, type: 'Raw Material' }),
   it('handles inactive items correctly', async () => {
     mockDb.getAll.mockImplementation(async (store: string) => {
       if (store === 'inventory') return [
-        makeItem({ id: 'I-1', cost: 10, stock: 100, type: 'Product', status: 'Active' }),
-        makeItem({ id: 'I-2', cost: 5, stock: 50, type: 'Product', status: 'Inactive' }),
+        makeItem({ id: 'I-1', cost: 10, stock: 100, type: 'Raw Material', status: 'Active' }),
+        makeItem({ id: 'I-2', cost: 5, stock: 50, type: 'Raw Material', status: 'Inactive' }),
       ];
       if (store === 'accounts') return [
         makeAccount({ id: 'acc-11410', code: '11410', name: 'Merchandise Inventory', parent_account_id: null }),

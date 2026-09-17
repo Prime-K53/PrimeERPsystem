@@ -18,6 +18,7 @@ import ReactMarkdown from 'react-markdown';
 import { AuditTimeline } from '../../shared/components/AuditTimeline';
 import { ConfirmDialog, ConfirmDialogType } from '../../../components/ConfirmDialog';
 import { generateNextId } from '../../../utils/helpers';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 
 const t = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39' };
 const amber = { 100: '#fbead0', 500: '#d99a3f', 200: '#f5d8a0' };
@@ -51,8 +52,10 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
     // Variant Detection
     const hasVariants = item.isVariantParent && item.variants && item.variants.length > 0;
     const variants = item.variants || [];
-    const normalizedItemType = String(item.type || '');
-    const supportsStockRecords = normalizedItemType === 'Stationery' || normalizedItemType === 'Raw Material' || normalizedItemType === 'Material' || normalizedItemType === 'Product';
+    // Authoritative eligibility: only Raw Material / Stationery keep stock
+    // records. Product (non-stock, produced to order) and Service show the
+    // price-tracked view with no Stock Log tab.
+    const supportsStockRecords = isInventoryBearingItem(item);
     const visibleTabs = useMemo(() => {
         const baseTabs: Array<'Overview' | 'Variants' | 'Logistics' | 'Sales History' | 'Purchase History' | 'Analytics' | 'Security'> = [
             'Overview',

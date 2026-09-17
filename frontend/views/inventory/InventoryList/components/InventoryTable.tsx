@@ -3,6 +3,7 @@ import { Copy, Archive, Trash2, Barcode, QrCode, Package, Edit3, TrendingUp, Lay
 import type { Item } from '../../../../types';
 import { RowIndicators } from './RowIndicators';
 import { resolveMinimumMarkup } from '../../../../services/pricingValidationService';
+import { isInventoryBearingItem } from '../../../../utils/inventoryNormalization';
 import {
   ResponsiveDataTable,
   StatusBadge,
@@ -85,8 +86,8 @@ export const InventoryTable: React.FC<Props> = (p) => {
     () => [
       { key: 'view', label: 'View', icon: <Eye size={14} aria-hidden="true" />, onSelect: p.onView },
       { key: 'edit', label: 'Edit', primary: true, icon: <Edit3 size={14} aria-hidden="true" />, onSelect: p.onEdit },
-      { key: 'adjust', label: 'Adjust stock', icon: <Package size={14} aria-hidden="true" />, onSelect: p.onAdjustStock },
-      { key: 'transfer', label: 'Transfer stock', icon: <TrendingUp size={14} aria-hidden="true" />, onSelect: p.onTransferStock },
+      { key: 'adjust', label: 'Adjust stock', icon: <Package size={14} aria-hidden="true" />, onSelect: p.onAdjustStock, hidden: (item) => !isInventoryBearingItem(item) },
+      { key: 'transfer', label: 'Transfer stock', icon: <TrendingUp size={14} aria-hidden="true" />, onSelect: p.onTransferStock, hidden: (item) => !isInventoryBearingItem(item) },
       { key: 'duplicate', label: 'Duplicate', icon: <Copy size={14} aria-hidden="true" />, onSelect: p.onDuplicate },
       { key: 'barcode', label: 'Print barcode', icon: <Barcode size={14} aria-hidden="true" />, onSelect: p.onPrintBarcode },
       { key: 'qr', label: 'Print QR', icon: <QrCode size={14} aria-hidden="true" />, onSelect: p.onPrintQR },
@@ -163,6 +164,10 @@ function cellValue(item: unknown, col: string): unknown {
 
 function renderCell(item: unknown, col: string): React.ReactNode {
   const r = item as Record<string, unknown>;
+  // Stock-applicability: Product/Service rows hold no inventory — stock
+  // columns render a muted marker instead of a quantity.
+  const stocked = isInventoryBearingItem(item);
+  const notStocked = <span style={{ color: '#94a3b8', fontSize: 12 }}>Not stocked</span>;
   switch (col) {
     case 'Name':
       return (
@@ -182,12 +187,15 @@ function renderCell(item: unknown, col: string): React.ReactNode {
     case 'Status':
       return <StatusBadge status={String(r.status || 'Active')} size="sm" />;
     case 'Stock':
+      if (!stocked) return notStocked;
       return <span style={{ fontFamily: 'monospace', color: Number(r.stock || 0) <= 0 ? '#dc2626' : '#0f172a' }}>{Number(r.stock || 0).toLocaleString('en-US')}</span>;
     case 'Available': {
+      if (!stocked) return notStocked;
       const v = Number(r.stock || 0) - Number(r.reserved || 0);
       return <span style={{ fontFamily: 'monospace', color: v <= 0 ? '#dc2626' : '#334155' }}>{v.toLocaleString('en-US')}</span>;
     }
     case 'Reserved':
+      if (!stocked) return notStocked;
       return <span style={{ fontFamily: 'monospace', color: '#d97706' }}>{Number(r.reserved || 0).toLocaleString('en-US')}</span>;
     case 'Base Unit':
       return <span style={{ color: '#64748b' }}>{String(r.unit || 'pcs')}</span>;
@@ -203,11 +211,12 @@ function renderCell(item: unknown, col: string): React.ReactNode {
       return <span style={{ fontFamily: 'monospace', color: healthy ? '#059669' : '#dc2626' }}>{markup.toFixed(1)}%</span>;
     }
     case 'Inventory Value': {
+      if (!stocked) return notStocked;
       const val = Number(r.stock || 0) * Number((r.costPrice as number) ?? (r.cost as number) ?? 0);
       return <span style={{ fontWeight: 600, color: '#111827' }}>{formatKwacha(val)}</span>;
     }
     case 'Supplier': return <span style={{ color: '#64748b' }}>{String(r.preferredSupplierId || '—')}</span>;
-    case 'Warehouse': return <span style={{ color: '#64748b' }}>{String(r.warehouseId || '—')}</span>;
+    case 'Warehouse': return stocked ? <span style={{ color: '#64748b' }}>{String(r.warehouseId || '—')}</span> : notStocked;
     case 'Category': return <span style={{ color: '#64748b' }}>{String(r.category || '—')}</span>;
     case 'Brand': return <span style={{ color: '#64748b' }}>{String(r.brand || '—')}</span>;
     case 'Last Updated': {

@@ -16,6 +16,7 @@ import { dbService } from '../../../services/db';
 import { calculateServicePrice } from '../../../utils/pricing/pricingEngine';
 import { isMarketAdjustmentActive } from '../../../utils/marketAdjustmentSemantics';
 import { normalizeStoredPricing, resolveStoredSellingPrice } from '../../../utils/pricing';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { getPlaceholder } from '../../../constants/placeholders';
 
 const teal: Record<string, string> = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -1077,7 +1078,7 @@ export const VariantSelectorModal: React.FC<{
                             </div>
                             <div style={{ textAlign: 'right', marginLeft: 16, flexShrink: 0 }}>
                                 <div style={{ fontSize: 14, fontWeight: 700, color: teal[600] }}>{currency}{formatNumber(resolveStoredSellingPrice(v))}</div>
-                                {(product.type === 'Stationery' || product.type === 'Material' || product.type === 'Raw Material' || product.type === 'Product') && v.stock > 0 && (
+                                {isInventoryBearingItem(product) && v.stock > 0 && (
                                     <div style={{ fontSize: 10, fontWeight: 500, color: inkSoft }}>{v.stock} in stock</div>
                                 )}
                             </div>

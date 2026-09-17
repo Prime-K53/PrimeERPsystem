@@ -113,7 +113,7 @@ const ledger = () => storeFor('ledger').getAll() as Promise<any[]>;
 describe('processInvoice postings', () => {
   beforeEach(seed);
 
-  it('unpaid stocked invoice posts AR + split COGS and deducts stock', async () => {
+  it('unpaid stocked invoice posts AR + COGS for stock-bearing lines and deducts their stock', async () => {
     await transactionService.processInvoice(stockedInvoice());
     const entries = await ledger();
 
@@ -124,21 +124,19 @@ describe('processInvoice postings', () => {
     expect(ar[0].amount).toBe(238000);
     expect(ar[0].referenceId).toBe('INV-T1001');
 
+    // Only the stock-bearing Stationery line relieves inventory. The Product
+    // line is produced via BOM without being stocked: no 11410 leg, no
+    // deduction — its raw-material cost was captured at production time.
     const cogs = entries.filter((e) => String(e.id).startsWith('LG-COGS'));
-    expect(cogs).toHaveLength(2);
-    const byCredit = Object.fromEntries(cogs.map((e) => [e.creditAccountId, e]));
-    expect(byCredit['ACC-11420'].amount).toBeCloseTo(112000, 2); // 40 x 2800
-    expect(byCredit['ACC-11410'].amount).toBeCloseTo(38082, 2); // 12 x 3173.5
-    for (const e of cogs) expect(e.debitAccountId).toBe('ACC-51200');
-
-    // DR 51200 total equals the inventory credits
-    const dr = cogs.reduce((s, e) => s + e.amount, 0);
-    expect(dr).toBeCloseTo(150082, 2);
+    expect(cogs).toHaveLength(1);
+    expect(cogs[0].creditAccountId).toBe('ACC-11420');
+    expect(cogs[0].debitAccountId).toBe('ACC-51200');
+    expect(cogs[0].amount).toBeCloseTo(112000, 2); // 40 x 2800
 
     const chalk = await storeFor('inventory').get('CHALK');
     const journal = await storeFor('inventory').get('JOURNAL');
     expect(chalk.stock).toBe(460);
-    expect(journal.stock).toBe(188);
+    expect(journal.stock).toBe(200);
   });
 
   it('draft invoice posts nothing and deducts nothing', async () => {

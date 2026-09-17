@@ -231,7 +231,7 @@ export function ResponsiveDataTable<T>(props: Props<T>) {
                         })}
                         <td className="rpt-td rpt-align-right" onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
-                            {actions?.filter((a) => a.primary).slice(0, 1).map((a) => (
+                            {actions?.filter((a) => a.primary && !(a.hidden && a.hidden(row))).slice(0, 1).map((a) => (
                               <button key={a.key} type="button" className="rpt-row-btn" onClick={() => a.onSelect(row)} aria-label={`${a.label} row ${i + 1}`}>
                                 {a.icon}{a.label}
                               </button>
@@ -254,7 +254,7 @@ export function ResponsiveDataTable<T>(props: Props<T>) {
                           <td colSpan={colSpan} id={detailId} className="rpt-detail-td">
                             <RowDetail
                               fields={detailOf(row, i).fields}
-                              actions={actions?.map((a) => (
+                              actions={actions?.filter((a) => !(a.hidden && a.hidden(row))).map((a) => (
                                 <button key={a.key} type="button" className={a.primary ? 'rpt-btn-primary' : a.danger ? 'rpt-btn-danger' : 'rpt-btn-secondary'} onClick={() => a.onSelect(row)}>
                                   {a.icon}{a.label}
                                 </button>
@@ -333,7 +333,7 @@ export function ResponsiveDataTable<T>(props: Props<T>) {
                     <div id={detailId} className="rpt-card-detail">
                       <RowDetail
                         fields={d.fields}
-                        actions={actions?.map((a) => (
+                        actions={actions?.filter((a) => !(a.hidden && a.hidden(row))).map((a) => (
                           <button key={a.key} type="button" className={a.primary ? 'rpt-btn-primary' : a.danger ? 'rpt-btn-danger' : 'rpt-btn-secondary'} onClick={() => a.onSelect(row)}>
                             {a.icon}{a.label}
                           </button>

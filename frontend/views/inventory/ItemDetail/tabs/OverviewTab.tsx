@@ -3,6 +3,7 @@ import { Package, DollarSign, Warehouse, Shield, Download } from 'lucide-react';
 import type { Item } from '../../../../types';
 import { resolveMinimumMarkup } from '../../../../services/pricingValidationService';
 import { generateBarcodeDataUrl, saveBarcodeAsImage } from '../../../../utils/barcodeGenerator';
+import { isInventoryBearingItem } from '../../../../utils/inventoryNormalization';
 
 const t = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39' };
 const amber = { 100: '#fbead0', 500: '#d99a3f' };
@@ -67,6 +68,17 @@ export const OverviewTab: React.FC<Props> = ({ item }) => {
         { label: 'Classification', value: item.type },
         { label: 'Product Type', value: b(item.productType) },
         { label: 'Inventory Role', value: item.inventoryRole || 'sellable', capitalize: true },
+        // Non-stock items are produced/delivered without being held as
+        // inventory. Product is produced against orders/BOM; Service is
+        // delivered without holding inventory.
+        ...(!isInventoryBearingItem(item)
+          ? [{
+              label: 'Stock Applicability',
+              value: String((item as any)?.type || '').toLowerCase().includes('service')
+                ? 'Not stocked — this is a non-stock service'
+                : 'Not stocked — this is a non-stock product produced against orders/BOM',
+            }]
+          : []),
         { label: 'Barcode', value: item.barcode, mono: true, barcode: true },
         { label: 'QR Code', value: item.qrCode, mono: true, qrcode: true },
       ],
@@ -84,16 +96,22 @@ export const OverviewTab: React.FC<Props> = ({ item }) => {
         { label: 'Currency', value: item.currency || 'KWD' },
       ],
     },
-    {
-      icon: <Warehouse size={16} />,
-      title: 'Storage',
-      fields: [
-        { label: 'Warehouse', value: b(item.warehouseId) },
-        { label: 'Storage Location', value: b(item.storageLocation) },
-        { label: 'Shelf', value: b(item.shelf) },
-        { label: 'Bin', value: b(item.binLocation), mono: true },
-      ],
-    },
+    // Storage locations apply to stock-bearing items only; hidden for
+    // non-stock Product/Service records.
+    ...(isInventoryBearingItem(item)
+      ? [
+          {
+            icon: <Warehouse size={16} />,
+            title: 'Storage',
+            fields: [
+              { label: 'Warehouse', value: b(item.warehouseId) },
+              { label: 'Storage Location', value: b(item.storageLocation) },
+              { label: 'Shelf', value: b(item.shelf) },
+              { label: 'Bin', value: b(item.binLocation), mono: true },
+            ],
+          },
+        ]
+      : []),
     {
       icon: <Shield size={16} />,
       title: 'Tracking',

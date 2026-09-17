@@ -10,7 +10,7 @@ import {
 import { DEFAULT_ACCOUNTS } from '../../constants';
 import { generateNextId, roundToCurrency } from '../../utils/helpers';
 import { computeHierarchicalRollup, getNormalBalance, isPostedLedgerEntry, entryTouchesAccount } from '../accountingEngine';
-import { classifyInventoryItem, resolveInventoryCostPerUnit } from '../../utils/inventoryNormalization';
+import { classifyInventoryItem, isInventoryBearingItem, resolveInventoryCostPerUnit } from '../../utils/inventoryNormalization';
 
 export const getCompanyConfig = () => {
     const saved = localStorage.getItem('nexus_company_config');
@@ -746,10 +746,14 @@ export const calculateItemsCost = async (
 ) => {
     let totalCost = 0;
     for (const item of items || []) {
-        if (item?.type === 'Service') continue;
         const itemId = resolveId(item);
         if (!itemId) continue;
         const invItem = await resolveInventoryRecord(itemId, inventorySource, fallbackInventorySource);
+        // Same eligibility as the COGS legs: only stock-bearing lines
+        // contribute cost. The line type governs; the stored record governs
+        // when the line carries no type.
+        const eligibilityProbe = item?.type ? item : invItem;
+        if (!isInventoryBearingItem(eligibilityProbe)) continue;
         const unitCost = await resolveItemUnitCost(item, invItem);
         const qty = Number(item?.quantity || 0);
         if (qty > 0 && unitCost > 0) {
@@ -949,17 +953,23 @@ export const calculateCogsLegsPerInventoryAccount = async (
 ): Promise<CogsLeg[]> => {
     const byAccount = new Map<string, { code: string; amount: number }>();
     for (const item of items || []) {
-        if (item?.type === 'Service') continue;
         const itemId = resolveId(item);
         if (!itemId) continue;
         const invItem = await resolveInventoryRecord(itemId, inventorySource, fallbackInventorySource);
+        // Authoritative eligibility: only Raw Material / Stationery lines
+        // relieve inventory. Product/Service lines carry no inventory value,
+        // so they generate no COGS inventory-credit leg (their costs were
+        // captured when raw materials were consumed in production). The line
+        // type governs; when it is absent the stored record's type governs.
+        const eligibilityProbe = item?.type ? item : invItem;
+        if (!isInventoryBearingItem(eligibilityProbe)) continue;
         const unitCost = await resolveItemUnitCost(item, invItem);
         const qty = Number(item?.quantity || 0);
         if (!(qty > 0) || !(unitCost > 0)) continue;
         const lineCost = unitCost * qty;
         // Unknown/missing types keep the historical default bucket (11410),
         // matching resolveInventoryAccountByItemType's documented behavior.
-        const resolvedId = resolveInventoryAccountByItemType(item?.type, accounts)
+        const resolvedId = resolveInventoryAccountByItemType(item?.type || (invItem as any)?.type, accounts)
             || resolveInventoryAccountByItemType('product', accounts);
         // Lazy fallback: only resolved when a line genuinely cannot be
         // classified (strict resolvers throw on broken COAs — never evaluate
@@ -1158,7 +1168,13 @@ export function resolveInventoryAccountFromItems(
 ): string | null {
     if (!items || items.length === 0) return null;
     
-    const nonServiceItems = items.filter((i: any) => i.type !== 'Service');
+    // Eligibility-first: only stock-bearing lines (Raw Material /
+    // Stationery) may select an inventory account. Product/Service lines
+    // must never pull a GRN/PO toward an inventory account.
+    const eligibleItems = items.filter((i: any) => isInventoryBearingItem(i));
+    if (eligibleItems.length === 0) return null;
+
+    const nonServiceItems = eligibleItems.filter((i: any) => i.type !== 'Service');
     if (nonServiceItems.length === 0) return null;
     
     const typeCounts: Record<string, number> = {};

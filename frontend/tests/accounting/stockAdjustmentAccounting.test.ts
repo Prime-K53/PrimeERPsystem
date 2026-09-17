@@ -16,7 +16,7 @@
  *  - Zero quantity / missing reason rejected
  *  - adjustStock integration: posts balanced COGS journal, never 42100,
  *    fails closed without mutating inventory, idempotent on retry,
- *    skips GL for service items
+ *    rejects non-stock (Product/Service) adjustments fail-safe
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -265,9 +265,12 @@ describe('adjustStock integration — fail-closed + idempotent + never 42100', (
   });
 
   it('posts a balanced DR Inventory / CR COGS journal for an operational increase', async () => {
-    seed({ id: 'INV-PRD-001', name: 'Book', type: 'Product', stock: 50, cost: 10 });
+    // Stock-bearing fixture: Product lines are non-stock under the
+    // eligibility rule, so the increase is exercised on a Raw Material
+    // (11420). Product/Service adjustments are rejected before posting.
+    seed({ id: 'INV-MAT-001', name: 'Paper', type: 'Raw Material', stock: 50, cost: 10 });
     const res: any = await transactionService.adjustStock({
-      itemId: 'INV-PRD-001',
+      itemId: 'INV-MAT-001',
       qtyChange: 5,
       reason: 'Test gain',
       warehouseId: 'WH-MAIN',
@@ -278,11 +281,11 @@ describe('adjustStock integration — fail-closed + idempotent + never 42100', (
     const ledger = await dbService.getAll<any>('ledger');
     expect(ledger.length).toBe(1);
     const e = ledger[0];
-    expect(e.debitAccountId).toBe('ACC-11410');
+    expect(e.debitAccountId).toBe('ACC-11420');
     expect(e.creditAccountId).toBe('ACC-51200');
     expect(e.creditAccountId).not.toContain('42100');
     expect(e.amount).toBe(50);
-    const inv = await dbService.get<any>('inventory', 'INV-PRD-001');
+    const inv = await dbService.get<any>('inventory', 'INV-MAT-001');
     expect(inv.stock).toBe(55);
   });
 
@@ -304,26 +307,28 @@ describe('adjustStock integration — fail-closed + idempotent + never 42100', (
 
   it('failed accounting does not mutate inventory (fail-closed ordering)', async () => {
     // Remove COGS so the resolver throws before any inventory write.
+    // Raw Material fixture: a Product fixture would be rejected by the
+    // eligibility guard before accounting is even reached.
     const accounts = coaFixture().filter((a) => a.code !== '51200');
-    seed({ id: 'INV-PRD-002', name: 'Pen', type: 'Product', stock: 20, cost: 2 }, accounts);
+    seed({ id: 'INV-MAT-002', name: 'Ink', type: 'Raw Material', stock: 20, cost: 2 }, accounts);
     const res: any = await transactionService.adjustStock({
-      itemId: 'INV-PRD-002',
+      itemId: 'INV-MAT-002',
       qtyChange: 5,
       reason: 'Should fail',
       warehouseId: 'WH-MAIN',
       accountingReason: 'OPERATIONAL_ADJUSTMENT',
     });
     expect(res.success).toBe(false);
-    const inv = await dbService.get<any>('inventory', 'INV-PRD-002');
+    const inv = await dbService.get<any>('inventory', 'INV-MAT-002');
     expect(inv.stock).toBe(20);
     const ledger = await dbService.getAll<any>('ledger');
     expect(ledger.length).toBe(0);
   });
 
   it('repeated operationId does not duplicate the journal (idempotent)', async () => {
-    seed({ id: 'INV-PRD-003', name: 'Ruler', type: 'Product', stock: 10, cost: 4 });
+    seed({ id: 'INV-MAT-003', name: 'Toner', type: 'Raw Material', stock: 10, cost: 4 });
     const params = {
-      itemId: 'INV-PRD-003',
+      itemId: 'INV-MAT-003',
       qtyChange: 2,
       reason: 'Retry test',
       warehouseId: 'WH-MAIN',
@@ -338,7 +343,10 @@ describe('adjustStock integration — fail-closed + idempotent + never 42100', (
     expect(ledger.length).toBe(1);
   });
 
-  it('service items move quantity but post no GL (services never carry inventory value)', async () => {
+  it('non-stock items reject stock operations (fail-safe, no mutation, no GL)', async () => {
+    // Authoritative eligibility: Service (and Product) lines hold no stock.
+    // The adjustment is rejected before any mutation or posting, per the
+    // existing {success, error} convention.
     seed({ id: 'INV-SVC-001', name: 'Printing Service', type: 'Service', stock: 0, cost: 50 });
     const res: any = await transactionService.adjustStock({
       itemId: 'INV-SVC-001',
@@ -347,10 +355,26 @@ describe('adjustStock integration — fail-closed + idempotent + never 42100', (
       warehouseId: 'WH-MAIN',
       accountingReason: 'OPERATIONAL_ADJUSTMENT',
     });
-    expect(res.success).toBe(true);
+    expect(res.success).toBe(false);
     const ledger = await dbService.getAll<any>('ledger');
     expect(ledger.length).toBe(0);
     const inv = await dbService.get<any>('inventory', 'INV-SVC-001');
-    expect(inv.stock).toBe(3);
+    expect(inv.stock).toBe(0);
+  });
+
+  it('product items reject stock operations (fail-safe, no mutation, no GL)', async () => {
+    seed({ id: 'INV-PRD-009', name: 'School Board', type: 'Product', stock: 5, cost: 100 });
+    const res: any = await transactionService.adjustStock({
+      itemId: 'INV-PRD-009',
+      qtyChange: 2,
+      reason: 'Product move',
+      warehouseId: 'WH-MAIN',
+      accountingReason: 'OPERATIONAL_ADJUSTMENT',
+    });
+    expect(res.success).toBe(false);
+    const ledger = await dbService.getAll<any>('ledger');
+    expect(ledger.length).toBe(0);
+    const inv = await dbService.get<any>('inventory', 'INV-PRD-009');
+    expect(inv.stock).toBe(5);
   });
 });

@@ -1,7 +1,7 @@
 import { api } from '../../../../services/api';
 import { exportToCSV } from '../../../../utils/helpers';
 import { normalizeInventoryItemPricing } from '../../../../utils/pricing';
-import { resolveInventoryCostPerUnit } from '../../../../utils/inventoryNormalization';
+import { isInventoryBearingItem, resolveInventoryCostPerUnit } from '../../../../utils/inventoryNormalization';
 import type { Item } from '../../../../types';
 
 export interface InventoryStats {
@@ -46,11 +46,15 @@ export function calculateStats(items: Item[]): InventoryStats {
     }
     else if (type === 'Service' && !(item as Item & Record<string, unknown>).printingServiceType) nonStockServices++;
 
-    const val = stock * costPrice;
+    // Authoritative eligibility: only Raw Material / Stationery contribute
+    // inventory value. Product/Service legacy qty×cost is not inventory
+    // (productValue is therefore always 0; field kept for compatibility).
+    // Stationery value is bucketed separately; every other eligible legacy
+    // alias (Material/consumable/…) belongs to the raw-materials bucket.
+    const val = isInventoryBearingItem(item) ? stock * costPrice : 0;
     inventoryValue += val;
-    if (type === 'Raw Material' || item.resourceSubtype === 'raw_material') rawValue += val;
-    else if (type === 'Product') productValue += val;
-    else if (type === 'Stationery') stationeryValue += val;
+    if (type === 'Stationery') stationeryValue += val;
+    else if (isInventoryBearingItem(item)) rawValue += val;
 
     // printing profit (approx): for printing services, use margin * stock
     if ((type === 'Service' || (item as Item & Record<string, unknown>).printingServiceType) && (item.sellingPrice || item.price)) {
@@ -137,7 +141,10 @@ export function exportItemsToCSV(items: Item[]): void {
 
 export function filterItemsByStock(items: Item[], stockFilter: string): Item[] {
   if (!stockFilter || stockFilter === 'all') return items;
+  // Stock-health filters only apply to stock-bearing items (Raw Material /
+  // Stationery); Product/Service rows never match them.
   return items.filter(item => {
+    if (!isInventoryBearingItem(item)) return false;
     const health = getStockHealth(item);
     switch (stockFilter) {
       case 'in_stock': return health === 'healthy' || health === 'low' || health === 'reorder';

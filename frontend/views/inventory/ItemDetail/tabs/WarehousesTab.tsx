@@ -1,6 +1,7 @@
 import React from 'react';
-import { Warehouse, MapPin, Thermometer, AlertTriangle, Layers, Hash, Barcode, Shield } from 'lucide-react';
+import { Warehouse, MapPin, Thermometer, AlertTriangle, Layers, Hash, Barcode, Shield, Package } from 'lucide-react';
 import type { Item } from '../../../../types';
+import { isInventoryBearingItem } from '../../../../utils/inventoryNormalization';
 
 const t = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39' };
 const amber = { 100: '#fbead0', 500: '#d99a3f' };
@@ -34,6 +35,13 @@ export const WarehousesTab: React.FC<Props> = ({ item }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {!isInventoryBearingItem(item) ? (
+        <div className="prime-card" style={{ background: paper, borderRadius: 12, border: `1.4px solid ${hairline}`, padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', color: inkSoft }}>
+          <Package size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
+          <p style={{ fontSize: 14, fontWeight: 600 }}>No warehouse stock for this item type</p>
+          <p style={{ fontSize: 12, marginTop: 4 }}>This is a non-stock item: warehouse quantities do not apply.</p>
+        </div>
+      ) : (
       <div className="prime-card" style={{ background: paper, borderRadius: 12, border: `1.4px solid ${hairline}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
         <div style={{ padding: '14px 20px', background: t[50], borderBottom: `1.4px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ padding: 6, borderRadius: 9, background: paper, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', color: inkSoft }}><Warehouse size={16} /></span>
@@ -90,6 +98,7 @@ export const WarehousesTab: React.FC<Props> = ({ item }) => {
           </div>
         )}
       </div>
+      )}
 
       <div className="prime-card" style={{ background: paper, borderRadius: 12, border: `1.4px solid ${hairline}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
         <div style={{ padding: '14px 20px', background: t[50], borderBottom: `1.4px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -21,6 +21,7 @@ import { exportToCSV } from '../../services/excelService';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { currencyService } from '../../services/currencyService';
 import { getCanonicalAccountType, computeTrialBalance, isPostedLedgerEntry } from '../../services/accountingEngine';
+import { isInventoryBearingItem } from '../../utils/inventoryNormalization';
 
 /**
  * Legacy display account type used throughout this report's logic
@@ -112,8 +113,10 @@ const FinancialReports: React.FC = () => {
         }
     }, [searchParams]);
 
+    // Physical inventory valuation: stock-bearing items only (Raw Material /
+    // Stationery). Product/Service lines hold no inventory value.
     const physicalValuation = useMemo(() =>
-        (inventory || []).reduce((sum, item) => sum + ((item.stock || 0) * (item.cost || 0)), 0)
+        (inventory || []).filter((item: any) => isInventoryBearingItem(item)).reduce((sum, item) => sum + ((item.stock || 0) * (item.cost || 0)), 0)
         , [inventory]);
 
     const [quickFilter, setQuickFilter] = useState('This Year');

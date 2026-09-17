@@ -13,6 +13,7 @@ import { generateLocalId } from '../../../utils/idGeneration';
 import { useInventory } from '../../../context/InventoryContext';
 import { generateNextId } from '../../../utils/helpers';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../../../utils/pricing';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
 
 const B = '#1E3A5F';
@@ -259,7 +260,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                                 )}
                             </div>
                             <div style={{ textAlign: 'right', fontSize: 11, color: SOFT, fontFamily: "'JetBrains Mono',monospace" }}>
-                                {(item.type === 'Stationery' || item.type === 'Product') ? `${item.stock}${item.unit ? ' ' + item.unit : ''}` : '\u2014'}
+                                {isInventoryBearingItem(item) ? `${item.stock}${item.unit ? ' ' + item.unit : ''}` : '—'}
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'center' }}>
                                 <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 4, textTransform: 'uppercase', background: item.type === 'Service' ? B100 : B50, color: item.type === 'Service' ? B7 : SOFT }}>
@@ -355,7 +356,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                         )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {(item.type === 'Stationery' || item.type === 'Product') && (
+                        {isInventoryBearingItem(item) && (
                             <span style={{ fontSize: 9.5, fontWeight: 500, color: item.stock <= item.minStockLevel ? RED : SOFT }}>
                                 {item.stock} {item.unit}
                             </span>

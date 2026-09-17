@@ -1410,23 +1410,13 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
         </div>
         <div style={{ ...s.statusRow, marginTop: 14 }}>
           <div>
-            <div style={s.statusLabel}>Track Stock</div>
-            <div style={s.statusSub}>Off by default — services aren't held as inventory</div>
+            <div style={s.statusLabel}>Stock Applicability</div>
+            <div style={s.statusSub}>Services are non-stock — delivered without holding inventory</div>
           </div>
-          <div style={{ ...s.switch, ...(trackStock ? s.switchOn : {}) }} onClick={() => setTrackStock(!trackStock)}>
-            <div style={{ ...s.switchKnob, ...(trackStock ? s.switchKnobOn : {}) }} />
+          <div style={{ ...s.switch, opacity: 0.45, cursor: 'not-allowed' }}>
+            <div style={{ ...s.switchKnob }} />
           </div>
         </div>
-        {trackStock && (
-          <div style={{ ...s.grid2, marginTop: 14 }}>
-            <Field label="Stock on Hand" hint="How many units are currently available">
-              <input type="number" style={{ ...s.input, ...s.mono }} value={serviceStock} onChange={e => setServiceStock(Number(e.target.value) || 0)} />
-            </Field>
-            <Field label="Reorder Level" hint="Trigger alert when stock falls to this level">
-              <input type="number" style={{ ...s.input, ...s.mono }} value={serviceReorder} onChange={e => setServiceReorder(Number(e.target.value) || 0)} />
-            </Field>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -5,11 +5,12 @@
  *  - valuation is ALWAYS quantity × cost (never Selling Price)
  *  - every historical cost representation values identically
  *  - production-shaped records normalize like canonical records
- *  - categories map to 11410 / 11420 / 11430 (products ≠ finished goods bucket)
+ *  - ONLY Raw Material / Stationery carry inventory value (Product and
+ *    Service are non-stock: excluded with NON_STOCK_TYPE, never valued)
  *  - services / deleted / negative / zero-cost / unmapped items are reported,
  *    never silently valued
  *  - opening inventory posts a balanced, idempotent journal exactly once
- *  - inventory sales relieve inventory + COGS; service sales do not
+ *  - stock-bearing sales relieve inventory + COGS; product/service sales do not
  *  - 11410/11420/11430 roll up to 11400 → 11000 → 10000 exactly once
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -139,7 +140,7 @@ beforeEach(() => {
 
 describe('inventory valuation (cost basis, never SP)', () => {
   it('Test 1 — quantity × CP, not SP (10 × 100 = 1,000, not 1,500)', () => {
-    const item = { id: 'A', name: 'Item A', type: 'Product', stock: 10, cost: 100, price: 150, sellingPrice: 150, status: 'Active' };
+    const item = { id: 'A', name: 'Item A', type: 'Raw Material', stock: 10, cost: 100, price: 150, sellingPrice: 150, status: 'Active' };
     const classified = classifyInventoryItem(item);
     expect(resolveInventoryCostPerUnit(item)).toBe(100);
     expect(classified.included).toBe(true);
@@ -153,7 +154,7 @@ describe('inventory valuation (cost basis, never SP)', () => {
       items.push({
         id: `ITM-${i}`,
         name: `Item ${i}`,
-        type: i % 3 === 0 ? 'Raw Material' : i % 3 === 1 ? 'Product' : 'Finished Good',
+        type: i % 3 === 0 ? 'Raw Material' : i % 3 === 1 ? 'Stationery' : 'Material',
         stock: (i % 7) + 1,
         cost: (i % 5) + 2,
         price: 999,
@@ -171,21 +172,28 @@ describe('inventory valuation (cost basis, never SP)', () => {
     expect(report.difference).toBe(expected);
   });
 
-  it('Test 3 — mixed categories map to 11410 / 11420 / 11430', () => {
+  it('Test 3 — only Raw Material / Stationery carry value; Product / Finished Good excluded', () => {
     const items = [
       { id: 'M1', name: 'Resale box', type: 'Product', stock: 10, cost: 100, status: 'Active' },
       { id: 'R1', name: 'Paper', type: 'Raw Material', stock: 20, cost: 5, status: 'Active' },
       { id: 'F1', name: 'Bound book', type: 'Finished Good', stock: 4, cost: 50, status: 'Active' },
       { id: 'S1', name: 'Glue sticks', type: 'Stationery', stock: 30, cost: 2, status: 'Active' },
     ];
+    const byId = Object.fromEntries(items.map((i) => [i.id, classifyInventoryItem(i)]));
+    expect(byId['M1'].included).toBe(false);
+    expect(byId['M1'].exclusionReason).toBe('NON_STOCK_TYPE');
+    expect(byId['M1'].inventoryValue).toBe(0);
+    expect(byId['F1'].included).toBe(false);
+    expect(byId['F1'].exclusionReason).toBe('NON_STOCK_TYPE');
     const report = reconcileInventoryValuation(items, coaFixture(), []);
-    expect(report.byCategory.merchandise.value).toBe(1000);
+    expect(report.byCategory.merchandise.value).toBe(0);
     expect(report.byCategory.merchandise.accountCode).toBe('11410');
     expect(report.byCategory.rawMaterials.value).toBe(20 * 5 + 30 * 2);
     expect(report.byCategory.rawMaterials.accountCode).toBe('11420');
-    expect(report.byCategory.finishedGoods.value).toBe(200);
+    expect(report.byCategory.finishedGoods.value).toBe(0);
     expect(report.byCategory.finishedGoods.accountCode).toBe('11430');
-    expect(report.totalInventoryValue).toBe(1000 + 160 + 200);
+    expect(report.totalInventoryValue).toBe(160);
+    expect(report.excludedByReason['NON_STOCK_TYPE']).toBe(2);
   });
 
   it('Test 4 — production-shaped records value like canonical records', () => {
@@ -201,11 +209,11 @@ describe('inventory valuation (cost basis, never SP)', () => {
 
   it('Test 5 — canonical records: every historical cost field values identically', () => {
     const variants = [
-      { id: 'V1', name: 'V', type: 'Product', stock: 10, cost: 7, status: 'Active' },
-      { id: 'V2', name: 'V', type: 'Product', stock: 10, costPrice: 7, status: 'Active' },
-      { id: 'V3', name: 'V', type: 'Product', stock: 10, cost_price: 7, status: 'Active' },
-      { id: 'V4', name: 'V', type: 'Product', stock: 10, cost_per_unit: 7, status: 'Active' },
-      { id: 'V5', name: 'V', type: 'Product', quantity: 10, costPrice: 7, status: 'Active' },
+      { id: 'V1', name: 'V', type: 'Raw Material', stock: 10, cost: 7, status: 'Active' },
+      { id: 'V2', name: 'V', type: 'Raw Material', stock: 10, costPrice: 7, status: 'Active' },
+      { id: 'V3', name: 'V', type: 'Raw Material', stock: 10, cost_price: 7, status: 'Active' },
+      { id: 'V4', name: 'V', type: 'Raw Material', stock: 10, cost_per_unit: 7, status: 'Active' },
+      { id: 'V5', name: 'V', type: 'Raw Material', quantity: 10, costPrice: 7, status: 'Active' },
     ];
     for (const v of variants) {
       expect(resolveInventoryCostPerUnit(v)).toBe(7);
@@ -214,7 +222,7 @@ describe('inventory valuation (cost basis, never SP)', () => {
   });
 
   it('Test 6 — zero cost with quantity is reported, never invented', () => {
-    const item = { id: 'Z1', name: 'Mystery', type: 'Product', stock: 10, cost: 0, status: 'Active' };
+    const item = { id: 'Z1', name: 'Mystery', type: 'Raw Material', stock: 10, cost: 0, status: 'Active' };
     const classified = classifyInventoryItem(item);
     expect(classified.included).toBe(false);
     expect(classified.exclusionReason).toBe('ZERO_COST');
@@ -244,7 +252,7 @@ describe('inventory valuation (cost basis, never SP)', () => {
   });
 
   it('Test 9 — negative stock follows the existing rule (excluded + reported)', () => {
-    const item = { id: 'N1', name: 'Negative', type: 'Product', stock: -5, cost: 10, status: 'Active' };
+    const item = { id: 'N1', name: 'Negative', type: 'Raw Material', stock: -5, cost: 10, status: 'Active' };
     const classified = classifyInventoryItem(item);
     expect(classified.included).toBe(false);
     expect(classified.exclusionReason).toBe('NEGATIVE_STOCK');
@@ -253,6 +261,8 @@ describe('inventory valuation (cost basis, never SP)', () => {
 
   it('Test 10 — opening inventory is idempotent (second run posts nothing)', async () => {
     const accounts = coaFixture();
+    // Only the Raw Material is stock-bearing: Product + Finished Good are
+    // excluded as NON_STOCK_TYPE, so a single 11420 line posts.
     const items = [
       { id: 'R1', name: 'Paper', type: 'Raw Material', stock: 100, cost: 5, status: 'Active' },
       { id: 'M1', name: 'Box', type: 'Product', stock: 50, cost: 10, status: 'Active' },
@@ -261,17 +271,17 @@ describe('inventory valuation (cost basis, never SP)', () => {
     seedStores(items, accounts);
 
     const first = await openInventory();
-    expect(first.entriesPosted).toBe(3);
-    expect(first.totalDebit).toBe(1500);
-    expect(first.totalCredit).toBe(1500);
+    expect(first.entriesPosted).toBe(1);
+    expect(first.totalDebit).toBe(500);
+    expect(first.totalCredit).toBe(500);
     const ledgerAfterFirst = await dbService.getAll<any>('ledger');
-    expect(ledgerAfterFirst.length).toBe(3);
+    expect(ledgerAfterFirst.length).toBe(1);
 
     const second = await openInventory();
     expect(second.alreadyOpened).toBe(true);
     expect(second.entriesPosted).toBe(0);
     const ledgerAfterSecond = await dbService.getAll<any>('ledger');
-    expect(ledgerAfterSecond.length).toBe(3);
+    expect(ledgerAfterSecond.length).toBe(1);
   });
 
   it('Test 11 — opening journal: Σ child debits = offset credit; 11410+11420+11430 = total', async () => {
@@ -289,18 +299,18 @@ describe('inventory valuation (cost basis, never SP)', () => {
     const debits = ledger.reduce((s: number, e: any) => s + (e.amount || 0), 0);
     // Every opening line debits inventory and credits the same offset once per line;
     // gross debits equal gross credits.
-    expect(debits).toBe(1500);
+    expect(debits).toBe(500);
 
     const report = reconcileInventoryValuation(
       await dbService.getAll<any>('inventory'),
       accounts,
       ledger
     );
-    expect(report.glInventoryByAccount['11410']).toBe(500);
+    expect(report.glInventoryByAccount['11410']).toBe(0);
     expect(report.glInventoryByAccount['11420']).toBe(500);
-    expect(report.glInventoryByAccount['11430']).toBe(500);
-    expect(report.glInventoryTotal).toBe(1500);
-    expect(report.totalInventoryValue).toBe(1500);
+    expect(report.glInventoryByAccount['11430']).toBe(0);
+    expect(report.glInventoryTotal).toBe(500);
+    expect(report.totalInventoryValue).toBe(500);
     expect(report.difference).toBe(0);
     expect(report.isReconciled).toBe(true);
 
@@ -310,22 +320,33 @@ describe('inventory valuation (cost basis, never SP)', () => {
     expect(text).toContain('RECONCILED:                     YES');
   });
 
-  it('Test 12 — inventory sale relieves inventory, creates COGS + revenue', async () => {
+  it('Test 12 — stock-bearing sale relieves inventory, creates COGS + revenue; product sale does not', async () => {
     const accounts = coaFixture();
-    const inventory = [{ id: 'M1', name: 'Box', type: 'Product', stock: 50, cost: 10, status: 'Active' }];
-    const saleItems = [{ id: 'M1', type: 'Product', quantity: 5, price: 20 }];
+    const inventory = [
+      { id: 'R1', name: 'Paper', type: 'Raw Material', stock: 50, cost: 10, status: 'Active' },
+      { id: 'M1', name: 'Box', type: 'Product', stock: 50, cost: 10, status: 'Active' },
+    ];
+    const saleItems = [{ id: 'R1', type: 'Raw Material', quantity: 5, price: 20 }];
 
     // COGS from authoritative cost (weighted average).
     const cogsTotal = await calculateItemsCost(saleItems, inventory, (i: any) => i.id);
     expect(cogsTotal).toBe(50);
 
+    // A Product line carries no inventory cost even with qty/cost present.
+    const productCogs = await calculateItemsCost(
+      [{ id: 'M1', type: 'Product', quantity: 5, price: 20 }],
+      inventory,
+      (i: any) => i.id
+    );
+    expect(productCogs).toBe(0);
+
     const ledger: any[] = [
       { id: 'LG-REV', date: '2026-09-10T00:00:00.000Z', description: 'Sale', debitAccountId: '11310', creditAccountId: '41100', amount: 100, referenceId: 'S1' },
-      { id: 'LG-COGS', date: '2026-09-10T00:00:00.000Z', description: 'COGS', debitAccountId: '51200', creditAccountId: '11410', amount: cogsTotal, referenceId: 'S1' },
+      { id: 'LG-COGS', date: '2026-09-10T00:00:00.000Z', description: 'COGS', debitAccountId: '51200', creditAccountId: '11420', amount: cogsTotal, referenceId: 'S1' },
     ];
     const own = computeOwnBalances(accounts as any[], ledger as any[]);
     expect(own['51200']).toBe(50);
-    expect(own['11410']).toBe(-50);
+    expect(own['11420']).toBe(-50);
     expect(own['41100']).toBe(100);
     const trial = computeTrialBalance(accounts as any[], ledger as any[]);
     expect(trial.isBalanced).toBe(true);
@@ -452,10 +473,11 @@ describe('inventory valuation (cost basis, never SP)', () => {
     memStores.putLog.length = 0;
     const preview = await previewOpeningInventory();
     expect(memStores.putLog.length).toBe(0);
-    expect(preview.totalDebit).toBe(1000);
-    expect(preview.totalCredit).toBe(1000);
+    // Only the Raw Material posts; the Product is NON_STOCK_TYPE.
+    expect(preview.totalDebit).toBe(500);
+    expect(preview.totalCredit).toBe(500);
     expect(preview.difference).toBe(0);
-    expect(preview.lines.length).toBe(2);
+    expect(preview.lines.length).toBe(1);
 
     const posted = await openInventory();
     expect(posted.totalDebit).toBe(preview.totalDebit);
