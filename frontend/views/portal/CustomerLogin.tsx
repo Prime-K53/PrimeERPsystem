@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, Loader2, Mail, KeyRound, Shield, QrCode } from 'lucide-react';
+import { Lock, Loader2, Mail, KeyRound, Shield, Eye, EyeOff } from 'lucide-react';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import ErrorBanner from './components/ErrorBanner';
 
@@ -9,6 +9,7 @@ const CustomerLogin: React.FC = () => {
   const { loginWithApi } = useCustomerAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
@@ -27,9 +28,12 @@ const CustomerLogin: React.FC = () => {
     }
     if (result.requiresTwoFactor) {
       setPendingToken(result.pendingToken || null);
+      setTwoFactorCode('');
+      setSubmitting(false);
       return;
     }
     setError(result.message || 'Login failed. Please try again.');
+    setPassword('');
     setSubmitting(false);
   };
 
@@ -45,6 +49,7 @@ const CustomerLogin: React.FC = () => {
       return;
     }
     setError(result.message || 'Login failed. Please try again.');
+    setTwoFactorCode('');
     setSubmitting(false);
   };
 
@@ -89,15 +94,20 @@ const CustomerLogin: React.FC = () => {
 
               <form onSubmit={handleTwoFactorSubmit} className="space-y-5">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Verification Code</label>
+                  <label htmlFor="portal-2fa-code" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Verification Code</label>
                   <div className="relative">
                     <Shield size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
+                      id="portal-2fa-code"
                       type="text"
                       value={twoFactorCode}
                       onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="000000"
                       autoComplete="one-time-code"
+                      inputMode="numeric"
+                      autoFocus
+                      required
+                      disabled={submitting}
                       className={inputClass}
                     />
                   </div>
@@ -120,32 +130,48 @@ const CustomerLogin: React.FC = () => {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Email Address</label>
+                <label htmlFor="portal-email" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Email Address</label>
                 <div className="relative">
                   <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
+                    id="portal-email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@company.com"
                     autoComplete="email"
+                    autoFocus
+                    required
+                    disabled={submitting}
                     className={inputClass}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Password</label>
+                <label htmlFor="portal-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Password</label>
                 <div className="relative">
                   <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="password"
+                    id="portal-password"
+                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
                     autoComplete="current-password"
-                    className={inputClass}
+                    required
+                    disabled={submitting}
+                    className={`${inputClass} pr-11`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    disabled={submitting}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-60"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Mail, ArrowLeft, ArrowRight, Loader2, ShieldCheck, AlertCircle, CheckCircle2, Key, Eye, EyeOff } from 'lucide-react';
 import AuthLayout from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
@@ -175,10 +176,10 @@ const ForgotPassword: React.FC = () => {
             )}
           </button>
 
-          <a href="#/login" className="block text-center text-xs text-slate-500 hover:text-slate-300 transition-colors">
+          <Link to="/login" className="block text-center text-xs text-slate-500 hover:text-slate-300 transition-colors">
             <ArrowLeft size={12} className="inline mr-1" />
             Back to Login
-          </a>
+          </Link>
         </form>
       )}
 
@@ -320,12 +321,12 @@ const ForgotPassword: React.FC = () => {
               Your password has been reset successfully. You can now sign in with your new password.
             </p>
           </div>
-          <a
-            href="#/login"
+          <Link
+            to="/login"
             className="w-full block text-center px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-lg font-semibold transition-all"
           >
             Sign In
-          </a>
+          </Link>
         </div>
       )}
     </AuthLayout>
