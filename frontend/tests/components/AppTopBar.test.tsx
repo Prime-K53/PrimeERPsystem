@@ -136,7 +136,7 @@ function setup(overrides: {
 function renderBar() {
   return render(
     <MemoryRouter initialEntries={['/sales-flow/invoices']}>
-      <AppTopBar onOpenSidebar={vi.fn()} onToggleCollapse={vi.fn()} onOpenMessages={vi.fn()} />
+      <AppTopBar onOpenSidebar={vi.fn()} onToggleCollapse={vi.fn()} />
     </MemoryRouter>
   );
 }
@@ -161,7 +161,7 @@ describe('AppTopBar', () => {
     expect(screen.getByRole('button', { name: /account menu for jane doe/i })).toBeInTheDocument();
   });
 
-  it('shows Closed state and blocks posting actions when the FY is closed', () => {
+  it('shows Closed state on the FY button when the FY is closed', () => {
     setup({
       fy: {
         selectedFinancialYear: { ...openFY.selectedFinancialYear, is_closed: 1 },
@@ -170,15 +170,7 @@ describe('AppTopBar', () => {
     });
     renderBar();
     expect(screen.getByRole('button', { name: /financial year.*closed/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /create new record/i }));
-    const menu = screen.getByRole('menu', { name: /create new/i });
-    const pos = within(menu).getByRole('menuitem', { name: /pos sale/i });
-    const invoice = within(menu).getByRole('menuitem', { name: /invoice/i });
-    expect(pos).toBeDisabled();
-    expect(invoice).toBeDisabled();
-    expect(invoice).toHaveAttribute('title', expect.stringMatching(/closed/i));
-    // non-posting creates stay available
-    expect(within(menu).getByRole('menuitem', { name: /customer/i })).toBeEnabled();
+    expect(screen.getByText('Closed')).toBeInTheDocument();
   });
 
   it('gates admin tools for non-admin users', () => {

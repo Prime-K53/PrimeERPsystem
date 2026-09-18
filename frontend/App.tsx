@@ -194,6 +194,7 @@ const CustomerCredentialRegeneration = lazyWithRetry('./views/tools/CustomerCred
 const MarketAdjustments = lazyWithRetry('./views/tools/MarketAdjustments', () => import('./views/tools/MarketAdjustments'));
 const SmartOperationsHub = lazyWithRetry('./views/SmartOperationsHub', () => import('./views/SmartOperationsHub'));
 const MarketingMessages = lazyWithRetry('./views/tools/MarketingMessages', () => import('./views/tools/MarketingMessages'));
+const SmartPricing = lazyWithRetry('./views/tools/SmartPricing', () => import('./views/tools/SmartPricing'));
 const PriceCards = lazyWithRetry('./views/tools/PriceCards', () => import('./views/tools/PriceCards'));
 const AdsManager = lazyWithRetry('./views/tools/AdsManager', () => import('./views/tools/AdsManager'));
 const FAQManager = lazyWithRetry('./views/tools/FAQManager', () => import('./views/tools/FAQManager'));
@@ -393,7 +394,6 @@ const AppLayout: React.FC = () => {
   } = useSales();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
 
   useEffect(() => {
     const theme = companyConfig?.appearance?.theme || 'Light';
@@ -490,7 +490,6 @@ const AppLayout: React.FC = () => {
             onOpenSidebar={() => setSidebarOpen(true)}
             onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
             sidebarCollapsed={sidebarCollapsed}
-            onOpenMessages={() => setIsWhatsAppModalOpen(true)}
           />
         </div>
         <main className="app-content-scroll flex-1 min-h-0 overflow-auto relative custom-scrollbar">
@@ -693,6 +692,7 @@ const AppLayout: React.FC = () => {
                 <Route element={<ErrorBoundary name="Smart Operations"><Outlet /></ErrorBoundary>}>
                   <Route path="/smart-operations" element={<SmartOperationsHub />} />
                   <Route path="/smart-operations/adjustments" element={<MarketAdjustments />} />
+                  <Route path="/smart-operations/pricing" element={<SmartPricing />} />
                   <Route path="/smart-operations/messages" element={<MarketingMessages />} />
                   <Route path="/smart-operations/price-cards" element={<PriceCards />} />
                   <Route path="/smart-operations/ads" element={<ProtectedRoute permission="admin.settings"><AdsManager /></ProtectedRoute>} />
@@ -784,21 +784,6 @@ const AppLayout: React.FC = () => {
       </div>
 
       {location.pathname === '/' && <AICopilot />}
-      {isWhatsAppModalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsWhatsAppModalOpen(false)}>
-          <div className="w-full max-w-4xl bg-[#FEFDFB] rounded-[14px] shadow-[0_30px_70px_-20px_rgba(0,0,0,.55),0_8px_24px_-8px_rgba(0,0,0,.35),0_0_0_1px_rgba(255,255,255,.04)] border border-[#e4ddd1] overflow-hidden animate-in zoom-in-95 slide-in-from-top-4 duration-200" onClick={(e) => e.stopPropagation()} style={{ height: '80vh', maxHeight: 700 }}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#e4ddd1] bg-[#eef7f6]">
-              <h2 className="text-sm font-bold text-[#0b3e39]">WhatsApp Messages</h2>
-              <button onClick={() => setIsWhatsAppModalOpen(false)} className="p-1 rounded-lg hover:bg-[#d9ceb8]/30 transition-colors" aria-label="Close messages">
-                <X size={16} className="text-[#5c6567]" />
-              </button>
-            </div>
-            <div className="overflow-y-auto" style={{ height: 'calc(80vh - 52px)', maxHeight: 'calc(700px - 52px)' }}>
-              <MarketingMessages />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
