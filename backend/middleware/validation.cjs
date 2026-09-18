@@ -119,6 +119,22 @@ const userSchemas = {
     email: z.string().email('Invalid email address'),
     code: z.string().min(4, 'Code must be at least 4 characters').max(8),
     purpose: z.string().min(1, 'Purpose is required')
+  }),
+  // Self-service company creation from the login page. Creates the initial
+  // company workspace plus its first Admin. Role/permissions are NOT accepted
+  // from the client — the backend always provisions an Admin.
+  registerCompany: z.object({
+    companyName: z.string().min(2, 'Company name must be at least 2 characters').max(200),
+    companyEmail: z.string().email('Invalid company email address').optional(),
+    companyPhone: z.string().max(50).optional(),
+    addressLine1: z.string().max(255).optional(),
+    city: z.string().max(100).optional(),
+    country: z.string().max(100).optional(),
+    currencySymbol: z.string().max(10).optional(),
+    adminFullName: z.string().min(2, 'Full name must be at least 2 characters').max(100),
+    adminUsername: z.string().min(3, 'Username must be at least 3 characters').max(50),
+    adminEmail: z.string().email('Invalid email address'),
+    adminPassword: z.string().min(6, 'Password must be at least 6 characters')
   })
 };
 

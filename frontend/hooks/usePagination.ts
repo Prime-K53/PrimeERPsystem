@@ -21,17 +21,24 @@ export function usePagination<T>(data: T[], initialItemsPerPage: number = 25) {
 
   const maxPage = Math.ceil(safeData.length / itemsPerPage) || 1;
 
-  useMemo(() => {
+  // Reset to the first page when the data shrinks below the current page
+  // (filter applied, rows removed, smaller page size). Done in an effect —
+  // never as a render-phase update — so concurrent renders cannot tear and
+  // leave the list on an out-of-range (empty) page that hides existing rows.
+  useEffect(() => {
     if (currentPage > maxPage && maxPage > 0) {
       setCurrentPage(1);
     }
   }, [safeData.length, maxPage, currentPage]);
 
   const currentItems = useMemo(() => {
-    const begin = (currentPage - 1) * itemsPerPage;
+    // Clamp defensively so the rendered slice is never out of range, even
+    // before the reset effect above lands.
+    const effectivePage = Math.min(Math.max(currentPage, 1), Math.max(maxPage, 1));
+    const begin = (effectivePage - 1) * itemsPerPage;
     const end = begin + itemsPerPage;
     return safeData.slice(begin, end);
-  }, [safeData, currentPage, itemsPerPage]);
+  }, [safeData, currentPage, itemsPerPage, maxPage]);
 
   const next = useCallback(() => {
     setCurrentPage((current) => Math.min(current + 1, maxPage));

@@ -417,6 +417,28 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
         <div className="flex flex-col h-full">
             {openMenuId && menuPos && currentOrder && renderMenu(currentOrder)}
 
+            {(props.searchTerm !== undefined || props.onSearchChange) && (
+                <div className="p-3 border-b border-[#e4ddd1]/60 flex justify-between items-center bg-[#eef7f6]/30 shrink-0">
+                    <div className="relative w-full max-w-md">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6567]" size={14} />
+                        <input
+                            type="text"
+                            placeholder="Search orders..."
+                            className="w-full pl-9 pr-3 py-1.5 border border-[#e4ddd1] rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#1f857715] bg-[#FEFDFB] font-normal"
+                            value={props.searchTerm || ''}
+                            onChange={e => props.onSearchChange?.(e.target.value)}
+                        />
+                        {props.searchTerm && props.onSearchClear && (
+                            <button
+                                onClick={props.onSearchClear}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5c6567] hover:text-[#23282A]"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
             {props.viewMode === 'Card' ? (
                 <div className="flex-1 overflow-y-auto custom-scrollbar">
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 p-1">
@@ -460,28 +482,6 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                 </div>
             ) : (
                     <div className="bg-[#FEFDFB] border border-[#e4ddd1] rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col">
-                    {(props.searchTerm !== undefined || props.onSearchChange) && (
-                        <div className="p-3 border-b border-[#e4ddd1]/60 flex justify-between items-center bg-[#eef7f6]/30 shrink-0">
-                            <div className="relative w-full max-w-md">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6567]" size={14} />
-                                <input
-                                    type="text"
-                                    placeholder="Search orders..."
-                                    className="w-full pl-9 pr-3 py-1.5 border border-[#e4ddd1] rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#1f857715] bg-[#FEFDFB] font-normal"
-                                    value={props.searchTerm || ''}
-                                    onChange={e => props.onSearchChange?.(e.target.value)}
-                                />
-                                {props.searchTerm && props.onSearchClear && (
-                                    <button
-                                        onClick={props.onSearchClear}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5c6567] hover:text-[#23282A]"
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
                     <div className="flex-1 overflow-auto custom-scrollbar sales-list-scroll">
                         <table className="w-full text-left text-[11px] md:text-[13px] table-auto md:table-fixed">
                             <thead className="bg-slate-50/80 backdrop-blur text-slate-500 sticky top-0 z-10 shadow-sm">
