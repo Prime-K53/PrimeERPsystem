@@ -61,3 +61,30 @@ export const resolveCustomerDisplay = (
     contactName: getCustomerContactName({ contactName: customer.contactName ?? null }),
   };
 };
+
+/**
+ * Label for customer <option> / search-dropdown rows.
+ *
+ * NON-NEGOTIABLE: always the Business Name, never the contact name.
+ * Falls back to the customer id (never blank) when no business identity
+ * exists, so dropdowns cannot render empty options.
+ */
+export const getCustomerOptionLabel = (
+  customer: {
+    id?: string | null;
+    name?: string | null;
+    businessName?: string | null;
+    companyName?: string | null;
+  } | null | undefined
+): string => {
+  if (!customer) return 'Unknown customer';
+  return (
+    getCustomerDisplayName({
+      businessName: customer.businessName ?? null,
+      companyName: customer.companyName ?? null,
+      legacyCustomerName: customer.name ?? null,
+    }) ||
+    String(customer.id || '').trim() ||
+    'Unknown customer'
+  );
+};

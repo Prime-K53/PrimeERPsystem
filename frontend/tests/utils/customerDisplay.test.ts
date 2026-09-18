@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCustomerDisplayName, getCustomerContactName, resolveCustomerDisplay } from '../../utils/customerDisplay';
+import { getCustomerDisplayName, getCustomerContactName, getCustomerOptionLabel, resolveCustomerDisplay } from '../../utils/customerDisplay';
 
 describe('getCustomerDisplayName', () => {
   describe('CASE 1: businessName and contactName both exist', () => {
@@ -226,5 +226,27 @@ describe('Business Name vs Contact Name Separation', () => {
       expect(displayName).toBe(expectedDisplayName);
       expect(contact).toBe(expectedContactName);
     });
+  });
+});
+
+describe('getCustomerOptionLabel (dropdown labels: Business Name, never contact)', () => {
+  it('uses businessName when present, ignoring contact-style legacy name', () => {
+    expect(
+      getCustomerOptionLabel({ id: 'C1', name: 'Ada Banda', businessName: 'Acme Printers Ltd', companyName: 'Acme' })
+    ).toBe('Acme Printers Ltd');
+  });
+
+  it('falls back to companyName, then legacy name, then id — never blank', () => {
+    expect(getCustomerOptionLabel({ id: 'C2', name: 'Ada Banda', companyName: 'Zed Milling' })).toBe('Zed Milling');
+    expect(getCustomerOptionLabel({ id: 'C3', name: 'Legacy Shop' })).toBe('Legacy Shop');
+    expect(getCustomerOptionLabel({ id: 'C4' })).toBe('C4');
+    expect(getCustomerOptionLabel(null)).toBe('Unknown customer');
+  });
+
+  it('never surfaces a contact-only record as a blank or contact label', () => {
+    // A record carrying only a person name still renders (legacy fallback),
+    // and a record with no identity at all falls back to its id.
+    expect(getCustomerOptionLabel({ id: 'C5', name: 'Ada Banda' })).toBe('Ada Banda');
+    expect(getCustomerOptionLabel({ id: 'C6', name: '  ' })).toBe('C6');
   });
 });
