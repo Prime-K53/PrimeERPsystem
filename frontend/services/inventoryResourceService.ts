@@ -3,6 +3,8 @@ import type {
   UnitConversionFactor, PurchaseLot,
 } from '../types';
 import { dbService } from './db';
+import { calculateWeightedAverageCost, syncCostAliases } from './purchaseCosting';
+import { isInventoryBearingItem } from '../utils/inventoryNormalization';
 
 // ─── ID generation ───
 const generateId = (): string =>
@@ -39,6 +41,17 @@ class InventoryResourceService {
     const item = await this.getItem(params.itemId);
     if (!item) throw new Error(`Item not found: ${params.itemId}`);
 
+    // Stock-tracked items only (Raw Material / Stationery). Averaging a
+    // supplier price into a printed product's or service's explicit business
+    // CP would destroy it — the same rule the GRN verification path enforces
+    // (non-stock value accrues to Purchases instead). Fails loud so future
+    // callers cannot repeat the mistake silently.
+    if (!isInventoryBearingItem(item)) {
+      throw new Error(
+        `recordPurchase only applies to stock-tracked items (got type "${item.type || 'unknown'}" for ${params.itemId})`
+      );
+    }
+
     const consumptionUnit = item.consumptionUnit || item.unit || 'pcs';
     const factor = item.conversionFactor || 1;
     const consumptionQty = params.purchaseQuantity * factor;
@@ -74,23 +87,27 @@ class InventoryResourceService {
       console.warn('[InventoryResourceService] Could not persist purchase lot:', err);
     }
 
-    // Recalculate weighted-average CP
-    const newNormalizedCP = await this.recalculateWeightedAverageCP(params.itemId);
+    // Weighted moving-average CP from the master carrying value — the same
+    // math as the GRN verification path. Averaging over purchase lots here
+    // would be wrong once sales have occurred: consumed quantities are never
+    // peeled from lots under weighted_average, so stale lots would drag the
+    // average (e.g. 5 @ 17 sold out, then 10 @ 20 must average to 20, not
+    // 19). Lots remain the per-receipt actual-cost history (and FIFO source).
+    const currentStock = item.stock || 0;
+    const masterCost = item.normalizedCP ?? item.costPrice ?? item.cost ?? 0;
+    const newNormalizedCP =
+      Math.round(
+        calculateWeightedAverageCost(masterCost, currentStock, unitCostPerConsumption, consumptionQty) * 10000
+      ) / 10000;
 
     // Update item stock (in consumption units)
-    const currentStock = item.stock || 0;
     const newStock = currentStock + consumptionQty;
 
-    // Update item
-    const updatedItem: Item = {
-      ...item,
-      stock: newStock,
-      normalizedCP: newNormalizedCP,
-      cost: newNormalizedCP,
-      cost_price: newNormalizedCP,
-      costPrice: newNormalizedCP,
-      // No SP/margin changes for internal items
-    };
+    // Update item: stock plus every cost alias synced to the new average so
+    // no stale alias (cost_price/cost_per_unit read BEFORE cost) can shadow
+    // it for PO defaults, POS snapshots, or sale CP. No SP/margin changes
+    // for internal items.
+    const updatedItem: Item = syncCostAliases({ ...item, stock: newStock }, newNormalizedCP);
 
     await this.saveItem(updatedItem);
     return { lot, updatedItem };

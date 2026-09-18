@@ -15,6 +15,7 @@ import { initializePrimePdfFonts } from '../../shared/components/PDF/templateSet
 import LandingCostAllocation from './LandingCostAllocation';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import { mapToInvoiceData } from '../../../utils/pdfMapper';
+import { resolvePoLineUnitCost } from '../../../services/purchaseCosting';
 import { attachDocumentSecurity } from '../../../utils/documentSecurity';
 import AIDocumentSummarizer from '../../../components/ai/AIDocumentSummarizer';
 import { useLocation } from 'react-router-dom';
@@ -273,6 +274,9 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
                                     <tbody style={{divideY:`1px solid ${hairline}`}}>
                                         {(purchase.items||[]).map((item,idx)=>{
                                             const product=(inventory||[]).find(i=>i.id===item.itemId);
+                                            // Actual PO purchase price (any alias) — the same
+                                            // figure the document, totals, and receiving use.
+                                            const lineUnitCost = resolvePoLineUnitCost(item);
                                             return (
                                             <tr key={idx} style={{borderBottom:`1px solid ${hairline}`,transition:'background .12s',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background=teal[50]} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                                                 <td style={{padding:'14px 12px',textAlign:'center',fontWeight:600,color:inkSoft,fontSize:13}}>{idx + 1}</td>
@@ -293,8 +297,8 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
                                                 <td style={{padding:'14px 20px',textAlign:'center'}}>
                                                     <span style={{display:'inline-block',padding:'4px 12px',borderRadius:999,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',...(item.receivedQty===item.quantity?`background:${teal[50]};color:${teal[700]};border:1px solid ${teal[200]}`:'background:#f5f4f0;color:#5c6567;border:1px solid #e4ddd1')}}>{item.receivedQty?`Recvd: ${item.receivedQty}`:'Pending'}</span>
                                                 </td>
-                                                <td style={{padding:'14px 20px',textAlign:'right',fontWeight:600,color:inkSoft,fontFamily:"'JetBrains Mono',monospace",fontSize:13}}>{currency}{(item.cost||0).toFixed(2)}</td>
-                                                <td style={{padding:'14px 20px',textAlign:'right',fontWeight:700,color:teal[800],fontFamily:"'JetBrains Mono',monospace",fontSize:13}}>{currency}{((item.cost||0)*(item.quantity||0)).toFixed(2)}</td>
+                                                <td style={{padding:'14px 20px',textAlign:'right',fontWeight:600,color:inkSoft,fontFamily:"'JetBrains Mono',monospace",fontSize:13}}>{currency}{lineUnitCost.toFixed(2)}</td>
+                                                <td style={{padding:'14px 20px',textAlign:'right',fontWeight:700,color:teal[800],fontFamily:"'JetBrains Mono',monospace",fontSize:13}}>{currency}{(lineUnitCost*(item.quantity||0)).toFixed(2)}</td>
                                             </tr>
                                             );
                                         })}

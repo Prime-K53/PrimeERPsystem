@@ -19,6 +19,7 @@ import { PrimeDocData } from '../shared/components/PDF/schemas';
 import { extractDeliveryNoteData } from '../../services/geminiService';
 import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils';
+import { resolvePoLineUnitCost } from '../../services/purchaseCosting';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
 const amber = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f' };
@@ -76,7 +77,12 @@ const GoodsReceived: React.FC = () => {
   };
 
   const handleCreateFromPO = (po: Purchase) => {
-      const newItems = (po.items || []).map(item => ({ itemId: item.itemId, name: item.name, orderedQty: item.quantity || 0, quantityReceived: Math.max(0, (item.quantity || 0) - (item.receivedQty || 0)), quantityRejected: 0, warehouseId: po.targetWarehouseId || (warehouses && warehouses[0]?.id) || 'WH-MAIN', cost: item.cost || 0, batchNumber: '', expiryDate: '' }));
+      // Carry the PO line's ACTUAL purchase price into the GRN (every alias
+      // synced) — never re-read the live inventory default here.
+      const newItems = (po.items || []).map(item => {
+          const unitCost = resolvePoLineUnitCost(item);
+          return { itemId: item.itemId, name: item.name, orderedQty: item.quantity || 0, quantityReceived: Math.max(0, (item.quantity || 0) - (item.receivedQty || 0)), quantityRejected: 0, warehouseId: po.targetWarehouseId || (warehouses && warehouses[0]?.id) || 'WH-MAIN', cost: unitCost, unitPrice: unitCost, price: unitCost, batchNumber: '', expiryDate: '' };
+      });
       setEditingGrn({ purchaseOrderId: po.id, date: getDefaultDate(), supplierId: po.supplierId, supplierName: getSupplierName(po.supplierId), status: 'Draft', items: newItems, receivedBy: user?.name || 'Current User', landingCosts: po.landingCosts || [] });
       setSelectedPO(po);
       setView('Form');

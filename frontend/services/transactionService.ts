@@ -49,6 +49,7 @@ import {
     type StockAdjustmentReason,
 } from './inventoryAdjustmentAccounting';
 import { isInventoryBearingItem, resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
+import { resolveReceiptUnitCost, costAliasValues } from './purchaseCosting';
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 
@@ -4458,7 +4459,9 @@ export const transactionService = {
 
                 // Calculate landed cost allocation if landing costs exist on the GRN
                 const landingCostTotal = grn.landingCosts?.reduce((s: number, c: any) => s + (c.amount || 0), 0) || 0;
-                const grnTotalPurchaseValue = grn.items.reduce((s: number, i: any) => s + ((i.cost || 0) * (i.quantityReceived || 0)), 0);
+                // GRN lines carry the PO's actual purchase price (any alias);
+                // never re-read the live inventory default here.
+                const grnTotalPurchaseValue = grn.items.reduce((s: number, i: any) => s + (resolveReceiptUnitCost(i) * (i.quantityReceived || 0)), 0);
 
                 // 1. Update Inventory Stock and Cost (before saving GRN to get accurate totalValue).
                 // Eligibility-first: only Raw Material / Stationery lines are
@@ -4469,30 +4472,33 @@ export const transactionService = {
                 for (const item of grn.items) {
                     const invItem = await inventoryStore.get(item.itemId);
                     if (invItem && !isInventoryBearingItem(invItem)) {
-                        nonStockValue += (item.cost || 0) * (item.quantityReceived || 0);
+                        nonStockValue += resolveReceiptUnitCost(item) * (item.quantityReceived || 0);
                         continue;
                     }
                     if (invItem && isInventoryBearingItem(invItem)) {
                         const oldStock = invItem.stock || 0;
                         const newStock = oldStock + item.quantityReceived;
+                        const lineUnitCost = resolveReceiptUnitCost(item);
 
                         // Calculate landed cost per unit for this item
                         let landedCostPerUnit = 0;
                         if (landingCostTotal > 0 && grnTotalPurchaseValue > 0 && item.quantityReceived > 0) {
-                            const itemPurchaseValue = (item.cost || 0) * item.quantityReceived;
+                            const itemPurchaseValue = lineUnitCost * item.quantityReceived;
                             const itemLandingShare = (itemPurchaseValue / grnTotalPurchaseValue) * landingCostTotal;
                             landedCostPerUnit = itemLandingShare / item.quantityReceived;
                         }
-                        const effectiveUnitCost = (item.cost || 0) + landedCostPerUnit;
+                        const effectiveUnitCost = lineUnitCost + landedCostPerUnit;
 
                         // Weighted Average Cost calculation (using landed cost)
                         const oldCost = invItem.cost || 0;
                         const newCost = ((oldCost * oldStock) + (effectiveUnitCost * item.quantityReceived)) / newStock;
 
                         invItem.stock = newStock;
-                        invItem.cost = newCost;
-                        invItem.normalizedCP = newCost;
-                        invItem.costPrice = newCost;
+                        // Every cost alias carries the fresh average:
+                        // resolveStoredCost reads cost_price/cost_per_unit
+                        // BEFORE cost, so a stale alias would shadow it for
+                        // PO defaults, POS snapshots, and sale CP.
+                        Object.assign(invItem, costAliasValues(newCost));
                         await inventoryStore.put(invItem);
 
                         totalValue += effectiveUnitCost * item.quantityReceived;
@@ -4505,8 +4511,8 @@ export const transactionService = {
                             quantity: item.quantityReceived,
                             previousQuantity: oldStock,
                             newQuantity: newStock,
-                            unitCost: item.cost,
-                            totalCost: item.cost * item.quantityReceived,
+                            unitCost: lineUnitCost,
+                            totalCost: lineUnitCost * item.quantityReceived,
                             landedCostPerUnit: landedCostPerUnit || 0,
                             landedCostTotal: (landedCostPerUnit || 0) * item.quantityReceived,
                             effectiveUnitCost,
@@ -4527,7 +4533,7 @@ export const transactionService = {
                                 quantity: item.quantityReceived,
                                 remainingQuantity: item.quantityReceived,
                                 costPerUnit: effectiveUnitCost,
-                                purchaseCostPerUnit: item.cost,
+                                purchaseCostPerUnit: lineUnitCost,
                                 landedCostPerUnit: landedCostPerUnit || 0,
                                 receivedDate: timestamp,
                                 expiryDate: item.expiryDate || '',
@@ -5298,9 +5304,9 @@ export const transactionService = {
                         const newNormalizedCP = oldNormalizedCP
                             ? ((oldNormalizedCP * oldStock) + (unitCost * qtyProduced)) / (oldStock + qtyProduced)
                             : unitCost;
-                        product.normalizedCP = newNormalizedCP;
-                        product.cost = newNormalizedCP;
-                        product.costPrice = newNormalizedCP;
+                        // Same alias-sync rule as receipts: no stale alias
+                        // may shadow the fresh average.
+                        Object.assign(product, costAliasValues(newNormalizedCP));
                     }
                     await invStore.put(product);
                 }

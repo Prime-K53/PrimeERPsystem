@@ -3,6 +3,7 @@ import { bomService } from '../services/bomService';
 import { currencyService } from '../services/currencyService';
 import { inferSignatureInputMode, resolveSignatureDataUrl } from './signatureUtils';
 import { isSupportedDocumentType } from './documentVerification';
+import { resolvePoLineUnitCost } from '../services/purchaseCosting';
 
 /**
  * Verifiable type implied by the mapper's own docType. An explicit,
@@ -470,13 +471,21 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             // via passthrough so PrimeDocument can display pages ("50 pages")
             // while financial qty stays billable sheets. Required desc/qty/
             // price/total still validated; extras survive via .passthrough().
-            items: ensureItems(item.items, 'line items').map((i: any) => ({
-                ...(i && typeof i === 'object' ? i : {}),
-                desc: buildServiceDescription(i),
-                qty: toNum(i.quantity || i.qty, 1),
-                price: toNum(i.price || i.unitPrice || i.cost),
-                total: toNum(i.total || i.subtotal || (toNum(i.quantity || i.qty, 1) * toNum(i.price || i.unitPrice || i.cost))),
-            })),
+            items: ensureItems(item.items, 'line items').map((i: any) => {
+                // Purchase orders print the ACTUAL purchase price: prefer the
+                // recorded cost aliases over display `price` (which may embed
+                // selling margin on lines saved before purchase-price sync).
+                // All other document types keep the existing precedence.
+                const lineUnit = docType === 'PO' ? resolvePoLineUnitCost(i) : toNum(i.price || i.unitPrice || i.cost);
+                const lineQty = toNum(i.quantity || i.qty, 1);
+                return {
+                    ...(i && typeof i === 'object' ? i : {}),
+                    desc: buildServiceDescription(i),
+                    qty: lineQty,
+                    price: lineUnit,
+                    total: toNum(i.total || i.subtotal || (lineQty * lineUnit)),
+                };
+            }),
             subtotal: toNum(item.totalAmount || item.total || item.total_amount || item.total_cost || item.subtotal || 0),
             discount: toNum(item.discount || item.totalDiscount || 0),
             discountType: item.discountType || 'fixed',

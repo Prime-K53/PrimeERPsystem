@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { X, Package, ChevronRight, Scale } from 'lucide-react';
 import { inventoryResourceService } from '../../../services/inventoryResourceService';
+import { resolveReceiptUnitCost } from '../../../services/purchaseCosting';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { useInventory } from '../../../context/InventoryContext';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../../../components/Dialog';
 
@@ -54,15 +56,26 @@ export const PurchaseReceiveModal: React.FC<PurchaseReceiveModalProps> = ({ purc
                 const qtyToReceive = receivedQuantities[itemId] || 0;
                 if (qtyToReceive <= 0) continue;
                 const invItem = findItem(itemId);
+                // Actual PO purchase price is the cost basis — never the
+                // live inventory default.
+                const poUnitCost = resolveReceiptUnitCost(poItem);
+                // Stock-tracked lines only: a printed product's or service's
+                // explicit business CP must never be averaged with a supplier
+                // price. Their receipt is still marked below; only the
+                // inventory-costing call is skipped.
+                if (invItem && !isInventoryBearingItem(invItem)) {
+                    console.warn(`[PurchaseReceive] Skipping inventory costing for non-stock item ${poItem.name}: explicit business CP preserved.`);
+                } else {
                 try {
                     await inventoryResourceService.recordPurchase({
                         itemId, purchaseQuantity: qtyToReceive,
                         purchaseUnit: poItem.unit || invItem?.purchaseUnit || invItem?.unit || 'pcs',
-                        totalCost: qtyToReceive * (poItem.cost || 0),
+                        totalCost: qtyToReceive * poUnitCost,
                         supplierId: purchase.supplierId, supplierName: purchase.supplierName || purchase.supplierName,
                         invoiceRef: purchase.id,
                     });
                 } catch (err) { console.warn(`[PurchaseReceive] Could not record purchase lot for ${poItem.name}:`, err); }
+                }
                 const oldReceived = poItem.receivedQty || 0;
                 updatedItems[i] = { ...poItem, receivedQty: oldReceived + qtyToReceive };
                 if ((oldReceived + qtyToReceive) < (poItem.quantity || 0)) allFullyReceived = false;
@@ -107,7 +120,8 @@ export const PurchaseReceiveModal: React.FC<PurchaseReceiveModalProps> = ({ purc
                     const invItem = findItem(itemId);
                     const isInventoryResource = invItem?.inventoryRole === 'internal' || invItem?.inventoryRole === 'both' || invItem?.type === 'Raw Material' || invItem?.type === 'Material';
                     const currentQty = receivedQuantities[itemId] ?? remaining;
-                    const lineTotal = currentQty * (poItem.cost || 0);
+                    const poUnitCost = resolveReceiptUnitCost(poItem);
+                    const lineTotal = currentQty * poUnitCost;
 
                     return (
                         <div key={itemId||idx} style={{background:`linear-gradient(135deg,${teal[50]},#FEFDFB)`,border:`1.4px solid ${teal[100]}`,borderRadius:14,padding:16,transition:'all .15s ease'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=teal[300];e.currentTarget.style.boxShadow='0 4px 14px -8px rgba(15,84,76,.12)'}} onMouseLeave={e=>{e.currentTarget.style.borderColor=teal[100];e.currentTarget.style.boxShadow='none'}}>
@@ -115,7 +129,7 @@ export const PurchaseReceiveModal: React.FC<PurchaseReceiveModalProps> = ({ purc
                                 <div>
                                     <div style={{fontWeight:700,fontSize:14,color:ink,fontFamily:"'DM Serif Display','Georgia',serif"}}>{poItem.name}</div>
                                     <div style={{fontSize:10,color:inkSoft,fontWeight:600,marginTop:3,fontFamily:"'JetBrains Mono',monospace"}}>
-                                        Ordered: {ordered} &times; {poItem.unit||'pcs'} @ ${(poItem.cost||0).toFixed(2)}
+                                        Ordered: {ordered} &times; {poItem.unit||'pcs'} @ ${poUnitCost.toFixed(2)}
                                         {received>0&&<span style={{color:teal[600],marginLeft:8,fontWeight:700}}>(Previously received: {received})</span>}
                                     </div>
                                 </div>

@@ -152,6 +152,18 @@ class ProcurementService {
     };
     await repo.purchaseOrders.upsert(poRecord);
     for (const item of items) {
+      // Accept the purchase price under any alias: callers may send the PO
+      // line's actual cost as `cost`/`price` rather than `unit_price`. The
+      // first positive value wins so a recorded purchase cost is never
+      // silently stored as zero.
+      const unitPrice =
+        Number(item.unit_price) ||
+        Number(item.unitPrice) ||
+        Number(item.cost) ||
+        Number(item.cost_price) ||
+        Number(item.costPrice) ||
+        Number(item.price) ||
+        0;
       const itemRecord = {
         id: item.id || crypto.randomUUID(),
         data: {
@@ -159,8 +171,8 @@ class ProcurementService {
           item_id: item.item_id || null,
           item_name: item.item_name || '',
           quantity: item.quantity || 0,
-          unit_price: item.unit_price || 0,
-          total_price: (item.quantity || 0) * (item.unit_price || 0),
+          unit_price: unitPrice,
+          total_price: (item.quantity || 0) * unitPrice,
         },
       };
       await repo.purchaseOrderItems.upsert(itemRecord);

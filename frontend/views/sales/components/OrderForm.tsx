@@ -26,6 +26,7 @@ import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPr
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
 import { calculateLineProfit, resolveSaleLineCostPrice } from '../../../utils/saleProfit';
 import { isExpenseAccount, isIncomeAccount } from '../../../utils/accountType';
+import { getCustomerOptionLabel } from '../../../utils/customerDisplay';
 import { roundMoney } from '../../../utils/roundingUtils';
 import { displayPrice } from '../../../services/pricingDisplayService';
 import { resolveCustomerPrice, getApplicableDiscounts, applyDiscounts, incrementDiscountUsage, getCustomerPricingTier } from '../../../services/customerPricingService';
@@ -148,11 +149,16 @@ const normalizeOtherCharges = (items: any[] = []): { items: any[]; otherChargesC
  * via resolveSaleLineCostPrice(item, liveCost).
  */
 const resolveOrderFormLineCost = (item: CartItem, inventory: Item[]): number => {
+    // The line's own CP wins: a manually entered purchase price (or a saved
+    // sale snapshot) must not be replaced by the live master cost. The
+    // master is only a fallback for lines carrying no stored CP.
+    const lineCost = Number((item as CartItem).cost) || 0;
+    if (lineCost > 0) return lineCost;
     if (item.serviceDetails) {
-        return Number((item as CartItem).cost) || 0;
+        return 0;
     }
     const invItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
-    if (!invItem) return Number((item as CartItem).cost) || 0;
+    if (!invItem) return 0;
     const variant = item.parentId && invItem.variants
         ? invItem.variants.find((v: any) => v.id === item.id)
         : null;
@@ -409,6 +415,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         if (!customerSearch) return source;
         const term = customerSearch.toLowerCase();
         return source.filter((c: any) =>
+            getCustomerOptionLabel(c).toLowerCase().includes(term) ||
             c.name?.toLowerCase().includes(term) ||
             c.id?.toLowerCase().includes(term) ||
             c.phone?.includes(term) ||
@@ -561,6 +568,21 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                         ...entry,
                         price: safePrice,
                         manual_override: true,
+                        // Purchase mode: the grid Price IS the supplier's
+                        // actual purchase price, so it must flow into the
+                        // cost fields that POs persist, print, and receive
+                        // from. (Sales mode keeps price/cost separate.)
+                        ...(type === 'Purchase'
+                            ? {
+                                unitPrice: safePrice,
+                                selling_price: safePrice,
+                                calculated_price: safePrice,
+                                cost: safePrice,
+                                cost_price: safePrice,
+                                basePrice: safePrice,
+                                baseUnitPrice: safePrice,
+                            }
+                            : {}),
                         serviceDetails: entry.serviceDetails
                             ? {
                                 ...entry.serviceDetails,
@@ -654,6 +676,28 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         const baseItem = inventory.find((i: Item) => i.id === baseItemId) || item;
         const activeAdjs: any[] = [];
         const marketAdjustmentsInput: any[] = [];
+
+        // Purchase mode: reset to the inventory default purchase cost
+        // across every price field (never a selling price).
+        if (type === 'Purchase') {
+            const purchaseCost = Number(resolveStoredCost(baseItem)) || Number((baseItem as Item).cost) || 0;
+            currentItems[idx] = {
+                ...currentItems[idx],
+                price: purchaseCost,
+                unitPrice: purchaseCost,
+                selling_price: purchaseCost,
+                calculated_price: purchaseCost,
+                cost: purchaseCost,
+                cost_price: purchaseCost,
+                basePrice: purchaseCost,
+                baseUnitPrice: purchaseCost,
+                adjustmentSnapshots: [],
+                adjustmentTotal: 0,
+                manual_override: false
+            };
+            setFormData({ ...formData, items: currentItems });
+            return;
+        }
 
         const normalizedSnapshots = resolveItemAdjustmentSnapshots(item);
         const storedVariantPrice = resolveStoredSellingPrice(item);
@@ -805,11 +849,13 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             totalGross += lineTotal;
 
             const invItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
-            let itemCost = item.cost || 0;
+            // Actual-cost display economics: the line's own CP wins over the
+            // live lookup so a manually entered purchase price (or a saved
+            // snapshot) is never replaced by the current master cost. The
+            // master is only a fallback for lines carrying no stored CP.
+            let itemCost = Number((item as CartItem).cost) || 0;
 
-            if (item.serviceDetails) {
-                itemCost = Number(item.cost) || 0;
-            } else if (invItem) {
+            if (itemCost <= 0 && !item.serviceDetails && invItem) {
                 const variant = item.parentId && invItem.variants
                     ? invItem.variants.find((v: any) => v.id === item.id)
                     : null;
@@ -1431,6 +1477,45 @@ const handleAddItem = async (item: Item) => {
             const activeAdjs: any[] = [];
             const marketAdjustmentsInput: any[] = [];
 
+            // Purchase mode: the line is a supplier purchase, not a sale.
+            // Seed every price field with the inventory default purchase
+            // cost — no selling margin, no customer-tier pricing. The buyer
+            // then edits the grid Price to the supplier's actual price and
+            // applyManualLineItemPrice keeps the cost fields in sync, so the
+            // PO persists, prints, and receives at the entered price.
+            if (type === 'Purchase') {
+                const purchaseCost = Number(resolveStoredCost(item)) || Number((item as Item).cost) || 0;
+                const purchaseItem: CartItem = {
+                    ...item,
+                    quantity: 1,
+                    discount: 0,
+                    price: purchaseCost,
+                    unitPrice: purchaseCost,
+                    selling_price: purchaseCost,
+                    calculated_price: purchaseCost,
+                    cost: purchaseCost,
+                    cost_price: purchaseCost,
+                    basePrice: purchaseCost,
+                    baseUnitPrice: purchaseCost,
+                    customerPriceAdjusted: false,
+                    customerPricingTier: '',
+                    customerPricingSegment: '',
+                    adjustmentSnapshots: [],
+                    adjustmentTotal: 0,
+                    smartPricingSnapshot: undefined,
+                    productionCostSnapshot: undefined,
+                    pagesOverride: item.pages
+                };
+
+                setFormData((prev: any) => ({
+                    ...prev,
+                    items: [...prev.items, purchaseItem]
+                }));
+                notify(`${item.name} added`, "success");
+                setItemSearch('');
+                return;
+            }
+
             const storedPrice = resolveStoredSellingPrice(item);
             const pricing = storedPrice > 0 ? {
                 unitPrice: storedPrice,
@@ -1453,7 +1538,8 @@ const handleAddItem = async (item: Item) => {
             const baseUnitPrice = finalUnitPrice;
             const segment = formData.customerPricingSegment || selectedCustomerObj?.segment || '';
             let tier: any = null;
-            if (formData.customerId) {
+            // Supplier purchase lines are never customer-tier adjusted.
+            if (formData.customerId && type !== 'Purchase') {
                 tier = await getCustomerPricingTier(formData.customerId).catch(() => null);
                 if (tier) {
                     finalUnitPrice = resolveCustomerPrice(baseUnitPrice, tier, segment);
@@ -1577,7 +1663,23 @@ const handleVariantSelect = async (variant: ProductVariant) => {
             }
 
             const segment = formData.customerPricingSegment || selectedCustomerObj?.segment || '';
-            if (formData.customerId && !variant.customerPriceAdjusted) {
+            // Supplier purchase lines are never customer-tier adjusted: the
+            // PO keeps the actual supplier price in every price field.
+            if (type === 'Purchase') {
+                const purchaseCost = Number(resolveStoredCost(variant)) || Number(variantItem.cost) || 0;
+                variantItem.price = purchaseCost;
+                variantItem.selling_price = purchaseCost;
+                variantItem.calculated_price = purchaseCost;
+                variantItem.cost = purchaseCost;
+                variantItem.cost_price = purchaseCost;
+                variantItem.basePrice = purchaseCost;
+                variantItem.baseUnitPrice = purchaseCost;
+                variantItem.adjustmentSnapshots = [];
+                variantItem.adjustmentTotal = 0;
+                variantItem.smartPricingSnapshot = undefined;
+                variantItem.productionCostSnapshot = undefined;
+            }
+            if (formData.customerId && !variant.customerPriceAdjusted && type !== 'Purchase') {
                 const tier = await getCustomerPricingTier(formData.customerId).catch(() => null);
                 if (tier) {
                     const baseUnitPrice = variantItem.price || 0;
@@ -1763,6 +1865,20 @@ const handleVariantSelect = async (variant: ProductVariant) => {
             newItems[idx].adjustmentTotal = priceData.adjustmentTotal;
         }
 
+        // Purchase mode: quantity changes never re-price. Keep every price
+        // field on the line's own actual purchase cost (services excluded —
+        // their calculator owns both fields).
+        if (type === 'Purchase' && newItems[idx].type !== 'Service' && !newItems[idx].serviceDetails) {
+            const purchaseCost = Number(newItems[idx].cost) || 0;
+            if (purchaseCost > 0) {
+                newItems[idx].price = purchaseCost;
+                newItems[idx].unitPrice = purchaseCost;
+                newItems[idx].selling_price = purchaseCost;
+                newItems[idx].cost = purchaseCost;
+                newItems[idx].cost_price = purchaseCost;
+            }
+        }
+
         setFormData({ ...formData, items: newItems });
     };
 
@@ -1862,7 +1978,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
             return;
         }
         const customer = customerId ? customers.find((c: any) => c.id === customerId) : findCustomerByName(normalizedName);
-        const selectedName = customer?.name || normalizedName;
+        const selectedName = customer ? getCustomerOptionLabel(customer) : normalizedName;
         const segment = customer?.segment || '';
         const tier = customer ? await getCustomerPricingTier(customer.id).catch(() => null) : null;
 
@@ -2147,11 +2263,11 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     <button
                                         key={c.id}
                                         type="button"
-                                        onMouseDown={e => { e.preventDefault(); selectCustomer(c.name, c.id); setCustomerSearch(''); setShowCustomerDropdown(false); }}
+                                        onMouseDown={e => { e.preventDefault(); selectCustomer(getCustomerOptionLabel(c), c.id); setCustomerSearch(''); setShowCustomerDropdown(false); }}
                                         className="w-full text-left px-[10px] py-[8px] text-[13px] text-[#23282A] hover:bg-[#eef7f6] transition-colors border-b border-[#E4DFD1]/50"
                                     >
                                         <div className="flex items-center justify-between">
-                                            <span className="truncate">{c.name}</span>
+                                            <span className="truncate">{getCustomerOptionLabel(c)}</span>
                                             {(c.balance || c.outstandingBalance) ? (
                                                 <span className={`ml-2 text-[11px] font-medium whitespace-nowrap ${(c.balance || c.outstandingBalance) > 0 ? 'text-red-500' : 'text-green-600'}`}>
                                                     {currency}{(c.balance || c.outstandingBalance).toLocaleString()}

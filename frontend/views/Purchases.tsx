@@ -15,6 +15,7 @@ import { SupplierPaymentModal } from './purchases/components/SupplierPaymentModa
 import { PurchaseReceiveModal } from './purchases/components/PurchaseReceiveModal';
 import { useLocation } from 'react-router-dom';
 import { generateNextId } from '../utils/helpers';
+import { resolvePoLineUnitCost, purchaseLineTotal } from '../services/purchaseCosting';
 import { ConfirmDialog, ConfirmDialogType } from '../components/ConfirmDialog';
 import { getDefaultDate, validateDateInFY } from '../utils/financialYearUtils';
 
@@ -66,14 +67,24 @@ const Purchases: React.FC = () => {
       const isEditing = !!editingPurchase?.id;
       const purchaseId = editingPurchase?.id || generateNextId('PO', purchases, companyConfig);
       const supplierId = data.supplierId || data.customerId || '';
-      const items = (data.items || []).map((item: any) => ({
-          itemId: item.itemId || item.productId || '',
-          name: item.name || item.itemName || '',
-          quantity: item.quantity || item.qty || 0,
-          cost: item.cost || item.price || 0,
-          receivedQty: 0,
-      }));
-      const totalAmount = data.totalAmount || data.total || items.reduce((sum: number, i: any) => sum + (i.quantity * i.cost), 0);
+      const items = (data.items || []).map((item: any) => {
+          // One actual purchase price across every alias: a manually entered
+          // supplier price (edited in the grid Price) resolves here instead
+          // of being silently replaced by the inventory default cost, so the
+          // PO form, details, document, totals, and receiving all agree.
+          const unitCost = resolvePoLineUnitCost(item);
+          return {
+              itemId: item.itemId || item.productId || '',
+              name: item.name || item.itemName || '',
+              quantity: item.quantity || item.qty || 0,
+              cost: unitCost,
+              cost_price: unitCost,
+              unitPrice: unitCost,
+              price: unitCost,
+              receivedQty: 0,
+          };
+      });
+      const totalAmount = data.totalAmount || data.total || items.reduce((sum: number, i: any) => sum + purchaseLineTotal(i), 0);
       const purchaseData: Purchase = {
           id: purchaseId,
           supplierId,

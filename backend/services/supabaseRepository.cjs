@@ -729,6 +729,15 @@ const entityQueries = {
     upsert: (record) => upsert('purchase_orders', record),
     softDelete: (id) => softDelete('purchase_orders', id),
   },
+  // PO line items: the `purchaseOrderItems` alias below resolves from this
+  // entry. Without it every backend PO-items call (createPurchase,
+  // getPurchaseItems, GRN ledger) throws on `undefined.upsert/getAll`.
+  purchase_order_items: {
+    getAll: (filters = {}) => getAll('purchase_order_items', filters),
+    getById: (id) => getById('purchase_order_items', id),
+    upsert: (record) => upsert('purchase_order_items', record),
+    softDelete: (id) => softDelete('purchase_order_items', id),
+  },
   goods_receipts: {
     getAll: (filters = {}) => getAll('goods_receipts', filters),
     getById: (id) => getById('goods_receipts', id),

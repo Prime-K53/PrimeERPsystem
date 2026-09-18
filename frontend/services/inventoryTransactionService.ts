@@ -199,11 +199,16 @@ class InventoryTransactionService {
       const newNormalizedCP = currentQuantity > 0
         ? ((currentCost * currentQuantity) + (unitCost * quantity)) / newQuantity
         : unitCost;
+      // Every cost alias carries the fresh average: resolveStoredCost reads
+      // cost_price/cost_per_unit BEFORE cost, so a stale alias would shadow
+      // it for PO defaults, POS snapshots, and sale CP.
       const updatedItem = {
         ...item,
         stock: newQuantity,
         normalizedCP: newNormalizedCP,
         cost: newNormalizedCP,
+        cost_price: newNormalizedCP,
+        cost_per_unit: newNormalizedCP,
         costPrice: newNormalizedCP,
       };
       await dbService.put('inventory', updatedItem);

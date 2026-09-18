@@ -9,6 +9,7 @@ import type { Referral, ReferralReward } from '../types/referral';
 import type { ServiceRecipe, ServiceJob, ServiceResource, ServiceConsumptionRecord } from '../types';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
 import type { PortalAd } from '../types/ads';
+import type { PurchaseLot } from '../types/inventory';
 import { calculateCustomerPaymentSnapshot } from './receiptCalculationService';
 
 import {
@@ -63,6 +64,9 @@ interface NexusDB extends DBSchema {
     warehouseInventory: { key: string; value: WarehouseInventory; };
     materialBatches: { key: string; value: MaterialBatch; };
     inventoryTransactions: { key: string; value: InventoryTransaction; };
+    // Receipt-level actual purchase costs (one lot per receive). Registered so
+    // recordPurchase()/FIFO can persist lots; local-only (no Supabase table).
+    purchaseLots: { key: string; value: PurchaseLot; };
     marketAdjustmentTransactions: { key: string; value: MarketAdjustmentTransaction; };
     batches: { key: string; value: ProductionBatch; };
     workOrders: { key: string; value: WorkOrder; };
@@ -189,7 +193,7 @@ const DB_NAME = 'PrimeERP_Final_v3_Clean';
 // v55: register the `engagementPromotions` store (PromotionsAdmin / PromotionsPanel / promotionPlugin).
 // v56: register the `statementSnapshots` store (immutable verifiable statement snapshots).
 // v57: register the `serviceRecipes`/`serviceJobs`/`serviceResources`/`serviceConsumptions` stores (service catalog execution).
-const DB_VERSION = 57;
+const DB_VERSION = 58;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -400,6 +404,10 @@ const LOCAL_ONLY_STORES = new Set([
   // (staff profiles live in `profiles`), so keep them local to avoid
   // 404s on /rest/v1/users from the background sync engine.
   'users',
+  // Purchase lots are local costing detail — no `purchase_lots` table exists
+  // in Supabase, so keep them local to avoid failed upserts from the
+  // background sync engine. The averaged master cost still syncs via products.
+  'purchaseLots',
 ]);
 
 interface PutOptions {
@@ -581,7 +589,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'schools',
     'classes', 'subjects',
     'customers', 'suppliers', 'supplierPayments',
-    'orders', 'materialReservations', 'materialCategories', 'warehouseInventory', 'materialBatches', 'inventoryTransactions',
+    'orders', 'materialReservations', 'materialCategories', 'warehouseInventory', 'materialBatches', 'inventoryTransactions', 'purchaseLots',
     'salesExchanges', 'salesExchangeItems', 'reprintJobs', 'salesExchangeApprovals', 'salesOrders',
     'vatTransactions', 'vatReturns', 'roundingLogs',
     'bankAccounts', 'bankTransactions', 'bankStatements', 'bankScheduledPayments',
