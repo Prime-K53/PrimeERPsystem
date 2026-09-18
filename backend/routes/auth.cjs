@@ -137,6 +137,105 @@ async function loginCustomer(res, user) {
   });
 }
 
+// Self-service company creation from the login page ("Create new company").
+// Public by design (no session exists yet); rate-limited at the mount point
+// (/api/auth shares the authLimiter bucket). The backend always provisions
+// the first user as an Admin — role/permissions are never accepted from the
+// client. Company config persistence is best-effort: the client's sync engine
+// uploads the full normalized config after signup, so a best-effort settings
+// row here must never fail the request.
+router.post('/register-company', validateBody(userSchemas.registerCompany), async (req, res) => {
+  try {
+    const {
+      companyName,
+      companyEmail,
+      companyPhone,
+      addressLine1,
+      city,
+      country,
+      currencySymbol,
+      adminFullName,
+      adminUsername,
+      adminEmail,
+      adminPassword,
+    } = req.body;
+
+    const normalizedEmail = String(adminEmail || '').toLowerCase().trim();
+    const normalizedUsername = String(adminUsername || '').trim();
+
+    // Duplicate check (best-effort when the store is unreachable).
+    try {
+      const repo = require('../services/supabaseRepository.cjs');
+      const existing = await repo.getAll('users');
+      const clash = (existing || []).find((r) => {
+        const d = r.data || r;
+        const email = String(d.email || '').toLowerCase().trim();
+        const username = String(d.username || '').trim().toLowerCase();
+        return (
+          (email && email === normalizedEmail) ||
+          (username && username === normalizedUsername.toLowerCase())
+        );
+      });
+      if (clash) {
+        return res.status(409).json({ error: 'An account with this email or username already exists' });
+      }
+    } catch {
+      // Non-fatal: continue to creation; persistence layer will enforce uniqueness.
+    }
+
+    const user = await authService.registerUser({
+      username: normalizedUsername,
+      email: normalizedEmail,
+      password: adminPassword,
+      role: 'Admin',
+      permissions: [],
+    });
+
+    const adminUser = {
+      ...user,
+      role: 'Admin',
+      full_name: String(adminFullName || '').trim(),
+    };
+
+    // Best-effort company workspace record. Never fails the request.
+    try {
+      const repo = require('../services/supabaseRepository.cjs');
+      const companyConfig = {
+        companyName: String(companyName || '').trim(),
+        email: companyEmail ? String(companyEmail).trim() : normalizedEmail,
+        phone: companyPhone ? String(companyPhone).trim() : '',
+        addressLine1: addressLine1 ? String(addressLine1).trim() : '',
+        city: city ? String(city).trim() : '',
+        country: country ? String(country).trim() : '',
+        currencySymbol: currencySymbol ? String(currencySymbol).trim() : 'K',
+        createdBy: adminUser.id,
+        createdAt: new Date().toISOString(),
+      };
+      await repo.upsert('settings', {
+        id: 'companyConfig',
+        key: 'companyConfig',
+        value: JSON.stringify(companyConfig),
+      });
+    } catch {
+      // Ignored — client sync uploads the full config after signup.
+    }
+
+    const token = generateToken({ ...adminUser });
+    res.status(201).json({
+      message: 'Company registered successfully',
+      user: adminUser,
+      token,
+      company: { name: String(companyName || '').trim() },
+    });
+  } catch (err) {
+    if (err && err.message === 'Username already exists') {
+      return res.status(409).json({ error: 'An account with this email or username already exists' });
+    }
+    console.error('[Auth] Register-company error:', err);
+    res.status(500).json({ error: 'Company registration failed' });
+  }
+});
+
 router.post('/request-verification', async (req, res) => {
   try {
     const { email } = req.body;

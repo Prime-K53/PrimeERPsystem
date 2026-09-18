@@ -70,3 +70,49 @@ export async function loginWithApi(payload: {
 
   return body as UnifiedLoginResponse;
 }
+
+export interface RegisterCompanyPayload {
+  companyName: string;
+  companyEmail?: string;
+  companyPhone?: string;
+  addressLine1?: string;
+  city?: string;
+  country?: string;
+  currencySymbol?: string;
+  adminFullName: string;
+  adminUsername: string;
+  adminEmail: string;
+  adminPassword: string;
+}
+
+export interface RegisterCompanyResponse {
+  message: string;
+  user: StaffUserInfo & { full_name?: string };
+  token: string;
+  company: { name: string };
+}
+
+/**
+ * Self-service company creation from the login page. Public endpoint —
+ * no session exists yet. The backend provisions the company workspace and
+ * its first Admin, returning a JWT for immediate sign-in.
+ */
+export async function registerCompany(payload: RegisterCompanyPayload): Promise<RegisterCompanyResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/register-company`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new ApiError(
+      body.message || body.error || `Company registration failed (${response.status})`,
+      response.status,
+      body
+    );
+  }
+
+  return body as RegisterCompanyResponse;
+}
