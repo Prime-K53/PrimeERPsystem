@@ -25,6 +25,7 @@ import { getPlaceholder } from '../../../constants/placeholders';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../../../utils/pricing';
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
 import { calculateLineProfit, resolveSaleLineCostPrice } from '../../../utils/saleProfit';
+import { buildAiOrderFormLine, withManualUnitPrice } from '../../../utils/aiOrderLine';
 import { isExpenseAccount, isIncomeAccount } from '../../../utils/accountType';
 import { getCustomerOptionLabel } from '../../../utils/customerDisplay';
 import { roundMoney } from '../../../utils/roundingUtils';
@@ -152,17 +153,20 @@ const resolveOrderFormLineCost = (item: CartItem, inventory: Item[]): number => 
     // The line's own CP wins: a manually entered purchase price (or a saved
     // sale snapshot) must not be replaced by the live master cost. The
     // master is only a fallback for lines carrying no stored CP.
-    const lineCost = Number((item as CartItem).cost) || 0;
+    // resolveStoredCost is the authoritative multi-alias CP resolver (also
+    // used by getInventoryPrices), so lines carrying cost_price/costPrice
+    // instead of cost resolve identically.
+    const lineCost = resolveStoredCost(item as any);
     if (lineCost > 0) return lineCost;
     if (item.serviceDetails) {
         return 0;
     }
-    const invItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
+    const invItem = inventory.find((i: Item) => i.id === ((item as any).productId || item.parentId || item.id));
     if (!invItem) return 0;
     const variant = item.parentId && invItem.variants
         ? invItem.variants.find((v: any) => v.id === item.id)
         : null;
-    return Number(variant ? (variant.cost || 0) : invItem.cost) || 0;
+    return resolveStoredCost(((variant || invItem) as any));
 };
 
 export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave, onCancel, onPreview, saving, onSaveSuccess }) => {
@@ -564,18 +568,20 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                         }
                     }
 
+                    // Canonical sales SP state: a manual price edit syncs every
+                    // SP alias (price/unitPrice/selling_price) so the grid,
+                    // the Amount cell, the saleProfit engine and the
+                    // pricing-breakdown snapshot all observe the same
+                    // selling price. CP aliases are deliberately untouched.
+                    const priced = withManualUnitPrice(entry, safePrice);
                     return {
-                        ...entry,
-                        price: safePrice,
-                        manual_override: true,
+                        ...priced,
                         // Purchase mode: the grid Price IS the supplier's
                         // actual purchase price, so it must flow into the
                         // cost fields that POs persist, print, and receive
                         // from. (Sales mode keeps price/cost separate.)
                         ...(type === 'Purchase'
                             ? {
-                                unitPrice: safePrice,
-                                selling_price: safePrice,
                                 calculated_price: safePrice,
                                 cost: safePrice,
                                 cost_price: safePrice,
@@ -583,13 +589,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                                 baseUnitPrice: safePrice,
                             }
                             : {}),
-                        serviceDetails: entry.serviceDetails
-                            ? {
-                                ...entry.serviceDetails,
-                                unitPricePerCopy: safePrice,
-                                totalPrice: safePrice * (Number(entry.quantity) || 1)
-                            }
-                            : entry.serviceDetails
+                        serviceDetails: priced.serviceDetails
                     };
                 })
                 : prev.items
@@ -848,18 +848,19 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             const lineTotal = (Number(item.price) || 0) * item.quantity;
             totalGross += lineTotal;
 
-            const invItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
+            const invItem = inventory.find((i: Item) => i.id === ((item as any).productId || item.parentId || item.id));
             // Actual-cost display economics: the line's own CP wins over the
             // live lookup so a manually entered purchase price (or a saved
             // snapshot) is never replaced by the current master cost. The
             // master is only a fallback for lines carrying no stored CP.
-            let itemCost = Number((item as CartItem).cost) || 0;
+            // resolveStoredCost is authoritative across cost aliases.
+            let itemCost = resolveStoredCost(item as any);
 
             if (itemCost <= 0 && !item.serviceDetails && invItem) {
                 const variant = item.parentId && invItem.variants
                     ? invItem.variants.find((v: any) => v.id === item.id)
                     : null;
-                itemCost = variant ? (variant.cost || 0) : invItem.cost;
+                itemCost = resolveStoredCost(((variant || invItem) as any));
             }
             totalCostPrice += itemCost * item.quantity;
 
@@ -2620,71 +2621,14 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                 <AIGeneratorCard
                                     type={type}
                                     onPopulate={(data) => {
-                                        const normalize = (s: string) => s.toLowerCase().replace(/s$/, '');
-                                        const matchedItems = data.items.map((item, idx) => {
-                                            const desc = item.description.toLowerCase();
-                                            const match = inventory.find((inv: any) => {
-                                                const invName = inv.name?.toLowerCase() || '';
-                                                return invName === desc ||
-                                                    invName.includes(desc) ||
-                                                    desc.includes(invName) ||
-                                                    normalize(invName) === normalize(desc) ||
-                                                    normalize(invName).includes(normalize(desc)) ||
-                                                    normalize(desc).includes(normalize(invName));
-                                            });
-                                            if (match) {
-                                                return {
-                                                    id: `AI-${Date.now()}-${idx}`,
-                                                    name: match.name,
-                                                    description: item.description,
-                                                    productId: match.id,
-                                                    sku: match.sku || '',
-                                                    quantity: item.quantity,
-                                                    price: item.unitPrice,
-                                                    unitPrice: item.unitPrice,
-                                                    cost: match.cost || 0,
-                                                    type: match.type || 'Service',
-                                                    category: match.category || 'Service',
-                                                    discount: 0,
-                                                    taxRate: item.taxRate,
-                                                    adjustmentSnapshots: [],
-                                                    lineTotalNet: item.quantity * item.unitPrice,
-                                                };
-                                            }
-                                            const similar = inventory.find((inv: any) => {
-                                                const a = inv.name?.toLowerCase() || '';
-                                                const words = desc.split(/\s+/);
-                                                for (const word of words) {
-                                                    if (word.length > 2 && a.includes(word)) return true;
-                                                    if (word.length > 2 && normalize(a).includes(normalize(word))) return true;
-                                                }
-                                                const invWords = a.split(/\s+/);
-                                                for (const w of invWords) {
-                                                    if (w.length > 2 && desc.includes(w)) return true;
-                                                    if (w.length > 2 && normalize(desc).includes(normalize(w))) return true;
-                                                }
-                                                return false;
-                                            });
-                                            return {
-                                                id: `AI-${Date.now()}-${idx}`,
-                                                name: similar ? similar.name : item.description,
-                                                description: similar
-                                                    ? `${item.description} was not found and was replaced with ${similar.name}`
-                                                    : item.description,
-                                                productId: similar?.id || '',
-                                                sku: similar?.sku || '',
-                                                quantity: item.quantity,
-                                                price: item.unitPrice,
-                                                unitPrice: item.unitPrice,
-                                                cost: similar?.cost || 0,
-                                                type: similar?.type || 'Service',
-                                                category: similar?.category || 'Service',
-                                                discount: 0,
-                                                taxRate: item.taxRate,
-                                                adjustmentSnapshots: [],
-                                                lineTotalNet: item.quantity * item.unitPrice,
-                                            };
-                                        });
+                                        // AI Invoice → Order Form boundary: every AI line
+                                        // is normalized to the canonical Order Form
+                                        // pricing state (authoritative CP/SP
+                                        // resolution) via buildAiOrderFormLine.
+                                        // AI never writes prices directly.
+                                        const matchedItems = data.items.map((item, idx) =>
+                                            buildAiOrderFormLine(item, inventory, idx),
+                                        );
                                         setFormData((prev: any) => ({
                                             ...prev,
                                             customerName: data.customer.name || prev.customerName,
