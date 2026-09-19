@@ -194,7 +194,6 @@ const CustomerCredentialRegeneration = lazyWithRetry('./views/tools/CustomerCred
 const MarketAdjustments = lazyWithRetry('./views/tools/MarketAdjustments', () => import('./views/tools/MarketAdjustments'));
 const SmartOperationsHub = lazyWithRetry('./views/SmartOperationsHub', () => import('./views/SmartOperationsHub'));
 const MarketingMessages = lazyWithRetry('./views/tools/MarketingMessages', () => import('./views/tools/MarketingMessages'));
-const SmartPricing = lazyWithRetry('./views/tools/SmartPricing', () => import('./views/tools/SmartPricing'));
 const PriceCards = lazyWithRetry('./views/tools/PriceCards', () => import('./views/tools/PriceCards'));
 const AdsManager = lazyWithRetry('./views/tools/AdsManager', () => import('./views/tools/AdsManager'));
 const FAQManager = lazyWithRetry('./views/tools/FAQManager', () => import('./views/tools/FAQManager'));
