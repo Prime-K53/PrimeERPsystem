@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '../config/api.js';
 import { getJsonRequestHeaders } from './requestHeaders';
 import { logger } from './logger';
+import { isSessionExpired, getStoredUserSession } from './authSession';
 
 /**
  * syncApiClient.ts — browser-side client for the backend sync gateway
@@ -121,6 +122,10 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
   }
   if (typeof fetch === 'undefined') {
     throw new Error('fetch is not available in this environment');
+  }
+  const storedUser = getStoredUserSession();
+  if (storedUser && isSessionExpired(storedUser)) {
+    throw new SyncAuthError('Sync gateway rejected the request (401) — session expired', 401);
   }
 
   logger.info('[SyncApiClient] sendSyncOps sending', { endpoint: SYNC_ENDPOINT, ops: ops.length });

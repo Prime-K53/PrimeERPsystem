@@ -31,7 +31,6 @@ import { getCustomerOptionLabel } from '../../../utils/customerDisplay';
 import { roundMoney } from '../../../utils/roundingUtils';
 import { displayPrice } from '../../../services/pricingDisplayService';
 import { resolveCustomerPrice, getApplicableDiscounts, applyDiscounts, incrementDiscountUsage, getCustomerPricingTier } from '../../../services/customerPricingService';
-import { calculateItemTax } from '../../../services/taxRateService';
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { getFifoUnitCost } from '../../../services/fifoCostService';
 import {
@@ -193,9 +192,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         id: '',
         date: new Date().toISOString().split('T')[0],
         dueDate: new Date().toISOString().split('T')[0],
-        customerName: '',
-        customerId: '',
-        subAccountName: 'Main',
+         customerName: '',
+         customerId: '',
+         subAccountName: 'Main',
          salesAccountId: type === 'Purchase' ? '51100' : '41100',
          items: [] as CartItem[],
         status: type === 'Invoice' ? 'Unpaid' : (type === 'Order' ? 'Pending' : 'Draft'),
@@ -904,8 +903,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         const rawDiscount = Number(formData.discount || 0);
         const discountAmount = formData.discountType === 'percentage' ? (rawDiscount / 100) * totalGross : rawDiscount;
 
-        const currentTaxRate = companyConfig?.taxRate || 0;
-        const taxAmount = (companyConfig?.enableTax) ? (totalGross - discountAmount) * (currentTaxRate / 100) : 0;
+        const currentTaxRate = 0;
+        const taxAmount = 0;
         const otherCharges = Number(formData.otherCharges) || 0;
         const calcOtherCharges = Number(calculatedOtherCharges) || 0;
         const subTotal = totalGross;
@@ -984,9 +983,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 id: fallbackId,
                 customerName: initialData.customerName || '',
                 customerId: initialData.customerId || '',
-                customerPricingTier: initialData.customerPricingTier || '',
-                customerPricingSegment: editSegment,
-                subAccountName: initialData.subAccountName || 'Main',
+                 customerPricingTier: initialData.customerPricingTier || '',
+                 customerPricingSegment: editSegment,
+                 subAccountName: initialData.subAccountName || 'Main',
                  salesAccountId: initialData.salesAccountId || (type === 'Purchase' ? '51100' : '41100'),
                 items: normalizedItems,
                 status: isRecurring
@@ -1170,22 +1169,13 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
             const baseItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
             const taxableAmount = lineTotal - discountAmount;
-            let taxAmount = 0;
-            let taxRate = companyConfig?.taxRate || 0;
-            let taxDetails: any = null;
-            if (companyConfig?.enableTax && baseItem) {
-                const effectiveUnitPrice = discountAmount > 0 && qty > 0 ? roundToCurrency(taxableAmount / qty) : unitPrice;
-                const taxResult = await calculateItemTax(baseItem, effectiveUnitPrice, qty, resolvedCustomerId);
-                taxAmount = taxResult?.taxAmount || 0;
-                taxRate = taxResult?.rate || taxRate;
-            }
 
             return {
                 ...item,
                 discount: discountAmount,
                 discountDetails,
-                taxAmount,
-                taxRate,
+                taxAmount: 0,
+                taxRate: 0,
                 taxableAmount,
                 taxDetails: null,
                 lineTotalNet: lineTotal - discountAmount
@@ -1197,13 +1187,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         const manualDiscount = formData.discountType === 'percentage' ? (rawManualDiscount / 100) * totalGross : rawManualDiscount;
         const ruleDiscount = processedItems.reduce((sum: number, i: any) => sum + (i.discount || 0), 0);
         const totalDiscount = manualDiscount + ruleDiscount;
-        const totalTax = processedItems.reduce((sum: number, i: any) => sum + (i.taxAmount || 0), 0);
+        const totalTax = 0;
         const otherCharges = Number(formData.otherCharges) || 0;
-        const preRoundTotal = totalGross - totalDiscount + totalTax + otherCharges + calculatedOtherCharges;
+        const preRoundTotal = totalGross - totalDiscount + otherCharges + calculatedOtherCharges;
         const { rounded: finalTotalAmount, difference: roundingDifference } = applyRoundingToTotal(preRoundTotal, formData.roundingMethod || 'Nearest');
-        const effectiveTaxRate = processedItems.length > 0
-            ? (totalTax / (totalGross - totalDiscount)) * 100
-            : 0;
+        const effectiveTaxRate = 0;
 
         const consumptionSnapshots: any[] = [];
 
@@ -2219,6 +2207,20 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 .order-form-scroll::-webkit-scrollbar-thumb { background: #72c0b7; border-radius: 10px; border: 2px solid #ede7db; background-clip: padding-box; }
 .order-form-scroll::-webkit-scrollbar-thumb:hover { background: #3fa294; }`;
 
+    const responsiveStyle = `@media (max-width: 768px) {
+  .order-form-grid {
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+    max-height: calc(100vh - 40px);
+  }
+  .order-form-sidebar {
+    border-right: none !important;
+    border-bottom: 1px solid #E4DFD1;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+}`;
+
     return (
         <div className="order-form-backdrop" style={{
             position: 'fixed', inset: 0, zIndex: 9999,
@@ -2227,6 +2229,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
             padding: '40px 20px', fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: '#23282A',
         }}>
             <style>{scrollStyle}</style>
+            <style>{responsiveStyle}</style>
             <div className="order-form-grid" style={{
                 width: '100%', maxWidth: 1040,
                 height: 'calc(100vh - 80px)',

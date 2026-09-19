@@ -400,6 +400,68 @@ router.get('/generation', async (req, res) => {
   }
 });
 
+// ─── record existence check (admin-only read) ─────────────────────────────────
+// Used by the ERP recovery tool to verify a canonical invoice record is absent
+// from the authoritative server before re-enqueuing the local mutation.
+// Returns `{ exists, record }` so the caller can decide whether to proceed.
+//
+// This is NOT a generic record reader: the table is constrained to the
+// minimum set the recovery tool actually needs (RECOVERY_READ_TABLES), not
+// the full sync write allow-list. Changing :table or :recordId in the URL can
+// never widen access beyond that set.
+
+// Minimum table set for the recovery existence check. Keep this narrow — do
+// not replace it with ALLOWED_TABLES.
+const RECOVERY_READ_TABLES = new Set(['invoices']);
+const MAX_RECORD_ID_LENGTH = 200;
+
+router.get('/ops/record/:table/:recordId', async (req, res) => {
+  try {
+    const hasUser = Boolean(req.user);
+    const callerRole = resolveAuthRole(req.user);
+    if (!hasUser || callerRole === 'anonymous' || callerRole === '') {
+      return res.status(401).json({
+        error: 'Unauthenticated',
+        message: 'Authentication required to read from the sync gateway.',
+      });
+    }
+    if (!roleIsAdmin(callerRole)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Sync gateway read requires an Admin.',
+      });
+    }
+
+    const { table, recordId } = req.params;
+
+    if (!VALID_TABLE_PATTERN.test(table)) {
+      return res.status(400).json({ error: `invalid table: ${table}` });
+    }
+    if (!RECOVERY_READ_TABLES.has(table)) {
+      return res.status(400).json({ error: `table not allowed: ${table}` });
+    }
+
+    // Express percent-decodes route params before they reach the handler,
+    // so `recordId` is already its final value — validate it directly and
+    // never decode a second time (a double-decode would reject legitimate
+    // ids containing a literal '%'). Un-decodable sequences never reach
+    // this handler: the router rejects them with a 400 first.
+    if (typeof recordId !== 'string' || recordId.length === 0 || recordId.length > MAX_RECORD_ID_LENGTH) {
+      return res.status(400).json({ error: 'invalid recordId' });
+    }
+
+    if (!cloudSyncStore.isConfigured()) {
+      return res.status(503).json({ error: 'Cloud database not configured' });
+    }
+
+    const row = await cloudSyncStore.getRow(table, recordId);
+    res.json({ exists: !!row, record: row });
+  } catch (err) {
+    console.error('[sync] GET /ops/record error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to check record existence' });
+  }
+});
+
 // ─── company reset (admin only) ───────────────────────────────────────────────
 
 router.post('/reset', async (req, res) => {

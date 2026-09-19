@@ -118,7 +118,7 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
       quantity: Number(newItem.quantity) || 1,
       unitPrice: Number(newItem.unitPrice) || 0,
       discount: Number(newItem.discount) || 0,
-      lineTotal: (Number(newItem.quantity) || 1) * (Number(newItem.unitPrice) || 0) - (Number(newItem.discount) || 0)
+      lineTotal: (Number(newItem.quantity) || 0) * (Number(newItem.unitPrice) || 0) - (Number(newItem.discount) || 0)
     };
 
     setOrder({

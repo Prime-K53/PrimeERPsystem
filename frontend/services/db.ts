@@ -199,17 +199,22 @@ let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
 const isRecoverableDbConnectionError = (error: unknown): boolean => {
     if (!(error instanceof Error)) return false;
-    if (error.name === 'VersionError' || error.name === 'InvalidStateError') return true;
+    if (error.name === 'VersionError') return true;
     if (error.name === 'AbortError') return true;
 
     const message = String(error.message || '').toLowerCase();
-    return message.includes('database connection is closing')
+    const isClosingMessage = message.includes('database connection is closing')
         || message.includes('connection is closing')
         || message.includes('connection is closed');
+
+    if (error.name === 'InvalidStateError' && isClosingMessage) return false;
+    if (error.name === 'InvalidStateError') return true;
+
+    return isClosingMessage;
 };
 
-const resetDbConnection = async (db?: IDBPDatabase<NexusDB> | null) => {
-    console.warn('[DB] resetDbConnection called!', new Error().stack);
+const resetDbConnection = async (db?: IDBPDatabase<NexusDB> | null, error?: unknown) => {
+    console.warn('[DB] resetDbConnection called!', error ?? '', new Error().stack);
     try {
         db?.close();
     } catch (err) {
@@ -232,7 +237,8 @@ const withDbRecovery = async <T>(operation: (db: IDBPDatabase<NexusDB>) => Promi
             }
 
             console.warn('[DB] Recovering from stale IndexedDB connection, reopening database...');
-            await resetDbConnection(db);
+            await resetDbConnection(db, error);
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
     }
 
@@ -1095,7 +1101,11 @@ export const dbService = {
                 }
                 return localValues;
             }
-        } catch { /* fall through */ }
+        } catch (error) {
+            if (isRecoverableDbConnectionError(error)) {
+                throw error;
+            }
+        }
 
         const all = (await getAllFromLegacyStore<T>(storeName)).filter(
             (item: any) => !item?.deletedAt

@@ -6,6 +6,8 @@ import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import { useAuth } from '../../../context/AuthContext';
 import { Quotation, Invoice, JobOrder, RecurringInvoice, DeliveryNote, CartItem, SalesExchange, Order } from '../../../types';
 import { AdminQuotationRequest } from '../../../services/adminPortalClient';
+import { recoverInvoiceToCloud } from '../../../services/invoiceRecoveryService';
+import { ConfirmDialog } from '../../../components/ConfirmDialog';
 import { WhatsAppLogo } from '../../../components/Icons';
 import { usePagination } from '../../../hooks/usePagination';
 import Pagination from '../../../components/Pagination';
@@ -408,10 +410,10 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                         <div className="my-1 border-t border-[#e4ddd1]"></div>
                         <button onClick={() => { setOpenMenuId(null); props.onDelete(order.id); }} className="w-full text-left px-4 py-2 text-xs text-[#b5493f] hover:bg-[#f5f2ed] flex items-center gap-3 transition-colors"><Trash2 size={14} /> Permanently Delete</button>
                     </>
-                )}
-            </div>
-        );
-    };
+            )}
+        </div>
+    );
+};
 
     return (
         <div className="flex flex-col h-full">
@@ -941,12 +943,39 @@ export const SalesSkeletonLoader: React.FC<{ type: 'table' | 'grid' }> = ({ type
 };
 
 export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
-    const { companyConfig, notify } = useAuth();
+    const { companyConfig, notify, user } = useAuth();
     const { handlePreview } = useDocumentPreview();
     const { openMenuId, menuPos, activeSubmenu, setActiveSubmenu, menuRef, handleContextMenu, handleRowClick, setOpenMenuId } = useContextMenu();
     const { hoveredId, hoverPos, onMouseEnter, onMouseMove, onMouseLeave } = useHoverTimer(2000);
     const location = useLocation();
     useHighlight();
+
+    const isAdminUser = useMemo(() => {
+        if (!user) return false;
+        const role = String(user.role || '').toLowerCase();
+        return role === 'admin' || role === 'company admin' || user.isSuperAdmin || role === 'manager';
+    }, [user]);
+
+    const [recoveringId, setRecoveringId] = useState<string | null>(null);
+    const [recoverConfirm, setRecoverConfirm] = useState<{ open: boolean; invoiceId: string }>({ open: false, invoiceId: '' });
+
+    const handleRecoverConfirm = async () => {
+        const invoiceId = recoverConfirm.invoiceId;
+        setRecoverConfirm({ open: false, invoiceId: '' });
+        setRecoveringId(invoiceId);
+        try {
+            const result = await recoverInvoiceToCloud(invoiceId);
+            if (result.success) {
+                notify(result.message, 'success');
+            } else {
+                notify(result.message, 'warning');
+            }
+        } catch (err) {
+            notify(`Recovery failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+        } finally {
+            setRecoveringId(null);
+        }
+    };
 
     const { currentItems, currentPage, maxPage, totalItems, next, prev, first, last, setItemsPerPage, itemsPerPage } = usePagination(props.data, props.viewMode === 'Card' ? CARD_ITEMS_PER_PAGE : LIST_ITEMS_PER_PAGE);
 
@@ -1037,6 +1066,20 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
                     </button>
 
                     <button onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(inv, 'duplicate'); }} className="w-full px-4 py-2 text-xs font-medium text-[#0b3e39] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"><Copy size={14} /> Duplicate</button>
+
+                    {isAdminUser && (
+                        <button
+                            onClick={() => {
+                                setOpenMenuId(null);
+                                setRecoverConfirm({ open: true, invoiceId: inv.id });
+                            }}
+                            disabled={recoveringId === inv.id}
+                            className="w-full px-4 py-2 text-xs font-medium text-[#1f8577] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors disabled:opacity-50"
+                        >
+                            <RefreshCw size={14} />
+                            Re-queue to Cloud
+                        </button>
+                    )}
 
                     <div className="my-1 border-t border-[#e4ddd1]"></div>
 
@@ -1214,6 +1257,16 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
                     <Pagination currentPage={currentPage} maxPage={maxPage} totalItems={totalItems} itemsPerPage={itemsPerPage} onNext={next} onPrev={prev} onFirst={first} onLast={last} onItemsPerPageChange={setItemsPerPage} />
                 </div>
             )}
+            <ConfirmDialog
+                open={recoverConfirm.open}
+                onOpenChange={(open) => setRecoverConfirm((c) => ({ ...c, open }))}
+                onConfirm={handleRecoverConfirm}
+                title="Re-queue Invoice to Cloud"
+                message="This re-queues the existing invoice record using the normal synchronization pipeline. It does not edit or recreate the invoice, and no payment or accounting transaction will be created. The operation will stop if the invoice already exists remotely."
+                confirmText="Re-queue"
+                cancelText="Cancel"
+                type="question"
+            />
         </div>
     );
 };
