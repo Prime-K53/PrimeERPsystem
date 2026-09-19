@@ -17,6 +17,7 @@ import { isStoredFileIdentifier } from '../../utils/documentPreview';
 import html2canvas from 'html2canvas';
 import QRCode from 'qrcode';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
 const amber = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f', 600: '#b97e2b' };
@@ -803,6 +804,7 @@ const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave
     if (!customerSearchTerm) return customers.slice(0, 10);
     const search = customerSearchTerm.toLowerCase();
     return customers.filter(c =>
+      getCustomerOptionLabel(c).toLowerCase().includes(search) ||
       c.name?.toLowerCase().includes(search) ||
       c.phone?.includes(search) ||
       c.email?.toLowerCase().includes(search)
@@ -813,7 +815,7 @@ const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave
     setFormData({
       ...formData,
       customerId: customer.id?.toString() || '',
-      customerName: customer.name || 'Walk-in',
+      customerName: getCustomerOptionLabel(customer),
       customerPhone: customer.phone || '',
     });
     setCustomerSearchTerm('');
@@ -960,7 +962,7 @@ const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave
                         }}
                       >
                         <div>
-                          <p style={{ fontWeight: 500, color: ink }}>{customer.name}</p>
+                          <p style={{ fontWeight: 500, color: ink }}>{getCustomerOptionLabel(customer)}</p>
                           {customer.phone && (
                             <p style={{ fontSize: 12, color: inkSoft }}>{customer.phone}</p>
                           )}

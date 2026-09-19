@@ -39,6 +39,7 @@ import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { generateVerificationToken } from '../../utils/documentVerification';
 import { dbService } from '../../services/db';
 import { generateNextId } from '../../utils/helpers';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { currencyService } from '../../services/currencyService';
 import { ConfirmDialog, ConfirmDialogType } from '../ConfirmDialog';
 import {
@@ -1112,7 +1113,7 @@ const PrintingContractsView: React.FC = () => {
   const money = (v: number) => `${currency}${num(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
   const partyOptions = useMemo(() => {
     const map = new Map<string, string>();
-    for (const c of customers || []) map.set(String(c.id), (c as Customer).name || String(c.id));
+    for (const c of customers || []) map.set(String(c.id), getCustomerOptionLabel(c as Customer));
     for (const s of schools || []) if (!map.has(String(s.id))) map.set(String(s.id), s.name || String(s.id));
     return [...map.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [customers, schools]);
@@ -1367,7 +1368,7 @@ const PrintingContractsView: React.FC = () => {
               <select value={formDraft.customer_id} onChange={e => setFormDraft({ ...formDraft, customer_id: e.target.value })}
                 style={contractSelectStyle}>
                 <option value="">Select customer…</option>
-                {(customers || []).map((c: Customer) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {(customers || []).map((c: Customer) => <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>)}
               </select>
             </div>
             <div>
@@ -1378,7 +1379,7 @@ const PrintingContractsView: React.FC = () => {
                 style={contractSelectStyle}>
                 <option value="">Select school…</option>
                 {schools.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-                {(customers || []).map((c: Customer) => <option key={`c-${c.id}`} value={c.id}>{c.name} (client)</option>)}
+                {(customers || []).map((c: Customer) => <option key={`c-${c.id}`} value={c.id}>{getCustomerOptionLabel(c)} (client)</option>)}
               </select>
             </div>
             <div>

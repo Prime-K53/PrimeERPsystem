@@ -10,6 +10,8 @@ if (typeof window !== 'undefined') {
 import './index.css';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+// Development-only DevTools diagnostics bridge (no-op in production builds).
+import './utils/devDiagnostics';
 
 const canRegisterServiceWorker = () => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {

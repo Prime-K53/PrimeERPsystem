@@ -10,6 +10,7 @@ import { Customer } from '../../types';
 import { dbService } from '../../services/db';
 import { toast } from '../../components/Toast';
 import { getPlaceholder } from '../../constants/placeholders';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { format, addDays } from 'date-fns';
 
 const teal: Record<string, string> = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -106,7 +107,7 @@ const ExaminationBatchForm: React.FC = () => {
       return [];
     }
     return [...customers].sort((a, b) =>
-      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+      getCustomerOptionLabel(a).localeCompare(getCustomerOptionLabel(b), undefined, { sensitivity: 'base' })
     );
   }, [customers]);
 
@@ -120,6 +121,7 @@ const ExaminationBatchForm: React.FC = () => {
     const q = customerSearch.toLowerCase();
     return sortedCustomers.filter(
       (c) =>
+        getCustomerOptionLabel(c).toLowerCase().includes(q) ||
         c.name?.toLowerCase().includes(q) ||
         c.email?.toLowerCase().includes(q) ||
         c.phone?.toLowerCase().includes(q)
@@ -340,7 +342,7 @@ const ExaminationBatchForm: React.FC = () => {
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer.name}</span>
+                                <span style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getCustomerOptionLabel(customer)}</span>
                                 {hasSubAccounts && (
                                   <span style={{
                                     display: 'inline-flex', alignItems: 'center', gap: 4,

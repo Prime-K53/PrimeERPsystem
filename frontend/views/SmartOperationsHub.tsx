@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, Calculator, MessageSquare, Gift, BadgePercent, Megaphone, HelpCircle, Tag } from 'lucide-react';
+import { TrendingUp, MessageSquare, Gift, BadgePercent, Megaphone, HelpCircle, Tag } from 'lucide-react';
 import GenericHub from './GenericHub';
 
 const SmartOperationsHub: React.FC = () => {
@@ -9,13 +9,6 @@ const SmartOperationsHub: React.FC = () => {
       description: 'Manage global cost layers, inflation adjustments, and logistics surcharges.',
       path: '/smart-operations/adjustments',
       icon: <TrendingUp />,
-      color: 'bg-blue-50 text-blue-600'
-    },
-    {
-      label: 'Smart Pricing Engine',
-      description: 'Calculate item prices with market adjustments and generate revenue reports.',
-      path: '/smart-operations/pricing',
-      icon: <Calculator />,
       color: 'bg-blue-50 text-blue-600'
     },
     {

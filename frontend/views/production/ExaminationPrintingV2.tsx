@@ -22,6 +22,7 @@ import {
   ExaminationRoundingRuleType
 } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 
 type JobRow = ExaminationJob & { subjects: ExaminationJobSubject[] };
 type EditingSubjectInput = {
@@ -835,7 +836,7 @@ const ExaminationPrintingV2: React.FC = () => {
   }, [jobs, groups, profiles]);
 
   const reportingBySchool = useMemo(() => {
-    const customerNames = new Map(customers.map(customer => [customer.id, customer.name]));
+    const customerNames = new Map(customers.map(customer => [customer.id, getCustomerOptionLabel(customer)]));
     const schoolMap = new Map<string, {
       school_id: string;
       school_name: string;
@@ -990,7 +991,7 @@ const ExaminationPrintingV2: React.FC = () => {
                     className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
                   >
                     <option value="">Select school</option>
-                    {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {customers.map(c => <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>)}
                   </select>
                 </label>
                 <label className="text-sm font-medium text-slate-700">Class
@@ -1176,7 +1177,7 @@ const ExaminationPrintingV2: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <label className="text-sm font-medium text-slate-700">School
                     <select id="job-school" name="job_school" disabled={isReadOnly} value={editingJob.school_id} onChange={e => setJobField('school_id', e.target.value)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
-                      {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {customers.map(c => <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>)}
                     </select>
                   </label>
                   <label className="text-sm font-medium text-slate-700">Class
@@ -1410,7 +1411,7 @@ const ExaminationPrintingV2: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <select id="group-school-id" name="group_school_id" value={groupSchoolId} onChange={e => setGroupSchoolId(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 text-sm">
                 <option value="">Select school</option>
-                {customers.map(customer => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
+                {customers.map(customer => <option key={customer.id} value={customer.id}>{getCustomerOptionLabel(customer)}</option>)}
               </select>
               <button onClick={handleCreateGroupFromSelection} className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold">Create Group</button>
               <button onClick={handleRunRecurring} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold">Run Recurring Cycle</button>

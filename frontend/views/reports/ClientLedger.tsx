@@ -9,6 +9,7 @@ import {
   Building2, Phone, Mail
 } from 'lucide-react';
 import { currencyService } from '../../services/currencyService';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { paymentCredit } from '../../services/customerLedger';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useDocumentStore } from '../../stores/documentStore';
@@ -205,7 +206,7 @@ const ClientLedger: React.FC = () => {
               <select value={selectedCustomerId} onChange={(e) => { setSelectedCustomerId(e.target.value); setSelectedSubAccountNames([]); }}
                 style={{ ...baseInput, paddingLeft: 36, background: teal[50], cursor: 'pointer' }} className="prime-select">
                 <option value="">Select a customer</option>
-                {customers.map((c: any) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                {customers.map((c: any) => (<option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>))}
               </select>
               <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, pointerEvents: 'none' }} />
             </div>

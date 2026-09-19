@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSales } from '../../context/SalesContext';
 import { useSalesOrderStore } from '../../stores/salesOrderStore';
 import { useAuth } from '../../context/AuthContext';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import type { SalesOrderItem, SalesOrder } from '../../types';
 import { CheckCircle, Printer, X } from 'lucide-react';
 
@@ -80,6 +81,7 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
     if (!searchTerm) return customers || [];
     const term = searchTerm.toLowerCase();
     return (customers || []).filter((c: any) =>
+      getCustomerOptionLabel(c).toLowerCase().includes(term) ||
       c.name?.toLowerCase().includes(term) ||
       c.id?.toLowerCase().includes(term) ||
       c.phone?.includes(term)
@@ -98,7 +100,7 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
       warning = `Credit limit ${limit} will be exceeded (${willBe}).`;
     }
     setOrder({ ...order, customerId: customer.id, _creditWarning: warning });
-    setSearchTerm(customer.name || customer.id);
+    setSearchTerm(getCustomerOptionLabel(customer));
     setShowDropdown(false);
   };
 
@@ -229,7 +231,7 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
                   onMouseDown={() => selectCustomer(c)}
                   style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #eee' }}
                 >
-                  {c.name} ({c.id}) {c.creditHold ? '⚠️ HOLD' : ''}
+                  {getCustomerOptionLabel(c)} ({c.id}) {c.creditHold ? '⚠️ HOLD' : ''}
                 </li>
               ))}
               {filteredCustomers.length === 0 && (

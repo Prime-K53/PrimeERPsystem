@@ -18,6 +18,7 @@ import { isMarketAdjustmentActive } from '../../../utils/marketAdjustmentSemanti
 import { normalizeStoredPricing, resolveStoredSellingPrice } from '../../../utils/pricing';
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { getPlaceholder } from '../../../constants/placeholders';
+import { getCustomerOptionLabel } from '../../../utils/customerDisplay';
 
 const teal: Record<string, string> = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
 const amber: Record<string, string> = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f', 600: '#b97e2b' };
@@ -629,7 +630,9 @@ export const CustomerModal: React.FC<{
     const customerNames = useMemo(() => {
         const names = new Set<string>();
         customers?.forEach(c => {
-            if (c.name) names.add(c.name);
+            // Business Name — never the contact name.
+            const label = getCustomerOptionLabel(c);
+            if (label && label !== 'Unknown customer') names.add(label);
         });
         invoices?.forEach(inv => {
             if (inv.customerName) names.add(inv.customerName);

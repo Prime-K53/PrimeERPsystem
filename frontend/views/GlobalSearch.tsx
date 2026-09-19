@@ -8,6 +8,7 @@ import { useSales } from '../context/SalesContext';
 import { useInventory } from '../context/InventoryContext';
 import { useProcurement } from '../context/ProcurementContext';
 import { askBusinessQuestion } from '../services/geminiService';
+import { getCustomerOptionLabel } from '../utils/customerDisplay';
 import ReactMarkdown from 'react-markdown';
 
 const toSafeNumber = (val: any): number => {
@@ -45,7 +46,7 @@ const GlobalSearch: React.FC = () => {
 
         const noResults = !inventory.some(i => String(i.name || '').toLowerCase().includes(query.toLowerCase()) || String(i.sku || '').toLowerCase().includes(query.toLowerCase())) &&
                           !sales.some(s => String(s.id || '').toLowerCase().includes(query.toLowerCase()) || String(s.customerName || '').toLowerCase().includes(query.toLowerCase())) &&
-                          ![...customers, ...suppliers].some(c => String(c.name || '').toLowerCase().includes(query.toLowerCase()) || String(c.contact || '').toLowerCase().includes(query.toLowerCase()) || String(c.email || '').toLowerCase().includes(query.toLowerCase())) &&
+                          ![...customers, ...suppliers].some(c => getCustomerOptionLabel(c).toLowerCase().includes(query.toLowerCase()) || String(c.name || '').toLowerCase().includes(query.toLowerCase()) || String(c.contact || '').toLowerCase().includes(query.toLowerCase()) || String(c.email || '').toLowerCase().includes(query.toLowerCase())) &&
                           !purchases.some(p => String(p.id || '').toLowerCase().includes(query.toLowerCase()) || String(p.supplierId || '').toLowerCase().includes(query.toLowerCase()));
         if (isQuestion || noResults) {
             setIsAiLoading(true);
@@ -53,7 +54,7 @@ const GlobalSearch: React.FC = () => {
                 const context = {
                     inventory: safe(inventory.map(i => ({ id: i.id, name: i.name, sku: i.sku, type: i.type, category: i.category, cost: i.cost, price: i.price, stock: i.stock, minStockLevel: i.minStockLevel }))),
                     sales: safe(sales.map(s => ({ id: s.id, date: s.date, customerName: s.customerName, totalAmount: s.totalAmount, status: s.status, items: s.items?.map((it: any) => ({ productId: it.productId, name: it.name, quantity: it.quantity, price: it.price, cost: it.cost })) }))),
-                    customers: safe(customers.map(c => ({ id: c.id, name: c.name, email: c.phone, segment: c.segment, creditLimit: c.creditLimit, outstandingBalance: c.outstandingBalance }))),
+                    customers: safe(customers.map(c => ({ id: c.id, name: getCustomerOptionLabel(c), email: c.phone, segment: c.segment, creditLimit: c.creditLimit, outstandingBalance: c.outstandingBalance }))),
                     suppliers: safe(suppliers.map(s => ({ id: s.id, name: s.name, email: s.email, phone: s.phone, category: s.category }))),
                     purchases: safe(purchases.map(p => ({ id: p.id, supplierId: p.supplierId, totalAmount: p.totalAmount, date: p.date, status: p.status, items: p.items?.map((it: any) => ({ productId: it.productId, name: it.name, quantity: it.quantity, price: it.price, cost: it.cost })) }))),
                 };
@@ -87,8 +88,9 @@ const GlobalSearch: React.FC = () => {
                 String(s.id || '').toLowerCase().includes(lowerQuery) || 
                 String(s.customerName || '').toLowerCase().includes(lowerQuery)
             ),
-            contacts: [...customers, ...suppliers].filter(c => 
-                String(c.name || '').toLowerCase().includes(lowerQuery) || 
+            contacts: [...customers, ...suppliers].filter(c =>
+                getCustomerOptionLabel(c).toLowerCase().includes(lowerQuery) ||
+                String(c.name || '').toLowerCase().includes(lowerQuery) ||
                 String(c.contact || '').toLowerCase().includes(lowerQuery) ||
                 String(c.email || '').toLowerCase().includes(lowerQuery)
             ),
@@ -233,10 +235,10 @@ const GlobalSearch: React.FC = () => {
                     content: (
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
-                                {contact.name.charAt(0)}
+                                {getCustomerOptionLabel(contact).charAt(0)}
                             </div>
                             <div>
-                                <div className="font-bold text-slate-800 text-sm">{contact.name}</div>
+                                <div className="font-bold text-slate-800 text-sm">{getCustomerOptionLabel(contact)}</div>
                                 <div className="text-xs text-slate-500">{contact.contact}</div>
                             </div>
                         </div>

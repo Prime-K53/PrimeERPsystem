@@ -18,6 +18,7 @@ import { AccountType, LedgerEntry, Account } from '../../types';
 import { isEquityAccount, isExpenseAccount, isIncomeAccount, isLiabilityAccount } from '../../utils/accountType';
 import { format, startOfYear, endOfYear, startOfMonth, endOfMonth, isWithinInterval, parseISO, isBefore, isAfter, differenceInDays } from 'date-fns';
 import { exportToCSV } from '../../services/excelService';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { currencyService } from '../../services/currencyService';
 import { getCanonicalAccountType, computeTrialBalance, isPostedLedgerEntry } from '../../services/accountingEngine';
@@ -1097,7 +1098,7 @@ const FinancialReports: React.FC = () => {
                                                 >
                                                     <option value="">All Customers</option>
                                                     {customers.map(c => (
-                                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                                        <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>
                                                     ))}
                                                 </select>
                                                 {selectedCustomerId && (

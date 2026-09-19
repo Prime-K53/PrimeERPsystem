@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wrench, CreditCard, Barcode, Upload, MessageSquare, TrendingUp, Database, Package, FileText, Activity, Key } from 'lucide-react';
+import { Wrench, CreditCard, Barcode, Upload, TrendingUp, Package, Key } from 'lucide-react';
 import GenericHub from './GenericHub';
 
 const InternalToolsHub: React.FC = () => {
@@ -26,39 +26,11 @@ const InternalToolsHub: React.FC = () => {
       color: 'bg-emerald-50 text-emerald-500'
     },
     {
-      label: 'Chat hub',
-      description: 'Internal team communication and real-time support messaging.',
-      path: '/internal-tools/chat',
-      icon: <MessageSquare />,
-      color: 'bg-amber-50 text-amber-500'
-    },
-    {
-      label: 'Legacy Migration',
-      description: 'Populate productType, inventoryRole, and Variant data from legacy Item records.',
-      path: '/internal-tools/legacy-migration',
-      icon: <Database />,
-      color: 'bg-amber-50 text-amber-500'
-    },
-    {
       label: 'Asset Management',
       description: 'Track printers, vehicles, equipment, and other physical assets.',
       path: '/internal-tools/assets',
       icon: <Package />,
       color: 'bg-indigo-50 text-indigo-500'
-    },
-    {
-      label: 'Document Templates',
-      description: 'Design custom document layouts for invoices, receipts, and reports.',
-      path: '/internal-tools/template-builder',
-      icon: <FileText />,
-      color: 'bg-purple-50 text-purple-500'
-    },
-    {
-      label: 'API Usage Monitor',
-      description: 'Monitor API consumption, rate limits, latency, and error rates.',
-      path: '/internal-tools/api-usage',
-      icon: <Activity />,
-      color: 'bg-rose-50 text-rose-500'
     },
     {
       label: 'Customer Credentials',

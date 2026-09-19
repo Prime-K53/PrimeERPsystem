@@ -953,7 +953,15 @@ router.post('/users/auto-create', async (req, res) => {
     }
 
     const password = crypto.randomBytes(9).toString('base64url');
-    const generatedEmail = await derivePortalEmail(name, customer_id, null, new Set());
+    // Business name is non-negotiable: prefer the stored customer business
+    // identity over the caller-supplied name (which may be a contact name).
+    const storedForEmail = await repoCanonical.getById('customers', customer_id).catch(() => null);
+    const generatedEmail = await derivePortalEmail(
+      storedCustomerBusinessName(storedForEmail, name),
+      customer_id,
+      null,
+      new Set()
+    );
     const user = await portalAuthService.registerPortalUser({
       customer_id,
       email: generatedEmail,
@@ -1060,15 +1068,58 @@ const PORTAL_EMAIL_TITLE_WORDS = new Set([
   'rev', 'hon', 'capt', 'col', 'gen', 'lord', 'lady', 'chief',
 ]);
 
+// BUSINESS identity for portal login emails — NON-NEGOTIABLE.
+// Portal login emails are always derived from the BUSINESS name, never from
+// a contact/person name (no initials, no first-names). Contact fields
+// (contact_name, contactName, full_name) are deliberately never read here,
+// so a person name can never leak into the local part — even if a caller
+// passes one in.
+function resolvePortalEmailBusinessName(source) {
+  const pick = (...vals) => {
+    for (const v of vals) {
+      const s = String(v ?? '').trim();
+      if (s) return s;
+    }
+    return '';
+  };
+  if (source && typeof source === 'object' && !Array.isArray(source)) {
+    return pick(
+      source.business_name,
+      source.businessName,
+      source.company_name,
+      source.companyName,
+      source.name
+    );
+  }
+  return pick(source);
+}
+
+// Business name from a stored customer envelope (flattened row or { data }).
+// `fallbackName` is a last resort only (used when no stored business name
+// exists); stored business identity always wins over caller-supplied input.
+function storedCustomerBusinessName(customer, fallbackName) {
+  const d = customer && customer.data && typeof customer.data === 'object' ? customer.data : {};
+  return resolvePortalEmailBusinessName({
+    business_name: customer?.business_name ?? d.business_name,
+    businessName: customer?.businessName ?? d.businessName,
+    company_name: customer?.company_name ?? d.company_name,
+    companyName: customer?.companyName ?? d.companyName,
+    name: fallbackName ?? customer?.name ?? d.name,
+  });
+}
+
 // Derive a stable, recognizable portal login email for a customer. The local
-// part is a SINGLE name word (the first non-title word, e.g. "Example
-// Company" -> example@prime.mw). When the base collides with another
-// account, the last 3 digits of the customer number are appended
-// (e.g. example052@prime.mw for customer …052), then an incrementing suffix
-// — checked against both the current batch (usedEmails) and the portal user
-// store. excludeUserId lets an existing customer keep their own email.
-async function derivePortalEmail(name, customerId, excludeUserId, usedEmails) {
-  const safe = String(name || '').toLowerCase().trim();
+// part is a SINGLE business-name word of length >= 2 (the first non-title
+// word, e.g. "Example Company" -> example@prime.mw). Single-character words
+// are never emitted alone (they read as initials): they are fused with the
+// next word (e.g. "A Banda Traders" -> abanda@prime.mw). When the base
+// collides with another account, the last 3 digits of the customer number
+// are appended (e.g. example052@prime.mw for customer …052), then an
+// incrementing suffix — checked against both the current batch (usedEmails)
+// and the portal user store. excludeUserId lets an existing customer keep
+// their own email.
+async function derivePortalEmail(businessName, customerId, excludeUserId, usedEmails) {
+  const safe = String(resolvePortalEmailBusinessName(businessName) || '').toLowerCase().trim();
   const words = safe.split(/[^a-z0-9]+/).filter((w) => w && !PORTAL_EMAIL_TITLE_WORDS.has(w));
 
   const digitTail = String(customerId || '').replace(/\D/g, '').slice(-3);
@@ -1076,8 +1127,12 @@ async function derivePortalEmail(name, customerId, excludeUserId, usedEmails) {
   let base;
   if (words.length === 0) {
     base = `customer-${String(customerId).toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-  } else {
+  } else if (words[0].length >= 2) {
     base = words[0];
+  } else if (words.length >= 2) {
+    base = `${words[0]}${words[1]}`;
+  } else {
+    base = `customer-${String(customerId).toLowerCase().replace(/[^a-z0-9]/g, '')}`;
   }
 
   let attempt = 0;
@@ -1118,7 +1173,8 @@ router.post('/customers/bulk-regenerate', async (req, res) => {
     const usedEmails = new Set();
     for (const c of customers) {
       const customerId = c.id;
-      const name = c.name || '';
+      // Business name is non-negotiable — never derive from a contact name.
+      const name = storedCustomerBusinessName(c, c.name || '');
       try {
         let portalUser = await portalAuthService.getPortalUserByCustomerId(customerId);
         let created = false;
@@ -1187,7 +1243,9 @@ router.post('/customers/:customerId/regenerate-credentials', async (req, res) =>
     const customer = (await repoCanonical.getAll('customers'))?.find((c) => c.id === customerId);
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-    const customerName = name || customer.business_name || customer.name || '';
+    // Business name is non-negotiable: stored business identity wins over the
+    // request-supplied name (which may be a contact name) on renames.
+    const customerName = storedCustomerBusinessName(customer, name || customer.business_name || customer.name || '');
     const portalUser = await portalAuthService.getPortalUserByCustomerId(customerId);
 
     if (!portalUser) {

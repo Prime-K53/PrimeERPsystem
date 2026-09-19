@@ -17,6 +17,7 @@ import { aiService, SmartReplySuggestion, AIConfig } from '../../services/aiServ
 import { whatsappClient, WhatsAppAccount } from '../../services/whatsappClientService';
 import { currencyService } from '../../services/currencyService';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 
 interface CampaignFormData {
   name: string;
@@ -1437,14 +1438,14 @@ const MarketingMessages: React.FC = () => {
                       <input className="prime-input" type="text" value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="Search customers..." style={{ width: '100%', padding: '8px 12px 8px 36px', border: `1.4px solid ${hairline}`, borderRadius: 9, fontSize: 13, color: ink, background: '#fff', outline: 'none', lineHeight: 1.4, fontFamily: "'Inter','DM Sans',sans-serif", boxSizing: 'border-box' }} />
                     </div>
                     <div style={{ maxHeight: 120, overflow: 'auto', border: `1px solid ${hairline}`, borderRadius: 9, background: paper }}>
-                      {customers.filter((c: any) => c.name?.toLowerCase().includes(customerSearch.toLowerCase()) || c.phone?.includes(customerSearch)).map((customer: any) => (
+                      {customers.filter((c: any) => getCustomerOptionLabel(c).toLowerCase().includes(customerSearch.toLowerCase()) || c.name?.toLowerCase().includes(customerSearch.toLowerCase()) || c.phone?.includes(customerSearch)).map((customer: any) => (
                         <label key={customer.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, cursor: 'pointer', borderBottom: `1px solid ${hairline}` }}
                           onMouseEnter={e => e.currentTarget.style.background = t[50]}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
                           <input type="checkbox" checked={selectedCustomerIds.includes(customer.id)} onChange={(e) => { if (e.target.checked) { setSelectedCustomerIds(prev => [...prev, customer.id]); } else { setSelectedCustomerIds(prev => prev.filter(id => id !== customer.id)); } }} style={{ accentColor: dt[500], width: 16, height: 16 }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ fontSize: 13, fontWeight: 600, color: ink, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer.name}</p>
+                            <p style={{ fontSize: 13, fontWeight: 600, color: ink, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getCustomerOptionLabel(customer)}</p>
                             <p style={{ fontSize: 12, color: inkSoft, margin: 0 }}>{customer.phone || 'No phone'}</p>
                           </div>
                         </label>

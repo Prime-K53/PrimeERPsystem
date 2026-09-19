@@ -1,5 +1,6 @@
 import React from 'react';
 import { Search, Filter, X, ChevronDown } from 'lucide-react';
+import { getCustomerOptionLabel } from '../utils/customerDisplay';
 
 export interface FilterOption {
     value: string;
@@ -159,7 +160,11 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
 };
 
 // Common filter configurations
-export const getInvoiceFilters = (customers: { id: string; name: string }[]): FilterConfig[] => [
+// Customer labels are ALWAYS the Business Name (never contact name).
+type CustomerFilterInput = { id: string; name?: string | null; businessName?: string | null; companyName?: string | null };
+const customerOptions = (customers: CustomerFilterInput[]) =>
+    customers.map(c => ({ value: c.id, label: getCustomerOptionLabel(c) }));
+export const getInvoiceFilters = (customers: CustomerFilterInput[]): FilterConfig[] => [
     { key: 'status', label: 'Status', type: 'select', options: [
         { value: 'Draft', label: 'Draft' },
         { value: 'Unpaid', label: 'Unpaid' },
@@ -168,11 +173,11 @@ export const getInvoiceFilters = (customers: { id: string; name: string }[]): Fi
         { value: 'Overdue', label: 'Overdue' },
         { value: 'Cancelled', label: 'Cancelled' }
     ]},
-    { key: 'customer', label: 'Customer', type: 'select', options: customers.map(c => ({ value: c.id, label: c.name })), placeholder: 'All Customers' },
+    { key: 'customer', label: 'Customer', type: 'select', options: customerOptions(customers), placeholder: 'All Customers' },
     { key: 'date', label: 'Date Range', type: 'dateRange' }
 ];
 
-export const getQuotationFilters = (customers: { id: string; name: string }[]): FilterConfig[] => [
+export const getQuotationFilters = (customers: CustomerFilterInput[]): FilterConfig[] => [
     { key: 'status', label: 'Status', type: 'select', options: [
         { value: 'Draft', label: 'Draft' },
         { value: 'Sent', label: 'Sent' },
@@ -181,18 +186,18 @@ export const getQuotationFilters = (customers: { id: string; name: string }[]): 
         { value: 'Expired', label: 'Expired' },
         { value: 'Converted', label: 'Converted' }
     ]},
-    { key: 'customer', label: 'Customer', type: 'select', options: customers.map(c => ({ value: c.id, label: c.name })), placeholder: 'All Customers' },
+    { key: 'customer', label: 'Customer', type: 'select', options: customerOptions(customers), placeholder: 'All Customers' },
     { key: 'date', label: 'Date Range', type: 'dateRange' }
 ];
 
-export const getOrdersFilters = (customers: { id: string; name: string }[]): FilterConfig[] => [
+export const getOrdersFilters = (customers: CustomerFilterInput[]): FilterConfig[] => [
     { key: 'status', label: 'Status', type: 'select', options: [
         { value: 'Pending', label: 'Pending' },
         { value: 'Processing', label: 'Processing' },
         { value: 'Completed', label: 'Completed' },
         { value: 'Cancelled', label: 'Cancelled' }
     ]},
-    { key: 'customer', label: 'Customer', type: 'select', options: customers.map(c => ({ value: c.id, label: c.name })), placeholder: 'All Customers' },
+    { key: 'customer', label: 'Customer', type: 'select', options: customerOptions(customers), placeholder: 'All Customers' },
     { key: 'date', label: 'Date Range', type: 'dateRange' }
 ];
 
@@ -226,7 +231,7 @@ export const getSubscriptionFilters = (): FilterConfig[] => [
     ]}
 ];
 
-export const getPaymentFilters = (customers: { id: string; name: string }[]): FilterConfig[] => [
+export const getPaymentFilters = (customers: CustomerFilterInput[]): FilterConfig[] => [
     { key: 'method', label: 'Payment Method', type: 'select', options: [
         { value: 'Cash', label: 'Cash' },
         { value: 'Card', label: 'Card' },
@@ -234,7 +239,7 @@ export const getPaymentFilters = (customers: { id: string; name: string }[]): Fi
         { value: 'Mobile Money', label: 'Mobile Money' },
         { value: 'Wallet', label: 'Wallet' }
     ]},
-    { key: 'customer', label: 'Customer', type: 'select', options: customers.map(c => ({ value: c.id, label: c.name })), placeholder: 'All Customers' },
+    { key: 'customer', label: 'Customer', type: 'select', options: customerOptions(customers), placeholder: 'All Customers' },
     { key: 'date', label: 'Date Range', type: 'dateRange' }
 ];
 

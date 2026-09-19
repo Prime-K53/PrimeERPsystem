@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { BOMComponent } from '../../types';
 import { OfflineImage } from '../../components/OfflineImage';
 import { bomService } from '../../services/bomService';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1';
 
@@ -119,7 +120,7 @@ const NewBatch: React.FC = () => {
       date: new Date().toISOString(),
       bomId: selectedBom.id,
       customerId: selectedCustomerId || undefined,
-      customerName: selectedCustomer?.name || undefined,
+      customerName: (selectedCustomer ? getCustomerOptionLabel(selectedCustomer) : '') || undefined,
       productName: selectedVariant ? selectedVariant.name : selectedBom.productName,
       quantityProduced: quantity,
       unitCost,
@@ -166,12 +167,12 @@ const NewBatch: React.FC = () => {
                   >
                     <option value="">-- No customer linked --</option>
                     {(customers || []).map((c: any) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+                      <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>
                     ))}
                   </select>
                   {selectedCustomer && (
                     <div className="flex items-center gap-1 mt-1 text-[11px] text-blue-600">
-                      <Users size={12} /> Producing for: {selectedCustomer.name}
+                      <Users size={12} /> Producing for: {getCustomerOptionLabel(selectedCustomer)}
                     </div>
                   )}
                 </div>

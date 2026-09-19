@@ -20,7 +20,7 @@ const CustomerCredentialRegeneration: React.FC = () => {
         if (running) return;
         setConfirmState({
             open: true, title: 'Regenerate ALL customer credentials',
-            message: 'This overwrites every customer\'s portal login email with the standard derived address (e.g. name@prime.mw) and issues a non‑expiring invitation code. Customers without a portal account will be created (invited).\n\nTheir old login email will stop working immediately. This cannot be undone.\n\nContinue?',
+            message: 'This overwrites every customer\'s portal login email with the standard derived address (e.g. acme@prime.mw — always derived from the Business Name, never a contact name) and issues a non‑expiring invitation code. Customers without a portal account will be created (invited).\n\nTheir old login email will stop working immediately. This cannot be undone.\n\nContinue?',
             type: 'warning', confirmText: 'Regenerate All',
             onConfirm: async () => {
                 setRunning(true); setResult(null); setError(null);

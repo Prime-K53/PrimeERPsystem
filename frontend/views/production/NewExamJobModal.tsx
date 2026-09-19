@@ -48,6 +48,7 @@ import { FinancialDoc } from '../shared/components/PDF/schemas';
 import { MarketAdjustment, BOMTemplate, ExamPricingResult, SubjectJob, ProductionSettingsConfig,
   ExamSchoolLocal as School, ExamClassLocal as Class, ExamSubjectLocal as Subject, ExamPaper as Examination } from '../../types';
 import { dbService } from '../../services/db';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { SafeFormulaEngine } from '../../services/formulaEngine';
 import { inventoryTransactionService } from '../../services/inventoryTransactionService';
 import {
@@ -640,7 +641,7 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
                 >
                   <option value="">Select Customer</option>
                   {customers.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>
                   ))}
                 </select>
               </div>

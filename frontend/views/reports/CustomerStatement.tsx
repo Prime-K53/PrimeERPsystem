@@ -9,6 +9,7 @@ import {
   Clock, FileText, X, Info, Download, Send
 } from 'lucide-react';
 import { currencyService } from '../../services/currencyService';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import {
   buildLedgerFromRecords,
   type LedgerTransaction,
@@ -517,7 +518,7 @@ const CustomerStatement: React.FC = () => {
               >
                 <option value="">Select customer...</option>
                 {customers.map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>
                 ))}
               </select>
               <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />

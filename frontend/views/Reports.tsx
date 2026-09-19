@@ -31,6 +31,7 @@ import BusinessHealthReport from './reports/BusinessHealthReport';
 import WalletStatement from './reports/WalletStatement';
 import CustomerStatement from './reports/CustomerStatement';
 import { currencyService } from '../services/currencyService';
+import { getCustomerOptionLabel } from '../utils/customerDisplay';
 import { getRevenueSourceLabel } from '../services/revenueAnalysisService';
 const teal={50:'#eef7f6',100:'#d3ece9',200:'#a6d9d3',300:'#72c0b7',400:'#3fa294',500:'#1f8577',600:'#146b60',700:'#0f544c',800:'#0b3e39',900:'#082e2a'};
 const amber={100:'#fbead0',300:'#eec27a',500:'#d99a3f',600:'#b97e2b'};
@@ -443,7 +444,7 @@ const Reports: React.FC = () => {
                     >
                       <option value="">All customers</option>
                       {customers.map((customer: any) => (
-                        <option key={customer.id} value={customer.id}>{customer.name}</option>
+                        <option key={customer.id} value={customer.id}>{getCustomerOptionLabel(customer)}</option>
                       ))}
                     </select>
 

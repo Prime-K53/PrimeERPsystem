@@ -140,7 +140,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
             { label: 'Clients', path: '/sales-flow/clients', icon: <UserPlus size={14} /> },
             { label: 'Suppliers', path: '/procurement/suppliers', icon: <Users size={14} /> },
             { label: 'Task Manager', path: '/sales-flow/tasks', icon: <CheckSquare size={14} /> },
-            { label: 'CRM Comms', path: '/internal-tools/chat', icon: <MessageSquare size={14} /> },
             { label: 'Portal Users', path: '/portal/users', icon: <Shield size={14} /> },
           ]
         },
@@ -213,7 +212,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           hideSubMenu: true,
           subItems: [
             { label: 'Market Adjustments', path: '/smart-operations/adjustments', icon: <TrendingUp size={14} /> },
-            { label: 'Smart Pricing Engine', path: '/smart-operations/pricing', icon: <Calculator size={14} /> },
             { label: 'Marketing Messages', path: '/smart-operations/messages', icon: <MessageSquare size={14} /> },
             { label: 'Price Cards', path: '/smart-operations/price-cards', icon: <Tag size={14} /> },
             { label: 'Referrals', path: '/smart-operations/referrals', icon: <Gift size={14} /> },

@@ -668,21 +668,52 @@ function toAdminDto(row) {
 }
 
 /**
- * Derive a stable portal login email for a customer. Mirrors the
- * portalAdmin.derivePortalEmail algorithm: first non-title word of
- * the company name @ prime.mw, with digit-tail and incrementing
- * suffix disambiguation.
+ * BUSINESS identity for portal login emails — NON-NEGOTIABLE.
+ * Portal login emails are always derived from the BUSINESS name, never from
+ * a contact/person name (no initials, no first-names). Contact fields are
+ * deliberately never read here.
  */
-async function derivePortalEmail(name, customerId) {
+function resolvePortalEmailBusinessName(source) {
+  const pick = (...vals) => {
+    for (const v of vals) {
+      const s = String(v ?? '').trim();
+      if (s) return s;
+    }
+    return '';
+  };
+  if (source && typeof source === 'object' && !Array.isArray(source)) {
+    return pick(
+      source.business_name,
+      source.businessName,
+      source.company_name,
+      source.companyName,
+      source.name
+    );
+  }
+  return pick(source);
+}
+
+/**
+ * Derive a stable portal login email for a customer. Mirrors the
+ * portalAdmin.derivePortalEmail algorithm: first non-title word of length
+ * >= 2 of the BUSINESS name @ prime.mw (single-character words are fused
+ * with the next word so initials are never emitted), with digit-tail and
+ * incrementing suffix disambiguation.
+ */
+async function derivePortalEmail(businessName, customerId) {
   const portalAuth = getPortalAuthService();
-  const safe = String(name || '').toLowerCase().trim();
+  const safe = String(resolvePortalEmailBusinessName(businessName) || '').toLowerCase().trim();
   const words = safe.split(/[^a-z0-9]+/).filter((w) => w && !PORTAL_EMAIL_TITLE_WORDS.has(w));
   const digitTail = String(customerId || '').replace(/\D/g, '').slice(-3);
   let base;
   if (words.length === 0) {
     base = `customer-${String(customerId || '').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-  } else {
+  } else if (words[0].length >= 2) {
     base = words[0];
+  } else if (words.length >= 2) {
+    base = `${words[0]}${words[1]}`;
+  } else {
+    base = `customer-${String(customerId || '').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
   }
   let attempt = 0;
   for (;;) {
@@ -888,4 +919,5 @@ module.exports = {
   approveRequest,
   toPublicDto,
   toAdminDto,
+  resolvePortalEmailBusinessName,
 };

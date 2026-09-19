@@ -394,6 +394,7 @@ const AppLayout: React.FC = () => {
   } = useSales();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
 
   useEffect(() => {
     const theme = companyConfig?.appearance?.theme || 'Light';
@@ -490,6 +491,7 @@ const AppLayout: React.FC = () => {
             onOpenSidebar={() => setSidebarOpen(true)}
             onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
             sidebarCollapsed={sidebarCollapsed}
+            onOpenMessages={() => setIsWhatsAppModalOpen(true)}
           />
         </div>
         <main className="app-content-scroll flex-1 min-h-0 overflow-auto relative custom-scrollbar">
@@ -692,7 +694,6 @@ const AppLayout: React.FC = () => {
                 <Route element={<ErrorBoundary name="Smart Operations"><Outlet /></ErrorBoundary>}>
                   <Route path="/smart-operations" element={<SmartOperationsHub />} />
                   <Route path="/smart-operations/adjustments" element={<MarketAdjustments />} />
-                  <Route path="/smart-operations/pricing" element={<SmartPricing />} />
                   <Route path="/smart-operations/messages" element={<MarketingMessages />} />
                   <Route path="/smart-operations/price-cards" element={<PriceCards />} />
                   <Route path="/smart-operations/ads" element={<ProtectedRoute permission="admin.settings"><AdsManager /></ProtectedRoute>} />

@@ -15,6 +15,7 @@ import { useDocumentVerificationLink } from '../../hooks/useDocumentVerification
 import { ClientModal } from './components/ClientModal';
 import { DocLink } from '../../components/DocLink';
 import { generateNextId, roundFinancial } from '../../utils/helpers';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils';
 import { useProcurement } from '../../context/ProcurementContext';
 import { useBankingStore } from '../../context/BankingContext';
@@ -1252,6 +1253,7 @@ const Payments: React.FC = () => {
         const term = (customerSearchTerm || '').toLowerCase().trim();
         if (!term) return customers || [];
         return (customers || []).filter((c: any) =>
+            getCustomerOptionLabel(c).toLowerCase().includes(term) ||
             (c.name || '').toLowerCase().includes(term) ||
             (c.id || '').toLowerCase().includes(term) ||
             (c.phone || '').toLowerCase().includes(term)
@@ -1563,7 +1565,7 @@ const Payments: React.FC = () => {
                                                                     type="button"
                                                                     onMouseDown={e => {
                                                                         e.preventDefault();
-                                                                        setFormData({ ...formData, customerName: c.name, customerId: c.id, subAccountName: 'Main' });
+                                                                        setFormData({ ...formData, customerName: getCustomerOptionLabel(c), customerId: c.id, subAccountName: 'Main' });
                                                                         setAllocations([]);
                                                                         setCustomerSearchTerm('');
                                                                         setShowCustomerDropdown(false);
@@ -1572,7 +1574,7 @@ const Payments: React.FC = () => {
                                                                     onMouseEnter={e => { e.currentTarget.style.background = '#eef7f6'; }}
                                                                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                                                                 >
-                                                                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.name}</span>
+                                                                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{getCustomerOptionLabel(c)}</span>
                                                                     {(c.balance || c.outstandingBalance) ? (
                                                                         <span style={{ marginLeft:8, fontSize:11, fontWeight:600, whiteSpace:'nowrap', color: (Number(c.balance || c.outstandingBalance) > 0) ? '#b5493f' : '#1f8577' }}>
                                                                             {currency}{(Number(c.balance || c.outstandingBalance)).toLocaleString()}

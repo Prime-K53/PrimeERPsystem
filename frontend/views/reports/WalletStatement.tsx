@@ -9,6 +9,7 @@ import {
   AlertCircle, CheckCircle, Clock, CreditCard, Landmark, ChevronDown
 } from 'lucide-react';
 import { currencyService } from '../../services/currencyService';
+import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { exportToCSV } from '../../utils/helpers';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -171,7 +172,7 @@ const WalletStatement: React.FC = () => {
           style={{ ...inputStyle, maxWidth: 300, marginTop: 8, cursor: 'pointer', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235c6567'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', paddingRight: 30 }}
           className="prime-select">
           <option value="">Choose a customer...</option>
-          {customers.map((c: any) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+          {customers.map((c: any) => (<option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>))}
         </select>
       </div>
     );

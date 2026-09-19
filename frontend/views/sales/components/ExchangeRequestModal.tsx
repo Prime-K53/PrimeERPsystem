@@ -9,6 +9,7 @@ import { useFinanceStore } from '../../../stores/financeStore';
 import { useAuth } from '../../../context/AuthContext';
 import { Sale, SalesExchange, SalesExchangeItem } from '../../../types';
 import { format } from 'date-fns';
+import { getCustomerOptionLabel } from '../../../utils/customerDisplay';
 
 interface ExchangeRequestModalProps {
   onClose: () => void;
@@ -68,7 +69,8 @@ export const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({ onCl
   const filteredResults = useMemo(() => {
     if (!searchTerm) return { invoices: [], customers: [] };
     const searchLower = searchTerm.toLowerCase();
-    const matchedCustomers = customers.filter(c => 
+    const matchedCustomers = customers.filter(c =>
+      getCustomerOptionLabel(c).toLowerCase().includes(searchLower) ||
       (c.name || '').toLowerCase().includes(searchLower) ||
       (c.email || '').toLowerCase().includes(searchLower) ||
       (c.phone || '').toLowerCase().includes(searchLower)
@@ -97,7 +99,7 @@ export const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({ onCl
 
   const handleSelectCustomer = (customer: any) => {
     setSelectedCustomer(customer);
-    setSearchTerm(customer.name);
+    setSearchTerm(getCustomerOptionLabel(customer));
     setShowDropdown(false);
   };
 
@@ -248,10 +250,10 @@ export const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({ onCl
                             className="flex items-center space-x-3 p-3 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors"
                           >
                             <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold text-xs">
-                              {customer.name.charAt(0)}
+                              {getCustomerOptionLabel(customer).charAt(0)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="text-sm font-bold text-gray-900 truncate">{customer.name}</div>
+                              <div className="text-sm font-bold text-gray-900 truncate">{getCustomerOptionLabel(customer)}</div>
                               <div className="text-[11px] text-gray-500 truncate">{customer.email || customer.phone || 'No contact info'}</div>
                             </div>
                           </div>
@@ -297,7 +299,7 @@ export const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({ onCl
                     </div>
                     <div>
                       <div className="text-xs text-indigo-600 font-semibold uppercase tracking-wider">Filtering by Customer</div>
-                      <div className="font-bold text-indigo-900">{selectedCustomer.name}</div>
+                      <div className="font-bold text-indigo-900">{getCustomerOptionLabel(selectedCustomer)}</div>
                     </div>
                   </div>
                   <button 

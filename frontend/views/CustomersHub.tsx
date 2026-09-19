@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Users, UserPlus, CheckSquare, MessageSquare, Shield } from 'lucide-react';
+import { Users, UserPlus, CheckSquare, Shield } from 'lucide-react';
 import GenericHub from './GenericHub';
 import { useData, REFRESH_INTERVAL } from '../context/DataContext';
 import { useModuleRefresh } from '../hooks/useModuleRefresh';
@@ -39,13 +39,6 @@ const CustomersHub: React.FC = () => {
       path: '/sales-flow/tasks',
       icon: <CheckSquare />,
       color: 'bg-emerald-50 text-emerald-600'
-    },
-    {
-      label: 'CRM Comms',
-      description: 'Automated SMS/Email marketing and customer relationship management.',
-      path: '/internal-tools/chat',
-      icon: <MessageSquare />,
-      color: 'bg-amber-50 text-amber-500'
     }
   ];
 
