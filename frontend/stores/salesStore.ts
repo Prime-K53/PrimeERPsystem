@@ -168,44 +168,20 @@ export const useSalesStore = create<SalesState>((set, get) => ({
   },
 
   addQuotation: async (quotation) => {
-    const newQuotation = { ...quotation, id: quotation.id || generateNextId('QTN', get().quotations) };
-    const prev = get().quotations;
-    set(state => ({ quotations: [...state.quotations, newQuotation] }));
-    try {
-      await api.sales.saveQuotation(newQuotation);
-    } catch (error) {
-      set({ quotations: prev });
-      throw error;
-    }
-    if (newQuotation.customerPhone) {
-      await customerNotificationService.triggerNotification('QUOTATION', {
-        id: newQuotation.id,
-        customerName: newQuotation.customerName,
-        phoneNumber: newQuotation.customerPhone,
-        amount: newQuotation.total ? `${newQuotation.currency || 'KES'} ${Number(newQuotation.total).toLocaleString()}` : '',
-      });
-    }
-    return newQuotation;
+    const { useQuotationStore } = await import('./quotationStore');
+    const result = await useQuotationStore.getState().addQuotation(quotation);
+    set({ quotations: useQuotationStore.getState().quotations });
+    return result;
   },
   updateQuotation: async (quotation) => {
-    const prev = get().quotations;
-    set(state => ({ quotations: state.quotations.map(q => q.id === quotation.id ? quotation : q) }));
-    try {
-      await api.sales.saveQuotation(quotation);
-    } catch (error) {
-      set({ quotations: prev });
-      throw error;
-    }
+    const { useQuotationStore } = await import('./quotationStore');
+    await useQuotationStore.getState().updateQuotation(quotation);
+    set({ quotations: useQuotationStore.getState().quotations });
   },
   deleteQuotation: async (id) => {
-    const prev = get().quotations;
-    set(state => ({ quotations: state.quotations.filter(q => q.id !== id) }));
-    try {
-      await api.sales.deleteQuotation(id);
-    } catch (error) {
-      set({ quotations: prev });
-      throw error;
-    }
+    const { useQuotationStore } = await import('./quotationStore');
+    await useQuotationStore.getState().deleteQuotation(id);
+    set({ quotations: useQuotationStore.getState().quotations });
   },
 
   addJobOrder: async (jobOrder) => {
@@ -347,40 +323,64 @@ addCustomerPayment: async (payment) => {
   },
 
   addCustomer: async (customer, options = {}): Promise<PortalCredentials | null> => {
-    const newCustomer = { ...customer, id: customer.id || generateCustomerId(get().customers) };
+    // Id collision guard: regenerate if exists
+    let newId = customer.id || generateCustomerId(get().customers);
+    while (get().customers.some(c => c.id === newId)) newId = generateCustomerId(get().customers);
+    const newCustomer = { ...customer, id: newId };
     const prev = get().customers;
     set(state => ({ customers: [...state.customers, newCustomer] }));
     try {
       await api.customers.save(newCustomer);
       let credentials: PortalCredentials | null = null;
-      try {
-        const portalAccount = await adminLifecycle.users.autoCreate({
-          customer_id: newCustomer.id,
-          name: newCustomer.name,
-          email: newCustomer.email,
-          phone: newCustomer.phone,
-          invite: options.invite,
-        });
-        if (portalAccount?.user) {
-          const isInvite = options.invite && !!portalAccount.invite_code;
-          credentials = {
-            email: portalAccount.user.email,
-            password: isInvite ? null : portalAccount.generated_password,
-            inviteCode: portalAccount.invite_code ?? null,
-            userId: portalAccount.user.id,
-          };
-          const enriched = {
-            ...newCustomer,
-            portalUserId: portalAccount.user.id,
-            portalEmail: portalAccount.user.email,
-            portalStatus: portalAccount.user.status || (isInvite ? 'invited' : 'active'),
-          };
-          set(state => ({ customers: state.customers.map(c => c.id === enriched.id ? enriched : c) }));
-          await api.customers.save(enriched).catch(() => {});
+      const attemptPortal = async (retries = 2): Promise<void> => {
+        for (let i = 0; i <= retries; i++) {
+          try {
+            const portalAccount = await adminLifecycle.users.autoCreate({
+              customer_id: newCustomer.id,
+              name: newCustomer.name,
+              email: newCustomer.email,
+              phone: newCustomer.phone,
+              invite: options.invite,
+            });
+            if (portalAccount?.user) {
+              const isInvite = options.invite && !!portalAccount.invite_code;
+              credentials = {
+                email: portalAccount.user.email,
+                password: isInvite ? null : portalAccount.generated_password,
+                inviteCode: portalAccount.invite_code ?? null,
+                userId: portalAccount.user.id,
+              };
+              const enriched = {
+                ...newCustomer,
+                portalUserId: portalAccount.user.id,
+                portalEmail: portalAccount.user.email,
+                portalStatus: portalAccount.user.status || (isInvite ? 'invited' : 'active'),
+              };
+              set(state => ({ customers: state.customers.map(c => c.id === enriched.id ? enriched : c) }));
+              await api.customers.save(enriched).catch(() => {});
+            }
+            return;
+          } catch (portalErr: any) {
+            const isLast = i === retries;
+            logger.warn(`Portal provisioning attempt ${i+1} failed for ${newCustomer.id}:`, portalErr?.message || portalErr);
+            if (isLast) {
+              // Offline queue: persist for background retry, do not block customer creation
+              try {
+                const q = JSON.parse(localStorage.getItem('portal:retryQueue') || '[]');
+                q.push({ customerId: newCustomer.id, ts: Date.now(), invite: !!options.invite });
+                localStorage.setItem('portal:retryQueue', JSON.stringify(q.slice(-50)));
+              } catch {}
+              // Mark pending_retry so UI can show retry CTA
+              const pending = { ...newCustomer, portalStatus: 'pending_retry' as const };
+              set(state => ({ customers: state.customers.map(c => c.id === pending.id ? pending : c) }));
+              await api.customers.save(pending).catch(()=>{});
+            } else {
+              await new Promise(r => setTimeout(r, 300 * Math.pow(2, i)));
+            }
+          }
         }
-      } catch (portalErr: any) {
-        console.warn(`Portal provisioning skipped for ${newCustomer.id}:`, portalErr?.message || portalErr);
-      }
+      };
+      await attemptPortal();
       return credentials;
     } catch (error) {
       set({ customers: prev });

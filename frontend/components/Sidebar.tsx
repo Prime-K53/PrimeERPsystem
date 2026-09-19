@@ -382,16 +382,26 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
   }, []);
 
   const filteredGroups = useMemo(() => {
-    if (!searchQuery.trim()) return menuGroups;
+    // Role gate — bulletproof: hide sensitive modules from non-admin, but never block navigation via URL (server enforces)
+    const isPrivileged = !!(user?.isSuperAdmin || String(user?.role || '').toLowerCase().includes('admin'));
+    const adminOnlyItems = new Set(['AI Workspace','Fiscal Reports','Payroll Engine','Year-End Closing','Smart Operations']);
+    let groups = menuGroups.map(g => ({
+      ...g,
+      items: g.items.filter(item => {
+        if (adminOnlyItems.has(item.label) && !isPrivileged) return false;
+        return true;
+      })
+    })).filter(g => g.items.length > 0);
+    if (!searchQuery.trim()) return groups;
     const q = searchQuery.toLowerCase();
-    return menuGroups.map(g => ({
+    return groups.map(g => ({
       ...g,
       items: g.items.filter(item =>
         item.label.toLowerCase().includes(q) ||
         item.subItems?.some(s => s.label.toLowerCase().includes(q))
       )
     })).filter(g => g.items.length > 0);
-  }, [menuGroups, searchQuery]);
+  }, [menuGroups, searchQuery, user]);
 
   return (
     <aside className={`
