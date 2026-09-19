@@ -50,6 +50,10 @@ const TABLES = {
     { id: 'STMT-G001', data: { id: 'STMT-G001', statementNumber: 'STMT-G001', statementDate: '2026-09-12', periodStart: '2026-08-01', periodEnd: '2026-08-31', customerId: 'CUST-1', customerName: 'Stmt School', email: 'private@example.com', phone: '+265000', currency: 'MWK', openingBalance: 100, transactions: [{ date: '2026-08-05', reference: 'INV-1', debit: 500, credit: 0, runningBalance: 600 }], totalInvoiced: 500, totalReceived: 200, closingBalance: 400, status: 'VALID', verificationToken: TOK } },
     { id: 'STMT-G002', data: { id: 'STMT-G002', statementNumber: 'STMT-G002', statementDate: '2026-08-12', periodStart: '2026-07-01', periodEnd: '2026-07-31', customerId: 'CUST-1', customerName: 'Stmt School', currency: 'MWK', openingBalance: 0, transactions: [], totalInvoiced: 0, totalReceived: 0, closingBalance: 0, status: 'SUPERSEDED', supersededBy: 'STMT-G001', verificationToken: TOK } },
   ],
+  assessment_contracts: [
+    { data: { id: 'c-g001', contract_number: 'PC-G001', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Contract School', currency: 'MWK', prepaid_amount: 5000, status: 'active', verificationToken: TOK } },
+    { data: { id: 'c-g002', contract_number: 'PC-G002', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Void School', currency: 'MWK', prepaid_amount: 1000, status: 'cancelled', verificationToken: TOK } },
+  ],
 };
 
 function startStub() {
@@ -191,6 +195,44 @@ describe('generic document verification', () => {
     assert.equal(res.body.status, 'Delivered');
   });
 
+  it('printing contract verifies with safe contract shape', async () => {
+    const res = await request(app).get(good('printing_contract', 'PC-G001', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.verified, true);
+    assert.equal(res.body.documentType, 'printing_contract');
+    assert.equal(res.body.contractNumber, 'PC-G001');
+    assert.equal(res.body.customerName, 'Contract School');
+    assert.equal(res.body.prepaidTotal, 5000);
+    assert.equal(res.body.status, 'ACTIVE');
+  });
+
+  it('hyphenated QR slugs verify (printing-contract, sales-order)', async () => {
+    const hyphen = await request(app).get(good('printing-contract', 'PC-G001', TOK));
+    assert.equal(hyphen.status, 200);
+    assert.equal(hyphen.body.contractNumber, 'PC-G001');
+    const so = await request(app).get(good('sales-order', 'SO-G001', TOK));
+    assert.equal(so.status, 200);
+    assert.equal(so.body.orderNumber, 'SO-G001');
+  });
+
+  it('cancelled printing contract verifies as authentic with CANCELLED status', async () => {
+    const res = await request(app).get(good('printing_contract', 'PC-G002', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.verified, true);
+    assert.equal(res.body.status, 'CANCELLED');
+  });
+
+  it('printing contract rejects wrong token and wrong number', async () => {
+    const badTok = await request(app).get(good('printing_contract', 'PC-G001', BAD));
+    assert.equal(badTok.status, 404);
+    const badNum = await request(app).get(good('printing_contract', 'PC-9999', TOK));
+    assert.equal(badNum.status, 404);
+    for (const r of [badTok, badNum]) {
+      assert.equal(r.body.verified, false);
+      assert.ok(!JSON.stringify(r.body).includes(TOK));
+    }
+  });
+
   it('unknown type, missing/wrong token, wrong number all 404 generic', async () => {
     const bad1 = await request(app).get(good('nope', 'INV-G001', TOK));
     assert.equal(bad1.status, 404);
@@ -231,6 +273,7 @@ describe('generic document verification', () => {
       'quotationNumber', 'quotationDate', 'orderNumber', 'orderDate', 'purchaseOrderNumber',
       'deliveryNoteNumber', 'deliveryDate', 'paymentNumber', 'paymentDate',
       'statementNumber', 'statementDate', 'statementPeriodStart', 'statementPeriodEnd',
+      'contractNumber', 'contractDate', 'prepaidTotal',
       'companyName', 'customerName', 'supplierName',
       'currency', 'subtotal', 'tax', 'total', 'amount', 'amountPaid', 'balanceDue',
       'openingBalance', 'totalInvoiced', 'totalReceived', 'closingBalance',
@@ -240,7 +283,7 @@ describe('generic document verification', () => {
     const cases = [
       ['invoice', 'INV-G001'], ['receipt', 'PAY-G001'], ['quotation', 'QTN-G001'],
       ['sales_order', 'SO-G001'], ['purchase_order', 'PO-G001'], ['delivery_note', 'DN-G001'],
-      ['supplier_payment', 'SPAY-G001'], ['statement', 'STMT-G001'],
+      ['supplier_payment', 'SPAY-G001'], ['statement', 'STMT-G001'], ['printing_contract', 'PC-G001'],
     ];
     for (const [type, num] of cases) {
       const res = await request(app).get(good(type, num, TOK));

@@ -3188,6 +3188,20 @@ export interface AssessmentContract {
   payment_status?: 'pending' | 'verified' | 'failed' | 'refunded';
   payment_verified_at?: string;
   wallet_credit_applied_at?: string;
+  /**
+   * Permanent public-verification token (cryptographically random hex).
+   * Issued once at creation (backfilled on first document generation for
+   * legacy rows), never regenerated; the contract QR encodes a
+   * verification URL carrying this token. Syncs inside the record envelope
+   * like any other contract field.
+   */
+  verificationToken?: string;
+  /**
+   * Denormalized customer display name (set at creation, refreshed on
+   * edit) so public verification can name the counterparty without a
+   * second lookup. Staleness accepted — same convention as receipts.
+   */
+  customerName?: string;
   notes?: string;
   terms?: string;
   created_by?: string;

@@ -29,6 +29,8 @@ const verifiableTypeForDocType = (docType: string): string | undefined => {
         case 'ACCOUNT_STATEMENT':
         case 'ACCOUNT_STATEMENT_SUMMARY':
             return 'statement';
+        case 'PRINTING_CONTRACT':
+            return 'printing_contract';
         default:
             return undefined;
     }

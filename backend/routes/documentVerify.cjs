@@ -15,7 +15,9 @@ const router = express.Router();
 // Express decodes %2F, so slash-bearing numbers (INV-P726/023) arrive intact.
 router.get('/verify/:documentType/:documentNumber', async (req, res) => {
   try {
-    const type = String(req.params.documentType || '').toLowerCase().trim();
+    // URL slugs use hyphens (sales-order, printing-contract); the registry
+    // uses underscores. Normalize here so hyphenated QR links verify.
+    const type = String(req.params.documentType || '').toLowerCase().trim().replace(/-/g, '_');
     if (!supportedDocumentTypes().includes(type)) {
       return res.status(404).json({ verified: false, error: GENERIC_FAILURE });
     }

@@ -130,6 +130,7 @@ describe('all supported document types use the Portal origin', () => {
     delivery_note: { dnNumber: 'DN-P726/001' },
     supplier_payment: { documentType: 'supplier_payment', paymentId: 'SPAY-P726/001', supplierName: 'Paper Supplier' },
     statement: { documentType: 'statement', statementNumber: 'STMT-P726-001' },
+    printing_contract: { documentType: 'printing_contract', contractNumber: 'PC-P726/001' },
   };
 
   it('covers every supported type (no ERP-origin stragglers)', () => {

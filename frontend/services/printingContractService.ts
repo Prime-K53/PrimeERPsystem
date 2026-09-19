@@ -19,6 +19,7 @@ export interface PrintingContractSignatureBlock {
 
 export interface PrintingContractDocData {
   documentType: 'printing_contract';
+  verificationToken?: string;
   contractNumber: string;
   date: string;
   version: number;
@@ -153,6 +154,7 @@ export const buildPrintingContractDoc = async (
   const customer = mapSignatureBlock((contract.data as any)?.signatures?.customer);
   const doc: Omit<PrintingContractDocData, 'contentHash'> = {
     documentType: 'printing_contract',
+    verificationToken: String((contract as any)?.verificationToken || '').trim() || undefined,
     contractNumber: String(contract.contract_number || '').trim(),
     date: toDisplayDate(input.issuedAtIso),
     version: Number(contract.version) || 1,

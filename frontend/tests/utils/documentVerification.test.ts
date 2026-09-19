@@ -14,6 +14,7 @@ import {
   documentTypeFromSlug,
   ensureDocumentVerificationToken,
   generateVerificationToken,
+  verificationStoreForDocType,
 } from '../../utils/documentVerification';
 import {
   buildInvoiceVerificationUrl,
@@ -25,7 +26,7 @@ const BASE = 'https://portal.primeerp.com';
 const TOK = 'a'.repeat(64);
 
 const CASES: Array<{
-  type: 'invoice' | 'receipt' | 'quotation' | 'sales_order' | 'purchase_order' | 'delivery_note' | 'supplier_payment' | 'statement';
+  type: 'invoice' | 'receipt' | 'quotation' | 'sales_order' | 'purchase_order' | 'delivery_note' | 'supplier_payment' | 'statement' | 'printing_contract';
   slug: string;
   doc: any;
   number: string;
@@ -38,13 +39,14 @@ const CASES: Array<{
   { type: 'delivery_note', slug: 'delivery-note', doc: { dnNumber: 'DN-G001', verificationToken: TOK }, number: 'DN-G001' },
   { type: 'supplier_payment', slug: 'supplier-payment', doc: { documentType: 'supplier_payment', paymentId: 'SPAY-G001', supplierName: 'Paper Supplier', verificationToken: TOK }, number: 'SPAY-G001' },
   { type: 'statement', slug: 'statement', doc: { documentType: 'statement', statementNumber: 'STMT-G001', verificationToken: TOK }, number: 'STMT-G001' },
+  { type: 'printing_contract', slug: 'printing-contract', doc: { documentType: 'printing_contract', contractNumber: 'PC-G001', verificationToken: TOK }, number: 'PC-G001' },
 ];
 
 describe('supported types', () => {
-  it('enables exactly the eight real document types', () => {
+  it('enables exactly the nine real document types', () => {
     expect(SUPPORTED_DOCUMENT_TYPES).toEqual([
       'invoice', 'receipt', 'quotation', 'sales_order', 'purchase_order', 'delivery_note',
-      'supplier_payment', 'statement',
+      'supplier_payment', 'statement', 'printing_contract',
     ]);
   });
 
@@ -53,6 +55,7 @@ describe('supported types', () => {
     expect(documentTypeFromSlug('supplier-payment')).toBe('supplier_payment');
     expect(documentTypeFromSlug('statement')).toBe('statement');
     expect(documentTypeFromSlug('invoice')).toBe('invoice');
+    expect(documentTypeFromSlug('printing-contract')).toBe('printing_contract');
     expect(documentTypeFromSlug('credit-note')).toBeNull();
     expect(documentTypeFromSlug('nope')).toBeNull();
   });
@@ -204,5 +207,42 @@ describe('new types: supplier_payment + statement', () => {
       'Prime Printing Service'
     );
     expect(st.securityQrPayload).toContain('Prime Printing Service, STMT-OLD, created on');
+  });
+});
+
+describe('new type: printing_contract', () => {
+  it('detects via explicit type, contractNumber field, or PC- prefix', () => {
+    expect(detectVerifiableDocumentType({ documentType: 'printing_contract' })).toBe('printing_contract');
+    expect(detectVerifiableDocumentType({ contractNumber: 'PC-001' })).toBe('printing_contract');
+    expect(detectVerifiableDocumentType({ number: 'PC-001' })).toBe('printing_contract');
+    expect(detectVerifiableDocumentType({ number: 'PO-001' })).toBe('purchase_order');
+    expect(resolveVerifiableDocumentNumber({ contractNumber: 'PC-001' }, 'printing_contract')).toBe('PC-001');
+  });
+
+  it('maps to the assessmentContracts store for token issue/persist', () => {
+    expect(verificationStoreForDocType('PRINTING_CONTRACT')).toBe('assessmentContracts');
+    expect(verificationStoreForDocType('printing_contract')).toBe('assessmentContracts');
+  });
+
+  it('tokened contract QR payload is the verification URL exactly', async () => {
+    const data: any = {
+      documentType: 'printing_contract',
+      contractNumber: 'PC-P726/001',
+      date: '2026-09-12',
+      verificationToken: TOK,
+    };
+    const viaQr = await attachDocumentSecurity({ ...data }, 'Prime Printing Service');
+    const expected = buildDocumentVerificationUrl({ documentType: 'printing_contract', documentNumber: 'PC-P726/001', verificationToken: TOK });
+    expect(expected).not.toBeNull();
+    expect(expected).toContain('/#/verify/printing-contract/PC-P726%2F001?t=');
+    expect(viaQr.securityQrPayload).toBe(expected);
+  });
+
+  it('legacy payload preserved for untokened contracts', async () => {
+    const pc = await attachDocumentSecurity(
+      { documentType: 'printing_contract', contractNumber: 'PC-OLD', customerName: 'Old School', date: '2026-01-01' } as any,
+      'Prime Printing Service'
+    );
+    expect(pc.securityQrPayload).toContain('Prime Printing Service, PC-OLD, created on');
   });
 });

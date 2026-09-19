@@ -20,6 +20,7 @@ const TYPE_TITLES: Record<string, string> = {
   delivery_note: 'Delivery note',
   supplier_payment: 'Supplier payment',
   statement: 'Statement',
+  'printing-contract': 'Printing contract',
 };
 
 const TERMINAL_STATUSES = ['VOID', 'CANCELLED', 'SUPERSEDED'];
@@ -64,8 +65,8 @@ type StubModel = {
   statusTone: 'teal' | 'amber' | 'red';
 };
 
-const TEAL_STATUSES = new Set(['PAID', 'VALID', 'CLEARED', 'COMPLETED', 'APPROVED', 'DELIVERED', 'SENT', 'CONFIRMED']);
-const AMBER_STATUSES = new Set(['PARTIALLY PAID', 'PARTIAL', 'PENDING', 'PROCESSING', 'DRAFT', 'OVERPAID']);
+const TEAL_STATUSES = new Set(['PAID', 'VALID', 'CLEARED', 'COMPLETED', 'APPROVED', 'DELIVERED', 'SENT', 'CONFIRMED', 'ACTIVE']);
+const AMBER_STATUSES = new Set(['PARTIALLY PAID', 'PARTIAL', 'PENDING', 'PROCESSING', 'DRAFT', 'OVERPAID', 'SUSPENDED']);
 
 function statusToneOf(status: unknown): 'teal' | 'amber' | 'red' {
   const s = String(status || '').toUpperCase().trim();
@@ -217,6 +218,23 @@ function stubModel(data: VerificationData, slug: string): StubModel {
         ],
         total: { label: 'Closing balance', value: fmtTotal(currency, data.closingBalance) },
         statusLabel: 'Snapshot status',
+        statusValue,
+        statusTone: tone,
+      };
+    }
+    // NOTE: hyphenated URL slug (like the QR encodes), not the underscored
+    // internal type name — the switch matches what the route delivers.
+    case 'printing-contract': {
+      return {
+        docTypeLabel,
+        rows: [
+          { label: 'Document number', value: str(data.contractNumber) },
+          { label: 'Date issued', value: fmtDateYMD(data.contractDate) },
+          { label: 'Customer', value: str(data.customerName) },
+          { label: 'Currency', value: currency },
+        ],
+        total: { label: 'Prepaid amount', value: fmtTotal(currency, data.prepaidTotal) },
+        statusLabel: 'Contract status',
         statusValue,
         statusTone: tone,
       };

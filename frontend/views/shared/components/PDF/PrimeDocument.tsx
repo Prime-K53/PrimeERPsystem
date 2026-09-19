@@ -1803,7 +1803,6 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           <PaginationFurniture
             identity={{ title: 'Contract', number: String(pc.contractNumber || ''), customer: String(pc.customerName || '') }}
             companyName={companyName}
-            verificationNote="Computer-generated document. Quote the contract number and content hash to verify."
           />
 
           <View style={s.headerSection}>
@@ -1904,6 +1903,18 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               signatures. Any alteration changes the hash. Quote the contract number and hash
               to verify with {companyName}.
             </Text>
+          </View>
+
+          <View wrap={false} style={{ marginTop: 10 }}>
+            <VerificationLabel fontScale={fontScale} />
+            <SecurityFooter
+              data={pc}
+              companyName={companyName}
+              legalFooterLine1={resolveFooterText(config, '', false)}
+              legalFooterLine2={buildFooterContactLine(config)}
+              fontScale={fontScale}
+              flowing
+            />
           </View>
         </Page>
       </Document>

@@ -83,6 +83,7 @@ describe('verification store registry (token ensured BEFORE mapping)', () => {
     ['SUBSCRIPTION', 'recurringInvoices'],
     ['SALES_EXCHANGE', 'salesExchanges'],
     ['ACCOUNT_STATEMENT', 'statementSnapshots'],
+    ['PRINTING_CONTRACT', 'assessmentContracts'],
   ] as Array<[string, string]>)('%s -> %s', (docType, store) => {
     expect(verificationStoreForDocType(docType)).toBe(store);
   });
@@ -224,6 +225,38 @@ describe('decoded QR for statement', () => {
     const decoded = decodeQrDataUrl(String(secured.securityQrCodeDataUrl));
     expect(decoded).toBe(secured.securityQrPayload);
     assertUrlOnly(decoded, 'statement', 'STMT-M001');
+  }, 30000);
+});
+
+describe('decoded QR for printing_contract', () => {
+  it('decodes to the URL only', async () => {
+    const { buildPrintingContractDoc } = await import('../../services/printingContractService');
+    const payload = await buildPrintingContractDoc({
+      contract: {
+        id: 'c-m001',
+        company_id: 'co-1',
+        customer_id: 'cust-1',
+        school_id: 'sch-1',
+        contract_number: 'PC-M001',
+        title: 'Decode printing',
+        status: 'active',
+        prepaid_amount: 5000,
+        max_assessments: 1,
+        assessment_price: 5000,
+        version: 1,
+        verificationToken: TOK,
+        created_at: '2026-09-01T00:00:00.000Z',
+        updated_at: '2026-09-01T00:00:00.000Z',
+        data: {
+          lines: [{ key: 'l1', assessment_name: 'Decode print', quantity: 1, unit_price: 5000 }],
+        },
+      } as any,
+      customerName: 'Decode School',
+    });
+    const secured: any = await attachDocumentSecurity(payload, COMPANY);
+    const decoded = decodeQrDataUrl(String(secured.securityQrCodeDataUrl));
+    expect(decoded).toBe(secured.securityQrPayload);
+    assertUrlOnly(decoded, 'printing-contract', 'PC-M001');
   }, 30000);
 });
 

@@ -39,6 +39,7 @@ const resolveDocumentNumber = (data: any) =>
     || data?.delivery_number
     || data?.paymentNumber
     || data?.paymentId
+    || data?.contractNumber
     || data?.statementNumber
     || data?.exchangeNumber
     || data?.reportName

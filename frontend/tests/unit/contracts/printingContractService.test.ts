@@ -108,6 +108,16 @@ describe('buildPrintingContractDoc', () => {
       buildPrintingContractDoc({ contract: { ...baseContract, contract_number: '' }, customerName: 'X' })
     ).rejects.toThrow(/Contract number is required/);
   });
+
+  it('carries the permanent verification token for QR routing', async () => {
+    const doc = await buildPrintingContractDoc({
+      contract: { ...baseContract, verificationToken: 'b'.repeat(64) },
+      customerName: 'Acme School',
+    });
+    expect(doc.verificationToken).toBe('b'.repeat(64));
+    const untokened = await buildPrintingContractDoc({ contract: baseContract, customerName: 'Acme School' });
+    expect(untokened.verificationToken).toBeUndefined();
+  });
 });
 
 describe('content hash', () => {

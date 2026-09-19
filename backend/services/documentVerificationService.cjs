@@ -8,7 +8,11 @@
  *
  * Supported types (stable number + persistent record + existing PDF):
  *   invoice, receipt, quotation, sales_order, purchase_order, delivery_note,
- *   supplier_payment, statement
+ *   supplier_payment, statement, printing_contract
+ *
+ * printing_contract reads assessment_contracts (official number =
+ * contract_number, PC- prefix; token persisted on the record envelope).
+ * Cancelled contracts verify as authentic with terminal CANCELLED status.
  *
  * purchase_order reads the CANONICAL purchase_orders table first (the ERP
  * record created by procurementService, synced through dbService); the
@@ -298,6 +302,29 @@ const REGISTRY = {
       companyName: String(d.companyName || company),
       customerName: customerNameOf(d),
       reference: String(d.invoiceId || d.reference || ''),
+      status,
+    }),
+  },
+  printing_contract: {
+    table: 'assessment_contracts',
+    idFields: ['contract_number'],
+    statusOf: (c) => {
+      const s = String(c.status || '').toLowerCase().trim();
+      if (['cancelled', 'canceled', 'void', 'voided'].includes(s)) return 'CANCELLED';
+      if (!s) return 'DRAFT';
+      return s.toUpperCase();
+    },
+    terminalInvalid: (status) => status === 'CANCELLED',
+    // Only safe display fields — never tokens, user ids or audit internals.
+    toSafe: (c, company, status) => ({
+      verified: true,
+      documentType: 'printing_contract',
+      contractNumber: String(c.contract_number || ''),
+      contractDate: String(c.starts_at || c.created_at || ''),
+      companyName: String(c.companyName || company),
+      customerName: customerNameOf(c),
+      currency: String(c.currency || 'MWK'),
+      prepaidTotal: Number(c.prepaid_amount ?? 0),
       status,
     }),
   },

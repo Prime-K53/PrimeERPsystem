@@ -8,7 +8,12 @@
  * Supported types (only documents with a stable number + persistent record
  * + existing PDF representation — see module docs per type):
  *   invoice, receipt, quotation, sales_order, purchase_order, delivery_note,
- *   supplier_payment, statement
+ *   supplier_payment, statement, printing_contract
+ *
+ * printing_contract: commercial agreement (assessment_contracts store ->
+ * assessment_contracts table, official number = contract_number, PC- prefix).
+ * Status comes from the contract lifecycle; cancelled contracts verify as
+ * terminal (authentic but cancelled).
  *
  * supplier_payment: official Supplier Payment voucher (supplierPayments
  * store -> supplier_payments table). The ERP treats the payment record id
@@ -39,7 +44,8 @@ export type VerifiableDocumentType =
   | 'purchase_order'
   | 'delivery_note'
   | 'supplier_payment'
-  | 'statement';
+  | 'statement'
+  | 'printing_contract';
 
 export const SUPPORTED_DOCUMENT_TYPES: VerifiableDocumentType[] = [
   'invoice',
@@ -50,6 +56,7 @@ export const SUPPORTED_DOCUMENT_TYPES: VerifiableDocumentType[] = [
   'delivery_note',
   'supplier_payment',
   'statement',
+  'printing_contract',
 ];
 
 /** URL slug per type (matches the frontend verify routes). */
@@ -62,6 +69,7 @@ const TYPE_SLUGS: Record<VerifiableDocumentType, string> = {
   delivery_note: 'delivery-note',
   supplier_payment: 'supplier-payment',
   statement: 'statement',
+  printing_contract: 'printing-contract',
 };
 
 const SLUG_TO_TYPE: Record<string, VerifiableDocumentType> = Object.fromEntries(
@@ -145,6 +153,7 @@ export interface VerifiableDocumentRef {
   documentType?: unknown;
   documentNumber?: unknown;
   invoiceNumber?: unknown;
+  contractNumber?: unknown;
   number?: unknown;
   verificationToken?: unknown;
 }
@@ -160,7 +169,7 @@ export function buildDocumentVerificationUrl(
 ): string | null {
   const type = String(ref?.documentType || 'invoice');
   if (!isSupportedDocumentType(type)) return null;
-  const number = String(ref?.documentNumber ?? ref?.invoiceNumber ?? ref?.number ?? '').trim();
+  const number = String(ref?.documentNumber ?? ref?.invoiceNumber ?? ref?.contractNumber ?? ref?.number ?? '').trim();
   const token = String(ref?.verificationToken ?? '').trim();
   if (!number || !token) return null;
   const base = String(baseUrl ?? resolveVerificationBaseUrl()).replace(/\/+$/, '');
@@ -181,21 +190,25 @@ export function buildDocumentVerificationUrl(
  * payments are detected ONLY via explicit documentType, the paymentNumber/
  * paymentId + supplierName pairing, or the SPAY- prefix. Statements are
  * detected ONLY via explicit documentType or a statementNumber field —
- * never from customer/ledger text.
+ * never from customer/ledger text. Printing contracts are detected via
+ * explicit documentType, a contractNumber field, or the PC- prefix (used
+ * only by printing contracts — purchase orders use PO-).
  */
 export function detectVerifiableDocumentType(data: any): VerifiableDocumentType | null {
   if (!data || typeof data !== 'object') return null;
   if (isSupportedDocumentType(data.documentType)) return data.documentType;
   if (data.invoiceNumber) return 'invoice';
   if (data.receiptNumber) return 'receipt';
+  if (data.contractNumber) return 'printing_contract';
   if (data.quotationNumber || data.quotationId) return 'quotation';
   if (data.orderNumber && String(data.orderNumber).startsWith('SO-')) return 'sales_order';
   if (data.order_number || (data.orderNumber && String(data.orderNumber).startsWith('PO-'))) return 'purchase_order';
   if (data.dnNumber || data.deliveryNoteNumber || data.delivery_number) return 'delivery_note';
   if (data.statementNumber) return 'statement';
   if ((data.paymentNumber || data.paymentId) && (data.supplierName || data.supplier_id || data.supplierId)) return 'supplier_payment';
-  const id = String(data.paymentNumber || data.paymentId || data.statementNumber || data.id || data.number || '');
+  const id = String(data.paymentNumber || data.paymentId || data.statementNumber || data.contractNumber || data.id || data.number || '');
   if (/^STMT-/i.test(id)) return 'statement';
+  if (/^PC-/i.test(id)) return 'printing_contract';
   if (/^SPAY-/i.test(id)) return 'supplier_payment';
   if (/^INV-/i.test(id)) return 'invoice';
   if (/^QTN-/i.test(id)) return 'quotation';
@@ -225,6 +238,8 @@ export function resolveVerifiableDocumentNumber(data: any, type: VerifiableDocum
       return String(data?.paymentNumber ?? data?.paymentId ?? data?.number ?? data?.id ?? '').trim();
     case 'statement':
       return String(data?.statementNumber ?? data?.number ?? data?.id ?? '').trim();
+    case 'printing_contract':
+      return String(data?.contractNumber ?? data?.contract_number ?? data?.number ?? data?.id ?? '').trim();
     default:
       return '';
   }
@@ -270,6 +285,8 @@ export function verificationStoreForDocType(docType: string): string | null {
       return 'salesExchanges';
     case 'ACCOUNT_STATEMENT':
       return 'statementSnapshots';
+    case 'PRINTING_CONTRACT':
+      return 'assessmentContracts';
     default:
       return null;
   }

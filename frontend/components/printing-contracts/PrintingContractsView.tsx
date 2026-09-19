@@ -35,6 +35,8 @@ import { SignatureCapture, type CapturedContractSignature } from './SignatureCap
 import { buildPrintingContractDoc } from '../../services/printingContractService';
 import { PrintingContractSchema } from '../../views/shared/components/PDF/schemas';
 import { PreviewModal } from '../../views/shared/components/PDF/PreviewModal';
+import { attachDocumentSecurity } from '../../utils/documentSecurity';
+import { generateVerificationToken } from '../../utils/documentVerification';
 import { dbService } from '../../services/db';
 import { generateNextId } from '../../utils/helpers';
 import { currencyService } from '../../services/currencyService';
@@ -474,6 +476,7 @@ const PrintingContractsView: React.FC = () => {
           title: formDraft.title.trim(),
           customer_id: formDraft.customer_id,
           school_id: formDraft.school_id,
+          customerName: customerNameOf(formDraft.customer_id),
           assessment_type: formDraft.assessment_type,
           assessment_grade: formDraft.assessment_grade || undefined,
           assessment_subject: formDraft.assessment_subject || undefined,
@@ -526,6 +529,11 @@ const PrintingContractsView: React.FC = () => {
           title: formDraft.title.trim(),
           description: formDraft.description || undefined,
           status: 'draft',
+          // Permanent public-verification token, issued once and never
+          // regenerated — the contract QR encodes it.
+          verificationToken: generateVerificationToken(),
+          // Denormalized for public verification display.
+          customerName: customerNameOf(formDraft.customer_id),
           prepaid_amount: linesTotal,
           consumed_amount: 0,
           reserved_amount: 0,
@@ -1075,12 +1083,27 @@ const PrintingContractsView: React.FC = () => {
   const handleGenerateContractDocument = async () => {
     if (!selected) return;
     try {
+      // Backfill the permanent verification token for legacy rows (status
+      // untouched, so the lifecycle guard passes through).
+      let source = selected;
+      if (!String(selected.verificationToken || '').trim()) {
+        const token = generateVerificationToken();
+        await updateAssessmentContract({
+          ...selected,
+          verificationToken: token,
+          updated_at: new Date().toISOString(),
+          version: num(selected.version) + 1,
+        } as AssessmentContract);
+        source = { ...selected, verificationToken: token };
+      }
       const doc = await buildPrintingContractDoc({
-        contract: selected,
-        customerName: customerNameOf(selected.customer_id),
-        schoolName: schoolNameOf(selected.school_id),
+        contract: source,
+        customerName: customerNameOf(source.customer_id),
+        schoolName: schoolNameOf(source.school_id),
       });
-      setDocPreview({ data: PrintingContractSchema.parse(doc) });
+      const parsed = PrintingContractSchema.parse(doc);
+      const secured = await attachDocumentSecurity(parsed, companyConfig?.companyName);
+      setDocPreview({ data: secured });
     } catch (e: any) {
       notify(`Document generation failed: ${e.message}`, 'error');
     }
