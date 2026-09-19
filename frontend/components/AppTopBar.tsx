@@ -208,21 +208,6 @@ const AppTopBar: React.FC<AppTopBarProps> = ({
     };
   }, [openMenu, bellOpen, searchOpen]);
 
-  // ⌘K / Ctrl+K opens search from anywhere
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setBellOpen(false);
-        setOpenMenu(null);
-        lastTriggerRef.current = searchTriggerRef.current;
-        setSearchOpen(true);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   // ── sync pill ──
   const syncState: 'offline' | 'syncing' | 'issue' | 'online' = !isOnline
     ? 'offline'
@@ -391,10 +376,6 @@ const AppTopBar: React.FC<AppTopBarProps> = ({
           aria-label="Search (Ctrl or Cmd + K)"
         >
           <Search size={14} className="shrink-0" />
-          <span className="flex-1 truncate">Search customers, invoices, jobs…</span>
-          <kbd className="shrink-0 rounded bg-[#eef7f6] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#5c6567]">
-            ⌘K
-          </kbd>
         </button>
         <button
           type="button"
@@ -863,7 +844,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
             aria-expanded="true"
             aria-controls="apptopbar-search-results"
             aria-activedescendant={results[activeIndex] ? `apptopbar-search-${activeIndex}` : undefined}
-            placeholder="Search customers, invoices, jobs, inventory…"
+            placeholder="Search…"
             className="min-w-0 flex-1 border-none bg-transparent text-[15px] font-medium text-[#0b3e39] outline-none placeholder:text-[#94a3b8]"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -996,13 +977,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
                     </span>
                   </button>
                 ))}
-              </div>
-              {recent.length === 0 && (
-                <p className="px-3 pb-3 pt-2 text-center text-[11px] text-[#94a3b8]">
-                  Tip: type at least 2 characters to search across customers, invoices, jobs and inventory.
-                </p>
-              )}
-            </>
+             </>
           ) : isSearching ? (
             <div className="space-y-1.5 p-1" aria-hidden="true">
               {[0, 1, 2].map((i) => (

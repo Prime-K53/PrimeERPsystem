@@ -13,7 +13,7 @@ import {
   Wallet, Target, Tag, Truck, WifiOff, HardDrive,
   CheckCircle, MonitorPlay, Maximize, Share2, Sparkles,
   Smartphone, FileSpreadsheet, BookOpen, FileCheck, History,
-  Calculator, Search, GitFork,
+  Calculator, GitFork,
   Gift, Calendar, FileSearch, Receipt, Inbox, Megaphone, BadgePercent,
   Building2, UserCog, CalendarCheck
 } from 'lucide-react';
@@ -45,11 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isTabletViewport, setIsTabletViewport] = useState(getTabletViewport);
-  const [searchQuery, setSearchQuery] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
-  const [recents, setRecents] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('sidebar:recents') || '[]'); } catch { return []; }
-  });
+
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -356,50 +352,19 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
     return () => document.removeEventListener('keydown', onKey);
   }, [isNewMenuOpen]);
 
-  // Track recents for Phase 2 upgrade
-  useEffect(() => {
-    const path = location.pathname;
-    if (!path || path === '/') return;
-    setRecents(prev => {
-      const next = [path, ...prev.filter(p => p !== path)].slice(0, 5);
-      try { localStorage.setItem('sidebar:recents', JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, [location.pathname]);
-
-  // Cmd+K focuses search
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   const filteredGroups = useMemo(() => {
     // Role gate — bulletproof: hide sensitive modules from non-admin, but never block navigation via URL (server enforces)
     const isPrivileged = !!(user?.isSuperAdmin || String(user?.role || '').toLowerCase().includes('admin'));
     const adminOnlyItems = new Set(['AI Workspace','Fiscal Reports','Payroll Engine','Year-End Closing','Smart Operations']);
-    let groups = menuGroups.map(g => ({
+    const groups = menuGroups.map(g => ({
       ...g,
       items: g.items.filter(item => {
         if (adminOnlyItems.has(item.label) && !isPrivileged) return false;
         return true;
       })
     })).filter(g => g.items.length > 0);
-    if (!searchQuery.trim()) return groups;
-    const q = searchQuery.toLowerCase();
-    return groups.map(g => ({
-      ...g,
-      items: g.items.filter(item =>
-        item.label.toLowerCase().includes(q) ||
-        item.subItems?.some(s => s.label.toLowerCase().includes(q))
-      )
-    })).filter(g => g.items.length > 0);
-  }, [menuGroups, searchQuery, user]);
+    return groups;
+  }, [menuGroups, user]);
 
   return (
     <aside className={`
@@ -484,38 +449,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
          </div>
         </div>
 
-      {/* Phase 2: Search + Recents — upgrade */}
-      {!isCompressed && (
-        <div className="px-3 mt-3">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
-            <input
-              ref={searchRef}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search (Cmd+K)"
-              className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-[13px] text-white placeholder:text-white/30 focus:outline-none focus:border-white/20 focus:bg-white/10 transition-colors"
-            />
-          </div>
-          {recents.length > 0 && !searchQuery && (
-            <div className="mt-3">
-              <p className="px-3 text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1">Recents</p>
-              <div className="space-y-1">
-                {recents.slice(0, 3).map(path => (
-                  <button key={path} onClick={() => navigate(path)} className="w-full text-left px-3 py-1.5 rounded-md text-[12px] text-white/50 hover:text-white hover:bg-white/5 truncate transition-colors">
-                    {path}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {searchQuery && filteredGroups.length === 0 && (
-            <p className="mt-2 px-3 text-[12px] text-white/40">No matches</p>
-          )}
-        </div>
-      )}
-
-      {/* Navigation */}
+       {/* Navigation */}
       <nav className="flex-1 flex flex-col space-y-1 overflow-y-auto custom-scrollbar px-3 py-4 pb-6 relative">
         <div className="absolute right-0 top-0 bottom-0 w-[1px]" style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,.15) 1px, transparent 1px)', backgroundSize: '4px 4px', backgroundRepeat: 'repeat-y' }} />
         {filteredGroups.map((group) => (
