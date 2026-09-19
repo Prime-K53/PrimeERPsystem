@@ -2207,17 +2207,180 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 .order-form-scroll::-webkit-scrollbar-thumb { background: #72c0b7; border-radius: 10px; border: 2px solid #ede7db; background-clip: padding-box; }
 .order-form-scroll::-webkit-scrollbar-thumb:hover { background: #3fa294; }`;
 
-    const responsiveStyle = `@media (max-width: 768px) {
+        const responsiveStyle = `@media (max-width: 768px) {
+  .order-form-backdrop {
+    padding: 0 !important;
+    align-items: flex-end !important;
+  }
   .order-form-grid {
     grid-template-columns: 1fr !important;
-    height: auto !important;
-    max-height: calc(100vh - 40px);
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    max-width: 100% !important;
   }
   .order-form-sidebar {
     border-right: none !important;
-    border-bottom: 1px solid #E4DFD1;
-    max-height: 40vh;
+    border-bottom: 2px solid #E4DFD1;
+    max-height: 45vh;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px 14px 10px !important;
+    flex-shrink: 0;
+  }
+  .order-form-sidebar .docket-field {
+    margin-bottom: 8px !important;
+  }
+  .order-form-sidebar .docket-field label {
+    font-size: 9px !important;
+  }
+  .order-form-sidebar input,
+  .order-form-sidebar select {
+    padding: 10px 12px !important;
+    font-size: 15px !important;
+    min-height: 44px;
+  }
+  .order-form-main {
+    border-radius: 0 !important;
+  }
+  .order-form-main > div:first-child {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px !important;
+  }
+  .order-form-main .order-form-scroll {
+    padding: 8px 12px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .order-form-main table {
+    font-size: 12px !important;
+  }
+  .order-form-main table th,
+  .order-form-main table td {
+    padding: 6px 4px !important;
+  }
+  .order-form-main table td[data-label="Description"] {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .order-form-main .summary-card {
+    padding: 10px !important;
+  }
+  .order-form-main .summary-card > div {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+  .order-form-main .summary-card .pr-\\[14px\\] {
+    padding-right: 0 !important;
+    border-right: none !important;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #E4DFD1;
+  }
+  .order-form-footer {
+    flex-wrap: wrap;
+    gap: 6px !important;
+    padding: 10px 12px !important;
+  }
+  .order-form-footer button {
+    flex: 1 1 auto;
+    min-height: 44px;
+    font-size: 13px !important;
+    padding: 10px 12px !important;
+    justify-content: center;
+  }
+  .order-form-footer input[type="text"] {
+    width: 100% !important;
+    min-height: 44px;
+  }
+  .search-row {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+  .search-box input {
+    font-size: 15px !important;
+    padding: 10px 12px !important;
+    min-height: 44px;
+  }
+  .search-box [style*=\"padding-left: 68px\"] {
+    padding-left: 12px !important;
+  }
+  .search-box [style*=\"left:12px\"] {
+    left: 10px !important;
+    font-size: 10px !important;
+  }
+  .order-form-main .bg-\\[#FEFDFB\\].border {
+    padding: 12px !important;
+  }
+  .order-form-main .bg-\\[#FEFDFB\\].border .order-form-charges {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .order-form-main .bg-\\[#FEFDFB\\].border .pr-\\[14px\\] {
+    padding-right: 0 !important;
+    border-right: none !important;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #E4DFD1;
+  }
+  .order-form-main textarea {
+    min-height: 60px !important;
+    font-size: 14px !important;
+  }
+  .order-form-main input[type=\"number\"] {
+    font-size: 15px !important;
+    padding: 8px !important;
+    min-height: 40px;
+  }
+  .order-form-main select {
+    font-size: 15px !important;
+    padding: 10px !important;
+    min-height: 44px;
+  }
+  .order-form-main .text-\\[27px\\] {
+    font-size: 22px !important;
+  }
+  .order-form-main .order-form-charges .summary-card {
+    font-size: 12px !important;
+  }
+  .order-form-main .order-form-charges .summary-card .text-\\[17px\\] {
+    font-size: 15px !important;
+  }
+  .order-form-main .order-form-charges .summary-card .text-\\[25px\\] {
+    font-size: 20px !important;
+  }
+  .order-form-main .grid-\\[theme\\(spacing\\.6\\)\\] {
+    gap: 8px !important;
+  }
+  .order-form-main .px-\\[26px\\] {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .order-form-main .pt-\\[6px\\] {
+    padding-top: 4px !important;
+  }
+  .order-form-main .mb-\\[8px\\] {
+    margin-bottom: 6px !important;
+  }
+  .order-form-main .mb-\\[11px\\] {
+    margin-bottom: 8px !important;
+  }
+  .order-form-main .mb-4 {
+    margin-bottom: 10px !important;
+  }
+  .order-form-main .mt-2 {
+    margin-top: 6px !important;
+  }
+  .order-form-main .mt-\\[6px\\] {
+    margin-top: 4px !important;
+  }
+  .order-form-main .border-\\[#E4DFD1\\] {
+    border-color: #E4DFD1;
+  }
+  .order-form-main .divide-y {
+    > :not([hidden]) ~ :not([hidden]) {
+      border-width: 1px;
+    }
   }
 }`;
 
@@ -2227,12 +2390,14 @@ const handleVariantSelect = async (variant: ProductVariant) => {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'rgba(15, 23, 42, 0.6)',
             padding: '40px 20px', fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: '#23282A',
+            overflowY: 'auto',
         }}>
             <style>{scrollStyle}</style>
             <style>{responsiveStyle}</style>
             <div className="order-form-grid" style={{
                 width: '100%', maxWidth: 1040,
                 height: 'calc(100vh - 80px)',
+                maxHeight: 'calc(100vh - 80px)',
                 background: '#FEFDFB', borderRadius: 14,
                 boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
                 display: 'grid', gridTemplateColumns: '266px 1fr',
@@ -2244,7 +2409,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                 }} />
 
                 {/* DOCKET SIDEBAR */}
-                <aside className="order-form-sidebar bg-[#FBF8F2] p-[20px_20px_14px] flex flex-col relative overflow-y-visible rounded-l-[14px] after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[1px] after:bg-[repeating-linear-gradient(#FEFDFB_50%,transparent_0%)] after:bg-[length:1px_14px] after:opacity-50">
+                <aside className="order-form-sidebar bg-[#FBF8F2] p-[20px_20px_14px] flex flex-col relative overflow-y-auto rounded-l-[14px] after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[1px] after:bg-[repeating-linear-gradient(#FEFDFB_50%,transparent_0%)] after:bg-[length:1px_14px] after:opacity-50">
                     <div className="text-[10.5px] font-bold tracking-[1.6px] uppercase text-[#666F6C] mb-[4px]">{isPurchase ? 'Purchase Flow' : 'Sales Flow'}</div>
                     <div className="font-['DM_Serif_Display',serif] text-[27px] leading-[1.15] text-[#23282A] mb-[2px]">{type}</div>
                     <div className="font-['JetBrains_Mono',monospace] text-[13px] text-[#666F6C] tracking-[0.5px] mb-[12px]">#{formData.id}</div>
@@ -2276,7 +2441,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                             <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#666F6C]" />
                         </div>
                         {showCustomerDropdown && (
-                            <div className="absolute left-0 right-0 z-50 mt-1 bg-white border border-[#E4DFD1] rounded-[7px] shadow-lg max-h-[360px] overflow-y-auto">
+                            <div className="absolute left-0 right-0 z-50 mt-1 bg-white border border-[#E4DFD1] rounded-[7px] shadow-lg max-h-[45vh] overflow-y-auto">
                                 {filteredCustomers.length > 0 ? filteredCustomers.map(c => (
                                     <button
                                         key={c.id}
@@ -2514,7 +2679,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     onKeyDown={e => handleItemKeyDown(e, filteredInventory, inventory)}
                                 />
                                 {isItemDropdownOpen && (
-                                    <div className="absolute z-50 mt-[4px] w-full bg-[#FEFDFB] border border-[#E4DFD1] rounded-[6px] shadow-[0_8px_24px_-6px_rgba(16,43,40,0.15)] max-h-60 overflow-y-auto">
+                                    <div className="absolute z-50 mt-[4px] w-full bg-[#FEFDFB] border border-[#E4DFD1] rounded-[6px] shadow-[0_8px_24px_-6px_rgba(16,43,40,0.15)] max-h-[45vh] overflow-y-auto">
                                         {filteredInventory.length === 0 ? (
                                             <div className="p-[12px] text-center">
                                                 <div className="text-[11px] text-[#666F6C] font-['JetBrains_Mono',monospace] mb-[6px]">No matching items</div>
@@ -2579,7 +2744,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     onChange={e => { setServiceSearch(e.target.value); setIsServiceDropdownOpen(true); }}
                                 />
                                 {isServiceDropdownOpen && (
-                                    <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                                    <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-[45vh] overflow-y-auto">
                                         {filteredServices.length === 0 ? (
                                             <div className="p-4 text-center text-xs text-slate-400">No matching services</div>
                                         ) : (
