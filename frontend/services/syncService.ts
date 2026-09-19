@@ -412,10 +412,6 @@ export async function pullRemoteChanges(
  * FIX (Bug #1): After each IndexedDB write we now dispatch `primeerp:data-changed`
  * and a BroadcastChannel message so that DataContext.queueRefresh() fires and
  * the React/Zustand stores pick up the new data immediately.
- *
- * FIX (Bug #6): Each channel now includes a `company_id` column filter so that
- * only this tenant's events are delivered — prevents cross-tenant leakage when
- * RLS is temporarily misconfigured and reduces unnecessary traffic.
  */
 async function subscribeToRemoteChanges() {
   if (!SUPABASE_ENABLED || realtimeSubscribed) {
@@ -426,39 +422,13 @@ async function subscribeToRemoteChanges() {
   realtimeSubscribed = true;
   const myGeneration = ++subscriptionGeneration;
 
-  // Retrieve the company_id once for use in per-channel column filters.
-  // Falls back gracefully — if company_id is unavailable we subscribe without
-  // the filter and rely on RLS to enforce tenant isolation.
-  let companyId: string | null = null;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      // Prefer app_metadata.tenant_id (server-stamped, cannot be spoofed)
-      companyId =
-        (session.user.app_metadata as Record<string, string>)?.tenant_id ||
-        (session.user.app_metadata as Record<string, string>)?.company_id ||
-        (session.user.user_metadata as Record<string, string>)?.company_id ||
-        null;
-    }
-  } catch {
-    // Could not retrieve session — continue without column filter
-  }
-
   for (const storeName of TABLES_TO_SYNC) {
     if (!realtimeSubscribed || subscriptionGeneration !== myGeneration) break; // Race guard: abort if unsubscribed or superseded
     const table = getTable(storeName);
 
     try {
-      // Build the postgres_changes filter. When company_id is known we scope
-      // the subscription to only this tenant's rows for efficiency and security.
       const changeFilter: Record<string, string> = { event: '*', schema: 'public', table };
-      if (companyId) {
-        changeFilter.filter = `company_id=eq.${companyId}`;
-      }
-
-      const channelName = companyId
-        ? `primeerp:${companyId}:${table}`
-        : `primeerp:${table}`;
+      const channelName = `primeerp:${table}`;
 
       const channel = supabase
         .channel(channelName)
@@ -529,7 +499,7 @@ async function subscribeToRemoteChanges() {
         )
         .subscribe((status: string) => {
           if (status === 'SUBSCRIBED') {
-            audit('realtime', 'channel subscribed', { table, companyId: companyId || 'unknown' });
+            audit('realtime', 'channel subscribed', { table });
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             logger.warn(`[Sync] realtime channel ${channelName} status=${status} — will rely on polling`);
           }
