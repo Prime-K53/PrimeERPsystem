@@ -121,7 +121,7 @@ export const PreviewModal = ({
     if (!data) return {};
     const r = data as Record<string, unknown>;
     return {
-      number: (r.number || r.invoiceNumber || r.documentNumber || r.orderNumber || r.salesOrderNumber || r.jobOrderNumber || r.quotationNumber || r.jobNumber || r.contractNumber || '') as string,
+      number: (r.number || r.invoiceNumber || r.documentNumber || r.orderNumber || r.salesOrderNumber || r.jobOrderNumber || r.quotationNumber || r.jobNumber || r.contractNumber || r.receiptNumber || '') as string,
       customer: (r.clientName || r.customerName || (r.billTo as any)?.name || '') as string,
       // Receipts preview the payment record: the pill names the payment
       // that was received (canonical receipt badge), never the invoice's
@@ -155,6 +155,8 @@ export const PreviewModal = ({
       return docMeta.number ? (docMeta.customer ? `${docMeta.number} - ${docMeta.customer}` : docMeta.number) : 'Order';
     if (type === 'PRINTING_CONTRACT')
       return docMeta.number ? `Printing Contract ${docMeta.number}` : 'Printing Contract Preview';
+    if (type === 'RECEIPT')
+      return docMeta.number ? `Receipt ${docMeta.number}` : 'Receipt Preview';
     if (docMeta.number)
       return docMeta.customer ? `${docMeta.number} - ${docMeta.customer}` : docMeta.number;
     return 'Document Preview';

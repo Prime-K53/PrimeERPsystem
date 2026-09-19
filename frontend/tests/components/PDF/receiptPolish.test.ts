@@ -18,7 +18,7 @@ import {
 } from '../../../services/receiptCalculationService';
 import { ReceiptSchema } from '../../../views/shared/components/PDF/schemas';
 import { attachDocumentSecurity } from '../../../utils/documentSecurity';
-import { analyseWithQr, norm } from './pdfAnalyse';
+import { analysePages, analyseWithQr, norm } from './pdfAnalyse';
 
 const COMPANY = 'Prime Printing Service';
 const TOK = 'a'.repeat(64);
@@ -69,6 +69,13 @@ async function renderBoth(type: string, secured: any) {
     })()),
   ]);
   return analyseWithQr(withQr, withoutQr);
+}
+
+async function renderPdfWithConfig(type: string, secured: any, configOverride: any): Promise<Buffer> {
+  const str = (await pdf(
+    React.createElement(PrimeDocument as any, { type, data: secured, configOverride })
+  ).toString()) as unknown as string;
+  return Buffer.from(str, 'latin1');
 }
 
 describe('resolveReceiptPaymentBadge — canonical payment-record status', () => {
@@ -272,6 +279,31 @@ describe('authentication, QR, footer and pagination safety', () => {
     expect(text).toContain(norm('PAYMENT RECEIVED'));
     expect(text).toContain(norm('K150,000.00'));
     expect(text).toContain(norm('INV-P726/042'));
+  }, 120000);
+});
+
+describe('receipt thank-you footer omits street address and contact lines', () => {
+  it('renders the company name only, even with a fully populated company config', async () => {
+    const secured: any = await attachDocumentSecurity(ReceiptSchema.parse(buildPartialDoc()), COMPANY);
+    const buf = await renderPdfWithConfig('RECEIPT', secured, {
+      companyName: 'Prime Printing Service',
+      addressLine1: 'Along M5 Road Mtakataka',
+      city: 'Dedza',
+      country: 'Malawi',
+      phone: '+265 992 528 222',
+      email: 'info.primemw@gmail.com',
+    });
+    const pages = analysePages(buf);
+    expect(pages).toHaveLength(1);
+    const text = pages.map((p) => p.text).join(' ');
+    // Thank-you keeps the company name.
+    expect(text).toContain(norm('Thank you for choosing Prime Printing Service'));
+    // Street address and email contact lines are gone from the receipt…
+    expect(text).not.toContain('Mtakataka');
+    expect(text).not.toContain('Dedza');
+    expect(text).not.toContain('primemw');
+    // …while the QR verification block (with its own contact line) is kept.
+    expect(text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
   }, 120000);
 });
 
