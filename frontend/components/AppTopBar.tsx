@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -127,6 +128,13 @@ const AppTopBar: React.FC<AppTopBarProps> = ({
   const [searchOpen, setSearchOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [syncRetrying, setSyncRetrying] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({
+    position: 'fixed', top: 0, left: 0, zIndex: 1201,
+    width: '380px', maxHeight: '500px', backgroundColor: '#FEFDFB',
+    borderRadius: '14px',
+    boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
+    border: '1px solid #e4ddd1', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  });
 
   const fyMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -646,17 +654,21 @@ const AppTopBar: React.FC<AppTopBarProps> = ({
           setSearchOpen(false);
           if (returnFocus) searchTriggerRef.current?.focus();
         }}
-        onNavigate={(link, label) => {
-          try {
-            const recent = [label, ...readRecentSearches().filter((r) => r !== label)].slice(0, 5);
-            localStorage.setItem(RECENT_SEARCH_KEY, JSON.stringify(recent));
-          } catch {
-            /* non-fatal */
-          }
-          setSearchOpen(false);
-          navigate(link);
-        }}
-      />
+         onNavigate={(link, label) => {
+           try {
+             const recent = [label, ...readRecentSearches().filter((r) => r !== label)].slice(0, 5);
+             localStorage.setItem(RECENT_SEARCH_KEY, JSON.stringify(recent));
+           } catch {
+             /* non-fatal */
+           }
+           setSearchOpen(false);
+           navigate(link);
+         }}
+         dropdownStyle={dropdownStyle}
+         setDropdownStyle={setDropdownStyle}
+         searchTriggerRef={searchTriggerRef}
+         searchOpen={searchOpen}
+       />
     </div>
   );
 };
@@ -705,6 +717,10 @@ interface SearchModalProps {
   inventoryItems: Array<{ name?: string; sku?: string }>;
   onClose: (returnFocus: boolean) => void;
   onNavigate: (link: string, label: string) => void;
+  dropdownStyle: React.CSSProperties;
+  setDropdownStyle: React.Dispatch<React.SetStateAction<React.CSSProperties>>;
+  searchTriggerRef: React.RefObject<HTMLButtonElement>;
+  searchOpen: boolean;
 }
 
 const SearchModal: React.FC<SearchModalProps> = ({
@@ -716,6 +732,10 @@ const SearchModal: React.FC<SearchModalProps> = ({
   inventoryItems,
   onClose,
   onNavigate,
+  dropdownStyle,
+  setDropdownStyle,
+  searchTriggerRef,
+  searchOpen,
 }) => {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -813,23 +833,67 @@ const SearchModal: React.FC<SearchModalProps> = ({
     setRecentVersion((v) => v + 1);
   }, []);
 
+  // Position dropdown anchored to search trigger button (like NotificationCenter)
+  const positionDropdown = useCallback(() => {
+    if (!searchTriggerRef.current) return;
+    const rect = searchTriggerRef.current.getBoundingClientRect();
+    const panelWidth = Math.min(520, Math.max(360, window.innerWidth - 24));
+    const maxLeft = Math.max(12, window.innerWidth - panelWidth - 12);
+    const left = Math.min(Math.max(12, rect.right - panelWidth), maxLeft);
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openDown = spaceBelow >= 560 || spaceBelow >= rect.top;
+    const top = openDown
+      ? rect.bottom + 8
+      : Math.max(12, rect.top - 8 - 500);
+    setDropdownStyle((prev) => ({
+      ...prev,
+      width: `${panelWidth}px`,
+      top,
+      left,
+    }));
+  }, [searchTriggerRef, setDropdownStyle]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    positionDropdown();
+    window.addEventListener('scroll', positionDropdown, true);
+    window.addEventListener('resize', positionDropdown);
+    return () => {
+      window.removeEventListener('scroll', positionDropdown, true);
+      window.removeEventListener('resize', positionDropdown);
+    };
+  }, [searchOpen, positionDropdown]);
+
+  // Close on click outside (panel + trigger button)
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const panel = document.querySelector('[aria-label="Global search"]');
+      if (
+        panel &&
+        !panel.contains(e.target as Node) &&
+        searchTriggerRef.current &&
+        !searchTriggerRef.current.contains(e.target as Node)
+      ) {
+        onClose(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [searchOpen, onClose, searchTriggerRef]);
+
   if (!open) return null;
 
   const goResult = (r: SearchResult) => onNavigate(r.link, r.label);
   const goFullSearch = () => onNavigate(`/search?q=${encodeURIComponent(query.trim())}`, query.trim());
 
-  return (
-    <div
-      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-slate-900/45 px-3 pb-8 pt-[9vh] backdrop-blur-sm motion-reduce:transition-none"
-      onClick={() => onClose(false)}
-      role="presentation"
-    >
+  return createPortal(
+    <div style={dropdownStyle}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Global search"
-        className="w-full max-w-xl overflow-hidden rounded-2xl border border-[#e4ddd1] bg-[#FEFDFB] shadow-[0_40px_90px_-20px_rgba(0,0,0,.55),0_8px_24px_-8px_rgba(0,0,0,.35)]"
-        onClick={(e) => e.stopPropagation()}
+        className="w-full overflow-hidden rounded-[14px] border border-[#e4ddd1] bg-[#FEFDFB] shadow-[0_30px_70px_-20px_rgba(0,0,0,.55),0_8px_24px_-8px_rgba(0,0,0,.35),0_0_0_1px_rgba(255,255,255,.04)]"
       >
         {/* ── header ── */}
         <div className="flex items-center gap-3 border-b border-[#e4ddd1] bg-gradient-to-b from-white to-[#faf8f3] px-4 py-3">
@@ -976,7 +1040,8 @@ const SearchModal: React.FC<SearchModalProps> = ({
                       <span className="block truncate text-[11px] text-[#5c6567]">{a.sub}</span>
                     </span>
                   </button>
-                ))}
+                 ))}
+               </div>
              </>
           ) : isSearching ? (
             <div className="space-y-1.5 p-1" aria-hidden="true">
@@ -1115,7 +1180,8 @@ const SearchModal: React.FC<SearchModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
