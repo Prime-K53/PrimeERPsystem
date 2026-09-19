@@ -24,6 +24,7 @@ import {
 } from './templateSettings.ts';
 import { generateAccountSummary } from '../../../../utils/pdfMapper.ts';
 import { currencyService } from '../../../../services/currencyService';
+import { resolveReceiptPaymentBadge } from '../../../../services/receiptCalculationService';
 import {
   PaginationFurniture,
   VerificationLabel,
@@ -1626,6 +1627,16 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     const overpaymentAmount = rc.overpaymentAmount || rc.walletDeposit || 0;
 
     const isCancelled = isCancelledStatus(rc.paymentStatus || rc.status, rc);
+    // Payment-record semantics: the badge names the payment that was
+    // received (PAYMENT RECEIVED), never the invoice settlement state.
+    // The invoice balance remains separately visible in the
+    // Outstanding Balance row below.
+    const receiptBadge = resolveReceiptPaymentBadge(rc as unknown as {
+      paymentStatus?: string;
+      status?: string;
+      isCancelled?: boolean;
+      cancelled?: boolean;
+    });
 
     return (
       <Document title={`Payment Receipt - ${rc.receiptNumber}`} author={companyName}>
@@ -1639,7 +1650,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View style={s.headerSection}>
             <View style={s.headerLeft}>
-              <Text style={[s.title, titleStyle]}>Payment Receipt</Text>
+              <Text style={[s.title, titleStyle, { fontFamily: 'Helvetica' }]}>Payment Receipt</Text>
               <View style={s.infoText}>
                 <Text>Receipt # : {rc.receiptNumber}</Text>
                 <Text>Date : {rc.date}</Text>
@@ -1660,7 +1671,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           )}
 
-          <View style={[s.billingSection, { marginTop: 0, marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
+          <View style={[s.billingSection, { marginTop: 0, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Received From</Text>
               <View style={s.recipientInfoText}>
@@ -1673,20 +1684,20 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
                 ) : null}
               </View>
             </View>
-            <View style={[s.statusBox, { borderLeftColor: '#10b981' }]}>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#059669' }}>
-                PAID
+            <View style={[s.statusBox, { borderLeftColor: receiptBadge.borderColor }]}>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: receiptBadge.color }}>
+                {receiptBadge.label}
               </Text>
             </View>
           </View>
 
-          <View style={{ marginTop: 5, padding: 15, backgroundColor: '#f8fafc', borderRadius: 8 }}>
+          <View style={{ marginTop: 8, padding: 10, backgroundColor: '#f8fafc', borderRadius: 8 }}>
             <Text style={{ fontSize: 12, lineHeight: 1.6, color: '#334155' }}>
               {rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount(rc.amountReceived)} received from ${rc.customerName}.`}
             </Text>
           </View>
 
-          <View style={{ marginTop: 30 }}>
+          <View style={{ marginTop: 16 }}>
             <View style={s.tableHeader}>
               <Text style={{ flex: 3 }}>Description</Text>
               <Text style={{ flex: 1, textAlign: 'right' }}>Amount Paid</Text>
@@ -1712,7 +1723,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               {isPartial && (
                 <View style={[s.totalRow]}>
                   <Text style={{ flex: 1, color: '#ef4444' }}>Outstanding Balance</Text>
-                  <Text style={{ color: '#ef4444', textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
+                  <Text style={{ color: '#ef4444', fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
                 </View>
               )}
 

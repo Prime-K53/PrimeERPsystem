@@ -55,8 +55,7 @@ const resolvePaymentStatus = (
 /** Maps the internal ReceiptPaymentStatus to the uppercase strings expected by the PDF ReceiptSchema. */
 const toSchemaPaymentStatus = (
   status: ReceiptPaymentStatus | undefined
-): 'PAID' | 'PARTIALLY PAID' | 'OVERPAID' | undefined => {
-  if (!status) return undefined;
+): 'PAID' | 'PARTIALLY PAID' | 'OVERPAID' | undefined => {  if (!status) return undefined;
   if (status === 'Paid') return 'PAID';
   if (status === 'Partial') return 'PARTIALLY PAID';
   if (status === 'Overpaid') return 'OVERPAID';
@@ -66,6 +65,45 @@ const toSchemaPaymentStatus = (
     return upper as 'PAID' | 'PARTIALLY PAID' | 'OVERPAID';
   }
   return undefined;
+};
+
+export interface ReceiptPaymentBadge {
+  label: 'PAYMENT RECEIVED' | 'CANCELLED';
+  color: string;
+  borderColor: string;
+}
+
+export interface ReceiptBadgeInput {
+  paymentStatus?: string;
+  status?: string;
+  isCancelled?: boolean;
+  cancelled?: boolean;
+}
+
+/**
+ * Canonical receipt (payment-record) badge.
+ *
+ * A receipt records the payment that was received — never the invoice's
+ * settlement state. `paymentStatus` (PAID / PARTIALLY PAID / OVERPAID)
+ * describes how much of the related invoice(s) is settled and must only
+ * drive the Outstanding Balance / Wallet Credit rows, never the payment
+ * label itself. The only payment-level states are recorded vs cancelled.
+ *
+ * Tones reuse the receipt's existing green/red accents; no new palette.
+ */
+export const resolveReceiptPaymentBadge = (
+  input: ReceiptBadgeInput | null | undefined
+): ReceiptPaymentBadge => {
+  const cancelled =
+    input?.isCancelled === true ||
+    input?.cancelled === true ||
+    ['cancelled', 'canceled', 'void', 'voided'].includes(
+      String(input?.status ?? input?.paymentStatus ?? '').trim().toLowerCase()
+    );
+  if (cancelled) {
+    return { label: 'CANCELLED', color: '#dc2626', borderColor: '#ef4444' };
+  }
+  return { label: 'PAYMENT RECEIVED', color: '#059669', borderColor: '#10b981' };
 };
 
 const inferPaymentPurpose = (

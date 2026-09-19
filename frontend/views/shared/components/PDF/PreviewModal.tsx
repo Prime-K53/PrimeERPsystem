@@ -28,6 +28,7 @@ import {
 import type { DocType, FilePreviewDescriptor } from '../../../../stores/documentStore';
 import type { PrimeDocData } from './schemas';
 import { attachDocumentSecurity } from '../../../../utils/documentSecurity';
+import { resolveReceiptPaymentBadge } from '../../../../services/receiptCalculationService';
 import { getStoredCompanyConfig, initializePrimePdfFonts } from './templateSettings';
 import { hydrateCompanyPdfAssets } from '../../../../utils/companyAssetUtils';
 import {
@@ -64,7 +65,7 @@ interface ToastMsg {
 /* ─────────────────────────── helpers ─────────────────────────── */
 const statusPalette = (s: string) => {
   const l = s.toLowerCase();
-  if (['paid', 'active', 'completed'].includes(l))
+  if (['paid', 'active', 'completed', 'payment received', 'received'].includes(l))
     return { dotColor: '#34d399', bg: 'rgba(16,185,129,0.15)', color: '#6ee7b7', ring: 'rgba(16,185,129,0.35)' };
   if (['pending', 'draft', 'partial'].includes(l))
     return { dotColor: '#fbbf24', bg: 'rgba(245,158,11,0.15)', color: '#fcd34d', ring: 'rgba(245,158,11,0.35)' };
@@ -122,13 +123,18 @@ export const PreviewModal = ({
     return {
       number: (r.number || r.invoiceNumber || r.documentNumber || r.orderNumber || r.salesOrderNumber || r.jobOrderNumber || r.quotationNumber || r.jobNumber || '') as string,
       customer: (r.clientName || r.customerName || (r.billTo as any)?.name || '') as string,
-      status: (r.status || r.paymentStatus || '') as string,
+      // Receipts preview the payment record: the pill names the payment
+      // that was received (canonical receipt badge), never the invoice's
+      // settlement state. All other types keep their own status.
+      status: (type === 'RECEIPT'
+        ? resolveReceiptPaymentBadge(r as { paymentStatus?: string; status?: string; isCancelled?: boolean; cancelled?: boolean }).label
+        : (r.status || r.paymentStatus || '')) as string,
       date: (r.date || r.invoiceDate || r.issueDate || '') as string,
       dueDate: (r.dueDate || r.due_date || '') as string,
       total: (r.total || r.totalAmount || r.grandTotal || '') as string | number,
       currency: (r.currency || 'USD') as string,
     };
-  }, [data]);
+  }, [data, type]);
 
   const previewTitle = useMemo(() => {
     if (file?.title) return file.title;
