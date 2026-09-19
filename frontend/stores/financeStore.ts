@@ -163,34 +163,33 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           } else {
             finalAccounts = [];
           }
-      } else {
-          // Ensure core banking accounts exist and have correct names
-          // Database uses UUID IDs (e.g., ACC-11210), NOT numeric IDs
-          // So we find by account_number (11210) but don't change the UUID id
-          const coreAccountCodes = ['11110', '11100', '11120', '11210', '11220', '11230', '11240'];
-          for (const code of coreAccountCodes) {
-              const defaultAcc = DEFAULT_ACCOUNTS.find(a => a.code === code);
-              const existingAcc = finalAccounts.find(a => a.account_number === code || a.code === code);
+       } else {
+           // Ensure core banking accounts exist and have correct names
+           // Database uses UUID IDs (e.g. ACC-XXXX), NOT numeric IDs
+           // So we find by account_number (11210) but don't change the UUID id
+           const coreAccountCodes = ['11110', '11100', '11120', '11210', '11220', '11230', '11240'];
+           for (const code of coreAccountCodes) {
+               const defaultAcc = DEFAULT_ACCOUNTS.find(a => a.code === code);
+               const existingAcc = finalAccounts.find(a => a.account_number === code || a.code === code);
 
-              if (defaultAcc) {
-                  if (!existingAcc) {
-                      // Add missing core account with UUID id, not numeric
-                      const newAcc = {
-                          ...defaultAcc,
-                          id: `ACC-${code}`,
-                          account_number: code
-                      };
-                      await dbService.put('accounts', newAcc);
-                      finalAccounts.push(newAcc);
-                  } else if (existingAcc.name !== defaultAcc.name) {
-                      // Just update the name, don't change the UUID id
-                      const updatedAcc = { ...existingAcc, name: defaultAcc.name };
-                      await dbService.put('accounts', updatedAcc);
-                      finalAccounts = finalAccounts.map(a => a.id === existingAcc.id ? updatedAcc : a);
-                  }
-              }
-          }
-          // Heal missing hierarchy links on previously-seeded accounts.
+               if (defaultAcc) {
+                   if (!existingAcc) {
+                       // Add missing core account with UUID id, not numeric
+                       const newAcc = {
+                           ...defaultAcc,
+                           id: `ACC-${code}`,
+                           account_number: code
+                       };
+                       await dbService.put('accounts', newAcc);
+                       finalAccounts.push(newAcc);
+                   }
+                   // NOTE: we intentionally do NOT reset existing core account names.
+                   // A user-initiated rename must be preserved; the name reset was
+                   // silently undoing renames every time fetchFinanceData ran
+                   // (triggered by realtime sync callbacks).
+                }
+            }
+            // Heal missing hierarchy links on previously-seeded accounts.
           // Older seeds stored intermediate accounts (11000, 11100, 31000,
           // 41000, …) without parent_account_id, which breaks COA rollup to
           // the roots. Only fills EMPTY links from the canonical chart —

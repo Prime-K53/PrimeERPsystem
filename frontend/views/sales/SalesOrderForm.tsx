@@ -4,7 +4,7 @@ import { useSalesOrderStore } from '../../stores/salesOrderStore';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import type { SalesOrderItem, SalesOrder } from '../../types';
-import { CheckCircle, Printer, X } from 'lucide-react';
+import { Printer } from 'lucide-react';
 
 interface SalesOrderFormProps {
   initial?: SalesOrder;
@@ -452,19 +452,28 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
         </button>
       </div>
 
-      {/* Order Successful Modal — before closing, mirrors Payment flow */}
+      {/* Invoice Saved Modal — mimics Payment Successful modal design */}
       {successModal.open && successModal.order && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => { setSuccessModal({ open: false, order: null, isNew: false }); if (typeof onDone === 'function') onDone(); }}>
-          <div className="bg-[#FEFDFB] rounded-2xl shadow-2xl border border-[#e4ddd1] w-full max-w-[420px] overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => { setSuccessModal({ open: false, order: null, isNew: false }); if (typeof onDone === 'function') onDone(); }}
+        >
+          <div
+            className="bg-[#FEFDFB] rounded-2xl shadow-2xl border border-[#e4ddd1] w-full max-w-[420px] overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invoice-success-title"
+          >
             <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #1f8577, #3fa294 50%, #d99a3f 100%)' }} />
             <div className="p-6 sm:p-7 text-center">
               <div className="w-14 h-14 rounded-full bg-[#eef7f6] border border-[#d3ece9] flex items-center justify-center mx-auto mb-4">
                 <div className="w-10 h-10 rounded-full bg-[#1f8577] flex items-center justify-center">
-                  <CheckCircle size={20} className="text-white" strokeWidth={2.5} />
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                 </div>
               </div>
-              <h2 className="text-[18px] font-bold text-[#0b3e39] tracking-tight">Order Successful</h2>
-              <p className="text-[12px] text-[#5c6567] mt-1">Order <span className="font-mono font-bold text-[#23282A]">{successModal.order.id || '—'}</span> has been created</p>
+              <h2 id="invoice-success-title" className="text-[18px] font-bold text-[#0b3e39] tracking-tight">Invoice Saved</h2>
+              <p className="text-[12px] text-[#5c6567] mt-1">Invoice <span className="font-mono font-bold text-[#23282A]">{successModal.order.id || '—'}</span> has been created</p>
               <div className="mt-5 bg-[#eef7f6]/60 border border-[#e4ddd1] rounded-xl p-4 text-left space-y-2.5">
                 <div className="flex justify-between items-center text-[12px]">
                   <span className="text-[#5c6567] font-semibold">Customer</span>
@@ -481,25 +490,21 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
               </div>
               <div className="mt-6 flex flex-col sm:flex-row gap-2">
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const o = successModal.order!;
-                    setSuccessModal({ open: false, order: null, isNew: false });
-                    if (typeof onDone === 'function') onDone();
-                    // Optional: trigger preview if parent handles it via onSaved
-                  }}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold bg-white border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6] hover:border-[#d3ece9] active:scale-[0.98] transition-all"
-                >
-                  <X size={16} /> Done
-                </button>
-                <button
-                  onClick={() => {
                     setSuccessModal({ open: false, order: null, isNew: false });
                     if (typeof onDone === 'function') onDone();
                   }}
                   className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-white shadow-sm hover:brightness-110 active:scale-[0.98] transition-all"
                   style={{ background: 'linear-gradient(155deg, #1f8577, #0f544c)' }}
                 >
-                  <Printer size={16} /> View Order
+                  <Printer size={16} /> View Invoice
+                </button>
+                <button
+                  onClick={() => { setSuccessModal({ open: false, order: null, isNew: false }); if (typeof onDone === 'function') onDone(); }}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold bg-white border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6] hover:border-[#d3ece9] active:scale-[0.98] transition-all"
+                >
+                  Done
                 </button>
               </div>
               <button
@@ -510,7 +515,7 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
                 }}
                 className="mt-3 text-[12px] font-semibold text-[#1f8577] hover:text-[#0f544c] hover:underline"
               >
-                + Create another order
+                + Create another invoice
               </button>
             </div>
           </div>
