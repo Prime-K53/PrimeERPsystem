@@ -3,6 +3,7 @@ import { useSales } from '../../context/SalesContext';
 import { useSalesOrderStore } from '../../stores/salesOrderStore';
 import { useAuth } from '../../context/AuthContext';
 import type { SalesOrderItem, SalesOrder } from '../../types';
+import { CheckCircle, Printer, X } from 'lucide-react';
 
 interface SalesOrderFormProps {
   initial?: SalesOrder;
@@ -52,6 +53,7 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
     quantity: 1,
     unitPrice: 0
   });
+  const [successModal, setSuccessModal] = useState<{ open: boolean; order: SalesOrder | null; isNew: boolean }>({ open: false, order: null, isNew: false });
 
   // Calculate totals based on items
   const calculatedSubtotal = useMemo(() => {
@@ -157,7 +159,6 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
   };
 
   const save = async () => {
-    // Ensure totals are calculated before saving
     const orderToSave = {
       ...order,
       subtotal: calculatedSubtotal,
@@ -165,15 +166,23 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
       orderDate: order.orderDate || new Date().toISOString()
     };
 
-    if (!orderToSave.id) {
-      if (onCreate) await onCreate(orderToSave); else await createSalesOrder(orderToSave);
-      alert('Sales order created');
-    } else {
-      await updateSalesOrder(orderToSave);
-      alert('Sales order updated');
+    const isNew = !orderToSave.id;
+    try {
+      if (isNew) {
+        if (onCreate) await onCreate(orderToSave); else await createSalesOrder(orderToSave);
+      } else {
+        await updateSalesOrder(orderToSave);
+      }
+      if (typeof onSaved === 'function') onSaved(orderToSave);
+      // Show success modal before closing — mirrors Payments flow
+      if (isNew) {
+        setSuccessModal({ open: true, order: orderToSave as SalesOrder, isNew: true });
+      } else {
+        if (typeof onDone === 'function') onDone();
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Failed to save sales order');
     }
-    if (typeof onSaved === 'function') onSaved(orderToSave);
-    if (typeof onDone === 'function') onDone();
   };
 
   return (
@@ -440,6 +449,71 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
           Save Sales Order
         </button>
       </div>
+
+      {/* Order Successful Modal — before closing, mirrors Payment flow */}
+      {successModal.open && successModal.order && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => { setSuccessModal({ open: false, order: null, isNew: false }); if (typeof onDone === 'function') onDone(); }}>
+          <div className="bg-[#FEFDFB] rounded-2xl shadow-2xl border border-[#e4ddd1] w-full max-w-[420px] overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #1f8577, #3fa294 50%, #d99a3f 100%)' }} />
+            <div className="p-6 sm:p-7 text-center">
+              <div className="w-14 h-14 rounded-full bg-[#eef7f6] border border-[#d3ece9] flex items-center justify-center mx-auto mb-4">
+                <div className="w-10 h-10 rounded-full bg-[#1f8577] flex items-center justify-center">
+                  <CheckCircle size={20} className="text-white" strokeWidth={2.5} />
+                </div>
+              </div>
+              <h2 className="text-[18px] font-bold text-[#0b3e39] tracking-tight">Order Successful</h2>
+              <p className="text-[12px] text-[#5c6567] mt-1">Order <span className="font-mono font-bold text-[#23282A]">{successModal.order.id || '—'}</span> has been created</p>
+              <div className="mt-5 bg-[#eef7f6]/60 border border-[#e4ddd1] rounded-xl p-4 text-left space-y-2.5">
+                <div className="flex justify-between items-center text-[12px]">
+                  <span className="text-[#5c6567] font-semibold">Customer</span>
+                  <span className="font-bold text-[#23282A] truncate max-w-[180px]">{customers.find((c:any)=>c.id===successModal.order!.customerId)?.name || successModal.order.customerId || '—'}</span>
+                </div>
+                <div className="flex justify-between items-center text-[12px]">
+                  <span className="text-[#5c6567] font-semibold">Total</span>
+                  <span className="font-bold text-[#0f544c]">{companyConfig.currencySymbol || '$'}{(successModal.order.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px] pt-2 border-t border-[#e4ddd1]">
+                  <span className="text-[#5c6567]">{new Date(successModal.order.orderDate || new Date().toISOString()).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
+                  <span className="px-2 py-0.5 rounded-full bg-[#eef7f6] border border-[#d3ece9] text-[10px] font-bold text-[#0f544c] uppercase">{successModal.order.status || 'Draft'}</span>
+                </div>
+              </div>
+              <div className="mt-6 flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={() => {
+                    const o = successModal.order!;
+                    setSuccessModal({ open: false, order: null, isNew: false });
+                    if (typeof onDone === 'function') onDone();
+                    // Optional: trigger preview if parent handles it via onSaved
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold bg-white border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6] hover:border-[#d3ece9] active:scale-[0.98] transition-all"
+                >
+                  <X size={16} /> Done
+                </button>
+                <button
+                  onClick={() => {
+                    setSuccessModal({ open: false, order: null, isNew: false });
+                    if (typeof onDone === 'function') onDone();
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-white shadow-sm hover:brightness-110 active:scale-[0.98] transition-all"
+                  style={{ background: 'linear-gradient(155deg, #1f8577, #0f544c)' }}
+                >
+                  <Printer size={16} /> View Order
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  setSuccessModal({ open: false, order: null, isNew: false });
+                  setOrder({ id: '', items: [], subtotal: 0, total: 0, status: 'Draft', discounts: 0, tax: 0, orderDate: new Date().toISOString() } as any);
+                  setSearchTerm('');
+                }}
+                className="mt-3 text-[12px] font-semibold text-[#1f8577] hover:text-[#0f544c] hover:underline"
+              >
+                + Create another order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

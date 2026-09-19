@@ -260,7 +260,9 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
 
       await store.createFinancialOrder(newOrder as unknown as SalesOrder);
-      await triggerSalesOrderNotification(newOrder);
+      // Customer messaging must never gate the save: the order is already
+      // persisted above, so it runs in the background (self-handled errors).
+      void triggerSalesOrderNotification(newOrder);
       notify("Order created successfully", "success");
     } catch (error: any) {
       notify(`Failed to create order: ${error.message}`, "error");

@@ -628,9 +628,9 @@ const handleOpenInventory = async () => {
         // already came from an order, is POS, or has no customer.
         await transactionService.ensureOrderFromInvoice(finalizedInvoice).catch(() => {});
         
-        // Refresh finance data to reflect changes
-        await financeStore.fetchFinanceData();
-        await inventoryStore.fetchInventory();
+        // Refresh stores in parallel — UI freshness must not serialize
+        // full reloads behind the save.
+        await Promise.all([financeStore.fetchFinanceData(), inventoryStore.fetchInventory()]);
         
         addAuditLog({
             action: 'CREATE',
@@ -643,7 +643,10 @@ const handleOpenInventory = async () => {
         notify(`Invoice #${invoiceId} processed successfully`, "success");
         autoWorkflowService.fireEvent('invoice.created', { invoiceId, amount: finalizedInvoice.totalAmount, customerName: finalizedInvoice.customerName }).catch(() => {});
 
-        // Trigger Customer Notification (Exclude POS if possible)
+        // Trigger Customer Notification (Exclude POS if possible).
+        // Customer messaging (template + LLM + webhooks) must never gate
+        // the save: the invoice is already persisted above, so it runs in
+        // the background and failures are logged, not thrown.
         const isPosInvoice = finalizedInvoice.notes?.includes('POS') || finalizedInvoice.sourceType === 'POS' || finalizedInvoice.reference?.includes('POS');
         if (!isPosInvoice) {
             const customer = salesStore.customers.find(c => c.name === finalizedInvoice.customerName || c.id === finalizedInvoice.customerId);
@@ -654,12 +657,14 @@ const handleOpenInventory = async () => {
                     || String(finalizedInvoice.documentTitle || '').toLowerCase().includes('service invoice')
                     || String(finalizedInvoice.reference || '').toUpperCase().startsWith('EXM-BATCH-');
 
-                await customerNotificationService.triggerNotification(isExaminationInvoice ? 'EXAMINATION_INVOICE' : 'INVOICE', {
+                void customerNotificationService.triggerNotification(isExaminationInvoice ? 'EXAMINATION_INVOICE' : 'INVOICE', {
                     id: invoiceId,
                     customerName: finalizedInvoice.customerName,
                     phoneNumber: customer.phone,
                     amount: `${companyConfig?.currencySymbol || ''}${finalizedInvoice.totalAmount.toLocaleString()}`,
                     dueDate: new Date(finalizedInvoice.dueDate).toLocaleDateString()
+                }).catch((err: any) => {
+                    logger.error(`[FinanceContext] Background invoice notification failed for ${invoiceId}`, err);
                 });
             }
         }

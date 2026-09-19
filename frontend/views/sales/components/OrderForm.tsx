@@ -1282,10 +1282,17 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 otherCharges: otherCharges
             };
             await createOrder(orderPayload);
-            const allAppliedDiscounts = processedItems.flatMap((i: any) => i.discountDetails || []);
-            for (const d of allAppliedDiscounts) {
-                await incrementDiscountUsage(d.ruleId || d.id).catch(() => {});
-            }
+            // Discount usage counters are bookkeeping: they settle in the
+            // background and never gate the close.
+            void Promise.allSettled(
+                processedItems.flatMap((i: any) => i.discountDetails || []).map((d: any) =>
+                    incrementDiscountUsage(d.ruleId || d.id)
+                )
+            ).then((results) => {
+                if (results.some((r) => r.status === 'rejected')) {
+                    logger.error('[ORDER FORM] Some discount-usage updates failed');
+                }
+            });
 
             if (selectedCustomerObj?.referredById) {
                 import('../../../services/referralService').then(({ referralService }) =>
@@ -1362,10 +1369,17 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
         };
 
-        const allAppliedDiscounts = processedItems.flatMap((i: any) => i.discountDetails || []);
-        for (const d of allAppliedDiscounts) {
-            await incrementDiscountUsage(d.ruleId || d.id).catch(() => {});
-        }
+        // Discount usage counters are bookkeeping: they settle in the
+        // background and never gate the close.
+        void Promise.allSettled(
+            processedItems.flatMap((i: any) => i.discountDetails || []).map((d: any) =>
+                incrementDiscountUsage(d.ruleId || d.id)
+            )
+        ).then((results) => {
+            if (results.some((r) => r.status === 'rejected')) {
+                logger.error('[ORDER FORM] Some discount-usage updates failed');
+            }
+        });
 
             await Promise.resolve(onSave(finalData, asDraft, auditReason, andPay));
         } catch (error: any) {

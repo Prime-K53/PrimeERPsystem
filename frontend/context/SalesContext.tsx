@@ -921,9 +921,9 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
             await transactionService.addCustomerPayment(finalPayment);
 
-            // Refresh data
-            await salesStore.fetchSalesData();
-            await finance.fetchFinanceData?.();
+            // Refresh stores in parallel — UI freshness must not serialize
+            // full reloads behind the save.
+            await Promise.all([salesStore.fetchSalesData(), finance.fetchFinanceData?.()]);
 
             addAuditLog({
                 action: 'CREATE',
@@ -945,7 +945,10 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             const isPosPayment = finalPayment.notes?.includes('POS') || finalPayment.reference?.includes('POS');
             if (!isPosPayment) {
-                await triggerCustomerActivityNotification('RECEIPT', {
+                // Customer messaging must never gate the save: the payment
+                // is already persisted above, so it runs in the background
+                // (the notifier self-handles its own errors).
+                void triggerCustomerActivityNotification('RECEIPT', {
                     id: finalPayment.id,
                     customerId: finalPayment.customerId,
                     customerName: finalPayment.customerName,
@@ -1134,8 +1137,9 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
             const oldPayment = salesStore.customerPayments.find(p => p.id === payment.id);
             await transactionService.updateCustomerPayment(payment);
-            await salesStore.fetchSalesData();
-            await finance.fetchFinanceData?.();
+            // Refresh stores in parallel — UI freshness must not serialize
+            // full reloads behind the save.
+            await Promise.all([salesStore.fetchSalesData(), finance.fetchFinanceData?.()]);
             notify(`Payment #${payment.id} updated successfully`, "success");
             await pushTransactionAlert({
                 title: 'Customer Payment Updated',
