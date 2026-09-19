@@ -717,6 +717,7 @@ const Payments: React.FC = () => {
         data: null,
         type: 'RECEIPT'
     });
+    const [successModal, setSuccessModal] = useState<{ open: boolean; payment: CustomerPayment | null }>({ open: false, payment: null });
 
     useEffect(() => {
         fetchBankingData?.();
@@ -1214,10 +1215,10 @@ const Payments: React.FC = () => {
                 await updateOrderStatus(alloc.orderId, newStatus);
             }
 
-            // Generate and show receipt preview
-            if (!editMode && formData.customerId) {
-                const postedPayment = await dbService.get<CustomerPayment>('customerPayments', newPayment.id);
-                await handlePreviewReceipt(postedPayment || newPayment as CustomerPayment);
+            // Show success modal first — then user chooses to preview
+            if (!editMode) {
+                const postedPayment = (await dbService.get<CustomerPayment>('customerPayments', newPayment.id)) || (newPayment as CustomerPayment);
+                setSuccessModal({ open: true, payment: postedPayment });
             }
 
             // Handle Examination Invoice payment sync
@@ -2406,6 +2407,85 @@ const Payments: React.FC = () => {
                     setSelectedSupplierPayment(null);
                 }}
             />
+
+            {/* Payment Successful Modal — shown before PDF preview */}
+            {successModal.open && successModal.payment && (
+                <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSuccessModal({ open: false, payment: null })}>
+                    <div
+                        className="bg-[#FEFDFB] rounded-2xl shadow-2xl border border-[#e4ddd1] w-full max-w-[420px] overflow-hidden animate-in zoom-in-95 duration-200"
+                        onClick={e => e.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="payment-success-title"
+                    >
+                        <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #1f8577, #3fa294 50%, #d99a3f 100%)' }} />
+                        <div className="p-6 sm:p-7 text-center">
+                            <div className="w-14 h-14 rounded-full bg-[#eef7f6] border border-[#d3ece9] flex items-center justify-center mx-auto mb-4">
+                                <div className="w-10 h-10 rounded-full bg-[#1f8577] flex items-center justify-center">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                                </div>
+                            </div>
+                            <h2 id="payment-success-title" className="text-[18px] font-bold text-[#0b3e39] tracking-tight">Payment Successful</h2>
+                            <p className="text-[12px] text-[#5c6567] mt-1">Receipt <span className="font-mono font-bold text-[#23282A]">{successModal.payment.id}</span> has been created</p>
+
+                            <div className="mt-5 bg-[#eef7f6]/60 border border-[#e4ddd1] rounded-xl p-4 text-left space-y-2.5">
+                                <div className="flex justify-between items-center text-[12px]">
+                                    <span className="text-[#5c6567] font-semibold">Customer</span>
+                                    <span className="font-bold text-[#23282A] truncate max-w-[180px]">{successModal.payment.customerName}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-[12px]">
+                                    <span className="text-[#5c6567] font-semibold">Amount</span>
+                                    <span className="font-bold text-[#0f544c] finance-nums">{currency}{(successModal.payment.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-[12px]">
+                                    <span className="text-[#5c6567] font-semibold">Method</span>
+                                    <span className="font-medium text-[#23282A]">{successModal.payment.paymentMethod}</span>
+                                </div>
+                                {successModal.payment.reference && (
+                                    <div className="flex justify-between items-center text-[12px]">
+                                        <span className="text-[#5c6567] font-semibold">Reference</span>
+                                        <span className="font-mono text-[#23282A] truncate max-w-[180px]">{successModal.payment.reference}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between items-center text-[11px] pt-2 border-t border-[#e4ddd1]">
+                                    <span className="text-[#5c6567]">{new Date(successModal.payment.date).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
+                                    <span className="px-2 py-0.5 rounded-full bg-[#eef7f6] border border-[#d3ece9] text-[10px] font-bold text-[#0f544c] uppercase">{successModal.payment.status || 'Cleared'}</span>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 flex flex-col sm:flex-row gap-2">
+                                <button
+                                    onClick={async () => {
+                                        const p = successModal.payment!;
+                                        setSuccessModal({ open: false, payment: null });
+                                        await handlePreviewReceipt(p);
+                                    }}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-white shadow-sm hover:brightness-110 active:scale-[0.98] transition-all"
+                                    style={{ background: 'linear-gradient(155deg, #1f8577, #0f544c)' }}
+                                >
+                                    <Printer size={16} /> View Receipt
+                                </button>
+                                <button
+                                    onClick={() => setSuccessModal({ open: false, payment: null })}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold bg-white border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6] hover:border-[#d3ece9] active:scale-[0.98] transition-all"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setSuccessModal({ open: false, payment: null });
+                                    resetForm();
+                                    setIsModalOpen(true);
+                                }}
+                                className="mt-3 text-[12px] font-semibold text-[#1f8577] hover:text-[#0f544c] hover:underline"
+                            >
+                                + Create another payment
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <PreviewModal
                 isOpen={previewState.isOpen}
