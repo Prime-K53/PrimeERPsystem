@@ -184,3 +184,114 @@ export const validateAmendmentAdjustments = (
   }
   return null;
 };
+
+// ── Dual-party signing ceremony (same-device sequential) ─────────────
+
+export type SignatureParty = 'company' | 'customer';
+
+export interface ContractSignatureBlock {
+  name: string;
+  role: string;
+  signatureDataUrl: string;
+  mode: 'Draw' | 'Upload';
+  signedAt: string;
+  signedBy: string;
+}
+
+export interface ContractSignatureEvent {
+  type: 'signed' | 're-signed' | 'voided';
+  party?: SignatureParty;
+  at: string;
+  by: string;
+  reason?: string;
+}
+
+export interface ContractSignatures {
+  company: ContractSignatureBlock | null;
+  customer: ContractSignatureBlock | null;
+  history: ContractSignatureEvent[];
+}
+
+/** Statuses on which signing (or re-signing) is permitted. */
+export const SIGNABLE_CONTRACT_STATUSES: string[] = [
+  'draft',
+  'pending_payment',
+  'active',
+  'suspended',
+];
+
+export const isSignableContractStatus = (status: string | undefined): boolean =>
+  SIGNABLE_CONTRACT_STATUSES.includes(String(status || ''));
+
+export const readContractSignatures = (data: unknown): ContractSignatures => {
+  const sig = (data as any)?.signatures;
+  return {
+    company: (sig?.company as ContractSignatureBlock | null) || null,
+    customer: (sig?.customer as ContractSignatureBlock | null) || null,
+    history: Array.isArray(sig?.history) ? (sig.history as ContractSignatureEvent[]) : [],
+  };
+};
+
+export const isFullySigned = (data: unknown): boolean => {
+  const sig = readContractSignatures(data);
+  return Boolean(sig.company && sig.customer);
+};
+
+/**
+ * Record a party signature. Re-signing the same party overwrites its block
+ * and appends a `re-signed` history event — history is append-only.
+ */
+export const applyContractSignature = (
+  data: Record<string, any> | null | undefined,
+  party: SignatureParty,
+  block: ContractSignatureBlock,
+): Record<string, any> => {
+  const base = { ...(data || {}) };
+  const prev = readContractSignatures(base);
+  return {
+    ...base,
+    signatures: {
+      company: party === 'company' ? block : prev.company,
+      customer: party === 'customer' ? block : prev.customer,
+      history: [
+        ...prev.history,
+        {
+          type: prev[party] ? 're-signed' : 'signed',
+          party,
+          at: block.signedAt,
+          by: block.signedBy,
+        } as ContractSignatureEvent,
+      ],
+    },
+  };
+};
+
+export interface SignatureVoidInput {
+  by: string;
+  at: string;
+  reason: string;
+}
+
+/**
+ * Void existing signatures (e.g. approved amendment changes the agreed
+ * terms). No-op — same data reference — when nothing is signed.
+ */
+export const applySignatureVoid = (
+  data: Record<string, any> | null | undefined,
+  input: SignatureVoidInput,
+): Record<string, any> => {
+  const base = (data || {}) as Record<string, any>;
+  const prev = readContractSignatures(base);
+  if (!prev.company && !prev.customer) return base;
+  return {
+    ...base,
+    signatures: {
+      company: null,
+      customer: null,
+      history: [
+        ...prev.history,
+        { type: 'voided', at: input.at, by: input.by, reason: input.reason } as ContractSignatureEvent,
+      ],
+    },
+  };
+};

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   FileText, Plus, Search, RefreshCw, Calendar, Wallet, Printer,
   Play, Pause, Edit2, Trash2, Eye, CheckCircle, Ban,
-  ClipboardList, History, Landmark, ChevronRight,
+  ClipboardList, History, Landmark, ChevronRight, PenLine,
 } from 'lucide-react';
 import type {
   AssessmentContract, AssessmentContractItem, ContractAmendment,
@@ -19,12 +19,22 @@ import {
 } from '../../utils/contractInvoiceDraft';
 import {
   CONTRACT_TRANSITIONS,
+  applyContractSignature,
+  applySignatureVoid,
   generateNextContractNumber,
   isAllowedContractTransition,
+  isFullySigned,
+  isSignableContractStatus,
   matchContractWalletTx,
+  readContractSignatures,
   resolveActivationEvidence,
   validateAmendmentAdjustments,
+  type SignatureParty,
 } from '../../utils/contractLifecycle';
+import { SignatureCapture, type CapturedContractSignature } from './SignatureCapture';
+import { buildPrintingContractDoc } from '../../services/printingContractService';
+import { PrintingContractSchema } from '../../views/shared/components/PDF/schemas';
+import { PreviewModal } from '../../views/shared/components/PDF/PreviewModal';
 import { dbService } from '../../services/db';
 import { generateNextId } from '../../utils/helpers';
 import { currencyService } from '../../services/currencyService';
@@ -234,6 +244,12 @@ const PrintingContractsView: React.FC = () => {
   // the button promises "Verify & activate" and must not fabricate it.
   const [activateOverride, setActivateOverride] = useState<{ contract: AssessmentContract; reason: string } | null>(null);
 
+  // Same-device sequential signing ceremony: company first, customer second.
+  const [signingParty, setSigningParty] = useState<SignatureParty | null>(null);
+
+  // Generated contract document preview (read-only render, no state change).
+  const [docPreview, setDocPreview] = useState<{ data: any } | null>(null);
+
   // Role gates mirror services/api.ts (save: Admin/Editor, delete: Admin).
   // Granular printing_contracts.* permissions grant additively where assigned.
   // Unknown/missing role fails OPEN exactly like the API (checkAuth allows
@@ -358,6 +374,11 @@ const PrintingContractsView: React.FC = () => {
       matchContractWalletTx(t as { contract_id?: unknown; reference?: unknown; data?: { contract_id?: unknown } | null }, cid, cnum),
     );
   }, [walletTransactions, selectedId, selected]);
+  const selectedSignatures = useMemo(
+    () => readContractSignatures(selected?.data),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedId, selected?.data],
+  );
 
   // ── Contract CRUD ──────────────────────────────────────────────
   const openCreate = () => {
@@ -970,19 +991,15 @@ const PrintingContractsView: React.FC = () => {
           return;
         }
         const data: Record<string, any> = { ...(contract.data || {}) };
-        // Approved amendments void signatures (forward-compatible shape for
-        // the coming signing ceremony): a signed PDF must never disagree
-        // with current terms.
-        const sig = (data as any).signatures;
-        if (sig && (sig.company || sig.customer)) {
-          data.signatures = {
-            company: null,
-            customer: null,
-            history: [
-              ...((sig.history || []) as any[]),
-              { type: 'voided', at: now, by: actor, reason: `amendment ${am.id} approved` },
-            ],
-          };
+        // Approved amendments void signatures (a signed PDF must never
+        // disagree with current terms). No-op when nothing is signed.
+        const voided = applySignatureVoid(data, {
+          by: actor,
+          at: now,
+          reason: `amendment ${am.id} approved`,
+        });
+        if (voided !== data) {
+          Object.assign(data, voided);
         }
         const priceAdj = num(am.assessment_price_adjustment);
         if (priceAdj > 0 && priceAdj !== num(contract.assessment_price)) {
@@ -1012,6 +1029,61 @@ const PrintingContractsView: React.FC = () => {
         notify('Amendment rejected', 'info');
       }
     } catch (e: any) { notify(`Amendment update failed: ${e.message}`, 'error'); }
+  };
+
+  // ── Same-device sequential signing ceremony ──────────────────────
+  const handleConfirmSignature = async (party: SignatureParty, captured: CapturedContractSignature) => {
+    if (!requireManageContracts()) return;
+    if (!selected) return;
+    if (!isSignableContractStatus(selected.status)) {
+      notify(`Contracts with status ${CONTRACT_STATUS_LABEL[selected.status]} cannot be signed.`, 'error');
+      return;
+    }
+    const current = readContractSignatures(selected.data);
+    if (party === 'customer' && !current.company) {
+      notify('The company must sign first — sequential order is enforced.', 'error');
+      return;
+    }
+    const now = new Date().toISOString();
+    const actor = (user as any)?.id || (user as any)?.username || 'system';
+    try {
+      const data = applyContractSignature({ ...(selected.data || {}) }, party, {
+        name: captured.name,
+        role: captured.role,
+        signatureDataUrl: captured.signatureDataUrl,
+        mode: captured.mode,
+        signedAt: now,
+        signedBy: actor,
+      });
+      await updateAssessmentContract({
+        ...selected,
+        data,
+        updated_at: now,
+        version: num(selected.version) + 1,
+      } as AssessmentContract);
+      notify(
+        party === 'company' ? 'Company signature recorded.' : 'Customer signature recorded — contract fully signed.',
+        'success',
+      );
+      setSigningParty(null);
+    } catch (e: any) {
+      notify(`Signature failed: ${e.message}`, 'error');
+    }
+  };
+
+  // ── Contract document generation (read-only) ─────────────────────
+  const handleGenerateContractDocument = async () => {
+    if (!selected) return;
+    try {
+      const doc = await buildPrintingContractDoc({
+        contract: selected,
+        customerName: customerNameOf(selected.customer_id),
+        schoolName: schoolNameOf(selected.school_id),
+      });
+      setDocPreview({ data: PrintingContractSchema.parse(doc) });
+    } catch (e: any) {
+      notify(`Document generation failed: ${e.message}`, 'error');
+    }
   };
 
   const money = (v: number) => `${currency}${num(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
@@ -1551,11 +1623,94 @@ const PrintingContractsView: React.FC = () => {
                         {(selected.data as any)?.issued_invoice_id || 'Not yet issued'}
                       </p>
                     </div>
-                    {!(selected.data as any)?.issued_invoice_id && (
+                    {!(selected.data as any)?.issued_invoice_id && canManageContracts && (
                       <ContractPrimaryButton compact chevron={false} onClick={handleIssueInvoiceForSelected}>
                         <FileText size={13} /> Issue invoice
                       </ContractPrimaryButton>
                     )}
+                  </div>
+                  <div style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: 0 }}>Signatures</p>
+                      <span style={{
+                        fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.06,
+                        padding: '3px 10px', borderRadius: 999, border: '1px solid',
+                        ...(selectedSignatures.company && selectedSignatures.customer
+                          ? { color: '#047857', background: '#ecfdf5', borderColor: '#a7f3d0' }
+                          : (selectedSignatures.company || selectedSignatures.customer)
+                            ? { color: '#b45309', background: '#fffbeb', borderColor: '#fde68a' }
+                            : { color: '#5c6567', background: '#f1f5f9', borderColor: '#e4ddd1' }),
+                      }}>
+                        {selectedSignatures.company && selectedSignatures.customer
+                          ? 'Fully signed'
+                          : (selectedSignatures.company || selectedSignatures.customer) ? 'Partially signed' : 'Unsigned'}
+                      </span>
+                    </div>
+                    {!selectedSignatures.company && !selectedSignatures.customer && selectedSignatures.history.some(h => h.type === 'voided') && (
+                      <p style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', margin: '0 0 12px' }}>
+                        Signatures were voided by an approved amendment — re-signing is required before a new document is generated.
+                      </p>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      {(['company', 'customer'] as SignatureParty[]).map(party => {
+                        const block = selectedSignatures[party];
+                        const lockedByOrder = party === 'customer' && !selectedSignatures.company;
+                        const canSign = canManageContracts && isSignableContractStatus(selected.status);
+                        return (
+                          <div key={party} style={{ border: `1px solid ${contractHairline}`, borderRadius: 10, padding: 12, background: '#fff' }}>
+                            <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: '0 0 8px' }}>
+                              {party === 'company' ? 'Company' : 'Customer'}
+                            </p>
+                            {block ? (
+                              <div>
+                                {block.signatureDataUrl && (
+                                  <img src={block.signatureDataUrl} alt={`${party} signature`} style={{ maxWidth: '100%', maxHeight: 56, marginBottom: 6, border: '1px solid #e4ddd1', borderRadius: 6, background: '#fff' }} />
+                                )}
+                                <p style={{ fontSize: 12, fontWeight: 700, color: contractInk, margin: 0 }}>{block.name}</p>
+                                <p style={{ fontSize: 11, color: contractInkSoft, margin: '2px 0 0' }}>{block.role} · signed {block.signedAt ? new Date(block.signedAt).toLocaleDateString() : ''}</p>
+                              </div>
+                            ) : (
+                              <p style={{ fontSize: 12, color: contractInkSoft, fontStyle: 'italic', margin: 0 }}>Not signed</p>
+                            )}
+                            {canSign && (
+                              <button
+                                type="button"
+                                disabled={lockedByOrder}
+                                title={lockedByOrder ? 'The company must sign first — sequential order is enforced' : (block ? `Re-sign as ${party}` : `Sign as ${party}`)}
+                                onClick={() => setSigningParty(party)}
+                                style={{
+                                  marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6,
+                                  padding: '7px 12px', fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: lockedByOrder ? 'not-allowed' : 'pointer',
+                                  border: '1px solid #0f766e', background: lockedByOrder ? '#f1f5f9' : '#0f766e', color: lockedByOrder ? '#94a3b8' : '#fff',
+                                }}
+                              >
+                                <PenLine size={13} /> {block ? 'Re-sign' : 'Sign'}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {selectedSignatures.history.length > 0 && (
+                      <div style={{ marginTop: 12, borderTop: `1px solid ${contractHairline}`, paddingTop: 8 }}>
+                        {selectedSignatures.history.slice(-4).map((h, i) => (
+                          <p key={i} style={{ fontSize: 11, color: contractInkSoft, margin: '2px 0', fontFamily: "'JetBrains Mono', monospace" }}>
+                            {h.type}{h.party ? ` · ${h.party}` : ''} · {h.at ? new Date(h.at).toLocaleDateString() : ''} · {h.by}{h.reason ? ` · ${h.reason}` : ''}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 12 }}>
+                      <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: '0 0 2px' }}>Contract document</p>
+                      <p className="finance-nums" style={{ fontWeight: 700, color: contractInk, margin: 0, fontFamily: "'JetBrains Mono', monospace" }}>
+                        {selected.contract_number} · v{num(selected.version) || 1} · {selectedSignatures.company && selectedSignatures.customer ? 'fully signed' : 'unsigned/partial'}
+                      </p>
+                    </div>
+                    <ContractPrimaryButton compact chevron={false} onClick={() => { void handleGenerateContractDocument(); }}>
+                      <FileText size={13} /> Generate document
+                    </ContractPrimaryButton>
                   </div>
                   <div style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 12 }}>
                     <p style={{ margin: 0 }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Period</span>
@@ -1905,6 +2060,40 @@ const PrintingContractsView: React.FC = () => {
           </div>
         </ContractModalShell>
       )}
+
+      {/* ── Same-device signing ceremony ── */}
+      {signingParty && selected && (
+        <ContractModalShell
+          width={620}
+          zIndex={9200}
+          icon={<PenLine size={19} color="#fff" />}
+          title={`Sign as ${signingParty === 'company' ? 'Company' : 'Customer'}`}
+          subtitle={`${selected.contract_number} — ${selected.title}`}
+          onClose={() => setSigningParty(null)}
+          footerHint={signingParty === 'customer' && !selectedSignatures.company
+            ? 'The company must sign first — sequential order is enforced'
+            : 'The signature, printed name and timestamp are stored on the contract audit trail'}
+          footerActions={<></>}
+        >
+          <SignatureCapture
+            signerLabel={signingParty === 'company' ? 'Company representative' : 'Customer representative'}
+            initialName={signingParty === 'company'
+              ? String((user as any)?.name || (user as any)?.username || '')
+              : customerNameOf(selected.customer_id)}
+            submitLabel={signingParty === 'company' ? 'Sign as Company' : 'Sign as Customer'}
+            onConfirm={(captured) => { void handleConfirmSignature(signingParty, captured); }}
+            onCancel={() => setSigningParty(null)}
+          />
+        </ContractModalShell>
+      )}
+
+      {/* Generated document preview (portal-based modal) */}
+      <PreviewModal
+        isOpen={!!docPreview}
+        onClose={() => setDocPreview(null)}
+        type="PRINTING_CONTRACT"
+        data={docPreview?.data ?? null}
+      />
 
       {/* Delete confirm renders above the contract modal overlays (shell uses z 9000+) */}
       <div style={{ position: 'relative', zIndex: 9500 }}>

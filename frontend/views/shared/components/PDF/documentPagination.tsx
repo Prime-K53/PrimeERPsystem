@@ -198,10 +198,19 @@ export const paginationFurnitureStyles = {
 export function PaginationFurniture({
   identity,
   companyName,
+  verificationNote,
 }: {
   identity: PaginationIdentity;
   companyName: string;
+  /**
+   * Intermediate-page verification sentence. Defaults to the QR-based
+   * reference wording; documents without a QR (e.g. printing contracts)
+   * pass their own honest wording.
+   */
+  verificationNote?: string;
 }) {
+  const note = verificationNote
+    ?? 'Computer-generated document. Verify authenticity using the QR code on the final page.';
   return (
     <>
       <Text
@@ -218,7 +227,7 @@ export function PaginationFurniture({
         style={paginationFurnitureStyles.intermediate}
         render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
           pageNumber < totalPages
-            ? `${companyName} · ${identity.title} ${identity.number} · Computer-generated document. Verify authenticity using the QR code on the final page.`
+            ? `${companyName} · ${identity.title} ${identity.number} · ${note}`
             : ''
         }
       />

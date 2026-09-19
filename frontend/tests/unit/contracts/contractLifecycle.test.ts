@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyContractSignature,
+  applySignatureVoid,
   assertAllowedContractTransition,
   generateNextContractNumber,
   isAllowedContractTransition,
   isAllowedItemTransition,
+  isFullySigned,
+  isSignableContractStatus,
   matchContractWalletTx,
+  readContractSignatures,
   resolveActivationEvidence,
   validateAmendmentAdjustments,
 } from '../../../utils/contractLifecycle';
@@ -118,8 +123,7 @@ describe('activation evidence', () => {
   });
 });
 
-describe('amendment bounds', () => {
-  it('rejects adjustments that break coherence', () => {
+describe('amendment bounds', () => {  it('rejects adjustments that break coherence', () => {
     expect(
       validateAmendmentAdjustments(contract(), { prepaid_amount_adjustment: -2000 })
     ).toMatch(/below zero/);
@@ -137,5 +141,64 @@ describe('amendment bounds', () => {
       validateAmendmentAdjustments(contract(), { prepaid_amount_adjustment: 500, assessment_count_adjustment: 2 })
     ).toBeNull();
     expect(validateAmendmentAdjustments(contract(), {})).toBeNull();
+  });
+});
+
+describe('signing ceremony state machine', () => {
+  const block = (overrides: any = {}) => ({
+    name: 'Jane Banda',
+    role: 'Sales Manager',
+    signatureDataUrl: 'data:image/png;base64,AAA',
+    mode: 'Draw' as const,
+    signedAt: '2026-09-19T10:00:00.000Z',
+    signedBy: 'u-1',
+    ...overrides,
+  });
+
+  it('reads empty signatures by default', () => {
+    expect(readContractSignatures(undefined)).toEqual({ company: null, customer: null, history: [] });
+    expect(readContractSignatures({})).toEqual({ company: null, customer: null, history: [] });
+    expect(isFullySigned({})).toBe(false);
+  });
+
+  it('records first signatures with signed events', () => {
+    const afterCompany = applyContractSignature({}, 'company', block());
+    expect(afterCompany.signatures.company?.name).toBe('Jane Banda');
+    expect(afterCompany.signatures.customer).toBeNull();
+    expect(afterCompany.signatures.history).toHaveLength(1);
+    expect(afterCompany.signatures.history[0].type).toBe('signed');
+    expect(isFullySigned(afterCompany)).toBe(false);
+
+    const afterCustomer = applyContractSignature(afterCompany, 'customer', block({ name: 'Peter Phiri' }));
+    expect(afterCustomer.signatures.customer?.name).toBe('Peter Phiri');
+    expect(afterCustomer.signatures.company?.name).toBe('Jane Banda');
+    expect(isFullySigned(afterCustomer)).toBe(true);
+  });
+
+  it('re-signing overwrites the block but appends history', () => {
+    const once = applyContractSignature({}, 'company', block());
+    const twice = applyContractSignature(once, 'company', block({ name: 'New Rep' }));
+    expect(twice.signatures.company?.name).toBe('New Rep');
+    expect(twice.signatures.history.map((h: any) => h.type)).toEqual(['signed', 're-signed']);
+  });
+
+  it('void is a no-op when nothing is signed, clearing otherwise', () => {
+    const empty: Record<string, any> = { lines: [] };
+    expect(applySignatureVoid(empty, { by: 'u-1', at: 'now', reason: 'x' })).toBe(empty);
+    const signed = applyContractSignature({}, 'company', block());
+    const voided = applySignatureVoid(signed, { by: 'u-1', at: 'later', reason: 'amendment a-1 approved' });
+    expect(voided.signatures.company).toBeNull();
+    expect(voided.signatures.customer).toBeNull();
+    expect(voided.signatures.history.at(-1)).toMatchObject({ type: 'voided', reason: 'amendment a-1 approved' });
+    expect(isFullySigned(voided)).toBe(false);
+  });
+
+  it('restricts signing to signable statuses', () => {
+    for (const s of ['draft', 'pending_payment', 'active', 'suspended']) {
+      expect(isSignableContractStatus(s)).toBe(true);
+    }
+    for (const s of ['completed', 'expired', 'cancelled', undefined]) {
+      expect(isSignableContractStatus(s)).toBe(false);
+    }
   });
 });

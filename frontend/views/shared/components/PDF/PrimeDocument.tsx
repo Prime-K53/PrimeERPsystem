@@ -12,6 +12,7 @@ import {
   PosReceiptDoc,
   ExaminationInvoiceDoc,
   SubscriptionDoc,
+  PrintingContractDoc,
 } from './schemas.ts';
 import { CompanyConfig } from '../../../../types.ts';
 import { resolvePdfLogoSource, resolvePdfQrCodeSource } from '../../../../utils/companyAssetUtils.ts';
@@ -235,7 +236,7 @@ import { StatementSummaryTemplate } from './StatementSummaryTemplate.tsx';
 import { PortalCopyWatermark } from './PortalCopyWatermark.tsx';
 
 interface DocProps {
-  type: 'INVOICE' | 'WORK_ORDER' | 'PO' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'EXAMINATION_INVOICE' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'ORDER' | 'SALES_ORDER' | 'SUBSCRIPTION';
+  type: 'INVOICE' | 'WORK_ORDER' | 'PO' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'EXAMINATION_INVOICE' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'ORDER' | 'SALES_ORDER' | 'SUBSCRIPTION' | 'PRINTING_CONTRACT';
   data: PrimeDocData;
   configOverride?: CompanyConfig | null;
   /**
@@ -1753,6 +1754,156 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               fontScale={fontScale}
               flowing
             />
+          </View>
+        </Page>
+      </Document>
+    );
+  }
+
+  if (type === 'PRINTING_CONTRACT') {
+    const pc = data as PrintingContractDoc;
+    const cancelled = isCancelledStatus((pc as unknown as { status?: string }).status, pc as unknown as Record<string, unknown>);
+
+    const renderableSignature = (raw: unknown): string | null => {
+      const validated = normalizeSignatureDataUrl(String(raw || ''));
+      const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || '').toLowerCase();
+      return validated && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg')
+        ? validated
+        : null;
+    };
+
+    const signatureCell = (
+      label: string,
+      block: { name: string; role: string; signatureDataUrl?: string | null; signedAt: string } | null | undefined,
+    ) => {
+      const img = block ? renderableSignature(block.signatureDataUrl) : null;
+      return (
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>{label}</Text>
+          <View style={{ height: 70, borderBottomWidth: 1, borderColor: '#000', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 5 }}>
+            {img ? (
+              <Image src={img} style={{ width: 120, height: 48, objectFit: 'contain', marginBottom: 2 }} />
+            ) : (
+              <Text style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginBottom: 6 }}>Not signed</Text>
+            )}
+          </View>
+          <Text style={{ fontSize: 11, fontWeight: 'bold' }}>{block?.name || '____________________'}</Text>
+          <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>
+            {block ? `${block.role || 'Signatory'} · signed ${formatDateOnly(block.signedAt)}` : 'Signature + date'}
+          </Text>
+        </View>
+      );
+    };
+
+    return (
+      <Document title={`Printing Contract - ${pc.contractNumber}`} author={companyName}>
+        <Page size="A4" style={[s.page, pageStyle]}>
+          {channel === 'portal' && <PortalCopyWatermark />}
+          {cancelled && <CancelledWatermark />}
+          <PaginationFurniture
+            identity={{ title: 'Contract', number: String(pc.contractNumber || ''), customer: String(pc.customerName || '') }}
+            companyName={companyName}
+            verificationNote="Computer-generated document. Quote the contract number and content hash to verify."
+          />
+
+          <View style={s.headerSection}>
+            <View style={s.headerLeft}>
+              <Text style={[s.title, titleStyle, { fontFamily: 'Helvetica' }]}>Printing Contract</Text>
+              <View style={s.infoText}>
+                <Text>Contract # : {pc.contractNumber}</Text>
+                <Text>Date : {formatDateOnly(pc.date)} · Version {pc.version}</Text>
+                <Text>Status : {toTitleCase(String(pc.status || 'draft'))}{pc.fullySigned ? ' · Fully signed' : ''}</Text>
+              </View>
+            </View>
+            <View style={s.headerRight}>
+              {renderBrandMark('right')}
+            </View>
+          </View>
+
+          <View style={[s.billingSection, { marginTop: 0, marginBottom: 12 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Company</Text>
+              <View style={s.recipientInfoText}>
+                <Text style={s.recipientName}>{companyName}</Text>
+                {companyAddress ? <Text style={s.recipientDetail}>{companyAddress}</Text> : null}
+                {companyContact ? <Text style={s.recipientPhone}>{companyContact}</Text> : null}
+              </View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Client</Text>
+              <View style={s.recipientInfoText}>
+                <Text style={s.recipientName}>{pc.customerName || 'N/A'}</Text>
+                {pc.schoolName ? <Text style={s.recipientDetail}>{pc.schoolName}</Text> : null}
+                {(pc.periodStart || pc.periodEnd) ? (
+                  <Text style={s.recipientDetail}>
+                    {formatDateOnly(pc.periodStart)} → {pc.periodEnd ? formatDateOnly(pc.periodEnd) : 'open'}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+
+          <View style={{ marginTop: 8 }}>
+            <View style={s.tableHeader}>
+              <Text style={{ flex: 3 }}>Description</Text>
+              <Text style={{ flex: 1, textAlign: 'right' }}>Qty</Text>
+              <Text style={{ flex: 1, textAlign: 'right' }}>Unit Price</Text>
+              <Text style={{ flex: 1, textAlign: 'right' }}>Amount</Text>
+            </View>
+            {(pc.lines || []).map((line: { desc: string; qty: number; price: number; total: number }, i: number) => (
+              <View key={i} style={s.row}>
+                <Text style={{ flex: 3 }}>{line.desc}</Text>
+                <Text style={{ flex: 1, textAlign: 'right' }}>{line.qty}</Text>
+                <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(line.price)}</Text>
+                <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(line.total)}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={[s.summaryContainer, { justifyContent: 'flex-end' }]}>
+            <View style={{ width: 280 }}>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1, fontWeight: 'bold' }}>Prepaid Amount</Text>
+                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(pc.prepaidAmount)}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Entitlement</Text>
+                <Text style={{ textAlign: 'right' }}>{pc.maxAssessments} assessments · {currency} {formatAmount(pc.assessmentPrice)} each</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={{ marginTop: 8, padding: 10, backgroundColor: '#f8fafc', borderRadius: 8 }}>
+            <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Terms &amp; Conditions</Text>
+            <Text style={{ fontSize: 11, lineHeight: 1.6, color: '#334155' }}>
+              {pc.terms || 'No specific terms recorded on this contract.'}
+            </Text>
+            {pc.notes ? (
+              <Text style={{ fontSize: 11, lineHeight: 1.6, color: '#334155', marginTop: 6 }}>
+                Notes: {pc.notes}
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={[s.signatureBlock, { marginTop: 24, alignItems: 'flex-start', gap: 24 }]}>
+            {signatureCell('Company', pc.signatures?.company)}
+            {signatureCell('Customer', pc.signatures?.customer)}
+          </View>
+
+          <View wrap={false} style={{ marginTop: 16, borderTopWidth: 0.5, borderColor: '#e2e8f0', paddingTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 10.5, fontWeight: 'bold', color: '#1e3a8a', letterSpacing: 0.4 }}>
+                DOCUMENT INTEGRITY
+              </Text>
+            </View>
+            <Text style={{ marginTop: 6, fontSize: 9, color: '#1e3a8a', lineHeight: 1.45 }}>
+              Content hash: {pc.contentHash}
+            </Text>
+            <Text style={{ marginTop: 4, fontSize: 9, color: '#475569', lineHeight: 1.45 }}>
+              This hash covers the agreed parties, commercial lines, totals, terms and both
+              signatures. Any alteration changes the hash. Quote the contract number and hash
+              to verify with {companyName}.
+            </Text>
           </View>
         </Page>
       </Document>

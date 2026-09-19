@@ -316,8 +316,50 @@ export const ExaminationInvoiceSchema = FinancialDocSchema.extend({
   })).optional(),
 });
 
-export type FinancialDoc = z.infer<typeof FinancialDocSchema>;
-export type LogisticsDoc = z.infer<typeof LogisticsDocSchema>;
+// 9. Printing Contract Schema — commercial agreement plus dual-party
+// signatures. Signature blocks are nullable (unsigned / voided states);
+// signatureDataUrl is nullable because the PDF sanitizer converts missing
+// values to null after validation.
+const ContractSignatureSchema = z.object({
+  name: z.string(),
+  role: z.string(),
+  signatureDataUrl: z.string().nullable().optional(),
+  mode: z.enum(['Draw', 'Upload']).optional(),
+  signedAt: z.string(),
+  signedBy: z.string(),
+});
+
+export const PrintingContractSchema = z.object({
+  ...VerifiableDocFields,
+  contractNumber: z.string(),
+  date: z.string(),
+  version: z.number(),
+  status: z.string(),
+  customerName: z.string(),
+  schoolName: z.string().optional(),
+  periodStart: z.string().optional(),
+  periodEnd: z.string().optional(),
+  lines: z.array(z.object({
+    desc: z.string(),
+    qty: z.number(),
+    price: z.number(),
+    total: z.number(),
+  }).passthrough()),
+  prepaidAmount: z.number(),
+  maxAssessments: z.number(),
+  assessmentPrice: z.number(),
+  terms: z.string().optional(),
+  notes: z.string().optional(),
+  signatures: z.object({
+    company: ContractSignatureSchema.nullable().optional(),
+    customer: ContractSignatureSchema.nullable().optional(),
+  }).optional(),
+  fullySigned: z.boolean(),
+  contentHash: z.string(),
+  issuedInvoiceId: z.string().optional(),
+});
+
+export type FinancialDoc = z.infer<typeof FinancialDocSchema>;export type LogisticsDoc = z.infer<typeof LogisticsDocSchema>;
 export type ReceiptDoc = z.infer<typeof ReceiptSchema>;
 export type SupplierPaymentDoc = z.infer<typeof SupplierPaymentSchema>;
 export type PosReceiptDoc = z.infer<typeof PosReceiptSchema>;
@@ -326,7 +368,8 @@ export type FiscalReportDoc = z.infer<typeof FiscalReportSchema>;
 export type SalesExchangeDoc = z.infer<typeof SalesExchangeSchema>;
 export type SubscriptionDoc = z.infer<typeof SubscriptionDocSchema>;
 export type ExaminationInvoiceDoc = z.infer<typeof ExaminationInvoiceSchema>;
-export type PrimeDocData = FinancialDoc | LogisticsDoc | ReceiptDoc | SupplierPaymentDoc | PosReceiptDoc | StatementDoc | FiscalReportDoc | SalesExchangeDoc | SubscriptionDoc | ExaminationInvoiceDoc;
+export type PrintingContractDoc = z.infer<typeof PrintingContractSchema>;
+export type PrimeDocData = FinancialDoc | LogisticsDoc | ReceiptDoc | SupplierPaymentDoc | PosReceiptDoc | StatementDoc | FiscalReportDoc | SalesExchangeDoc | SubscriptionDoc | ExaminationInvoiceDoc | PrintingContractDoc;
 
 type UnionKeys<T> = T extends T ? keyof T : never;
 type PickType<T, K extends PropertyKey> = T extends Record<K, infer V> ? V : never;

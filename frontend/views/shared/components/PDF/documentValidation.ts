@@ -86,6 +86,17 @@ export const validateDocumentData = (type: DocType | string, data: any): Validat
     return { valid: true };
   }
 
+  if (type === 'PRINTING_CONTRACT') {
+    const r1 = requireFields(data, ['contractNumber', 'customerName', 'contentHash'], 'Printing Contract', ['Contract number', 'Customer name', 'Content hash']);
+    if (r1) return { valid: false, error: r1 };
+    if (data.prepaidAmount === undefined || data.prepaidAmount === null) {
+      return { valid: false, error: 'Printing Contract is missing a prepaid amount' };
+    }
+    const r2 = checkArray(data, 'lines', 'Printing Contract', 'commercial lines');
+    if (r2) return { valid: false, error: r2 };
+    return { valid: true };
+  }
+
   if (type === 'WORK_ORDER') {
     const r1 = requireFields(data, ['number', 'instructions'], 'Work Order', ['Order number', 'Instructions']);
     if (r1) return { valid: false, error: r1 };

@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { logger } from '@/services/logger';
-import { PrimeDocData, FinancialDocSchema, LogisticsDocSchema, ReceiptSchema, SupplierPaymentSchema, PosReceiptSchema, StatementSchema, FiscalReportSchema, SalesExchangeSchema, SubscriptionDocSchema, ExaminationInvoiceSchema } from '../views/shared/components/PDF/schemas';
+import { PrimeDocData, FinancialDocSchema, LogisticsDocSchema, ReceiptSchema, SupplierPaymentSchema, PosReceiptSchema, StatementSchema, FiscalReportSchema, SalesExchangeSchema, SubscriptionDocSchema, ExaminationInvoiceSchema, PrintingContractSchema } from '../views/shared/components/PDF/schemas';
 
-export type DocType = 'INVOICE' | 'EXAMINATION_INVOICE' | 'PO' | 'WORK_ORDER' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'SALES_ORDER' | 'SUBSCRIPTION' | 'ORDER';
+export type DocType = 'INVOICE' | 'EXAMINATION_INVOICE' | 'PO' | 'WORK_ORDER' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'SALES_ORDER' | 'SUBSCRIPTION' | 'ORDER' | 'PRINTING_CONTRACT';
 
 export interface FilePreviewDescriptor {
   downloadUrl?: string;
@@ -41,6 +41,9 @@ const resolveSchema = (type: DocType) => {
   }
   if (type === 'SALES_EXCHANGE') {
     return SalesExchangeSchema;
+  }
+  if (type === 'PRINTING_CONTRACT') {
+    return PrintingContractSchema;
   }
   return LogisticsDocSchema;
 };
