@@ -430,6 +430,31 @@ export const Clients: React.FC = () => {
         </div>
       </div>
 
+      {/* Portal retry banner — offline queue */}
+      {customers.some((c: any) => c.portalStatus === 'pending_retry') && (
+        <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#92400e', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <AlertTriangle size={14} /> Portal provisioning pending for {customers.filter((c: any) => c.portalStatus === 'pending_retry').length} clients — queued for background retry
+          </span>
+          <button
+            onClick={async () => {
+              const q = JSON.parse(localStorage.getItem('portal:retryQueue') || '[]');
+              if (!q.length) return;
+              for (const entry of q) {
+                const c = customers.find(x => x.id === entry.customerId);
+                if (c) await addCustomer(c, { invite: entry.invite }).catch(()=>{});
+              }
+              localStorage.removeItem('portal:retryQueue');
+              // Clear pending_retry status locally by refetch
+              window.location.reload();
+            }}
+            style={{ ...btnPrimary, background: '#d97706', fontSize: 11, padding: '6px 12px' }}
+          >
+            Retry now
+          </button>
+        </div>
+      )}
+
       {/* Main Content */}
       <div style={{
         background: paper, borderRadius: 14, border: `1px solid ${hairline}`,
@@ -655,11 +680,16 @@ export const Clients: React.FC = () => {
                         </div>
 
                         {/* Badges: Overdue + Pipeline Stage */}
-                          {(hasOverdue || (customer as Customer & Record<string, unknown>).pipelineStage) && (
+                          {(hasOverdue || (customer as Customer & Record<string, unknown>).pipelineStage || (customer as any).portalStatus === 'pending_retry') && (
                             <div style={{ display: 'flex', gap: 5, marginBottom: 8, flexWrap: 'wrap' }}>
                             {hasOverdue && (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: '#fef2f2', color: danger, border: `1px solid ${danger}40` }}>
                                 <AlertIcon size={9} /> Overdue
+                              </span>
+                            )}
+                            {(customer as any).portalStatus === 'pending_retry' && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a' }}>
+                                <Clock size={9} /> Portal pending
                               </span>
                             )}
                             {(customer as Customer & Record<string, unknown>).pipelineStage && (
@@ -784,6 +814,7 @@ export const Clients: React.FC = () => {
                                   <span style={{ fontWeight: 600, color: ink }}>{customer.companyName || customer.name}</span>
                                   {statusBadge(customer.status)}
                                   {overdue && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, fontSize: 9, fontWeight: 700, background: '#fef2f2', color: danger, border: `1px solid ${danger}40` }}><AlertIcon size={8} /> Overdue</span>}
+                                  {(customer as any).portalStatus === 'pending_retry' && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, fontSize: 9, fontWeight: 700, background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a' }}><Clock size={8} /> Portal pending</span>}
                                 </div>
                                 <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: inkSoft, marginTop: 2 }}>{customer.id}</div>
                               </div>
