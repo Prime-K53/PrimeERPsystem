@@ -176,7 +176,7 @@ const Login: React.FC = () => {
   };
 
   const inputClass =
-    'w-full h-[48px] sm:h-12 pl-11 pr-4 bg-[#0f1e3a]/70 border border-white/[0.12] rounded-xl text-[16px] sm:text-sm text-white placeholder:text-slate-500 outline-none transition-all duration-200 hover:border-white/20 hover:bg-[#142a4d]/80 focus:border-blue-400 focus:bg-[#13244e] focus:ring-4 focus:ring-blue-500/20 focus:placeholder:text-slate-400 disabled:opacity-60 backdrop-blur-sm caret-blue-300 selection:bg-blue-500/30 selection:text-white touch-manipulation';
+    'w-full h-[48px] sm:h-12 pl-11 pr-4 bg-white/[0.07] backdrop-blur-md border border-white/[0.15] rounded-2xl text-[16px] sm:text-sm text-white placeholder:text-slate-500 outline-none transition-all duration-300 hover:border-white/25 hover:bg-white/[0.10] focus:border-blue-400/70 focus:bg-white/[0.11] focus:ring-4 focus:ring-blue-500/20 focus:placeholder:text-slate-400 disabled:opacity-60 shadow-inner shadow-black/10 caret-blue-300 selection:bg-blue-500/30 selection:text-white touch-manipulation';
   const errorId = 'login-error';
   const emailErrorId = 'login-email-error';
 
@@ -189,8 +189,8 @@ const Login: React.FC = () => {
         input:-webkit-autofill:focus,
         input:-webkit-autofill:active {
           -webkit-text-fill-color: #ffffff !important;
-          -webkit-box-shadow: 0 0 0px 1000px #13244e inset !important;
-          box-shadow: 0 0 0px 1000px #13244e inset !important;
+          -webkit-box-shadow: 0 0 0px 1000px rgba(15,30,58,0.85) inset !important;
+          box-shadow: 0 0 0px 1000px rgba(15,30,58,0.85) inset !important;
           transition: background-color 5000s ease-in-out 0s !important;
           caret-color: #ffffff;
         }
@@ -200,7 +200,8 @@ const Login: React.FC = () => {
         }
       `}</style>
       <div className="animate-slideUp">
-        {/* ── Redesigned Welcome Header — bulletproof mobile ── */}
+        {/* ── Glass card container ── */}
+        <div className="relative p-5 sm:p-7 rounded-3xl bg-white/[0.04] backdrop-blur-xl border border-white/[0.09] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.05]">
         <div className="mb-5 sm:mb-7 relative px-1 sm:px-0">
           {/* glows reduced on mobile for GPU */}
           <div className="absolute -top-8 -left-8 w-24 h-24 sm:w-32 sm:h-32 bg-blue-500/10 rounded-full blur-2xl sm:blur-3xl pointer-events-none" aria-hidden="true" />
@@ -208,13 +209,13 @@ const Login: React.FC = () => {
 
           {/* Eyebrow — wraps on 320px, Online always visible but compact */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-gradient-to-r from-blue-600/20 to-indigo-600/20 border border-blue-400/20 backdrop-blur-sm shadow-[0_2px_12px_rgba(37,99,235,0.15)] max-w-full">
+            <span className="inline-flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/[0.08] backdrop-blur-md border border-white/[0.12] shadow-[0_2px_12px_rgba(37,99,235,0.15)] max-w-full">
               <span className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md ring-1 ring-white/15 shrink-0">
                 <ShieldCheck size={12} className="text-white" strokeWidth={2.5} />
               </span>
               <span className="text-[10px] font-extrabold tracking-[0.14em] text-blue-100 uppercase truncate">Administrator Login</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/15 text-[10px] font-bold text-emerald-300 backdrop-blur-sm shrink-0">
+            <span className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-emerald-500/[0.08] backdrop-blur-md border border-emerald-400/[0.12] text-[10px] font-bold text-emerald-300 shrink-0">
               <span className="relative flex w-1.5 h-1.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40" />
                 <span className="relative inline-flex rounded-full w-1.5 h-1.5 bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
@@ -261,7 +262,7 @@ const Login: React.FC = () => {
         </div>
 
           {error && (
-            <div role="alert" id={errorId} className="mb-4 sm:mb-5 p-3 sm:p-3.5 bg-rose-500/10 border border-rose-400/25 rounded-2xl flex items-start gap-2.5 sm:gap-3 animate-shake break-words">
+            <div role="alert" id={errorId} className="mb-4 sm:mb-5 p-3 sm:p-3.5 bg-rose-500/[0.08] backdrop-blur-md border border-rose-400/25 rounded-2xl flex items-start gap-2.5 sm:gap-3 animate-shake break-words shadow-lg shadow-rose-500/5">
               <span className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-400/20 flex items-center justify-center shrink-0">
                 <AlertCircle size={15} className="text-rose-300" />
               </span>
@@ -313,8 +314,8 @@ const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={!canVerifyMfa}
-                className="w-full h-[48px] sm:h-12 text-white rounded-xl font-bold text-[15px] sm:text-[13.5px] flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:brightness-110 enabled:hover:shadow-[0_10px_30px_-8px_rgba(37,99,235,0.6)] touch-manipulation select-none"
-                style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.95) 0%, rgba(30,58,138,0.98) 100%)', boxShadow: '0 8px 24px -8px rgba(37,99,235,0.55), inset 0 1px 0 rgba(255,255,255,0.12)' }}
+                className="w-full h-[48px] sm:h-12 text-white rounded-2xl font-bold text-[15px] sm:text-[13.5px] flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:brightness-110 enabled:hover:shadow-[0_10px_30px_-8px_rgba(37,99,235,0.6)] touch-manipulation select-none backdrop-blur-md border border-blue-400/20"
+                style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.85) 0%, rgba(30,58,138,0.90) 100%)', boxShadow: '0 8px 24px -8px rgba(37,99,235,0.55), inset 0 1px 0 rgba(255,255,255,0.15)' }}
               >
                 {submitting ? (
                   <>
@@ -416,8 +417,8 @@ const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="group w-full h-[48px] sm:h-12 text-white rounded-xl font-bold text-[15px] sm:text-[13.5px] flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:brightness-110 enabled:hover:shadow-[0_10px_30px_-8px_rgba(37,99,235,0.6)] touch-manipulation select-none"
-                style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.95) 0%, rgba(30,58,138,0.98) 100%)', boxShadow: '0 8px 24px -8px rgba(37,99,235,0.55), inset 0 1px 0 rgba(255,255,255,0.12)' }}
+                className="group w-full h-[48px] sm:h-12 text-white rounded-2xl font-bold text-[15px] sm:text-[13.5px] flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:brightness-110 enabled:hover:shadow-[0_10px_30px_-8px_rgba(37,99,235,0.6)] touch-manipulation select-none backdrop-blur-md border border-blue-400/20"
+                style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.85) 0%, rgba(30,58,138,0.90) 100%)', boxShadow: '0 8px 24px -8px rgba(37,99,235,0.55), inset 0 1px 0 rgba(255,255,255,0.15)' }}
               >
                 {submitting ? (
                   <>
@@ -440,13 +441,15 @@ const Login: React.FC = () => {
 
               <Link
                 to="/register-company"
-                className="w-full h-[48px] sm:h-11 rounded-xl border border-white/[0.12] bg-white/[0.05] hover:bg-white/[0.09] hover:border-amber-300/30 text-slate-200 hover:text-white font-bold text-[14px] sm:text-[13px] flex items-center justify-center gap-2 transition-all touch-manipulation"
+                className="w-full h-[48px] sm:h-11 rounded-2xl border border-white/[0.10] bg-white/[0.05] backdrop-blur-md hover:bg-white/[0.09] hover:border-amber-300/30 text-slate-200 hover:text-white font-bold text-[14px] sm:text-[13px] flex items-center justify-center gap-2 transition-all duration-300 touch-manipulation shadow-sm shadow-black/10"
               >
                 <Building2 size={15} className="text-amber-300" />
                 Create new company
               </Link>
             </form>
           )}
+
+        </div>
 
         {/* ── Trust footer ── */}
         <div className="mt-6 sm:mt-5 flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[11px] font-semibold text-slate-500 px-2 text-center">

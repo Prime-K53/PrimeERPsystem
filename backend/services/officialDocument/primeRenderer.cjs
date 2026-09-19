@@ -230940,6 +230940,43 @@ var ExaminationInvoiceSchema = FinancialDocSchema.extend({
     classTotal: external_exports.number()
   })).optional()
 });
+var ContractSignatureSchema = external_exports.object({
+  name: external_exports.string(),
+  role: external_exports.string(),
+  signatureDataUrl: external_exports.string().nullable().optional(),
+  mode: external_exports.enum(["Draw", "Upload"]).optional(),
+  signedAt: external_exports.string(),
+  signedBy: external_exports.string()
+});
+var PrintingContractSchema = external_exports.object({
+  ...VerifiableDocFields,
+  contractNumber: external_exports.string(),
+  date: external_exports.string(),
+  version: external_exports.number(),
+  status: external_exports.string(),
+  customerName: external_exports.string(),
+  schoolName: external_exports.string().optional(),
+  periodStart: external_exports.string().optional(),
+  periodEnd: external_exports.string().optional(),
+  lines: external_exports.array(external_exports.object({
+    desc: external_exports.string(),
+    qty: external_exports.number(),
+    price: external_exports.number(),
+    total: external_exports.number()
+  }).passthrough()),
+  prepaidAmount: external_exports.number(),
+  maxAssessments: external_exports.number(),
+  assessmentPrice: external_exports.number(),
+  terms: external_exports.string().optional(),
+  notes: external_exports.string().optional(),
+  signatures: external_exports.object({
+    company: ContractSignatureSchema.nullable().optional(),
+    customer: ContractSignatureSchema.nullable().optional()
+  }).optional(),
+  fullySigned: external_exports.boolean(),
+  contentHash: external_exports.string(),
+  issuedInvoiceId: external_exports.string().optional()
+});
 
 // types/currency.ts
 var DEFAULT_CURRENCIES = [
@@ -231762,7 +231799,8 @@ var SUPPORTED_DOCUMENT_TYPES = [
   "purchase_order",
   "delivery_note",
   "supplier_payment",
-  "statement"
+  "statement",
+  "printing_contract"
 ];
 var TYPE_SLUGS = {
   invoice: "invoice",
@@ -231772,7 +231810,8 @@ var TYPE_SLUGS = {
   purchase_order: "purchase-order",
   delivery_note: "delivery-note",
   supplier_payment: "supplier-payment",
-  statement: "statement"
+  statement: "statement",
+  printing_contract: "printing-contract"
 };
 var SLUG_TO_TYPE = Object.fromEntries(
   Object.entries(TYPE_SLUGS).map(([type, slug]) => [slug, type])
@@ -231810,7 +231849,7 @@ function resolveVerificationBaseUrl() {
 function buildDocumentVerificationUrl(ref, baseUrl) {
   const type = String(ref?.documentType || "invoice");
   if (!isSupportedDocumentType(type)) return null;
-  const number6 = String(ref?.documentNumber ?? ref?.invoiceNumber ?? ref?.number ?? "").trim();
+  const number6 = String(ref?.documentNumber ?? ref?.invoiceNumber ?? ref?.contractNumber ?? ref?.number ?? "").trim();
   const token = String(ref?.verificationToken ?? "").trim();
   if (!number6 || !token) return null;
   const base = String(baseUrl ?? resolveVerificationBaseUrl()).replace(/\/+$/, "");
@@ -231822,14 +231861,16 @@ function detectVerifiableDocumentType(data2) {
   if (isSupportedDocumentType(data2.documentType)) return data2.documentType;
   if (data2.invoiceNumber) return "invoice";
   if (data2.receiptNumber) return "receipt";
+  if (data2.contractNumber) return "printing_contract";
   if (data2.quotationNumber || data2.quotationId) return "quotation";
   if (data2.orderNumber && String(data2.orderNumber).startsWith("SO-")) return "sales_order";
   if (data2.order_number || data2.orderNumber && String(data2.orderNumber).startsWith("PO-")) return "purchase_order";
   if (data2.dnNumber || data2.deliveryNoteNumber || data2.delivery_number) return "delivery_note";
   if (data2.statementNumber) return "statement";
   if ((data2.paymentNumber || data2.paymentId) && (data2.supplierName || data2.supplier_id || data2.supplierId)) return "supplier_payment";
-  const id = String(data2.paymentNumber || data2.paymentId || data2.statementNumber || data2.id || data2.number || "");
+  const id = String(data2.paymentNumber || data2.paymentId || data2.statementNumber || data2.contractNumber || data2.id || data2.number || "");
   if (/^STMT-/i.test(id)) return "statement";
+  if (/^PC-/i.test(id)) return "printing_contract";
   if (/^SPAY-/i.test(id)) return "supplier_payment";
   if (/^INV-/i.test(id)) return "invoice";
   if (/^QTN-/i.test(id)) return "quotation";
@@ -231857,6 +231898,8 @@ function resolveVerifiableDocumentNumber(data2, type) {
       return String(data2?.paymentNumber ?? data2?.paymentId ?? data2?.number ?? data2?.id ?? "").trim();
     case "statement":
       return String(data2?.statementNumber ?? data2?.number ?? data2?.id ?? "").trim();
+    case "printing_contract":
+      return String(data2?.contractNumber ?? data2?.contract_number ?? data2?.number ?? data2?.id ?? "").trim();
     default:
       return "";
   }
@@ -231891,6 +231934,8 @@ var verifiableTypeForDocType = (docType) => {
     case "ACCOUNT_STATEMENT":
     case "ACCOUNT_STATEMENT_SUMMARY":
       return "statement";
+    case "PRINTING_CONTRACT":
+      return "printing_contract";
     default:
       return void 0;
   }
@@ -233203,6 +233248,17 @@ var getDefaultPaymentTermsLabel = (companyConfig) => {
     30
   );
   return termsDays === 0 ? "Due on receipt" : `Net ${termsDays}`;
+};
+
+// services/receiptCalculationService.ts
+var resolveReceiptPaymentBadge = (input) => {
+  const cancelled = input?.isCancelled === true || input?.cancelled === true || ["cancelled", "canceled", "void", "voided"].includes(
+    String(input?.status ?? input?.paymentStatus ?? "").trim().toLowerCase()
+  );
+  if (cancelled) {
+    return { label: "CANCELLED", color: "#dc2626", borderColor: "#ef4444" };
+  }
+  return { label: "PAYMENT RECEIVED", color: "#059669", borderColor: "#10b981" };
 };
 
 // views/shared/components/PDF/documentPagination.tsx
@@ -234924,6 +234980,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const isOverpaid = rc.paymentStatus === "OVERPAID";
     const overpaymentAmount = rc.overpaymentAmount || rc.walletDeposit || 0;
     const isCancelled2 = isCancelledStatus(rc.paymentStatus || rc.status, rc);
+    const receiptBadge = resolveReceiptPaymentBadge(rc);
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Payment Receipt - ${rc.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
       channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, {}),
       isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, {}),
@@ -234936,7 +234993,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       ),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.headerSection, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.title, titleStyle], children: "Payment Receipt" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.title, titleStyle, { fontFamily: "Helvetica" }], children: "Payment Receipt" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.infoText, children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
               "Receipt # : ",
@@ -234958,7 +235015,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: "#991b1b", fontSize: 12, fontWeight: "bold", lineHeight: 1.4 }, children: "OVERPAYMENT NOTICE" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: "#b91c1c", fontSize: 12, lineHeight: 1.4 }, children: "This payment exceeds the invoice total. The excess has been credited to your wallet." })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 0, marginBottom: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }], children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 0, marginBottom: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }], children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Received From" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.recipientInfoText, children: [
@@ -234967,10 +235024,10 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
             resolvedRecipientPhone ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.recipientPhone, children: resolvedRecipientPhone }) : null
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.statusBox, { borderLeftColor: "#10b981" }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: "#059669" }, children: "PAID" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.statusBox, { borderLeftColor: receiptBadge.borderColor }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: receiptBadge.color }, children: receiptBadge.label }) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 5, padding: 15, backgroundColor: "#f8fafc", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, lineHeight: 1.6, color: "#334155" }, children: rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount2(rc.amountReceived)} received from ${rc.customerName}.` }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 30 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 8, padding: 10, backgroundColor: "#f8fafc", borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, lineHeight: 1.6, color: "#334155" }, children: rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount2(rc.amountReceived)} received from ${rc.customerName}.` }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 16 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount Paid" })
@@ -234995,7 +235052,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         ] }),
         isPartial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.totalRow], children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, color: "#ef4444" }, children: "Outstanding Balance" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: "#ef4444", textAlign: "right" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: "#ef4444", fontWeight: "bold", textAlign: "right" }, children: [
             currency,
             " ",
             formatAmount2(rc.balanceDue)
@@ -235010,21 +235067,171 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           ] })
         ] })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.footerContainer, wrap: false, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: [docStyles.thankYouText, { fontSize: scaledFont(12) }], children: [
-          "Thank you for choosing ",
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: scaledFont(14) }, children: companyName })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.footerLine }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyAddress }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.footerDetail, { fontSize: scaledFont(12) }], children: companyContact })
-      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 10, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(12), color: "#334155" }, children: [
+        "Thank you for choosing ",
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+      ] }) }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           SecurityFooter,
           {
             data: rc,
+            companyName,
+            legalFooterLine1: resolveFooterText(config2, "", false),
+            legalFooterLine2: buildFooterContactLine(config2),
+            fontScale,
+            flowing: true
+          }
+        )
+      ] })
+    ] }) });
+  }
+  if (type === "PRINTING_CONTRACT") {
+    const pc = data2;
+    const cancelled = isCancelledStatus(pc.status, pc);
+    const renderableSignature = (raw) => {
+      const validated = normalizeSignatureDataUrl(String(raw || ""));
+      const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || "").toLowerCase();
+      return validated && (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg") ? validated : null;
+    };
+    const signatureCell = (label, block) => {
+      const img = block ? renderableSignature(block.signatureDataUrl) : null;
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: label }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 70, borderBottomWidth: 1, borderColor: "#000", justifyContent: "flex-end", alignItems: "center", marginBottom: 5 }, children: img ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: img, style: { width: 120, height: 48, objectFit: "contain", marginBottom: 2 } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: "#94a3b8", fontStyle: "italic", marginBottom: 6 }, children: "Not signed" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, fontWeight: "bold" }, children: block?.name || "____________________" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: "#475569", marginTop: 2 }, children: block ? `${block.role || "Signatory"} \xB7 signed ${formatDateOnly(block.signedAt)}` : "Signature + date" })
+      ] });
+    };
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Printing Contract - ${pc.contractNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [docStyles.page, pageStyle], children: [
+      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, {}),
+      cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        PaginationFurniture,
+        {
+          identity: { title: "Contract", number: String(pc.contractNumber || ""), customer: String(pc.customerName || "") },
+          companyName
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.headerSection, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.headerLeft, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [docStyles.title, titleStyle, { fontFamily: "Helvetica" }], children: "Printing Contract" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.infoText, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+              "Contract # : ",
+              pc.contractNumber
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+              "Date : ",
+              formatDateOnly(pc.date),
+              " \xB7 Version ",
+              pc.version
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+              "Status : ",
+              toTitleCase(String(pc.status || "draft")),
+              pc.fullySigned ? " \xB7 Fully signed" : ""
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: docStyles.headerRight, children: renderBrandMark("right") })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.billingSection, { marginTop: 0, marginBottom: 12 }], children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Company" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.recipientInfoText, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.recipientName, children: companyName }),
+            companyAddress ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.recipientDetail, children: companyAddress }) : null,
+            companyContact ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.recipientPhone, children: companyContact }) : null
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Client" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.recipientInfoText, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.recipientName, children: pc.customerName || "N/A" }),
+            pc.schoolName ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.recipientDetail, children: pc.schoolName }) : null,
+            pc.periodStart || pc.periodEnd ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: docStyles.recipientDetail, children: [
+              formatDateOnly(pc.periodStart),
+              " \u2192 ",
+              pc.periodEnd ? formatDateOnly(pc.periodEnd) : "open"
+            ] }) : null
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.tableHeader, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Qty" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Unit Price" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount" })
+        ] }),
+        (pc.lines || []).map((line2, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: line2.desc }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: line2.qty }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
+            currency,
+            " ",
+            formatAmount2(line2.price)
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
+            currency,
+            " ",
+            formatAmount2(line2.total)
+          ] })
+        ] }, i2))
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [docStyles.summaryContainer, { justifyContent: "flex-end" }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 280 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.totalRow], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Prepaid Amount" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", textAlign: "right" }, children: [
+            currency,
+            " ",
+            formatAmount2(pc.prepaidAmount)
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.totalRow], children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Entitlement" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
+            pc.maxAssessments,
+            " assessments \xB7 ",
+            currency,
+            " ",
+            formatAmount2(pc.assessmentPrice),
+            " each"
+          ] })
+        ] })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: "#f8fafc", borderRadius: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 4, fontSize: 10, textTransform: "uppercase", color: "#64748b" }, children: "Terms & Conditions" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, lineHeight: 1.6, color: "#334155" }, children: pc.terms || "No specific terms recorded on this contract." }),
+        pc.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, lineHeight: 1.6, color: "#334155", marginTop: 6 }, children: [
+          "Notes: ",
+          pc.notes
+        ] }) : null
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [docStyles.signatureBlock, { marginTop: 24, alignItems: "flex-start", gap: 24 }], children: [
+        signatureCell("Company", pc.signatures?.company),
+        signatureCell("Customer", pc.signatures?.customer)
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 16, borderTopWidth: 0.5, borderColor: "#e2e8f0", paddingTop: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", alignItems: "center", gap: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10.5, fontWeight: "bold", color: "#1e3a8a", letterSpacing: 0.4 }, children: "DOCUMENT INTEGRITY" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 6, fontSize: 9, color: "#1e3a8a", lineHeight: 1.45 }, children: [
+          "Content hash: ",
+          pc.contentHash
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 4, fontSize: 9, color: "#475569", lineHeight: 1.45 }, children: [
+          "This hash covers the agreed parties, commercial lines, totals, terms and both signatures. Any alteration changes the hash. Quote the contract number and hash to verify with ",
+          companyName,
+          "."
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          SecurityFooter,
+          {
+            data: pc,
             companyName,
             legalFooterLine1: resolveFooterText(config2, "", false),
             legalFooterLine2: buildFooterContactLine(config2),
@@ -236129,7 +236336,7 @@ var formatSecurityTimestamp = (value2) => {
   return parsed.toLocaleString();
 };
 var resolveDocumentNumber = (data2) => String(
-  data2?.number || data2?.invoiceNumber || data2?.orderNumber || data2?.order_number || data2?.receiptNumber || data2?.quotationNumber || data2?.quotationId || data2?.dnNumber || data2?.deliveryNoteNumber || data2?.delivery_number || data2?.paymentNumber || data2?.paymentId || data2?.statementNumber || data2?.exchangeNumber || data2?.reportName || "N/A"
+  data2?.number || data2?.invoiceNumber || data2?.orderNumber || data2?.order_number || data2?.receiptNumber || data2?.quotationNumber || data2?.quotationId || data2?.dnNumber || data2?.deliveryNoteNumber || data2?.delivery_number || data2?.paymentNumber || data2?.paymentId || data2?.contractNumber || data2?.statementNumber || data2?.exchangeNumber || data2?.reportName || "N/A"
 ).trim() || "N/A";
 var resolveCreatedBy = (data2) => String(
   data2?.createdByName || data2?.createdBy || data2?.created_by || data2?.cashierName || data2?.cashier_name || data2?.operatorName || data2?.operator_name || "System User"
@@ -236236,6 +236443,16 @@ var validateDocumentData = (type, data2) => {
   if (type === "SALES_EXCHANGE") {
     const r1 = requireFields(data2, ["exchangeNumber", "customerName", "invoiceNumber", "reason"], "Sales Exchange", ["Exchange number", "Customer name", "Reference invoice", "Reason"]);
     if (r1) return { valid: false, error: r1 };
+    return { valid: true };
+  }
+  if (type === "PRINTING_CONTRACT") {
+    const r1 = requireFields(data2, ["contractNumber", "customerName", "contentHash"], "Printing Contract", ["Contract number", "Customer name", "Content hash"]);
+    if (r1) return { valid: false, error: r1 };
+    if (data2.prepaidAmount === void 0 || data2.prepaidAmount === null) {
+      return { valid: false, error: "Printing Contract is missing a prepaid amount" };
+    }
+    const r22 = checkArray(data2, "lines", "Printing Contract", "commercial lines");
+    if (r22) return { valid: false, error: r22 };
     return { valid: true };
   }
   if (type === "WORK_ORDER") {

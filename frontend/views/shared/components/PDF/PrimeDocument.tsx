@@ -1740,9 +1740,11 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             {/* Receipt thank-you carries the company name only: street
                 address and phone/email contact lines are intentionally
                 omitted from the payment receipt (the QR verification block
-                below remains the contact point). */}
-            <View style={s.footerContainer} wrap={false}>
-              <Text style={[s.thankYouText, { fontSize: scaledFont(12) }]}>Thank you for choosing <Text style={{ fontWeight: 'bold', fontSize: scaledFont(14) }}>{companyName}</Text></Text>
+                below remains the contact point). Spacing matches the invoice. */}
+            <View wrap={false} style={{ marginTop: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: scaledFont(12), color: '#334155' }}>
+                Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
+              </Text>
             </View>
 
           <View wrap={false} style={{ marginTop: 10 }}>
