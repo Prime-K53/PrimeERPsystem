@@ -105,19 +105,18 @@ export const useSalesStore = create<SalesState>((set, get) => ({
   fetchSalesData: async (silent = false) => {
     if (!silent) set({ isLoading: true });
     try {
-      // Sales Orders are fetched from the canonical salesOrderStore, not duplicated here.
       await useSalesOrderStore.getState().fetchSalesOrders(true);
       const [sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs] = await Promise.all([
-        api.sales.getAllSales(),
-        api.sales.getQuotations(),
-        api.sales.getJobOrders(),
-        api.sales.getCustomerPayments(),
-        api.sales.getShipments(),
-        api.customers.getAll().then(list => (list as Array<Record<string, unknown>>).filter(c => !c.deletedAt)),
-        api.sales.getSalesExchanges(),
-        api.sales.getReprintJobs(),
+        api.sales.getAllSales().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
+        api.sales.getQuotations().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
+        api.sales.getJobOrders().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
+        api.sales.getCustomerPayments().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
+        api.sales.getShipments().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
+        api.customers.getAll().then(list => (list as Array<Record<string, unknown>>).filter(c => !c.deletedAt).slice(0,2000)),
+        api.sales.getSalesExchanges().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
+        api.sales.getReprintJobs().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
       ]);
-
+      if ((sales as any[]).length >= 1000) logger.warn('Sales truncated at 1000 — pagination required (Phase 2)');
       set({ sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs, salesOrders: useSalesOrderStore.getState().salesOrders });
     } catch (error) {
       logger.error("Failed to load sales data", error);
@@ -253,7 +252,14 @@ export const useSalesStore = create<SalesState>((set, get) => ({
     }
   },
   deleteHeldOrder: async (id) => {
+      const prev = get().heldOrders;
       set(state => ({ heldOrders: state.heldOrders.filter(h => h.id !== id) }));
+      try {
+        await api.sales.deleteHeldOrder?.(id) ?? api.sales.saveHeldOrder?.({ id, _deleted: true } as any);
+      } catch (e) {
+        set({ heldOrders: prev });
+        throw e;
+      }
   },
 
 addCustomerPayment: async (payment) => {

@@ -127,16 +127,24 @@ const GenericHub: React.FC<GenericHubProps> = ({
           </p>
         </div>
 
+        <style>{`
+          @media (max-width: 640px) {
+            .hub-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+            .hub-card { padding: 18px 16px !important; }
+            .hub-header { padding-top: 10px !important; margin-bottom: 20px !important; }
+            .hub-title { font-size: 28px !important; }
+          }
+        `}</style>
         <div style={{
           width: '100%',
           maxWidth: 1200,
-          padding: '32px 24px',
-        }}>
+          padding: '24px 16px',
+        }} className="sm:!p-[32px_24px]">
           {/* Navigation Grid */}
-          <div style={{
+          <div className="hub-grid" style={{
             width: '100%',
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px,100%), 1fr))',
             gap: 16,
           }}>
             {options.map((option, index) => (

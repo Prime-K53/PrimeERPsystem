@@ -32,6 +32,8 @@ interface SalesOrderState {
   runMigrationIfNeeded: () => Promise<void>;
 }
 
+const inFlightCreates = new Set<string>();
+
 export const useSalesOrderStore = create<SalesOrderState>((set, get) => ({
   salesOrders: [],
   isLoading: false,
@@ -53,20 +55,23 @@ export const useSalesOrderStore = create<SalesOrderState>((set, get) => ({
 
   createSalesOrder: async (order) => {
     const canonical = salesOrderService.canonicalizeOrder(order);
-    // Tenant isolation: enforced server-side when company_id is added to sales_orders.
-    // assertTenantSafe() exists but requires companyConfig from React context; not wired here intentionally.
-    const existing = get().salesOrders.find((o) => o.id === canonical.id);
-    if (existing) {
-      if (canonical.idempotencyKey && existing.idempotencyKey === canonical.idempotencyKey) {
-        return existing;
+    const dedupeKey = canonical.idempotencyKey || canonical.id;
+    if (inFlightCreates.has(dedupeKey)) throw new Error('Duplicate submit blocked — order already creating');
+    inFlightCreates.add(dedupeKey);
+    try {
+      const existing = get().salesOrders.find((o) => o.id === canonical.id);
+      if (existing) {
+        if (canonical.idempotencyKey && existing.idempotencyKey === canonical.idempotencyKey) return existing;
+        throw new Error(`Sales order ${canonical.id} already exists`);
       }
-      throw new Error(`Sales order ${canonical.id} already exists`);
+      const errors = salesOrderService.validateOrder(canonical);
+      if (errors.length > 0) throw new Error(errors.join('; '));
+      await api.sales.saveSalesOrder(canonical);
+      set((state) => ({ salesOrders: [...state.salesOrders, canonical] }));
+      return canonical;
+    } finally {
+      inFlightCreates.delete(dedupeKey);
     }
-    const errors = salesOrderService.validateOrder(canonical);
-    if (errors.length > 0) throw new Error(errors.join('; '));
-    await api.sales.saveSalesOrder(canonical);
-    set((state) => ({ salesOrders: [...state.salesOrders, canonical] }));
-    return canonical;
   },
 
   createFinancialOrder: async (order) => {

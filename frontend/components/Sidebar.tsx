@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { logger } from '../services/logger';
 import {
   PieChart, Users, ArrowLeftRight, ArrowRightLeft, BarChart3, Package, Factory,
@@ -38,13 +38,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
   const { refreshAllData } = useData();
   const getTabletViewport = () => {
     if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 1024 && window.innerWidth >= 768;
+    return window.matchMedia('(min-width:768px) and (max-width:1024px)').matches;
   };
 
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isTabletViewport, setIsTabletViewport] = useState(getTabletViewport);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [recents, setRecents] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('sidebar:recents') || '[]'); } catch { return []; }
+  });
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -84,32 +89,35 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
   }, []);
 
   useEffect(() => {
-    const handleResize = () => {
-      setIsTabletViewport(getTabletViewport());
+    const mql = window.matchMedia('(min-width:768px) and (max-width:1024px)');
+    const handleChange = () => setIsTabletViewport(mql.matches);
+    handleChange();
+    // Modern browsers
+    if (mql.addEventListener) mql.addEventListener('change', handleChange);
+    else mql.addListener(handleChange);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener('change', handleChange);
+      else mql.removeListener(handleChange);
     };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const isCompressed = isCollapsed || isTabletViewport;
 
-  const isActive = (path: string) => {
+  const isActive = useCallback((path: string) => {
     if (!path) return false;
-    if (path === '/' && location.pathname === '/') return true;
-
-    // Fix for user request: "when supplier is selected procurement should not be highlighted in the side bar, so do clients sales flow should not be highlighted"
-    // We explicitly exclude these paths when checking for the parent menu items.
-    const normalizedPath = path.endsWith('/') ? path.slice(0, -1) : path;
-    const normalizedLocation = location.pathname.endsWith('/') ? location.pathname.slice(0, -1) : location.pathname;
-
-    if (normalizedPath === '/sales-flow' && normalizedLocation.startsWith('/sales-flow/clients')) return false;
-    if (normalizedPath === '/procurement' && normalizedLocation.startsWith('/procurement/suppliers')) return false;
-
-    if (path !== '/' && normalizedLocation.startsWith(normalizedPath)) return true;
-    return false;
-  };
+    const clean = (p: string) => p.replace(/\/+$/, '') || '/';
+    const loc = clean(location.pathname);
+    const target = clean(path);
+    if (loc === target) return true;
+    if (target === '/') return false;
+    // Segment-boundary check: loc must be target + '/' + rest
+    const isChild = loc === target || loc.startsWith(target + '/');
+    if (!isChild) return false;
+    // Preserve original UX: don't highlight parent when drilling into pure sub-routes
+    if (target === '/sales-flow' && loc.startsWith('/sales-flow/clients')) return false;
+    if (target === '/procurement' && loc.startsWith('/procurement/suppliers')) return false;
+    return true;
+  }, [location.pathname]);
 
   const toggleSubMenu = (label: string) => {
     if (isCollapsed) {
@@ -118,7 +126,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
     setExpandedMenus(prev => ({ ...prev, [label]: !prev[label] }));
   };
 
-  const menuGroups = [
+  const menuGroups = useMemo(() => [
     {
       group: "Command",
       items: [
@@ -326,7 +334,64 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
         },
       ].filter(item => item.visible !== false)
     },
-  ].filter(group => group.visible !== false);
+  ].filter(group => group.visible !== false), [companyConfig?.enabledModules?.manufacturing, companyConfig?.enabledModules?.accounting, companyConfig?.enabledModules?.payroll]);
+
+  // Auto-expand parent when child is active — fixes hidden active state (hideSubMenu lie)
+  useEffect(() => {
+    const next: Record<string, boolean> = { ...expandedMenus };
+    let changed = false;
+    menuGroups.forEach(g => g.items.forEach(item => {
+      if (item.subItems && !item.hideSubMenu) {
+        const hasActiveChild = item.subItems.some(s => isActive(s.path));
+        if (hasActiveChild && !next[item.label]) { next[item.label] = true; changed = true; }
+      }
+    }));
+    if (changed) setExpandedMenus(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, menuGroups]);
+
+      // Close Quick Action on Escape + trap focus
+  useEffect(() => {
+    if (!isNewMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsNewMenuOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isNewMenuOpen]);
+
+  // Track recents for Phase 2 upgrade
+  useEffect(() => {
+    const path = location.pathname;
+    if (!path || path === '/') return;
+    setRecents(prev => {
+      const next = [path, ...prev.filter(p => p !== path)].slice(0, 5);
+      try { localStorage.setItem('sidebar:recents', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [location.pathname]);
+
+  // Cmd+K focuses search
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const filteredGroups = useMemo(() => {
+    if (!searchQuery.trim()) return menuGroups;
+    const q = searchQuery.toLowerCase();
+    return menuGroups.map(g => ({
+      ...g,
+      items: g.items.filter(item =>
+        item.label.toLowerCase().includes(q) ||
+        item.subItems?.some(s => s.label.toLowerCase().includes(q))
+      )
+    })).filter(g => g.items.length > 0);
+  }, [menuGroups, searchQuery]);
 
   return (
     <aside className={`
@@ -360,27 +425,30 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
        <div className="px-3 mt-4 space-y-2">
          {/* Primary Action (Quick Action) */}
          <div className="relative" ref={newMenuRef}>
-           <button
-             onClick={() => setIsNewMenuOpen(!isNewMenuOpen)}
-             className="w-full flex items-center justify-center gap-2 py-2 rounded-full transition-all active:scale-[0.98]"
-             style={{
-               background: 'linear-gradient(160deg, #fbbf24, #d97706)',
-               color: '#fef3c7',
-               boxShadow: '0 1px 2px rgba(217,154,63,.15)',
-             }}
-           >
+            <button
+              onClick={() => setIsNewMenuOpen(!isNewMenuOpen)}
+              aria-expanded={isNewMenuOpen}
+              aria-haspopup="menu"
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-full transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/50"
+              style={{
+                background: 'linear-gradient(160deg, #fbbf24, #d97706)',
+                color: '#fef3c7',
+                boxShadow: '0 1px 2px rgba(217,154,63,.15)',
+              }}
+            >
              <div className={`transition-transform duration-300 ${isNewMenuOpen ? 'rotate-45' : ''}`}>
                <Plus size={18} />
              </div>
               {!isCompressed && <span className="font-semibold text-[13px]" style={{ color: '#fef3c7' }}>Quick Action</span>}
            </button>
 {isNewMenuOpen && (
-               <div style={{
-                 position: 'absolute', left: '100%', top: 0, marginLeft: 12,
-                 background: '#FEFDFB', borderRadius: 14,
-                 boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
-                 overflow: 'hidden', zIndex: 50, width: 210, padding: 0
-               }}>
+                <div
+                  role="menu"
+                  aria-label="Quick Actions"
+                  className="absolute z-50 w-[210px] overflow-hidden rounded-[14px] bg-[#FEFDFB] top-full left-0 mt-2 lg:top-0 lg:left-full lg:mt-0 lg:ml-3"
+                  style={{
+                    boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
+                  }}>
                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #146b60, #3fa294 40%, #d99a3f 100%)' }} />
                  <div style={{ padding: '16px 14px 12px', marginTop: 3 }}>
                    <div style={{ fontSize: 9, fontWeight: 800, color: '#146b60', textTransform: 'uppercase', letterSpacing: '0.22em', marginBottom: 10 }}>Quick Actions</div>
@@ -394,13 +462,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
                        { icon: CheckSquare, color: '#f59e0b', label: 'New Task', onClick: () => { navigate('/sales-flow/tasks', { state: { action: 'create' } }); setIsNewMenuOpen(false); } },
                        { icon: BookOpen, color: '#ec4899', label: 'New Exam Batch', onClick: () => { navigate('/examination/batches/new'); setIsNewMenuOpen(false); } },
                      ].map((item) => (
-                       <button key={item.label} onClick={item.onClick} style={{
-                         display: 'flex', alignItems: 'center', gap: 10,
-                         padding: '7px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                         background: 'transparent', transition: 'all .2s ease', textAlign: 'left', width: '100%', position: 'relative',
-                       }}
-                         onMouseEnter={e => { e.currentTarget.style.background = '#eef7f6'; e.currentTarget.style.paddingLeft = '14px'; }}
-                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.paddingLeft = '10px'; }}>
+                        <button key={item.label} onClick={item.onClick} className="group flex items-center gap-[10px] w-full text-left relative rounded-lg px-[10px] py-[7px] border-0 cursor-pointer bg-transparent hover:bg-[#eef7f6] hover:translate-x-[2px] transition-all duration-200" style={{
+                          display: 'flex', borderRadius: 8, transition: 'all .2s ease', width: '100%', position: 'relative',
+                        }}>
                          <item.icon size={15} color={item.color} style={{ flexShrink: 0 }} />
                          <span style={{ fontSize: 12.5, fontWeight: 500, color: '#23282A', letterSpacing: '0.01em' }}>{item.label}</span>
                        </button>
@@ -410,12 +474,43 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
                </div>
             )}
          </div>
-       </div>
+        </div>
+
+      {/* Phase 2: Search + Recents — upgrade */}
+      {!isCompressed && (
+        <div className="px-3 mt-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+            <input
+              ref={searchRef}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search (Cmd+K)"
+              className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-[13px] text-white placeholder:text-white/30 focus:outline-none focus:border-white/20 focus:bg-white/10 transition-colors"
+            />
+          </div>
+          {recents.length > 0 && !searchQuery && (
+            <div className="mt-3">
+              <p className="px-3 text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1">Recents</p>
+              <div className="space-y-1">
+                {recents.slice(0, 3).map(path => (
+                  <button key={path} onClick={() => navigate(path)} className="w-full text-left px-3 py-1.5 rounded-md text-[12px] text-white/50 hover:text-white hover:bg-white/5 truncate transition-colors">
+                    {path}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {searchQuery && filteredGroups.length === 0 && (
+            <p className="mt-2 px-3 text-[12px] text-white/40">No matches</p>
+          )}
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 flex flex-col space-y-1 overflow-y-auto custom-scrollbar px-3 py-4 pb-6 relative">
         <div className="absolute right-0 top-0 bottom-0 w-[1px]" style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,.15) 1px, transparent 1px)', backgroundSize: '4px 4px', backgroundRepeat: 'repeat-y' }} />
-        {menuGroups.map((group) => (
+        {filteredGroups.map((group) => (
           <div key={group.group} className="mb-6">
             {!isCompressed && (
               <p className="px-3 text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">{group.group}</p>
@@ -443,13 +538,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
                         }
                       }}
                       className={`
-                        w-full flex items-center px-3 py-2 rounded-lg transition-all duration-200 group
+                        w-full flex items-center px-3 py-2 rounded-lg transition-all duration-200 group hover:translate-x-[1px]
                         ${active && !hasSub
                           ? 'text-white'
                           : 'text-white/62 hover:text-white hover:bg-white/5'}
                       `}
-                      onMouseEnter={e => { if (!active) e.currentTarget.style.paddingLeft = '16px'; }}
-                      onMouseLeave={e => { if (!active) e.currentTarget.style.paddingLeft = '12px'; }}
                       style={active && !hasSub ? {
                         background: 'linear-gradient(90deg, rgba(217,154,63,.2), rgba(217,154,63,.04))',
                         boxShadow: 'inset 3px 0 0 #d99a3f'
@@ -480,9 +573,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
                               key={sub.path}
                               data-tour={sub.label === 'Master Inventory' ? 'inventory' : undefined}
                               onClick={() => navigate(sub.path)}
-                               onMouseEnter={e => { if (!subActive) { e.currentTarget.style.paddingLeft = '16px'; } }}
-                               onMouseLeave={e => { if (!subActive) { e.currentTarget.style.paddingLeft = '12px'; } }}
-                               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all
+                               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all hover:translate-x-[1px]
                                              ${subActive
                                      ? 'text-white bg-white/10 font-bold'
                                      : 'text-white/50 hover:text-white hover:bg-white/5'}`}
