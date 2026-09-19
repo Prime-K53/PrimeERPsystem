@@ -105,12 +105,12 @@ const ForgotPassword: React.FC = () => {
     }
   };
 
-  const inputClass = "w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:bg-white/10 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 text-white text-sm transition-all placeholder:text-slate-600 outline-none";
+  const inputClass = "w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:bg-white/10 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 text-white text-sm transition-all placeholder:text-slate-600 outline-none";
 
   return (
     <AuthLayout title="Reset Password" subtitle="Reset your password using a verification code">
       <div className="mb-6">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-emerald-400 uppercase tracking-widest mb-3">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-blue-400 uppercase tracking-widest mb-3">
           <ShieldCheck size={12} />
           Password Reset
         </span>
@@ -161,7 +161,7 @@ const ForgotPassword: React.FC = () => {
           <button
             type="submit"
             disabled={!email.trim() || submitting}
-            className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
+            className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
           >
             {submitting ? (
               <>
@@ -196,7 +196,7 @@ const ForgotPassword: React.FC = () => {
               <input
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:bg-white/10 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 text-white text-sm transition-all placeholder:text-slate-600 outline-none tracking-[0.2em] font-mono text-center text-base"
+                className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:bg-white/10 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 text-white text-sm transition-all placeholder:text-slate-600 outline-none tracking-[0.2em] font-mono text-center text-base"
                 inputMode="numeric"
                 placeholder="000000"
                 disabled={submitting}
@@ -209,7 +209,7 @@ const ForgotPassword: React.FC = () => {
             type="button"
             onClick={handleVerifyOtp}
             disabled={otpCode.trim().length !== 6 || submitting}
-            className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
+            className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
           >
             {submitting ? (
               <>
@@ -229,7 +229,7 @@ const ForgotPassword: React.FC = () => {
               type="button"
               onClick={handleResend}
               disabled={submitting || resendCooldown > 0}
-              className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors disabled:text-slate-600 disabled:cursor-not-allowed"
+              className="text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors disabled:text-slate-600 disabled:cursor-not-allowed"
             >
               {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend Code'}
             </button>
@@ -294,7 +294,7 @@ const ForgotPassword: React.FC = () => {
           <button
             type="submit"
             disabled={!newPassword || !confirmPassword || submitting}
-            className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
+            className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
           >
             {submitting ? (
               <>
@@ -323,7 +323,7 @@ const ForgotPassword: React.FC = () => {
           </div>
           <Link
             to="/login"
-            className="w-full block text-center px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-lg font-semibold transition-all"
+            className="w-full block text-center px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold transition-all"
           >
             Sign In
           </Link>

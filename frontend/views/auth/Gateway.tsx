@@ -15,13 +15,13 @@ const Gateway: React.FC = () => {
     <div className="fixed inset-0 overflow-y-auto bg-[var(--dashboard-bg)] font-sans">
       <div className="min-h-full flex items-center justify-center p-6">
         <div className="fixed inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-40 -right-40 w-[600px] h-[600px] bg-gradient-to-br from-teal-500/10 to-emerald-400/5 rounded-full blur-[120px]" />
-          <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-gradient-to-tr from-indigo-500/10 to-teal-500/10 rounded-full blur-[100px]" />
+          <div className="absolute -top-40 -right-40 w-[600px] h-[600px] bg-gradient-to-br from-blue-500/10 to-indigo-400/5 rounded-full blur-[120px]" />
+          <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-gradient-to-tr from-indigo-500/10 to-blue-500/10 rounded-full blur-[100px]" />
         </div>
 
         <div className="w-full max-w-[960px] relative z-10">
           <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white" style={{ background: 'linear-gradient(160deg, #3fa294, #0f544c)' }}>
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white" style={{ background: 'linear-gradient(160deg, #3b82f6, #1e3a8a)' }}>
               <Lock size={22} />
             </div>
             <div>
@@ -48,16 +48,16 @@ const Gateway: React.FC = () => {
               className="group text-left bg-white border border-slate-200 rounded-2xl p-8 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
             >
               <div className="flex items-start justify-between mb-6">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white" style={{ background: 'linear-gradient(155deg, #1f8577, #0f544c)', boxShadow: '0 8px 20px rgba(15,84,76,.25)' }}>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white" style={{ background: 'linear-gradient(155deg, #2563eb, #1e3a8a)', boxShadow: '0 8px 20px rgba(30,58,138,.25)' }}>
                   <Building2 size={24} />
                 </div>
-                <ArrowRight size={18} className="text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
+                <ArrowRight size={18} className="text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
               </div>
               <h2 className="text-lg font-bold tracking-tight" style={{ color: '#23282A' }}>Customer Portal</h2>
               <p className="mt-2 text-sm leading-relaxed" style={{ color: '#5c6567' }}>
                 View your invoices, orders, quotations, statements and wallet. If you received an invite, use the <strong>Activate Account</strong> tab to set your password.
               </p>
-              <span className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(90deg, #146b60, #3fa294)' }}>
+              <span className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(90deg, #1e3a8a, #3b82f6)' }}>
                 Continue to Portal
               </span>
             </button>

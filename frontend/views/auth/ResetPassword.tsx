@@ -47,12 +47,12 @@ const ResetPassword: React.FC = () => {
     }
   };
 
-  const inputClass = "w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:bg-white/10 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 text-white text-sm transition-all placeholder:text-slate-600 outline-none";
+  const inputClass = "w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:bg-white/10 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 text-white text-sm transition-all placeholder:text-slate-600 outline-none";
 
   return (
     <AuthLayout title="Reset Password" subtitle="Enter your new password">
       <div className="mb-6">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-emerald-400 uppercase tracking-widest mb-3">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-blue-400 uppercase tracking-widest mb-3">
           <ShieldCheck size={12} />
           {success ? 'Complete' : 'New Password'}
         </span>
@@ -87,7 +87,7 @@ const ResetPassword: React.FC = () => {
           </div>
           <a
             href="#/login"
-            className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
+            className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
           >
             <ArrowLeft size={16} />
             <span>Sign In</span>
@@ -153,7 +153,7 @@ const ResetPassword: React.FC = () => {
           <button
             type="submit"
             disabled={!password || !confirmPassword || submitting}
-            className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
+            className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
           >
             {submitting ? (
               <>
