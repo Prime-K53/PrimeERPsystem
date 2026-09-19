@@ -45,6 +45,7 @@ interface SalesState {
   salesOrders: SalesOrder[];
   reprintJobs: ReprintJob[];
   isLoading: boolean;
+  loadingMap: Record<string, boolean>;
 
   addSalesOrder: (order: SalesOrder) => Promise<void>;
   updateSalesOrder: (order: SalesOrder) => Promise<void>;
@@ -86,6 +87,7 @@ interface SalesState {
   cancelSalesExchange: (id: string) => Promise<void>;
   bulkCancelSalesExchanges: (ids: string[]) => Promise<void>;
   updateReprintJob: (id: string, data: any) => Promise<void>;
+  processPortalRetryQueue: () => Promise<number>;
 }
 
 export const useSalesStore = create<SalesState>((set, get) => ({
@@ -101,9 +103,10 @@ export const useSalesStore = create<SalesState>((set, get) => ({
   salesOrders: [],
   reprintJobs: [],
   isLoading: false,
+  loadingMap: {},
 
   fetchSalesData: async (silent = false) => {
-    if (!silent) set({ isLoading: true });
+    if (!silent) set({ isLoading: true, loadingMap: { sales: true, quotations: true, jobOrders: true, customers: true } });
     try {
       await useSalesOrderStore.getState().fetchSalesOrders(true);
       const [sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs] = await Promise.all([
@@ -117,11 +120,12 @@ export const useSalesStore = create<SalesState>((set, get) => ({
         api.sales.getReprintJobs().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
       ]);
       if ((sales as any[]).length >= 1000) logger.warn('Sales truncated at 1000 — pagination required (Phase 2)');
-      set({ sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs, salesOrders: useSalesOrderStore.getState().salesOrders });
+      set({ sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs, salesOrders: useSalesOrderStore.getState().salesOrders, loadingMap: {} });
     } catch (error) {
       logger.error("Failed to load sales data", error);
+      if (!silent) set({ loadingMap: {} });
     } finally {
-      if (!silent) set({ isLoading: false });
+      if (!silent) set({ isLoading: false, loadingMap: {} });
     }
   },
 
@@ -448,5 +452,38 @@ addCustomerPayment: async (payment) => {
   updateReprintJob: async (id, data) => {
     await api.sales.updateReprintJob(id, data);
     await get().fetchExchanges();
+  },
+  processPortalRetryQueue: async () => {
+    let q: Array<{customerId:string, invite?:boolean, ts:number}> = [];
+    try { q = JSON.parse(localStorage.getItem('portal:retryQueue') || '[]'); } catch {}
+    if (!q.length) return 0;
+    let success = 0;
+    const remaining: typeof q = [];
+    for (const entry of q) {
+      try {
+        const c = get().customers.find(x => x.id === entry.customerId);
+        if (!c) { success++; continue; }
+        const res = await adminLifecycle.users.autoCreate({
+          customer_id: c.id,
+          name: c.name,
+          email: c.email,
+          phone: c.phone,
+          invite: entry.invite,
+        });
+        if (res?.user) {
+          const enriched = { ...c, portalUserId: res.user.id, portalEmail: res.user.email, portalStatus: res.user.status || (entry.invite ? 'invited' : 'active') };
+          set(state => ({ customers: state.customers.map(x => x.id === enriched.id ? enriched : x) }));
+          await api.customers.save(enriched).catch(()=>{});
+          success++;
+        } else {
+          remaining.push(entry);
+        }
+      } catch {
+        remaining.push(entry);
+      }
+    }
+    try { localStorage.setItem('portal:retryQueue', JSON.stringify(remaining.slice(-50))); } catch {}
+    if (success) logger.info(`Portal retry: ${success} recovered, ${remaining.length} still pending`);
+    return success;
   }
 }));

@@ -7,7 +7,7 @@ import { logger } from '@/services/logger';
  * Replace direct api.sales.getAllSales() with this hook.
  * Usage: const { data, loadMore, hasMore } = useSalesPagination('sales', 50);
  */
-export function useSalesPagination(entity: 'sales' | 'quotations' | 'invoices', pageSize = 50) {
+export function useSalesPagination(entity: 'sales' | 'quotations' | 'invoices' | 'customers', pageSize = 50) {
   const [data, setData] = useState<any[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -21,6 +21,7 @@ export function useSalesPagination(entity: 'sales' | 'quotations' | 'invoices', 
       const all = await (async () => {
         if (entity === 'sales') return api.sales.getAllSales();
         if (entity === 'quotations') return api.sales.getQuotations();
+        if (entity === 'customers') return api.customers.getAll().then(l => (l as any[]).filter(c => !c.deletedAt));
         return [];
       })();
       const start = cursor ? parseInt(cursor, 10) : 0;
