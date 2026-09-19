@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type {
   AssessmentContract, AssessmentContractItem, ContractAmendment,
-  Customer, School, JobOrder, WalletTransaction,
+  Customer, ExaminationBatch, School, JobOrder, WalletTransaction,
 } from '../../types';
 import { useFinanceStore } from '../../stores/financeStore';
 import { useSalesStore } from '../../stores/salesStore';
@@ -17,6 +17,14 @@ import {
   isValidContractLine, buildContractItemsFromLines, buildInvoiceDraftFromContract,
   type ContractFormLine,
 } from '../../utils/contractInvoiceDraft';
+import {
+  CONTRACT_TRANSITIONS,
+  generateNextContractNumber,
+  isAllowedContractTransition,
+  matchContractWalletTx,
+  resolveActivationEvidence,
+  validateAmendmentAdjustments,
+} from '../../utils/contractLifecycle';
 import { dbService } from '../../services/db';
 import { generateNextId } from '../../utils/helpers';
 import { currencyService } from '../../services/currencyService';
@@ -91,16 +99,8 @@ const ITEM_STATUS_STYLE: Record<ItemStatus, string> = {
   cancelled: 'bg-red-50 text-red-700 border-red-200',
 };
 
-/** Allowed lifecycle transitions (0006 lifecycle: Draft → Pending Payment → Active → Suspended → Completed/Expired/Cancelled). */
-const CONTRACT_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
-  draft: ['pending_payment', 'cancelled'],
-  pending_payment: ['active', 'cancelled'],
-  active: ['suspended', 'completed', 'expired', 'cancelled'],
-  suspended: ['active', 'cancelled'],
-  completed: [],
-  expired: [],
-  cancelled: [],
-};
+/** Lifecycle edges live in utils/contractLifecycle so the finance store
+ * enforces the same map (UI checks alone are bypassable). */
 
 type DetailTab = 'overview' | 'assessments' | 'jobs' | 'wallet' | 'amendments';
 
@@ -163,7 +163,9 @@ const emptyItemDraft = () => ({
 });
 
 const PrintingContractsView: React.FC = () => {
-  const { companyConfig, notify, user } = useAuth();
+  const { companyConfig, notify, user, checkPermission } = useAuth() as ReturnType<typeof useAuth> & {
+    checkPermission?: (permissionId: string) => boolean;
+  };
   const { addInvoice } = useFinance();
   const currency = companyConfig?.currencySymbol
     || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol
@@ -193,6 +195,7 @@ const PrintingContractsView: React.FC = () => {
   const fetchSalesData = useSalesStore(s => s.fetchSalesData);
 
   const [schools, setSchools] = useState<School[]>([]);
+  const [examBatches, setExamBatches] = useState<ExaminationBatch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | ContractStatus>('All');
@@ -227,12 +230,51 @@ const PrintingContractsView: React.FC = () => {
     type?: ConfirmDialogType; onConfirm?: () => void;
   }>({ open: false, title: '', message: '' });
 
+  // Activation without payment evidence requires a recorded reason —
+  // the button promises "Verify & activate" and must not fabricate it.
+  const [activateOverride, setActivateOverride] = useState<{ contract: AssessmentContract; reason: string } | null>(null);
+
+  // Role gates mirror services/api.ts (save: Admin/Editor, delete: Admin).
+  // Granular printing_contracts.* permissions grant additively where assigned.
+  // Unknown/missing role fails OPEN exactly like the API (checkAuth allows
+  // when it cannot resolve a role) — a UI gate must never be stricter than
+  // its enforcement layer, or it manufactures lockouts the API would allow.
+  const userRole = String((user as any)?.role || '').toLowerCase();
+  const isSuperUser = Boolean((user as any)?.isSuperAdmin) || userRole === 'admin';
+  const roleKnown = Boolean(user) && (Boolean(userRole) || Boolean((user as any)?.isSuperAdmin));
+  const hasPerm = (id: string) => {
+    try {
+      return typeof checkPermission === 'function' ? !!checkPermission(id) : false;
+    } catch {
+      return false;
+    }
+  };
+  const canManageContracts = !roleKnown || isSuperUser || userRole === 'editor'
+    || hasPerm('printing_contracts.create') || hasPerm('printing_contracts.edit')
+    || hasPerm('printing_contracts.activate') || hasPerm('printing_contracts.amend')
+    || hasPerm('printing_contracts.manage_assessments') || hasPerm('printing_contracts.create_job');
+  const canDeleteContracts = !roleKnown || isSuperUser;
+
+  // Behavioral gates: buttons are also hidden/disabled, but the handlers
+  // enforce roles themselves so no caller can bypass the UI.
+  const requireManageContracts = () => {
+    if (canManageContracts) return true;
+    notify('Your role cannot modify printing contracts.', 'error');
+    return false;
+  };
+  const requireDeleteContracts = () => {
+    if (canDeleteContracts) return true;
+    notify('Only an Admin can delete printing contracts.', 'error');
+    return false;
+  };
+
   useEffect(() => {
     setIsLoading(true);
     Promise.all([
       fetchFinanceData().catch(() => {}),
       fetchSalesData(true).catch(() => {}),
       dbService.getAll<School>('schools').then(setSchools).catch(() => setSchools([])),
+      dbService.getAll<ExaminationBatch>('examPrintingBatches').then(setExamBatches).catch(() => setExamBatches([])),
     ]).finally(() => setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -310,11 +352,11 @@ const PrintingContractsView: React.FC = () => {
   }, [jobOrders, selectedItems]);
   const selectedWalletTx = useMemo(() => {
     const cid = String(selectedId || '');
-    return (walletTransactions || []).filter((t: WalletTransaction) => {
-      const d = (t as any)?.data || {};
-      return String((t as any)?.contract_id || d.contract_id || t.reference || '').includes(cid)
-        || String(t.reference || '').includes(selected?.contract_number || '~~nomatch~~');
-    });
+    const cnum = String(selected?.contract_number || '');
+    if (!cid && !cnum) return [];
+    return (walletTransactions || []).filter((t: WalletTransaction) =>
+      matchContractWalletTx(t as { contract_id?: unknown; reference?: unknown; data?: { contract_id?: unknown } | null }, cid, cnum),
+    );
   }, [walletTransactions, selectedId, selected]);
 
   // ── Contract CRUD ──────────────────────────────────────────────
@@ -394,6 +436,7 @@ const PrintingContractsView: React.FC = () => {
   };
 
   const handleSaveContract = async (issueInvoice = false) => {
+    if (!requireManageContracts()) return;
     const err = validateContractDraft(issueInvoice);
     if (err) { notify(err, 'error'); return; }
     if (isSaving) return;
@@ -427,14 +470,34 @@ const PrintingContractsView: React.FC = () => {
         notify('Printing contract updated', 'success');
       } else {
         // Invoice-style totals: entitlement and prepaid derive from the lines.
-        const validLines = (formDraft.lines || []).filter(isValidContractLine);
+        const rawLines = formDraft.lines || [];
+        if (rawLines.some((l) => Number(l.quantity) < 0 || Number(l.unit_price) < 0)) {
+          notify('Negative quantities/prices were treated as zero.', 'warning');
+        }
+        const validLines = rawLines.filter(isValidContractLine);
         const linesTotal = contractLinesTotal(validLines);
         const linesQty = contractLinesQuantity(validLines);
-        const contractNumber = generateNextId('PC', assessmentContracts || [], companyConfig);
+        // Sequence is drawn from contract_number (record ids are random
+        // uids) with a uniqueness guard against legacy duplicates.
+        const contractNumber = generateNextContractNumber(assessmentContracts || [], companyConfig);
         const companyId = (companyConfig as any)?.id || (user as any)?.companyId || 'default';
         const createdBy = (user as any)?.id || (user as any)?.username || 'system';
+        const recordId = uid();
+        // Materialise the entitlement first so assessment_count is exact on
+        // day one instead of drifting from zero.
+        const contractItems = buildContractItemsFromLines(
+          {
+            contract_id: recordId,
+            company_id: companyId,
+            customer_id: formDraft.customer_id,
+            school_id: formDraft.school_id,
+            created_by: createdBy,
+            now,
+          },
+          validLines,
+        );
         const record: AssessmentContract = {
-          id: uid(),
+          id: recordId,
           company_id: companyId,
           customer_id: formDraft.customer_id,
           school_id: formDraft.school_id,
@@ -450,7 +513,7 @@ const PrintingContractsView: React.FC = () => {
           assessment_type: formDraft.assessment_type,
           assessment_grade: formDraft.assessment_grade || undefined,
           assessment_subject: formDraft.assessment_subject || undefined,
-          assessment_count: 0,
+          assessment_count: contractItems.length,
           max_assessments: linesQty,
           assessment_price: linesQty > 0 ? linesTotal / linesQty : 0,
           payment_status: 'pending',
@@ -466,17 +529,6 @@ const PrintingContractsView: React.FC = () => {
         };
         await addAssessmentContract(record);
         // Materialise one reserved assessment record per billed unit.
-        const contractItems = buildContractItemsFromLines(
-          {
-            contract_id: record.id,
-            company_id: companyId,
-            customer_id: formDraft.customer_id,
-            school_id: formDraft.school_id,
-            created_by: createdBy,
-            now,
-          },
-          validLines,
-        );
         for (const item of contractItems) {
           await addContractAssessment(item);
         }
@@ -513,6 +565,7 @@ const PrintingContractsView: React.FC = () => {
   };
 
   const handleIssueInvoiceForSelected = async () => {
+    if (!requireManageContracts()) return;
     if (!selected || isSaving) return;
     const data = (selected.data || {}) as any;
     if (data.issued_invoice_id) {
@@ -559,44 +612,99 @@ const PrintingContractsView: React.FC = () => {
     }
   };
 
-  const transitionContract = async (c: AssessmentContract, next: ContractStatus) => {
-    if (!CONTRACT_TRANSITIONS[c.status].includes(next)) {
+  const transitionContract = async (c: AssessmentContract, next: ContractStatus, opts?: { overrideReason?: string }) => {
+    if (!requireManageContracts()) return;
+    if (!isAllowedContractTransition(c.status, next)) {
       notify(`Transition ${CONTRACT_STATUS_LABEL[c.status]} → ${CONTRACT_STATUS_LABEL[next]} is not allowed.`, 'error');
       return;
     }
     const now = new Date().toISOString();
-    const patch: Partial<AssessmentContract> = { status: next, updated_at: now, version: num(c.version) + 1 };
+    const actor = (user as any)?.id || (user as any)?.username || 'system';
+
+    // Activation honesty: this button promises "Verify & activate", so a
+    // verified stamp and wallet deposit require payment evidence. Without
+    // evidence the caller is routed to an explicit, reason-recorded
+    // override — verification is never fabricated.
     if (next === 'active') {
-      patch.activated_at = now;
-      patch.payment_status = 'verified';
-      patch.payment_verified_at = now;
-      patch.wallet_credit_applied_at = now;
-    }
-    if (next === 'suspended') patch.suspended_at = now;
-    if (next === 'completed') patch.completed_at = now;
-    if (next === 'cancelled') patch.cancelled_at = now;
-    try {
-      await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
-      // Financial flow (§18): wallet moves at payment time, not at scheduling time.
-      if (next === 'active' && num(c.prepaid_amount) > 0) {
-        await addWalletTransaction({
-          id: '', customerId: c.customer_id, amount: num(c.prepaid_amount),
-          type: 'Deposit', reference: c.contract_number, date: now,
-          data: { type: 'CONTRACT_DEPOSIT', contract_id: c.id, contract_number: c.contract_number },
-        } as WalletTransaction).catch(() => {});
+      const evidence = resolveActivationEvidence(c, invoices || []);
+      const overrideReason = (opts?.overrideReason || '').trim();
+      if (!evidence.ok && !overrideReason) {
+        setActivateOverride({ contract: c, reason: '' });
+        return;
       }
-      if (next === 'cancelled') {
+      try {
+        if (evidence.ok && evidence.kind === 'paid-invoice' && num(c.prepaid_amount) > 0) {
+          // Wallet first: a failed posting aborts the transition instead
+          // of leaving an active contract with silently missing money.
+          await addWalletTransaction({
+            id: '', customerId: c.customer_id, amount: num(c.prepaid_amount),
+            type: 'Deposit', reference: c.contract_number, date: now,
+            data: { type: 'CONTRACT_DEPOSIT', contract_id: c.id, contract_number: c.contract_number, invoice_id: evidence.invoiceId },
+          } as WalletTransaction);
+        }
+        const patch: Partial<AssessmentContract> = {
+          status: next,
+          updated_at: now,
+          version: num(c.version) + 1,
+          activated_at: now,
+        };
+        if (evidence.ok && evidence.kind === 'paid-invoice') {
+          patch.payment_status = 'verified';
+          patch.payment_verified_at = now;
+          patch.wallet_credit_applied_at = now;
+          await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
+          notify(`Contract activated — payment verified against invoice ${evidence.invoiceId}`, 'success');
+        } else if (evidence.ok) {
+          await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
+          notify('Contract activated (no payment required for zero value)', 'success');
+        } else {
+          await updateAssessmentContract({
+            ...c,
+            ...patch,
+            data: {
+              ...(c.data || {}),
+              activationOverride: { reason: overrideReason, by: actor, at: now },
+            },
+          } as AssessmentContract);
+          notify('Contract activated WITHOUT payment evidence — reason recorded on the contract.', 'warning');
+        }
+      } catch (e: any) {
+        notify(`Activation failed: ${e.message}`, 'error');
+      }
+      return;
+    }
+
+    if (next === 'cancelled') {
+      const patch: Partial<AssessmentContract> = {
+        status: next, updated_at: now, version: num(c.version) + 1, cancelled_at: now,
+      };
+      try {
         const refund = fundsOf(c).prepaid - fundsOf(c).consumed;
         if (refund > 0) {
+          // Refund first: a failed posting aborts instead of reporting a
+          // refund that never happened.
           await addWalletTransaction({
             id: '', customerId: c.customer_id, amount: refund,
             type: 'Credit', reference: c.contract_number, date: now,
             data: { type: 'CONTRACT_REFUND', contract_id: c.id, contract_number: c.contract_number },
-          } as WalletTransaction).catch(() => {});
+          } as WalletTransaction);
+          await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
           notify(`Contract cancelled. Unused ${currency}${refund.toLocaleString()} refunded to wallet.`, 'success');
           return;
         }
+        await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
+        notify(`Contract ${CONTRACT_STATUS_LABEL[next].toLowerCase()}`, 'success');
+      } catch (e: any) {
+        notify(`Cancellation failed: ${e.message}`, 'error');
       }
+      return;
+    }
+
+    const patch: Partial<AssessmentContract> = { status: next, updated_at: now, version: num(c.version) + 1 };
+    if (next === 'suspended') patch.suspended_at = now;
+    if (next === 'completed') patch.completed_at = now;
+    try {
+      await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
       notify(`Contract ${CONTRACT_STATUS_LABEL[next].toLowerCase()}`, 'success');
     } catch (e: any) {
       notify(`Transition failed: ${e.message}`, 'error');
@@ -604,6 +712,7 @@ const PrintingContractsView: React.FC = () => {
   };
 
   const handleDeleteContract = (c: AssessmentContract) => {
+    if (!requireDeleteContracts()) return;
     const linkedItems = (contractAssessments || []).filter(a => a.contract_id === c.id);
     const hasConsumed = linkedItems.some(a => a.status === 'consumed');
     if (c.status === 'active' || c.status === 'suspended') {
@@ -616,11 +725,22 @@ const PrintingContractsView: React.FC = () => {
     }
     setConfirmState({
       open: true, title: 'Delete Printing Contract',
-      message: `Soft-delete contract ${c.contract_number} (${c.title})? Linked schedule entries will be removed. Financial records are preserved.`,
-      confirmText: 'Delete', type: 'danger',
+      message: `Permanently delete contract ${c.contract_number} (${c.title})? This cannot be undone. Linked schedule entries will be removed. Wallet transactions and invoices are preserved as financial history.`,
+      confirmText: 'Delete permanently', type: 'danger',
       onConfirm: async () => {
         try {
-          for (const a of linkedItems) { await deleteContractAssessment(a.id).catch(() => {}); }
+          const failures: string[] = [];
+          for (const a of linkedItems) {
+            try {
+              await deleteContractAssessment(a.id);
+            } catch (e: any) {
+              failures.push(a.assessment_name || a.id);
+            }
+          }
+          if (failures.length > 0) {
+            notify(`Delete aborted: could not remove ${failures.length} schedule entr${failures.length === 1 ? 'y' : 'ies'}.`, 'error');
+            return;
+          }
           await deleteAssessmentContract(c.id);
           if (selectedId === c.id) setSelectedId(null);
           notify('Printing contract deleted', 'info');
@@ -651,9 +771,10 @@ const PrintingContractsView: React.FC = () => {
   };
 
   const handleSaveItem = async () => {
+    if (!requireManageContracts()) return;
     if (!selected) return;
     if (!itemDraft.assessment_name.trim()) { notify('Assessment name is required.', 'error'); return; }
-    if (num(itemDraft.item_price) <= 0) { notify('Assessment price must be greater than zero.', 'error'); return; }
+    if (Number(itemDraft.item_price) < 0) { notify('Assessment price cannot be negative.', 'error'); return; }
     const siblings = (contractAssessments || []).filter(a => a.contract_id === selected.id && a.id !== editingItem?.id);
     if (!editingItem && siblings.length >= num(selected.max_assessments)) {
       notify(`Entitlement exceeded: contract allows ${selected.max_assessments} assessments. Create an amendment to extend it.`, 'error');
@@ -738,24 +859,45 @@ const PrintingContractsView: React.FC = () => {
     setExamBatchId(a.examination_printing_batch_id || '');
   };
   const handleSaveJobLink = async () => {
+    if (!requireManageContracts()) return;
     if (!jobLinkItem) return;
+    const batchId = (examBatchId || '').trim();
+    if (batchId && !examBatches.some(b => b.id === batchId || b.batch_number === batchId)) {
+      notify(`Examination batch "${batchId}" was not found.`, 'error');
+      return;
+    }
     try {
       const now = new Date().toISOString();
+      const prevJobId = jobLinkItem.job_order_id || '';
       await updateContractAssessment({
         ...jobLinkItem,
         job_order_id: jobLinkId || undefined,
-        examination_printing_batch_id: examBatchId || undefined,
+        examination_printing_batch_id: batchId || undefined,
         updated_at: now, version: num(jobLinkItem.version) + 1,
       });
+      // Clear a stale backlink when the item is re-linked elsewhere.
+      if (prevJobId && prevJobId !== jobLinkId) {
+        const prev = (jobOrders || []).find((j: JobOrder) => j.id === prevJobId);
+        if (prev && (prev as JobOrder).contract_assessment_id === jobLinkItem.id) {
+          await updateJobOrder({ ...(prev as JobOrder), contract_assessment_id: undefined } as JobOrder);
+        }
+      }
       if (jobLinkId) {
         const job = (jobOrders || []).find((j: JobOrder) => j.id === jobLinkId);
-        if (job) await updateJobOrder({ ...job, contract_assessment_id: jobLinkItem.id } as JobOrder).catch(() => {});
+        if (job) {
+          try {
+            await updateJobOrder({ ...job, contract_assessment_id: jobLinkItem.id } as JobOrder);
+          } catch (e: any) {
+            notify(`Item linked, but the job back-link failed: ${e.message}`, 'warning');
+          }
+        }
       }
       notify('Printing job linked to assessment', 'success');
       setJobLinkItem(null);
     } catch (e: any) { notify(`Link failed: ${e.message}`, 'error'); }
   };
   const handleCreateJobFromAssessment = async (a: AssessmentContractItem) => {
+    if (!requireManageContracts()) return;
     const contract = (assessmentContracts || []).find(c => c.id === a.contract_id);
     if (!contract) return;
     if (a.job_order_id) { notify('This assessment already has a linked job order.', 'info'); return; }
@@ -780,8 +922,14 @@ const PrintingContractsView: React.FC = () => {
 
   // ── Amendments (audit-backed, §17 design) ───────────────────────
   const handleSaveAmendment = async () => {
+    if (!requireManageContracts()) return;
     if (!selected) return;
     if (!amendDraft.description.trim()) { notify('Amendment description is required.', 'error'); return; }
+    const boundsError = validateAmendmentAdjustments(selected, {
+      prepaid_amount_adjustment: amendDraft.prepaid_amount_adjustment,
+      assessment_count_adjustment: amendDraft.assessment_count_adjustment,
+    });
+    if (boundsError) { notify(boundsError, 'error'); return; }
     const now = new Date().toISOString();
     try {
       await addContractAmendment({
@@ -801,24 +949,68 @@ const PrintingContractsView: React.FC = () => {
     } catch (e: any) { notify(`Amendment failed: ${e.message}`, 'error'); }
   };
   const handleApproveAmendment = async (am: ContractAmendment, approve: boolean) => {
+    if (!requireManageContracts()) return;
     const contract = (assessmentContracts || []).find(c => c.id === am.contract_id);
     if (!contract) return;
     const now = new Date().toISOString();
+    const actor = (user as any)?.id || (user as any)?.username || 'system';
     try {
       await updateContractAmendment({
         ...am, status: approve ? 'approved' : 'rejected',
-        approved_by: (user as any)?.id || 'system', approved_at: now, updated_at: now, version: num(am.version) + 1,
+        approved_by: actor, approved_at: now, updated_at: now, version: num(am.version) + 1,
       });
       if (approve) {
+        // Bounds first: never silently clamp or drive money negative.
+        const boundsError = validateAmendmentAdjustments(contract, {
+          prepaid_amount_adjustment: am.prepaid_amount_adjustment,
+          assessment_count_adjustment: am.assessment_count_adjustment,
+        });
+        if (boundsError) {
+          notify(boundsError, 'error');
+          return;
+        }
+        const data: Record<string, any> = { ...(contract.data || {}) };
+        // Approved amendments void signatures (forward-compatible shape for
+        // the coming signing ceremony): a signed PDF must never disagree
+        // with current terms.
+        const sig = (data as any).signatures;
+        if (sig && (sig.company || sig.customer)) {
+          data.signatures = {
+            company: null,
+            customer: null,
+            history: [
+              ...((sig.history || []) as any[]),
+              { type: 'voided', at: now, by: actor, reason: `amendment ${am.id} approved` },
+            ],
+          };
+        }
+        const priceAdj = num(am.assessment_price_adjustment);
+        if (priceAdj > 0 && priceAdj !== num(contract.assessment_price)) {
+          data.priceHistory = [
+            ...((data as any).priceHistory || []),
+            { at: now, by: actor, from: num(contract.assessment_price), to: priceAdj, amendmentId: am.id },
+          ];
+        }
+        const prepaidAdj = num(am.prepaid_amount_adjustment);
         await updateAssessmentContract({
           ...contract,
-          prepaid_amount: num(contract.prepaid_amount) + num(am.prepaid_amount_adjustment),
-          max_assessments: Math.max(1, num(contract.max_assessments) + num(am.assessment_count_adjustment)),
-          assessment_price: num(am.assessment_price_adjustment) > 0 ? num(am.assessment_price_adjustment) : contract.assessment_price,
+          prepaid_amount: num(contract.prepaid_amount) + prepaidAdj,
+          max_assessments: Math.max(1, num(contract.max_assessments) + Math.floor(num(am.assessment_count_adjustment))),
+          assessment_price: priceAdj > 0 ? priceAdj : contract.assessment_price,
+          data,
           updated_at: now, version: num(contract.version) + 1,
         });
+        // No wallet fabrication: extra commercial value is a receivable.
+        // The holder must record customer payment; activation evidence
+        // re-checks coverage against the new prepaid figure.
+        if (prepaidAdj > 0) {
+          notify(`Amendment approved — additional ${money(prepaidAdj)} is now due. Record customer payment.`, 'warning');
+        } else {
+          notify('Amendment approved and applied', 'success');
+        }
+      } else {
+        notify('Amendment rejected', 'info');
       }
-      notify(approve ? 'Amendment approved and applied' : 'Amendment rejected', approve ? 'success' : 'info');
     } catch (e: any) { notify(`Amendment update failed: ${e.message}`, 'error'); }
   };
 
@@ -885,9 +1077,11 @@ const PrintingContractsView: React.FC = () => {
           <ContractGhostButton compact onClick={() => { setIsLoading(true); Promise.all([fetchFinanceData().catch(() => {}), fetchSalesData(true).catch(() => {})]).finally(() => setIsLoading(false)); }}>
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /> Refresh
           </ContractGhostButton>
-          <ContractPrimaryButton compact chevron={false} onClick={openCreate}>
-            <Plus size={14} /> New Contract
-          </ContractPrimaryButton>
+          {canManageContracts && (
+            <ContractPrimaryButton compact chevron={false} onClick={openCreate}>
+              <Plus size={14} /> New Contract
+            </ContractPrimaryButton>
+          )}
         </div>
       </div>
 
@@ -938,9 +1132,11 @@ const PrintingContractsView: React.FC = () => {
             </div>
             <p style={{ fontWeight: 700, color: contractInk, margin: '0 0 4px' }}>No printing contracts found</p>
             <p style={{ fontSize: 12, color: contractInkSoft, margin: '0 0 16px' }}>Create the first commercial agreement to schedule assessments against prepaid entitlement.</p>
-            <ContractPrimaryButton compact chevron={false} onClick={openCreate}>
-              <Plus size={14} /> New Printing Contract
-            </ContractPrimaryButton>
+            {canManageContracts && (
+              <ContractPrimaryButton compact chevron={false} onClick={openCreate}>
+                <Plus size={14} /> New Printing Contract
+              </ContractPrimaryButton>
+            )}
           </div>
         ) : (
           <table style={{ width: '100%', textAlign: 'left', fontSize: 12, borderCollapse: 'collapse' }}>
@@ -993,7 +1189,7 @@ const PrintingContractsView: React.FC = () => {
                       <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                         <button title="Open details" onClick={() => { setSelectedId(c.id); setDetailTab('overview'); }} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#0f544c] hover:bg-[#eef7f6]"><Eye size={14} /></button>
                         <button title="Edit" onClick={() => openEdit(c)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#0f544c] hover:bg-[#eef7f6]"><Edit2 size={14} /></button>
-                        <button title="Delete" onClick={() => handleDeleteContract(c)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#b5493f] hover:bg-[#b5493f15]"><Trash2 size={14} /></button>
+                        {canDeleteContracts && (<button title="Delete" onClick={() => handleDeleteContract(c)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#b5493f] hover:bg-[#b5493f15]"><Trash2 size={14} /></button>)}
                       </div>
                     </td>
                   </tr>
@@ -1291,12 +1487,12 @@ const PrintingContractsView: React.FC = () => {
           }
           onClose={() => setSelectedId(null)}
           footerHint={`Contract ${selected.contract_number} — ${CONTRACT_STATUS_LABEL[selected.status]}`}
-          footerActions={
-            <>
-              <ContractGhostButton onClick={() => setSelectedId(null)}>Close</ContractGhostButton>
-              <ContractPrimaryButton onClick={() => openEdit(selected)}>Edit Contract</ContractPrimaryButton>
-            </>
-          }
+            footerActions={
+              <>
+                <ContractGhostButton onClick={() => setSelectedId(null)}>Close</ContractGhostButton>
+                {canManageContracts && (<ContractPrimaryButton onClick={() => openEdit(selected)}>Edit Contract</ContractPrimaryButton>)}
+              </>
+            }
         >
           {/* Horizontal tab strip (no sidebar) */}
           <div style={{
@@ -1323,7 +1519,7 @@ const PrintingContractsView: React.FC = () => {
           </div>
 
           {/* Lifecycle transitions */}
-          {CONTRACT_TRANSITIONS[selected.status].length > 0 && (
+          {canManageContracts && CONTRACT_TRANSITIONS[selected.status].length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
               {CONTRACT_TRANSITIONS[selected.status].map(next => (
                 <ContractGhostButton key={next} onClick={() => transitionContract(selected, next)}>
@@ -1487,9 +1683,11 @@ const PrintingContractsView: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: 0 }}>Amendments ({selectedAmendments.length})</p>
-                    <ContractGhostButton compact onClick={() => setIsAmendOpen(true)}>
-                      <Plus size={13} /> Request Amendment
-                    </ContractGhostButton>
+                    {canManageContracts && (
+                      <ContractGhostButton compact onClick={() => setIsAmendOpen(true)}>
+                        <Plus size={13} /> Request Amendment
+                      </ContractGhostButton>
+                    )}
                   </div>
                   {selectedAmendments.length === 0
                     ? <p style={{ fontSize: 12, color: contractInkSoft, fontStyle: 'italic', background: contractPaper, borderRadius: 12, border: `2px dashed ${contractTeal[100]}`, padding: 24, textAlign: 'center', margin: 0 }}>No amendments. History is audit-backed — each change is a new amendment record.</p>
@@ -1505,7 +1703,7 @@ const PrintingContractsView: React.FC = () => {
                               requested {am.created_at ? new Date(am.created_at).toLocaleDateString() : ''}
                             </p>
                           </div>
-                          {am.status === 'pending' && (
+                          {am.status === 'pending' && canManageContracts && (
                             <div className="flex gap-1.5 shrink-0">
                               <ContractPrimaryButton compact chevron={false} onClick={() => handleApproveAmendment(am, true)}>Approve</ContractPrimaryButton>
                               <ContractGhostButton compact onClick={() => handleApproveAmendment(am, false)}>Reject</ContractGhostButton>
@@ -1606,8 +1804,16 @@ const PrintingContractsView: React.FC = () => {
           </div>
           <div style={{ marginBottom: 18 }}>
             <label style={contractLabelStyle}>Examination printing batch (optional)</label>
-            <input value={examBatchId} onChange={e => setExamBatchId(e.target.value)} placeholder="Batch ID from the Examination module"
-              style={{ ...contractInputStyle, fontFamily: "'JetBrains Mono', monospace" }} />
+            <select value={examBatchId} onChange={e => setExamBatchId(e.target.value)}
+              style={{ ...contractSelectStyle, fontFamily: "'JetBrains Mono', monospace" }}>
+              <option value="">None</option>
+              {examBatchId && !examBatches.some(b => b.id === examBatchId || b.batch_number === examBatchId) && (
+                <option value={examBatchId}>{examBatchId} (unknown — clear and reselect)</option>
+              )}
+              {examBatches.map(b => (
+                <option key={b.id} value={b.id}>{b.batch_number || b.id} — {b.name || 'Unnamed batch'}{b.status ? ` (${b.status})` : ''}</option>
+              ))}
+            </select>
           </div>
         </ContractModalShell>
       )}
@@ -1659,6 +1865,43 @@ const PrintingContractsView: React.FC = () => {
                 onChange={e => setAmendDraft({ ...amendDraft, assessment_price_adjustment: Number(e.target.value) })}
                 style={{ ...contractInputStyle, fontVariantNumeric: 'tabular-nums' }} />
             </div>
+          </div>
+        </ContractModalShell>
+      )}
+
+      {/* ── Activation without payment evidence (explicit override) ── */}
+      {activateOverride && (
+        <ContractModalShell
+          width={560}
+          zIndex={9200}
+          icon={<Play size={19} color="#fff" />}
+          title="Activate without payment evidence"
+          subtitle={`${activateOverride.contract.contract_number} — no paid invoice found`}
+          onClose={() => setActivateOverride(null)}
+          footerHint="The reason is stored on the contract audit trail. Prefer issuing the invoice and recording payment first."
+          submitLabel="Activate anyway"
+          onSubmit={() => {
+            if (!activateOverride.reason.trim()) {
+              notify('A reason is required to activate without payment evidence.', 'error');
+              return;
+            }
+            const target = activateOverride.contract;
+            const reason = activateOverride.reason.trim();
+            setActivateOverride(null);
+            void transitionContract(target, 'active', { overrideReason: reason });
+          }}
+        >
+          <div style={{ marginBottom: 18 }}>
+            <label style={contractLabelStyle}>
+              Reason <ContractRequiredMark />
+            </label>
+            <textarea
+              value={activateOverride.reason}
+              onChange={e => setActivateOverride({ ...activateOverride, reason: e.target.value })}
+              rows={3}
+              placeholder="e.g. Government LPO received — payment follows in 30 days"
+              style={contractTextareaStyle}
+            />
           </div>
         </ContractModalShell>
       )}

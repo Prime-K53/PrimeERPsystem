@@ -51,8 +51,8 @@ export const assertInvoiceNumberFormat = (id: string, config?: CompanyConfig, ty
   return true;
 };
 
-export const generateNextId = (type: string = 'ID', collection: any[] = [], config?: CompanyConfig) => {
-  const nextId = generateSequentialId(type, collection, config);
+export const generateNextId = (type: string = 'ID', collection: any[] = [], config?: CompanyConfig, numberField: string = 'id') => {
+  const nextId = generateSequentialId(type, collection, config, numberField);
   if (isInvoiceNumberingType(type)) {
     assertInvoiceNumberFormat(nextId, config, type);
   }

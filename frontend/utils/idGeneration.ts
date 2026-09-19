@@ -185,7 +185,15 @@ export const isCustomerNumberingType = (type: string) => {
 export const generateSequentialId = (
   type: string = 'ID',
   collection: any[] = [],
-  config?: CompanyConfig
+  config?: CompanyConfig,
+  /**
+   * Record field scanned for the highest existing sequence number.
+   * Defaults to `id` (all existing callers). Collections whose display
+   * number lives elsewhere (e.g. contracts keep `contract_number` while
+   * `id` is a random uid) must pass that field — otherwise every call
+   * returns the start number and mints duplicates.
+   */
+  numberField: string = 'id',
 ) => {
   const safeType = String(type || 'ID');
 
@@ -254,8 +262,9 @@ export const generateSequentialId = (
   }
 
   const maxId = filteredCollection.reduce((max, item) => {
-    if (!item?.id || typeof item.id !== 'string') return max;
-    const numericValue = extractConfiguredDocumentNumberValue(item.id, activeRule);
+    const rawId = item?.[numberField];
+    if (!rawId || typeof rawId !== 'string') return max;
+    const numericValue = extractConfiguredDocumentNumberValue(rawId, activeRule);
     return numericValue !== null ? Math.max(max, numericValue) : max;
   }, 0);
 

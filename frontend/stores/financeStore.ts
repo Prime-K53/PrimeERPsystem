@@ -7,6 +7,7 @@ import { transactionService } from '../services/transactionService';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
 import { DEFAULT_ACCOUNTS } from '../constants';
 import { generateNextId } from '../utils/helpers';
+import { assertAllowedContractTransition, isAllowedItemTransition } from '../utils/contractLifecycle';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { customerNotificationService } from '../services/customerNotificationService';
 import { logger } from '../services/logger';
@@ -451,10 +452,17 @@ addInvoice: async (invoice) => {
        set(state => ({ assessmentContracts: [...state.assessmentContracts, contract] }));
        await api.finance.saveAssessmentContract(contract);
    },
-   updateAssessmentContract: async (contract: AssessmentContract) => {
-       set(state => ({ assessmentContracts: state.assessmentContracts.map(c => c.id === contract.id ? contract : c) }));
-       await api.finance.saveAssessmentContract(contract);
-   },
+    updateAssessmentContract: async (contract: AssessmentContract) => {
+        // Defense in depth: lifecycle edges are enforced here as well as in
+        // the UI, so no caller can jump statuses by writing to the store
+        // directly. Non-status updates pass through untouched.
+        const current = get().assessmentContracts.find(c => c.id === contract.id);
+        if (current && current.status !== contract.status) {
+            assertAllowedContractTransition(current.status, contract.status);
+        }
+        set(state => ({ assessmentContracts: state.assessmentContracts.map(c => c.id === contract.id ? contract : c) }));
+        await api.finance.saveAssessmentContract(contract);
+    },
    deleteAssessmentContract: async (id: string) => {
        set(state => ({ assessmentContracts: state.assessmentContracts.filter(c => c.id !== id) }));
        await api.finance.deleteAssessmentContract(id);
@@ -464,10 +472,15 @@ addInvoice: async (invoice) => {
        set(state => ({ contractAssessments: [...state.contractAssessments, assessment] }));
        await api.finance.saveContractAssessment(assessment);
    },
-   updateContractAssessment: async (assessment: AssessmentContractItem) => {
-       set(state => ({ contractAssessments: state.contractAssessments.map(a => a.id === assessment.id ? assessment : a) }));
-       await api.finance.saveContractAssessment(assessment);
-   },
+    updateContractAssessment: async (assessment: AssessmentContractItem) => {
+        const currentItem = get().contractAssessments.find(a => a.id === assessment.id);
+        if (currentItem && currentItem.status !== assessment.status
+            && !isAllowedItemTransition(currentItem.status, assessment.status)) {
+            throw new Error(`Assessment transition ${String(currentItem.status)} → ${String(assessment.status)} is not allowed.`);
+        }
+        set(state => ({ contractAssessments: state.contractAssessments.map(a => a.id === assessment.id ? assessment : a) }));
+        await api.finance.saveContractAssessment(assessment);
+    },
    deleteContractAssessment: async (id: string) => {
        set(state => ({ contractAssessments: state.contractAssessments.filter(a => a.id !== id) }));
        await api.finance.deleteContractAssessment(id);
