@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { X, Banknote, CreditCard, Smartphone, Send, ChevronRight } from 'lucide-react';
 import { Purchase, SupplierPayment } from '../../../types';
 import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
+import { useFinance } from '../../../context/FinanceContext';
+import { useAuth } from '../../../context/AuthContext';
+import { computeOwnBalances } from '../../../services/accountingEngine';
 
 interface SupplierPaymentModalProps {
     purchase: Purchase;
@@ -17,9 +20,30 @@ const inkSoft = '#5c6567';
 const hairline = '#e4ddd1';
 
 export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purchase, onClose, onRecord }) => {
-    const remainingBalance = purchase.total - (purchase.paidAmount || 0);
+    const { accounts, ledger } = useFinance();
+    const { companyConfig } = useAuth();
+    const total = purchase.totalAmount ?? purchase.total ?? 0;
+    const paid = purchase.paidAmount ?? 0;
+    const remainingBalance = Math.max(0, total - paid);
     const [amount, setAmount] = useState(remainingBalance.toString());
     const [selectedAccountId, setSelectedAccountId] = useState('1000');
+
+    const accountBalances = computeOwnBalances(accounts || [], ledger || []);
+    const balanceByCode: Record<string, number> = {};
+    (accounts || []).forEach(acc => {
+      const code = String(acc.account_number || acc.code || acc.id || '').trim();
+      if (code) balanceByCode[code] = accountBalances[acc.id] || 0;
+    });
+    const liveAccountByCode: Record<string, any> = {};
+    (accounts || []).forEach(acc => {
+      const code = String(acc.account_number || acc.code || '').trim();
+      if (code) liveAccountByCode[code] = acc;
+    });
+    const currency = companyConfig?.currencySymbol || '$';
+
+    const paymentAccountIds = ['11110', '11100', '11120', '11210', '11220', '11230', '11240'];
+    const accountsWithFunds = DEFAULT_ACCOUNTS.filter(a => paymentAccountIds.includes(a.id) && (balanceByCode[a.id] || 0) > 0);
+    const paymentAccounts = accountsWithFunds.length > 0 ? accountsWithFunds : DEFAULT_ACCOUNTS.filter(a => paymentAccountIds.includes(a.id));
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -29,14 +53,16 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
             return;
         }
         const selectedAccount = DEFAULT_ACCOUNTS.find(a => a.id === selectedAccountId);
+        const liveAccount = liveAccountByCode[selectedAccountId];
+        const paymentMethod = liveAccount?.subtype === 'CASH' ? 'Cash' :
+            (liveAccount?.subtype === 'MOBILE_MONEY' ? 'Mobile Money' : 'Bank');
         const payment: SupplierPayment = {
             id: '',
             date: new Date().toISOString(),
             supplierId: purchase.supplierId,
             amount: paymentAmount,
             accountId: selectedAccountId,
-            paymentMethod: selectedAccount?.name.includes('Cash') ? 'Cash' :
-                (selectedAccount?.name.includes('Mobile') ? 'Mobile Money' : 'Bank'),
+            paymentMethod,
             status: 'Cleared',
             reconciled: false,
             allocations: [{ purchaseId: purchase.id, amount: paymentAmount }]
@@ -92,7 +118,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
                                 Record Supplier Payment
                             </h1>
                             <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>
-                                Bill #{purchase.id} · Balance: ${remainingBalance.toLocaleString()}
+                                Bill #{purchase.id} · Balance: {currency}{remainingBalance.toLocaleString()}
                             </p>
                         </div>
                     </div>
@@ -113,7 +139,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
                     <div>
                         <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Payment Amount</div>
                         <div style={{ position: 'relative' }}>
-                            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 18 }}>$</span>
+                            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, fontWeight: 700, fontSize: 18 }}>{currency}</span>
                             <input
                                 autoFocus
                                 type="number"
@@ -135,8 +161,11 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
                     <div>
                         <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 8 }}>Payment Account</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                             {DEFAULT_ACCOUNTS.filter(a => ['11110', '11100', '11120', '11210', '11220', '11230', '11240'].includes(a.id)).map(account => {
+                             {paymentAccounts.map(account => {
                                 const isActive = selectedAccountId === account.id;
+                                const liveAccount = liveAccountByCode[account.id];
+                                const displayName = liveAccount?.name || account.name;
+                                const balance = balanceByCode[account.id] || 0;
                                 const Icon = getIcon(account.id);
                                 return (
                                     <button
@@ -159,8 +188,8 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
                                             {Icon}
                                         </div>
                                         <div style={{ flex: 1 }}>
-                                            <div style={{ fontWeight: 600, color: isActive ? teal[600] : ink }}>{account.name}</div>
-                                            <div style={{ fontSize: 11, color: inkSoft, letterSpacing: 0.04 }}>{account.code}</div>
+                                            <div style={{ fontWeight: 600, color: isActive ? teal[600] : ink }}>{displayName}</div>
+                                            <div style={{ fontSize: 11, color: inkSoft, letterSpacing: 0.04 }}>Balance: {currency}{balance.toLocaleString()}</div>
                                         </div>
                                         {isActive && (
                                             <div style={{

@@ -249,8 +249,11 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       await api.finance.saveAccount(account);
   },
   deleteAccount: async (id) => {
-      set(state => ({ accounts: state.accounts.filter(a => a.id !== id) }));
-      await api.finance.deleteAccount(id);
+      const account = get().accounts.find(a => a.id === id);
+      if (!account) return;
+      const updated = { ...account, is_active: false };
+      set(state => ({ accounts: state.accounts.map(a => a.id === id ? updated : a) }));
+      await api.finance.saveAccount(updated);
   },
 
 addInvoice: async (invoice) => {

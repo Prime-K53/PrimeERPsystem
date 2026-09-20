@@ -9,9 +9,9 @@
  */
 
 import { dbService } from './db';
-import { LedgerEntry } from '../types';
+import { LedgerEntry, Account } from '../types';
 import { loadAccountsFromStore, resolveAccountForPosting, getCompanyConfig, generateId } from './transactions/_internal';
-import { isPostedLedgerEntry } from './accountingEngine';
+import { isPostedLedgerEntry, isPostingAccount } from './accountingEngine';
 import { logger } from './logger';
 
 interface JournalLine {
@@ -51,6 +51,9 @@ export const ledgerService = {
             return null;
         }
 
+        // Load accounts for group-account posting safety validation.
+        const accounts = await loadAccountsFromStore();
+
         // Split-line journals: enforce SUM(debit) === SUM(credit).
         if (splits && splits.length > 0) {
             let splitDebit = 0;
@@ -87,6 +90,19 @@ export const ledgerService = {
             if (l.debitAccountId === l.creditAccountId) {
                 throw new Error(`Journal line posts to itself: ${l.debitAccountId}`);
             }
+
+            // Group-account posting safety: reject posting directly to a GROUP
+            // (heading/subtotal) account. Balances of group accounts are derived
+            // from their descendants, not from direct journal entries.
+            const debitAccount = (accounts || []).find((a: Account) => a.id === l.debitAccountId);
+            if (debitAccount && !isPostingAccount(debitAccount)) {
+                throw new Error(`Journal line debit account ${l.debitAccountId} (${debitAccount.name || 'unnamed'}) is a GROUP account and cannot receive postings`);
+            }
+            const creditAccount = (accounts || []).find((a: Account) => a.id === l.creditAccountId);
+            if (creditAccount && !isPostingAccount(creditAccount)) {
+                throw new Error(`Journal line credit account ${l.creditAccountId} (${creditAccount.name || 'unnamed'}) is a GROUP account and cannot receive postings`);
+            }
+
             totalDebit += amount;
             totalCredit += amount;
         }

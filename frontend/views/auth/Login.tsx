@@ -4,6 +4,7 @@ import { Mail, Lock, Eye, EyeOff, Loader2, KeyRound, AlertCircle } from 'lucide-
 import AuthLayout from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
 import { loginWithApi, ApiError, StaffUserInfo } from '../../services/authApiClient';
+import { resolveCustomerPortalLoginUrl } from '../../utils/portalLinks';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -176,7 +177,7 @@ const Login: React.FC = () => {
   };
 
   const inputClass =
-    'w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-[15px] sm:text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 hover:border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:opacity-60';
+    'w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-[15px] sm:text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60';
   const errorId = 'login-error';
   const emailErrorId = 'login-email-error';
 
@@ -185,7 +186,11 @@ const Login: React.FC = () => {
       variant="split-card"
       title="Your business, in perfect sync."
       brandTagline="Smart. Simple. Business Operations."
-      backLink={{ to: '/portal/login', label: 'Customer portal →' }}
+      backLink={{
+        to: resolveCustomerPortalLoginUrl(),
+        label: 'Customer portal →',
+        external: true,
+      }}
     >
       <style>{`
         input:-webkit-autofill,

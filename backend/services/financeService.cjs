@@ -767,6 +767,18 @@ class FinanceService {
   }
 
   async saveLedgerEntry(entry, currency = 'USD') {
+    const accountId = entry.account_id;
+    if (!accountId) throw new Error('saveLedgerEntry: account_id is required');
+
+    // Enforce GROUP vs POSTING distinction: group accounts must not
+    // receive direct journal postings. This is the canonical accounting
+    // safety gate — fail loudly rather than silently dropping one side.
+    const account = await this.getAccountById(accountId);
+    if (!account) throw new Error(`saveLedgerEntry: account not found: ${accountId}`);
+    if (this._isGroupAccount(account)) {
+      throw new Error(`saveLedgerEntry: cannot post to group account ${account.account_number || account.code || accountId} (${account.name}) — group accounts are headings, not posting accounts`);
+    }
+
     const id = entry.id || crypto.randomUUID();
     const record = {
       id,
@@ -785,6 +797,15 @@ class FinanceService {
     };
     await repo.upsert('ledger_entries', record);
     return repo.getById('ledger_entries', id);
+  }
+
+  /** Return true when the account is a GROUP (heading/subtotal) account, not a posting account. */
+  _isGroupAccount(account) {
+    if (!account) return true;
+    const flag = account.allow_posting;
+    if (flag === false || flag === 0) return true;
+    if (typeof flag === 'string' && (flag === 'false' || flag === '0')) return true;
+    return false;
   }
 
   async reverseLedgerEntriesByReference(referenceType, referenceId) {

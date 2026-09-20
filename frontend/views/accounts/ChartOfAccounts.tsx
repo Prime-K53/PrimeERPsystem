@@ -263,22 +263,22 @@ const ChartOfAccounts: React.FC = () => {
 
   const handleDelete = (account: Account) => {
     if (account.is_system_account) {
-      notify('Cannot delete system accounts', 'error');
+      notify('Cannot deactivate system accounts', 'error');
       return;
     }
     setConfirmState({
       open: true,
-      title: 'Delete Account',
-      message: `Are you sure you want to delete "${account.name}"? This action cannot be undone.`,
-      confirmText: 'Delete',
+      title: 'Deactivate Account',
+      message: `Are you sure you want to deactivate "${account.name}"? It will be hidden from active lists but can be reactivated later.`,
+      confirmText: 'Deactivate',
       type: 'danger',
       onConfirm: async () => {
         try {
           await deleteAccount(account.id);
-          notify('Account deleted successfully', 'success');
+          notify('Account deactivated successfully', 'success');
           setConfirmState(s => ({ ...s, open: false }));
         } catch (err: any) {
-          notify(err.message || 'Failed to delete account', 'error');
+          notify(err.message || 'Failed to deactivate account', 'error');
         }
       }
     });

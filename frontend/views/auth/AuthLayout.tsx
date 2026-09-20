@@ -10,7 +10,7 @@ type Props = {
   showBrand?: boolean;
   brandName?: React.ReactNode;
   brandTagline?: string;
-  backLink?: { to: string; label: string };
+  backLink?: { to: string; label: string; external?: boolean };
   wide?: boolean;
 };
 
@@ -35,7 +35,7 @@ const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand
         <div className="absolute -bottom-48 -left-40 w-[560px] h-[560px] rounded-full blur-[130px] opacity-50" style={{ background: 'radial-gradient(circle, rgba(20,60,160,.35), transparent 65%)' }} />
         <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'radial-gradient(circle, #93c5fd 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
       </div>
-      <div className={`relative z-10 w-full ${wide ? 'max-w-[1160px]' : 'max-w-[1080px]'} h-full lg:h-auto lg:min-h-[520px] lg:max-h-[calc(100dvh-5rem)] my-0 lg:my-auto grid lg:grid-cols-2 rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-[0_32px_90px_-20px_rgba(0,0,0,0.65)] border border-white/10 bg-white`}>
+      <div className={`relative z-10 w-full ${wide ? 'max-w-[1160px]' : 'max-w-[1080px]'} h-full lg:h-auto lg:min-h-[520px] lg:max-h-[calc(100dvh-5rem)] my-0 lg:my-auto grid lg:grid-cols-2 rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-[0_32px_90px_-20px_rgba(0,0,0,0.65)] border border-white/10 bg-white auth-split`}>
         <div className="relative hidden lg:flex flex-col justify-between overflow-y-auto p-12 xl:p-14 lg:min-h-0 lg:max-h-[calc(100dvh-5rem)] auth-scroll" style={{ background: 'linear-gradient(155deg, #1b3a9e 0%, #122a75 38%, #0a1c52 68%, #070f35 100%)' }}>
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
             <div className="absolute inset-0 opacity-[0.10]" style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
@@ -89,7 +89,23 @@ const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand
             {children}
             {backLink && (
               <div className="mt-6 text-center">
-                <Link to={backLink.to} className="text-[13px] font-bold text-slate-500 hover:text-blue-600 transition-colors">{backLink.label}</Link>
+                {backLink.external ? (
+                  // Leaves this app entirely (its own deployment) — a full-page
+                  // anchor keeps the SPA router out of the way.
+                  <a
+                    href={backLink.to}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[13px] font-bold text-slate-500 hover:text-blue-600 transition-colors"
+                    data-testid="auth-external-back-link"
+                  >
+                    {backLink.label}
+                  </a>
+                ) : (
+                  <Link to={backLink.to} className="text-[13px] font-bold text-slate-500 hover:text-blue-600 transition-colors">
+                    {backLink.label}
+                  </Link>
+                )}
               </div>
             )}
           </div>
@@ -221,7 +237,7 @@ const AuthLayout: React.FC<Props> = ({
         </div>
 
       {/* ── Form side ── */}
-      <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6 lg:p-10 xl:p-14 relative z-10 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto">
+      <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6 lg:p-10 xl:p-14 relative z-10 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto auth-scroll">
         <div className="w-full max-w-[440px] my-auto py-4 sm:py-6">
           {children}
           <p className="mt-6 sm:mt-8 text-center text-[11px] leading-relaxed text-slate-500 px-2">

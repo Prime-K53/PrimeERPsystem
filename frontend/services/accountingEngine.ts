@@ -85,6 +85,14 @@ export function isPostingAccount(account: Partial<Account> | null | undefined): 
   return flag !== false && flag !== 0;
 }
 
+/**
+ * Classify an account as GROUP (heading/subtotal) or POSTING (leaf ledger account).
+ * Matches the canonical rule: allow_posting === false | 0 => GROUP, otherwise POSTING.
+ */
+export function classifyAccount(account: Partial<Account> | null | undefined): 'GROUP' | 'POSTING' {
+  return isPostingAccount(account) ? 'POSTING' : 'GROUP';
+}
+
 const EXCLUDED_ENTRY_STATUSES = new Set(['DRAFT', 'VOID', 'VOIDED', 'DELETED', 'CANCELLED']);
 
 /**
