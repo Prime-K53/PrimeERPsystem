@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Lock, ArrowLeft, Loader2, ShieldCheck, AlertCircle, CheckCircle2, Key } from 'lucide-react';
-import { Input } from '../../components/Input';
+import { Link } from 'react-router-dom';
+import { Lock, Loader2, AlertCircle, CheckCircle2, Key } from 'lucide-react';
 import AuthLayout from './AuthLayout';
 import { dbService } from '../../services/db';
 
@@ -47,80 +47,84 @@ const ResetPassword: React.FC = () => {
     }
   };
 
-  const inputClass = "w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:bg-white/10 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 text-white text-sm transition-all placeholder:text-slate-600 outline-none";
+  const inputClass = "w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-[15px] sm:text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 hover:border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:opacity-60";
+  const primaryBtn = "w-full h-12 text-white text-[15px] font-bold rounded-xl flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 hover:shadow-[0_10px_28px_-8px_rgba(29,78,216,0.55)]";
+  const primaryBtnStyle = { background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', boxShadow: '0 10px 24px -10px rgba(29,78,216,0.55)' } as React.CSSProperties;
+  const labelClass = "block text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2";
 
   return (
-    <AuthLayout title="Reset Password" subtitle="Enter your new password">
-      <div className="mb-6">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-blue-400 uppercase tracking-widest mb-3">
-          <ShieldCheck size={12} />
-          {success ? 'Complete' : 'New Password'}
-        </span>
-        <h2 className="text-2xl font-bold text-white tracking-tight">
-          {success ? 'Password Reset Complete' : 'Set New Password'}
-        </h2>
-        <p className="text-sm text-slate-400 mt-2">
-          {success
-            ? 'Your password has been updated successfully.'
-            : sessionReady
-              ? 'Choose a strong password for your account.'
-              : 'Verifying your reset link...'}
-        </p>
-      </div>
+    <AuthLayout
+      variant="split-card"
+      title="Your business, in perfect sync."
+      brandTagline="Smart. Simple. Business Operations."
+      backLink={{ to: '/login', label: '← Back to sign in' }}
+    >
+      <div className="animate-slideUp">
+        <div className="mb-6 sm:mb-7">
+          <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight">
+            {success ? 'Password Reset Complete' : 'Set New Password'}
+          </h1>
+          <p className="text-[13.5px] text-slate-500 mt-2 leading-relaxed">
+            {success
+              ? 'Your password has been updated successfully.'
+              : sessionReady
+                ? 'Choose a strong password for your account.'
+                : 'Verifying your reset link...'}
+          </p>
+        </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2">
-          <AlertCircle size={15} className="text-rose-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-rose-300">{error}</p>
+        <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 animate-shake">
+          <span className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center shrink-0">
+            <AlertCircle size={15} className="text-rose-500" />
+          </span>
+          <p className="text-[12.5px] text-rose-600/90 leading-relaxed pt-1.5">{error}</p>
         </div>
       )}
 
       {success ? (
         <div className="space-y-5">
-          <div className="bg-white/3 border border-white/6 rounded-xl p-6 text-center">
-            <div className="w-14 h-14 rounded-full bg-emerald-500/10 mx-auto flex items-center justify-center mb-4">
-              <CheckCircle2 size={28} className="text-emerald-400" />
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-white border border-emerald-200 mx-auto flex items-center justify-center mb-4 shadow-sm">
+              <CheckCircle2 size={28} className="text-emerald-500" />
             </div>
-            <p className="text-sm text-slate-300">
+            <p className="text-[13.5px] text-slate-600 leading-relaxed">
               Your password has been reset. You can now sign in with your new password.
             </p>
           </div>
-          <a
-            href="#/login"
-            className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
-          >
-            <ArrowLeft size={16} />
+          <Link to="/login" className={`${primaryBtn} no-underline`} style={primaryBtnStyle}>
             <span>Sign In</span>
-          </a>
+          </Link>
         </div>
       ) : !sessionReady ? (
-        <div className="bg-white/3 border border-white/6 rounded-xl p-6 text-center">
-          <Loader2 size={24} className="animate-spin text-emerald-400 mx-auto mb-3" />
-          <p className="text-sm text-slate-400">Verifying your reset link...</p>
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center">
+          <Loader2 size={24} className="animate-spin text-blue-500 mx-auto mb-3" />
+          <p className="text-[13px] text-slate-500">Verifying your reset link...</p>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="bg-white/3 border border-white/6 rounded-xl p-5 space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Key size={16} className="text-emerald-400" />
-              <h3 className="text-sm font-semibold text-white">New Password</h3>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Key size={15} className="text-blue-600" />
+              <h3 className="text-[13px] font-bold text-slate-800">New Password</h3>
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-300 mb-1.5 block">
-                New Password <span className="text-rose-400">*</span>
+              <label className={labelClass}>
+                New Password
               </label>
               <div className="relative">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
-                  <Lock size={16} />
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <Lock size={17} />
                 </div>
-                <Input
+                <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className={`${inputClass} pl-10`}
-                  placeholder="••••••••"
+                  className={inputClass}
+                  placeholder="Minimum 6 characters"
                   autoComplete="new-password"
+                  autoFocus
                   disabled={submitting}
                   required
                   minLength={6}
@@ -129,19 +133,19 @@ const ResetPassword: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-300 mb-1.5 block">
-                Confirm Password <span className="text-rose-400">*</span>
+              <label className={labelClass}>
+                Confirm Password
               </label>
               <div className="relative">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
-                  <Lock size={16} />
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <Lock size={17} />
                 </div>
-                <Input
+                <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className={`${inputClass} pl-10`}
-                  placeholder="••••••••"
+                  className={inputClass}
+                  placeholder="Repeat new password"
                   autoComplete="new-password"
                   disabled={submitting}
                   required
@@ -153,21 +157,21 @@ const ResetPassword: React.FC = () => {
           <button
             type="submit"
             disabled={!password || !confirmPassword || submitting}
-            className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
+            className={primaryBtn}
+            style={primaryBtnStyle}
           >
             {submitting ? (
               <>
-                <Loader2 size={16} className="animate-spin" />
+                <Loader2 size={17} className="animate-spin" />
                 <span>Resetting...</span>
               </>
             ) : (
-              <>
-                <span>Reset Password</span>
-              </>
+              <span>Reset Password</span>
             )}
           </button>
         </form>
       )}
+      </div>
     </AuthLayout>
   );
 };

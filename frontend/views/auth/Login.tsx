@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ShieldCheck, Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, KeyRound, AlertCircle, Fingerprint, Building2, Sparkles, Zap } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, KeyRound, AlertCircle } from 'lucide-react';
 import AuthLayout from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
 import { loginWithApi, ApiError, StaffUserInfo } from '../../services/authApiClient';
@@ -176,112 +176,62 @@ const Login: React.FC = () => {
   };
 
   const inputClass =
-    'w-full h-[48px] sm:h-12 pl-11 pr-4 bg-white/[0.07] backdrop-blur-md border border-white/[0.15] rounded-2xl text-[16px] sm:text-sm text-white placeholder:text-slate-500 outline-none transition-all duration-300 hover:border-white/25 hover:bg-white/[0.10] focus:border-blue-400/70 focus:bg-white/[0.11] focus:ring-4 focus:ring-blue-500/20 focus:placeholder:text-slate-400 disabled:opacity-60 shadow-inner shadow-black/10 caret-blue-300 selection:bg-blue-500/30 selection:text-white touch-manipulation';
+    'w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-[15px] sm:text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 hover:border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:opacity-60';
   const errorId = 'login-error';
   const emailErrorId = 'login-email-error';
 
   return (
-    <AuthLayout title="Command your operations with confidence." subtitle="Sign in with your administrator credentials to access live finance, inventory, sales and production." showBrand>
-      {/* fix autofill/highlight — keeps dark bg + white text when Chrome yellow autofill or selection */}
+    <AuthLayout
+      variant="split-card"
+      title="Your business, in perfect sync."
+      brandTagline="Smart. Simple. Business Operations."
+      backLink={{ to: '/portal/login', label: 'Customer portal →' }}
+    >
       <style>{`
         input:-webkit-autofill,
         input:-webkit-autofill:hover,
         input:-webkit-autofill:focus,
         input:-webkit-autofill:active {
-          -webkit-text-fill-color: #ffffff !important;
-          -webkit-box-shadow: 0 0 0px 1000px rgba(15,30,58,0.85) inset !important;
-          box-shadow: 0 0 0px 1000px rgba(15,30,58,0.85) inset !important;
+          -webkit-text-fill-color: #0f172a !important;
+          -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
+          box-shadow: 0 0 0px 1000px #ffffff inset !important;
           transition: background-color 5000s ease-in-out 0s !important;
-          caret-color: #ffffff;
-        }
-        input::selection {
-          background-color: rgba(59,130,246,0.35);
-          color: #ffffff;
+          caret-color: #0f172a;
         }
       `}</style>
       <div className="animate-slideUp">
-        {/* ── Glass card container ── */}
-        <div className="relative p-5 sm:p-7 rounded-3xl bg-white/[0.04] backdrop-blur-xl border border-white/[0.09] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.05]">
-        <div className="mb-5 sm:mb-7 relative px-1 sm:px-0">
-          {/* glows reduced on mobile for GPU */}
-          <div className="absolute -top-8 -left-8 w-24 h-24 sm:w-32 sm:h-32 bg-blue-500/10 rounded-full blur-2xl sm:blur-3xl pointer-events-none" aria-hidden="true" />
-          <div className="absolute -top-4 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-indigo-500/10 rounded-full blur-xl sm:blur-2xl pointer-events-none" aria-hidden="true" />
-
-          {/* Eyebrow — wraps on 320px, Online always visible but compact */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/[0.08] backdrop-blur-md border border-white/[0.12] shadow-[0_2px_12px_rgba(37,99,235,0.15)] max-w-full">
-              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md ring-1 ring-white/15 shrink-0">
-                <ShieldCheck size={12} className="text-white" strokeWidth={2.5} />
-              </span>
-              <span className="text-[10px] font-extrabold tracking-[0.14em] text-blue-100 uppercase truncate">Administrator Login</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-emerald-500/[0.08] backdrop-blur-md border border-emerald-400/[0.12] text-[10px] font-bold text-emerald-300 shrink-0">
-              <span className="relative flex w-1.5 h-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40" />
-                <span className="relative inline-flex rounded-full w-1.5 h-1.5 bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
-              </span>
-              Online
-            </span>
-          </div>
-
-          {/* Heading — fluid clamp, no fixed 2.05rem that breaks 320px */}
-          <div className="mt-4 sm:mt-5 relative">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-bold tracking-[0.18em] uppercase text-amber-300/90 shrink-0">
-                <Sparkles size={11} className="text-amber-300" />
-                Secure workspace
-              </span>
-              <span className="h-px flex-1 max-w-[60px] sm:max-w-[80px] bg-gradient-to-r from-amber-300/30 to-transparent" aria-hidden="true" />
-            </div>
-            <h1 className="text-[clamp(1.65rem,7vw,2.05rem)] font-black tracking-tight leading-[0.95] text-white break-words">
-              Welcome{' '}
-              <span className="relative inline-block">
-                <span className="bg-gradient-to-r from-blue-300 via-indigo-300 to-blue-400 bg-clip-text text-transparent">back</span>
-                {/* underline hidden on wrap to avoid mis-align */}
-                <span className="hidden sm:block absolute -bottom-1 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500/0 via-blue-400/60 to-indigo-400/0 rounded-full blur-[0.5px]" aria-hidden="true" />
-              </span>
-              <span className="text-amber-300">.</span>
-            </h1>
-            <p className="mt-2.5 sm:mt-3 text-[13px] sm:text-[13.5px] leading-[1.6] sm:leading-[1.65] text-slate-400 max-w-full sm:max-w-[36ch]">
-              {mfaRequired ? (
-                <span className="flex items-start gap-2 text-left">
-                  <span className="mt-0.5 w-5 h-5 rounded-full bg-amber-500/15 border border-amber-400/20 flex items-center justify-center shrink-0">
-                    <Zap size={10} className="text-amber-300" />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    Two-factor auth is on. Enter the <span className="text-slate-200 font-semibold">6-digit code</span> from your app.
-                  </span>
-                </span>
-              ) : (
-                <>
-                  Enter your credentials to pick up <span className="text-slate-200 font-semibold decoration-blue-400/30 underline underline-offset-4">right where you left off</span>.
-                </>
-              )}
-            </p>
-          </div>
+        {/* ── Heading (matches portal card) ── */}
+        <div className="mb-6 sm:mb-7">
+          <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight">
+            {mfaRequired ? 'Check your authenticator' : 'Welcome Back'}
+          </h1>
+          <p className="text-[13.5px] text-slate-500 mt-2 leading-relaxed">
+            {mfaRequired
+              ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
+              : 'Sign in to manage sales, inventory, procurement and finance — synchronized live with PrimeERP.'}
+          </p>
         </div>
 
           {error && (
-            <div role="alert" id={errorId} className="mb-4 sm:mb-5 p-3 sm:p-3.5 bg-rose-500/[0.08] backdrop-blur-md border border-rose-400/25 rounded-2xl flex items-start gap-2.5 sm:gap-3 animate-shake break-words shadow-lg shadow-rose-500/5">
-              <span className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-400/20 flex items-center justify-center shrink-0">
-                <AlertCircle size={15} className="text-rose-300" />
+            <div role="alert" id={errorId} className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 animate-shake break-words">
+              <span className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center shrink-0">
+                <AlertCircle size={15} className="text-rose-500" />
               </span>
               <div className="flex-1 min-w-0 pt-0.5 overflow-hidden">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-rose-200">Sign-in failed</p>
-                <p className="mt-0.5 text-[12px] sm:text-[13px] text-rose-200/90 leading-relaxed break-words [overflow-wrap:anywhere]">{error}</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-rose-600">Sign-in failed</p>
+                <p className="mt-0.5 text-[12.5px] text-rose-600/90 leading-relaxed break-words [overflow-wrap:anywhere]">{error}</p>
               </div>
             </div>
           )}
 
           {mfaRequired ? (
-            <form onSubmit={handleMfaSubmit} className="space-y-4 sm:space-y-5" aria-describedby={error ? errorId : undefined}>
+            <form onSubmit={handleMfaSubmit} className="space-y-5" aria-describedby={error ? errorId : undefined}>
               <div>
-                <label htmlFor="login-mfa-code" className="flex items-center gap-1.5 text-[12px] font-bold text-slate-200 uppercase tracking-wider mb-2">
-                  <Fingerprint size={13} className="text-blue-400" />
-                  Verification code <span className="text-rose-400">*</span>
+                <label htmlFor="login-mfa-code" className="block text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Verification code
                 </label>
-                <div className="relative group">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-300 transition-colors">
+                <div className="relative">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                     <KeyRound size={17} />
                   </div>
                   <input
@@ -292,7 +242,7 @@ const Login: React.FC = () => {
                     enterKeyHint="done"
                     value={mfaCode}
                     onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    className={`${inputClass} !pl-11 tracking-[0.28em] sm:tracking-[0.35em] font-mono text-center !text-[18px] sm:!text-base font-bold peer`}
+                    className={`${inputClass} !pl-11 tracking-[0.3em] font-mono text-center !text-[17px] font-bold`}
                     placeholder="000000"
                     disabled={submitting}
                     autoFocus
@@ -304,18 +254,18 @@ const Login: React.FC = () => {
                   {Array.from({ length: 6 }).map((_, i) => (
                     <span
                       key={i}
-                      className={`h-1.5 rounded-full transition-all duration-200 ${i < mfaCode.length ? 'w-6 bg-blue-400' : 'w-1.5 bg-white/15'}`}
+                      className={`h-1.5 rounded-full transition-all duration-200 ${i < mfaCode.length ? 'w-6 bg-blue-600' : 'w-1.5 bg-slate-200'}`}
                     />
                   ))}
                 </div>
-                <p className="text-[11.5px] text-slate-500 mt-2.5 text-center">Enter the 6-digit code from your authenticator app.</p>
+                <p className="text-[12px] text-slate-500 mt-2.5 text-center">Enter the 6-digit code from your authenticator app.</p>
               </div>
 
               <button
                 type="submit"
                 disabled={!canVerifyMfa}
-                className="w-full h-[48px] sm:h-12 text-white rounded-2xl font-bold text-[15px] sm:text-[13.5px] flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:brightness-110 enabled:hover:shadow-[0_10px_30px_-8px_rgba(37,99,235,0.6)] touch-manipulation select-none backdrop-blur-md border border-blue-400/20"
-                style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.85) 0%, rgba(30,58,138,0.90) 100%)', boxShadow: '0 8px 24px -8px rgba(37,99,235,0.55), inset 0 1px 0 rgba(255,255,255,0.15)' }}
+                className="w-full h-12 text-white text-[15px] font-bold rounded-xl flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 hover:shadow-[0_10px_28px_-8px_rgba(29,78,216,0.55)]"
+                style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', boxShadow: '0 10px 24px -10px rgba(29,78,216,0.55)' }}
               >
                 {submitting ? (
                   <>
@@ -323,30 +273,27 @@ const Login: React.FC = () => {
                     <span>Verifying...</span>
                   </>
                 ) : (
-                  <>
-                    <span>Verify &amp; Sign In</span>
-                    <ArrowRight size={16} />
-                  </>
+                  <span>Verify & Sign In</span>
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => { setMfaRequired(false); setMfaCode(''); setError(null); }}
                 disabled={submitting}
-                className="w-full text-center text-xs font-semibold text-slate-500 hover:text-blue-300 transition-colors disabled:opacity-60"
+                className="w-full h-11 text-[13.5px] font-bold text-slate-500 hover:text-blue-600 rounded-xl border border-slate-200 bg-white hover:border-blue-300 transition-all disabled:opacity-50"
               >
                 ← Back to email &amp; password
               </button>
             </form>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5" noValidate aria-describedby={error ? errorId : undefined}>
-              <div className="space-y-3.5 sm:space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5" noValidate aria-describedby={error ? errorId : undefined}>
+              <div className="space-y-4">
                 <div>
-                  <label htmlFor="login-email" className="block text-[12px] font-bold text-slate-200 uppercase tracking-wider mb-2">
-                    Email <span className="text-rose-400">*</span>
+                  <label htmlFor="login-email" className="block text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">
+                    Email Address
                   </label>
-                  <div className="relative group">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-300 transition-colors">
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                       <Mail size={17} />
                     </div>
                     <input
@@ -359,8 +306,8 @@ const Login: React.FC = () => {
                       spellCheck={false}
                       value={email}
                       onChange={(e) => { setEmail(e.target.value); if (fieldError) setFieldError(null); }}
-                      className={`${inputClass} peer ${fieldError ? '!border-rose-400/50 !bg-rose-500/5 focus:!border-rose-400 focus:!ring-rose-500/15' : ''}`}
-                      placeholder="admin@company.com"
+                      className={`${inputClass} ${fieldError ? '!border-rose-400 !bg-rose-50/50 focus:!border-rose-500 focus:!ring-rose-500/15' : ''}`}
+                      placeholder="accounts@company.mw"
                       autoComplete="email"
                       disabled={submitting}
                       autoFocus
@@ -370,7 +317,7 @@ const Login: React.FC = () => {
                     />
                   </div>
                   {fieldError && (
-                    <p id={emailErrorId} role="alert" className="mt-2 text-[12px] font-medium text-rose-300 flex items-center gap-1.5">
+                    <p id={emailErrorId} role="alert" className="mt-2 text-[12px] font-medium text-rose-600 flex items-center gap-1.5">
                       <AlertCircle size={13} />
                       {fieldError}
                     </p>
@@ -379,15 +326,15 @@ const Login: React.FC = () => {
 
                 <div>
                   <div className="flex flex-wrap gap-2 justify-between items-center mb-2">
-                    <label htmlFor="login-password" className="block text-[12px] font-bold text-slate-200 uppercase tracking-wider">
-                      Password <span className="text-rose-400">*</span>
+                    <label htmlFor="login-password" className="block text-[12px] font-bold text-slate-700 uppercase tracking-wider">
+                      Password
                     </label>
-                    <Link to="/forgot-password" className="text-[11px] sm:text-[12px] font-bold text-blue-300 hover:text-blue-200 transition-colors shrink-0">
-                      Forgot Password?
+                    <Link to="/forgot-password" className="text-[12px] font-bold text-slate-500 hover:text-blue-600 transition-colors shrink-0">
+                      Forgot your password?
                     </Link>
                   </div>
-                  <div className="relative group">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-300 transition-colors">
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                       <Lock size={17} />
                     </div>
                     <input
@@ -396,8 +343,8 @@ const Login: React.FC = () => {
                       enterKeyHint="done"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className={`${inputClass} pr-12 peer`}
-                      placeholder="Enter your password"
+                      className={`${inputClass} pr-12`}
+                      placeholder="••••••••••"
                       autoComplete="current-password"
                       disabled={submitting}
                       required
@@ -405,7 +352,7 @@ const Login: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-1 sm:right-1.5 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-200 active:text-slate-100 hover:bg-white/10 active:bg-white/15 transition-all touch-manipulation shrink-0"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all shrink-0"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -417,52 +364,35 @@ const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="group w-full h-[48px] sm:h-12 text-white rounded-2xl font-bold text-[15px] sm:text-[13.5px] flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:brightness-110 enabled:hover:shadow-[0_10px_30px_-8px_rgba(37,99,235,0.6)] touch-manipulation select-none backdrop-blur-md border border-blue-400/20"
-                style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.85) 0%, rgba(30,58,138,0.90) 100%)', boxShadow: '0 8px 24px -8px rgba(37,99,235,0.55), inset 0 1px 0 rgba(255,255,255,0.15)' }}
+                className="w-full h-12 text-white text-[15px] font-bold rounded-xl flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 hover:shadow-[0_10px_28px_-8px_rgba(29,78,216,0.55)]"
+                style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', boxShadow: '0 10px 24px -10px rgba(29,78,216,0.55)' }}
               >
                 {submitting ? (
                   <>
                     <Loader2 size={17} className="animate-spin" />
-                    <span>Signing in securely...</span>
+                    <span>Signing in...</span>
                   </>
                 ) : (
-                  <>
-                    <span>Sign In</span>
-                    <ArrowRight size={16} className="transition-transform group-enabled:group-hover:translate-x-0.5" />
-                  </>
+                  <span>Sign In</span>
                 )}
               </button>
 
-              <div className="flex items-center gap-3 pt-1">
-                <div className="h-px flex-1 bg-white/[0.08]" />
-                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 whitespace-nowrap">New here?</span>
-                <div className="h-px flex-1 bg-white/[0.08]" />
-              </div>
-
               <Link
                 to="/register-company"
-                className="w-full h-[48px] sm:h-11 rounded-2xl border border-white/[0.10] bg-white/[0.05] backdrop-blur-md hover:bg-white/[0.09] hover:border-amber-300/30 text-slate-200 hover:text-white font-bold text-[14px] sm:text-[13px] flex items-center justify-center gap-2 transition-all duration-300 touch-manipulation shadow-sm shadow-black/10"
+                className="flex items-center gap-3.5 p-4 rounded-2xl bg-amber-50/80 border border-amber-200/70 hover:border-amber-300 hover:bg-amber-50 transition-all group"
               >
-                <Building2 size={15} className="text-amber-300" />
-                Create new company
+                <span className="w-10 h-10 rounded-xl bg-white border border-amber-200 flex items-center justify-center shrink-0 shadow-sm">
+                  <KeyRound size={17} className="text-amber-600" />
+                </span>
+                <span className="min-w-0 text-left">
+                  <span className="block text-[13.5px] font-bold text-slate-900 leading-tight">Set up your workspace</span>
+                  <span className="block text-[12px] text-slate-500 mt-0.5">First time here? Create your company</span>
+                </span>
               </Link>
             </form>
           )}
 
         </div>
-
-        {/* ── Trust footer ── */}
-        <div className="mt-6 sm:mt-5 flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[11px] font-semibold text-slate-500 px-2 text-center">
-          <span className="inline-flex items-center gap-1.5">
-            <Lock size={11} className="text-emerald-400/80" />
-            256-bit encrypted
-          </span>
-          <span className="w-1 h-1 rounded-full bg-white/15" />
-          <Link to="/portal/login" className="hover:text-blue-300 transition-colors">
-            Customer portal →
-          </Link>
-        </div>
-      </div>
     </AuthLayout>
   );
 };

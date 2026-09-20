@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Building2, UserRound, Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, ArrowLeft, AlertCircle, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Building2, UserRound, Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
 import AuthLayout from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
 import { registerCompany, ApiError } from '../../services/authApiClient';
@@ -32,6 +32,7 @@ const CreateCompany: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  const [wizardStep, setWizardStep] = useState<0 | 1 | 2>(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -42,6 +43,20 @@ const CreateCompany: React.FC = () => {
       navigate('/', { replace: true });
     }
   }, [currentUser, navigate]);
+
+  // Each wizard step is a fresh panel — scroll the form column back to the top
+  // (the scroll container lives in AuthLayout's split-card shell).
+  const stepRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = stepRef.current?.closest('.auth-scroll') as HTMLElement | null;
+    if (!scroller) return;
+    // Element.scrollTo is missing in jsdom and some embedded webviews.
+    if (typeof scroller.scrollTo === 'function') {
+      scroller.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      scroller.scrollTop = 0;
+    }
+  }, [wizardStep]);
 
   const passwordValidation = useMemo(
     () => validatePasswordStrength(password),
@@ -60,11 +75,15 @@ const CreateCompany: React.FC = () => {
     [companyName, fullName, username, adminEmail, password, confirmPassword, submitting]
   );
 
-  const validate = (): string | null => {
+  const validateCompanyStep = (): string | null => {
     if (companyName.trim().length < 2) return 'Company name must be at least 2 characters.';
     if (companyEmail.trim() && !EMAIL_PATTERN.test(companyEmail.trim())) {
       return 'Enter a valid company email address (or leave it blank).';
     }
+    return null;
+  };
+
+  const validateAdminStep = (): string | null => {
     if (fullName.trim().length < 2) return 'Enter the administrator full name.';
     if (username.trim().length < 3) return 'Username must be at least 3 characters.';
     if (!EMAIL_PATTERN.test(adminEmail.trim())) return 'Enter a valid administrator email address.';
@@ -72,6 +91,43 @@ const CreateCompany: React.FC = () => {
     if (password !== confirmPassword) return "Passwords don't match.";
     if (!passwordValidation.valid) return passwordValidation.errors[0] || 'Password does not meet the required complexity.';
     return null;
+  };
+
+  const canContinueCompany = useMemo(
+    () => companyName.trim().length >= 2 && (!companyEmail.trim() || EMAIL_PATTERN.test(companyEmail.trim())) && !submitting,
+    [companyName, companyEmail, submitting],
+  );
+
+  const canContinueAdmin = useMemo(
+    () =>
+      fullName.trim().length >= 2 &&
+      username.trim().length >= 3 &&
+      adminEmail.trim().length > 0 &&
+      password.length >= 6 &&
+      confirmPassword.length > 0 &&
+      !submitting,
+    [fullName, username, adminEmail, password, confirmPassword, submitting],
+  );
+
+  const goToNextStep = () => {
+    const err = wizardStep === 0 ? validateCompanyStep() : validateAdminStep();
+    if (err) {
+      setFieldError(err);
+      return;
+    }
+    setFieldError(null);
+    setError(null);
+    setWizardStep((s) => (s === 0 ? 1 : 2) as 0 | 1 | 2);
+  };
+
+  const goToPrevStep = () => {
+    setFieldError(null);
+    setError(null);
+    setWizardStep((s) => (s === 2 ? 1 : 0) as 0 | 1 | 2);
+  };
+
+  const validate = (): string | null => {
+    return validateCompanyStep() ?? validateAdminStep();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -207,58 +263,94 @@ const CreateCompany: React.FC = () => {
   };
 
   const inputClass =
-    'w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-all focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60';
-  const labelClass = 'block text-[13px] font-semibold text-slate-300 mb-1.5';
+    'w-full h-11 pl-10 pr-4 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 hover:border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:opacity-60';
+  const plainInputClass =
+    'w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 hover:border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:opacity-60';
+  const labelClass = 'block text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2';
+  const sectionTitleClass = 'text-[11px] font-bold text-slate-500 uppercase tracking-[0.15em] mb-4 flex items-center gap-2';
+  const primaryBtn = "w-full h-12 text-white text-[15px] font-bold rounded-xl flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 hover:shadow-[0_10px_28px_-8px_rgba(29,78,216,0.55)]";
+  const primaryBtnStyle = { background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', boxShadow: '0 10px 24px -10px rgba(29,78,216,0.55)' } as React.CSSProperties;
   const errorId = 'create-company-error';
   const fieldErrorId = 'create-company-field-error';
 
   return (
-    <AuthLayout title="Create your company" subtitle="Set up a new company workspace and its administrator account." showBrand>
-      <div>
-        <div className="mb-8">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-[11px] font-bold text-indigo-300 uppercase tracking-wider">
-            <Building2 size={12} />
-            New Company
-          </span>
-          <h1 className="mt-4 text-[1.65rem] font-bold text-slate-100 tracking-tight leading-snug">
+    <AuthLayout
+      variant="split-card"
+      wide
+      title="Your business, in perfect sync."
+      brandTagline="Smart. Simple. Business Operations."
+      backLink={{ to: '/login', label: '← Back to sign in' }}
+    >
+      <div className="animate-slideUp" ref={stepRef}>
+        <div className="mb-6">
+          <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight">
             Create new company
           </h1>
-          <p className="mt-2 text-sm text-slate-400 leading-relaxed">
-            Enter your company details and an administrator account to get started.
+          <p className="mt-2 text-[13.5px] text-slate-500 leading-relaxed">
+            {wizardStep === 0 && 'Step 1 of 3 — Tell us about your company.'}
+            {wizardStep === 1 && 'Step 2 of 3 — Create your administrator account.'}
+            {wizardStep === 2 && 'Step 3 of 3 — Review everything, then create your workspace.'}
           </p>
         </div>
 
+        {/* ── Wizard stepper ── */}
+        <ol className="mb-6 flex items-center gap-1.5" aria-label="Signup progress">
+          {['Company', 'Admin', 'Review'].map((label, i) => {
+            const done = i < wizardStep;
+            const active = i === wizardStep;
+            return (
+              <li key={label} className="flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => { if (!submitting && i < wizardStep) setWizardStep(i as 0 | 1 | 2); }}
+                  disabled={submitting || i >= wizardStep}
+                  className={`w-full text-left rounded-xl px-2.5 py-2 border transition-all ${active ? 'bg-blue-50 border-blue-200' : done ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200 opacity-70'} ${i < wizardStep ? 'cursor-pointer hover:border-blue-300' : 'cursor-default'}`}
+                  aria-current={active ? 'step' : undefined}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-extrabold shrink-0 ${done ? 'bg-emerald-500 text-white' : active ? 'text-white' : 'bg-slate-200 text-slate-500'}`} style={active ? { background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' } : undefined}>
+                      {done ? '✓' : i + 1}
+                    </span>
+                    <span className={`text-[12px] font-bold truncate ${active ? 'text-blue-700' : 'text-slate-500'}`}>{label}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+
         {error && (
-          <div role="alert" id={errorId} className="mb-5 p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-3">
-            <div className="w-5 h-5 rounded-full bg-rose-500/20 flex items-center justify-center shrink-0 mt-0.5">
-              <div className="w-2 h-2 rounded-full bg-rose-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-rose-300 leading-relaxed">{error}</p>
-            </div>
+          <div role="alert" id={errorId} className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 animate-shake">
+            <span className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center shrink-0">
+              <AlertCircle size={15} className="text-rose-500" />
+            </span>
+            <p className="text-[12.5px] text-rose-600/90 leading-relaxed pt-1.5">{error}</p>
           </div>
         )}
 
         {fieldError && (
-          <div role="alert" id={fieldErrorId} className="mb-5 p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-3">
-            <AlertCircle size={16} className="text-amber-300 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-200 leading-relaxed">{fieldError}</p>
+          <div role="alert" id={fieldErrorId} className="mb-5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5">
+            <span className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+              <AlertCircle size={15} className="text-amber-600" />
+            </span>
+            <p className="text-[12.5px] text-amber-700 leading-relaxed pt-1.5">{fieldError}</p>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-7" noValidate aria-describedby={error ? errorId : undefined}>
+          {wizardStep === 0 && (
           <section aria-label="Company details">
-            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
-              <Building2 size={13} />
+            <h2 className={sectionTitleClass}>
+              <Building2 size={13} className="text-blue-600" />
               Company details
             </h2>
             <div className="space-y-4">
               <div>
                 <label htmlFor="create-company-name" className={labelClass}>
-                  Company name <span className="text-rose-400">*</span>
+                  Company name
                 </label>
                 <div className="relative">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                     <Building2 size={16} />
                   </div>
                   <input
@@ -282,7 +374,7 @@ const CreateCompany: React.FC = () => {
                     Company email
                   </label>
                   <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                       <Mail size={16} />
                     </div>
                     <input
@@ -306,7 +398,7 @@ const CreateCompany: React.FC = () => {
                     type="tel"
                     value={companyPhone}
                     onChange={(e) => setCompanyPhone(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-all focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+                    className={plainInputClass}
                     placeholder="+265 884 528 222"
                     autoComplete="tel"
                     disabled={submitting}
@@ -323,7 +415,7 @@ const CreateCompany: React.FC = () => {
                   type="text"
                   value={addressLine1}
                   onChange={(e) => setAddressLine1(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-all focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+                  className={plainInputClass}
                   placeholder="123 Business Way"
                   autoComplete="street-address"
                   disabled={submitting}
@@ -340,7 +432,7 @@ const CreateCompany: React.FC = () => {
                     type="text"
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-all focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+                    className={plainInputClass}
                     placeholder="Lilongwe"
                     autoComplete="address-level2"
                     disabled={submitting}
@@ -355,7 +447,7 @@ const CreateCompany: React.FC = () => {
                     type="text"
                     value={country}
                     onChange={(e) => setCountry(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-500 outline-none transition-all focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+                    className={plainInputClass}
                     placeholder="Malawi"
                     autoComplete="country-name"
                     disabled={submitting}
@@ -369,7 +461,7 @@ const CreateCompany: React.FC = () => {
                     id="create-company-currency"
                     value={currencySymbol}
                     onChange={(e) => setCurrencySymbol(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none transition-all focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60 [&>option]:text-slate-900"
+                    className={plainInputClass}
                     disabled={submitting}
                   >
                     <option value="K">K - Kwacha</option>
@@ -382,19 +474,21 @@ const CreateCompany: React.FC = () => {
               </div>
             </div>
           </section>
+          )}
 
+          {wizardStep === 1 && (
           <section aria-label="Administrator account">
-            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
-              <UserRound size={13} />
+            <h2 className={sectionTitleClass}>
+              <UserRound size={13} className="text-blue-600" />
               Administrator account
             </h2>
             <div className="space-y-4">
               <div>
                 <label htmlFor="create-company-fullname" className={labelClass}>
-                  Full name <span className="text-rose-400">*</span>
+                  Full name
                 </label>
                 <div className="relative">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                     <UserRound size={16} />
                   </div>
                   <input
@@ -413,10 +507,10 @@ const CreateCompany: React.FC = () => {
 
               <div>
                 <label htmlFor="create-company-username" className={labelClass}>
-                  Username <span className="text-rose-400">*</span>
+                  Username
                 </label>
                 <div className="relative">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                     <UserRound size={16} />
                   </div>
                   <input
@@ -435,10 +529,10 @@ const CreateCompany: React.FC = () => {
 
               <div>
                 <label htmlFor="create-company-admin-email" className={labelClass}>
-                  Email <span className="text-rose-400">*</span>
+                  Email Address
                 </label>
                 <div className="relative">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                     <Mail size={16} />
                   </div>
                   <input
@@ -458,10 +552,10 @@ const CreateCompany: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="create-company-password" className={labelClass}>
-                    Password <span className="text-rose-400">*</span>
+                    Password
                   </label>
                   <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                       <Lock size={16} />
                     </div>
                     <input
@@ -478,7 +572,7 @@ const CreateCompany: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -487,10 +581,10 @@ const CreateCompany: React.FC = () => {
                 </div>
                 <div>
                   <label htmlFor="create-company-confirm-password" className={labelClass}>
-                    Confirm password <span className="text-rose-400">*</span>
+                    Confirm Password
                   </label>
                   <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                       <Lock size={16} />
                     </div>
                     <input
@@ -509,43 +603,92 @@ const CreateCompany: React.FC = () => {
               </div>
 
               {password && !passwordValidation.valid && (
-                <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
                   <AlertCircle size={12} />
                   {passwordValidation.errors[0] || 'Basic password strength'}
                 </p>
               )}
             </div>
           </section>
+          )}
 
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/30 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-[13px] flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 active:scale-[0.99]"
-          >
-            {submitting ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                <span>Creating company...</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 size={16} />
-                <span>Create Company &amp; Continue</span>
-                <ArrowRight size={16} />
-              </>
+          {wizardStep === 2 && (
+          <section aria-label="Review details">
+            <h2 className={sectionTitleClass}>
+              <Building2 size={13} className="text-blue-600" />
+              Review &amp; confirm
+            </h2>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 divide-y divide-slate-200 overflow-hidden">
+              <div className="p-4 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Company</p>
+                  <p className="mt-1 text-[14px] font-bold text-slate-900 truncate">{companyName.trim() || '—'}</p>
+                  <p className="mt-0.5 text-[12.5px] text-slate-500 truncate">
+                    {[companyEmail.trim(), companyPhone.trim()].filter(Boolean).join(' · ') || 'No contact email/phone'}
+                  </p>
+                  <p className="mt-0.5 text-[12.5px] text-slate-500 truncate">
+                    {[addressLine1.trim(), city.trim(), country.trim()].filter(Boolean).join(', ') || 'No address yet'} · {currencySymbol.trim() || 'K'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setWizardStep(0)} disabled={submitting} className="text-[12px] font-bold text-blue-600 hover:text-blue-700 shrink-0 disabled:opacity-50">Edit</button>
+              </div>
+              <div className="p-4 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Administrator</p>
+                  <p className="mt-1 text-[14px] font-bold text-slate-900 truncate">{fullName.trim() || '—'}</p>
+                  <p className="mt-0.5 text-[12.5px] text-slate-500 truncate">
+                    {[`@${username.trim() || '—'}`, adminEmail.trim()].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setWizardStep(1)} disabled={submitting} className="text-[12px] font-bold text-blue-600 hover:text-blue-700 shrink-0 disabled:opacity-50">Edit</button>
+              </div>
+            </div>
+            <p className="mt-3 text-[12px] text-slate-500 leading-relaxed">
+              Creating your workspace provisions the company profile, administrator account and starter data.
+            </p>
+          </section>
+          )}
+
+          <div className="flex items-center gap-3">
+            {wizardStep > 0 && (
+              <button
+                type="button"
+                onClick={goToPrevStep}
+                disabled={submitting}
+                className="h-12 px-5 rounded-xl border border-slate-200 bg-white text-[14px] font-bold text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-all disabled:opacity-50 shrink-0"
+              >
+                ← Back
+              </button>
             )}
-          </button>
+            {wizardStep < 2 ? (
+              <button
+                type="button"
+                onClick={goToNextStep}
+                disabled={wizardStep === 0 ? !canContinueCompany : !canContinueAdmin}
+                className={`${primaryBtn} flex-1`}
+                style={primaryBtnStyle}
+              >
+                <span>Continue →</span>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className={`${primaryBtn} flex-1`}
+                style={primaryBtnStyle}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={17} className="animate-spin" />
+                    <span>Creating company...</span>
+                  </>
+                ) : (
+                  <span>Create Company &amp; Continue</span>
+                )}
+              </button>
+            )}
+          </div>
         </form>
-
-        <div className="mt-6 pt-6 border-t border-white/10 text-center">
-          <Link
-            to="/login"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            <ArrowLeft size={13} />
-            Back to sign in
-          </Link>
-        </div>
       </div>
     </AuthLayout>
   );
