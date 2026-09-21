@@ -18,6 +18,7 @@ import { whatsappClient, WhatsAppAccount } from '../../services/whatsappClientSe
 import { currencyService } from '../../services/currencyService';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
+import CommunicationCenter from './communication/CommunicationCenter';
 
 interface CampaignFormData {
   name: string;
@@ -33,7 +34,7 @@ const MarketingMessages: React.FC = () => {
   const { customers } = useSales();
   const currency = currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
   
-  const [activeView, setActiveView] = useState<'inbox' | 'campaigns' | 'templates' | 'automation' | 'accounts' | 'activity'>('inbox');
+  const [activeView, setActiveView] = useState<'compose' | 'inbox' | 'campaigns' | 'templates' | 'automation' | 'accounts' | 'activity'>('compose');
   const [chats, setChats] = useState<WhatsAppChat[]>([]);
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [campaigns, setCampaigns] = useState<WhatsAppCampaign[]>([]);
@@ -842,6 +843,7 @@ const MarketingMessages: React.FC = () => {
 
         <div className="prime-btn-secondary" style={{ display: 'flex', background: t[50], padding: 3, margin: '0 12px', borderRadius: 10 }}>
           {[
+            { id: 'compose', label: 'Compose' },
             { id: 'inbox', label: 'Inbox', badge: unreadCount },
             { id: 'campaigns', label: 'Campaigns' },
             { id: 'templates', label: 'Templates' },
@@ -849,7 +851,7 @@ const MarketingMessages: React.FC = () => {
             { id: 'accounts', label: 'Accounts' },
             { id: 'activity', label: 'Activity' },
           ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveView(tab.id)} style={{ flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', borderRadius: 8, transition: 'all .15s ease', background: activeView === tab.id ? paper : 'transparent', color: activeView === tab.id ? dt[500] : inkSoft, boxShadow: activeView === tab.id ? '0 1px 2px rgba(0,0,0,0.06)' : 'none', lineHeight: 1.3 }}>
+            <button key={tab.id} onClick={() => setActiveView(tab.id as typeof activeView)} style={{ flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', borderRadius: 8, transition: 'all .15s ease', background: activeView === tab.id ? paper : 'transparent', color: activeView === tab.id ? dt[500] : inkSoft, boxShadow: activeView === tab.id ? '0 1px 2px rgba(0,0,0,0.06)' : 'none', lineHeight: 1.3 }}>
               {tab.label}
               {tab.badge ? <span style={{ marginLeft: 4, padding: '1px 6px', background: danger, color: '#fff', borderRadius: 10, fontSize: 9, display: 'inline-block' }}>{tab.badge}</span> : null}
             </button>
@@ -922,6 +924,8 @@ const MarketingMessages: React.FC = () => {
 
       {/* Main Content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* COMPOSE VIEW — ERP-aware Customer Communication Center (primary workflow) */}
+        {activeView === 'compose' && <CommunicationCenter />}
         {/* INBOX VIEW */}
         {activeView === 'inbox' && selectedChat ? (
           <>
