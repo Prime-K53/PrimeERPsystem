@@ -33,4 +33,6 @@ query_db.js
 query_supabase.js
 backfill-sales-order-numbers.sql
 
+verify-artifacts/cdp-profile/
+
 __pycache__/
