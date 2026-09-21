@@ -1082,21 +1082,20 @@ export function buildResolvedJournalLine(
     input: JournalLineInput,
     accounts: any[],
     options: ResolveAccountOptions = {}
-): Omit<LedgerEntry, 'id' | 'date'> | null {
+): Omit<LedgerEntry, 'id' | 'date'> {
     const resolvedDebit = resolveGLAccount(input.debitAccountRef, accounts, options);
     const resolvedCredit = resolveGLAccount(input.creditAccountRef, accounts, options);
-    
-    if (!resolvedDebit && !resolvedCredit) {
-        logger.warn('[JOURNAL] Could not resolve either debit or credit account', {
-            debitRef: input.debitAccountRef,
-            creditRef: input.creditAccountRef
-        });
-        return null;
+
+    if (!resolvedDebit) {
+        throw new UnresolvedAccountError(input.debitAccountRef || 'undefined');
     }
-    
+    if (!resolvedCredit) {
+        throw new UnresolvedAccountError(input.creditAccountRef || 'undefined');
+    }
+
     return {
-        debitAccountId: resolvedDebit || input.debitAccountRef!,
-        creditAccountId: resolvedCredit || input.creditAccountRef!,
+        debitAccountId: resolvedDebit,
+        creditAccountId: resolvedCredit,
         amount: input.amount,
         description: input.description,
         referenceId: input.referenceId,
@@ -1112,9 +1111,7 @@ export function buildResolvedJournalLines(
     accounts: any[],
     options: ResolveAccountOptions = {}
 ): Omit<LedgerEntry, 'id' | 'date'>[] {
-    return inputs
-        .map(input => buildResolvedJournalLine(input, accounts, options))
-        .filter((line): line is Omit<LedgerEntry, 'id' | 'date'> => line !== null);
+    return inputs.map(input => buildResolvedJournalLine(input, accounts, options));
 }
 
 export function resolveInventoryAccountByItemType(

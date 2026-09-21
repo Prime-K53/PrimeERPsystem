@@ -1671,10 +1671,33 @@ const portalService = {
       console.warn('[PortalService] Delivery note direct lookup failed:', err?.message || err);
     }
 
-    // Otherwise the id is a sales order; locate its linked delivery note.
+    // The id might be a shipment id; resolve the shipment and use its orderId
+    // to locate the linked delivery note.
+    try {
+      const shipment = await getOneById('shipments', deliveryId);
+      if (shipment) {
+        const shCustomerId = shipment.customerId || shipment.customer_id || null;
+        if (String(shCustomerId) === String(customerId)) {
+          const linkedId = String(shipment.orderId || shipment.order_id || '');
+          if (linkedId) {
+            const notes = await scopedRows('delivery_notes', customerId);
+            const note = notes.find(
+              (dn) => String(dn.id || '') === linkedId || String(dn.order_id || dn.orderId || '') === linkedId
+            );
+            if (note && belongs(note)) return note;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[PortalService] Shipment lookup failed during delivery note resolution:', err?.message || err);
+    }
+
+    // Otherwise the id is a sales order or delivery note number; locate its linked delivery note.
     const notes = await scopedRows('delivery_notes', customerId);
     const note = notes.find(
-      (dn) => String(dn.order_id || dn.orderId || '') === String(deliveryId)
+      (dn) =>
+        String(dn.order_id || dn.orderId || '') === String(deliveryId) ||
+        String(dn.dnNumber || dn.deliveryNoteNumber || '') === String(deliveryId)
     );
     return note && belongs(note) ? note : null;
   },

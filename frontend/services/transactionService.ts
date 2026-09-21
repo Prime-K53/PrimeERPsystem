@@ -994,8 +994,8 @@ export const transactionService = {
                     let targetDebitAccount = gl.cashDrawerAccount;
                     if (payment.method === 'Wallet') {
                         targetDebitAccount = gl.customerDepositAccount;
-                    } else if (payment.accountId) {
-                        targetDebitAccount = payment.accountId;
+                } else if (payment.accountId) {
+                    targetDebitAccount = resolveAcct(payment.accountId);
                     } else {
                         if (payment.method === 'Card' || payment.method === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
                         if (payment.method === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
@@ -2945,16 +2945,16 @@ export const transactionService = {
 
                 // 7. Create Ledger entry for retained cash (ignore pure change-only records).
                 const gl = getGLConfig();
-                let targetDebitAccount = resolveAcct(gl.cashDrawerAccount);
+                 let targetDebitAccount = resolveAcct(gl.cashDrawerAccount);
 
-                if (payment.paymentMethod === 'Wallet') {
-                    targetDebitAccount = resolveAcct(gl.customerDepositAccount);
-                } else if (payment.accountId) {
-                    targetDebitAccount = payment.accountId;
-                } else {
-                    if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') targetDebitAccount = resolveAcct(gl.bankAccount);
-                    if (payment.paymentMethod === 'Mobile Money') targetDebitAccount = resolveAcct(gl.mobileMoneyAccount);
-                }
+                 if (payment.paymentMethod === 'Wallet') {
+                     targetDebitAccount = resolveAcct(gl.customerDepositAccount);
+                 } else if (payment.accountId) {
+                     targetDebitAccount = resolveAcct(payment.accountId);
+                 } else {
+                     if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') targetDebitAccount = resolveAcct(gl.bankAccount);
+                     if (payment.paymentMethod === 'Mobile Money') targetDebitAccount = resolveAcct(gl.mobileMoneyAccount);
+                 }
 
                 if (snapshot.amountRetained > 0) {
                     // Split ledger when overpayment goes to wallet alongside invoice payment

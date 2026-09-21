@@ -399,6 +399,13 @@ export async function pullRemoteChanges(
 
   if (pulled > 0) {
     localStorage.setItem('nexus_last_sync_pull', new Date().toISOString());
+    // Notify the React layer that IndexedDB has been updated via pull.
+    // DataContext listens to this event and calls queueRefresh() → refreshAllData()
+    // → Zustand stores re-read IndexedDB and re-render. Without this, pulled data
+    // would not be visible in the UI until the next periodic poll (5 min) or a
+    // realtime event (which may never arrive if channels timeout).
+    emitDataChanged('inventory', 'PULL_COMPLETE');
+    emitDataChanged('warehouses', 'PULL_COMPLETE');
   }
 
   /* SYNC-FORENSIC suppressed: PULL-COMPLETE pullRemoteChanges() */

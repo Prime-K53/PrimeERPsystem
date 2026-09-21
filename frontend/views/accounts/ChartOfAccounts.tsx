@@ -29,6 +29,7 @@ import {
   computeHierarchicalRollup,
   computeTypeTotals,
   computeTrialBalance,
+  isPostingAccount,
 } from '../../services/accountingEngine';
 
 /* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
@@ -401,6 +402,16 @@ const ChartOfAccounts: React.FC = () => {
           <span className="text-sm flex-1 min-w-0 truncate" style={{ color: ink, fontWeight: depth === 0 ? 600 : 400 }}>
             {account.name}
           </span>
+          {isPostingAccount(account) && (
+            <span style={{ padding: '2px 8px', fontSize: 10, fontWeight: 700, borderRadius: 6, background: '#ECFDF5', color: '#065F46', letterSpacing: 0.08, textTransform: 'uppercase' }}>
+              Posting
+            </span>
+          )}
+          {!isPostingAccount(account) && (
+            <span style={{ padding: '2px 8px', fontSize: 10, fontWeight: 700, borderRadius: 6, background: '#F1F5F9', color: '#64748B', letterSpacing: 0.08, textTransform: 'uppercase' }}>
+              Group
+            </span>
+          )}
           {!account.is_active && (
             <span style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 20, background: amber[100], color: amber[600] }}>
               Inactive

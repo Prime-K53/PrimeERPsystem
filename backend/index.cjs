@@ -108,7 +108,7 @@ app.use((req, res, next) => {
       res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
     // Minimal CSP to mitigate inline script attacks; configurable via env
-    const csp = process.env.CONTENT_SECURITY_POLICY || "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;";
+    const csp = process.env.CONTENT_SECURITY_POLICY || "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*;";
     res.setHeader('Content-Security-Policy', csp);
   } catch (err) {
     // Non-fatal: continue request handling

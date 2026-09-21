@@ -112,7 +112,7 @@ export const DEFAULT_ACCOUNTS: Account[] = [
   { id: '12200', code: '12200', account_number: '12200', name: 'Furniture & Fixtures', account_type: 'ASSET', type: 'Asset', account_group: 'FIXED_ASSET', parent_account_id: '12000' },
   { id: '12300', code: '12300', account_number: '12300', name: 'Computers & Equipment', account_type: 'ASSET', type: 'Asset', account_group: 'FIXED_ASSET', parent_account_id: '12000' },
   { id: '12400', code: '12400', account_number: '12400', name: 'Buildings', account_type: 'ASSET', type: 'Asset', account_group: 'FIXED_ASSET', parent_account_id: '12000' },
-  { id: '12500', code: '12500', account_number: '12500', name: 'Accumulated Depreciation', account_type: 'ASSET', type: 'Asset', account_group: 'FIXED_ASSET', parent_account_id: '12000', allow_posting: false },
+  { id: '12500', code: '12500', account_number: '12500', name: 'Accumulated Depreciation', account_type: 'ASSET', type: 'Asset', account_group: 'FIXED_ASSET', parent_account_id: '12000', allow_posting: true },
   // --- Liabilities (20000-29999) ---
   { id: '20000', code: '20000', account_number: '20000', name: 'Liabilities', account_type: 'LIABILITY', type: 'Liability', allow_posting: false, is_system_account: true },
   { id: '21000', code: '21000', account_number: '21000', name: 'Current Liabilities', account_type: 'LIABILITY', type: 'Liability', account_group: 'CURRENT_LIABILITY', parent_account_id: '20000', allow_posting: false },
@@ -131,8 +131,8 @@ export const DEFAULT_ACCOUNTS: Account[] = [
   // --- Equity (30000-39999) ---
   { id: '30000', code: '30000', account_number: '30000', name: 'Equity', account_type: 'EQUITY', type: 'Equity', allow_posting: false, is_system_account: true },
   { id: '31000', code: '31000', account_number: '31000', name: "Owner's Capital", account_type: 'EQUITY', type: 'Equity', account_group: 'EQUITY', parent_account_id: '30000', allow_posting: true },
-  { id: '32000', code: '32000', account_number: '32000', name: 'Retained Earnings', account_type: 'EQUITY', type: 'Equity', account_group: 'EQUITY', parent_account_id: '30000', is_system_account: true },
-  { id: '33000', code: '33000', account_number: '33000', name: 'Current Year Earnings', account_type: 'EQUITY', type: 'Equity', account_group: 'EQUITY', parent_account_id: '30000', is_system_account: true },
+  { id: '32000', code: '32000', account_number: '32000', name: 'Retained Earnings', account_type: 'EQUITY', type: 'Equity', account_group: 'EQUITY', parent_account_id: '30000', is_system_account: true, allow_posting: true },
+  { id: '33000', code: '33000', account_number: '33000', name: 'Current Year Earnings', account_type: 'EQUITY', type: 'Equity', account_group: 'EQUITY', parent_account_id: '30000', is_system_account: true, allow_posting: true },
   { id: '34000', code: '34000', account_number: '34000', name: 'Drawings', account_type: 'EQUITY', type: 'Equity', account_group: 'EQUITY', parent_account_id: '30000', allow_posting: true },
   // --- Income (40000-49999) ---
   { id: '40000', code: '40000', account_number: '40000', name: 'Income', account_type: 'INCOME', type: 'Revenue', allow_posting: false, is_system_account: true },

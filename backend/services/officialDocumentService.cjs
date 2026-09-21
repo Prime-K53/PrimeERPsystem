@@ -14,9 +14,51 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const { getCompanyConfig } = require('./companyConfigService.cjs');
 
 let rendererPromise = null;
+
+/**
+ * Font path resolver for the server-side renderer bundle.
+ *
+ * The renderer (primeRenderer.cjs) was built for browser use and registers
+ * fonts with web-relative paths like "/fonts/comic.ttf". When @react-pdf/renderer
+ * runs in Node.js it calls fs.promises.readFile() on that string, which on Windows
+ * resolves to "D:\fonts\comic.ttf" — a path that doesn't exist.
+ *
+ * This patches fs.promises.readFile (once) so any access to an absolute path
+ * ending in /fonts/<name>.ttf|.otf is transparently redirected to the
+ * frontend/public/fonts/ directory where the files actually live.
+ *
+ * The patch is idempotent and only touches font file reads.
+ */
+const FONT_DIR = path.resolve(__dirname, '..', '..', 'frontend', 'public', 'fonts');
+let _fontPathsPatched = false;
+
+function ensureFontPaths() {
+  if (_fontPathsPatched) return;
+  _fontPathsPatched = true;
+
+  const origReadFile = fs.promises.readFile;
+  fs.promises.readFile = function (filename, ...args) {
+    if (
+      typeof filename === 'string' &&
+      /[/\\]fonts[/\\][^/\\]+\.(ttf|otf)$/i.test(filename) &&
+      !filename.startsWith(FONT_DIR)
+    ) {
+      const fontName = path.basename(filename);
+      const resolved = path.join(FONT_DIR, fontName);
+      console.log(
+        `[OfficialDocumentService] Font path redirect: "${filename}" → "${resolved}"`
+      );
+      filename = resolved;
+    }
+    return origReadFile.call(this, filename, ...args);
+  };
+
+  console.log(`[OfficialDocumentService] Font path resolver active (FONT_DIR: ${FONT_DIR})`);
+}
 
 /**
  * Server-side renderer environment propagation (public verification URLs).
@@ -52,6 +94,7 @@ function ensureRendererEnv() {
 
 function loadRenderer() {
   if (!rendererPromise) {
+    ensureFontPaths();   // must be before require() so fs.promises.readFile is patched
     ensureRendererEnv();
     const bundlePath = path.resolve(__dirname, 'officialDocument', 'primeRenderer.cjs');
     rendererPromise = Promise.resolve()

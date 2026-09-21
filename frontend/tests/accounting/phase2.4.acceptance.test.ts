@@ -113,10 +113,9 @@ describe('Phase 3 - Controlled Transaction Tests', () => {
         description: 'Salaries & Wages expense',
       }, accounts, { allowNonPosting: false });
 
-      expect(journalLine).not.toBeNull();
-      expect(journalLine!.debitAccountId).toBe('coa-uuid-52100');
-      expect(journalLine!.creditAccountId).toBe('coa-uuid-11110');
-      expect(journalLine!.amount).toBe(1000);
+      expect(journalLine.debitAccountId).toBe('coa-uuid-52100');
+      expect(journalLine.creditAccountId).toBe('coa-uuid-11110');
+      expect(journalLine.amount).toBe(1000);
 
       // Verify balanced entry
       expect(journalLine!.amount).toBe(journalLine!.amount);
@@ -160,10 +159,9 @@ describe('Phase 3 - Controlled Transaction Tests', () => {
         description: 'Product sales income',
       }, accounts, { allowNonPosting: false });
 
-      expect(journalLine).not.toBeNull();
-      expect(journalLine!.debitAccountId).toBe('coa-uuid-11110');
-      expect(journalLine!.creditAccountId).toBe('coa-uuid-41100');
-      expect(journalLine!.amount).toBe(2000);
+      expect(journalLine.debitAccountId).toBe('coa-uuid-11110');
+      expect(journalLine.creditAccountId).toBe('coa-uuid-41100');
+      expect(journalLine.amount).toBe(2000);
     });
   });
 
@@ -504,15 +502,12 @@ describe('Phase 9 - Atomicity', () => {
     it('should not resolve partial entries when one account is invalid', () => {
       const accounts = CANONICAL_ACCOUNTS;
 
-      // Try to build journal with one valid and one invalid account
-      const lines = buildResolvedJournalLines([
-        { debitAccountRef: '52100', creditAccountRef: '11110', amount: 500, description: 'Valid line' },
-        { debitAccountRef: '99999', creditAccountRef: '11110', amount: 300, description: 'Invalid line' },
-      ], accounts, { allowNonPosting: false });
-
-      // Should have only the valid line (invalid line filtered out)
-      // OR none if the builder is strict
-      // This depends on implementation - either returns partial or throws
+      expect(() => {
+        buildResolvedJournalLines([
+          { debitAccountRef: '52100', creditAccountRef: '11110', amount: 500, description: 'Valid line' },
+          { debitAccountRef: '99999', creditAccountId: '11110', amount: 300, description: 'Invalid line' },
+        ], accounts, { allowNonPosting: false });
+      }).toThrow(UnresolvedAccountError);
     });
 
     it('UnresolvedAccountError should preserve transaction integrity', () => {

@@ -79,6 +79,26 @@ export function getNormalBalance(account: Partial<Account> | null | undefined): 
 /**
  * A posting account is any account not explicitly closed to posting.
  * (Matches resolveAccountForPosting: only allow_posting === false | 0 blocks.)
+ *
+ * ACCOUNTING RULE (hardening):
+ * 1. GROUP accounts (allow_posting === false | 0) CANNOT receive direct
+ *    journal postings. They are headings/subtotals for display rollup only.
+ * 2. POSTING accounts (allow_posting !== false && allow_posting !== 0)
+ *    CAN receive journal postings. These are the leaf ledger accounts.
+ * 3. Account references in ledger entries must resolve through the canonical
+ *    resolver chain: UUID → code → account_number → approved legacy mapping.
+ *    Never silently accept a raw unresolved reference.
+ * 4. Unresolved account references must fail closed (throw or return null),
+ *    never fall back to the raw unresolved reference string.
+ * 5. Non-inventory-bearing Products must NOT generate DR COGS / CR Inventory
+ *    entries. Only inventory-bearing types (Raw Material, Stationery,
+ *    Finished Goods) participate in inventory accounting.
+ * 6. Inventory-bearing items may generate COGS/inventory entries according
+ *    to canonical inventory account mapping (11410/11420/11430).
+ * 7. Finished Goods must NOT receive production accounting unless a real
+ *    production accounting workflow (WIP → FG → COGS) is fully implemented
+ *    and approved. Do not invent production accounting merely because 11430
+ *    exists in the COA.
  */
 export function isPostingAccount(account: Partial<Account> | null | undefined): boolean {
   const flag = (account as { allow_posting?: unknown })?.allow_posting;
@@ -88,6 +108,10 @@ export function isPostingAccount(account: Partial<Account> | null | undefined): 
 /**
  * Classify an account as GROUP (heading/subtotal) or POSTING (leaf ledger account).
  * Matches the canonical rule: allow_posting === false | 0 => GROUP, otherwise POSTING.
+ *
+ * GROUP accounts are DISPLAY ONLY. They must never appear as debitAccountId or
+ * creditAccountId in posted ledger entries. All economic postings flow through
+ * POSTING leaf accounts; GROUP totals are computed by hierarchical rollup.
  */
 export function classifyAccount(account: Partial<Account> | null | undefined): 'GROUP' | 'POSTING' {
   return isPostingAccount(account) ? 'POSTING' : 'GROUP';

@@ -91,14 +91,24 @@ export const ledgerService = {
                 throw new Error(`Journal line posts to itself: ${l.debitAccountId}`);
             }
 
-            // Group-account posting safety: reject posting directly to a GROUP
-            // (heading/subtotal) account. Balances of group accounts are derived
-            // from their descendants, not from direct journal entries.
-            const debitAccount = (accounts || []).find((a: Account) => a.id === l.debitAccountId);
+            // Account resolution + group-account posting safety:
+            // resolve every reference through the canonical resolver so
+            // UUIDs, codes, account_numbers, and legacy mappings all work.
+            // Then reject GROUP accounts so parent balances stay derived.
+            const resolveRef = (ref: string) => resolveAccountForPosting(ref, accounts || [], { allowNonPosting: true });
+            const resolvedDebit = resolveRef(l.debitAccountId);
+            if (!resolvedDebit) {
+                throw new Error(`Journal line debit account "${l.debitAccountId}" does not resolve to a valid account`);
+            }
+            const debitAccount = (accounts || []).find((a: Account) => a.id === resolvedDebit);
             if (debitAccount && !isPostingAccount(debitAccount)) {
                 throw new Error(`Journal line debit account ${l.debitAccountId} (${debitAccount.name || 'unnamed'}) is a GROUP account and cannot receive postings`);
             }
-            const creditAccount = (accounts || []).find((a: Account) => a.id === l.creditAccountId);
+            const resolvedCredit = resolveRef(l.creditAccountId);
+            if (!resolvedCredit) {
+                throw new Error(`Journal line credit account "${l.creditAccountId}" does not resolve to a valid account`);
+            }
+            const creditAccount = (accounts || []).find((a: Account) => a.id === resolvedCredit);
             if (creditAccount && !isPostingAccount(creditAccount)) {
                 throw new Error(`Journal line credit account ${l.creditAccountId} (${creditAccount.name || 'unnamed'}) is a GROUP account and cannot receive postings`);
             }

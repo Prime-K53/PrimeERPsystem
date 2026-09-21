@@ -143,6 +143,18 @@ export function resolveInventoryQuantity(item: any): number {
   return Number.isFinite(qty) ? qty : 0;
 }
 
+/** Authoritative warehouse quantity (locationStock sum, fallback to stock). */
+export function resolveWarehouseQuantity(item: any): number {
+  if (!item) return 0;
+  const source = isProductionItem(item) ? item.data : item;
+  const locationStock = source?.locationStock;
+  if (Array.isArray(locationStock) && locationStock.length > 0) {
+    const sum = locationStock.reduce((acc: number, ls: any) => acc + Number(ls?.quantity ?? 0), 0);
+    return Number.isFinite(sum) ? sum : 0;
+  }
+  return resolveInventoryQuantity(item);
+}
+
 function tokenizeInventoryType(value: unknown): string {
   return String(value ?? '').trim().toLowerCase();
 }
@@ -261,6 +273,7 @@ export interface ClassifiedInventoryItem {
   rawType: string;
   classification: string;
   quantity: number;
+  warehouseQuantity: number;
   costPerUnit: number;
   inventoryValue: number;
   expectedAccount: string | null;
@@ -281,6 +294,7 @@ export function classifyInventoryItem(rawItem: any): ClassifiedInventoryItem {
   const classification = String(rawClassificationOf(rawItem) ?? '');
 
   const quantity = resolveInventoryQuantity(rawItem);
+  const warehouseQuantity = resolveWarehouseQuantity(rawItem);
   const costPerUnit = resolveInventoryCostPerUnit(rawItem);
 
   let included = true;
@@ -325,6 +339,7 @@ export function classifyInventoryItem(rawItem: any): ClassifiedInventoryItem {
     rawType,
     classification,
     quantity,
+    warehouseQuantity,
     costPerUnit,
     inventoryValue: included ? Math.round(quantity * costPerUnit * 100) / 100 : 0,
     expectedAccount,
@@ -339,9 +354,9 @@ export interface InventoryValuationReconciliation {
   excludedItems: ClassifiedInventoryItem[];
   excludedByReason: Record<string, number>;
   byCategory: {
-    merchandise: { accountCode: string; quantity: number; value: number; itemCount: number };
-    rawMaterials: { accountCode: string; quantity: number; value: number; itemCount: number };
-    finishedGoods: { accountCode: string; quantity: number; value: number; itemCount: number };
+    merchandise: { accountCode: string; quantity: number; warehouseQuantity: number; value: number; itemCount: number };
+    rawMaterials: { accountCode: string; quantity: number; warehouseQuantity: number; value: number; itemCount: number };
+    finishedGoods: { accountCode: string; quantity: number; warehouseQuantity: number; value: number; itemCount: number };
   };
   totalInventoryValue: number;
   glInventoryByAccount: Record<string, number>;
@@ -357,6 +372,15 @@ function round2Local(n: number): number {
 /**
  * Read-only inventory ↔ GL reconciliation (Phase 2/18 diagnostic).
  * Never creates journals. GL side uses posted entries only.
+ *
+ * INVENTORY VALUATION RULE:
+ * - Calculates inventory independently of Account.balance field.
+ * - For every inventory-bearing item shows: Item, Item type, Stock quantity,
+ *   Warehouse quantity, Canonical cost, Calculated inventory value, Inventory account.
+ * - Aggregates: 11410, 11420, 11430, Total Inventory.
+ * - Separately calculates GL balances: Opening balance + ledger debits - ledger credits = GL balance.
+ * - Compares PHYSICAL/CURRENT STOCK VALUATION versus INVENTORY GL.
+ * - Does NOT change either side.
  */
 export function reconcileInventoryValuation(
   rawItems: any[],
@@ -376,6 +400,7 @@ export function reconcileInventoryValuation(
   const bucket = (code: string) => ({
     accountCode: code,
     quantity: 0,
+    warehouseQuantity: 0,
     value: 0,
     itemCount: 0,
   });
@@ -395,6 +420,7 @@ export function reconcileInventoryValuation(
   for (const item of eligibleItems) {
     const slot = bucketFor(item.expectedAccount);
     slot.quantity = round2Local(slot.quantity + item.quantity);
+    slot.warehouseQuantity = round2Local(slot.warehouseQuantity + item.warehouseQuantity);
     slot.value = round2Local(slot.value + item.inventoryValue);
     slot.itemCount += 1;
     totalInventoryValue = round2Local(totalInventoryValue + item.inventoryValue);
@@ -457,14 +483,17 @@ export function formatInventoryReconciliation(
     '',
     'Merchandise:',
     `  Quantity:                     ${report.byCategory.merchandise.quantity}`,
+    `  Warehouse Qty:                ${report.byCategory.merchandise.warehouseQuantity}`,
     `  Value:                        ${money(report.byCategory.merchandise.value)}`,
     '',
     'Raw Materials:',
     `  Quantity:                     ${report.byCategory.rawMaterials.quantity}`,
+    `  Warehouse Qty:                ${report.byCategory.rawMaterials.warehouseQuantity}`,
     `  Value:                        ${money(report.byCategory.rawMaterials.value)}`,
     '',
     'Finished Goods:',
     `  Quantity:                     ${report.byCategory.finishedGoods.quantity}`,
+    `  Warehouse Qty:                ${report.byCategory.finishedGoods.warehouseQuantity}`,
     `  Value:                        ${money(report.byCategory.finishedGoods.value)}`,
     '',
     `TOTAL INVENTORY VALUE:          ${money(report.totalInventoryValue)}`,
