@@ -1,0 +1,79 @@
+{
+ "totalInventoryTransactions": 148,
+ "smartStockRows": 100,
+ "smartStockAddRows": 100,
+ "smartStockAddUnits": 50000,
+ "distinctItemsAdjusted": 100,
+ "adjustedItemsThatAreInventoryBearing": 30,
+ "adjustedItemsNotInventoryBearing": [
+  "FG-BC-009",
+  "INV-PRD-0107",
+  "INV-PRD-0108",
+  "INV-PRD-015",
+  "INV-PRD-016",
+  "INV-PRD-018",
+  "INV-PRD-019",
+  "INV-PRD-020",
+  "INV-PRD-021",
+  "INV-PRD-024",
+  "INV-PRD-025",
+  "INV-PRD-029",
+  "INV-PRD-032",
+  "INV-PRD-033",
+  "INV-PRD-035",
+  "INV-PRD-036",
+  "INV-PRD-037",
+  "INV-PRD-038",
+  "INV-PRD-040",
+  "INV-PRD-041"
+ ],
+ "eachAdjustedBy500": true,
+ "sampleRow": {
+  "id": "ADJ-1789588940914-g97t9e",
+  "created_at": "2026-09-16T20:02:26.400263+00:00",
+  "version": 1,
+  "date": "2026-09-16T20:02:20.914Z",
+  "type": "ADJUSTMENT",
+  "notes": "Smart stock adjustment (ADD)",
+  "itemId": "FG-BC-005",
+  "quantity": 500,
+  "referenceId": "Smart stock adjustment (ADD)",
+  "warehouseId": "WH-MAIN",
+  "updated_at": "2026-09-16T20:02:25.784+00:00",
+  "_updatedAt": "2026-09-16T20:02:25.784+00:00",
+  "serverUpdatedAt": "2026-09-16T20:02:25.784+00:00"
+ },
+ "fieldNames": [
+  "_updatedAt",
+  "created_at",
+  "date",
+  "id",
+  "itemId",
+  "notes",
+  "quantity",
+  "referenceId",
+  "serverUpdatedAt",
+  "type",
+  "updated_at",
+  "version",
+  "warehouseId"
+ ],
+ "typeBreakdown": {
+  "ADJUSTMENT": 100
+ },
+ "referenceBreakdown": {
+  "Smart stock adjustment (ADD)": 100
+ },
+ "notesBreakdown": {
+  "Smart stock adjustment (ADD)": 100
+ },
+ "dateRange": {
+  "earliest": "2026-09-16T20:02:20.914Z",
+  "latest": "2026-09-16T20:03:50.193Z"
+ },
+ "warehouseBreakdown": {
+  "WH-MAIN": 100
+ },
+ "bearingItemSmartStockRows": 30,
+ "bearingItemSmartStockUnits": 15000
+}

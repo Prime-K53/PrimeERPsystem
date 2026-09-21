@@ -1,0 +1,304 @@
+{
+ "fatal": null,
+ "userId": "3a4b9576-1d4b-4ead-a0b5-ca1cb86c0b6a",
+ "step3": {
+  "compositionOk": true,
+  "micPendingCount": 3,
+  "whPendingCount": 3,
+  "obActive": false,
+  "obDead": true,
+  "othersCount": 0,
+  "whChecks": [
+   {
+    "recordId": "WH-MAIN",
+    "zeroDiff": true,
+    "remoteVersion": 1,
+    "diffs": []
+   },
+   {
+    "recordId": "WH-VIR",
+    "zeroDiff": true,
+    "remoteVersion": 1,
+    "diffs": []
+   },
+   {
+    "recordId": "WH-SHOP",
+    "zeroDiff": true,
+    "remoteVersion": 1,
+    "diffs": []
+   }
+  ],
+  "deadLetterOps": [
+   {
+    "id": "q-ba545d94-117b-4a40-b768-fb3bdda5c816-4joatv",
+    "table": "ledger_entries",
+    "recordId": "LG-OPENING-BALANCE",
+    "operation": "upsert",
+    "status": "dead_letter",
+    "createdAt": "2026-09-21T01:28:31.934Z"
+   }
+  ],
+  "micRemotePreCount": 0
+ },
+ "step4": {
+  "wasPaused": true,
+  "nowPaused": false,
+  "syncResult": {
+   "success": 6,
+   "failed": 0,
+   "deadLetter": 0,
+   "skipped": 0,
+   "conflictsResolved": 3,
+   "durationMs": 10796
+  },
+  "syncError": null,
+  "durationMs": 10973,
+  "events": [
+   {
+    "event": "sync-conflict",
+    "data": {
+     "table": "warehouses",
+     "recordId": "WH-MAIN",
+     "operation": "upsert",
+     "resolved": "auto",
+     "conflictedFields": [],
+     "serverVersion": 1
+    }
+   },
+   {
+    "event": "sync-conflict",
+    "data": {
+     "table": "warehouses",
+     "recordId": "WH-SHOP",
+     "operation": "upsert",
+     "resolved": "auto",
+     "conflictedFields": [],
+     "serverVersion": 1
+    }
+   },
+   {
+    "event": "sync-conflict",
+    "data": {
+     "table": "warehouses",
+     "recordId": "WH-VIR",
+     "operation": "upsert",
+     "resolved": "auto",
+     "conflictedFields": [],
+     "serverVersion": 1
+    }
+   },
+   {
+    "event": "sync-complete",
+    "data": {
+     "synced": 6,
+     "totalBefore": 7
+    }
+   }
+  ]
+ },
+ "post": {
+  "queueAfter": [
+   {
+    "id": "q-1981f202-5a74-4c1a-ae70-d2a7a0ebe09e-ye0f2c",
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "operation": "upsert",
+    "status": "completed",
+    "createdAt": "2026-09-21T03:36:20.935Z"
+   },
+   {
+    "id": "q-2c1e1487-7aff-44ad-8b57-4aa494e4c051-70ufly",
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "operation": "upsert",
+    "status": "completed",
+    "createdAt": "2026-09-21T03:36:20.973Z"
+   },
+   {
+    "id": "q-32187eb9-2aa4-4c94-91a1-1013fa19973b-bp0b3z",
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "operation": "upsert",
+    "status": "completed",
+    "createdAt": "2026-09-21T03:36:20.971Z"
+   },
+   {
+    "id": "q-b1167cae-0d70-4edd-acec-5cc2ed194835-2e4g03",
+    "table": "warehouses",
+    "recordId": "WH-MAIN",
+    "operation": "upsert",
+    "status": "completed",
+    "createdAt": "2026-09-21T01:27:44.684Z"
+   },
+   {
+    "id": "q-ba545d94-117b-4a40-b768-fb3bdda5c816-4joatv",
+    "table": "ledger_entries",
+    "recordId": "LG-OPENING-BALANCE",
+    "operation": "upsert",
+    "status": "dead_letter",
+    "createdAt": "2026-09-21T01:28:31.934Z"
+   },
+   {
+    "id": "q-c821dcb3-6514-45bb-bb87-44e31f8af24a-yuc3ei",
+    "table": "warehouses",
+    "recordId": "WH-VIR",
+    "operation": "upsert",
+    "status": "completed",
+    "createdAt": "2026-09-21T01:27:44.709Z"
+   },
+   {
+    "id": "q-e7b82eaf-fd1e-42fb-95b2-17ae8753a07b-h6nf2v",
+    "table": "warehouses",
+    "recordId": "WH-SHOP",
+    "operation": "upsert",
+    "status": "completed",
+    "createdAt": "2026-09-21T01:27:44.704Z"
+   }
+  ],
+  "countPendingAfter": 0,
+  "deadAfter": [
+   {
+    "id": "q-ba545d94-117b-4a40-b768-fb3bdda5c816-4joatv",
+    "table": "ledger_entries",
+    "recordId": "LG-OPENING-BALANCE",
+    "operation": "upsert",
+    "status": "dead_letter",
+    "createdAt": "2026-09-21T01:28:31.934Z"
+   }
+  ],
+  "remoteCountPre": {
+   "count": 55,
+   "error": null
+  },
+  "remoteCountPost": {
+   "count": 58,
+   "error": null
+  },
+  "micRemote": [
+   {
+    "id": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "data": {
+     "id": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+     "date": "2026-09-16",
+     "amount": 222500000,
+     "status": "posted",
+     "appliedBy": "materialInventoryCorrectionService",
+     "createdAt": "2026-09-21T03:36:20.893Z",
+     "entryType": "material_inventory_correction",
+     "updatedAt": "2026-09-21T03:36:20.893Z",
+     "reconciled": false,
+     "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched.",
+     "description": "Material inventory capitalisation — verified physical stock (15,000 units / 30 inventory-bearing items, approved correction)",
+     "referenceId": "CORR-MATINV-CAPITAL-11420",
+     "referenceType": "material_inventory_correction",
+     "debitAccountId": "ACC-11420",
+     "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-CAPITAL-11420",
+     "creditAccountId": "ACC-32000"
+    },
+    "created_at": "2026-09-21T04:40:41.333939+00:00",
+    "updated_at": "2026-09-21T04:40:40.746+00:00",
+    "version": 1
+   },
+   {
+    "id": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "data": {
+     "id": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+     "date": "2026-01-01",
+     "amount": 1687500,
+     "status": "posted",
+     "appliedBy": "materialInventoryCorrectionService",
+     "createdAt": "2026-09-21T03:36:20.893Z",
+     "entryType": "material_inventory_correction",
+     "updatedAt": "2026-09-21T03:36:20.893Z",
+     "reconciled": false,
+     "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched.",
+     "description": "Material inventory capitalisation — opening balance (FY2026 pre-Smart-Stock material stock, approved correction)",
+     "referenceId": "CORR-MATINV-OPENING-11420",
+     "referenceType": "material_inventory_correction",
+     "debitAccountId": "ACC-11420",
+     "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-OPENING-11420",
+     "creditAccountId": "ACC-32000"
+    },
+    "created_at": "2026-09-21T04:40:39.68125+00:00",
+    "updated_at": "2026-09-21T04:40:39.109+00:00",
+    "version": 1
+   },
+   {
+    "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "data": {
+     "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+     "date": "2026-09-21",
+     "amount": 187600,
+     "status": "posted",
+     "appliedBy": "materialInventoryCorrectionService",
+     "createdAt": "2026-09-21T03:36:20.893Z",
+     "entryType": "material_inventory_correction",
+     "updatedAt": "2026-09-21T03:36:20.893Z",
+     "reconciled": false,
+     "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched.",
+     "description": "REVERSAL: duplicate material COGS leg INV-P726/031 (COGS - Invoice #INV-P726/031) — approved material-inventory correction",
+     "referenceId": "CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+     "referenceType": "material_inventory_correction",
+     "debitAccountId": "ACC-11420",
+     "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+     "creditAccountId": "ACC-51200",
+     "reversesEntryId": "LG-COGS-1789787524516-mcpj3jfhj"
+    },
+    "created_at": "2026-09-21T04:40:37.627994+00:00",
+    "updated_at": "2026-09-21T04:40:36.979+00:00",
+    "version": 1
+   }
+  ],
+  "obUnchanged": true,
+  "obPostRow": {
+   "id": "LG-OPENING-BALANCE",
+   "data": {
+    "id": "LG-OPENING-BALANCE",
+    "date": "2026-09-20T23:24:07.265Z",
+    "amount": 500,
+    "reconciled": true,
+    "description": "System Initialization: Opening Cash Balance",
+    "referenceId": "OPENING_BALANCE",
+    "debitAccountId": "11110",
+    "creditAccountId": "31000",
+    "serverUpdatedAt": "2026-09-19T09:32:48.074064+00:00"
+   },
+   "created_at": "2026-09-17T03:06:11.321199+00:00",
+   "updated_at": "2026-09-20T23:25:47.785943+00:00",
+   "version": 6
+  },
+  "cogsPostRow": {
+   "id": "LG-COGS-1789787524516-mcpj3jfhj",
+   "data": {
+    "id": "LG-COGS-1789787524516-mcpj3jfhj",
+    "date": "2026-01-17",
+    "amount": 187600,
+    "customerId": "CUST-0050",
+    "reconciled": false,
+    "description": "COGS - Invoice #INV-P726/031",
+    "referenceId": "INV-P726/031",
+    "customerName": "Chigwenembe Primary School",
+    "debitAccountId": "ACC-51200",
+    "creditAccountId": "ACC-11420"
+   },
+   "created_at": "2026-09-19T03:12:16.311492+00:00",
+   "updated_at": "2026-09-19T03:12:16.011+00:00",
+   "version": 1
+  },
+  "micInFull": 3,
+  "remoteBalances": {
+   "i11410": -448985,
+   "i11420": 222500000,
+   "i11400rollup": 222051015,
+   "eq32000": 224187500,
+   "cogs51200": 2136485
+  },
+  "remoteTrial": {
+   "debits": 234259985,
+   "credits": 234609985,
+   "difference": -350000,
+   "balanced": false
+  },
+  "allRemoteError": null
+ }
+}

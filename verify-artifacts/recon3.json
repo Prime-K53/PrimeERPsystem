@@ -1,0 +1,809 @@
+{
+ "accounts": [
+  {
+   "id": "ACC-10000",
+   "code": "10000",
+   "name": "Assets",
+   "type": "ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11000",
+   "code": "11000",
+   "name": "Current Assets",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11100",
+   "code": "11100",
+   "name": "Cash in Hand",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11110",
+   "code": "11110",
+   "name": "Cash Drawer",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11120",
+   "code": "11120",
+   "name": "Petty Cash",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11200",
+   "code": "11200",
+   "name": "Bank Accounts",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11210",
+   "code": "11210",
+   "name": "National Bank",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11220",
+   "code": "11220",
+   "name": "Mobile Wallet",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11230",
+   "code": "11230",
+   "name": "First Capital Bank",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "11240",
+   "code": "11240",
+   "name": "Mobile Money",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11300",
+   "code": "11300",
+   "name": "Accounts Receivable",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11310",
+   "code": "11310",
+   "name": "Trade Debtors",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11400",
+   "code": "11400",
+   "name": "Inventory",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11410",
+   "code": "11410",
+   "name": "Merchandise Inventory",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11420",
+   "code": "11420",
+   "name": "Raw Materials",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11430",
+   "code": "11430",
+   "name": "Finished Goods",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11500",
+   "code": "11500",
+   "name": "Other Current Assets",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11510",
+   "code": "11510",
+   "name": "Prepayments",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-11520",
+   "code": "11520",
+   "name": "Staff Advances",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-12000",
+   "code": "12000",
+   "name": "Fixed Assets",
+   "type": "ASSET",
+   "group": "FIXED_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-12100",
+   "code": "12100",
+   "name": "Motor Vehicles",
+   "type": "ASSET",
+   "group": "FIXED_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-12200",
+   "code": "12200",
+   "name": "Furniture & Fixtures",
+   "type": "ASSET",
+   "group": "FIXED_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-12300",
+   "code": "12300",
+   "name": "Computers & Equipment",
+   "type": "ASSET",
+   "group": "FIXED_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-12400",
+   "code": "12400",
+   "name": "Buildings",
+   "type": "ASSET",
+   "group": "FIXED_ASSET",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-12500",
+   "code": "12500",
+   "name": "Accumulated Depreciation",
+   "type": "ASSET",
+   "group": "FIXED_ASSET",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-20000",
+   "code": "20000",
+   "name": "Liabilities",
+   "type": "LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-21000",
+   "code": "21000",
+   "name": "Current Liabilities",
+   "type": "LIABILITY",
+   "group": "CURRENT_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-21100",
+   "code": "21100",
+   "name": "Accounts Payable",
+   "type": "LIABILITY",
+   "group": "CURRENT_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-21110",
+   "code": "21110",
+   "name": "Trade Creditors",
+   "type": "LIABILITY",
+   "group": "CURRENT_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-21200",
+   "code": "21200",
+   "name": "Tax Payable",
+   "type": "LIABILITY",
+   "group": "CURRENT_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-21210",
+   "code": "21210",
+   "name": "VAT Payable",
+   "type": "LIABILITY",
+   "group": "CURRENT_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-21220",
+   "code": "21220",
+   "name": "PAYE Payable",
+   "type": "LIABILITY",
+   "group": "CURRENT_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-21300",
+   "code": "21300",
+   "name": "Accrued Expenses",
+   "type": "LIABILITY",
+   "group": "CURRENT_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-22000",
+   "code": "22000",
+   "name": "Long-Term Liabilities",
+   "type": "LIABILITY",
+   "group": "LONG_TERM_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-22100",
+   "code": "22100",
+   "name": "Bank Loans",
+   "type": "LIABILITY",
+   "group": "LONG_TERM_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-22200",
+   "code": "22200",
+   "name": "Other Loans",
+   "type": "LIABILITY",
+   "group": "LONG_TERM_LIABILITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-30000",
+   "code": "30000",
+   "name": "Equity",
+   "type": "EQUITY",
+   "group": "EQUITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-31000",
+   "code": "31000",
+   "name": "Owner's Capital",
+   "type": "EQUITY",
+   "group": "EQUITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-32000",
+   "code": "32000",
+   "name": "Retained Earnings",
+   "type": "EQUITY",
+   "group": "EQUITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-33000",
+   "code": "33000",
+   "name": "Current Year Earnings",
+   "type": "EQUITY",
+   "group": "EQUITY",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-34000",
+   "code": "34000",
+   "name": "Drawings",
+   "type": "EQUITY",
+   "group": "EQUITY",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-40000",
+   "code": "40000",
+   "name": "Income",
+   "type": "INCOME",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-41000",
+   "code": "41000",
+   "name": "Sales",
+   "type": "INCOME",
+   "group": "REVENUE",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-41100",
+   "code": "41100",
+   "name": "Product Sales",
+   "type": "INCOME",
+   "group": "REVENUE",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-41200",
+   "code": "41200",
+   "name": "Service Income",
+   "type": "INCOME",
+   "group": "REVENUE",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-42000",
+   "code": "42000",
+   "name": "Other Income",
+   "type": "INCOME",
+   "group": "OTHER_INCOME",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-42100",
+   "code": "42100",
+   "name": "Interest Income",
+   "type": "INCOME",
+   "group": "OTHER_INCOME",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-42200",
+   "code": "42200",
+   "name": "Discount Received",
+   "type": "INCOME",
+   "group": "OTHER_INCOME",
+   "normal": "CREDIT"
+  },
+  {
+   "id": "ACC-50000",
+   "code": "50000",
+   "name": "Expenses",
+   "type": "EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-51000",
+   "code": "51000",
+   "name": "Cost of Sales",
+   "type": "EXPENSE",
+   "group": "COST_OF_SALES",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-51100",
+   "code": "51100",
+   "name": "Purchases",
+   "type": "EXPENSE",
+   "group": "COST_OF_SALES",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-51200",
+   "code": "51200",
+   "name": "Cost of Goods Sold",
+   "type": "EXPENSE",
+   "group": "COST_OF_SALES",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-51300",
+   "code": "51300",
+   "name": "Freight & Carriage",
+   "type": "EXPENSE",
+   "group": "COST_OF_SALES",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52000",
+   "code": "52000",
+   "name": "Operating Expenses",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52100",
+   "code": "52100",
+   "name": "Salaries & Wages",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52200",
+   "code": "52200",
+   "name": "Rent",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52300",
+   "code": "52300",
+   "name": "Utilities",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52400",
+   "code": "52400",
+   "name": "Internet & Telephone",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52500",
+   "code": "52500",
+   "name": "Advertising",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52600",
+   "code": "52600",
+   "name": "Transport",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52700",
+   "code": "52700",
+   "name": "Repairs & Maintenance",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52800",
+   "code": "52800",
+   "name": "Office Expenses",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-52900",
+   "code": "52900",
+   "name": "Bank Charges",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-53000",
+   "code": "53000",
+   "name": "Depreciation",
+   "type": "EXPENSE",
+   "group": "OPERATING_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-54000",
+   "code": "54000",
+   "name": "Other Expenses",
+   "type": "EXPENSE",
+   "group": "OTHER_EXPENSE",
+   "normal": "DEBIT"
+  },
+  {
+   "id": "ACC-54100",
+   "code": "54100",
+   "name": "Interest Expense",
+   "type": "EXPENSE",
+   "group": "OTHER_EXPENSE",
+   "normal": "DEBIT"
+  }
+ ],
+ "bearingRaw": [
+  {
+   "id": "FG-BC-005",
+   "name": "A4 Exercise Books",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 240,
+   "cost": 240
+  },
+  {
+   "id": "FG-BC-014",
+   "name": "Arch File",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 3800,
+   "cost": 3800
+  },
+  {
+   "id": "FG-BC-022",
+   "name": "Bantley Pens",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 13000,
+   "cost": 13000
+  },
+  {
+   "id": "INV-MAT-003",
+   "name": "Staples",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 4500,
+   "cost": 4500
+  },
+  {
+   "id": "INV-MAT-008",
+   "name": "A4 Paper 80gsm",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 17000,
+   "cost": 17000
+  },
+  {
+   "id": "INV-MAT-009",
+   "name": "Cover Page",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 9500,
+   "cost": 9500
+  },
+  {
+   "id": "INV-MAT-010",
+   "name": "HP LaserJet Toner",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 70000,
+   "cost": 70000
+  },
+  {
+   "id": "INV-MAT-028",
+   "name": "Binding Tape",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 4500,
+   "cost": 4500
+  },
+  {
+   "id": "INV-MAT-031",
+   "name": "Cartlage 05A/55A",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 70000,
+   "cost": 70000
+  },
+  {
+   "id": "INV-MAT-056",
+   "name": "Fuser Paper",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 25000,
+   "cost": 25000
+  },
+  {
+   "id": "INV-MAT-058",
+   "name": "Haevy duty staples",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 4500,
+   "cost": 4500
+  },
+  {
+   "id": "INV-MAT-073",
+   "name": "Pick Up Rollers",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 20000,
+   "cost": 20000
+  },
+  {
+   "id": "INV-MAT-079",
+   "name": "Printer Greese",
+   "type": "Raw Material",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 30000,
+   "cost": 30000
+  },
+  {
+   "id": "INV-STA-0097",
+   "name": "Bic Pens (Copy)",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 13000,
+   "cost": 13000
+  },
+  {
+   "id": "INV-STA-0098",
+   "name": "Bic Pens (Original)",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 32000,
+   "cost": 32000
+  },
+  {
+   "id": "INV-STA-011",
+   "name": "Chalk (box)",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 2800,
+   "cost": 2800
+  },
+  {
+   "id": "INV-STA-012",
+   "name": "A4 Envelope",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 120,
+   "cost": 120
+  },
+  {
+   "id": "INV-STA-014",
+   "name": "A4 Hardcover",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 4800,
+   "cost": 4800
+  },
+  {
+   "id": "INV-STA-045",
+   "name": "Duster",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 2800,
+   "cost": 2800
+  },
+  {
+   "id": "INV-STA-049",
+   "name": "Exercise Books A5",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 240,
+   "cost": 240
+  },
+  {
+   "id": "INV-STA-053",
+   "name": "Flat File",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 1300,
+   "cost": 1300
+  },
+  {
+   "id": "INV-STA-054",
+   "name": "Flip chart",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 9500,
+   "cost": 9500
+  },
+  {
+   "id": "INV-STA-055",
+   "name": "Fly paper",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 17000,
+   "cost": 17000
+  },
+  {
+   "id": "INV-STA-066",
+   "name": "Markers",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 3800,
+   "cost": 3800
+  },
+  {
+   "id": "INV-STA-067",
+   "name": "Masking Tape",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 3500,
+   "cost": 3500
+  },
+  {
+   "id": "INV-STA-070",
+   "name": "Office Paste",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 4800,
+   "cost": 4800
+  },
+  {
+   "id": "INV-STA-077",
+   "name": "Portable Board",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 40000,
+   "cost": 40000
+  },
+  {
+   "id": "INV-STA-089",
+   "name": "School Bags",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 18000,
+   "cost": 18000
+  },
+  {
+   "id": "INV-STA-095",
+   "name": "Stapler Machine",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 0,
+   "cost": 0
+  },
+  {
+   "id": "INV-STA-096",
+   "name": "Staples 26/6",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 2500,
+   "cost": 2500
+  },
+  {
+   "id": "ITM-0002",
+   "name": "A4 Plain Paper",
+   "type": "Stationery",
+   "status": "Active",
+   "stock": 500,
+   "cost_price": 16800,
+   "cost": 16800
+  }
+ ]
+}

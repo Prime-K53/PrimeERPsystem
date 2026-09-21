@@ -1,0 +1,127 @@
+{
+ "correctionCutoff": "2026-09-21T03:36:20.915Z",
+ "ledgerRowCount": {
+  "before": 55,
+  "now": 58
+ },
+ "correctionRows": [
+  {
+   "id": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+   "date": "2026-09-16",
+   "amount": 222500000,
+   "dr": "ACC-11420",
+   "cr": "ACC-32000",
+   "referenceId": "CORR-MATINV-CAPITAL-11420",
+   "entryType": "material_inventory_correction",
+   "referenceType": "material_inventory_correction",
+   "status": "posted",
+   "reversesEntryId": null,
+   "_updatedAt": "2026-09-21T03:36:20.972Z"
+  },
+  {
+   "id": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+   "date": "2026-01-01",
+   "amount": 1687500,
+   "dr": "ACC-11420",
+   "cr": "ACC-32000",
+   "referenceId": "CORR-MATINV-OPENING-11420",
+   "entryType": "material_inventory_correction",
+   "referenceType": "material_inventory_correction",
+   "status": "posted",
+   "reversesEntryId": null,
+   "_updatedAt": "2026-09-21T03:36:20.970Z"
+  },
+  {
+   "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+   "date": "2026-09-21",
+   "amount": 187600,
+   "dr": "ACC-11420",
+   "cr": "ACC-51200",
+   "referenceId": "CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+   "entryType": "material_inventory_correction",
+   "referenceType": "material_inventory_correction",
+   "status": "posted",
+   "reversesEntryId": "LG-COGS-1789787524516-mcpj3jfhj",
+   "_updatedAt": "2026-09-21T03:36:20.915Z"
+  }
+ ],
+ "ledgerRowCountStampedAtCorrection": 3,
+ "inventoryRowsStampedAtCorrection": 0,
+ "inventoryTxnRowsStampedAtCorrection": 0,
+ "warehouseInvRowsStampedAtCorrection": 0,
+ "warehouseRowsStampedAtCorrection": 0,
+ "maxUpdatedAt": {
+  "inventoryTransactions": "2026-09-20T12:59:58.34+00:00",
+  "inventory": "2026-09-21T01:47:33.750317+00:00",
+  "warehouseInventory": "2026-09-16T20:06:58.562+00:00",
+  "warehouses": "2026-09-21T01:27:44.708Z",
+  "ledger": "2026-09-21T03:36:20.972Z"
+ },
+ "counts": {
+  "inventory": 107,
+  "inventoryTransactions": 148,
+  "smartStockRows": 100,
+  "smartStockUnits": 50000,
+  "warehouseInventory": 100,
+  "warehouses": 3
+ },
+ "inventoryBearing": {
+  "includedCount": 30,
+  "excludedReasons": {
+   "NON_STOCK_TYPE": 62,
+   "DELETED_ITEM": 6,
+   "SERVICE_ITEM": 8,
+   "ZERO_COST": 1
+  },
+  "units": 15000,
+  "value": 222500000,
+  "byAccount": {
+   "11420": {
+    "items": 30,
+    "units": 15000,
+    "value": 222500000
+   }
+  },
+  "everyIncludedItemAt500Units": true
+ },
+ "duplicateUnchanged": true,
+ "balances": {
+  "i11410": -448985,
+  "i11420": 222500000,
+  "i11430": 0,
+  "i11400rollup": 222051015,
+  "eq32000": 224187500,
+  "cogs51200": 2136485
+ },
+ "trial": {
+  "debits": 234259985,
+  "credits": 234609985,
+  "difference": -350000,
+  "balanced": false
+ },
+ "queueOpsTotal": 7,
+ "queueByTable": {
+  "ledger_entries:pending": 4,
+  "warehouses:pending": 3
+ },
+ "correctionOpsInOutbox": [
+  {
+   "table": "ledger_entries",
+   "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+   "operation": "upsert",
+   "status": "pending"
+  },
+  {
+   "table": "ledger_entries",
+   "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+   "operation": "upsert",
+   "status": "pending"
+  },
+  {
+   "table": "ledger_entries",
+   "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+   "operation": "upsert",
+   "status": "pending"
+  }
+ ]
+}

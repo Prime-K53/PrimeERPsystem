@@ -1,0 +1,174 @@
+{
+ "fatal": null,
+ "pre": {
+  "ledgerCount": 58,
+  "micRowCount": 3,
+  "micVersions": {
+   "LG-MIC-CAPITAL-1789961780893-t1qzdpjki": 1,
+   "LG-MIC-OPENING-1789961780893-thsjuxe8o": 1,
+   "LG-MIC-REV-1789961780893-5wvx4kqr3": 1
+  },
+  "reversalRows": [
+   {
+    "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "reversesEntryId": "LG-COGS-1789787524516-mcpj3jfhj"
+   }
+  ],
+  "remoteBalances": {
+   "i11410": -448985,
+   "i11420": 222500000,
+   "i11400rollup": 222051015,
+   "eq32000": 224187500,
+   "cogs51200": 2136485
+  },
+  "opInventory": {
+   "items": 30,
+   "units": 15000,
+   "value": 222500000
+  }
+ },
+ "step12": {
+  "sync2Result": null,
+  "sync2Error": null,
+  "sync2Ms": 1,
+  "events": [],
+  "mid": {
+   "ledgerCount": 58,
+   "micRowCount": 3,
+   "micVersions": {
+    "LG-MIC-CAPITAL-1789961780893-t1qzdpjki": 1,
+    "LG-MIC-OPENING-1789961780893-thsjuxe8o": 1,
+    "LG-MIC-REV-1789961780893-5wvx4kqr3": 1
+   },
+   "reversalRows": [
+    {
+     "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+     "reversesEntryId": "LG-COGS-1789787524516-mcpj3jfhj"
+    }
+   ],
+   "obMidUnchanged": true,
+   "midBalancesOk": true,
+   "remoteBalances": {
+    "i11410": -448985,
+    "i11420": 222500000,
+    "i11400rollup": 222051015,
+    "eq32000": 224187500,
+    "cogs51200": 2136485
+   },
+   "opInventory": {
+    "items": 30,
+    "units": 15000,
+    "value": 222500000
+   }
+  },
+  "obDeadMid": true,
+  "queueMid": [
+   {
+    "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "table": "ledger_entries",
+    "status": "completed"
+   },
+   {
+    "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "table": "ledger_entries",
+    "status": "completed"
+   },
+   {
+    "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "table": "ledger_entries",
+    "status": "completed"
+   },
+   {
+    "recordId": "WH-MAIN",
+    "table": "warehouses",
+    "status": "completed"
+   },
+   {
+    "recordId": "LG-OPENING-BALANCE",
+    "table": "ledger_entries",
+    "status": "dead_letter"
+   },
+   {
+    "recordId": "WH-VIR",
+    "table": "warehouses",
+    "status": "completed"
+   },
+   {
+    "recordId": "WH-SHOP",
+    "table": "warehouses",
+    "status": "completed"
+   }
+  ]
+ },
+ "step13": {
+  "pullResult": {
+   "pulled": 25,
+   "errors": []
+  },
+  "pullError": null,
+  "post": {
+   "ledgerCount": 58,
+   "micRowCount": 3,
+   "micVersions": {
+    "LG-MIC-CAPITAL-1789961780893-t1qzdpjki": 1,
+    "LG-MIC-OPENING-1789961780893-thsjuxe8o": 1,
+    "LG-MIC-REV-1789961780893-5wvx4kqr3": 1
+   },
+   "reversalRows": [
+    {
+     "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+     "reversesEntryId": "LG-COGS-1789787524516-mcpj3jfhj"
+    }
+   ],
+   "obPostUnchanged": true,
+   "postBalancesOk": true,
+   "remoteBalances": {
+    "i11410": -448985,
+    "i11420": 222500000,
+    "i11400rollup": 222051015,
+    "eq32000": 224187500,
+    "cogs51200": 2136485
+   },
+   "remoteTrial": {
+    "debits": 234259985,
+    "credits": 234609985,
+    "difference": -350000,
+    "balanced": false
+   },
+   "opInventory": {
+    "items": 30,
+    "units": 15000,
+    "value": 222500000
+   }
+  },
+  "localAfterPull": {
+   "ledgerCount": 58,
+   "micCounts": [
+    1,
+    1,
+    1
+   ],
+   "micTotal": 3,
+   "localBalances": {
+    "i11410": -448985,
+    "i11420": 222500000,
+    "i11400rollup": 222051015,
+    "eq32000": 224187500,
+    "cogs51200": 2136485
+   },
+   "localTrial": {
+    "debits": 234259985,
+    "credits": 234609985,
+    "difference": -350000,
+    "balanced": false
+   },
+   "localOpInventory": {
+    "items": 30,
+    "units": 15000,
+    "value": 222500000
+   }
+  },
+  "obDeadPost": true,
+  "pendingPost": []
+ }
+}

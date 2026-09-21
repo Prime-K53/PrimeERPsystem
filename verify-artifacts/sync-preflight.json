@@ -1,0 +1,200 @@
+{
+ "pageUrl": "https://localhost:5173/#/login",
+ "auth": {
+  "hasSupabaseSession": false,
+  "userId": null,
+  "error": null,
+  "projectRef": "rdtuzuzehfbwvfdzqliw"
+ },
+ "nexusUser": null,
+ "localStorageKeys": [
+  "nexus_last_sync_pull",
+  "nexus_company_config"
+ ],
+ "sessionStorageKeys": [],
+ "outbox": {
+  "total": 7,
+  "all": [
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.935Z"
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.973Z"
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.971Z"
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-MAIN",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.684Z"
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-OPENING-BALANCE",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:28:31.934Z"
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-VIR",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.709Z"
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-SHOP",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.704Z"
+   }
+  ],
+  "micRecords": [
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "operation": "upsert",
+    "status": "pending"
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "operation": "upsert",
+    "status": "pending"
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "operation": "upsert",
+    "status": "pending"
+   }
+  ]
+ },
+ "localLedgerCount": 58,
+ "localMicRowCount": 3,
+ "checks": [
+  {
+   "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+   "ok": true,
+   "diffs": [],
+   "row": {
+    "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "date": "2026-09-21",
+    "amount": 187600,
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-51200",
+    "referenceId": "CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+    "entryType": "material_inventory_correction",
+    "referenceType": "material_inventory_correction",
+    "status": "posted",
+    "reversesEntryId": "LG-COGS-1789787524516-mcpj3jfhj",
+    "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj"
+   }
+  },
+  {
+   "id": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+   "ok": true,
+   "diffs": [],
+   "row": {
+    "id": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "date": "2026-01-01",
+    "amount": 1687500,
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-32000",
+    "referenceId": "CORR-MATINV-OPENING-11420",
+    "entryType": "material_inventory_correction",
+    "referenceType": "material_inventory_correction",
+    "status": "posted",
+    "reversesEntryId": null,
+    "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-OPENING-11420"
+   }
+  },
+  {
+   "id": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+   "ok": true,
+   "diffs": [],
+   "row": {
+    "id": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "date": "2026-09-16",
+    "amount": 222500000,
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-32000",
+    "referenceId": "CORR-MATINV-CAPITAL-11420",
+    "entryType": "material_inventory_correction",
+    "referenceType": "material_inventory_correction",
+    "status": "posted",
+    "reversesEntryId": null,
+    "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-CAPITAL-11420"
+   }
+  }
+ ],
+ "balances": {
+  "i11410": -448985,
+  "i11420": 222500000,
+  "i11430": 0,
+  "i11400rollup": 222051015,
+  "eq32000": 224187500,
+  "cogs51200": 2136485
+ },
+ "trial": {
+  "difference": -350000,
+  "balanced": false
+ },
+ "operational": {
+  "items": 30,
+  "units": 15000,
+  "value": 222500000
+ },
+ "duplicateRow": {
+  "id": "LG-COGS-1789787524516-mcpj3jfhj",
+  "date": "2026-01-17",
+  "amount": 187600,
+  "debitAccountId": "ACC-51200",
+  "creditAccountId": "ACC-11420",
+  "referenceId": "INV-P726/031",
+  "_updatedAt": "2026-09-19T03:12:16.011+00:00"
+ },
+ "accountRefs": {
+  "ACC-11420": {
+   "id": "ACC-11420",
+   "code": "11420",
+   "name": "Raw Materials"
+  },
+  "ACC-11410": {
+   "id": "ACC-11410",
+   "code": "11410",
+   "name": "Merchandise Inventory"
+  },
+  "ACC-32000": {
+   "id": "ACC-32000",
+   "code": "32000",
+   "name": "Retained Earnings"
+  },
+  "ACC-51200": {
+   "id": "ACC-51200",
+   "code": "51200",
+   "name": "Cost of Goods Sold"
+  },
+  "ACC-11400": {
+   "id": "ACC-11400",
+   "code": "11400",
+   "name": "Inventory"
+  }
+ }
+}

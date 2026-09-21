@@ -1,0 +1,1444 @@
+{
+ "ownByCode": {
+  "11400": 0,
+  "11410": -448985,
+  "11420": -1875100,
+  "11430": 0,
+  "51200": 2324085
+ },
+ "typeBuckets": {
+  "Stationery": 22,
+  "Product": 65,
+  "Raw Material": 12,
+  "Service": 8
+ },
+ "classifiedCounts": {
+  "total": 107,
+  "included": 30,
+  "excludedByReason": {
+   "NON_STOCK_TYPE": 62,
+   "DELETED_ITEM": 6,
+   "SERVICE_ITEM": 8,
+   "ZERO_COST": 1
+  }
+ },
+ "byAccount": {
+  "11410": {
+   "qty": 0,
+   "whQty": 0,
+   "value": 0,
+   "n": 0
+  },
+  "11420": {
+   "qty": 15000,
+   "whQty": 15000,
+   "value": 222500000,
+   "n": 30
+  },
+  "11430": {
+   "qty": 0,
+   "whQty": 0,
+   "value": 0,
+   "n": 0
+  }
+ },
+ "negative": [],
+ "valuation": {
+  "totalInventoryValue": 222500000,
+  "glInventoryByAccount": {
+   "11410": -448985,
+   "11420": -1875100,
+   "11430": 0
+  },
+  "glInventoryTotal": -2324085,
+  "difference": 224824085
+ },
+ "bearingItems": [
+  {
+   "id": "FG-BC-005",
+   "name": "A4 Exercise Books",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 240,
+   "value": 120000
+  },
+  {
+   "id": "FG-BC-014",
+   "name": "Arch File",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 3800,
+   "value": 1900000
+  },
+  {
+   "id": "FG-BC-022",
+   "name": "Bantley Pens",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 13000,
+   "value": 6500000
+  },
+  {
+   "id": "INV-MAT-003",
+   "name": "Staples",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 4500,
+   "value": 2250000
+  },
+  {
+   "id": "INV-MAT-008",
+   "name": "A4 Paper 80gsm",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 17000,
+   "value": 8500000
+  },
+  {
+   "id": "INV-MAT-009",
+   "name": "Cover Page",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 9500,
+   "value": 4750000
+  },
+  {
+   "id": "INV-MAT-010",
+   "name": "HP LaserJet Toner",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 70000,
+   "value": 35000000
+  },
+  {
+   "id": "INV-MAT-028",
+   "name": "Binding Tape",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 4500,
+   "value": 2250000
+  },
+  {
+   "id": "INV-MAT-031",
+   "name": "Cartlage 05A/55A",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 70000,
+   "value": 35000000
+  },
+  {
+   "id": "INV-MAT-056",
+   "name": "Fuser Paper",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 25000,
+   "value": 12500000
+  },
+  {
+   "id": "INV-MAT-058",
+   "name": "Haevy duty staples",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 4500,
+   "value": 2250000
+  },
+  {
+   "id": "INV-MAT-073",
+   "name": "Pick Up Rollers",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 20000,
+   "value": 10000000
+  },
+  {
+   "id": "INV-MAT-079",
+   "name": "Printer Greese",
+   "type": "Raw Material",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 30000,
+   "value": 15000000
+  },
+  {
+   "id": "INV-STA-0097",
+   "name": "Bic Pens (Copy)",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 13000,
+   "value": 6500000
+  },
+  {
+   "id": "INV-STA-0098",
+   "name": "Bic Pens (Original)",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 32000,
+   "value": 16000000
+  },
+  {
+   "id": "INV-STA-011",
+   "name": "Chalk (box)",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 2800,
+   "value": 1400000
+  },
+  {
+   "id": "INV-STA-012",
+   "name": "A4 Envelope",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 120,
+   "value": 60000
+  },
+  {
+   "id": "INV-STA-014",
+   "name": "A4 Hardcover",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 4800,
+   "value": 2400000
+  },
+  {
+   "id": "INV-STA-045",
+   "name": "Duster",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 2800,
+   "value": 1400000
+  },
+  {
+   "id": "INV-STA-049",
+   "name": "Exercise Books A5",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 240,
+   "value": 120000
+  },
+  {
+   "id": "INV-STA-053",
+   "name": "Flat File",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 1300,
+   "value": 650000
+  },
+  {
+   "id": "INV-STA-054",
+   "name": "Flip chart",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 9500,
+   "value": 4750000
+  },
+  {
+   "id": "INV-STA-055",
+   "name": "Fly paper",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 17000,
+   "value": 8500000
+  },
+  {
+   "id": "INV-STA-066",
+   "name": "Markers",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 3800,
+   "value": 1900000
+  },
+  {
+   "id": "INV-STA-067",
+   "name": "Masking Tape",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 3500,
+   "value": 1750000
+  },
+  {
+   "id": "INV-STA-070",
+   "name": "Office Paste",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 4800,
+   "value": 2400000
+  },
+  {
+   "id": "INV-STA-077",
+   "name": "Portable Board",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 40000,
+   "value": 20000000
+  },
+  {
+   "id": "INV-STA-089",
+   "name": "School Bags",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 18000,
+   "value": 9000000
+  },
+  {
+   "id": "INV-STA-096",
+   "name": "Staples 26/6",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 2500,
+   "value": 1250000
+  },
+  {
+   "id": "ITM-0002",
+   "name": "A4 Plain Paper",
+   "type": "Stationery",
+   "acct": "11420",
+   "qty": 500,
+   "whQty": 500,
+   "cost": 16800,
+   "value": 8400000
+  }
+ ],
+ "ledgerInv": [
+  {
+   "id": "LG-COGS-1789592857367-o222qvulp",
+   "date": "2026-01-15",
+   "amount": 75570,
+   "description": "COGS - Invoice #INV-P726/021",
+   "referenceId": "INV-P726/021",
+   "customerId": "CUST-0009",
+   "customerName": "Makankhula Primary School",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789592857410-z622vz8hm",
+   "date": "2026-01-15",
+   "amount": 199000,
+   "description": "COGS - Invoice #INV-P726/021",
+   "referenceId": "INV-P726/021",
+   "customerId": "CUST-0009",
+   "customerName": "Makankhula Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789592954811-jf06hlksn",
+   "date": "2026-01-16",
+   "amount": 18981,
+   "description": "COGS - Invoice #INV-P726/022",
+   "referenceId": "INV-P726/022",
+   "customerId": "CUST-0051",
+   "customerName": "Bondo RC Primary",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789593359659-n2msqgaz6",
+   "date": "2026-01-16",
+   "amount": 44289,
+   "description": "COGS - Invoice #INV-P726/023",
+   "referenceId": "INV-P726/023",
+   "customerId": "CUST-0008",
+   "customerName": "Kataila Primary School",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789593359700-0j93c9rlq",
+   "date": "2026-01-16",
+   "amount": 11200,
+   "description": "COGS - Invoice #INV-P726/023",
+   "referenceId": "INV-P726/023",
+   "customerId": "CUST-0008",
+   "customerName": "Kataila Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789593504158-fu1f34u4c",
+   "date": "2026-01-16",
+   "amount": 20388,
+   "description": "COGS - Invoice #INV-P726/024",
+   "referenceId": "INV-P726/024",
+   "customerId": "CUST-0014",
+   "customerName": "Mchezime LEA Primary",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789593686292-vj8m7f8x8",
+   "date": "2026-01-19",
+   "amount": 63270,
+   "description": "COGS - Invoice #INV-P726/025",
+   "referenceId": "INV-P726/025",
+   "customerId": "CUST-0033",
+   "customerName": "Mtakataka CCAP School",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789593686342-wi43ohl7u",
+   "date": "2026-01-19",
+   "amount": 28000,
+   "description": "COGS - Invoice #INV-P726/025",
+   "referenceId": "INV-P726/025",
+   "customerId": "CUST-0033",
+   "customerName": "Mtakataka CCAP School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789626445879-zkjdnrlbm",
+   "date": "2026-01-19",
+   "amount": 75570,
+   "description": "COGS - Invoice #INV-P726/026",
+   "referenceId": "INV-P726/026",
+   "customerId": "CUST-0031",
+   "customerName": "Msekeni Primary School",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789626519460-5jzznh1br",
+   "date": "2026-09-16",
+   "amount": 23668,
+   "description": "COGS - Invoice #INV-P726/027",
+   "referenceId": "INV-P726/027",
+   "customerId": "CUST-0034",
+   "customerName": "Mtakataka Police Primary",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789629161363-9ngztle5e",
+   "date": "2026-01-17",
+   "amount": 127249,
+   "description": "COGS - Invoice #INV-P726/028",
+   "referenceId": "INV-P726/028",
+   "customerId": "CUST-0049",
+   "customerName": "Chipse Primary School",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789753843501-3550vjgsg",
+   "date": "2026-01-17",
+   "amount": 186600,
+   "description": "COGS - Invoice #INV-P726/030",
+   "referenceId": "INV-P726/030",
+   "customerId": "CUST-0044",
+   "customerName": "Bolera Chiwina Primary",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789754754047-do1tr5htf",
+   "date": "2026-01-17",
+   "amount": 187600,
+   "description": "COGS - Invoice #INV-P726/031",
+   "referenceId": "INV-P726/031",
+   "customerId": "CUST-0050",
+   "customerName": "Chigwenembe Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789787524516-mcpj3jfhj",
+   "date": "2026-01-17",
+   "amount": 187600,
+   "description": "COGS - Invoice #INV-P726/031",
+   "referenceId": "INV-P726/031",
+   "customerId": "CUST-0050",
+   "customerName": "Chigwenembe Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789809002270-wapub33ac",
+   "date": "2026-03-10",
+   "amount": 47900,
+   "description": "COGS - Invoice #INV-P726/034",
+   "referenceId": "INV-P726/034",
+   "customerId": "CUST-0049",
+   "customerName": "Chipse Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789814659562-ke41lr310",
+   "date": "2026-03-10",
+   "amount": 95700,
+   "description": "COGS - Invoice #INV-P726/035",
+   "referenceId": "INV-P726/035",
+   "customerId": "CUST-0009",
+   "customerName": "Makankhula Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789815655026-hn71v44xv",
+   "date": "2026-03-17",
+   "amount": 31800,
+   "description": "COGS - Invoice #INV-P726/036",
+   "referenceId": "INV-P726/036",
+   "customerId": "CUST-0033",
+   "customerName": "Mtakataka CCAP School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789888883823-oqn6ht4x4",
+   "date": "2026-09-20",
+   "amount": 319800,
+   "description": "COGS - Invoice #INV-P726/040",
+   "referenceId": "INV-P726/040",
+   "customerId": "CUST-0050",
+   "customerName": "Chigwenembe Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789908550448-vea4mt8l8",
+   "date": "2026-09-11",
+   "amount": 318900,
+   "description": "COGS - Invoice #INV-P726/041",
+   "referenceId": "INV-P726/041",
+   "customerId": "CUST-0043",
+   "customerName": "Chiwaka Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789909180398-o91nyb0cq",
+   "date": "2026-09-11",
+   "amount": 261000,
+   "description": "COGS - Invoice #INV-P726/042",
+   "referenceId": "INV-P726/042",
+   "customerId": "CUST-0009",
+   "customerName": "Makankhula Primary School",
+   "debit": "51200",
+   "credit": "11420"
+  }
+ ],
+ "ledgerAll": [
+  {
+   "id": "LG-COGS-1789592857367-o222qvulp",
+   "date": "2026-01-15",
+   "amount": 75570,
+   "description": "COGS - Invoice #INV-P726/021",
+   "referenceId": "INV-P726/021",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789592857410-z622vz8hm",
+   "date": "2026-01-15",
+   "amount": 199000,
+   "description": "COGS - Invoice #INV-P726/021",
+   "referenceId": "INV-P726/021",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789592954811-jf06hlksn",
+   "date": "2026-01-16",
+   "amount": 18981,
+   "description": "COGS - Invoice #INV-P726/022",
+   "referenceId": "INV-P726/022",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789593359659-n2msqgaz6",
+   "date": "2026-01-16",
+   "amount": 44289,
+   "description": "COGS - Invoice #INV-P726/023",
+   "referenceId": "INV-P726/023",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789593359700-0j93c9rlq",
+   "date": "2026-01-16",
+   "amount": 11200,
+   "description": "COGS - Invoice #INV-P726/023",
+   "referenceId": "INV-P726/023",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789593504158-fu1f34u4c",
+   "date": "2026-01-16",
+   "amount": 20388,
+   "description": "COGS - Invoice #INV-P726/024",
+   "referenceId": "INV-P726/024",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789593686292-vj8m7f8x8",
+   "date": "2026-01-19",
+   "amount": 63270,
+   "description": "COGS - Invoice #INV-P726/025",
+   "referenceId": "INV-P726/025",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789593686342-wi43ohl7u",
+   "date": "2026-01-19",
+   "amount": 28000,
+   "description": "COGS - Invoice #INV-P726/025",
+   "referenceId": "INV-P726/025",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789626445879-zkjdnrlbm",
+   "date": "2026-01-19",
+   "amount": 75570,
+   "description": "COGS - Invoice #INV-P726/026",
+   "referenceId": "INV-P726/026",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789626519460-5jzznh1br",
+   "date": "2026-09-16",
+   "amount": 23668,
+   "description": "COGS - Invoice #INV-P726/027",
+   "referenceId": "INV-P726/027",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789629161363-9ngztle5e",
+   "date": "2026-01-17",
+   "amount": 127249,
+   "description": "COGS - Invoice #INV-P726/028",
+   "referenceId": "INV-P726/028",
+   "debit": "51200",
+   "credit": "11410"
+  },
+  {
+   "id": "LG-COGS-1789753843501-3550vjgsg",
+   "date": "2026-01-17",
+   "amount": 186600,
+   "description": "COGS - Invoice #INV-P726/030",
+   "referenceId": "INV-P726/030",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789754754047-do1tr5htf",
+   "date": "2026-01-17",
+   "amount": 187600,
+   "description": "COGS - Invoice #INV-P726/031",
+   "referenceId": "INV-P726/031",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789787524516-mcpj3jfhj",
+   "date": "2026-01-17",
+   "amount": 187600,
+   "description": "COGS - Invoice #INV-P726/031",
+   "referenceId": "INV-P726/031",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789809002270-wapub33ac",
+   "date": "2026-03-10",
+   "amount": 47900,
+   "description": "COGS - Invoice #INV-P726/034",
+   "referenceId": "INV-P726/034",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789814659562-ke41lr310",
+   "date": "2026-03-10",
+   "amount": 95700,
+   "description": "COGS - Invoice #INV-P726/035",
+   "referenceId": "INV-P726/035",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789815655026-hn71v44xv",
+   "date": "2026-03-17",
+   "amount": 31800,
+   "description": "COGS - Invoice #INV-P726/036",
+   "referenceId": "INV-P726/036",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789888883823-oqn6ht4x4",
+   "date": "2026-09-20",
+   "amount": 319800,
+   "description": "COGS - Invoice #INV-P726/040",
+   "referenceId": "INV-P726/040",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789908550448-vea4mt8l8",
+   "date": "2026-09-11",
+   "amount": 318900,
+   "description": "COGS - Invoice #INV-P726/041",
+   "referenceId": "INV-P726/041",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-COGS-1789909180398-o91nyb0cq",
+   "date": "2026-09-11",
+   "amount": 261000,
+   "description": "COGS - Invoice #INV-P726/042",
+   "referenceId": "INV-P726/042",
+   "debit": "51200",
+   "credit": "11420"
+  },
+  {
+   "id": "LG-INV-AR-1789592857455-vafguv56o",
+   "date": "2026-01-15",
+   "amount": 431000,
+   "description": "Invoice #INV-P726/021",
+   "referenceId": "INV-P726/021",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789592954857-8a8dzea2m",
+   "date": "2026-01-16",
+   "amount": 36000,
+   "description": "Invoice #INV-P726/022",
+   "referenceId": "INV-P726/022",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789593359755-ctmfu7g2l",
+   "date": "2026-01-16",
+   "amount": 101050,
+   "description": "Invoice #INV-P726/023",
+   "referenceId": "INV-P726/023",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789593504217-l19himq8v",
+   "date": "2026-01-16",
+   "amount": 40000,
+   "description": "Invoice #INV-P726/024",
+   "referenceId": "INV-P726/024",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789593686388-dxxv8oasi",
+   "date": "2026-01-19",
+   "amount": 160000,
+   "description": "Invoice #INV-P726/025",
+   "referenceId": "INV-P726/025",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789626445963-b1z0tom5x",
+   "date": "2026-01-19",
+   "amount": 140000,
+   "description": "Invoice #INV-P726/026",
+   "referenceId": "INV-P726/026",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789626519518-tmdl2smq8",
+   "date": "2026-09-16",
+   "amount": 56000,
+   "description": "Invoice #INV-P726/027",
+   "referenceId": "INV-P726/027",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789629161427-akc0sjk8i",
+   "date": "2026-01-17",
+   "amount": 236000,
+   "description": "Invoice #INV-P726/028",
+   "referenceId": "INV-P726/028",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789738092839-7oh1lfyyd",
+   "date": "2026-09-18",
+   "amount": 200250,
+   "description": "Invoice #INV-P726/029",
+   "referenceId": "INV-P726/029",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789753843536-xqy1s8r19",
+   "date": "2026-01-17",
+   "amount": 324000,
+   "description": "Invoice #INV-P726/030",
+   "referenceId": "INV-P726/030",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789754754091-5rcvqj9iu",
+   "date": "2026-01-17",
+   "amount": 403000,
+   "description": "Invoice #INV-P726/031",
+   "referenceId": "INV-P726/031",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789787524519-ocvg3a5la",
+   "date": "2026-01-17",
+   "amount": 403000,
+   "description": "Invoice #INV-P726/031",
+   "referenceId": "INV-P726/031",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789809002274-5kqj1ccch",
+   "date": "2026-03-10",
+   "amount": 345000,
+   "description": "Invoice #INV-P726/034",
+   "referenceId": "INV-P726/034",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789814659566-vjln2i7vs",
+   "date": "2026-03-10",
+   "amount": 257000,
+   "description": "Invoice #INV-P726/035",
+   "referenceId": "INV-P726/035",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789815655030-njw9fcpt2",
+   "date": "2026-03-17",
+   "amount": 166500,
+   "description": "Invoice #INV-P726/036",
+   "referenceId": "INV-P726/036",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789816013072-3k4gpf2o2",
+   "date": "2026-03-17",
+   "amount": 140000,
+   "description": "Invoice #INV-P726/037",
+   "referenceId": "INV-P726/037",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789817566268-sea3vafo1",
+   "date": "2026-07-16",
+   "amount": 230000,
+   "description": "Invoice #INV-P726/038",
+   "referenceId": "INV-P726/038",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789821868396-ihztu4t7b",
+   "date": "2026-07-23",
+   "amount": 72000,
+   "description": "Invoice #INV-P726/039",
+   "referenceId": "INV-P726/039",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789888883831-ykmxigw0v",
+   "date": "2026-09-20",
+   "amount": 583500,
+   "description": "Invoice #INV-P726/040",
+   "referenceId": "INV-P726/040",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789908550502-njumocsd2",
+   "date": "2026-09-11",
+   "amount": 841000,
+   "description": "Invoice #INV-P726/041",
+   "referenceId": "INV-P726/041",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789909180443-x3x7b3snu",
+   "date": "2026-09-11",
+   "amount": 705000,
+   "description": "Invoice #INV-P726/042",
+   "referenceId": "INV-P726/042",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789935331337-i9n7d95k1",
+   "date": "2026-08-04",
+   "amount": 119000,
+   "description": "Invoice #INV-P726/043",
+   "referenceId": "INV-P726/043",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789935416418-hivdnh7lk",
+   "date": "2026-01-21",
+   "amount": 75000,
+   "description": "Invoice #INV-P726/044",
+   "referenceId": "INV-P726/044",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789953217342-0n6xlfyhl",
+   "date": "2026-03-11",
+   "amount": 75000,
+   "description": "Invoice #INV-P726/045",
+   "referenceId": "INV-P726/045",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789955198028-zihrydgy0",
+   "date": "2026-08-26",
+   "amount": 425000,
+   "description": "Invoice #INV-P726/046",
+   "referenceId": "INV-P726/046",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-INV-AR-1789955244988-rg20ugubj",
+   "date": "2026-09-03",
+   "amount": 30000,
+   "description": "Invoice #INV-P726/047",
+   "referenceId": "INV-P726/047",
+   "debit": "11310",
+   "credit": "41100"
+  },
+  {
+   "id": "LG-OPENING-BALANCE",
+   "date": "2026-09-21T01:28:31.814Z",
+   "amount": 500,
+   "description": "System Initialization: Opening Cash Balance",
+   "referenceId": "OPENING_BALANCE",
+   "debit": "11110",
+   "credit": "31000"
+  },
+  {
+   "id": "LG-PAY-1789755214253-gx62il5s0",
+   "date": "2026-01-24",
+   "amount": 70000,
+   "description": "Payment #PAY-P726/021 from Chigwenembe Primary School - Status: Partial",
+   "referenceId": "PAY-P726/021",
+   "debit": "11210",
+   "credit": "11310"
+  },
+  {
+   "id": "LG-PAY-1789787620689-ll3b367sz",
+   "date": "2026-01-24",
+   "amount": 70000,
+   "description": "Payment #PAY-P726/021 from Chigwenembe Primary School - Status: Partial",
+   "referenceId": "PAY-P726/021",
+   "debit": "11210",
+   "credit": "11310"
+  },
+  {
+   "id": "LG-PAY-1789814890368-i85k9zul5",
+   "date": "2026-07-18",
+   "amount": 300000,
+   "description": "Payment #PAY-P726/022 from Chipse Primary School - Status: Partial",
+   "referenceId": "PAY-P726/022",
+   "debit": "11220",
+   "credit": "11310"
+  },
+  {
+   "id": "LG-PAY-1789817607332-zqa2stm17",
+   "date": "2026-07-17",
+   "amount": 100000,
+   "description": "Payment #PAY-P726/023 from Chinkhumbe RC School - Status: Partial",
+   "referenceId": "PAY-P726/023",
+   "debit": "1000",
+   "credit": "11310"
+  },
+  {
+   "id": "LG-PAY-1789830479637-5qg96d5m2",
+   "date": "2026-01-24",
+   "amount": 251000,
+   "description": "Payment #PAY-P726/024 from Makankhula Primary School - Status: Partial",
+   "referenceId": "PAY-P726/024",
+   "debit": "11230",
+   "credit": "11310"
+  },
+  {
+   "id": "LG-PAY-1789830621031-y7j5vqknj",
+   "date": "2026-07-23",
+   "amount": 250000,
+   "description": "Payment #PAY-P726/025 from Makankhula Primary School - Status: Partial",
+   "referenceId": "PAY-P726/025",
+   "debit": "1000",
+   "credit": "11310"
+  },
+  {
+   "id": "LG-PAY-1789955310265-c60yb0yrv",
+   "date": "2026-08-28",
+   "amount": 100000,
+   "description": "Payment #PAY-P726/026 from Mr Michiko - Status: Partial",
+   "referenceId": "PAY-P726/026",
+   "debit": "11110",
+   "credit": "11310"
+  },
+  {
+   "id": "LG-PAY-1789955394341-b9cc7f9aw",
+   "date": "2026-09-07",
+   "amount": 175000,
+   "description": "Payment #PAY-P726/027 from Mr Michiko - Status: Partial",
+   "referenceId": "PAY-P726/027",
+   "debit": "11210",
+   "credit": "11310"
+  }
+ ],
+ "smart": {
+  "bulkId": "SMART-1789588940379-egoshg",
+  "totalAffected": 0,
+  "inventoryBearingCount": 0,
+  "nonInventoryBearingCount": 0,
+  "totalSeedQuantity": 0,
+  "totalCurrentQuantity": 0,
+  "totalCurrentValue": 0,
+  "unrecoverableQuantityCount": 0,
+  "affected": []
+ },
+ "recovery": {
+  "accountReconciliations": [
+   {
+    "accountCode": "11410",
+    "accountName": "Merchandise Inventory",
+    "accountType": "ASSET",
+    "openingBalance": 0,
+    "legitimateDebits": 0,
+    "legitimateCredits": 448985,
+    "smartStockEntries": 0,
+    "currentLedgerBalance": -448985,
+    "currentPhysicalValue": 0,
+    "difference": 448985,
+    "explanation": "Physical inventory exceeds GL by K448,985.00. Possible causes: unrecorded receipts, missing GL postings, or Smart Stock contamination.",
+    "confidence": "HIGH"
+   },
+   {
+    "accountCode": "11420",
+    "accountName": "Raw Materials",
+    "accountType": "ASSET",
+    "openingBalance": 0,
+    "legitimateDebits": 0,
+    "legitimateCredits": 1875100,
+    "smartStockEntries": 0,
+    "currentLedgerBalance": -1875100,
+    "currentPhysicalValue": 222500000,
+    "difference": 224375100,
+    "explanation": "Physical inventory exceeds GL by K224,375,100.00. Possible causes: unrecorded receipts, missing GL postings, or Smart Stock contamination.",
+    "confidence": "HIGH"
+   },
+   {
+    "accountCode": "11430",
+    "accountName": "Finished Goods",
+    "accountType": "ASSET",
+    "openingBalance": 0,
+    "legitimateDebits": 0,
+    "legitimateCredits": 0,
+    "smartStockEntries": 0,
+    "currentLedgerBalance": 0,
+    "currentPhysicalValue": 0,
+    "difference": 0,
+    "explanation": "Physical inventory matches GL balance.",
+    "confidence": "LOW"
+   }
+  ],
+  "recoverabilitySummary": {
+   "recoverable": 0,
+   "partiallyRecoverable": 0,
+   "unknown": 0
+  },
+  "recommendedRecoveryModel": "C",
+  "totalCurrentSystemValue": 0,
+  "totalCurrentWarehouseValue": 0
+ },
+ "txTypes": {
+  "ADJUSTMENT": 100,
+  "OUT": 48
+ },
+ "txByRef": {
+  "Smart stock adjustment (ADD)": {
+   "n": 100,
+   "qty": 50000
+  },
+  "INV-P726/021": {
+   "n": 2,
+   "qty": -65
+  },
+  "INV-P726/023": {
+   "n": 2,
+   "qty": -59
+  },
+  "INV-P726/025": {
+   "n": 1,
+   "qty": -10
+  },
+  "INV-P726/027": {
+   "n": 1,
+   "qty": -8
+  },
+  "INV-P726/028": {
+   "n": 1,
+   "qty": -1
+  },
+  "INV-P726/030": {
+   "n": 6,
+   "qty": -41
+  },
+  "INV-P726/031": {
+   "n": 6,
+   "qty": -18
+  },
+  "INV-P726/034": {
+   "n": 2,
+   "qty": -13
+  },
+  "INV-P726/035": {
+   "n": 3,
+   "qty": -15
+  },
+  "INV-P726/036": {
+   "n": 2,
+   "qty": -11
+  },
+  "INV-P726/040": {
+   "n": 8,
+   "qty": -57
+  },
+  "INV-P726/041": {
+   "n": 8,
+   "qty": -51
+  },
+  "INV-P726/042": {
+   "n": 6,
+   "qty": -62
+  }
+ },
+ "txCount": 148,
+ "whInvCount": 100,
+ "invOfInterest": [
+  {
+   "id": "INV-P726/021",
+   "date": "2026-01-15",
+   "status": "Paid",
+   "total": 431000,
+   "itemCount": 5
+  },
+  {
+   "id": "INV-P726/022",
+   "date": "2026-01-16",
+   "status": "Unpaid",
+   "total": 36000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/023",
+   "date": "2026-01-16",
+   "status": "Unpaid",
+   "total": 101050,
+   "itemCount": 3
+  },
+  {
+   "id": "INV-P726/024",
+   "date": "2026-01-16",
+   "status": "Unpaid",
+   "total": 40000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/025",
+   "date": "2026-01-19",
+   "status": "Unpaid",
+   "total": 160000,
+   "itemCount": 2
+  },
+  {
+   "id": "INV-P726/026",
+   "date": "2026-01-19",
+   "status": "Unpaid",
+   "total": 140000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/027",
+   "date": "2026-09-16",
+   "status": "Unpaid",
+   "total": 56000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/028",
+   "date": "2026-01-17",
+   "status": "Paid",
+   "total": 236000,
+   "itemCount": 4
+  },
+  {
+   "id": "INV-P726/029",
+   "date": "2026-09-18",
+   "status": "Unpaid",
+   "total": 200250,
+   "itemCount": 4
+  },
+  {
+   "id": "INV-P726/030",
+   "date": "2026-01-17",
+   "status": "Unpaid",
+   "total": 324000,
+   "itemCount": 9
+  },
+  {
+   "id": "INV-P726/031",
+   "date": "2026-01-17",
+   "status": "Partial",
+   "total": 403000,
+   "itemCount": 6
+  },
+  {
+   "id": "INV-P726/032",
+   "date": "2026-02-21",
+   "status": "Unpaid",
+   "total": 36000,
+   "itemCount": 3
+  },
+  {
+   "id": "INV-P726/033",
+   "date": "2026-03-10",
+   "status": "Unpaid",
+   "total": 80000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/034",
+   "date": "2026-03-10",
+   "status": "Partial",
+   "total": 345000,
+   "itemCount": 4
+  },
+  {
+   "id": "INV-P726/035",
+   "date": "2026-03-10",
+   "status": "Partial",
+   "total": 257000,
+   "itemCount": 4
+  },
+  {
+   "id": "INV-P726/036",
+   "date": "2026-03-17",
+   "status": "Unpaid",
+   "total": 166500,
+   "itemCount": 3
+  },
+  {
+   "id": "INV-P726/037",
+   "date": "2026-03-17",
+   "status": "Unpaid",
+   "total": 140000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/038",
+   "date": "2026-07-16",
+   "status": "Partial",
+   "total": 230000,
+   "itemCount": 2
+  },
+  {
+   "id": "INV-P726/039",
+   "date": "2026-07-23",
+   "status": "Unpaid",
+   "total": 72000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/040",
+   "date": "2026-09-20",
+   "status": "Unpaid",
+   "total": 583500,
+   "itemCount": 12
+  },
+  {
+   "id": "INV-P726/041",
+   "date": "2026-09-11",
+   "status": "Unpaid",
+   "total": 841000,
+   "itemCount": 12
+  },
+  {
+   "id": "INV-P726/042",
+   "date": "2026-09-11",
+   "status": "Unpaid",
+   "total": 705000,
+   "itemCount": 10
+  },
+  {
+   "id": "INV-P726/043",
+   "date": "2026-08-04",
+   "status": "Unpaid",
+   "total": 119000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/044",
+   "date": "2026-01-21",
+   "status": "Unpaid",
+   "total": 75000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/045",
+   "date": "2026-03-11",
+   "status": "Unpaid",
+   "total": 75000,
+   "itemCount": 1
+  },
+  {
+   "id": "INV-P726/046",
+   "date": "2026-08-26",
+   "status": "Partial",
+   "total": 425000,
+   "itemCount": 2
+  },
+  {
+   "id": "INV-P726/047",
+   "date": "2026-09-03",
+   "status": "Unpaid",
+   "total": 30000,
+   "itemCount": 1
+  }
+ ],
+ "accountsInv": [
+  {
+   "id": "ACC-11400",
+   "code": "11400",
+   "name": "Inventory",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT",
+   "parent": "ACC-11000"
+  },
+  {
+   "id": "ACC-11410",
+   "code": "11410",
+   "name": "Merchandise Inventory",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT",
+   "parent": "ACC-11400"
+  },
+  {
+   "id": "ACC-11420",
+   "code": "11420",
+   "name": "Raw Materials",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT",
+   "parent": "ACC-11400"
+  },
+  {
+   "id": "ACC-11430",
+   "code": "11430",
+   "name": "Finished Goods",
+   "type": "ASSET",
+   "group": "CURRENT_ASSET",
+   "normal": "DEBIT",
+   "parent": "ACC-11400"
+  },
+  {
+   "id": "ACC-51200",
+   "code": "51200",
+   "name": "Cost of Goods Sold",
+   "type": "EXPENSE",
+   "group": "COST_OF_SALES",
+   "normal": "DEBIT",
+   "parent": "ACC-51000"
+  }
+ ]
+}

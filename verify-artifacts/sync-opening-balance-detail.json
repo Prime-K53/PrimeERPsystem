@@ -1,0 +1,87 @@
+{
+ "op": {
+  "id": "q-ba545d94-117b-4a40-b768-fb3bdda5c816-4joatv",
+  "table": "ledger_entries",
+  "recordId": "LG-OPENING-BALANCE",
+  "operation": "upsert",
+  "status": "pending",
+  "createdAt": "2026-09-21T01:28:31.934Z",
+  "syncGeneration": 1,
+  "baseVersion": null,
+  "payloadKeys": [
+   "_updatedAt",
+   "amount",
+   "creditAccountId",
+   "date",
+   "debitAccountId",
+   "description",
+   "id",
+   "reconciled",
+   "referenceId"
+  ],
+  "payloadVersionish": {}
+ },
+ "fieldTable": {
+  "_updatedAt": {
+   "outboxPayload": "2026-09-21T01:28:31.814Z",
+   "localIndexedDb": "2026-09-21T01:28:31.814Z",
+   "remoteData": "(absent)"
+  },
+  "amount": {
+   "outboxPayload": 500,
+   "localIndexedDb": 500,
+   "remoteData": 500
+  },
+  "creditAccountId": {
+   "outboxPayload": "31000",
+   "localIndexedDb": "31000",
+   "remoteData": "31000"
+  },
+  "date": {
+   "outboxPayload": "2026-09-21T01:28:31.814Z",
+   "localIndexedDb": "2026-09-21T01:28:31.814Z",
+   "remoteData": "2026-09-20T23:24:07.265Z"
+  },
+  "debitAccountId": {
+   "outboxPayload": "11110",
+   "localIndexedDb": "11110",
+   "remoteData": "11110"
+  },
+  "description": {
+   "outboxPayload": "System Initialization: Opening Cash Balance",
+   "localIndexedDb": "System Initialization: Opening Cash Balance",
+   "remoteData": "System Initialization: Opening Cash Balance"
+  },
+  "id": {
+   "outboxPayload": "LG-OPENING-BALANCE",
+   "localIndexedDb": "LG-OPENING-BALANCE",
+   "remoteData": "LG-OPENING-BALANCE"
+  },
+  "reconciled": {
+   "outboxPayload": true,
+   "localIndexedDb": true,
+   "remoteData": true
+  },
+  "referenceId": {
+   "outboxPayload": "OPENING_BALANCE",
+   "localIndexedDb": "OPENING_BALANCE",
+   "remoteData": "OPENING_BALANCE"
+  },
+  "serverUpdatedAt": {
+   "outboxPayload": "(absent)",
+   "localIndexedDb": "(absent)",
+   "remoteData": "2026-09-19T09:32:48.074064+00:00"
+  }
+ },
+ "remoteMeta": {
+  "id": "LG-OPENING-BALANCE",
+  "version": 6,
+  "created_at": "2026-09-17T03:06:11.321199+00:00",
+  "updated_at": "2026-09-20T23:25:47.785943+00:00"
+ },
+ "differingFields": [
+  "_updatedAt",
+  "date",
+  "serverUpdatedAt"
+ ]
+}

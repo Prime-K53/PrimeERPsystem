@@ -1,0 +1,181 @@
+{
+ "sessionInfo": {
+  "has": false,
+  "userId": null,
+  "error": null
+ },
+ "accounts": {
+  "a11420": {
+   "ref": "11420",
+   "directFound": true,
+   "resolved": "ACC-11420",
+   "resolvedCode": "11420",
+   "resolvedName": "Raw Materials",
+   "resolvedType": "ASSET",
+   "resolvedAllowPosting": true,
+   "resolvedIsActive": true,
+   "resolvedParent": "ACC-11400",
+   "resolvedOpening": 0,
+   "direct": {
+    "id": "ACC-11420",
+    "code": "11420",
+    "name": "Raw Materials",
+    "type": "ASSET",
+    "allow_posting": true,
+    "opening_balance": 0
+   }
+  },
+  "a11430": {
+   "ref": "11430",
+   "directFound": true,
+   "resolved": "ACC-11430",
+   "resolvedCode": "11430",
+   "resolvedName": "Finished Goods",
+   "resolvedType": "ASSET",
+   "resolvedAllowPosting": true,
+   "resolvedIsActive": true,
+   "resolvedParent": "ACC-11400",
+   "resolvedOpening": 0,
+   "direct": {
+    "id": "ACC-11430",
+    "code": "11430",
+    "name": "Finished Goods",
+    "type": "ASSET",
+    "allow_posting": true,
+    "opening_balance": 0
+   }
+  },
+  "a11410": {
+   "ref": "11410",
+   "directFound": true,
+   "resolved": "ACC-11410",
+   "resolvedCode": "11410",
+   "resolvedName": "Merchandise Inventory",
+   "resolvedType": "ASSET",
+   "resolvedAllowPosting": true,
+   "resolvedIsActive": true,
+   "resolvedParent": "ACC-11400",
+   "resolvedOpening": 0,
+   "direct": {
+    "id": "ACC-11410",
+    "code": "11410",
+    "name": "Merchandise Inventory",
+    "type": "ASSET",
+    "allow_posting": true,
+    "opening_balance": 0
+   }
+  },
+  "a11400": {
+   "ref": "11400",
+   "directFound": true,
+   "resolved": "ACC-11410",
+   "resolvedCode": "11410",
+   "resolvedName": "Merchandise Inventory",
+   "resolvedType": "ASSET",
+   "resolvedAllowPosting": true,
+   "resolvedIsActive": true,
+   "resolvedParent": "ACC-11400",
+   "resolvedOpening": 0,
+   "direct": {
+    "id": "ACC-11400",
+    "code": "11400",
+    "name": "Inventory",
+    "type": "ASSET",
+    "allow_posting": false,
+    "opening_balance": 0
+   }
+  },
+  "a32000": {
+   "ref": "32000",
+   "directFound": true,
+   "resolved": "ACC-32000",
+   "resolvedCode": "32000",
+   "resolvedName": "Retained Earnings",
+   "resolvedType": "EQUITY",
+   "resolvedAllowPosting": true,
+   "resolvedIsActive": true,
+   "resolvedParent": "ACC-30000",
+   "resolvedOpening": 0,
+   "direct": {
+    "id": "ACC-32000",
+    "code": "32000",
+    "name": "Retained Earnings",
+    "type": "EQUITY",
+    "allow_posting": true,
+    "opening_balance": 0
+   }
+  },
+  "a51200": {
+   "ref": "51200",
+   "directFound": true,
+   "resolved": "ACC-51200",
+   "resolvedCode": "51200",
+   "resolvedName": "Cost of Goods Sold",
+   "resolvedType": "EXPENSE",
+   "resolvedAllowPosting": true,
+   "resolvedIsActive": true,
+   "resolvedParent": "ACC-51000",
+   "resolvedOpening": 0,
+   "direct": {
+    "id": "ACC-51200",
+    "code": "51200",
+    "name": "Cost of Goods Sold",
+    "type": "EXPENSE",
+    "allow_posting": true,
+    "opening_balance": 0
+   }
+  }
+ },
+ "duplicate": {
+  "id": "LG-COGS-1789787524516-mcpj3jfhj",
+  "date": "2026-01-17",
+  "amount": 187600,
+  "description": "COGS - Invoice #INV-P726/031",
+  "debitAccountId": "ACC-51200",
+  "creditAccountId": "ACC-11420",
+  "referenceId": "INV-P726/031",
+  "reconciled": false,
+  "createdAt": "2026-09-19T03:12:16.311492+00:00"
+ },
+ "reversalOfDup": [],
+ "existingMarkers": [],
+ "ledgerCount": 55,
+ "balances": {
+  "b11420": {
+   "id": "ACC-11420",
+   "own": -1875100,
+   "rollup": -1875100
+  },
+  "b11430": {
+   "id": "ACC-11430",
+   "own": 0,
+   "rollup": 0
+  },
+  "b11410": {
+   "id": "ACC-11410",
+   "own": -448985,
+   "rollup": -448985
+  },
+  "b11400": {
+   "id": "ACC-11400",
+   "own": 0,
+   "rollup": -2324085
+  },
+  "b32000": {
+   "id": "ACC-32000",
+   "own": 0,
+   "rollup": 0
+  },
+  "b51200": {
+   "id": "ACC-51200",
+   "own": 2324085,
+   "rollup": 2324085
+  }
+ },
+ "trial": {
+  "totalDebits": 9884885,
+  "totalCredits": 10234885,
+  "difference": -350000,
+  "isBalanced": false
+ }
+}

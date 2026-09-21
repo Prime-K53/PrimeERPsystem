@@ -1,0 +1,870 @@
+{
+ "invoiceDetail": [
+  {
+   "id": "INV-P726/021",
+   "date": "2026-01-15",
+   "total": 431000,
+   "lines": [
+    {
+     "name": "Lesson Plans - L",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 19,
+     "cost": 3778.5,
+     "cogsCandidate": 71791.5
+    },
+    {
+     "itemId": "INV-STA-011",
+     "name": "Chalk (box)",
+     "type": "Stationery",
+     "bearing": true,
+     "acct": "11420",
+     "qty": 55,
+     "cost": 2800,
+     "cogsCandidate": 154000
+    },
+    {
+     "name": "Bic Pens (Copy) - Blue",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 1,
+     "cost": 13000,
+     "cogsCandidate": 13000
+    },
+    {
+     "name": "Bic Pens (Original) - Red",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 1,
+     "cost": 32000,
+     "cogsCandidate": 32000
+    },
+    {
+     "name": "Time Book - L",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 1,
+     "cost": 3778.5,
+     "cogsCandidate": 3778.5
+    }
+   ]
+  },
+  {
+   "id": "INV-P726/022",
+   "date": "2026-01-16",
+   "total": 36000,
+   "lines": [
+    {
+     "name": "Scheme Pad - M",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 6,
+     "cost": 3163.5,
+     "cogsCandidate": 18981
+    }
+   ]
+  },
+  {
+   "id": "INV-P726/023",
+   "date": "2026-01-16",
+   "total": 101050,
+   "lines": [
+    {
+     "name": "Scheme Pad - M",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 14,
+     "cost": 3163.5,
+     "cogsCandidate": 44289
+    },
+    {
+     "itemId": "INV-STA-011",
+     "name": "Chalk (box)",
+     "type": "Stationery",
+     "bearing": true,
+     "acct": "11420",
+     "qty": 4,
+     "cost": 2800,
+     "cogsCandidate": 11200
+    },
+    {
+     "itemId": "SVC-PHOTOCOPY",
+     "name": "Quick Photocopy",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 7,
+     "cost": 69.64285714285714,
+     "cogsCandidate": 487.5
+    }
+   ]
+  },
+  {
+   "id": "INV-P726/024",
+   "date": "2026-01-16",
+   "total": 40000,
+   "lines": [
+    {
+     "name": "Scheme Pad - S",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 8,
+     "cost": 2548.5,
+     "cogsCandidate": 20388
+    }
+   ]
+  },
+  {
+   "id": "INV-P726/025",
+   "date": "2026-01-19",
+   "total": 160000,
+   "lines": [
+    {
+     "name": "Scheme Pad - M",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 20,
+     "cost": 3163.5,
+     "cogsCandidate": 63270
+    },
+    {
+     "itemId": "INV-STA-011",
+     "name": "Chalk (box)",
+     "type": "Stationery",
+     "bearing": true,
+     "acct": "11420",
+     "qty": 10,
+     "cost": 2800,
+     "cogsCandidate": 28000
+    }
+   ]
+  },
+  {
+   "id": "INV-P726/026",
+   "date": "2026-01-19",
+   "total": 140000,
+   "lines": [
+    {
+     "name": "Scheme Pad - L",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 20,
+     "cost": 3778.5,
+     "cogsCandidate": 75570
+    }
+   ]
+  },
+  {
+   "id": "INV-P726/027",
+   "date": "2026-09-16",
+   "total": 56000,
+   "lines": [
+    {
+     "itemId": "INV-PRD-036",
+     "name": "Class Records Book",
+     "type": "Product",
+     "bearing": false,
+     "acct": "11410",
+     "qty": 8,
+     "cost": 2958.5,
+     "cogsCandidate": 23668
+    }
+   ]
+  },
+  {
+   "id": "INV-P726/028",
+   "date": "2026-01-17",
+   "total": 236000,
+   "lines": [
+    {
+     "name": "Scheme Pad - L",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 14,
+     "cost": 3778.5,
+     "cogsCandidate": 52899
+    },
+    {
+     "name": "Lesson Plans - L",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 18,
+     "cost": 3778.5,
+     "cogsCandidate": 68013
+    },
+    {
+     "itemId": "ITM-P726/003",
+     "name": "Visitors Book",
+     "type": "Product",
+     "bearing": false,
+     "acct": "11410",
+     "qty": 1,
+     "cost": 3173.5,
+     "cogsCandidate": 3173.5
+    },
+    {
+     "name": "Time Book - M",
+     "type": "(item not found)",
+     "bearing": null,
+     "qty": 1,
+     "cost": 3163.5,
+     "cogsCandidate": 3163.5
+    }
+   ]
+  }
+ ],
+ "bearingTxCount": 77,
+ "seed500Count": 31,
+ "seed500Sample": [
+  {
+   "id": "ADJ-1789588940914-g97t9e",
+   "date": "2026-09-16T20:02:20.914Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-005",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588943286-jhpe2l",
+   "date": "2026-09-16T20:02:23.286Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-014",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588944048-lwzvn1",
+   "date": "2026-09-16T20:02:24.048Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-022",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588944788-3r653e",
+   "date": "2026-09-16T20:02:24.788Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-003",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588945388-ibzty0",
+   "date": "2026-09-16T20:02:25.388Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-008",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  }
+ ],
+ "bearingTxSample": [
+  {
+   "id": "ADJ-1789588940914-g97t9e",
+   "date": "2026-09-16T20:02:20.914Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-005",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588943286-jhpe2l",
+   "date": "2026-09-16T20:02:23.286Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-014",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588944048-lwzvn1",
+   "date": "2026-09-16T20:02:24.048Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-022",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588944788-3r653e",
+   "date": "2026-09-16T20:02:24.788Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-003",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588945388-ibzty0",
+   "date": "2026-09-16T20:02:25.388Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-008",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588946025-9nwb9v",
+   "date": "2026-09-16T20:02:26.025Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-009",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588946867-1ox6cm",
+   "date": "2026-09-16T20:02:26.867Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-010",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588947798-p272ns",
+   "date": "2026-09-16T20:02:27.798Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-028",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588948451-0q8dhp",
+   "date": "2026-09-16T20:02:28.451Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-031",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588949228-y5wvm0",
+   "date": "2026-09-16T20:02:29.228Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-056",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588949852-mz82k1",
+   "date": "2026-09-16T20:02:29.852Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-058",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588950562-qj9h8i",
+   "date": "2026-09-16T20:02:30.562Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-073",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588951743-mi74ku",
+   "date": "2026-09-16T20:02:31.743Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-079",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589010258-2vrkwq",
+   "date": "2026-09-16T20:03:30.258Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-0097",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589011105-jfbuqo",
+   "date": "2026-09-16T20:03:31.105Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-0098",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589012009-2uodvc",
+   "date": "2026-09-16T20:03:32.009Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-011",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589012862-erhjlp",
+   "date": "2026-09-16T20:03:32.862Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-012",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589013707-xb6ymo",
+   "date": "2026-09-16T20:03:33.707Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-014",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589014532-ow9nwn",
+   "date": "2026-09-16T20:03:34.532Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-045",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589015388-29v8c4",
+   "date": "2026-09-16T20:03:35.388Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-049",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589016231-7lppor",
+   "date": "2026-09-16T20:03:36.231Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-053",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589017082-35lkt2",
+   "date": "2026-09-16T20:03:37.082Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-054",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589018119-t73akt",
+   "date": "2026-09-16T20:03:38.119Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-055",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589018984-62vbym",
+   "date": "2026-09-16T20:03:38.984Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-066",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589020220-apnc6k",
+   "date": "2026-09-16T20:03:40.220Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-067",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589021066-wq3lxt",
+   "date": "2026-09-16T20:03:41.066Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-070",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589022430-db11br",
+   "date": "2026-09-16T20:03:42.430Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-077",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589023875-00en6u",
+   "date": "2026-09-16T20:03:43.875Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-089",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589025255-mmuxgh",
+   "date": "2026-09-16T20:03:45.255Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-095",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589026109-808ru8",
+   "date": "2026-09-16T20:03:46.109Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-STA-096",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789589027060-atn7df",
+   "date": "2026-09-16T20:03:47.060Z",
+   "type": "ADJUSTMENT",
+   "itemId": "ITM-0002",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "TXN-1789352994621-kpq3n3csz",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -10,
+   "ref": "INV-P726/021"
+  },
+  {
+   "id": "TXN-1789589259689-2dpywm1kt",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -55,
+   "ref": "INV-P726/023"
+  },
+  {
+   "id": "TXN-1789592857261-98gyb7hk4",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -55,
+   "ref": "INV-P726/021"
+  },
+  {
+   "id": "TXN-1789593359466-7c9g4dmsn",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -4,
+   "ref": "INV-P726/023"
+  },
+  {
+   "id": "TXN-1789593686142-1tf1uyvwv",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -10,
+   "ref": "INV-P726/025"
+  },
+  {
+   "id": "TXN-1789753843019-ov5vl0l7x",
+   "type": "OUT",
+   "itemId": "INV-STA-014",
+   "qty": -12,
+   "ref": "INV-P726/030"
+  },
+  {
+   "id": "TXN-1789753843114-hjsqlqt4g",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -20,
+   "ref": "INV-P726/030"
+  },
+  {
+   "id": "TXN-1789753843180-ab6qh6wnd",
+   "type": "OUT",
+   "itemId": "INV-STA-054",
+   "qty": -2,
+   "ref": "INV-P726/030"
+  },
+  {
+   "id": "TXN-1789753843236-ds2au0vwy",
+   "type": "OUT",
+   "itemId": "INV-STA-066",
+   "qty": -3,
+   "ref": "INV-P726/030"
+  },
+  {
+   "id": "TXN-1789753843308-yu2y2exrq",
+   "type": "OUT",
+   "itemId": "INV-STA-070",
+   "qty": -2,
+   "ref": "INV-P726/030"
+  },
+  {
+   "id": "TXN-1789753843390-1445px51i",
+   "type": "OUT",
+   "itemId": "INV-STA-067",
+   "qty": -2,
+   "ref": "INV-P726/030"
+  },
+  {
+   "id": "TXN-1789754753821-ehzas8xgu",
+   "type": "OUT",
+   "itemId": "ITM-0002",
+   "qty": -2,
+   "ref": "INV-P726/031"
+  },
+  {
+   "id": "TXN-1789754753895-ia29nkdjz",
+   "type": "OUT",
+   "itemId": "INV-STA-055",
+   "qty": -2,
+   "ref": "INV-P726/031"
+  },
+  {
+   "id": "TXN-1789754753956-brtan4gbz",
+   "type": "OUT",
+   "itemId": "INV-STA-070",
+   "qty": -5,
+   "ref": "INV-P726/031"
+  },
+  {
+   "id": "TXN-1789787524494-oyglqvgjp",
+   "type": "OUT",
+   "itemId": "ITM-0002",
+   "qty": -2,
+   "ref": "INV-P726/031"
+  },
+  {
+   "id": "TXN-1789787524502-3wustadul",
+   "type": "OUT",
+   "itemId": "INV-STA-055",
+   "qty": -2,
+   "ref": "INV-P726/031"
+  },
+  {
+   "id": "TXN-1789787524507-iwing29wp",
+   "type": "OUT",
+   "itemId": "INV-STA-070",
+   "qty": -5,
+   "ref": "INV-P726/031"
+  },
+  {
+   "id": "TXN-1789809002257-tprccouav",
+   "type": "OUT",
+   "itemId": "INV-STA-066",
+   "qty": -8,
+   "ref": "INV-P726/034"
+  },
+  {
+   "id": "TXN-1789809002262-c3hnmlvyb",
+   "type": "OUT",
+   "itemId": "INV-STA-067",
+   "qty": -5,
+   "ref": "INV-P726/034"
+  },
+  {
+   "id": "TXN-1789814659531-fa9tzc2dk",
+   "type": "OUT",
+   "itemId": "INV-STA-054",
+   "qty": -7,
+   "ref": "INV-P726/035"
+  },
+  {
+   "id": "TXN-1789814659540-3ixy3a0sj",
+   "type": "OUT",
+   "itemId": "INV-STA-066",
+   "qty": -4,
+   "ref": "INV-P726/035"
+  },
+  {
+   "id": "TXN-1789814659549-3emruzqk1",
+   "type": "OUT",
+   "itemId": "INV-STA-067",
+   "qty": -4,
+   "ref": "INV-P726/035"
+  },
+  {
+   "id": "TXN-1789815655011-su1v3ts1m",
+   "type": "OUT",
+   "itemId": "FG-BC-014",
+   "qty": -1,
+   "ref": "INV-P726/036"
+  },
+  {
+   "id": "TXN-1789815655018-g74r4h9ca",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -10,
+   "ref": "INV-P726/036"
+  },
+  {
+   "id": "TXN-1789888883768-xy746rf7c",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -40,
+   "ref": "INV-P726/040"
+  },
+  {
+   "id": "TXN-1789888883776-gw4ykkjhh",
+   "type": "OUT",
+   "itemId": "INV-STA-014",
+   "qty": -6,
+   "ref": "INV-P726/040"
+  },
+  {
+   "id": "TXN-1789888883786-nhat3s4qu",
+   "type": "OUT",
+   "itemId": "INV-STA-070",
+   "qty": -3,
+   "ref": "INV-P726/040"
+  },
+  {
+   "id": "TXN-1789888883790-o6kzt6unj",
+   "type": "OUT",
+   "itemId": "ITM-0002",
+   "qty": -2,
+   "ref": "INV-P726/040"
+  },
+  {
+   "id": "TXN-1789888883795-ta7x51b9c",
+   "type": "OUT",
+   "itemId": "INV-STA-095",
+   "qty": -1,
+   "ref": "INV-P726/040"
+  }
+ ],
+ "refBuckets": {
+  "Smart stock adjustment (ADD)": {
+   "n": 31,
+   "qty": 15500,
+   "types": {
+    "ADJUSTMENT": 31
+   }
+  },
+  "INV-P726/021": {
+   "n": 2,
+   "qty": -65,
+   "types": {
+    "OUT": 2
+   }
+  },
+  "INV-P726/023": {
+   "n": 2,
+   "qty": -59,
+   "types": {
+    "OUT": 2
+   }
+  },
+  "INV-P726/025": {
+   "n": 1,
+   "qty": -10,
+   "types": {
+    "OUT": 1
+   }
+  },
+  "INV-P726/030": {
+   "n": 6,
+   "qty": -41,
+   "types": {
+    "OUT": 6
+   }
+  },
+  "INV-P726/031": {
+   "n": 6,
+   "qty": -18,
+   "types": {
+    "OUT": 6
+   }
+  },
+  "INV-P726/034": {
+   "n": 2,
+   "qty": -13,
+   "types": {
+    "OUT": 2
+   }
+  },
+  "INV-P726/035": {
+   "n": 3,
+   "qty": -15,
+   "types": {
+    "OUT": 3
+   }
+  },
+  "INV-P726/036": {
+   "n": 2,
+   "qty": -11,
+   "types": {
+    "OUT": 2
+   }
+  },
+  "INV-P726/040": {
+   "n": 8,
+   "qty": -57,
+   "types": {
+    "OUT": 8
+   }
+  },
+  "INV-P726/041": {
+   "n": 8,
+   "qty": -51,
+   "types": {
+    "OUT": 8
+   }
+  },
+  "INV-P726/042": {
+   "n": 6,
+   "qty": -62,
+   "types": {
+    "OUT": 6
+   }
+  }
+ }
+}

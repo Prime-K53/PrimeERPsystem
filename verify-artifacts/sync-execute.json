@@ -1,0 +1,191 @@
+{
+ "authOk": true,
+ "before": {
+  "queue": [
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.935Z",
+    "error": null
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.973Z",
+    "error": null
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.971Z",
+    "error": null
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-MAIN",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.684Z",
+    "error": null
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-OPENING-BALANCE",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:28:31.934Z",
+    "error": null
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-VIR",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.709Z",
+    "error": null
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-SHOP",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.704Z",
+    "error": null
+   }
+  ],
+  "remoteLedgerCount": {
+   "count": 55,
+   "error": null
+  }
+ },
+ "after": {
+  "queue": [
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.935Z",
+    "error": null
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.973Z",
+    "error": null
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T03:36:20.971Z",
+    "error": null
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-MAIN",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.684Z",
+    "error": null
+   },
+   {
+    "table": "ledger_entries",
+    "recordId": "LG-OPENING-BALANCE",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:28:31.934Z",
+    "error": null
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-VIR",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.709Z",
+    "error": null
+   },
+   {
+    "table": "warehouses",
+    "recordId": "WH-SHOP",
+    "operation": "upsert",
+    "status": "pending",
+    "createdAt": "2026-09-21T01:27:44.704Z",
+    "error": null
+   }
+  ],
+  "remoteLedgerCount": {
+   "count": 55,
+   "error": null
+  }
+ },
+ "syncResult": null,
+ "syncError": null,
+ "events": [],
+ "remoteFetchError": null,
+ "perTarget": [
+  {
+   "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+   "present": false
+  },
+  {
+   "id": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+   "present": false
+  },
+  {
+   "id": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+   "present": false
+  }
+ ],
+ "remoteTotals": {
+  "rowCount": 55,
+  "error": null
+ },
+ "corrRemoteCount": 0,
+ "corrRemoteRows": [],
+ "reversalsRemote": [],
+ "duplicateRowRemote": {
+  "id": "LG-COGS-1789787524516-mcpj3jfhj",
+  "date": "2026-01-17",
+  "amount": 187600,
+  "dr": "ACC-51200",
+  "cr": "ACC-11420",
+  "referenceId": "INV-P726/031",
+  "__version": 1
+ },
+ "duplicatedRowIds": [],
+ "openingBalanceRemoteAfter": {
+  "id": "LG-OPENING-BALANCE",
+  "date": "2026-09-20T23:24:07.265Z",
+  "amount": 500,
+  "dr": "11110",
+  "cr": "31000",
+  "referenceId": "OPENING_BALANCE",
+  "serverUpdatedAt": "2026-09-19T09:32:48.074064+00:00",
+  "__version": 6,
+  "__updated_at": "2026-09-20T23:25:47.785943+00:00"
+ },
+ "remoteBalances": {
+  "i11410": -448985,
+  "i11420": -1875100,
+  "i11430": 0,
+  "i11400rollup": -2324085,
+  "eq32000": 0,
+  "cogs51200": 2324085
+ },
+ "remoteTrial": {
+  "debits": 9884885,
+  "credits": 10234885,
+  "difference": -350000,
+  "balanced": false
+ }
+}

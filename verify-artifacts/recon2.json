@@ -1,0 +1,845 @@
+{
+ "bearingCount": 30,
+ "detail": [
+  {
+   "id": "FG-BC-005",
+   "name": "A4 Exercise Books",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 240,
+   "value": 120000,
+   "account": "11420"
+  },
+  {
+   "id": "FG-BC-014",
+   "name": "Arch File",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 3800,
+   "value": 1900000,
+   "account": "11420"
+  },
+  {
+   "id": "FG-BC-022",
+   "name": "Bantley Pens",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 13000,
+   "value": 6500000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-003",
+   "name": "Staples",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 4500,
+   "value": 2250000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-008",
+   "name": "A4 Paper 80gsm",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 17000,
+   "value": 8500000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-009",
+   "name": "Cover Page",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 9500,
+   "value": 4750000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-010",
+   "name": "HP LaserJet Toner",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 70000,
+   "value": 35000000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-028",
+   "name": "Binding Tape",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 4500,
+   "value": 2250000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-031",
+   "name": "Cartlage 05A/55A",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 70000,
+   "value": 35000000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-056",
+   "name": "Fuser Paper",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 25000,
+   "value": 12500000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-058",
+   "name": "Haevy duty staples",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 4500,
+   "value": 2250000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-073",
+   "name": "Pick Up Rollers",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 20000,
+   "value": 10000000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-MAT-079",
+   "name": "Printer Greese",
+   "type": "Raw Material",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 30000,
+   "value": 15000000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-0097",
+   "name": "Bic Pens (Copy)",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 13000,
+   "value": 6500000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-0098",
+   "name": "Bic Pens (Original)",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 32000,
+   "value": 16000000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-011",
+   "name": "Chalk (box)",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 2800,
+   "value": 1400000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-012",
+   "name": "A4 Envelope",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 120,
+   "value": 60000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-014",
+   "name": "A4 Hardcover",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 4800,
+   "value": 2400000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-045",
+   "name": "Duster",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 2800,
+   "value": 1400000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-049",
+   "name": "Exercise Books A5",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 240,
+   "value": 120000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-053",
+   "name": "Flat File",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 1300,
+   "value": 650000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-054",
+   "name": "Flip chart",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 9500,
+   "value": 4750000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-055",
+   "name": "Fly paper",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 17000,
+   "value": 8500000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-066",
+   "name": "Markers",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 3800,
+   "value": 1900000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-067",
+   "name": "Masking Tape",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 3500,
+   "value": 1750000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-070",
+   "name": "Office Paste",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 4800,
+   "value": 2400000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-077",
+   "name": "Portable Board",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 40000,
+   "value": 20000000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-089",
+   "name": "School Bags",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 18000,
+   "value": 9000000,
+   "account": "11420"
+  },
+  {
+   "id": "INV-STA-096",
+   "name": "Staples 26/6",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 2500,
+   "value": 1250000,
+   "account": "11420"
+  },
+  {
+   "id": "ITM-0002",
+   "name": "A4 Plain Paper",
+   "type": "Stationery",
+   "qty": 500,
+   "whQty": 500,
+   "unitCost": 16800,
+   "value": 8400000,
+   "account": "11420"
+  }
+ ],
+ "totalQty": 15000,
+ "totalValue": 222500000,
+ "txCount": 74,
+ "addCount": 30,
+ "addQty": 15000,
+ "addValue": 222500000,
+ "outCount": 44,
+ "outQty": -400,
+ "outValue": -1576100,
+ "dateRange": {
+  "min": "2026-09-16T20:02:20.914Z",
+  "max": "2026-09-16T20:03:47.060Z"
+ },
+ "addDateRange": {
+  "min": "2026-09-16T20:02:20.914Z",
+  "max": "2026-09-16T20:03:47.060Z"
+ },
+ "outDateRange": {},
+ "addRefs": [
+  "Smart stock adjustment (ADD)"
+ ],
+ "addNotes": [
+  "Smart stock adjustment (ADD)"
+ ],
+ "addSample": [
+  {
+   "id": "ADJ-1789588940914-g97t9e",
+   "date": "2026-09-16T20:02:20.914Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-005",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588943286-jhpe2l",
+   "date": "2026-09-16T20:02:23.286Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-014",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588944048-lwzvn1",
+   "date": "2026-09-16T20:02:24.048Z",
+   "type": "ADJUSTMENT",
+   "itemId": "FG-BC-022",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588944788-3r653e",
+   "date": "2026-09-16T20:02:24.788Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-003",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588945388-ibzty0",
+   "date": "2026-09-16T20:02:25.388Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-008",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  },
+  {
+   "id": "ADJ-1789588946025-9nwb9v",
+   "date": "2026-09-16T20:02:26.025Z",
+   "type": "ADJUSTMENT",
+   "itemId": "INV-MAT-009",
+   "qty": 500,
+   "ref": "Smart stock adjustment (ADD)",
+   "wh": "WH-MAIN",
+   "notes": "Smart stock adjustment (ADD)"
+  }
+ ],
+ "outSample": [
+  {
+   "id": "TXN-1789352994621-kpq3n3csz",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -10,
+   "ref": "INV-P726/021"
+  },
+  {
+   "id": "TXN-1789589259689-2dpywm1kt",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -55,
+   "ref": "INV-P726/023"
+  },
+  {
+   "id": "TXN-1789592857261-98gyb7hk4",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -55,
+   "ref": "INV-P726/021"
+  },
+  {
+   "id": "TXN-1789593359466-7c9g4dmsn",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -4,
+   "ref": "INV-P726/023"
+  },
+  {
+   "id": "TXN-1789593686142-1tf1uyvwv",
+   "type": "OUT",
+   "itemId": "INV-STA-011",
+   "qty": -10,
+   "ref": "INV-P726/025"
+  },
+  {
+   "id": "TXN-1789753843019-ov5vl0l7x",
+   "type": "OUT",
+   "itemId": "INV-STA-014",
+   "qty": -12,
+   "ref": "INV-P726/030"
+  }
+ ],
+ "perItem": [
+  {
+   "id": "FG-BC-005",
+   "name": "A4 Exercise Books",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "FG-BC-014",
+   "name": "Arch File",
+   "current": 500,
+   "add": 500,
+   "out": -1,
+   "reconstructedPre": 1,
+   "nTx": 2
+  },
+  {
+   "id": "FG-BC-022",
+   "name": "Bantley Pens",
+   "current": 500,
+   "add": 500,
+   "out": -1,
+   "reconstructedPre": 1,
+   "nTx": 2
+  },
+  {
+   "id": "INV-MAT-003",
+   "name": "Staples",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-008",
+   "name": "A4 Paper 80gsm",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-009",
+   "name": "Cover Page",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-010",
+   "name": "HP LaserJet Toner",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-028",
+   "name": "Binding Tape",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-031",
+   "name": "Cartlage 05A/55A",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-056",
+   "name": "Fuser Paper",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-058",
+   "name": "Haevy duty staples",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-073",
+   "name": "Pick Up Rollers",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-MAT-079",
+   "name": "Printer Greese",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-0097",
+   "name": "Bic Pens (Copy)",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-0098",
+   "name": "Bic Pens (Original)",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-011",
+   "name": "Chalk (box)",
+   "current": 500,
+   "add": 500,
+   "out": -275,
+   "reconstructedPre": 275,
+   "nTx": 11
+  },
+  {
+   "id": "INV-STA-012",
+   "name": "A4 Envelope",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-014",
+   "name": "A4 Hardcover",
+   "current": 500,
+   "add": 500,
+   "out": -32,
+   "reconstructedPre": 32,
+   "nTx": 4
+  },
+  {
+   "id": "INV-STA-045",
+   "name": "Duster",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-049",
+   "name": "Exercise Books A5",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-053",
+   "name": "Flat File",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-054",
+   "name": "Flip chart",
+   "current": 500,
+   "add": 500,
+   "out": -19,
+   "reconstructedPre": 19,
+   "nTx": 6
+  },
+  {
+   "id": "INV-STA-055",
+   "name": "Fly paper",
+   "current": 500,
+   "add": 500,
+   "out": -5,
+   "reconstructedPre": 5,
+   "nTx": 4
+  },
+  {
+   "id": "INV-STA-066",
+   "name": "Markers",
+   "current": 500,
+   "add": 500,
+   "out": -22,
+   "reconstructedPre": 22,
+   "nTx": 6
+  },
+  {
+   "id": "INV-STA-067",
+   "name": "Masking Tape",
+   "current": 500,
+   "add": 500,
+   "out": -16,
+   "reconstructedPre": 16,
+   "nTx": 6
+  },
+  {
+   "id": "INV-STA-070",
+   "name": "Office Paste",
+   "current": 500,
+   "add": 500,
+   "out": -19,
+   "reconstructedPre": 19,
+   "nTx": 6
+  },
+  {
+   "id": "INV-STA-077",
+   "name": "Portable Board",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-089",
+   "name": "School Bags",
+   "current": 500,
+   "add": 500,
+   "out": 0,
+   "reconstructedPre": 0,
+   "nTx": 1
+  },
+  {
+   "id": "INV-STA-096",
+   "name": "Staples 26/6",
+   "current": 500,
+   "add": 500,
+   "out": -2,
+   "reconstructedPre": 2,
+   "nTx": 2
+  },
+  {
+   "id": "ITM-0002",
+   "name": "A4 Plain Paper",
+   "current": 500,
+   "add": 500,
+   "out": -8,
+   "reconstructedPre": 8,
+   "nTx": 6
+  }
+ ],
+ "led11420": [
+  {
+   "id": "LG-COGS-1789592857410-z622vz8hm",
+   "date": "2026-01-15",
+   "amount": 199000,
+   "ref": "INV-P726/021",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/021"
+  },
+  {
+   "id": "LG-COGS-1789593359700-0j93c9rlq",
+   "date": "2026-01-16",
+   "amount": 11200,
+   "ref": "INV-P726/023",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/023"
+  },
+  {
+   "id": "LG-COGS-1789593686342-wi43ohl7u",
+   "date": "2026-01-19",
+   "amount": 28000,
+   "ref": "INV-P726/025",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/025"
+  },
+  {
+   "id": "LG-COGS-1789753843501-3550vjgsg",
+   "date": "2026-01-17",
+   "amount": 186600,
+   "ref": "INV-P726/030",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/030"
+  },
+  {
+   "id": "LG-COGS-1789754754047-do1tr5htf",
+   "date": "2026-01-17",
+   "amount": 187600,
+   "ref": "INV-P726/031",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/031"
+  },
+  {
+   "id": "LG-COGS-1789787524516-mcpj3jfhj",
+   "date": "2026-01-17",
+   "amount": 187600,
+   "ref": "INV-P726/031",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/031"
+  },
+  {
+   "id": "LG-COGS-1789809002270-wapub33ac",
+   "date": "2026-03-10",
+   "amount": 47900,
+   "ref": "INV-P726/034",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/034"
+  },
+  {
+   "id": "LG-COGS-1789814659562-ke41lr310",
+   "date": "2026-03-10",
+   "amount": 95700,
+   "ref": "INV-P726/035",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/035"
+  },
+  {
+   "id": "LG-COGS-1789815655026-hn71v44xv",
+   "date": "2026-03-17",
+   "amount": 31800,
+   "ref": "INV-P726/036",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/036"
+  },
+  {
+   "id": "LG-COGS-1789888883823-oqn6ht4x4",
+   "date": "2026-09-20",
+   "amount": 319800,
+   "ref": "INV-P726/040",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/040"
+  },
+  {
+   "id": "LG-COGS-1789908550448-vea4mt8l8",
+   "date": "2026-09-11",
+   "amount": 318900,
+   "ref": "INV-P726/041",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/041"
+  },
+  {
+   "id": "LG-COGS-1789909180398-o91nyb0cq",
+   "date": "2026-09-11",
+   "amount": 261000,
+   "ref": "INV-P726/042",
+   "dr": "51200",
+   "cr": "11420",
+   "desc": "COGS - Invoice #INV-P726/042"
+  }
+ ],
+ "led11420Total": 1875100,
+ "itemDates": [
+  {
+   "id": "FG-BC-005",
+   "created": "2026-09-13T17:56:04.478862+00:00",
+   "updated": "2026-09-16T21:00:33.297506+00:00"
+  },
+  {
+   "id": "FG-BC-014",
+   "created": "2026-09-13T17:56:08.024275+00:00",
+   "updated": "2026-09-19T14:54:17.151909+00:00"
+  },
+  {
+   "id": "FG-BC-022",
+   "created": "2026-09-13T17:56:08.829012+00:00",
+   "updated": "2026-09-20T13:21:33.490029+00:00"
+  },
+  {
+   "id": "INV-MAT-003",
+   "created": "2026-09-13T17:56:09.691891+00:00",
+   "updated": "2026-09-20T12:43:27.682328+00:00"
+  },
+  {
+   "id": "INV-MAT-008",
+   "created": "2026-09-13T17:56:11.29558+00:00",
+   "updated": "2026-09-20T07:58:33.730942+00:00"
+  }
+ ]
+}

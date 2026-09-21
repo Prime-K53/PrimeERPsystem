@@ -1,0 +1,287 @@
+{
+ "ledgerCount": {
+  "before": 55,
+  "after": 58
+ },
+ "counts": {
+  "inventory": 107,
+  "warehouses": 3,
+  "warehouseInventory": 100,
+  "inventoryTransactions": 148,
+  "smartStockRecords": 0
+ },
+ "balances": {
+  "before": {
+   "b11400": {
+    "id": "ACC-11400",
+    "own": 0,
+    "rollup": -2324085
+   },
+   "b11410": {
+    "id": "ACC-11410",
+    "own": -448985,
+    "rollup": -448985
+   },
+   "b11420": {
+    "id": "ACC-11420",
+    "own": -1875100,
+    "rollup": -1875100
+   },
+   "b11430": {
+    "id": "ACC-11430",
+    "own": 0,
+    "rollup": 0
+   },
+   "b32000": {
+    "id": "ACC-32000",
+    "own": 0,
+    "rollup": 0
+   },
+   "b51200": {
+    "id": "ACC-51200",
+    "own": 2324085,
+    "rollup": 2324085
+   }
+  },
+  "after": {
+   "b11400": {
+    "id": "ACC-11400",
+    "own": 0,
+    "rollup": 222051015
+   },
+   "b11410": {
+    "id": "ACC-11410",
+    "own": -448985,
+    "rollup": -448985
+   },
+   "b11420": {
+    "id": "ACC-11420",
+    "own": 222500000,
+    "rollup": 222500000
+   },
+   "b11430": {
+    "id": "ACC-11430",
+    "own": 0,
+    "rollup": 0
+   },
+   "b32000": {
+    "id": "ACC-32000",
+    "own": 224187500,
+    "rollup": 224187500
+   },
+   "b51200": {
+    "id": "ACC-51200",
+    "own": 2136485,
+    "rollup": 2136485
+   }
+  },
+  "after2": {
+   "b11400": {
+    "id": "ACC-11400",
+    "own": 0,
+    "rollup": 222051015
+   },
+   "b11410": {
+    "id": "ACC-11410",
+    "own": -448985,
+    "rollup": -448985
+   },
+   "b11420": {
+    "id": "ACC-11420",
+    "own": 222500000,
+    "rollup": 222500000
+   },
+   "b11430": {
+    "id": "ACC-11430",
+    "own": 0,
+    "rollup": 0
+   },
+   "b32000": {
+    "id": "ACC-32000",
+    "own": 224187500,
+    "rollup": 224187500
+   },
+   "b51200": {
+    "id": "ACC-51200",
+    "own": 2136485,
+    "rollup": 2136485
+   }
+  }
+ },
+ "trial": {
+  "before": {
+   "debits": 9884885,
+   "credits": 10234885,
+   "difference": -350000,
+   "balanced": false
+  },
+  "after": {
+   "debits": 234259985,
+   "credits": 234609985,
+   "difference": -350000,
+   "balanced": false
+  }
+ },
+ "unresolvedLedgerRows": [
+  {
+   "id": "LG-PAY-1789817607332-zqa2stm17",
+   "date": "2026-07-17",
+   "amount": 100000,
+   "debitAccountId": "1000",
+   "debitResolves": false,
+   "creditAccountId": "ACC-11310",
+   "creditResolves": true,
+   "referenceId": "PAY-P726/023",
+   "entryType": null,
+   "status": null
+  },
+  {
+   "id": "LG-PAY-1789830621031-y7j5vqknj",
+   "date": "2026-07-23",
+   "amount": 250000,
+   "debitAccountId": "1000",
+   "debitResolves": false,
+   "creditAccountId": "ACC-11310",
+   "creditResolves": true,
+   "referenceId": "PAY-P726/025",
+   "entryType": null,
+   "status": null
+  }
+ ],
+ "missingDebits": 350000,
+ "missingCredits": 0,
+ "ledgerRowsWithoutAmount": [],
+ "preview": {
+  "failures": [],
+  "canApply": true,
+  "proposed": [
+   {
+    "component": "REVERSAL",
+    "id": "LG-MIC-REV-1789961780641-4xqoeykxm",
+    "date": "2026-09-21",
+    "amount": 187600,
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-51200",
+    "referenceId": "CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj"
+   },
+   {
+    "component": "OPENING",
+    "id": "LG-MIC-OPENING-1789961780641-ogl43v9rn",
+    "date": "2026-01-01",
+    "amount": 1687500,
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-32000",
+    "referenceId": "CORR-MATINV-OPENING-11420"
+   },
+   {
+    "component": "CAPITAL",
+    "id": "LG-MIC-CAPITAL-1789961780641-ie5qryq5i",
+    "date": "2026-09-16",
+    "amount": 222500000,
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-32000",
+    "referenceId": "CORR-MATINV-CAPITAL-11420"
+   }
+  ],
+  "proposedCapitalisationTotal": 224187500,
+  "proposedTotalDebit11420": 224375100
+ },
+ "applyResult": {
+  "status": "applied",
+  "wroteOutOfScopeData": false,
+  "reversal": {
+   "originalLedgerId": "LG-COGS-1789787524516-mcpj3jfhj",
+   "reversalEntryId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+   "reversalReferenceId": "CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+   "amount": 187600,
+   "created": true
+  },
+  "capitalisation": [
+   {
+    "component": "OPENING",
+    "referenceId": "CORR-MATINV-OPENING-11420",
+    "entryId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "date": "2026-01-01",
+    "amount": 1687500,
+    "created": true
+   },
+   {
+    "component": "CAPITAL",
+    "referenceId": "CORR-MATINV-CAPITAL-11420",
+    "entryId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "date": "2026-09-16",
+    "amount": 222500000,
+    "created": true
+   }
+  ],
+  "capitalisationDebit11420": 224187500,
+  "totalDebit11420": 224375100,
+  "failures": []
+ },
+ "createdRows": [
+  {
+   "id": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+   "date": "2026-09-16",
+   "amount": 222500000,
+   "debitAccountId": "ACC-11420",
+   "creditAccountId": "ACC-32000",
+   "referenceId": "CORR-MATINV-CAPITAL-11420",
+   "referenceType": "material_inventory_correction",
+   "entryType": "material_inventory_correction",
+   "status": "posted",
+   "reversesEntryId": null,
+   "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-CAPITAL-11420",
+   "appliedBy": "materialInventoryCorrectionService",
+   "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched."
+  },
+  {
+   "id": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+   "date": "2026-01-01",
+   "amount": 1687500,
+   "debitAccountId": "ACC-11420",
+   "creditAccountId": "ACC-32000",
+   "referenceId": "CORR-MATINV-OPENING-11420",
+   "referenceType": "material_inventory_correction",
+   "entryType": "material_inventory_correction",
+   "status": "posted",
+   "reversesEntryId": null,
+   "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-OPENING-11420",
+   "appliedBy": "materialInventoryCorrectionService",
+   "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched."
+  },
+  {
+   "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+   "date": "2026-09-21",
+   "amount": 187600,
+   "debitAccountId": "ACC-11420",
+   "creditAccountId": "ACC-51200",
+   "referenceId": "CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+   "referenceType": "material_inventory_correction",
+   "entryType": "material_inventory_correction",
+   "status": "posted",
+   "reversesEntryId": "LG-COGS-1789787524516-mcpj3jfhj",
+   "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+   "appliedBy": "materialInventoryCorrectionService",
+   "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched."
+  }
+ ],
+ "duplicateRowStillPresent": true,
+ "reversalsOfDuplicate": [
+  "LG-MIC-REV-1789961780893-5wvx4kqr3"
+ ],
+ "queueOpsForLedger": [],
+ "idempotency": {
+  "secondStatus": "already-applied",
+  "secondTotalDebit11420": 224375100,
+  "ledgerDeltaOnReRun": 0
+ },
+ "untouched": {
+  "inventoryFingerprintEqual": true,
+  "smartStockFingerprintEqual": true
+ },
+ "operationalMaterialInventory": {
+  "units": 15500,
+  "value": 222500000,
+  "items": 31
+ }
+}

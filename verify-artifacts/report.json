@@ -1,0 +1,50 @@
+{
+  "auth": {
+    "hasSession": false,
+    "userId": null,
+    "emailDomain": null,
+    "expiresAt": null,
+    "error": null
+  },
+  "urlAtStart": "https://localhost:5173/#/",
+  "baselineIdb": {
+    "inventory": 0,
+    "products": null,
+    "warehouses": 3,
+    "warehouseInventory": 0
+  },
+  "baselineStore": {
+    "inventory": 0,
+    "warehouses": 3,
+    "isLoading": false
+  },
+  "pull": {
+    "mode": "full",
+    "pulled": 0,
+    "errors": [
+      "Not authenticated"
+    ]
+  },
+  "events": [],
+  "bcEvents": [],
+  "getAllItemsCalls": [],
+  "postPullIdb": {
+    "inventory": 0,
+    "products": null,
+    "warehouses": 3,
+    "warehouseInventory": 0
+  },
+  "postPullStore": {
+    "inventory": 0,
+    "warehouses": 3,
+    "isLoading": false
+  },
+  "inventoryUi": {
+    "itemCountText": null,
+    "tbodyRows": 0
+  },
+  "realtime": [],
+  "consoleLog": [],
+  "netSupabase": [],
+  "netSync": []
+}

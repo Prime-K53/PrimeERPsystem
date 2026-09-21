@@ -1,0 +1,220 @@
+{
+ "pendingCount": 7,
+ "pendingSummary": [
+  {
+   "table": "ledger_entries",
+   "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+   "status": "pending",
+   "createdAt": "2026-09-21T03:36:20.935Z",
+   "operation": "upsert"
+  },
+  {
+   "table": "ledger_entries",
+   "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+   "status": "pending",
+   "createdAt": "2026-09-21T03:36:20.973Z",
+   "operation": "upsert"
+  },
+  {
+   "table": "ledger_entries",
+   "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+   "status": "pending",
+   "createdAt": "2026-09-21T03:36:20.971Z",
+   "operation": "upsert"
+  },
+  {
+   "table": "warehouses",
+   "recordId": "WH-MAIN",
+   "status": "pending",
+   "createdAt": "2026-09-21T01:27:44.684Z",
+   "operation": "upsert"
+  },
+  {
+   "table": "ledger_entries",
+   "recordId": "LG-OPENING-BALANCE",
+   "status": "pending",
+   "createdAt": "2026-09-21T01:28:31.934Z",
+   "operation": "upsert"
+  },
+  {
+   "table": "warehouses",
+   "recordId": "WH-VIR",
+   "status": "pending",
+   "createdAt": "2026-09-21T01:27:44.709Z",
+   "operation": "upsert"
+  },
+  {
+   "table": "warehouses",
+   "recordId": "WH-SHOP",
+   "status": "pending",
+   "createdAt": "2026-09-21T01:27:44.704Z",
+   "operation": "upsert"
+  }
+ ],
+ "micPayloads": [
+  {
+   "recordId": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+   "table": "ledger_entries",
+   "payload": {
+    "id": "LG-MIC-REV-1789961780893-5wvx4kqr3",
+    "date": "2026-09-21",
+    "description": "REVERSAL: duplicate material COGS leg INV-P726/031 (COGS - Invoice #INV-P726/031) — approved material-inventory correction",
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-51200",
+    "amount": 187600,
+    "referenceId": "CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+    "referenceType": "material_inventory_correction",
+    "entryType": "material_inventory_correction",
+    "status": "posted",
+    "reconciled": false,
+    "reversesEntryId": "LG-COGS-1789787524516-mcpj3jfhj",
+    "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-REV-LG-COGS-1789787524516-mcpj3jfhj",
+    "appliedBy": "materialInventoryCorrectionService",
+    "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched.",
+    "created_at": "2026-09-21T03:36:20.893Z",
+    "createdAt": "2026-09-21T03:36:20.893Z",
+    "updatedAt": "2026-09-21T03:36:20.893Z",
+    "_updatedAt": "2026-09-21T03:36:20.915Z"
+   }
+  },
+  {
+   "recordId": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+   "table": "ledger_entries",
+   "payload": {
+    "id": "LG-MIC-CAPITAL-1789961780893-t1qzdpjki",
+    "date": "2026-09-16",
+    "description": "Material inventory capitalisation — verified physical stock (15,000 units / 30 inventory-bearing items, approved correction)",
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-32000",
+    "amount": 222500000,
+    "referenceId": "CORR-MATINV-CAPITAL-11420",
+    "referenceType": "material_inventory_correction",
+    "entryType": "material_inventory_correction",
+    "status": "posted",
+    "reconciled": false,
+    "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-CAPITAL-11420",
+    "appliedBy": "materialInventoryCorrectionService",
+    "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched.",
+    "created_at": "2026-09-21T03:36:20.893Z",
+    "createdAt": "2026-09-21T03:36:20.893Z",
+    "updatedAt": "2026-09-21T03:36:20.893Z",
+    "_updatedAt": "2026-09-21T03:36:20.972Z"
+   }
+  },
+  {
+   "recordId": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+   "table": "ledger_entries",
+   "payload": {
+    "id": "LG-MIC-OPENING-1789961780893-thsjuxe8o",
+    "date": "2026-01-01",
+    "description": "Material inventory capitalisation — opening balance (FY2026 pre-Smart-Stock material stock, approved correction)",
+    "debitAccountId": "ACC-11420",
+    "creditAccountId": "ACC-32000",
+    "amount": 1687500,
+    "referenceId": "CORR-MATINV-OPENING-11420",
+    "referenceType": "material_inventory_correction",
+    "entryType": "material_inventory_correction",
+    "status": "posted",
+    "reconciled": false,
+    "idempotencyKey": "material_inventory_correction_20260916:CORR-MATINV-OPENING-11420",
+    "appliedBy": "materialInventoryCorrectionService",
+    "applyReason": "Approved material-inventory correction: reverse duplicate INV-P726/031 COGS leg K187,600 and capitalise verified 11420 material inventory (K1,687,500 opening + K222,500,000 verified stock) against 32000. Accountant-approved; Smart Stock and 11410 left untouched.",
+    "created_at": "2026-09-21T03:36:20.893Z",
+    "createdAt": "2026-09-21T03:36:20.893Z",
+    "updatedAt": "2026-09-21T03:36:20.893Z",
+    "_updatedAt": "2026-09-21T03:36:20.970Z"
+   }
+  }
+ ],
+ "extraComparison": [
+  {
+   "table": "warehouses",
+   "recordId": "WH-MAIN",
+   "remoteExists": true,
+   "remoteVersion": 1,
+   "remoteUpdatedAt": "2026-09-13T17:30:51.665+00:00",
+   "diffs": []
+  },
+  {
+   "table": "ledger_entries",
+   "recordId": "LG-OPENING-BALANCE",
+   "remoteExists": true,
+   "remoteVersion": 6,
+   "remoteUpdatedAt": "2026-09-20T23:25:47.785943+00:00",
+   "diffs": [
+    "date: local=\"2026-09-21T01:28:31.814Z\" remote=\"2026-09-20T23:24:07.265Z\""
+   ]
+  },
+  {
+   "table": "warehouses",
+   "recordId": "WH-VIR",
+   "remoteExists": true,
+   "remoteVersion": 1,
+   "remoteUpdatedAt": "2026-09-13T17:30:52.646+00:00",
+   "diffs": []
+  },
+  {
+   "table": "warehouses",
+   "recordId": "WH-SHOP",
+   "remoteExists": true,
+   "remoteVersion": 1,
+   "remoteUpdatedAt": "2026-09-13T17:30:51.808+00:00",
+   "diffs": []
+  }
+ ],
+ "remoteRows": {
+  "LG-OPENING-BALANCE": {
+   "id": "LG-OPENING-BALANCE",
+   "data": {
+    "id": "LG-OPENING-BALANCE",
+    "date": "2026-09-20T23:24:07.265Z",
+    "amount": 500,
+    "reconciled": true,
+    "description": "System Initialization: Opening Cash Balance",
+    "referenceId": "OPENING_BALANCE",
+    "debitAccountId": "11110",
+    "creditAccountId": "31000",
+    "serverUpdatedAt": "2026-09-19T09:32:48.074064+00:00"
+   },
+   "created_at": "2026-09-17T03:06:11.321199+00:00",
+   "updated_at": "2026-09-20T23:25:47.785943+00:00",
+   "version": 6
+  },
+  "WH-MAIN": {
+   "id": "WH-MAIN",
+   "data": {
+    "id": "WH-MAIN",
+    "name": "Main Warehouse",
+    "type": "Physical",
+    "location": "Lilongwe"
+   },
+   "created_at": "2026-09-13T17:30:51.924136+00:00",
+   "updated_at": "2026-09-13T17:30:51.665+00:00",
+   "version": 1
+  },
+  "WH-SHOP": {
+   "id": "WH-SHOP",
+   "data": {
+    "id": "WH-SHOP",
+    "name": "Front Shop",
+    "type": "Store",
+    "location": "Lilongwe"
+   },
+   "created_at": "2026-09-13T17:30:52.066947+00:00",
+   "updated_at": "2026-09-13T17:30:51.808+00:00",
+   "version": 1
+  },
+  "WH-VIR": {
+   "id": "WH-VIR",
+   "data": {
+    "id": "WH-VIR",
+    "name": "Virtual/Transit",
+    "type": "Virtual",
+    "location": "System"
+   },
+   "created_at": "2026-09-13T17:30:52.908671+00:00",
+   "updated_at": "2026-09-13T17:30:52.646+00:00",
+   "version": 1
+  }
+ }
+}
