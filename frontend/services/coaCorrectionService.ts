@@ -1,9 +1,14 @@
 /**
- * R1 Historical Correction Service — controlled reversal of 5 erroneous
+ * R1 Historical Correction Service — controlled reversal of 8 erroneous
  * COGS legs that incorrectly credited 11410 Merchandise Inventory.
  *
  * The erroneous entries are identified by invoice references:
- *   INV-P726/021, INV-P726/022, INV-P726/023, INV-P726/024, INV-P726/025
+ *   INV-P726/021, INV-P726/022, INV-P726/023, INV-P726/024, INV-P726/025,
+ *   INV-P726/026, INV-P726/027, INV-P726/028
+ * (the last three verified by the 2026-09-22 transaction-level audit of
+ * live Supabase ledger data: same DR 51200 / CR 11410 Product-COGS shape,
+ * totalling K448,985 together with the original five — exactly the
+ * reported 11410 credit balance, so full reversal nets 11410 to K0.00).
  *
  * For each entry, the service verifies:
  *   - original ledger entry still exists
@@ -48,7 +53,13 @@ export const R1_TARGETS: R1Target[] = [
   { invoiceRef: 'INV-P726/023', expectedAmount: 44289 },
   { invoiceRef: 'INV-P726/024', expectedAmount: 20388 },
   { invoiceRef: 'INV-P726/025', expectedAmount: 63270 },
+  { invoiceRef: 'INV-P726/026', expectedAmount: 75570 },
+  { invoiceRef: 'INV-P726/027', expectedAmount: 23668 },
+  { invoiceRef: 'INV-P726/028', expectedAmount: 127249 },
 ];
+
+/** Total erroneous 11410 credit reversed when all targets correct (K448,985). */
+export const R1_TOTAL_CORRECTION = R1_TARGETS.reduce((sum, t) => sum + t.expectedAmount, 0);
 
 // ── Types ────────────────────────────────────────────────────────
 
