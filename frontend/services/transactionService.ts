@@ -3968,7 +3968,7 @@ export const transactionService = {
                 if (inventoryItems && inventoryItems.length > 0) {
                     for (const item of inventoryItems) {
                         if (item.type === 'Service') continue;
-                        const childCode = resolveInventoryAccountByItemType(item.type, accounts);
+                        const childCode = resolveInventoryAccountByItemType(item.type, accounts, (item as any)?.inventoryRole);
                         if (childCode) {
                             const found = accounts.find(a => a.id === childCode || a.code === childCode || a.account_number === childCode);
                             const childId = found?.id || childCode;
@@ -4769,6 +4769,7 @@ export const transactionService = {
                             reason: accountingReason,
                             qtyChange: params.qtyChange,
                             itemType: itemTypeForPosting,
+                            inventoryRole: (storedItem as any)?.inventoryRole,
                             accounts,
                             gl,
                         });
@@ -5180,7 +5181,7 @@ export const transactionService = {
                 if (Math.abs(eligibleVarianceCost) > 0.01) {
                     const gl = getGLConfig();
                     const firstItem = eligibleResults.length > 0 ? await inventoryStore.get(eligibleResults[0].itemId) : null;
-                    const inventoryAccountId = accounts.length > 0 && firstItem ? resolveInventoryAccountByItemType(firstItem.type, accounts) : null;
+                    const inventoryAccountId = accounts.length > 0 && firstItem ? resolveInventoryAccountByItemType(firstItem.type, accounts, (firstItem as any)?.inventoryRole) : null;
                     // Reconciliation GL (fail-closed, symmetric COGS — never
                     // income; previously resolveAcct('42000') silently
                     // returned 42100 Interest Income via parent fallback):
@@ -5272,7 +5273,7 @@ export const transactionService = {
                         item.stock = (item.stock || 0) - mat.quantity;
                         await invStore.put(item);
 
-                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountByItemType(item.type, accounts) : null;
+                        const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountByItemType(item.type, accounts, (item as any)?.inventoryRole) : null;
                         // Ledger entry for material consumption
                         const entry: LedgerEntry = {
                             id: generateId('LG-CONS'),
@@ -5421,7 +5422,7 @@ export const transactionService = {
 
                 // 2. Create Ledger Entry (Debit COGS/Waste, Credit Inventory)
                 const gl = getGLConfig();
-                const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountByItemType(item?.type, accounts) : null;
+                const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountByItemType(item?.type, accounts, (item as any)?.inventoryRole) : null;
                 const entry: LedgerEntry = {
                     id: generateId('LG-WST'),
                     date: new Date().toISOString(),

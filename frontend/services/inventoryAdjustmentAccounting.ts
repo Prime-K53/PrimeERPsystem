@@ -140,9 +140,10 @@ export function assertAccountSemanticallyValidForStockAdjustment(
 function resolveInventorySide(
   itemType: string | undefined,
   accounts: any[],
-  glDefaultInventoryAccount: string | undefined
+  glDefaultInventoryAccount: string | undefined,
+  inventoryRole?: unknown
 ): { id: string; code: string } {
-  const viaType = resolveInventoryAccountByItemType(itemType, accounts);
+  const viaType = resolveInventoryAccountByItemType(itemType, accounts, inventoryRole);
   if (viaType) {
     const acc = findAccount(accounts, viaType);
     if (acc) {
@@ -215,6 +216,7 @@ export function resolveStockAdjustmentPosting(args: {
   reason: StockAdjustmentReason;
   qtyChange: number;
   itemType?: string;
+  inventoryRole?: unknown;
   accounts: any[];
   gl: {
     defaultInventoryAccount?: string;
@@ -223,7 +225,7 @@ export function resolveStockAdjustmentPosting(args: {
     retainedEarningsAccount?: string;
   };
 }): ResolvedStockAdjustmentPosting {
-  const { reason, qtyChange, itemType, accounts, gl } = args;
+  const { reason, qtyChange, itemType, inventoryRole, accounts, gl } = args;
   if (!reason || !['OPENING_BALANCE', 'OPERATIONAL_ADJUSTMENT', 'RECONCILIATION'].includes(reason)) {
     throw new StockAdjustmentAccountingError(
       `Stock adjustment requires an explicit accounting reason (OPENING_BALANCE | OPERATIONAL_ADJUSTMENT | RECONCILIATION). Posting aborted.`
@@ -238,7 +240,8 @@ export function resolveStockAdjustmentPosting(args: {
   const inventory = resolveInventorySide(
     itemType,
     accounts,
-    gl.defaultInventoryAccount
+    gl.defaultInventoryAccount,
+    inventoryRole
   );
 
   if (reason === 'OPENING_BALANCE') {

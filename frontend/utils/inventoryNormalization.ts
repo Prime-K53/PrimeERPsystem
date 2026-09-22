@@ -214,6 +214,22 @@ export function getInventoryAccountForItem(item: any): string | null {
 }
 
 /**
+ * Stationery account selection by economic purpose (inventoryRole).
+ *
+ * Fail-safe policy: only an explicit `sellable` role selects Merchandise
+ * Inventory (11410). Every other value — `internal`, `both`, absent, null
+ * or unknown — preserves the historical behavior (11420 Raw Materials).
+ * Callers MUST gate on isInventoryBearingItem() first; this helper decides
+ * only WHICH account a stockable Stationery item belongs to, never WHETHER
+ * an item is stockable.
+ */
+export function resolveStationeryAccountCode(inventoryRole: unknown): string {
+  return String(inventoryRole ?? '').trim().toLowerCase() === 'sellable'
+    ? INVENTORY_GL_CODES.merchandise
+    : INVENTORY_GL_CODES.rawMaterials;
+}
+
+/**
  * Canonical GL mapping for one inventory item.
  * Returns the 5-digit code, or null when the item must NOT post to
  * inventory (services) or cannot be mapped (unmapped type — reported, never
@@ -228,7 +244,9 @@ export function getInventoryAccountForItem(item: any): string | null {
  * - service-like           → null (SERVICE_ITEM, excluded upstream)
  * - finished good(s)       → 11430 Finished Goods
  * - product / merchandise  → 11410 Merchandise Inventory
- * - raw / material / consumable / stationery → 11420 Raw Materials
+ * - raw / material / consumable → 11420 Raw Materials
+ * - stationery             → 11410 iff inventoryRole is `sellable`,
+ *                            else 11420 (see resolveStationeryAccountCode)
  */
 export function resolveInventoryGLAccountCode(item: any): string | null {
   if (!item) return null;
@@ -239,9 +257,12 @@ export function resolveInventoryGLAccountCode(item: any): string | null {
   if (tokens.some((t) => t.includes('service'))) return null;
   if (tokens.some((t) => t.includes('finished good') || t.includes('finished product'))) return INVENTORY_GL_CODES.finishedGoods;
   if (tokens.some((t) => t.includes('product') || t.includes('merchandise'))) return INVENTORY_GL_CODES.merchandise;
+  if (tokens.some((t) => t.includes('stationery') || t.includes('stationaries'))) {
+    return resolveStationeryAccountCode((item as any)?.inventoryRole);
+  }
   if (
     tokens.some((t) =>
-      t.includes('raw') || t.includes('material') || t.includes('consumable') || t.includes('stationery') || t.includes('stationaries')
+      t.includes('raw') || t.includes('material') || t.includes('consumable')
     )
   ) {
     return INVENTORY_GL_CODES.rawMaterials;

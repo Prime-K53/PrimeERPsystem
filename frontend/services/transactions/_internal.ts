@@ -10,7 +10,7 @@ import {
 import { DEFAULT_ACCOUNTS } from '../../constants';
 import { generateNextId, roundToCurrency } from '../../utils/helpers';
 import { computeHierarchicalRollup, getNormalBalance, isPostedLedgerEntry, entryTouchesAccount } from '../accountingEngine';
-import { classifyInventoryItem, isInventoryBearingItem, resolveInventoryCostPerUnit } from '../../utils/inventoryNormalization';
+import { classifyInventoryItem, isInventoryBearingItem, resolveInventoryCostPerUnit, resolveStationeryAccountCode } from '../../utils/inventoryNormalization';
 
 export const getCompanyConfig = () => {
     const saved = localStorage.getItem('nexus_company_config');
@@ -969,7 +969,9 @@ export const calculateCogsLegsPerInventoryAccount = async (
         const lineCost = unitCost * qty;
         // Unknown/missing types keep the historical default bucket (11410),
         // matching resolveInventoryAccountByItemType's documented behavior.
-        const resolvedId = resolveInventoryAccountByItemType(item?.type || (invItem as any)?.type, accounts)
+        // COGS symmetry: the same role-aware resolver selects the account,
+        // so sellable Stationery relieves 11410 exactly as it capitalizes.
+        const resolvedId = resolveInventoryAccountByItemType(item?.type || (invItem as any)?.type, accounts, (item as any)?.inventoryRole ?? (invItem as any)?.inventoryRole)
             || resolveInventoryAccountByItemType('product', accounts);
         // Lazy fallback: only resolved when a line genuinely cannot be
         // classified (strict resolvers throw on broken COAs — never evaluate
@@ -1116,7 +1118,8 @@ export function buildResolvedJournalLines(
 
 export function resolveInventoryAccountByItemType(
     itemType: string | undefined,
-    accounts: any[]
+    accounts: any[],
+    inventoryRole?: unknown
 ): string | null {
     if (!itemType) return null;
 
@@ -1125,8 +1128,10 @@ export function resolveInventoryAccountByItemType(
     // utils/inventoryNormalization.ts so opening journals and COGS relieve
     // the SAME account. 'Product' (resale merchandise, including the UI's
     // Finished Good collapse) posts to 11410; only explicit finished-goods
-    // types post to 11430. Never silently default: unknown types fall back
-    // to 11410 only to preserve the historical default bucket.
+    // types post to 11430. Stationery follows resolveStationeryAccountCode:
+    // `sellable` → 11410, everything else → 11420 (fail-safe default).
+    // Never silently default: unknown types fall back to 11410 only to
+    // preserve the historical default bucket.
     let targetCode = '11410'; // Default: Merchandise Inventory
 
     if (normalizedType === 'material' || normalizedType === 'raw material' || normalizedType === 'raw' || normalizedType === 'consumable') {
@@ -1136,7 +1141,7 @@ export function resolveInventoryAccountByItemType(
     } else if (normalizedType === 'product' || normalizedType === 'merchandise') {
         targetCode = '11410'; // Merchandise Inventory
     } else if (normalizedType === 'stationery' || normalizedType === 'stationaries') {
-        targetCode = '11420'; // Stationery tracked with Raw Materials
+        targetCode = resolveStationeryAccountCode(inventoryRole);
     }
     
     const found = accounts.find(a =>
@@ -1181,7 +1186,11 @@ export function resolveInventoryAccountFromItems(
     }
     
     const dominantType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0][0];
-    return resolveInventoryAccountByItemType(dominantType, accounts);
+    // Role follows a representative bearing item of the dominant type so a
+    // sellable-Stationery purchase capitalizes 11410 like its COGS relieves.
+    const representative = nonServiceItems.find((i: any) => String(i.type || 'product').toLowerCase() === dominantType)
+        || nonServiceItems[0];
+    return resolveInventoryAccountByItemType(dominantType, accounts, (representative as any)?.inventoryRole);
 }
 
 export function computeHierarchicalBalances(
