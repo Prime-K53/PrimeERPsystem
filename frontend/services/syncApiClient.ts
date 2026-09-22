@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '../config/api.js';
 import { getJsonRequestHeaders } from './requestHeaders';
 import { logger } from './logger';
+import { diagRequestCompleted, diagRequestFailed, diagRequestStarted } from './syncDiag';
 import { isSessionExpired, getStoredUserSession } from './authSession';
 
 /**
@@ -147,6 +148,9 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 25000);
 
+  // [ERP-SYNC-DIAG] safe metadata only: method + endpoint path + status + duration.
+  // No headers, bodies, or tokens are logged.
+  const diagStart = diagRequestStarted('POST', '/api/sync/ops', { kind: 'sync', ops: ops.length });
   try {
     const res = await fetch(SYNC_ENDPOINT, {
       method: 'POST',
@@ -158,14 +162,17 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
     logger.info('[SyncApiClient] sendSyncOps response', { status: res.status, ok: res.ok });
 
     if (res.status === 503) {
+      diagRequestFailed('POST', '/api/sync/ops', diagStart, 'http-503', { kind: 'sync', ops: ops.length });
       throw new Error('Cloud database is not configured on this server');
     }
     if (res.status === 429) {
       const retryAfter = Number(res.headers.get('Retry-After') || 0);
+      diagRequestFailed('POST', '/api/sync/ops', diagStart, 'http-429-rate-limited', { kind: 'sync', ops: ops.length });
       const hint = Number.isFinite(retryAfter) && retryAfter > 0 ? ` (retry after ${retryAfter}s)` : '';
       throw new Error(`Sync gateway rate-limited${hint}`);
     }
     if (res.status === 401 || res.status === 403) {
+      diagRequestFailed('POST', '/api/sync/ops', diagStart, `http-${res.status}-auth`, { kind: 'sync', ops: ops.length });
       throw new SyncAuthError(`Sync gateway rejected the request (${res.status})`, res.status);
     }
     if (!res.ok) {
@@ -173,6 +180,7 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
       const detail = (body as any)?.detail;
       const errorMsg = detail ? `${(body as any)?.error || 'Sync gateway failed'}: ${detail}` : ((body as any)?.error || `Sync gateway failed (${res.status})`);
       logger.warn('[SyncApiClient] gateway error', { status: res.status, error: errorMsg });
+      diagRequestFailed('POST', '/api/sync/ops', diagStart, `http-${res.status}`, { kind: 'sync', ops: ops.length });
       throw new Error(errorMsg);
     }
 
@@ -196,10 +204,21 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
       totalOps: ops.length,
       results: diagResults,
     });
+    diagRequestCompleted('POST', '/api/sync/ops', diagStart, 200, {
+      kind: 'sync',
+      ops: ops.length,
+      succeeded: payload.succeeded ?? -1,
+    });
     return payload;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
+      diagRequestFailed('POST', '/api/sync/ops', diagStart, 'timeout-abort', { kind: 'sync', ops: ops.length });
       throw new Error('Sync gateway timed out');
+    }
+    if (err instanceof SyncAuthError || (err instanceof Error && /Sync gateway (rejected|failed|rate-limited)|not configured/i.test(err.message))) {
+      // Already logged as request_failed above — do not double-log.
+    } else {
+      diagRequestFailed('POST', '/api/sync/ops', diagStart, 'transport-error', { kind: 'sync', ops: ops.length });
     }
     throw err;
   } finally {

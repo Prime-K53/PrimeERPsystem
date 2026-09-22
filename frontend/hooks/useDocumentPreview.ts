@@ -113,6 +113,7 @@ export const useDocumentPreview = () => {
         const blob = await pdf(createElement(PrimeDocument as any, {
           type: effectiveType,
           data: securedData as PrimeDocData,
+          configOverride: companyConfig ?? null,
           customers: customers as any
         }) as any).toBlob();
 

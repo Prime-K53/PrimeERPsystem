@@ -553,10 +553,25 @@ export const durableSyncQueue = {
     return ready;
   },
 
+  // ── Settlement idempotency ─────────────────────────────────────────────
+  // Terminal transitions (completed / failed / dead_letter) are accepted only
+  // from ACTIVE states (pending / syncing / failed). A stale second
+  // settlement for the same item — e.g. a losing overlap that settles after
+  // the item already reached a terminal state — is a no-op instead of
+  // corrupting queue state (completed→failed, completed→completed with a
+  // bumped retryCount, …). All legitimate flows settle items dequeued by the
+  // owning cycle (status 'syncing'), so this changes no valid transition.
   async markCompleted(id: string, serverTimestamp?: string): Promise<void> {
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item) {
+      if (item.status !== 'pending' && item.status !== 'syncing' && item.status !== 'failed') {
+        logger.warn('[DurableQueue] markCompleted ignored — item already terminal', {
+          id,
+          status: item.status,
+        });
+        return;
+      }
       item.status = 'completed';
       item.retryCount = 0;
       item.lastAttempt = serverTimestamp || new Date().toISOString();
@@ -569,6 +584,13 @@ export const durableSyncQueue = {
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item) {
+      if (item.status !== 'pending' && item.status !== 'syncing' && item.status !== 'failed') {
+        logger.warn('[DurableQueue] markFailed ignored — item already terminal', {
+          id,
+          status: item.status,
+        });
+        return;
+      }
       const errorType = overrideErrorType || classifyError(error);
       // Unauthorized items stay in 'failed' — they must NEVER be retried
       // automatically. Only resumeAfterAuth() (after the user re-authenticates)
@@ -593,6 +615,13 @@ export const durableSyncQueue = {
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item) {
+      if (item.status !== 'pending' && item.status !== 'syncing' && item.status !== 'failed') {
+        logger.warn('[DurableQueue] deadLetter ignored — item already terminal', {
+          id,
+          status: item.status,
+        });
+        return;
+      }
       item.status = 'dead_letter';
       item.retryCount = item.retryCount + 1;
       item.lastAttempt = new Date().toISOString();
@@ -636,6 +665,16 @@ export const durableSyncQueue = {
     const db = await getDb();
     const item = await db.get('operations', id);
     if (!item) return;
+    // A requeue resurrects the item as pending work — never from a terminal
+    // state (a stale conflict-resolution racing a completed item must not
+    // resurrect it). Legitimate merges always originate from 'syncing' items.
+    if (item.status !== 'pending' && item.status !== 'syncing' && item.status !== 'failed') {
+      logger.warn('[DurableQueue] requeue ignored — item already terminal', {
+        id,
+        status: item.status,
+      });
+      return;
+    }
     const payloadStr = JSON.stringify(payload);
     item.payload = payload;
     item.payloadSizeBytes = payloadStr.length;

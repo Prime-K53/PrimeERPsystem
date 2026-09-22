@@ -392,6 +392,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const handleOnline = async () => {
       setIsOnline(true);
+      // [ERP-SYNC-DIAG] network detection point — documents that AuthContext
+      // itself does NOT trigger queue sync (backgroundSyncService owns that).
+      const { diagOnlineDetected } = await import('../services/syncDiag').catch(() => ({ diagOnlineDetected: (_source: string) => {} }));
+      try { diagOnlineDetected('AuthContext:window-online'); } catch { /* diag-only */ }
       if (!SUPABASE_ENABLED) {
         try {
           const { customerNotificationService } = await import('../services/customerNotificationService');
@@ -399,7 +403,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch {}
       }
     };
-    const handleOffline = () => setIsOnline(false);
+    const handleOffline = () => {
+      setIsOnline(false);
+      // [ERP-SYNC-DIAG] network detection point only.
+      import('../services/syncDiag').then(({ diagOfflineDetected }) => {
+        try { diagOfflineDetected('AuthContext:window-offline'); } catch { /* diag-only */ }
+      }).catch(() => {});
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 

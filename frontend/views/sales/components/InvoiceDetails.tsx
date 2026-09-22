@@ -628,7 +628,7 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                         <div className="space-y-6 animate-in fade-in duration-300">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="md:col-span-2 space-y-6">
-                                    {(invoice as Record<string, unknown>).isConverted && (invoice as Record<string, unknown>).conversionDetails && (
+                                    {(companyConfig?.invoiceTemplates?.showConversionHistory !== false) && (invoice as Record<string, unknown>).isConverted && (invoice as Record<string, unknown>).conversionDetails && (
                                         <div style={{ padding: 16, background: paper, borderRadius: 12, border: `1px solid ${hairline}` }}>
                                             <h3 style={{ margin: '0 0 12px', fontSize: 12, color: inkSoft, display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 <History size={14} color={teal[600]} /> Conversion History

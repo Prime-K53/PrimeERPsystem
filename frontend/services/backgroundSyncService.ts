@@ -4,6 +4,32 @@ import { resolvePushConflict } from './syncConflictResolver';
 import { cloudDb } from './cloudDb';
 import { audit } from './syncAudit';
 import { logger } from './logger';
+import {
+  diagActiveSyncId,
+  diagCaller,
+  diagLockAcquired,
+  diagLockReleased,
+  diagLog,
+  diagNewSyncId,
+  diagNextTimerGeneration,
+  diagOnlineDetected,
+  diagPendingQueueLoaded,
+  diagPeriodicLifecycleCall,
+  diagRetryAttempt,
+  diagRetryWaitStarted,
+  diagStageCompleted,
+  diagStageFailed,
+  diagStageStarted,
+  diagSyncCompleted,
+  diagSyncSkipped,
+  diagSyncStarted,
+  diagSyncTriggerInvoked,
+  diagSyncTriggerSkipped,
+  diagTimerCleared,
+  diagTimerFired,
+  diagTimerReplaced,
+  diagTimerScheduled,
+} from './syncDiag';
 
 type SyncEventType = 'sync-start' | 'sync-complete' | 'sync-failure' | 'sync-partial' | 'queue-empty' | 'queue-full' | 'dead-letter' | 'sync-conflict';
 type SyncCallback = (event: SyncEventType, data?: unknown) => void;
@@ -36,6 +62,14 @@ const isClient = typeof window !== 'undefined';
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
+// Generation of the currently installed periodic sync interval instance.
+// Incremented on every REAL setInterval creation so logs can distinguish
+// one timer being replaced from multiple timers coexisting. DEV-diag only.
+let periodicTimerGeneration = 0;
+// Last interval passed to setInterval for the periodic sync timer.
+// Write-only diagnostic mirror (read only by DEV-only [ERP-SYNC-DIAG] logs);
+// never influences scheduling decisions.
+let lastScheduledIntervalMs: number | null = null;
 let eventListenersRegistered = false;
 let isInitialized = false;
 
@@ -47,23 +81,221 @@ let originalReplaceState: typeof history.replaceState | null = null;
 // enqueue normally — exactly the offline-first condition.
 let paused = false;
 
-function onVisibilityChange() {
-  if (document.visibilityState === 'visible') {
-    syncOnce(true).catch(() => {});
+// ─── Single-consumer sync lock ──────────────────────────────────────────────
+// At most ONE syncOnce() execution may actively process the durable queue at
+// any moment. The lock is acquired SYNCHRONOUSLY at syncOnce() entry — before
+// the first await — so overlapping triggers (online, visibility, navigation,
+// periodic timer, per-write triggers) can never enter the queue concurrently.
+// `state.isSyncing` mirrors the lock for external readers; `activeSync` is
+// the authoritative guard.
+let activeSync: { syncId: string; trigger: string } | null = null;
+
+// ─── Single authoritative lifecycle ─────────────────────────────────────────
+// ONE named handler per browser event, registered exactly once via
+// ensureLifecycleListeners(). Previously the module scope AND
+// startPeriodicSync() each registered their own online/visibility listeners,
+// so a single browser event fired syncOnce() twice.
+// [ERP-SYNC-DIAG] Snapshot of the periodic timer firing context.
+// Read-only: safe metadata only, no side effects, DEV-only via diagLog.
+function timerOnline(): string {
+  try {
+    return typeof navigator !== 'undefined' ? String(navigator.onLine) : 'unknown';
+  } catch {
+    return 'unknown';
   }
 }
 
-function onOnline() {
-  syncOnce(true).catch(() => {});
+function timerVisibility(): string {
+  try {
+    return typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function periodicTimerContext() {
+  return {
+    trigger: 'periodic-interval',
+    intervalMs: lastScheduledIntervalMs ?? -1,
+    timerGeneration: periodicTimerGeneration,
+    timerActive: intervalId !== null,
+    online: timerOnline(),
+    visibility: timerVisibility(),
+    activeSync: activeSync !== null,
+    activeSyncId: activeSync?.syncId,
+  };
+}
+
+async function periodicDoSync(): Promise<void> {
+  // [ERP-SYNC-DIAG] Fires every time the 60s periodic timer callback runs.
+  // Placed before any other work; decision logic below is unchanged.
+  // Single emission: the full firing context rides on this one event.
+  diagTimerFired('periodic', 'backgroundSync', lastScheduledIntervalMs ?? -1, periodicTimerGeneration, {
+    trigger: 'periodic-interval',
+    timerActive: intervalId !== null,
+    online: timerOnline(),
+    visibility: timerVisibility(),
+    activeSync: activeSync !== null,
+    activeSyncId: activeSync?.syncId,
+  });
+  try {
+    audit('push', 'syncOnce begin', {});
+    // [ERP-SYNC-DIAG] Immediately before invoking the existing sync function.
+    diagLog('periodic_sync_invoking', periodicTimerContext());
+    await syncOnce(false, 'periodic-interval');
+    audit('push', 'syncOnce end', {});
+  } catch {
+    // background sync errors are handled internally
+  }
+}
+
+function rearmPeriodicTimer(): void {
+  if (intervalId) {
+    // [ERP-SYNC-DIAG] real timer replacement only — same clear+create as before.
+    const oldGeneration = periodicTimerGeneration;
+    clearInterval(intervalId);
+    diagTimerCleared('periodic', 'backgroundSync', oldGeneration, 'replaced-by-rearm');
+    const rearmMs = getBackoffInterval();
+    lastScheduledIntervalMs = rearmMs;
+    periodicTimerGeneration = diagNextTimerGeneration('periodic');
+    intervalId = setInterval(periodicDoSync, rearmMs);
+    diagTimerScheduled('periodic', 'backgroundSync', rearmMs, periodicTimerGeneration);
+    diagTimerReplaced('periodic', 'backgroundSync', oldGeneration, periodicTimerGeneration, rearmMs);
+  }
+}
+
+function handleLifecycleOnline(): void {
+  state.consecutiveFailures = 0;
+  rearmPeriodicTimer();
+  diagOnlineDetected('backgroundSyncService:lifecycle-online');
+  syncOnce(true, 'window-online').catch(() => {});
+}
+
+function handleLifecycleVisibility(): void {
+  if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+  rearmPeriodicTimer();
+  diagOnlineDetected('backgroundSyncService:lifecycle-visibility');
+  syncOnce(true, 'visibility-visible').catch(() => {});
+  runCleanup();
+  reportHealth();
+}
+
+function ensureLifecycleListeners(): void {
+  if (!isClient || eventListenersRegistered) return;
+  eventListenersRegistered = true;
+  try {
+    if (typeof document !== 'undefined' && 'onvisibilitychange' in document) {
+      document.addEventListener('visibilitychange', handleLifecycleVisibility);
+    }
+  } catch { /* listener registration is best-effort */ }
+  try {
+    if (typeof navigator !== 'undefined' && 'onLine' in navigator) {
+      window.addEventListener('online', handleLifecycleOnline);
+    }
+  } catch { /* listener registration is best-effort */ }
+  ensureHistoryWrappers();
+}
+
+function removeLifecycleListeners(): void {
+  if (!isClient) {
+    eventListenersRegistered = false;
+    return;
+  }
+  try {
+    if (typeof document !== 'undefined' && 'onvisibilitychange' in document) {
+      document.removeEventListener('visibilitychange', handleLifecycleVisibility);
+    }
+  } catch { /* best-effort */ }
+  try {
+    window.removeEventListener('online', handleLifecycleOnline);
+  } catch { /* best-effort */ }
+  eventListenersRegistered = false;
+}
+
+function ensureHistoryWrappers(): void {
+  if (!isClient || typeof history === 'undefined') return;
+  try {
+    const marker = '__primeSyncWrapped';
+    const alreadyWrapped =
+      (history.pushState as unknown as Record<string, unknown>)?.[marker] === true;
+    if (alreadyWrapped && originalPushState && originalReplaceState) return;
+    if (!alreadyWrapped) {
+      originalPushState = history.pushState.bind(history);
+      originalReplaceState = history.replaceState.bind(history);
+      history.pushState = onPushState;
+      history.replaceState = onReplaceState;
+      (history.pushState as unknown as Record<string, unknown>)[marker] = true;
+      (history.replaceState as unknown as Record<string, unknown>)[marker] = true;
+    }
+  } catch { /* best-effort */ }
+}
+
+function restoreHistoryWrappers(): void {
+  if (!isClient || typeof history === 'undefined') return;
+  try {
+    if (originalPushState) history.pushState = originalPushState;
+    if (originalReplaceState) history.replaceState = originalReplaceState;
+  } catch { /* best-effort */ }
+  originalPushState = null;
+  originalReplaceState = null;
+}
+
+// Push-sync → application refresh bridge (single signal per cycle; see
+// emitPushSyncDataChanged below). One shared BroadcastChannel, mirroring
+// syncService.emitDataChanged, so repeated cycles never leak channels.
+let pushSyncChannel: BroadcastChannel | null = null;
+
+function getPushSyncChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === 'undefined') return null;
+  if (!pushSyncChannel) {
+    try {
+      pushSyncChannel = new BroadcastChannel('primeerp-data-sync');
+    } catch {
+      return null;
+    }
+  }
+  return pushSyncChannel;
+}
+
+/**
+ * Emit ONE data-changed signal after a push-sync cycle that successfully
+ * applied server-bound changes, using the existing window +
+ * BroadcastChannel mechanism consumed by DataContext.queueRefresh()
+ * (debounced) — the same path realtime/pull completions already use.
+ * No-ops when nothing was applied, so no-change cycles never force a
+ * full application refresh. This is purely an invalidation signal: no
+ * listener in the app starts a sync from it, so no refresh loop can form.
+ */
+function emitPushSyncDataChanged(syncId: string, successCount: number): void {
+  diagLog('sync_data_changed_emitted', { id: syncId, success: successCount, channel: 'primeerp:data-changed' });
+  try {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(
+        new CustomEvent('primeerp:data-changed', {
+          detail: { source: 'push-sync', table: '*', eventType: 'PUSH_SYNC_COMPLETE' },
+        }),
+      );
+    }
+  } catch { /* best-effort */ }
+  try {
+    getPushSyncChannel()?.postMessage({
+      type: 'data-changed',
+      source: 'push-sync',
+      table: '*',
+      eventType: 'PUSH_SYNC_COMPLETE',
+    });
+  } catch { /* best-effort */ }
 }
 
 function onPushState(this: typeof history, ...args: Parameters<typeof history.pushState>) {
-  setTimeout(() => syncOnce(true).catch(() => {}), 500);
+  diagSyncTriggerInvoked('navigation-pushState');
+  setTimeout(() => syncOnce(true, 'navigation-pushState').catch(() => {}), 500);
   return originalPushState!.apply(this, args);
 }
 
 function onReplaceState(this: typeof history, ...args: Parameters<typeof history.replaceState>) {
-  setTimeout(() => syncOnce(true).catch(() => {}), 500);
+  diagSyncTriggerInvoked('navigation-replaceState');
+  setTimeout(() => syncOnce(true, 'navigation-replaceState').catch(() => {}), 500);
   return originalReplaceState!.apply(this, args);
 }
 
@@ -86,7 +318,7 @@ function notify(event: SyncEventType, data?: unknown) {
   }
 }
 
-async function processBatch(batchSize: number = 10): Promise<BatchResult> {
+async function processBatch(batchSize: number = 10, batchNumber: number = 0): Promise<BatchResult> {
   const startTime = Date.now();
   let success = 0;
   let failed = 0;
@@ -94,7 +326,21 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
   let skipped = 0;
   let conflictsResolved = 0;
 
+  // [ERP-SYNC-DIAG] pending queue retrieval timing (existing dequeue only — no extra reads).
+  const diagDequeueStart = performance.now();
   const items = await durableSyncQueue.dequeue(batchSize);
+  const diagDequeueMs = performance.now() - diagDequeueStart;
+  const diagOpCounts = { insert: 0, update: 0, upsert: 0, delete: 0, other: 0 };
+  const diagTables = new Set<string>();
+  for (const it of items) {
+    diagTables.add(it.table);
+    if (it.operation === 'insert') diagOpCounts.insert++;
+    else if (it.operation === 'update') diagOpCounts.update++;
+    else if (it.operation === 'upsert') diagOpCounts.upsert++;
+    else if (it.operation === 'delete') diagOpCounts.delete++;
+    else diagOpCounts.other++;
+  }
+  diagPendingQueueLoaded(diagActiveSyncId() ?? 'none', items.length, diagOpCounts, diagDequeueMs, batchNumber);
   logger.info('[BackgroundSync] processBatch dequeued', { count: items.length, tables: items.map(i => i.table) });
 
   if (items.length === 0) return { success: 0, failed: 0, deadLetter: 0, skipped: 0, conflictsResolved: 0, durationMs: 0 };
@@ -128,11 +374,19 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
   let opResults = new Map<string, SyncOpResult>();
   let transportFailed = false;
   if (gatewayOps.length > 0) {
+    const diagGatewayId = diagActiveSyncId() ?? 'none';
+    const diagGatewayStart = performance.now();
+    diagStageStarted(diagGatewayId, 'gateway-batch', { batch: batchNumber, ops: gatewayOps.length });
     try {
       const syncPayload = gatewayOps.map(({ op }) => op);
       logger.info('[BackgroundSync] sendSyncOps sending', { ops: syncPayload.length, tables: syncPayload.map(o => o.table) });
       /* SYNC-FORENSIC suppressed: STAGE-6 sendSyncOps() calling POST /api/sync/ops */
       const response = await sendSyncOps(syncPayload);
+      diagStageCompleted(diagGatewayId, 'gateway-batch', performance.now() - diagGatewayStart, {
+        batch: batchNumber,
+        ops: gatewayOps.length,
+        results: response.results.length,
+      });
       /* SYNC-FORENSIC suppressed: STAGE-6 sendSyncOps() response */
       logger.info('[BackgroundSync] sendSyncOps response', { results: response.results.length });
       // Expose per-operation outcome diagnostics (safe metadata only)
@@ -158,6 +412,13 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
       // Transport failure: the entire batch is retryable. Mark items failed
       // and bail before the settle loop so they aren't marked completed.
       transportFailed = true;
+      // [ERP-SYNC-DIAG] existing retry wait only — mechanism unchanged.
+      const diagErrMsg = err instanceof Error ? err.message : String(err);
+      const diagErrKind = err instanceof SyncAuthError ? 'unauthorized' : classifyError(diagErrMsg);
+      diagStageFailed(diagActiveSyncId() ?? 'none', 'gateway-batch', diagErrKind, { batch: batchNumber, ops: gatewayOps.length });
+      try {
+        diagRetryWaitStarted(diagActiveSyncId(), getBackoffInterval(), 'transport-failure');
+      } catch { /* diag-only */ }
       const errorMessage = err instanceof Error ? err.message : String(err);
       const errorType = classifyError(errorMessage);
       /* SYNC-FORENSIC suppressed: STAGE-6 sendSyncOps() TRANSPORT FAILURE */
@@ -381,6 +642,9 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
 
   // 2) File uploads → direct Supabase Storage (large binaries bypass the
   // backend so the gateway never becomes a bandwidth bottleneck).
+  const diagFileId = diagActiveSyncId() ?? 'none';
+  const diagFileStart = performance.now();
+  if (fileItems.length > 0) diagStageStarted(diagFileId, 'file-upload', { files: fileItems.length });
   const filePromises = fileItems.map(async (item) => {
     try {
       // Blobs live in the canonical PrimeERP IndexedDB `files` store
@@ -406,6 +670,9 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
   });
 
   const settled = await Promise.allSettled(filePromises);
+  if (fileItems.length > 0) {
+    diagStageCompleted(diagFileId, 'file-upload', performance.now() - diagFileStart, { files: fileItems.length });
+  }
   for (const result of settled) {
     if (result.status === 'rejected') {
       skipped++;
@@ -418,33 +685,49 @@ async function processBatch(batchSize: number = 10): Promise<BatchResult> {
   return { success, failed, deadLetter, skipped, conflictsResolved, durationMs };
 }
 
-async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
-  // Never run two sync passes concurrently — forced syncs (navigation, online,
-  // visibility) previously bypassed this guard and flooded the network with
-  // overlapping cloud writes.
-  if (state.isSyncing) {
-    /* SYNC-FORENSIC suppressed: syncOnce() SKIPPED — already syncing */
+async function syncOnce(force: boolean = false, triggerSource: string = 'unknown'): Promise<BatchResult | null> {
+  // Every invocation is logged with its trigger source (diag-only).
+  diagSyncTriggerInvoked(triggerSource);
+  // Invocation ID doubles as the cycle correlation ID when admitted.
+  const invocationId = diagNewSyncId();
+
+  // ── Synchronous admission (BEFORE any await) ─────────────────────────────
+  // This closes the race where N triggers overlapped during the
+  // isAuthBlocked()/retryFailed()/countPending() awaits and each entered
+  // queue processing. Exactly one invocation holds the lock; all others
+  // return here without touching the queue.
+  if (activeSync !== null) {
+    diagSyncSkipped(activeSync.syncId, triggerSource, 'sync-in-progress');
     return null;
   }
+  activeSync = { syncId: invocationId, trigger: triggerSource };
+  state.isSyncing = true;
+  diagLockAcquired(invocationId, triggerSource);
+  // Reported in `finally` so every exit path (completed / exception /
+  // paused / auth-blocked / zero-pending) shows lock release exactly once.
+  let diagLockOutcome = 'early-return';
 
-  // Simulated offline: the acceptance framework (and any user who wants a
-  // true airplane mode) pauses network sync while local writes keep queuing.
-  if (paused) {
-    /* SYNC-FORENSIC suppressed: syncOnce() SKIPPED — paused (simulated offline) */
-    return null;
-  }
-
-  // Authorization-blocked: the sync gateway returned 401/403 for the current
-  // session. RetryFailed() will not auto-requeue these items; the queue will
-  // resume only after the user re-authenticates (AuthContext calls
-  // durableSyncQueue.resumeAfterAuth() and clears the block).
   try {
-    if (await durableSyncQueue.isAuthBlocked()) {
+    // Simulated offline: the acceptance framework (and any user who wants a
+    // true airplane mode) pauses network sync while local writes keep queuing.
+    if (paused) {
+      /* SYNC-FORENSIC suppressed: syncOnce() SKIPPED — paused (simulated offline) */
+      diagSyncTriggerSkipped(triggerSource, 'paused');
       return null;
     }
-  } catch {
-    // non-fatal; fall through
-  }
+
+    // Authorization-blocked: the sync gateway returned 401/403 for the current
+    // session. RetryFailed() will not auto-requeue these items; the queue will
+    // resume only after the user re-authenticates (AuthContext calls
+    // durableSyncQueue.resumeAfterAuth() and clears the block).
+    try {
+      if (await durableSyncQueue.isAuthBlocked()) {
+        diagSyncTriggerSkipped(triggerSource, 'auth-blocked');
+        return null;
+      }
+    } catch {
+      // non-fatal; fall through
+    }
 
   // Cheap short-circuit: when nothing is pending there is nothing to do, so we
   // avoid the heavy getMetrics()/dequeue() scans that fired on every page
@@ -455,8 +738,11 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
   // On reconnect, `countPending()` returns 0 because the items are `failed`,
   // so `syncOnce()` would skip forever. Retrying them restores them to
   // `pending` so the normal dequeue path picks them up.
+  // [ERP-SYNC-DIAG] existing retryFailed() return value only — no extra query.
+  let diagRetriedFailed = 0;
   try {
-    await durableSyncQueue.retryFailed();
+    diagRetriedFailed = await durableSyncQueue.retryFailed();
+    if (diagRetriedFailed > 0) diagRetryAttempt(diagActiveSyncId(), 'retryFailed-on-sync-start', diagRetriedFailed);
   } catch {
     // non-fatal
   }
@@ -467,6 +753,7 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
     logger.info('[BackgroundSync] syncOnce pendingCount:', pendingCount);
     if (pendingCount === 0) {
       /* SYNC-FORENSIC suppressed: syncOnce() SKIPPED — 0 pending ops */
+      diagSyncTriggerSkipped(triggerSource, 'zero-pending');
       return null;
     }
   } catch {
@@ -474,13 +761,15 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
   }
 
   /* SYNC-FORENSIC suppressed: syncOnce() START */
-  state.isSyncing = true;
+  // [ERP-SYNC-DIAG] correlation ID for this offline → online sync cycle (client-side only).
+  // Reuses the invocation ID issued at lock acquisition so entry, lock, and
+  // processing events share one ID.
+  const diagSyncId = diagSyncStarted(pendingCount, diagRetriedFailed, invocationId);
+  const diagSyncStartMs = performance.now();
   logger.info('[BackgroundSync] syncOnce starting to process', { pendingCount });
 
-  try {
-    const metricsBefore: QueueMetrics = await durableSyncQueue.getMetrics();
+  const metricsBefore: QueueMetrics = await durableSyncQueue.getMetrics();
     const totalBefore = metricsBefore.total;
-
     let totalSuccess = 0;
     let totalFailed = 0;
     let totalDeadLetter = 0;
@@ -505,7 +794,7 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
     }
 
     for (let i = 0; i < maxBatches; i++) {
-      const result = await processBatch(batchSize);
+      const result = await processBatch(batchSize, i + 1);
       if (result.success === 0 && result.failed === 0 && result.deadLetter === 0 && result.skipped === 0 && result.conflictsResolved === 0) break;
 
       totalSuccess += result.success;
@@ -551,6 +840,26 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
     }
 
     /* SYNC-FORENSIC suppressed: syncOnce() COMPLETE */
+    // [ERP-SYNC-DIAG] sync completion uses only values already in hand — no extra queries.
+    diagSyncCompleted(
+      diagSyncId,
+      performance.now() - diagSyncStartMs,
+      totalSuccess,
+      totalFailed + totalDeadLetter,
+      metricsAfter.total,
+    );
+    if (totalSuccess > 0) {
+      // Exactly ONE data-changed signal per cycle that actually applied
+      // changes (never one per operation). No-change cycles (only failures,
+      // dead-letters, skips, no-ops) emit nothing and never force a refresh.
+      emitPushSyncDataChanged(diagSyncId, totalSuccess);
+    } else {
+      diagLog('sync_completed_no_data_change', {
+        id: diagSyncId,
+        note: 'no-successful-operations-no-refresh-emitted',
+      });
+    }
+    diagLockOutcome = 'completed';
     return { success: totalSuccess, failed: totalFailed, deadLetter: totalDeadLetter, skipped: totalSkipped, conflictsResolved: totalConflicts, durationMs: totalDuration };
   } catch (err) {
     state.consecutiveFailures++;
@@ -558,9 +867,14 @@ async function syncOnce(force: boolean = false): Promise<BatchResult | null> {
     await durableSyncQueue.recordMetric('last_sync_failure', state.lastSyncFailure);
     notify('sync-failure', { error: err instanceof Error ? err.message : String(err) });
     /* SYNC-FORENSIC suppressed: syncOnce() EXCEPTION */
+    diagLockOutcome = 'exception';
     return null;
   } finally {
+    // The lock is ALWAYS released here: success, failure, exception, and
+    // every early return above. The next legitimate sync can always proceed.
+    if (activeSync?.syncId === invocationId) activeSync = null;
     state.isSyncing = false;
+    diagLockReleased(invocationId, diagLockOutcome);
   }
 }
 
@@ -598,16 +912,10 @@ async function reportHealth(): Promise<void> {
 }
 
 if (isClient) {
-  if ('onvisibilitychange' in document) {
-    document.addEventListener('visibilitychange', onVisibilityChange);
-  }
-  if (typeof navigator !== 'undefined' && 'onLine' in navigator) {
-    window.addEventListener('online', onOnline);
-  }
-  originalPushState = history.pushState.bind(history);
-  originalReplaceState = history.replaceState.bind(history);
-  history.pushState = onPushState;
-  history.replaceState = onReplaceState;
+  // Navigation triggers only — online/visibility listeners are owned by the
+  // single authoritative lifecycle (ensureLifecycleListeners, called from
+  // startPeriodicSync). History wrappers install once (marker-guarded).
+  ensureHistoryWrappers();
 }
 
 export const backgroundSyncService = {
@@ -645,71 +953,68 @@ export const backgroundSyncService = {
   },
 
   startPeriodicSync(intervalMs?: number): void {
-    if (intervalId) clearInterval(intervalId);
+    // [ERP-SYNC-DIAG] lifecycle entry only — who called, no behavior change.
+    const diagStartCaller = diagCaller('startPeriodicSync');
+    diagPeriodicLifecycleCall('backgroundSync', 'start', 'started', diagStartCaller);
+    // Idempotent: repeated calls never create duplicate timers or listeners.
+    // The existing interval is replaced (single timer), listeners are
+    // registered exactly once via the guard in ensureLifecycleListeners().
+    const replacedOldGeneration = intervalId ? periodicTimerGeneration : null;
+    if (intervalId) {
+      clearInterval(intervalId);
+      // [ERP-SYNC-DIAG] real timer replacement only — same clear as before.
+      diagTimerCleared('periodic', 'backgroundSync', replacedOldGeneration as number, 'replaced-by-startPeriodicSync');
+      intervalId = null;
+    }
     logger.info('[BackgroundSync] startPeriodicSync starting', { intervalMs });
 
     audit('push', 'backgroundSyncService startPeriodicSync', { intervalMs });
 
-    const doSync = async () => {
-      try {
-        audit('push', 'syncOnce begin', {});
-        await syncOnce();
-        audit('push', 'syncOnce end', {});
-      } catch {
-        // background sync errors are handled internally
-      }
-    };
+    ensureLifecycleListeners();
 
-    doSync();
-    intervalId = setInterval(doSync, intervalMs ?? getBackoffInterval());
+    periodicDoSync();
+    const diagScheduledMs = intervalMs ?? getBackoffInterval();
+    lastScheduledIntervalMs = diagScheduledMs;
+    diagLog('sync_polling_scheduled', {
+      requested_interval_ms: intervalMs ?? -1,
+      effective_interval_ms: diagScheduledMs,
+      consecutiveFailures: state.consecutiveFailures,
+    });
+    periodicTimerGeneration = diagNextTimerGeneration('periodic');
+    intervalId = setInterval(periodicDoSync, diagScheduledMs);
+    // [ERP-SYNC-DIAG] real interval creation only — value unchanged.
+    diagTimerScheduled('periodic', 'backgroundSync', diagScheduledMs, periodicTimerGeneration);
+    if (replacedOldGeneration !== null) {
+      diagTimerReplaced('periodic', 'backgroundSync', replacedOldGeneration, periodicTimerGeneration, diagScheduledMs);
+    }
 
     if (!cleanupIntervalId) {
       cleanupIntervalId = setInterval(runCleanup, 3600000);
     }
-
-    if (!eventListenersRegistered) {
-      eventListenersRegistered = true;
-      if (isClient && 'onvisibilitychange' in document) {
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible') {
-            const newInterval = getBackoffInterval();
-            if (intervalId) {
-              clearInterval(intervalId);
-              intervalId = setInterval(doSync, newInterval);
-            }
-            doSync();
-            runCleanup();
-            reportHealth();
-          }
-        });
-      }
-      if (isClient && typeof navigator !== 'undefined' && 'onLine' in navigator) {
-        window.addEventListener('online', () => {
-          state.consecutiveFailures = 0;
-          const newInterval = getBackoffInterval();
-          if (intervalId) {
-            clearInterval(intervalId);
-            intervalId = setInterval(doSync, newInterval);
-          }
-          doSync();
-        });
-      }
-    }
   },
 
   stopPeriodicSync(): void {
+    // [ERP-SYNC-DIAG] lifecycle entry only — who called, no behavior change.
+    diagPeriodicLifecycleCall('backgroundSync', 'stop', 'stopped', diagCaller('stopPeriodicSync'));
+    // Full lifecycle teardown (symmetric with start): timers AND the single
+    // authoritative listener set. A later startPeriodicSync() re-registers.
+    // After logout this also stops wasted wakeups (previously listeners
+    // survived and every online event ran a no-op syncOnce).
     if (intervalId) {
       clearInterval(intervalId);
+      // [ERP-SYNC-DIAG] real clear only — same clear as before.
+      diagTimerCleared('periodic', 'backgroundSync', periodicTimerGeneration, 'stopPeriodicSync');
       intervalId = null;
     }
     if (cleanupIntervalId) {
       clearInterval(cleanupIntervalId);
       cleanupIntervalId = null;
     }
+    removeLifecycleListeners();
   },
 
-  async syncNow(force: boolean = true): Promise<BatchResult | null> {
-    return syncOnce(force);
+  async syncNow(force: boolean = true, triggerSource: string = 'manual-syncNow'): Promise<BatchResult | null> {
+    return syncOnce(force, triggerSource);
   },
 
   async getMetrics(): Promise<QueueMetrics> {
@@ -748,12 +1053,12 @@ export const backgroundSyncService = {
   },
 
   triggerImmediateSync(): void {
-    syncOnce(true).catch(() => {});
+    syncOnce(true, 'immediate').catch(() => {});
   },
 
   /** Alias for syncNow — used by syncService.ts */
   async trigger(): Promise<BatchResult | null> {
-    return syncOnce(true);
+    return syncOnce(true, 'queue-trigger');
   },
 
   /** True while the sync engine is in simulated-offline mode. */
@@ -773,6 +1078,7 @@ export const backgroundSyncService = {
 
   /** Reset internal state for test isolation */
   reset(): void {
+    if (activeSync !== null) activeSync = null;
     state.isSyncing = false;
     paused = false;
     state.lastSyncStart = null;
@@ -784,6 +1090,11 @@ export const backgroundSyncService = {
     state.conflictsResolved = 0;
     subscribers.clear();
     this.stopPeriodicSync();
+    restoreHistoryWrappers();
+    if (pushSyncChannel) {
+      try { pushSyncChannel.close(); } catch { /* best-effort */ }
+      pushSyncChannel = null;
+    }
     eventListenersRegistered = false;
     isInitialized = false;
   },

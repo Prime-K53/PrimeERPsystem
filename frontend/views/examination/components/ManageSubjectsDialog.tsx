@@ -121,6 +121,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
   const [learnerCount, setLearnerCount] = useState<number>(0);
   const [isUpdatingLearners, setIsUpdatingLearners] = useState(false);
   const learnerUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const learnerConfirmPendingRef = useRef(false);
 
   useEffect(() => {
     if (examinationClass) {
@@ -150,6 +151,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
       const isSignificant = diff > 50 || (currentCount > 20 && diff / currentCount > 0.25);
 
       if (isSignificant) {
+        learnerConfirmPendingRef.current = true;
         setConfirmState({
           open: true,
           title: 'Update Learner Count',
@@ -378,7 +380,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
       autoSyncTimeoutRef.current = null;
     }
 
-    if (isPersistingSelections) return;
+    if (isPersistingSelections || isSavingPricing) return;
     setIsPersistingSelections(true);
     setSelectionPersistError(null);
     void (async () => {
@@ -402,7 +404,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
         setIsPersistingSelections(false);
       }
     })();
-  }, [isLocked, examinationClass?.id, isPersistingSelections, onOpenChange, onSaveClassPricing, persistHiddenBomSelections, preview]);
+  }, [isLocked, examinationClass?.id, isPersistingSelections, isSavingPricing, onOpenChange, onSaveClassPricing, persistHiddenBomSelections, preview]);
 
   // Fetch preview from backend API and automatically sync to persistent state
   const fetchAndSyncPreview = useCallback(async (isManualTrigger = false) => {
@@ -573,8 +575,9 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
   }, [examinationClass?.id, onApplyOverridePricing]);
 
   const handleSavePricing = async () => {
+    if (isSavingPricing || isPersistingSelections) return;
     if (!examinationClass || !preview) {
-      onOpenChange(false);
+      handleDialogOpenChange(false);
       return;
     }
     if (autoSyncTimeoutRef.current) {
@@ -753,16 +756,21 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
               </p>
             </div>
           </div>
-          <button onClick={() => handleDialogOpenChange(false)} aria-label="Close" style={{
+          <button onClick={() => handleDialogOpenChange(false)} aria-label="Close"
+            disabled={isPersistingSelections || isSavingPricing || isApplyingOverride}
+            title={(isPersistingSelections || isSavingPricing) ? 'Saving pricing…' : 'Close'}
+            style={{
             width: 32, height: 32, borderRadius: 8,
             border: `1px solid ${hairline}`, background: paper, color: inkSoft,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', transition: 'all .15s ease', fontSize: 16
+            cursor: (isPersistingSelections || isSavingPricing || isApplyingOverride) ? 'not-allowed' : 'pointer',
+            transition: 'all .15s ease', fontSize: 16,
+            opacity: (isPersistingSelections || isSavingPricing || isApplyingOverride) ? 0.5 : 1
           }}
             onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
             onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
           >
-            <XIcon size={15} />
+            {(isPersistingSelections || isSavingPricing) ? <Loader2 size={15} className="animate-spin" /> : <XIcon size={15} />}
           </button>
         </div>
 
@@ -901,7 +909,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
                   disabled={loading}
                   className="w-10 inline-flex items-center justify-center bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-all"
                 >
-                  <X size={16} />
+                  <XIcon size={16} />
                 </button>
               )}
             </div>
@@ -1255,6 +1263,10 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
           )}
         </div>
       </div>
+      {/* Nested dialogs must not bubble clicks to the subjects overlay,
+          otherwise dismissing/confirming them would also close this dialog. */}
+      {(isOverrideDialogOpen || confirmState.open) && (
+      <div onClick={(e) => e.stopPropagation()}>
       <OverrideDialog
         isOpen={isOverrideDialogOpen}
         onClose={() => setIsOverrideDialogOpen(false)}
@@ -1263,6 +1275,30 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
         expectedPrice={expectedFeePerLearner}
         currencySymbol={currencySymbol}
       />
+      <ConfirmDialog
+        open={confirmState.open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            if (learnerConfirmPendingRef.current) {
+              learnerConfirmPendingRef.current = false;
+              if (examinationClass) {
+                setLearnerCount(Math.max(0, Math.floor(Number(examinationClass.number_of_learners) || 0)));
+              }
+            }
+            setConfirmState(prev => ({ ...prev, open: false }));
+          }
+        }}
+        onConfirm={() => {
+          learnerConfirmPendingRef.current = false;
+          confirmState.onConfirm?.();
+        }}
+        title={confirmState.title || 'Confirm'}
+        message={confirmState.message}
+        type={confirmState.type ?? 'warning'}
+        confirmText={confirmState.confirmText ?? 'Confirm'}
+      />
+      </div>
+      )}
     </div>
   );
 };

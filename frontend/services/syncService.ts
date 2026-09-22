@@ -4,6 +4,25 @@ import { mergeRecords, fieldLevelMerge } from './syncConflictResolver';
 import { durableSyncQueue, getLocalGeneration, setLocalGeneration } from './durableSyncQueue';
 import { logger } from './logger';
 import { initAudit, audit } from './syncAudit';
+import {
+  diagActiveSyncId,
+  diagCaller,
+  diagDashboardRefreshTriggered,
+  diagNewSyncId,
+  diagNextTimerGeneration,
+  diagPeriodicLifecycleCall,
+  diagPullTriggerInvoked,
+  diagRequestCompleted,
+  diagRequestFailed,
+  diagRequestStarted,
+  diagStageCompleted,
+  diagStageFailed,
+  diagStageStarted,
+  diagTimerCleared,
+  diagTimerFired,
+  diagTimerReplaced,
+  diagTimerScheduled,
+} from './syncDiag';
 
 // ---------------------------------------------------------------------------
 // Cross-device sync notification helpers
@@ -32,6 +51,8 @@ function getBroadcastChannel(): BroadcastChannel | null {
  */
 function emitDataChanged(table: string, eventType: string) {
   if (typeof window === 'undefined') return;
+  // [ERP-SYNC-DIAG] this event is the trigger DataContext.queueRefresh() listens to.
+  diagDashboardRefreshTriggered('emit-data-changed', `${table}:${eventType}`);
   try {
     window.dispatchEvent(
       new CustomEvent('primeerp:data-changed', {
@@ -63,6 +84,9 @@ const SYNC_CONCURRENCY = 6;
 const PULL_PAGE_SIZE = 2000;
 const MAX_PULL_ROWS_PER_TABLE_PER_PASS = 50000;
 let pushTimer: ReturnType<typeof setInterval> | null = null;
+// Generation of the currently installed pull-timer interval instance.
+// Incremented on every REAL setInterval creation. DEV-diag only.
+let pullTimerGeneration = 0;
 let realtimeSubscribed = false;
 let realtimeChannels: any[] = [];
 let subscriptionGeneration = 0; // incremented on each unsubscribe to cancel stale async inits
@@ -277,6 +301,14 @@ export async function pullRemoteChanges(
   }
 
   /* SYNC-FORENSIC suppressed: PULL-START pullRemoteChanges() */
+  // [ERP-SYNC-DIAG] pull (Supabase → IndexedDB) is a real sync stage: Device B
+  // needs it to see other devices' changes. Timed with existing boundaries only.
+  const diagPullId = diagNewSyncId();
+  const diagPullStart = performance.now();
+  diagStageStarted(diagActiveSyncId() ?? diagPullId, 'pull-supabase', {
+    runId: diagPullId,
+    forceFullSync: forceFullSync,
+  });
   const errors: string[] = [];
   let pulled = 0;
   const totalStores = TABLES_TO_SYNC.length;
@@ -409,6 +441,18 @@ export async function pullRemoteChanges(
   }
 
   /* SYNC-FORENSIC suppressed: PULL-COMPLETE pullRemoteChanges() */
+  if (errors.length > 0) {
+    diagStageFailed(diagActiveSyncId() ?? diagPullId, 'pull-supabase', 'pull-errors', {
+      runId: diagPullId,
+      pulled,
+      errorCount: errors.length,
+    });
+  } else {
+    diagStageCompleted(diagActiveSyncId() ?? diagPullId, 'pull-supabase', performance.now() - diagPullStart, {
+      runId: diagPullId,
+      pulled,
+    });
+  }
   return { pulled, errors };
 }
 
@@ -543,11 +587,20 @@ export async function fetchServerGeneration(): Promise<number | null> {
     if (token) headers.Authorization = `Bearer ${token}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
+    // [ERP-SYNC-DIAG] safe metadata only — no headers/tokens/bodies logged.
+    const diagGenStart = diagRequestStarted('GET', '/sync/generation', { kind: 'sync' });
     try {
       const res = await fetch(`${API_BASE_URL}/sync/generation`, { headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        diagRequestFailed('GET', '/sync/generation', diagGenStart, `http-${res.status}`, { kind: 'sync' });
+        return null;
+      }
       const data = await res.json() as { ok?: boolean; generation?: number };
+      diagRequestCompleted('GET', '/sync/generation', diagGenStart, res.status, { kind: 'sync' });
       return (data?.ok && Number.isFinite(data?.generation)) ? data.generation : null;
+    } catch {
+      diagRequestFailed('GET', '/sync/generation', diagGenStart, 'transport-error', { kind: 'sync' });
+      throw new Error('generation-fetch-transport-error');
     } finally {
       clearTimeout(timeout);
     }
@@ -589,7 +642,10 @@ export async function startPeriodicSync(
   intervalMs = PUSH_INTERVAL_MS,
   onSyncComplete?: (result: { pulled: number; pushed: number; errors: string[] }) => void
 ) {
+  // [ERP-SYNC-DIAG] lifecycle entry only — who called, no behavior change.
+  const diagStartCaller = diagCaller('startPeriodicSync');
   if (!SUPABASE_ENABLED) {
+    diagPeriodicLifecycleCall('syncService', 'start', 'skipped', diagStartCaller, 'supabase-not-enabled');
     logger.warn('[SyncService] startPeriodicSync SKIPPED — SUPABASE_ENABLED=false');
     return;
   }
@@ -606,10 +662,12 @@ export async function startPeriodicSync(
   // could both pass the guard and create duplicate realtime subscriptions and
   // duplicate pull timers.
   if (syncLifecycleActive) {
+    diagPeriodicLifecycleCall('syncService', 'start', 'skipped', diagStartCaller, 'lifecycle-already-active');
     logger.info('[SyncService] startPeriodicSync SKIPPED — lifecycle already active (idempotent, no duplicate timers created)');
     return;
   }
   syncLifecycleActive = true;
+  diagPeriodicLifecycleCall('syncService', 'start', 'started', diagStartCaller);
 
   logger.info('[SyncService] startPeriodicSync starting', { intervalMs, supabaseEnabled: SUPABASE_ENABLED });
 
@@ -640,18 +698,30 @@ export async function startPeriodicSync(
   backgroundSyncService.start();
   logger.info('[SyncService] backgroundSyncService.start() called');
 
-  // Periodic pull (incremental sync) - 30 second interval for catching missed realtime events
+  // Periodic pull (incremental sync) - 30 second interval for catching missed realtime events.
+  // This pull timer is INDEPENDENT of the 60s background push timer
+  // (backgroundSyncService): push drains the local outbox via POST
+  // /api/sync/ops, pull fetches Supabase rows into IndexedDB.
+  const pullIntervalMs = Math.min(intervalMs, 30000);
+  pullTimerGeneration = diagNextTimerGeneration('pull');
+  const diagPullGeneration = pullTimerGeneration;
   pushTimer = setInterval(async () => {
+    // [ERP-SYNC-DIAG] real pull-timer fire only — decision logic unchanged.
+    diagTimerFired('pull', 'syncService', pullIntervalMs, diagPullGeneration);
+    diagPullTriggerInvoked('pull-timer');
     if (navigator.onLine) {
       const result = await pullRemoteChanges().catch(() => ({ pulled: 0, errors: [] }));
     }
-  }, Math.min(intervalMs, 30000));
+  }, pullIntervalMs);
+  // [ERP-SYNC-DIAG] real interval creation only — value unchanged.
+  diagTimerScheduled('pull', 'syncService', pullIntervalMs, diagPullGeneration);
 
   // Initial sync on start - full pull on first sync, then incremental
   if (navigator.onLine) {
     const isFirstSync = !localStorage.getItem('nexus_last_sync_pull');
     /* SYNC-FORENSIC suppressed: startPeriodicSync() initial pull decision */
     audit('sync', 'initial pull starting', { isFirstSync });
+    diagPullTriggerInvoked('initial-pull');
     pullRemoteChanges(undefined, isFirstSync).then(result => {
       /* SYNC-FORENSIC suppressed: startPeriodicSync() initial pull COMPLETE */
       audit('sync', 'initial pull complete', { pulled: result.pulled, errors: result.errors });
@@ -665,8 +735,12 @@ export async function startPeriodicSync(
 }
 
 export function stopPeriodicSync() {
+  // [ERP-SYNC-DIAG] lifecycle entry only — who called, no behavior change.
+  diagPeriodicLifecycleCall('syncService', 'stop', 'stopped', diagCaller('stopPeriodicSync'));
   if (pushTimer) {
     clearInterval(pushTimer);
+    // [ERP-SYNC-DIAG] real clear only — same clear as before.
+    diagTimerCleared('pull', 'syncService', pullTimerGeneration, 'stopPeriodicSync');
     pushTimer = null;
   }
   syncLifecycleActive = false;

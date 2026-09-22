@@ -2094,8 +2094,9 @@ if (type === 'POS_RECEIPT') {
 
   const isConverted = 'isConverted' in data && data.isConverted;
   const conversionDetails = isConverted && 'conversionDetails' in data ? (dataAny.conversionDetails as Record<string, unknown>) || null : null;
-  const isFromOrder = conversionDetails?.sourceType === 'Order' || conversionDetails?.sourceType === 'JobOrder';
-  const isFromQuotation = conversionDetails?.sourceType === 'Quotation';
+  const normalizedSourceType = String(conversionDetails?.sourceType || '').trim().toLowerCase().replace(/[\s_]+/g, '');
+  const isFromOrder = normalizedSourceType === 'order' || normalizedSourceType === 'joborder' || normalizedSourceType === 'salesorder';
+  const isFromQuotation = normalizedSourceType === 'quotation';
   const isConvertedOrder = (type === 'INVOICE' || (type as string) === 'SALES_ORDER' || type === 'ORDER') && isConverted;
 
   let title: string;
@@ -2163,14 +2164,14 @@ if (type === 'POS_RECEIPT') {
                       <Text>Invoice No. {String(('invoiceNumber' in data && dataAny.invoiceNumber) || ('number' in data ? dataAny.number : 'INV'))}</Text>
                       <Text>Invoice Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
                       {Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Due Date: {formatDateOnly(String(data.dueDate))}</Text>}
-                      {isFromQuotation && <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Order Ref: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
-                      {isFromOrder && <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Original Order: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
+                      {showConversionHistory && isFromQuotation && <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Order Ref: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
+                      {showConversionHistory && isFromOrder && <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Original Order: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
                     </>
                   ) : type === 'ORDER' ? (
                     <>
                       <Text>Order No. {String(('orderNumber' in data && dataAny.orderNumber) || ('number' in data ? dataAny.number : 'ORD'))}</Text>
                       <Text>Order Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                      <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Order Ref: {String(isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : (('orderNumber' in data && dataAny.orderNumber) || 'N/A'))}</Text>
+                      <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Order Ref: {String(showConversionHistory && isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : (('orderNumber' in data && dataAny.orderNumber) || 'N/A'))}</Text>
                       {Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Due Date: {formatDateOnly(String(data.dueDate))}</Text>}
                     </>
                   ) : (type as string) === 'SALES_ORDER' ? (

@@ -1,5 +1,18 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {logger } from '@/services/logger';
+import {
+  diagDashboardDataLoadCompleted,
+  diagDashboardDataLoadStarted,
+  diagDashboardRefreshTriggered,
+  diagDashboardRenderUpdated,
+  diagNextTimerGeneration,
+  diagRequestCompleted,
+  diagRequestFailed,
+  diagRequestStarted,
+  diagTimerCleared,
+  diagTimerFired,
+  diagTimerScheduled,
+} from '@/services/syncDiag';
 import { useNavigate } from 'react-router-dom';
 import { useModuleRefresh } from '../hooks/useModuleRefresh';
 import { useAuth } from '../context/AuthContext';
@@ -757,15 +770,69 @@ const DashboardContent: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    // [ERP-SYNC-DIAG] generation for THIS mount's analytics interval instance.
+    const diagAnalyticsGen = diagNextTimerGeneration('dashboard');
     const loadAnalytics = () => {
+      // [ERP-SYNC-DIAG] existing dashboard data request only — timed, query unchanged.
+      // Safe metadata only: logical endpoint name + status + duration (no bodies).
+      const diagReqStart = diagRequestStarted('GET', 'admin-analytics', { source: 'Dashboard' });
+      const diagLoadStart = diagDashboardDataLoadStarted('Dashboard.analytics');
       adminLifecycle.analytics.get()
-        .then((data) => { if (!cancelled) setRequestAnalytics(data); })
-        .catch(() => {});
+        .then((data) => {
+          if (!cancelled) {
+            diagRequestCompleted('GET', 'admin-analytics', diagReqStart, 'ok', { source: 'Dashboard' });
+            diagDashboardDataLoadCompleted('Dashboard.analytics', diagLoadStart);
+            setRequestAnalytics(data);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            diagRequestFailed('GET', 'admin-analytics', diagReqStart, 'request-error', { source: 'Dashboard' });
+            diagDashboardDataLoadCompleted('Dashboard.analytics', diagLoadStart);
+          }
+        });
     };
     loadAnalytics();
-    const timer = setInterval(loadAnalytics, 60000);
-    return () => { cancelled = true; clearInterval(timer); };
+    const timer = setInterval(() => {
+      // [ERP-SYNC-DIAG] real analytics-timer fire only — interval unchanged.
+      diagTimerFired('dashboard', 'Dashboard.analytics', 60000, diagAnalyticsGen);
+      // [ERP-SYNC-DIAG] existing 60s dashboard poll only — interval unchanged.
+      diagDashboardRefreshTriggered('Dashboard.analytics-poll', 'intervalMs=60000');
+      loadAnalytics();
+    }, 60000);
+    // [ERP-SYNC-DIAG] real interval creation only — value unchanged.
+    diagTimerScheduled('dashboard', 'Dashboard.analytics', 60000, diagAnalyticsGen);
+    return () => {
+      cancelled = true;
+      // [ERP-SYNC-DIAG] real clear only — same clear as before.
+      diagTimerCleared('dashboard', 'Dashboard.analytics', diagAnalyticsGen, 'unmount-cleanup');
+      clearInterval(timer);
+    };
   }, []);
+
+  // [ERP-SYNC-DIAG] dashboard render tracking (read-only): fires when the data
+  // the dashboard renders actually changes. Counts only — no record payloads.
+  // This marks `dashboard_render_data_updated` in the online→sync→dashboard chain.
+  const diagRenderCounts = {
+    accounts: Array.isArray(accounts) ? accounts.length : -1,
+    invoices: Array.isArray(invoices) ? invoices.length : -1,
+    ledger: Array.isArray(ledger) ? ledger.length : -1,
+    customers: Array.isArray(customers) ? customers.length : -1,
+    sales: Array.isArray(sales) ? sales.length : -1,
+    customerPayments: Array.isArray(customerPayments) ? customerPayments.length : -1,
+    workOrders: Array.isArray(workOrders) ? workOrders.length : -1,
+  };
+  const diagRenderKey = Object.values(diagRenderCounts).join(',');
+  const diagFirstRenderRef = useRef(true);
+  useEffect(() => {
+    if (diagFirstRenderRef.current) {
+      // Mount render only — establishes the baseline, never attributed to a sync cycle.
+      diagFirstRenderRef.current = false;
+      return;
+    }
+    diagDashboardRenderUpdated('Dashboard.content', diagRenderCounts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagRenderKey]);
 
   const finYearStart = companyConfig?.financialYearStart || 'January';
   const finYearStartMonth = new Date(`${finYearStart} 1, 2000`).getMonth();
