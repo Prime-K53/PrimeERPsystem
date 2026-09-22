@@ -63,6 +63,8 @@ const CustomerStatement: React.FC = () => {
   });
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>({
     showCompanyDetails: true,
     showCustomerDetails: true,
@@ -509,20 +511,62 @@ const CustomerStatement: React.FC = () => {
           {/* Customer */}
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Customer</label>
-            <div className="relative">
-              <Users size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <select
-                value={filters.customerId}
-                onChange={e => setFilter('customerId', e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium outline-none focus:border-emerald-500 transition-colors appearance-none cursor-pointer"
-              >
-                <option value="">Select customer...</option>
-                {customers.map((c: any) => (
-                  <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>
-                ))}
-              </select>
-              <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
+            {(() => {
+              const selected = (customers || []).find((c: any) => c.id === filters.customerId);
+              if (selected) {
+                return (
+                  <div className="w-full pl-3 pr-2 py-2 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium truncate">{getCustomerOptionLabel(selected)}</span>
+                    <button
+                      onClick={() => { setFilter('customerId', ''); setCustomerSearch(''); }}
+                      className="px-2 py-1 rounded-md border border-slate-200 bg-white text-[11px] font-bold text-slate-500 hover:bg-slate-100 transition-all shrink-0"
+                    >
+                      Change
+                    </button>
+                  </div>
+                );
+              }
+              const q = customerSearch.trim().toLowerCase();
+              const matches = (customers || []).filter((c: any) => !q
+                || getCustomerOptionLabel(c).toLowerCase().includes(q)
+                || String(c.phone || '').toLowerCase().includes(q)
+                || String(c.email || '').toLowerCase().includes(q)).slice(0, 30);
+              return (
+                <div className="relative" onBlur={() => setTimeout(() => setCustomerDropdownOpen(false), 150)}>
+                  <Users size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10" />
+                  <input
+                    type="text"
+                    value={customerSearch}
+                    onChange={e => { setCustomerSearch(e.target.value); setCustomerDropdownOpen(true); }}
+                    onFocus={() => setCustomerDropdownOpen(true)}
+                    onKeyDown={e => { if (e.key === 'Escape') setCustomerDropdownOpen(false); }}
+                    placeholder="Search by name, phone, email…"
+                    aria-label="Search customers"
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium outline-none focus:border-emerald-500 transition-colors"
+                  />
+                  <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  {customerDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-60 overflow-auto bg-white border border-slate-200 rounded-lg shadow-xl">
+                      {matches.length === 0 && (
+                        <div className="px-3 py-2.5 text-xs text-slate-400">No customers found.</div>
+                      )}
+                      {matches.map((c: any) => (
+                        <button
+                          key={c.id}
+                          onClick={() => { setFilter('customerId', c.id); setCustomerSearch(''); setCustomerDropdownOpen(false); }}
+                          className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-b-0 transition-colors"
+                        >
+                          <div className="text-xs font-medium text-slate-900 truncate">{getCustomerOptionLabel(c)}</div>
+                          <div className="text-[11px] text-slate-400 truncate">
+                            {[String(c.phone || ''), String(c.email || '')].filter(Boolean).join(' · ') || 'No contact details'}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Start Date */}
