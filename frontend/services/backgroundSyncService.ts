@@ -113,9 +113,9 @@ function timerVisibility(): string {
   }
 }
 
-function periodicTimerContext() {
+function periodicTimerContext(trigger: string = 'periodic-interval') {
   return {
-    trigger: 'periodic-interval',
+    trigger,
     intervalMs: lastScheduledIntervalMs ?? -1,
     timerGeneration: periodicTimerGeneration,
     timerActive: intervalId !== null,
@@ -126,23 +126,34 @@ function periodicTimerContext() {
   };
 }
 
-async function periodicDoSync(): Promise<void> {
-  // [ERP-SYNC-DIAG] Fires every time the 60s periodic timer callback runs.
-  // Placed before any other work; decision logic below is unchanged.
-  // Single emission: the full firing context rides on this one event.
-  diagTimerFired('periodic', 'backgroundSync', lastScheduledIntervalMs ?? -1, periodicTimerGeneration, {
-    trigger: 'periodic-interval',
-    timerActive: intervalId !== null,
-    online: timerOnline(),
-    visibility: timerVisibility(),
-    activeSync: activeSync !== null,
-    activeSyncId: activeSync?.syncId,
-  });
+async function periodicDoSync(origin: 'timer' | 'initial' = 'timer'): Promise<void> {
+  // [ERP-SYNC-DIAG] The immediate initialization invocation is NOT a timer
+  // fire (generation 0 = no installed timer). It keeps its own identity so
+  // `periodic_timer_fired` always means a genuine interval callback.
+  // The immediate sync behavior itself is unchanged and still required.
+  if (origin === 'initial') {
+    diagLog('periodic_initial_invoked', {
+      ...periodicTimerContext(),
+      trigger: 'periodic-initial',
+    });
+  } else {
+    // [ERP-SYNC-DIAG] Fires every time the periodic timer callback runs.
+    // Placed before any other work; decision logic below is unchanged.
+    // Single emission: the full firing context rides on this one event.
+    diagTimerFired('periodic', 'backgroundSync', lastScheduledIntervalMs ?? -1, periodicTimerGeneration, {
+      trigger: 'periodic-interval',
+      timerActive: intervalId !== null,
+      online: timerOnline(),
+      visibility: timerVisibility(),
+      activeSync: activeSync !== null,
+      activeSyncId: activeSync?.syncId,
+    });
+  }
   try {
     audit('push', 'syncOnce begin', {});
     // [ERP-SYNC-DIAG] Immediately before invoking the existing sync function.
-    diagLog('periodic_sync_invoking', periodicTimerContext());
-    await syncOnce(false, 'periodic-interval');
+    diagLog('periodic_sync_invoking', periodicTimerContext(origin === 'initial' ? 'periodic-initial' : 'periodic-interval'));
+    await syncOnce(false, origin === 'initial' ? 'periodic-initial' : 'periodic-interval');
     audit('push', 'syncOnce end', {});
   } catch {
     // background sync errors are handled internally
@@ -921,7 +932,7 @@ if (isClient) {
 export const backgroundSyncService = {
   get state(): Readonly<SyncState> { return state; },
 
-  async initialize(): Promise<void> {
+  async initialize(intervalMs?: number): Promise<void> {
     if (isInitialized) return;
     isInitialized = true;
     logger.info('[BackgroundSync] initialize starting');
@@ -947,7 +958,7 @@ export const backgroundSyncService = {
     }
 
     logger.info('[BackgroundSync] initialize calling startPeriodicSync');
-    await this.startPeriodicSync();
+    await this.startPeriodicSync(intervalMs);
     await runCleanup();
     logger.info('[BackgroundSync] initialize complete');
   },
@@ -972,7 +983,13 @@ export const backgroundSyncService = {
 
     ensureLifecycleListeners();
 
-    periodicDoSync();
+    // Immediate first pass (existing behavior, still required): runs once
+    // synchronously at startup. It is NOT a timer fire — see periodicDoSync.
+    periodicDoSync('initial');
+    // Normal path: the caller threads the configured interval (60000 ms from
+    // syncService). The backoff fallback applies ONLY when no interval was
+    // configured (direct no-arg calls) — it is the failure/retry polling
+    // branch and must not replace the normal 60s configuration.
     const diagScheduledMs = intervalMs ?? getBackoffInterval();
     lastScheduledIntervalMs = diagScheduledMs;
     diagLog('sync_polling_scheduled', {
@@ -1071,9 +1088,11 @@ export const backgroundSyncService = {
     paused = value;
   },
 
-  /** Alias for initialize — used by syncService.ts */
-  start(): void {
-    this.initialize().catch(() => {});
+  /** Alias for initialize — used by syncService.ts. Threads the configured
+   *  periodic interval through so the normal background timer uses it
+   *  instead of falling back to the retry/backoff base interval. */
+  start(intervalMs?: number): void {
+    this.initialize(intervalMs).catch(() => {});
   },
 
   /** Reset internal state for test isolation */

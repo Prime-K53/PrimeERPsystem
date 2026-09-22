@@ -177,7 +177,9 @@ const Login: React.FC = () => {
   };
 
   const inputClass =
-    'w-full h-12 pl-11 pr-4 bg-white border border-slate-200 rounded-xl text-[15px] sm:text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60';
+    'w-full h-[52px] pl-[52px] pr-4 bg-slate-50 border-[1.5px] border-slate-200 rounded-2xl text-[15px] sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none transition-all duration-200 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] hover:bg-white hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15 focus:shadow-[0_8px_24px_-12px_rgba(37,99,235,0.45)] disabled:opacity-60';
+  const inputIconTileClass =
+    'absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-400 transition-all duration-200 group-hover:border-slate-300 group-focus-within:bg-blue-600 group-focus-within:border-blue-600 group-focus-within:text-white group-focus-within:shadow-[0_6px_16px_-6px_rgba(37,99,235,0.6)]';
   const errorId = 'login-error';
   const emailErrorId = 'login-email-error';
 
@@ -186,6 +188,7 @@ const Login: React.FC = () => {
       variant="split-card"
       title="Your business, in perfect sync."
       brandTagline="Smart. Simple. Business Operations."
+      formPanelClassName="bg-[#e9f7ef] sm:bg-[#FDFDFF]"
       backLink={{
         to: resolveCustomerPortalLoginUrl(),
         label: 'Customer portal →',
@@ -198,8 +201,8 @@ const Login: React.FC = () => {
         input:-webkit-autofill:focus,
         input:-webkit-autofill:active {
           -webkit-text-fill-color: #0f172a !important;
-          -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
-          box-shadow: 0 0 0px 1000px #ffffff inset !important;
+          -webkit-box-shadow: 0 0 0px 1000px #f8fafc inset !important;
+          box-shadow: 0 0 0px 1000px #f8fafc inset !important;
           transition: background-color 5000s ease-in-out 0s !important;
           caret-color: #0f172a;
         }
@@ -207,9 +210,16 @@ const Login: React.FC = () => {
       <div className="animate-slideUp">
         {/* ── Heading (matches portal card) ── */}
         <div className="mb-6 sm:mb-7">
-          <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight">
+          {/* Mobile-only eyebrow badge */}
+          <span className="sm:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-[10px] font-extrabold uppercase tracking-[0.14em] text-blue-700 mb-3">
+            <Lock size={11} strokeWidth={2.5} />
+            Secure sign-in
+          </span>
+          <h1 className="text-[26px] sm:text-[30px] font-extrabold tracking-tight leading-tight bg-gradient-to-r from-[#1d4ed8] via-[#2563eb] to-[#4f46e5] bg-clip-text text-transparent sm:bg-none sm:text-slate-900">
             {mfaRequired ? 'Check your authenticator' : 'Welcome Back'}
           </h1>
+          {/* Mobile-only gradient accent bar */}
+          <span aria-hidden="true" className="sm:hidden block h-1 w-14 mt-2.5 rounded-full" style={{ background: 'linear-gradient(90deg, #2563eb, #4f46e5 60%, #d99a3f)' }} />
           <p className="text-[13.5px] text-slate-500 mt-2 leading-relaxed">
             {mfaRequired
               ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
@@ -235,8 +245,8 @@ const Login: React.FC = () => {
                 <label htmlFor="login-mfa-code" className="block text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                   Verification code
                 </label>
-                <div className="relative">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <div className="relative group">
+                  <div className={inputIconTileClass}>
                     <KeyRound size={17} />
                   </div>
                   <input
@@ -247,7 +257,7 @@ const Login: React.FC = () => {
                     enterKeyHint="done"
                     value={mfaCode}
                     onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    className={`${inputClass} !pl-11 tracking-[0.3em] font-mono text-center !text-[17px] font-bold`}
+                    className={`${inputClass} !pl-[52px] tracking-[0.3em] font-mono text-center !text-[17px] font-bold`}
                     placeholder="000000"
                     disabled={submitting}
                     autoFocus
@@ -297,8 +307,8 @@ const Login: React.FC = () => {
                   <label htmlFor="login-email" className="block text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                     Email Address
                   </label>
-                  <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <div className="relative group">
+                    <div className={inputIconTileClass}>
                       <Mail size={17} />
                     </div>
                     <input
@@ -338,8 +348,8 @@ const Login: React.FC = () => {
                       Forgot your password?
                     </Link>
                   </div>
-                  <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <div className="relative group">
+                    <div className={inputIconTileClass}>
                       <Lock size={17} />
                     </div>
                     <input
@@ -357,7 +367,7 @@ const Login: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all shrink-0"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all shrink-0"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

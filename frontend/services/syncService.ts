@@ -695,7 +695,9 @@ export async function startPeriodicSync(
 
   const { backgroundSyncService } = await import('./backgroundSyncService');
   logger.info('[SyncService] calling backgroundSyncService.start()');
-  backgroundSyncService.start();
+  // Thread the configured interval through so the background push timer uses
+  // the normal 60s configuration instead of the backoff fallback (15s base).
+  backgroundSyncService.start(intervalMs);
   logger.info('[SyncService] backgroundSyncService.start() called');
 
   // Periodic pull (incremental sync) - 30 second interval for catching missed realtime events.

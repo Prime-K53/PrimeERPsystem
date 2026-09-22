@@ -12,6 +12,7 @@ type Props = {
   brandTagline?: string;
   backLink?: { to: string; label: string; external?: boolean };
   wide?: boolean;
+  formPanelClassName?: string;
 };
 
 const ERP_FEATURES = [
@@ -26,7 +27,7 @@ const PORTAL_FEATURES = [
   { icon: KeyRound, label: 'Secure Payments', desc: 'Bank transfers verified by our finance team.' },
 ];
 
-const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand = true, brandName, brandTagline, backLink, wide = false }) => {
+const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand = true, brandName, brandTagline, backLink, wide = false, formPanelClassName = 'bg-[#FDFDFF]' }) => {
   return (
     <div className="h-[100dvh] h-screen bg-[#101828] font-sans flex items-stretch lg:items-center justify-center p-3 sm:p-6 lg:p-10 relative overflow-hidden auth-split">
       <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
@@ -71,7 +72,7 @@ const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand
           </div>
           <div className="relative z-10 text-[12px] text-blue-100/50">© 2026 Prime ERP · Powered by PrimeERP</div>
         </div>
-        <div className="relative bg-[#FDFDFF] flex items-start justify-center p-6 sm:p-10 lg:p-12 h-full lg:h-auto lg:max-h-[calc(100dvh-5rem)] overflow-y-auto auth-scroll overscroll-contain">
+        <div className={`relative ${formPanelClassName} flex items-start justify-center p-6 sm:p-10 lg:p-12 h-full lg:h-auto lg:max-h-[calc(100dvh-5rem)] overflow-y-auto auth-scroll overscroll-contain`}>
           <div className={`w-full ${wide ? 'max-w-[480px]' : 'max-w-[420px]'} py-2 my-auto min-h-min`}>
             {showBrand && (
               <div className="flex items-center gap-3 mb-8">
@@ -126,6 +127,7 @@ const AuthLayout: React.FC<Props> = ({
   brandTagline,
   backLink,
   wide = false,
+  formPanelClassName,
 }) => {
   if (variant === 'split-card') {
     return <SplitCardLayout
@@ -136,6 +138,7 @@ const AuthLayout: React.FC<Props> = ({
       brandTagline={brandTagline}
       backLink={backLink}
       wide={wide}
+      formPanelClassName={formPanelClassName}
     >{children}</SplitCardLayout>;
   }
 

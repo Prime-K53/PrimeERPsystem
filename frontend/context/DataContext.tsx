@@ -8,6 +8,7 @@ import {
   diagLocalStateRefreshCompleted,
   diagLocalStateRefreshSkipped,
   diagLocalStateRefreshStarted,
+  diagLog,
   diagNextTimerGeneration,
   diagPollingLifecycleCall,
   diagPollingScheduled,
@@ -102,6 +103,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // logs distinguish one timer being replaced from timers coexisting.
     // DEV-diag only; never influences scheduling.
     const pollTimerGenRef = useRef(0);
+    // Effective interval of the currently installed poll timer (null when no
+    // timer is installed). Lets startPolling keep a live timer instead of
+    // destroying/recreating it on every data refresh.
+    const pollIntervalRef = useRef<number | null>(null);
     const channelRef = useRef<BroadcastChannel | null>(null);
     const lastRefreshAtRef = useRef(0);
     const instanceIdRef = useRef(generateOpaqueId('ctx', { randomLength: 8 }));
@@ -161,6 +166,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const startPolling = useCallback((intervalMs = REFRESH_INTERVAL) => {
         // [ERP-SYNC-DIAG] lifecycle entry only — who called, no behavior change.
         diagPollingLifecycleCall('DataContext', 'start', diagCaller('startPolling'));
+        // Enforce minimum polling interval to prevent overwhelming the backend
+        const safeInterval = Math.max(intervalMs, MIN_POLL_INTERVAL);
+        // A live timer with the same effective interval is KEPT, not
+        // recreated: a data refresh must not destroy/recreate the long-lived
+        // polling interval. A different requested interval still replaces it.
+        if (pollTimerRef.current && pollIntervalRef.current === safeInterval) {
+            // [ERP-SYNC-DIAG] keep only — no timer touched.
+            diagLog('dashboard_poll_timer_kept', {
+                source: 'DataContext',
+                intervalMs: safeInterval,
+                timerGeneration: pollTimerGenRef.current,
+            });
+            return;
+        }
         const replacedOldGeneration = pollTimerRef.current ? pollTimerGenRef.current : null;
         if (pollTimerRef.current) {
             window.clearInterval(pollTimerRef.current);
@@ -168,8 +187,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             diagTimerCleared('dashboard', 'DataContext', replacedOldGeneration as number, 'replaced-by-startPolling');
             pollTimerRef.current = null;
         }
-        // Enforce minimum polling interval to prevent overwhelming the backend
-        const safeInterval = Math.max(intervalMs, MIN_POLL_INTERVAL);
         // [ERP-SYNC-DIAG] existing polling schedule only — intervals unchanged.
         diagPollingScheduled('DataContext.startPolling', intervalMs, safeInterval);
         pollTimerGenRef.current = diagNextTimerGeneration('dashboard');
@@ -182,6 +199,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, safeInterval);
         // [ERP-SYNC-DIAG] real interval creation only — value unchanged.
         diagTimerScheduled('dashboard', 'DataContext', safeInterval, diagPollGeneration);
+        pollIntervalRef.current = safeInterval;
         if (replacedOldGeneration !== null) {
             diagTimerReplaced('dashboard', 'DataContext', replacedOldGeneration, diagPollGeneration, safeInterval);
         }
@@ -195,6 +213,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // [ERP-SYNC-DIAG] real clear only — same clear as before.
         diagTimerCleared('dashboard', 'DataContext', pollTimerGenRef.current, reason);
         pollTimerRef.current = null;
+        pollIntervalRef.current = null;
     }, []);
 
     useEffect(() => {
@@ -238,13 +257,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 window.clearTimeout(refreshTimerRef.current);
                 refreshTimerRef.current = null;
             }
-            stopPolling('unmount-cleanup');
+            // NOTE: stopPolling() is intentionally NOT called here. This
+            // effect re-subscribes whenever refresh callbacks change identity
+            // (which happens on data refreshes); killing the long-lived poll
+            // timer on every re-subscribe caused the timer churn. Unmount
+            // cleanup owns polling teardown (see the mount-only effect below).
             if (channelRef.current) {
                 channelRef.current.close();
                 channelRef.current = null;
             }
         };
     }, [queueRefresh, refreshAllData, startPolling, stopPolling]);
+
+    // Mount-only lifecycle: stop polling exactly once, when THIS provider
+    // unmounts. Re-renders and listener re-subscriptions above must not
+    // touch the polling timer.
+    useEffect(() => {
+        return () => {
+            stopPolling('unmount-cleanup');
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // NOTE: The Supabase realtime subscription was removed from this component.
     // syncService.ts::subscribeToRemoteChanges() handles all realtime events for

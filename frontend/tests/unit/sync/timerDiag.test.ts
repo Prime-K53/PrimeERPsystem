@@ -237,10 +237,11 @@ describe('backgroundSync 60s timer lifecycle (fresh module graph)', () => {
     const gen1 = Number(firstScheduled.match(/timerGeneration=(\d+)/)![1]);
     expect(firstScheduled).toContain('intervalMs=60000');
 
-    // NOTE: startPeriodicSync runs one IMMEDIATE first pass (not via the
-    // timer), which also logs fired/invoking with timerGeneration=0 ("no
-    // timer installed yet"). The assertion below isolates the REAL timer
-    // callback: exactly one additional fired event carrying the new gen.
+    // The immediate first pass is NOT a timer fire: it must log
+    // periodic_initial_invoked and must never log periodic_timer_fired
+    // with generation 0.
+    expect(debugLines(debugSpy).some((l) => l.includes('periodic_initial_invoked'))).toBe(true);
+    expect(debugLines(debugSpy).some((l) => l.includes('periodic_timer_fired'))).toBe(false);
 
     svc.startPeriodicSync(60000);
     await vi.waitFor(() => {
@@ -264,6 +265,39 @@ describe('backgroundSync 60s timer lifecycle (fresh module graph)', () => {
     debugSpy.mockClear();
     svc.stopPeriodicSync();
     expect(debugLines(debugSpy).some((l) => l.includes('periodic_timer_cleared'))).toBe(true);
+  });
+
+  it('startup threads the configured interval: 60000ms timer, never -1/15000', async () => {
+    svc.start(60000);
+    await vi.waitFor(() => {
+      expect(
+        debugLines(debugSpy).some(
+          (l) => l.includes('periodic_timer_scheduled') && l.includes('intervalMs=60000'),
+        ),
+      ).toBe(true);
+    });
+    const lines = debugLines(debugSpy);
+    // The immediate first pass keeps its own identity — never a timer fire.
+    expect(lines.some((l) => l.includes('periodic_initial_invoked'))).toBe(true);
+    expect(lines.some((l) => l.includes('periodic_timer_fired'))).toBe(false);
+    // The configured interval reaches the timer; the backoff fallback (-1/15000)
+    // must not become the normal periodic timer.
+    expect(lines.some((l) => l.includes('requested_interval_ms=-1'))).toBe(false);
+    expect(
+      lines.some(
+        (l) => l.includes('periodic_timer_scheduled') && /intervalMs=(15000|-1)( |$)/.test(l),
+      ),
+    ).toBe(false);
+  });
+
+  it('no-arg startPeriodicSync preserves the backoff fallback (retry branch intact)', async () => {
+    svc.startPeriodicSync();
+    await vi.waitFor(() => {
+      expect(debugLines(debugSpy).some((l) => l.includes('periodic_timer_scheduled'))).toBe(true);
+    });
+    const scheduled = debugLines(debugSpy).find((l) => l.includes('periodic_timer_scheduled'))!;
+    // getBackoffInterval() base with zero failures — retry branch unchanged.
+    expect(scheduled).toContain('intervalMs=15000');
   });
 });
 
@@ -308,6 +342,15 @@ describe('syncService pull timer (engine install gate)', () => {
       }
       expect(pullScheduled).toContain('intervalMs=30000');
       const gen = Number(pullScheduled.match(/timerGeneration=(\d+)/)![1]);
+      // syncService threads its configured interval into the background push
+      // timer: it must be 60000 (never the 15000 backoff fallback).
+      await vi.waitFor(() => {
+        expect(
+          debugLines(debugSpy).some(
+            (l) => l.includes('periodic_timer_scheduled') && l.includes('intervalMs=60000'),
+          ),
+        ).toBe(true);
+      });
       debugSpy.mockClear();
       const pullCb = scheduled.find(
         (s) => s.ms === 30000 && /syncService\.(ts|js)/.test(s.stack),
