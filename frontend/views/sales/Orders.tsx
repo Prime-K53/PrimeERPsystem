@@ -422,25 +422,33 @@ const Orders: React.FC = () => {
         }
 
         if (activeView === 'Orders') {
-            const orderToDelete = orders.find(o => o.id === id);
-            if (orderToDelete?.status === 'Cancelled') {
-                if (!window.confirm(`Permanently delete cancelled order ${orderToDelete.orderNumber || id}? This cannot be undone.`)) return;
-                try {
-                    await deleteSalesOrder(id);
-                    notify("Order permanently deleted", "success");
-                } catch (err: any) {
-                    notify("Failed to delete: " + (err?.message || err), "error");
-                }
+            const orderToDelete: any = orders.find(o => o.id === id);
+            if (!orderToDelete) {
+                notify("Order not found", "error");
                 return;
             }
-            setCancelReasonText('');
-            setCancelReasonModal({
+            if ((orderToDelete.paidAmount || 0) > 0 || (orderToDelete.payments?.length || 0) > 0) {
+                notify("Cannot permanently delete an order with recorded payments. Void associated payments first.", "error");
+                return;
+            }
+            if (orderToDelete.invoiceStatus === 'Invoiced' || orderToDelete.status === 'Converted') {
+                notify("Cannot permanently delete an order that has been converted to an invoice.", "error");
+                return;
+            }
+            setConfirmState({
                 open: true,
-                title: 'Reason for cancelling this order (Deletion is restricted for audit compliance)',
-                onConfirm: async (reason) => {
-                    if (!reason) return;
-                    await cancelOrder(id, reason);
-                    notify("Order cancelled successfully", "info");
+                title: 'Permanently Delete Order',
+                message: `Permanently delete order ${orderToDelete.orderNumber || id}? This cannot be undone.`,
+                type: 'danger',
+                confirmText: 'Delete Permanently',
+                onConfirm: async () => {
+                    try {
+                        await deleteSalesOrder(id);
+                        notify("Order permanently deleted", "success");
+                        if (selectedOrderForDetail?.id === id) setSelectedOrderForDetail(null);
+                    } catch (err: any) {
+                        notify("Failed to delete: " + (err?.message || err), "error");
+                    }
                 }
             });
             return;
@@ -1252,6 +1260,9 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                 const ticketId = await convertOrderToJobTicket(item);
                 notify(`Order ${item.id} successfully converted to Job Ticket ${ticketId}`, "success");
                 navigate('/sales-flow/job-tickets');
+            }
+            if (action === 'delete') {
+                await handleDelete(item.id);
             }
         }
     };

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useSalesOrderStore } from '../../stores/salesOrderStore';
 import { useFinanceStore } from '../../stores/financeStore';
@@ -90,10 +91,10 @@ const RowActions: React.FC<RowActionsProps> = ({ order, onEdit, onConvert, onCha
     >
       Convert
     </button>
-    {order.status === 'Cancelled' && (
+    {order.status === 'Cancelled' || order.status === 'Draft' || order.status === 'Confirmed' || order.status === 'Processing' ? (
       <button
         onClick={() => onDelete(order)}
-        title="Permanently delete cancelled order"
+        title="Permanently delete sales order"
         style={{
           fontFamily: "'Inter', sans-serif",
           fontSize: 12,
@@ -115,7 +116,7 @@ const RowActions: React.FC<RowActionsProps> = ({ order, onEdit, onConvert, onCha
       >
         <Trash2 size={14} />
       </button>
-    )}
+    ) : null}
     <select
       value={order.status}
       onChange={(e) => onChangeStatus(order, e.target.value)}
@@ -245,6 +246,14 @@ const SalesOrders: React.FC = () => {
   };
 
   const handleDelete = async (order: any) => {
+    if ((order.paidAmount || 0) > 0 || (order.payments?.length || 0) > 0) {
+      toast.error('Cannot permanently delete a sales order with recorded payments.');
+      return;
+    }
+    if (order.invoiceId || order.invoiceStatus === 'Invoiced') {
+      toast.error('Cannot permanently delete a sales order that has been invoiced.');
+      return;
+    }
     if (!window.confirm(`Permanently delete sales order ${order.orderNumber || order.id}? This cannot be undone.`)) return;
     try {
       await store.deleteSalesOrder(order.id);
