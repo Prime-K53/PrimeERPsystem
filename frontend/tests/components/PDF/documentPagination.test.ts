@@ -100,6 +100,7 @@ async function securedMapped(raw: any, target: any) {
 
 const COMPACT = norm('Verify authenticity using the QR code on the final page');
 const VERIFY_LABEL = norm('DOCUMENT AUTHENTICATION & VERIFICATION');
+const KEPT_LINE = norm('Digitally generated');
 const CONTINUED = norm('continued');
 
 function expectPageNumbers(pages: Array<{ text: string }>, total: number) {
@@ -127,7 +128,8 @@ function expectQrFinalOnly(pages: Array<{ text: string; drawnImages: number[] }>
       if (i > 0) expect(p.text).toContain(CONTINUED);
     } else {
       expect(p.drawnImages).toContain(qrObj);
-      expect(p.text).toContain(VERIFY_LABEL);
+      expect(p.text).not.toContain(VERIFY_LABEL);
+      expect(p.text).toContain(KEPT_LINE);
       expect(p.text).not.toContain(COMPACT);
       if (i > 0) expect(p.text).toContain(CONTINUED);
     }
@@ -374,7 +376,8 @@ describe('receipt pagination (global standard)', () => {
   }, 120000);
 
   it('TEST 2 — two pages', async () => {
-    const { pages, pageCount, qrObj } = await renderBoth('RECEIPT', await secured(30));
+    // 60 allocations: calibrated for the trimmed verification footer.
+    const { pages, pageCount, qrObj } = await renderBoth('RECEIPT', await secured(60));
     expectPageNumbers(pages, 2);
     expectQrFinalOnly(pages, qrObj);
     expect(pages[1].text).toContain(norm('Receipt PAY-P726/001'));

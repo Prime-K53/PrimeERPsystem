@@ -233670,10 +233670,6 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
             return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "column" }, children: [
               /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", gap: 10 }, children: [
                 /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flex: 1 }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 6 }, children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 22, height: 24, borderWidth: 1.8, borderColor: "#2563eb", backgroundColor: "#dbeafe", borderRadius: 3, alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 9, height: 5, borderLeftWidth: 1.8, borderBottomWidth: 1.8, borderColor: "#2563eb", transform: "rotate(-45deg)", marginTop: -2 } }) }),
-                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 10.5 * fontScale, fontWeight: "bold", color: "#1e3a8a", letterSpacing: 0.4 }, children: "DOCUMENT AUTHENTICATION & VERIFICATION" })
-                  ] }),
                   /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", marginTop: 4, gap: 4 }, children: [
                     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 12, height: 12, borderRadius: 6, backgroundColor: "#10b981", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 6, height: 3.5, borderLeftWidth: 1.2, borderBottomWidth: 1.2, borderColor: "#ffffff", transform: "rotate(-45deg)", marginTop: -1 } }) }),
                     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 8.5 * fontScale, fontWeight: "bold", color: "#2563eb" }, children: "Digitally generated" }),
@@ -233687,13 +233683,7 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
                   ] })
                 ] }),
                 /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 1, backgroundColor: "#cbd5e1", alignSelf: "stretch" } }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { backgroundColor: "#0b4da2", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 5 }, children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 9, height: 13, borderWidth: 1, borderColor: "#ffffff", borderRadius: 2, alignItems: "center", justifyContent: "flex-end", paddingBottom: 1.2 }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: 2, height: 2, borderRadius: 1, backgroundColor: "#ffffff" } }) }),
-                    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontSize: 7.5 * fontScale, fontWeight: "bold", color: "#ffffff", letterSpacing: 0.5 }, children: "SCAN TO VERIFY" })
-                  ] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 6, alignItems: "center" }, children: qrUrl ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: qrUrl, style: { width: footerQrSize, height: footerQrSize } }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: footerQrSize, height: footerQrSize, backgroundColor: "#f1f5f9" } }) })
-                ] })
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { alignItems: "center" }, children: qrUrl ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Image, { src: qrUrl, style: { width: footerQrSize, height: footerQrSize } }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { width: footerQrSize, height: footerQrSize, backgroundColor: "#f1f5f9" } }) }) })
               ] }),
               /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { style: { marginTop: 8, height: 1, backgroundColor: "#dbeafe", width: "100%" } })
             ] });
@@ -233845,51 +233835,6 @@ var SecurityFooter = ({
   const displayCompany = String(companyName || "").trim() || "Prime Printing";
   const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, "").trim() || displayCompany;
   const titleColor = "#1e3a8a";
-  const shieldBlue = "#2563eb";
-  const shieldFill = "#dbeafe";
-  const headerRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", gap: 6 }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      View,
-      {
-        style: {
-          width: 22,
-          height: 24,
-          borderWidth: 1.8,
-          borderColor: shieldBlue,
-          backgroundColor: shieldFill,
-          borderRadius: 3,
-          alignItems: "center",
-          justifyContent: "center"
-        },
-        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          View,
-          {
-            style: {
-              width: 9,
-              height: 5,
-              borderLeftWidth: 1.8,
-              borderBottomWidth: 1.8,
-              borderColor: shieldBlue,
-              transform: "rotate(-45deg)",
-              marginTop: -2
-            }
-          }
-        )
-      }
-    ),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      Text,
-      {
-        style: {
-          fontSize: 10.5 * fontScale,
-          fontWeight: "bold",
-          color: titleColor,
-          letterSpacing: 0.4
-        },
-        children: "DOCUMENT AUTHENTICATION & VERIFICATION"
-      }
-    )
-  ] });
   const subRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", marginTop: 4, gap: 4 }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
       View,
@@ -233927,45 +233872,9 @@ var SecurityFooter = ({
     shortCompany,
     " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record. or contact us on +265 992 528 222"
   ] });
-  const qrColumn = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
-      View,
-      {
-        style: {
-          backgroundColor: "#0b4da2",
-          borderRadius: 8,
-          paddingVertical: 4,
-          paddingHorizontal: 8,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 5
-        },
-        children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-            View,
-            {
-              style: {
-                width: 9,
-                height: 13,
-                borderWidth: 1,
-                borderColor: "#ffffff",
-                borderRadius: 2,
-                alignItems: "center",
-                justifyContent: "flex-end",
-                paddingBottom: 1.2
-              },
-              children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 2, height: 2, borderRadius: 1, backgroundColor: "#ffffff" } })
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.5 * fontScale, fontWeight: "bold", color: "#ffffff", letterSpacing: 0.5 }, children: "SCAN TO VERIFY" })
-        ]
-      }
-    ),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 6, alignItems: "center" }, children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: footerQrSize, height: footerQrSize, backgroundColor: "#f1f5f9" } }) })
-  ] });
+  const qrColumn = /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center" }, children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: footerQrSize, height: footerQrSize, backgroundColor: "#f1f5f9" } }) }) });
   const contentRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 10 }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-      headerRow,
       subRow,
       bodyCopy
     ] }),

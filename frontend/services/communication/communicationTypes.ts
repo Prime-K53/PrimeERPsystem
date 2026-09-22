@@ -130,6 +130,42 @@ export interface FactValidationResult {
   issues: FactValidationIssue[];
 }
 
+/**
+ * Honest outbound delivery states — only what the provider can truthfully
+ * establish. "submitted" means the provider accepted the payload (messageId)
+ * WITHOUT delivery confirmation. "delivered" is used ONLY when the provider
+ * supplies delivery confirmation (none of the current providers do for these
+ * paths, so it must not be claimed).
+ */
+export type OutboundStatus =
+  | 'draft'
+  | 'queued'
+  | 'submitted'
+  | 'sent_accepted'
+  | 'delivered'
+  | 'failed'
+  | 'blocked_validation'
+  | 'blocked_stale';
+
+/**
+ * Atomic invoice attachment descriptor. The actual PDF bytes are rendered
+ * server-side by the canonical officialDocumentService at send time — this
+ * descriptor binds message + document + verification URL to ONE invoice so
+ * integrity can be verified before sending. Never report "attached" unless
+ * the outbound payload actually contains the document.
+ */
+export interface InvoiceAttachmentDescriptor {
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  filename: string;
+  mimeType: 'application/pdf';
+  /** Declared size when known (server render); null until rendered. */
+  sizeBytes: number | null;
+  source: 'erp-official-document';
+  verificationUrl: string | null;
+}
+
 export interface CommunicationHistoryRecord {
   id: string;
   customerId: string;
@@ -138,40 +174,53 @@ export interface CommunicationHistoryRecord {
   channel: CommunicationChannel;
   tone: CommunicationTone;
   aiDraft: string;
+  /** EXACT final message transmitted (post-edit, post-injection) — never just the AI draft. */
   finalMessage: string;
   invoiceId: string | null;
   invoiceNumber: string | null;
   verificationUrl: string | null;
   hadAttachment: boolean;
-  status: 'sent' | 'failed' | 'blocked_validation' | 'blocked_stale';
+  attachmentFilename: string | null;
+  attachmentIncluded: boolean;
+  status: OutboundStatus | 'sent';
   failureReason: string | null;
   operator: string | null;
+  providerMessageId: string | null;
   aiGenerated: boolean;
   snapshotId: string;
   factsSnapshot: string;
   createdAt: string;
 }
 
-export const CHANNEL_CAPABILITIES: Record<
-  CommunicationChannel,
-  { label: string; supportsAttachment: boolean; supportsClickableUrl: boolean; note: string }
-> = {
+export interface ChannelCapability {
+  label: string;
+  supportsAttachment: boolean;
+  supportsClickableUrl: boolean;
+  note: string;
+  /** Exact attachment behavior — shown in preview so limits are explicit. */
+  attachmentBehavior: string;
+}
+
+export const CHANNEL_CAPABILITIES: Record<CommunicationChannel, ChannelCapability> = {
   whatsapp: {
     label: 'WhatsApp',
     supportsAttachment: false,
     supportsClickableUrl: true,
-    note: 'Text + clickable verification link via Meta API. Invoice PDF opens in the ERP document viewer (download/share from preview).',
+    note: 'Text + clickable verification link via Meta API (text-only integration).',
+    attachmentBehavior: 'The current Meta integration sends TEXT ONLY — no document endpoint is wired. The invoice PDF is NOT attached; share it from the ERP document viewer/download.',
   },
   sms: {
     label: 'SMS',
     supportsAttachment: false,
     supportsClickableUrl: false,
-    note: 'Plain text only (160-char segments). Verification URL included as plain text; attachment not supported.',
+    note: 'Plain text only (160-char segments). Verification URL included as plain text.',
+    attachmentBehavior: 'SMS cannot carry a PDF attachment. Message + verification URL (plain text) only.',
   },
   email: {
     label: 'Email',
     supportsAttachment: true,
     supportsClickableUrl: true,
-    note: 'Full HTML/text + verification link. Attachment via ERP document handoff until SMTP attachment API lands.',
+    note: 'Message + verification link + real invoice PDF via the ERP backend.',
+    attachmentBehavior: 'The official invoice PDF is rendered server-side (canonical renderer) and attached to the SMTP payload. Status reflects SMTP acceptance, not inbox delivery.',
   },
 };

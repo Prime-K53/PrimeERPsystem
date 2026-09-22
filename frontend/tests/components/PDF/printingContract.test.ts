@@ -106,8 +106,10 @@ describe('rendered contract content', () => {
     expect(text).toContain(norm('K5,000.00'));
     expect(text).toContain(norm('Not signed'));
     expect(text).toContain(norm('DOCUMENT INTEGRITY'));
-    expect(text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
-    expect(text).toContain(norm('SCAN TO VERIFY'));
+    expect(text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(text).not.toContain(norm('SCAN TO VERIFY'));
+    expect(text).toContain(norm('Digitally generated'));
+    expect(text).toContain(norm('Verification available online'));
     // QR is drawn on the final page only.
     pages.forEach((p, i) => {
       if (i < pages.length - 1) expect(p.drawnImages).not.toContain(qrObj);
@@ -174,11 +176,12 @@ describe('contract pagination honesty', () => {
         expect(pages[i].text).toContain(norm('continued'));
       }
     }
-    // Final page: QR drawn, both auth blocks, integrity evidence retained.
+    // Final page: QR drawn, trimmed auth block, integrity evidence retained.
     const final = pages[total - 1];
     expect(final.drawnImages).toContain(qrObj);
-    expect(final.text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
-    expect(final.text).toContain(norm('SCAN TO VERIFY'));
+    expect(final.text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(final.text).not.toContain(norm('SCAN TO VERIFY'));
+    expect(final.text).toContain(norm('Digitally generated'));
     expect(final.text).toContain(norm('DOCUMENT INTEGRITY'));
   }, 120000);
 });

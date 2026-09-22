@@ -33,11 +33,18 @@ vi.mock('../../services/whatsAppMarketingService', () => ({
 
 import { dbService } from '../../services/db';
 import { aiService } from '../../services/aiService';
+import { whatsappClient } from '../../services/whatsappClientService';
 import { buildCommunicationContext, diffFinancialFacts } from '../../services/communication/communicationContextBuilder';
 import { validateDraftAgainstFacts, injectFactsPostGeneration } from '../../services/communication/communicationValidation';
 import { generateCommunicationDraft } from '../../services/communication/communicationAIService';
 import { recordCommunication, findRecentInvoiceSend } from '../../services/communication/communicationHistoryService';
-import { sendCommunication } from '../../services/communication/communicationSendService';
+import { buildFinalPayload, sendCommunication } from '../../services/communication/communicationSendService';
+import {
+  getFocalInvoice,
+  resolveInvoiceAttachmentDescriptor,
+  verifyAttachmentIntegrity,
+} from '../../services/communication/invoiceAttachmentService';
+import { CHANNEL_CAPABILITIES } from '../../services/communication/communicationTypes';
 
 const CUSTOMERS = [
   { id: 'C-ABC', businessName: 'ABC School', contactName: 'Jane Doe', phone: '260971000001', email: 'abc@example.com' },
@@ -264,5 +271,224 @@ describe('send layer honesty', () => {
     const ctx = await buildCommunicationContext('welcome', 'C-ABC');
     const res = await sendCommunication({ channel: 'whatsapp', recipientPhone: '260971000001', recipientEmail: null, message: '  ', ctx });
     expect(res.ok).toBe(false);
+  });
+});
+
+describe('hardening boundaries (atomic invoice context)', () => {
+  const baseOpts = {
+    invoicesOverride: INVOICES as unknown as never, paymentsOverride: [], openingBalanceOverride: 0,
+  };
+
+  it('1. Invoice-A message + Invoice-A attachment + Invoice-A verification URL passes', async () => {
+    const ctx = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    const focal = getFocalInvoice(ctx);
+    expect(focal?.invoiceNumber).toBe('INV-002');
+    const descriptor = resolveInvoiceAttachmentDescriptor(ctx);
+    expect(descriptor?.invoiceId).toBe(focal?.id);
+    expect(descriptor?.verificationUrl).toBe(focal?.verificationUrl);
+    const integrity = verifyAttachmentIntegrity(descriptor, ctx);
+    expect(integrity.ok).toBe(true);
+  });
+
+  it('2. Invoice-A message + Invoice-B attachment descriptor is BLOCKED', async () => {
+    const ctx = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    const descriptor = resolveInvoiceAttachmentDescriptor(ctx)!;
+    const tampered = { ...descriptor, invoiceId: 'INV-1', invoiceNumber: 'INV-001' };
+    const integrity = verifyAttachmentIntegrity(tampered, ctx);
+    expect(integrity.ok).toBe(false);
+  });
+
+  it('3. Invoice-A attachment + Invoice-B verification URL is BLOCKED', async () => {
+    const ctx = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    const descriptor = resolveInvoiceAttachmentDescriptor(ctx)!;
+    const tampered = { ...descriptor, verificationUrl: 'http://localhost/#/verify/invoice/INV-001?t=tok123' };
+    const integrity = verifyAttachmentIntegrity(tampered, ctx);
+    expect(integrity.ok).toBe(false);
+    // A draft carrying the wrong invoice URL is also blocked by fact validation.
+    const v = validateDraftAgainstFacts(
+      `Invoice INV-002 total K45,000.00 verify http://localhost/#/verify/invoice/INV-001?t=tok123`, ctx,
+    );
+    expect(v.ok).toBe(false);
+  });
+
+  it('4. AI changing K145,000.00 to K150,000.00 is BLOCKED at final validation', async () => {
+    const ctx = await buildCommunicationContext('payment_reminder', 'C-ABC', baseOpts);
+    const built = buildFinalPayload('whatsapp', 'Dear ABC School, your balance is K150,000.00.', ctx);
+    expect(built.payload).toBeNull();
+    expect(built.issues.join(' ')).toMatch(/K150,000/);
+  });
+
+  it('5. User editing K145,000.00 to K150,000.00 is BLOCKED at send', async () => {
+    const ctx = await buildCommunicationContext('payment_reminder', 'C-ABC', baseOpts);
+    const res = await sendCommunication({
+      channel: 'whatsapp', recipientPhone: '260971000001', recipientEmail: null,
+      message: 'Dear ABC School, your balance is K150,000.00.', ctx,
+    });
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe('blocked_validation');
+    expect(res.attachmentIncluded).toBe(false);
+  });
+
+  it('6. Balance changing after preview BLOCKS and requires reconfirmation', async () => {
+    const before = await buildCommunicationContext('payment_reminder', 'C-ABC', baseOpts);
+    const after = await buildCommunicationContext('payment_reminder', 'C-ABC', {
+      invoicesOverride: INVOICES as unknown as never,
+      paymentsOverride: [{ customerId: 'C-ABC', amountApplied: 50000, status: 'Confirmed' }],
+      openingBalanceOverride: 0,
+    });
+    const diff = diffFinancialFacts(before, after);
+    expect(diff.changed).toBe(true);
+    // The approved message (old balance) no longer validates against fresh facts.
+    const built = buildFinalPayload('whatsapp', 'Dear ABC School, your balance is K145,000.00.', after);
+    expect(built.payload).toBeNull();
+  });
+
+  it('7. Invoice changing after preview BLOCKS and requires reconfirmation', async () => {
+    const before = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    const afterInvoices = [
+      ...INVOICES,
+      { id: 'INV-3', customerId: 'C-ABC', customerName: 'ABC School', invoiceNumber: 'INV-003', totalAmount: 10000, paidAmount: 0, date: '2026-09-20', status: 'Pending', verificationToken: 'tok789' },
+    ];
+    const after = await buildCommunicationContext('send_latest_invoice', 'C-ABC', {
+      invoicesOverride: afterInvoices as unknown as never, paymentsOverride: [], openingBalanceOverride: 0,
+    });
+    const diff = diffFinancialFacts(before, after);
+    expect(diff.changed).toBe(true);
+    expect(diff.messages.join(' ')).toMatch(/INV-002.*INV-003|Focal invoice changed/);
+  });
+
+  it('8. Missing attachment BLOCKS an invoice send', async () => {
+    mockStores(INVOICES, CUSTOMERS, PAYMENTS);
+    const ctx = await buildCommunicationContext('send_specific_invoice', 'C-ABC', {
+      invoicesOverride: INVOICES as unknown as never, paymentsOverride: [], openingBalanceOverride: 0,
+    });
+    // No specific invoice selected → no attachment descriptor → blocked.
+    const res = await sendCommunication({
+      channel: 'email', recipientPhone: null, recipientEmail: 'abc@example.com',
+      message: 'Dear ABC School, please see your invoice.', ctx,
+    });
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe('blocked_validation');
+    expect(res.attachmentIncluded).toBe(false);
+  });
+
+  it('9. Provider acceptance without delivery confirmation is NEVER "delivered"', async () => {
+    mockStores(INVOICES, CUSTOMERS, PAYMENTS);
+    vi.mocked(whatsappClient.getAccountInfo).mockReturnValue({
+      id: 'wa-1', user_id: 'u1', phone_number_id: 'pnid', access_token: 'tok',
+      display_name: 'x', connection_status: 'connected', last_connected_at: null,
+      created_at: '', updated_at: '',
+    });
+    vi.mocked(whatsappClient.sendMessage).mockResolvedValue({ messageId: 'wamid-1' });
+    const ctx = await buildCommunicationContext('payment_reminder', 'C-ABC', baseOpts);
+    const res = await sendCommunication({
+      channel: 'whatsapp', recipientPhone: '260971000001', recipientEmail: null,
+      message: 'Dear ABC School, your balance is K145,000.00.', ctx,
+    });
+    expect(res.ok).toBe(true);
+    expect(res.status).not.toBe('delivered');
+    expect(res.status).toBe('submitted');
+    expect(res.providerMessageId).toBe('wamid-1');
+    expect(res.attachmentIncluded).toBe(false);
+  });
+
+  it('10. History records the EXACT final edited message, not just the AI draft', async () => {
+    mockStores(INVOICES, CUSTOMERS, PAYMENTS);
+    await recordCommunication({
+      customerId: 'C-ABC', businessName: 'ABC School', purpose: 'payment_reminder',
+      channel: 'whatsapp', tone: 'professional', aiDraft: 'AI wording K145,000.00',
+      finalMessage: 'Edited final wording K145,000.00 — please pay today.',
+      invoiceId: null, invoiceNumber: null, verificationUrl: null,
+      hadAttachment: false, status: 'submitted', failureReason: null,
+      aiGenerated: true, snapshotId: 's', factsSnapshot: '{}',
+    });
+    expect(dbService.put).toHaveBeenCalledWith('customerNotificationLogs', expect.objectContaining({
+      aiDraft: 'AI wording K145,000.00',
+      finalMessage: 'Edited final wording K145,000.00 — please pay today.',
+    }));
+  });
+
+  it('11. WhatsApp capability honestly reflects the text-only Meta integration', () => {
+    expect(CHANNEL_CAPABILITIES.whatsapp.supportsAttachment).toBe(false);
+    expect(CHANNEL_CAPABILITIES.whatsapp.attachmentBehavior).toMatch(/NOT attached/i);
+  });
+
+  it('12. Email attachment is actually present in the SMTP payload path', async () => {
+    mockStores(INVOICES, CUSTOMERS, PAYMENTS);
+    const ctx = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    const finalMessage = `Dear ABC School, invoice INV-002 total K45,000.00. Verify: ${ctx.latestInvoice?.verificationUrl}`;
+    (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, messageId: 'smtp-1', invoiceNumber: 'INV-002', attachmentFilename: 'INV-002.pdf', verificationUrl: ctx.latestInvoice?.verificationUrl }),
+    });
+    const res = await sendCommunication({
+      channel: 'email', recipientPhone: null, recipientEmail: 'abc@example.com',
+      message: finalMessage, ctx,
+    });
+    expect(res.ok).toBe(true);
+    expect(res.attachmentIncluded).toBe(true);
+    expect(res.attachmentFilename).toBe('INV-002.pdf');
+    expect(res.status).toBe('submitted');
+    const [, options] = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const sentBody = JSON.parse(String(options.body));
+    expect(sentBody.invoiceId).toBe('INV-2');
+    expect(sentBody.message).toBe(finalMessage);
+  });
+
+  it('13. SMS never claims a PDF attachment', async () => {
+    mockStores(INVOICES, CUSTOMERS, PAYMENTS);
+    const ctx = await buildCommunicationContext('payment_reminder', 'C-ABC', baseOpts);
+    const res = await sendCommunication({
+      channel: 'sms', recipientPhone: '260971000001', recipientEmail: null,
+      message: 'Dear ABC School, your balance is K145,000.00.', ctx,
+    });
+    expect(res.attachmentIncluded).toBe(false);
+    expect(res.detail).toMatch(/cannot carry a PDF|not integrated/i);
+  });
+
+  it('3b. Lowercase unknown-invoice reference (inv-999) is BLOCKED', async () => {
+    const ctx = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    const v = validateDraftAgainstFacts('Invoice inv-999 total K145,000.00 from our company.', ctx);
+    expect(v.ok).toBe(false);
+    expect(v.issues.some((i) => i.code === 'invoice_mismatch')).toBe(true);
+  });
+
+  it('3c. Lowercase correct-invoice reference (inv-002) is accepted as INV-002', async () => {
+    const ctx = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    const v = validateDraftAgainstFacts(`Invoice inv-002 total K45,000.00. Verify: ${ctx.latestInvoice?.verificationUrl}`, ctx);
+    expect(v.ok).toBe(true);
+  });
+
+  it('14b. Verification-token fragments (tok456) are never read as monetary amounts', async () => {
+    const ctx = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    const v = validateDraftAgainstFacts(
+      `Dear ABC School. Verify: ${ctx.latestInvoice?.verificationUrl}`, ctx,
+    );
+    expect(v.ok).toBe(true);
+  });
+
+  it('14. Verification URL is the canonical ERP URL (token + number, never guessed)', async () => {
+    const ctx = await buildCommunicationContext('send_latest_invoice', 'C-ABC', baseOpts);
+    expect(ctx.latestInvoice?.verificationUrl).toContain('INV-002');
+    expect(ctx.latestInvoice?.verificationUrl).toContain('tok456');
+  });
+
+  it('15. Duplicate warning is per customer/invoice/channel', async () => {
+    vi.mocked(dbService.getAll).mockImplementation(async (store: string) => {
+      if (store === 'customers') return CUSTOMERS as unknown[];
+      if (store === 'customerNotificationLogs') return [{
+        id: 'h1', customerId: 'C-ABC', businessName: 'ABC School', purpose: 'send_latest_invoice',
+        channel: 'whatsapp', tone: 'professional', aiDraft: 'x', finalMessage: 'y',
+        invoiceId: 'INV-2', invoiceNumber: 'INV-002', verificationUrl: null, hadAttachment: true,
+        status: 'submitted', failureReason: null, aiGenerated: true, snapshotId: 's', factsSnapshot: '{}',
+        createdAt: new Date().toISOString(),
+      }] as unknown[];
+      return [];
+    });
+    const same = await findRecentInvoiceSend('C-ABC', 'INV-2');
+    expect(same?.channel).toBe('whatsapp');
+    expect(same?.status).toBe('submitted');
+    const other = await findRecentInvoiceSend('C-ABC', 'INV-1');
+    expect(other).toBeNull();
   });
 });

@@ -9,7 +9,9 @@
  * (context builder, AI, validation, send, history). No duplicate ledger,
  * document, verification, or AI logic.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Mic } from 'lucide-react';
+import { useVoiceDictation } from '../../../hooks/useVoiceDictation';
 import { useSales } from '../../../context/SalesContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -85,6 +87,7 @@ const CommunicationCenter: React.FC = () => {
 
   const [customerId, setCustomerId] = useState('');
   const [search, setSearch] = useState('');
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const [purpose, setPurpose] = useState<CommunicationPurposeId>('payment_reminder');
   const [specificInvoiceId, setSpecificInvoiceId] = useState('');
   const [tone, setTone] = useState<CommunicationTone>('professional');
@@ -97,6 +100,7 @@ const CommunicationCenter: React.FC = () => {
   const [ctxError, setCtxError] = useState<string | null>(null);
 
   const [draft, setDraft] = useState('');
+  const [generatedDraft, setGeneratedDraft] = useState('');
   const [aiGenerated, setAiGenerated] = useState(false);
   const [aiWarning, setAiWarning] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -109,6 +113,17 @@ const CommunicationCenter: React.FC = () => {
   const [duplicateWarning, setDuplicateWarning] = useState<CommunicationHistoryRecord | null>(null);
   const [history, setHistory] = useState<CommunicationHistoryRecord[]>([]);
   const [confirmingSend, setConfirmingSend] = useState(false);
+
+  // Voice dictation (browser-native, same mechanism as AICopilot voice input).
+  // Dictated text flows through the normal edit path, so validation +
+  // revalidation still apply before anything can send.
+  const draftRef = useRef('');
+  draftRef.current = draft;
+  const noteVoice = useVoiceDictation((t) => setCustomNote((prev) => (prev ? `${prev} ${t}` : t)));
+  const draftVoice = useVoiceDictation((t) => {
+    const base = draftRef.current;
+    handleEdit(base ? `${base} ${t}` : t);
+  });
 
   const customer = useMemo(
     () => (customers as Array<{ id: string }>).find((c) => String(c.id) === String(customerId)) as Record<string, unknown> | undefined,
@@ -186,6 +201,7 @@ const CommunicationCenter: React.FC = () => {
     try {
       const res = await generateCommunicationDraft(ctx, { tone, length, customNote: customNote.trim() || undefined });
       setDraft(res.text);
+      setGeneratedDraft(res.text);
       setAiGenerated(res.aiGenerated);
       setAiWarning(res.warning);
       setValidation(validateDraftAgainstFacts(res.text, ctx));
@@ -227,6 +243,8 @@ const CommunicationCenter: React.FC = () => {
         return;
       }
       const focal = fresh.specificInvoice || fresh.latestInvoice;
+      // sendCommunication re-validates the EXACT final payload at the boundary,
+      // so an edited message can never bypass validation.
       const res = await sendCommunication({
         channel,
         recipientPhone: fresh.customer.phone,
@@ -234,20 +252,25 @@ const CommunicationCenter: React.FC = () => {
         message: draft.trim(),
         ctx: fresh,
       });
+      // Audit records the EXACT final message transmitted (post-edit), the
+      // original AI draft, the honest provider status and attachment truth.
       await recordCommunication({
         customerId: fresh.customer.id,
         businessName: fresh.customer.businessName,
         purpose,
         channel,
         tone,
-        aiDraft: draft.trim(),
+        aiDraft: generatedDraft,
         finalMessage: draft.trim(),
         invoiceId: focal?.id || null,
         invoiceNumber: focal?.invoiceNumber || null,
         verificationUrl: focal?.verificationUrl || null,
-        hadAttachment: Boolean(focal),
-        status: res.ok ? 'sent' : 'failed',
+        hadAttachment: res.attachmentIncluded,
+        attachmentFilename: res.attachmentFilename,
+        attachmentIncluded: res.attachmentIncluded,
+        status: res.status,
         failureReason: res.ok ? null : res.detail,
+        providerMessageId: res.providerMessageId,
         aiGenerated,
         snapshotId: fresh.snapshotId,
         factsSnapshot: JSON.stringify({
@@ -257,8 +280,8 @@ const CommunicationCenter: React.FC = () => {
           fetchedAt: fresh.fetchedAt,
         }),
       });
-      setSendResult(res.detail);
-      notify(res.ok ? 'Message recorded as sent.' : `Send failed: ${res.detail}`, res.ok ? 'success' : 'error');
+      setSendResult(`[${res.status}] ${res.detail}`);
+      notify(res.ok ? `Recorded (${res.status}).` : `Send failed: ${res.detail}`, res.ok ? 'success' : 'error');
       if (res.ok) {
         setStage('sent');
         getCustomerHistory(customerId, 20).then(setHistory).catch(() => undefined);
@@ -282,45 +305,72 @@ const CommunicationCenter: React.FC = () => {
       <div style={{ maxWidth: 1080, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* Step 1: customer + purpose */}
         <div style={{ background: paper, border: `1.4px solid ${hairline}`, borderRadius: 12, padding: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
               <span style={labelStyle}>1 · Select customer</span>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by business name, phone, email…"
-                style={inputStyle}
-              />
-              <div style={{ marginTop: 6, maxHeight: 220, overflow: 'auto', border: `1px solid ${hairline}`, borderRadius: 8 }}>
-                {filteredCustomers.length === 0 && (
-                  <div style={{ padding: 12, fontSize: 12, color: inkSoft }}>No customers found.</div>
-                )}
-                {filteredCustomers.map((c) => {
-                  const id = String(c.id);
-                  const name = getCustomerOptionLabel(c as { id?: string | null; name?: string | null; businessName?: string | null; companyName?: string | null });
-                  const contact = String(c.contactName || '');
-                  const debt = quickOutstanding(id, getCustomerDisplayName({ businessName: c.businessName as string, companyName: c.companyName as string, legacyCustomerName: c.name as string }), (invoices || []) as unknown[]);
-                  const active = id === customerId;
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => { setCustomerId(id); setSpecificInvoiceId(''); setDraft(''); setSendResult(null); }}
-                      style={{
-                        width: '100%', textAlign: 'left', padding: '7px 10px', cursor: 'pointer',
-                        background: active ? tealBg : 'transparent', border: 'none', borderBottom: `1px solid ${hairline}`,
-                      }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: 700, color: ink }}>{name}</div>
-                      <div style={{ fontSize: 11, color: inkSoft }}>
-                        {[contact, String(c.phone || ''), String(c.email || '')].filter(Boolean).join(' · ') || 'No contact details'}
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: debt > 0 ? danger : teal }}>
-                        {currency}{debt.toLocaleString()} {debt > 0 ? 'outstanding' : 'settled'}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              {customer ? (
+                <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {getCustomerOptionLabel(customer as { id?: string | null; name?: string | null; businessName?: string | null; companyName?: string | null })}
+                    </div>
+                    <div style={{ fontSize: 11, color: inkSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {[String(customer.contactName || ''), String(customer.phone || ''), String(customer.email || '')].filter(Boolean).join(' · ') || 'No contact details'}
+                      {' · '}
+                      <span style={{ fontWeight: 700, color: quickOutstanding(String(customer.id), getCustomerDisplayName({ businessName: customer.businessName as string, companyName: customer.companyName as string, legacyCustomerName: customer.name as string }), (invoices || []) as unknown[]) > 0 ? danger : teal }}>
+                        {currency}{quickOutstanding(String(customer.id), getCustomerDisplayName({ businessName: customer.businessName as string, companyName: customer.companyName as string, legacyCustomerName: customer.name as string }), (invoices || []) as unknown[]).toLocaleString()} {quickOutstanding(String(customer.id), getCustomerDisplayName({ businessName: customer.businessName as string, companyName: customer.companyName as string, legacyCustomerName: customer.name as string }), (invoices || []) as unknown[]) > 0 ? 'outstanding' : 'settled'}
+                      </span>
+                    </div>
+                  </div>
+                  <button onClick={() => { setCustomerId(''); setSpecificInvoiceId(''); setDraft(''); setGeneratedDraft(''); setSendResult(null); setSearch(''); }} style={{ ...btnGhost, padding: '6px 10px', flexShrink: 0 }}>Change</button>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }} onBlur={() => setTimeout(() => setCustomerDropdownOpen(false), 150)}>
+                  <input
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setCustomerDropdownOpen(true); }}
+                    onFocus={() => setCustomerDropdownOpen(true)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setCustomerDropdownOpen(false); }}
+                    placeholder="Search by business name, phone, email…"
+                    style={inputStyle}
+                    aria-label="Search customers"
+                  />
+                  {customerDropdownOpen && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, maxHeight: 240, overflow: 'auto', background: '#fff', border: `1.4px solid ${hairline}`, borderRadius: 8, boxShadow: '0 12px 28px rgba(0,0,0,0.12)' }}>
+                      {filteredCustomers.length === 0 && (
+                        <div style={{ padding: 12, fontSize: 12, color: inkSoft }}>No customers found.</div>
+                      )}
+                      {filteredCustomers.map((c) => {
+                        const id = String(c.id);
+                        const name = getCustomerOptionLabel(c as { id?: string | null; name?: string | null; businessName?: string | null; companyName?: string | null });
+                        const debt = quickOutstanding(id, getCustomerDisplayName({ businessName: c.businessName as string, companyName: c.companyName as string, legacyCustomerName: c.name as string }), (invoices || []) as unknown[]);
+                        return (
+                          <button
+                            key={id}
+                            onClick={() => { setCustomerId(id); setSpecificInvoiceId(''); setDraft(''); setGeneratedDraft(''); setSendResult(null); setSearch(''); setCustomerDropdownOpen(false); }}
+                            style={{
+                              width: '100%', textAlign: 'left', padding: '7px 10px', cursor: 'pointer',
+                              background: 'transparent', border: 'none', borderBottom: `1px solid ${hairline}`,
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = tealBg}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: debt > 0 ? danger : teal, flexShrink: 0 }}>
+                                {currency}{debt.toLocaleString()} {debt > 0 ? 'outstanding' : 'settled'}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 11, color: inkSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {[String(c.contactName || ''), String(c.phone || ''), String(c.email || '')].filter(Boolean).join(' · ') || 'No contact details'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <span style={labelStyle}>2 · Communication purpose</span>
@@ -328,7 +378,7 @@ const CommunicationCenter: React.FC = () => {
                 {COMMUNICATION_PURPOSES.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => { setPurpose(p.id); setSpecificInvoiceId(''); setDraft(''); setSendResult(null); }}
+                    onClick={() => { setPurpose(p.id); setSpecificInvoiceId(''); setDraft(''); setGeneratedDraft(''); setSendResult(null); }}
                     title={p.description}
                     style={{
                       padding: '7px 8px', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
@@ -362,8 +412,20 @@ const CommunicationCenter: React.FC = () => {
               </div>
               {purpose === 'custom' && (
                 <div style={{ marginTop: 8 }}>
-                  <span style={labelStyle}>Custom note (what is this about?)</span>
-                  <input value={customNote} onChange={(e) => setCustomNote(e.target.value)} placeholder="e.g. Price list update for schools" style={inputStyle} />
+                  <span style={labelStyle}>Custom note (what is this about? — type or dictate)</span>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                    <input value={customNote} onChange={(e) => setCustomNote(e.target.value)} placeholder="e.g. Price list update for schools" style={{ ...inputStyle, flex: 1 }} aria-label="Custom message note" />
+                    <button
+                      onClick={noteVoice.toggle}
+                      title={noteVoice.supported ? (noteVoice.listening ? 'Stop dictation' : 'Dictate the note by voice') : 'Voice input — check support'}
+                      aria-label="Dictate custom note by voice"
+                      style={{ ...btnGhost, padding: '7px 10px', flexShrink: 0, borderColor: noteVoice.listening ? danger : hairline, color: noteVoice.listening ? danger : ink }}
+                    >
+                      <Mic size={15} />
+                    </button>
+                  </div>
+                  {noteVoice.listening && <div style={{ fontSize: 11, color: danger, marginTop: 4 }}>Listening… speak now, or press the mic again to stop.</div>}
+                  {noteVoice.error && <div style={{ fontSize: 11, color: inkSoft, marginTop: 4 }}>{noteVoice.error}</div>}
                 </div>
               )}
               {needsInvoiceChoice && (
@@ -431,7 +493,7 @@ const CommunicationCenter: React.FC = () => {
           )}
           {duplicateWarning && (
             <div style={{ marginTop: 8, background: amberBg, borderRadius: 8, padding: 8, fontSize: 12 }}>
-              Recently sent: invoice {duplicateWarning.invoiceNumber} was already sent on {new Date(duplicateWarning.createdAt).toLocaleString()} via {duplicateWarning.channel}. Resending is allowed but confirm it is intentional.
+              This invoice ({duplicateWarning.purpose}, {duplicateWarning.invoiceNumber || 'no number'}) was already {duplicateWarning.status} to this customer via {duplicateWarning.channel} on {new Date(duplicateWarning.createdAt).toLocaleString()}{duplicateWarning.operator ? ` by ${duplicateWarning.operator}` : ''}. Resending is allowed but confirm it is intentional.
             </div>
           )}
           {staleWarning && (
@@ -461,14 +523,33 @@ const CommunicationCenter: React.FC = () => {
                 onChange={(e) => handleEdit(e.target.value)}
                 rows={6}
                 style={{ ...inputStyle, minHeight: 120, lineHeight: 1.5, fontFamily: 'inherit' }}
+                aria-label="Message preview editor"
               />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <button
+                  onClick={draftVoice.toggle}
+                  title={draftVoice.supported ? (draftVoice.listening ? 'Stop dictation' : 'Dictate into the message by voice') : 'Voice input — check support'}
+                  aria-label="Dictate into the message by voice"
+                  style={{ ...btnGhost, padding: '6px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, borderColor: draftVoice.listening ? danger : hairline, color: draftVoice.listening ? danger : ink }}
+                >
+                  <Mic size={14} /> {draftVoice.listening ? 'Listening… press to stop' : 'Dictate'}
+                </button>
+                {draftVoice.error && <span style={{ fontSize: 11, color: inkSoft }}>{draftVoice.error}</span>}
+              </div>
               <div style={{ marginTop: 8, fontSize: 12, padding: 8, borderRadius: 8, background: validation?.ok ? tealBg : '#fde8e6', color: validation?.ok ? ink : danger }}>
                 {validation?.ok ? 'Facts validated against ERP context.' : (validation?.issues || []).map((i) => <div key={i.code + i.message}>• {i.message}</div>)}
               </div>
               {focal && (
-                <div style={{ marginTop: 8, fontSize: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  <span>Attachment: invoice {focal.invoiceNumber} (ERP document)</span>
-                  {focal.verificationUrl && <a href={focal.verificationUrl} target="_blank" rel="noreferrer">Verification link</a>}
+                <div style={{ marginTop: 8, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <span>Document: invoice {focal.invoiceNumber} (official ERP document)</span>
+                    {focal.verificationUrl && <a href={focal.verificationUrl} target="_blank" rel="noreferrer">Verification link</a>}
+                  </div>
+                  <div style={{ color: channel === 'email' ? teal : inkSoft }}>
+                    {channel === 'email'
+                      ? 'On send, the official invoice PDF is rendered server-side and attached to the SMTP payload — "attached" is reported only then.'
+                      : CHANNEL_CAPABILITIES[channel].attachmentBehavior}
+                  </div>
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
@@ -508,11 +589,11 @@ const CommunicationCenter: React.FC = () => {
                 <div key={h.id} style={{ border: `1px solid ${hairline}`, borderRadius: 8, padding: 8, fontSize: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                     <strong>{h.purpose}</strong>
-                    <span style={{ color: h.status === 'sent' ? teal : danger }}>{h.status}</span>
+                    <span style={{ color: h.status === 'sent' || h.status === 'submitted' || h.status === 'delivered' ? teal : danger }}>{h.status}</span>
                   </div>
-                  <div style={{ color: inkSoft }}>{new Date(h.createdAt).toLocaleString()} · {h.channel} · {h.aiGenerated ? 'AI draft' : 'manual'} · {h.operator || 'operator'}</div>
+                  <div style={{ color: inkSoft }}>{new Date(h.createdAt).toLocaleString()} · {h.channel} · {h.aiGenerated ? 'AI draft' : 'manual'} · {h.operator || 'operator'}{h.providerMessageId ? ` · ${h.providerMessageId}` : ''}</div>
                   <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{h.finalMessage}</div>
-                  {h.invoiceNumber && <div style={{ color: inkSoft }}>Invoice: {h.invoiceNumber}{h.verificationUrl ? ` · ${h.verificationUrl}` : ''}</div>}
+                  {h.invoiceNumber && <div style={{ color: inkSoft }}>Invoice: {h.invoiceNumber}{h.attachmentIncluded ? ` · attached (${h.attachmentFilename || 'PDF'})` : ' · no attachment in payload'}{h.verificationUrl ? ` · ${h.verificationUrl}` : ''}</div>}
                   {h.failureReason && <div style={{ color: danger }}>Reason: {h.failureReason}</div>}
                 </div>
               ))}

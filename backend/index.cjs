@@ -1889,6 +1889,47 @@ async function startServer() {
     }
   });
 
+  // --- Customer Communication Center: invoice email with REAL document attachment ---
+  // Reuses ONLY existing infrastructure (same pattern as the statement-email route
+  // above): authoritative invoice fetch, officialDocumentService.renderOfficialPdf
+  // (the ONE canonical renderer), canonical verification URL rule, and
+  // emailService.sendEmailWithAttachment. No duplicate document/AI/ledger logic.
+  // Atomicity is enforced server-side: the invoice must belong to the customer,
+  // and the client message must not reference a different invoice number —
+  // otherwise the send is BLOCKED (never Invoice-A message + Invoice-B attachment).
+  app.post('/api/communication/invoice-email', requireRole('Admin', 'Accountant', 'Manager'), async (req, res) => {
+    try {
+      const { sendInvoiceEmail } = require('./services/communicationInvoiceEmailService.cjs');
+      const portalService = require('./services/portalService.cjs');
+      const officialDocumentService = require('./services/officialDocumentService.cjs');
+      const emailService = require('./services/emailService.cjs');
+      const companyConfigService = require('./services/companyConfigService.cjs');
+
+      // SMTP acceptance only (messageId) — NOT delivery confirmation.
+      const result = await sendInvoiceEmail(
+        {
+          getInvoiceById: (invoiceId, customerId) => portalService.getInvoiceById(invoiceId, customerId).catch(() => null),
+          getCustomerById: (customerId) => repo.getById('customers', customerId),
+          getCompanyConfig: () => companyConfigService.getCompanyConfig(),
+          renderOfficialPdf: (args) => officialDocumentService.renderOfficialPdf(args),
+          sendEmailWithAttachment: (args) => emailService.sendEmailWithAttachment(args),
+          portalBaseUrl: process.env.VITE_PUBLIC_PORTAL_URL || '',
+        },
+        req.body || {},
+      );
+      res.json(result);
+    } catch (err) {
+      if (err && (err.code === 'RENDERER_UNAVAILABLE' || /renderer/i.test(err.message || ''))) {
+        return res.status(503).json({ error: 'official_document_renderer_unconfigured' });
+      }
+      if (err && err.status) {
+        return res.status(err.status).json({ error: err.message, code: err.code || undefined });
+      }
+      console.error('[Communication] Invoice email error:', err?.message || err);
+      res.status(500).json({ error: err?.message || 'Failed to send invoice email' });
+    }
+  });
+
   // --- VAT Management Endpoints ---
   app.get('/api/vat/transactions', requireRole('Admin', 'Accountant', 'Manager'), injectFinancialYear, async (req, res) => {
     try {

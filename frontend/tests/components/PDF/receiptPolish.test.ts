@@ -229,15 +229,20 @@ describe('authentication, QR, footer and pagination safety', () => {
     expect(pageCount).toBe(1);
     expect(pages[0].text).toContain(norm('Page 1 of 1'));
     expect(pages[0].drawnImages).toContain(qrObj);
-    expect(pages[0].text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
-    expect(pages[0].text).toContain(norm('SCAN TO VERIFY'));
+    expect(pages[0].text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(pages[0].text).not.toContain(norm('SCAN TO VERIFY'));
+    expect(pages[0].text).toContain(norm('Digitally generated'));
+    expect(pages[0].text).toContain(norm('Verification available online'));
   }, 120000);
 
   it('multi-invoice receipts still paginate with QR final-only', async () => {
-    const applied = Array.from({ length: 30 }, (_, i) => `INV-P726/${String(i + 1).padStart(3, '0')}`);
+    // 60 allocations: calibrated for the trimmed verification footer (30
+    // allocations fit on one page since the title/shield block and SCAN
+    // TO VERIFY pill were removed).
+    const applied = Array.from({ length: 60 }, (_, i) => `INV-P726/${String(i + 1).padStart(3, '0')}`);
     const payment: any = {
       id: 'PAY-P726/001', date: '2026-09-01', customerName: CUSTOMER,
-      amount: 30000, paymentMethod: 'Cash', verificationToken: TOK,
+      amount: 60000, paymentMethod: 'Cash', verificationToken: TOK,
       allocations: applied.map((id) => ({ invoiceId: id, amount: 1000 })),
     };
     const secured: any = await attachDocumentSecurity(
@@ -253,7 +258,9 @@ describe('authentication, QR, footer and pagination safety', () => {
     expect(pages[0].drawnImages).not.toContain(qrObj);
     expect(pages[0].text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
     expect(pages[1].drawnImages).toContain(qrObj);
-    expect(pages[1].text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(pages[1].text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(pages[1].text).not.toContain(norm('SCAN TO VERIFY'));
+    expect(pages[1].text).toContain(norm('Digitally generated'));
     expect(pages[1].text).toContain(norm('Receipt PAY-P726/001'));
   }, 120000);
 
@@ -303,7 +310,8 @@ describe('receipt thank-you footer omits street address and contact lines', () =
     expect(text).not.toContain('Dedza');
     expect(text).not.toContain('primemw');
     // …while the QR verification block (with its own contact line) is kept.
-    expect(text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(text).toContain(norm('Verification available online'));
   }, 120000);
 });
 

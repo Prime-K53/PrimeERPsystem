@@ -113,7 +113,8 @@ describe('invoice template pagination (presentation only)', () => {
     expect(pages[0].text).toContain(norm('Page 1 of 1'));
     expect(pages[0].drawnImages).toContain(qrObj); // QR on the (final) page
     expect(pages[0].text).toContain(norm('INV-P726/024'));
-    expect(pages[0].text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(pages[0].text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(pages[0].text).toContain(norm('Digitally generated'));
   }, 60000);
 
   it('TEST B — two pages: QR only on page 2, compact footer on page 1', async () => {
@@ -127,7 +128,8 @@ describe('invoice template pagination (presentation only)', () => {
     expect(p2.drawnImages).toContain(qrObj); // QR on final page
     expect(p1.text).toContain(norm('Verify authenticity using the QR code on the final page'));
     expect(p2.text).not.toContain(norm('Verify authenticity using the QR code on the final page'));
-    expect(p2.text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(p2.text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(p2.text).toContain(norm('Digitally generated'));
     expect(p1.text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
     expect(p2.text).toContain(norm('continued')); // continuation header on page 2
     expect(p2.text).toContain(norm('Due Balance')); // totals appear once, on final page
@@ -149,7 +151,8 @@ describe('invoice template pagination (presentation only)', () => {
     expect(p3.drawnImages).toContain(qrObj);
     expect(p1.text).toContain(norm('Verify authenticity using the QR code on the final page'));
     expect(p2.text).toContain(norm('Verify authenticity using the QR code on the final page'));
-    expect(p3.text).toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(p3.text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
+    expect(p3.text).toContain(norm('Digitally generated'));
     expect(p3.text).toContain(norm('Due Balance'));
   }, 60000);
 });

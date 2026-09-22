@@ -21,10 +21,14 @@ function escapeRegExp(s: string): string {
 }
 
 function normalizeAmountText(text: string): number[] {
+  // Strip URLs first: verification tokens (e.g. ?t=tok456) contain fragments
+  // like "k456" that are NOT monetary claims. The \b guard additionally
+  // prevents matching a currency letter glued inside another word.
+  const withoutUrls = String(text || '').replace(/https?:\/\/[^\s)]+/g, ' ');
   const found: number[] = [];
-  const re = /(?:K|ZMW|Kwacha)\s?([\d,]+(?:\.\d{1,2})?)/gi;
+  const re = /\b(?:K|ZMW|Kwacha)\s?([\d,]+(?:\.\d{1,2})?)/gi;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(withoutUrls)) !== null) {
     const n = Number(String(m[1]).replace(/,/g, ''));
     if (Number.isFinite(n)) found.push(Math.round(n * 100) / 100);
   }
@@ -86,8 +90,10 @@ export function validateDraftAgainstFacts(draft: string, ctx: CommunicationConte
   }
 
   // 2. Invoice numbers: INV-like tokens in draft must exist in context.
+  // Case-insensitive: inv-002 / Inv-002 match the same reference as INV-002
+  // (comparison below is already case-insensitive; canonical formatting untouched).
   const knownInvoices = collectInvoiceNumbers(ctx);
-  const invRe = /\b((?:INV|QTN|SO|ORD|PAY|RCP|DN|PO)-[A-Za-z0-9\-/]+)\b/g;
+  const invRe = /\b((?:INV|QTN|SO|ORD|PAY|RCP|DN|PO)-[A-Za-z0-9\-/]+)\b/gi;
   const draftInvoices = new Set<string>();
   let im: RegExpExecArray | null;
   while ((im = invRe.exec(text)) !== null) draftInvoices.add(im[1]);

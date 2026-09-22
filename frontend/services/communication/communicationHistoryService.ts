@@ -8,7 +8,7 @@
  */
 
 import { dbService } from '../db';
-import type { CommunicationHistoryRecord } from './communicationTypes';
+import type { CommunicationHistoryRecord, OutboundStatus } from './communicationTypes';
 
 function currentOperator(): string | null {
   try {
@@ -23,6 +23,9 @@ function currentOperator(): string | null {
 
 export async function recordCommunication(entry: Omit<CommunicationHistoryRecord, 'id' | 'createdAt' | 'operator'> & { operator?: string | null }): Promise<CommunicationHistoryRecord> {
   const record: CommunicationHistoryRecord = {
+    attachmentFilename: null,
+    attachmentIncluded: false,
+    providerMessageId: null,
     ...entry,
     id: `comm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     operator: entry.operator ?? currentOperator(),
@@ -66,11 +69,22 @@ export async function getRecentHistory(limit = 100): Promise<CommunicationHistor
   }
 }
 
-/** Warn (don't block) when the same invoice was sent recently. */
+/**
+ * Warn (don't block) when the same invoice was communicated recently.
+ * Any honestly-successful outbound state counts (legacy 'sent' plus the
+ * hardened submitted/delivered/queued states) — per customer + invoice.
+ */
+const SUCCESSFUL_STATUSES: Array<CommunicationHistoryRecord['status']> = [
+  'sent',
+  'submitted',
+  'delivered',
+  'queued',
+];
+
 export async function findRecentInvoiceSend(customerId: string, invoiceId: string, withinHours = 72): Promise<CommunicationHistoryRecord | null> {
   const history = await getCustomerHistory(customerId, 50);
   const cutoff = Date.now() - withinHours * 3600 * 1000;
-  return history.find((h) => h.invoiceId === invoiceId && h.status === 'sent' && new Date(h.createdAt).getTime() >= cutoff) || null;
+  return history.find((h) => h.invoiceId === invoiceId && SUCCESSFUL_STATUSES.includes(h.status) && new Date(h.createdAt).getTime() >= cutoff) || null;
 }
 
 function normalizeRecord(l: Record<string, unknown>): CommunicationHistoryRecord {
@@ -88,9 +102,12 @@ function normalizeRecord(l: Record<string, unknown>): CommunicationHistoryRecord
     invoiceNumber: (r.invoiceNumber as string | null) ?? null,
     verificationUrl: (r.verificationUrl as string | null) ?? null,
     hadAttachment: Boolean(r.hadAttachment),
+    attachmentFilename: (r.attachmentFilename as string | null) ?? null,
+    attachmentIncluded: Boolean(r.attachmentIncluded),
     status: (r.status as CommunicationHistoryRecord['status']) || 'sent',
     failureReason: (r.failureReason as string | null) ?? (l as { error?: string }).error ?? null,
     operator: (r.operator as string | null) ?? null,
+    providerMessageId: (r.providerMessageId as string | null) ?? (l as { message_id?: string }).message_id ?? null,
     aiGenerated: Boolean(r.aiGenerated),
     snapshotId: String(r.snapshotId || ''),
     factsSnapshot: String(r.factsSnapshot || ''),

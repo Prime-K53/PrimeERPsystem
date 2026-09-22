@@ -372,10 +372,12 @@ export function diffFinancialFacts(
   if ((bInv?.id || null) !== (aInv?.id || null)) {
     messages.push(`Focal invoice changed from ${bInv?.invoiceNumber || 'none'} to ${aInv?.invoiceNumber || 'none'}.`);
   } else if (bInv && aInv) {
+    if (bInv.invoiceNumber !== aInv.invoiceNumber) messages.push(`Invoice number changed from ${bInv.invoiceNumber} to ${aInv.invoiceNumber}.`);
     if (bInv.total !== aInv.total) messages.push(`Invoice total changed from ${formatMoney(bInv.total)} to ${formatMoney(aInv.total)}.`);
     if (bInv.paid !== aInv.paid) messages.push(`Amount paid changed from ${formatMoney(bInv.paid)} to ${formatMoney(aInv.paid)}.`);
     if (bInv.outstanding !== aInv.outstanding) messages.push(`Invoice outstanding changed from ${formatMoney(bInv.outstanding)} to ${formatMoney(aInv.outstanding)}.`);
-    if ((bInv.verificationUrl || null) !== (aInv.verificationUrl || null)) messages.push('Verification URL changed.');
+    if ((bInv.verificationUrl || null) !== (aInv.verificationUrl || null)) messages.push('Verification token/URL changed.');
+    if (bInv.status !== aInv.status) messages.push(`Invoice status changed from ${bInv.status || 'unknown'} to ${aInv.status || 'unknown'}.`);
   }
   return { changed: messages.length > 0, messages };
 }

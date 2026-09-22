@@ -46,6 +46,8 @@ const ClientLedger: React.FC = () => {
   const [selectedSubAccountNames, setSelectedSubAccountNames] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<'all' | '3m' | '6m' | '12m'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const { safeOpenPreview } = useDocumentStore();
 
   const formatCurrency = useCallback((val: number) => {
@@ -201,15 +203,51 @@ const ClientLedger: React.FC = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
           <div>
             <label style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, display: 'block', marginBottom: 6 }}>Customer</label>
-            <div style={{ position: 'relative' }}>
-              <Users size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} />
-              <select value={selectedCustomerId} onChange={(e) => { setSelectedCustomerId(e.target.value); setSelectedSubAccountNames([]); }}
-                style={{ ...baseInput, paddingLeft: 36, background: teal[50], cursor: 'pointer' }} className="prime-select">
-                <option value="">Select a customer</option>
-                {customers.map((c: any) => (<option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>))}
-              </select>
-              <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, pointerEvents: 'none' }} />
-            </div>
+            {selectedCustomer ? (
+              <div style={{ ...baseInput, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{getCustomerOptionLabel(selectedCustomer)}</span>
+                <button onClick={() => { setSelectedCustomerId(''); setSelectedSubAccountNames([]); setCustomerSearch(''); }}
+                  style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, border: `1.4px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', flexShrink: 0 }}>
+                  Change
+                </button>
+              </div>
+            ) : (
+              <div style={{ position: 'relative' }} onBlur={() => setTimeout(() => setCustomerDropdownOpen(false), 150)}>
+                <Users size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, zIndex: 1 }} />
+                <input type="text" value={customerSearch}
+                  onChange={(e) => { setCustomerSearch(e.target.value); setCustomerDropdownOpen(true); }}
+                  onFocus={() => setCustomerDropdownOpen(true)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setCustomerDropdownOpen(false); }}
+                  placeholder="Search by name, phone, email…"
+                  aria-label="Search customers"
+                  style={{ ...baseInput, paddingLeft: 36, background: teal[50] }} className="prime-input" />
+                <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, pointerEvents: 'none' }} />
+                {customerDropdownOpen && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, marginTop: 4, maxHeight: 240, overflow: 'auto', background: paper, border: `1.4px solid ${hairline}`, borderRadius: 9, boxShadow: '0 12px 28px rgba(0,0,0,0.12)' }}>
+                    {(() => {
+                      const q = customerSearch.trim().toLowerCase();
+                      const matches = (customers || []).filter((c: any) => !q
+                        || getCustomerOptionLabel(c).toLowerCase().includes(q)
+                        || String(c.phone || '').toLowerCase().includes(q)
+                        || String(c.email || '').toLowerCase().includes(q)).slice(0, 30);
+                      if (matches.length === 0) return (<div style={{ padding: 12, fontSize: 12, color: inkSoft }}>No customers found.</div>);
+                      return matches.map((c: any) => (
+                        <button key={c.id}
+                          onClick={() => { setSelectedCustomerId(c.id); setSelectedSubAccountNames([]); setCustomerSearch(''); setCustomerDropdownOpen(false); }}
+                          style={{ width: '100%', textAlign: 'left', padding: '8px 12px', cursor: 'pointer', background: 'transparent', border: 'none', borderBottom: `1px solid ${hairline}` }}
+                          onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getCustomerOptionLabel(c)}</div>
+                          <div style={{ fontSize: 11, color: inkSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {[String(c.phone || ''), String(c.email || '')].filter(Boolean).join(' · ') || 'No contact details'}
+                          </div>
+                        </button>
+                      ));
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div>
             <label style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, display: 'block', marginBottom: 6 }}>Period</label>

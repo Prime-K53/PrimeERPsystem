@@ -781,67 +781,27 @@ const MarketingMessages: React.FC = () => {
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', background: '#FBF8F2', overflow: 'hidden' }}>
-      {/* Sidebar - Chat List */}
-      <div style={{ width: 320, background: paper, borderRight: `1px solid ${hairline}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-        <div style={{ padding: 16, borderBottom: `1px solid ${hairline}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <div className="prime-btn-secondary" style={{ padding: 8, background: dt[50], borderRadius: 12 }}>
-              <MessageCircle style={{ width: 20, height: 20, color: dt[600] }} />
-            </div>
-            <div>
-              <h1 style={{ fontWeight: 700, color: ink, margin: 0, fontSize: 17 }}>WhatsApp Hub</h1>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <p style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: waConfigured ? dt[600] : inkSoft, margin: 0 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: waConfigured ? dt[500] : hairline, display: 'inline-block' }}></span>
-                  {waConfigured ? 'Connected' : 'Disconnected'}
-                </p>
-                {waConfigured ? (
-                  <button onClick={handleDisconnectWhatsApp} className="prime-btn-secondary" style={{ fontSize: 10, fontWeight: 700, color: danger, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Disconnect</button>
-                ) : (
-                  <button onClick={() => setShowWASettings(true)} className="prime-btn-secondary" style={{ fontSize: 10, fontWeight: 700, color: dt[500], background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Connect</button>
-                )}
-              </div>
-            </div>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#FBF8F2', overflow: 'hidden' }}>
+      {/* Top bar - responsive view navigation (wraps on small screens; tabs scroll horizontally when tight) */}
+      <div style={{ background: paper, borderBottom: `1px solid ${hairline}`, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, rowGap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minWidth: 0 }}>
+          <div className="prime-btn-secondary" style={{ padding: 6, background: dt[50], borderRadius: 10, flexShrink: 0 }}>
+            <MessageCircle style={{ width: 18, height: 18, color: dt[600] }} />
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 12 }}>
-            <div className="prime-card" style={{ background: paper, padding: '8px 10px', borderRadius: 10, border: `1.4px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 8, borderLeft: `4px solid ${dt[500]}` }}>
-              <div style={{ padding: 6, background: dt[50], color: dt[600], borderRadius: 8, display: 'flex' }}>
-                <MessageCircle size={14} />
-              </div>
-              <div>
-                <p style={{ fontSize: 8, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.3, margin: 0, lineHeight: 1.2 }}>Unread</p>
-                <p style={{ fontSize: 14, fontWeight: 600, color: ink, margin: 0, lineHeight: 1.3 }}>{unreadCount}</p>
-              </div>
-            </div>
-            <div className="prime-card" style={{ background: paper, padding: '8px 10px', borderRadius: 10, border: `1.4px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 8, borderLeft: `4px solid ${dAmber[500]}` }}>
-              <div style={{ padding: 6, background: dAmber[100], color: dAmber[500], borderRadius: 8, display: 'flex' }}>
-                <Send size={14} />
-              </div>
-              <div>
-                <p style={{ fontSize: 8, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.3, margin: 0, lineHeight: 1.2 }}>Campaigns</p>
-                <p style={{ fontSize: 14, fontWeight: 600, color: ink, margin: 0, lineHeight: 1.3 }}>{totalCampaigns}</p>
-              </div>
-            </div>
-            <div className="prime-card" style={{ background: paper, padding: '8px 10px', borderRadius: 10, border: `1.4px solid ${hairline}`, display: 'flex', alignItems: 'center', gap: 8, borderLeft: `4px solid ${dt[500]}` }}>
-              <div style={{ padding: 6, background: dt[50], color: dt[600], borderRadius: 8, display: 'flex' }}>
-                <CheckCircle size={14} />
-              </div>
-              <div>
-                <p style={{ fontSize: 8, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.3, margin: 0, lineHeight: 1.2 }}>Sent</p>
-                <p style={{ fontSize: 14, fontWeight: 600, color: ink, margin: 0, lineHeight: 1.3 }}>{totalSent}</p>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ position: 'relative' }}>
-            <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, pointerEvents: 'none' }} />
-            <input className="prime-input" type="text" placeholder="Search conversations..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 36px', background: t[50], border: `1.4px solid ${hairline}`, borderRadius: 9, fontSize: 13, color: ink, outline: 'none', lineHeight: 1.4, fontFamily: "'Inter','DM Sans',sans-serif", boxSizing: 'border-box' }} />
-          </div>
+          <h1 style={{ fontWeight: 700, color: ink, margin: 0, fontSize: 15, whiteSpace: 'nowrap' }}>Messages</h1>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: waConfigured ? dt[500] : hairline, display: 'inline-block', flexShrink: 0 }}></span>
+          {waConfigured ? (
+            <button onClick={handleDisconnectWhatsApp} className="prime-btn-secondary" style={{ fontSize: 10, fontWeight: 700, color: danger, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0, whiteSpace: 'nowrap' }}>Disconnect</button>
+          ) : (
+            <button onClick={() => setShowWASettings(true)} className="prime-btn-secondary" style={{ fontSize: 10, fontWeight: 700, color: dt[500], background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0, whiteSpace: 'nowrap' }}>Connect</button>
+          )}
         </div>
-
-        <div className="prime-btn-secondary" style={{ display: 'flex', background: t[50], padding: 3, margin: '0 12px', borderRadius: 10 }}>
+        <div
+          className="prime-btn-secondary"
+          role="tablist"
+          aria-label="Message views"
+          style={{ display: 'flex', background: t[50], padding: 3, borderRadius: 10, flex: '1 1 300px', minWidth: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}
+        >
           {[
             { id: 'compose', label: 'Compose' },
             { id: 'inbox', label: 'Inbox', badge: unreadCount },
@@ -851,74 +811,11 @@ const MarketingMessages: React.FC = () => {
             { id: 'accounts', label: 'Accounts' },
             { id: 'activity', label: 'Activity' },
           ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveView(tab.id as typeof activeView)} style={{ flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', borderRadius: 8, transition: 'all .15s ease', background: activeView === tab.id ? paper : 'transparent', color: activeView === tab.id ? dt[500] : inkSoft, boxShadow: activeView === tab.id ? '0 1px 2px rgba(0,0,0,0.06)' : 'none', lineHeight: 1.3 }}>
+            <button key={tab.id} role="tab" aria-selected={activeView === tab.id} onClick={() => setActiveView(tab.id as typeof activeView)} style={{ flex: '1 0 auto', minWidth: 68, padding: '6px 8px', fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap', transition: 'all .15s ease', background: activeView === tab.id ? paper : 'transparent', color: activeView === tab.id ? dt[500] : inkSoft, boxShadow: activeView === tab.id ? '0 1px 2px rgba(0,0,0,0.06)' : 'none', lineHeight: 1.3 }}>
               {tab.label}
               {tab.badge ? <span style={{ marginLeft: 4, padding: '1px 6px', background: danger, color: '#fff', borderRadius: 10, fontSize: 9, display: 'inline-block' }}>{tab.badge}</span> : null}
             </button>
           ))}
-        </div>
-
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          {activeView === 'inbox' ? (
-            filteredChats.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-                <MessageCircle size={48} style={{ color: hairline, margin: '0 auto 12px', display: 'block' }} />
-                <p style={{ color: inkSoft, fontSize: 13 }}>No conversations yet</p>
-                <button onClick={() => setShowNewCampaign(true)} className="prime-btn-secondary" style={{ marginTop: 12, color: dt[500], fontWeight: 500, fontSize: 13, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Start a new campaign</button>
-              </div>
-            ) : (
-              filteredChats.map(chat => (
-                <div key={chat.id} onClick={() => setSelectedChat(chat)} style={{ padding: 12, borderBottom: `1px solid ${hairline}`, cursor: 'pointer', transition: 'background 0.1s', background: selectedChat?.id === chat.id ? dt[50] : 'transparent', borderLeft: selectedChat?.id === chat.id ? `4px solid ${dt[500]}` : '4px solid transparent' }}
-                  onMouseEnter={e => { if (selectedChat?.id !== chat.id) e.currentTarget.style.background = t[50]; }}
-                  onMouseLeave={e => { if (selectedChat?.id !== chat.id) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: dt[100], display: 'flex', alignItems: 'center', justifyContent: 'center', color: dt[600], fontWeight: 700, flexShrink: 0, fontSize: 15 }}>
-                      {chat.customerName?.charAt(0).toUpperCase() || '?'}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                        <h3 style={{ fontWeight: 500, color: ink, margin: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.customerName}</h3>
-                        <span style={{ fontSize: 12, color: inkSoft, flexShrink: 0 }}>{new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      <p style={{ fontSize: 12, color: inkSoft, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.lastMessage}</p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                        {chat.status === 'unread' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: dt[500], display: 'inline-block' }}></span>}
-                        {chat.priority === 'high' && <Star size={10} style={{ color: dAmber[500], fill: dAmber[500] }} />}
-                        {chat.tags?.map(tag => <span key={tag} style={{ fontSize: 10, background: t[50], padding: '1px 6px', borderRadius: 4, color: inkSoft }}>{tag}</span>)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )
-          ) : activeView === 'templates' ? (
-            <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button onClick={() => setShowNewTemplate(true)} className="prime-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, background: `linear-gradient(135deg, ${dt[500]}, ${dt[700]})`, color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', lineHeight: 1.4 }}>
-                <Plus size={16} /> New Template
-              </button>
-              <select value={templateCategory} onChange={(e) => setTemplateCategory(e.target.value)} className="prime-select" style={{ width: '100%', fontSize: 12, padding: 8, background: t[50], border: `1.4px solid ${hairline}`, borderRadius: 9, color: ink, outline: 'none', cursor: 'pointer' }}>
-                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-              </select>
-              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="prime-select" style={{ width: '100%', fontSize: 12, padding: 8, background: t[50], border: `1.4px solid ${hairline}`, borderRadius: 9, color: ink, outline: 'none', cursor: 'pointer' }}>
-                <option value="newest">Newest First</option>
-                <option value="popular">Most Used</option>
-                <option value="alpha">Alphabetical</option>
-              </select>
-            </div>
-          ) : activeView === 'campaigns' ? (
-            <div style={{ padding: 8 }}>
-              <button onClick={() => setShowNewCampaign(true)} className="prime-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, background: `linear-gradient(135deg, ${dt[500]}, ${dt[700]})`, color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', lineHeight: 1.4 }}>
-                <Plus size={16} /> New Campaign
-              </button>
-            </div>
-          ) : activeView === 'automation' ? (
-            <div style={{ padding: 8 }}>
-              <button onClick={() => setShowNewAutomation(true)} className="prime-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, background: `linear-gradient(135deg, ${dt[500]}, ${dt[700]})`, color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', lineHeight: 1.4 }}>
-                <Plus size={16} /> New Flow
-              </button>
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -1002,16 +899,46 @@ const MarketingMessages: React.FC = () => {
             </div>
           </>
         ) : activeView === 'inbox' ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: t[50] }}>
-            <div style={{ textAlign: 'center', maxWidth: 400, padding: 32 }}>
-              <div style={{ padding: 16, background: dt[50], borderRadius: '50%', display: 'inline-flex', marginBottom: 16 }}>
-                <MessageCircle size={32} style={{ color: dt[600] }} />
+          <div style={{ flex: 1, overflow: 'auto', background: t[50], padding: 16 }}>
+            <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: inkSoft, pointerEvents: 'none' }} />
+                <input className="prime-input" type="text" placeholder="Search conversations..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 36px', background: paper, border: `1.4px solid ${hairline}`, borderRadius: 9, fontSize: 13, color: ink, outline: 'none', lineHeight: 1.4, fontFamily: "'Inter','DM Sans',sans-serif", boxSizing: 'border-box' }} />
               </div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, color: ink, margin: '0 0 8px' }}>WhatsApp Inbox</h2>
-              <p style={{ color: inkSoft, marginBottom: 16 }}>Select a conversation or create a campaign</p>
-              <button onClick={() => setShowNewCampaign(true)} className="prime-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: `linear-gradient(135deg, ${dt[500]}, ${dt[700]})`, color: '#fff', border: 'none', borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: 'pointer', lineHeight: 1.4 }}>
-                <Send size={18} />New Campaign
-              </button>
+              {filteredChats.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 16px', background: paper, borderRadius: 12, border: `1.4px solid ${hairline}` }}>
+                  <MessageCircle size={48} style={{ color: hairline, margin: '0 auto 12px', display: 'block' }} />
+                  <p style={{ color: inkSoft, fontSize: 13 }}>No conversations yet</p>
+                  <button onClick={() => setShowNewCampaign(true)} className="prime-btn-secondary" style={{ marginTop: 12, color: dt[500], fontWeight: 500, fontSize: 13, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Start a new campaign</button>
+                </div>
+              ) : (
+                <div style={{ background: paper, borderRadius: 12, border: `1.4px solid ${hairline}`, overflow: 'hidden' }}>
+                  {filteredChats.map(chat => (
+                    <div key={chat.id} onClick={() => setSelectedChat(chat)} style={{ padding: 12, borderBottom: `1px solid ${hairline}`, cursor: 'pointer', transition: 'background 0.1s', background: selectedChat?.id === chat.id ? dt[50] : 'transparent', borderLeft: selectedChat?.id === chat.id ? `4px solid ${dt[500]}` : '4px solid transparent' }}
+                      onMouseEnter={e => { if (selectedChat?.id !== chat.id) e.currentTarget.style.background = t[50]; }}
+                      onMouseLeave={e => { if (selectedChat?.id !== chat.id) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: dt[100], display: 'flex', alignItems: 'center', justifyContent: 'center', color: dt[600], fontWeight: 700, flexShrink: 0, fontSize: 15 }}>
+                          {chat.customerName?.charAt(0).toUpperCase() || '?'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <h3 style={{ fontWeight: 500, color: ink, margin: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.customerName}</h3>
+                            <span style={{ fontSize: 12, color: inkSoft, flexShrink: 0 }}>{new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          <p style={{ fontSize: 12, color: inkSoft, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.lastMessage}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                            {chat.status === 'unread' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: dt[500], display: 'inline-block' }}></span>}
+                            {chat.priority === 'high' && <Star size={10} style={{ color: dAmber[500], fill: dAmber[500] }} />}
+                            {chat.tags?.map(tag => <span key={tag} style={{ fontSize: 10, background: t[50], padding: '1px 6px', borderRadius: 4, color: inkSoft }}>{tag}</span>)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ) : null}
@@ -1079,9 +1006,19 @@ const MarketingMessages: React.FC = () => {
                 <h2 style={{ fontSize: 20, fontWeight: 700, color: ink, margin: 0 }}>Message Templates</h2>
                 <p style={{ fontSize: 13, color: inkSoft, margin: '2px 0 0' }}>{templates.length} WhatsApp-approved templates</p>
               </div>
-              <button onClick={() => setShowNewTemplate(true)} className="prime-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: `linear-gradient(135deg, ${dt[500]}, ${dt[700]})`, color: '#fff', border: 'none', borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: 'pointer', lineHeight: 1.4 }}>
-                <Plus size={18} />New Template
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select value={templateCategory} onChange={(e) => setTemplateCategory(e.target.value)} className="prime-select" style={{ fontSize: 12, padding: 8, background: paper, border: `1.4px solid ${hairline}`, borderRadius: 9, color: ink, outline: 'none', cursor: 'pointer' }}>
+                  {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="prime-select" style={{ fontSize: 12, padding: 8, background: paper, border: `1.4px solid ${hairline}`, borderRadius: 9, color: ink, outline: 'none', cursor: 'pointer' }}>
+                  <option value="newest">Newest First</option>
+                  <option value="popular">Most Used</option>
+                  <option value="alpha">Alphabetical</option>
+                </select>
+                <button onClick={() => setShowNewTemplate(true)} className="prime-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: `linear-gradient(135deg, ${dt[500]}, ${dt[700]})`, color: '#fff', border: 'none', borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: 'pointer', lineHeight: 1.4 }}>
+                  <Plus size={18} />New Template
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>

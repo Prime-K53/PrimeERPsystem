@@ -1,8 +1,9 @@
 /**
  * documentTemplateTweaks.test.ts — render-level proof for the document
  * presentation tweaks (single PrimeDocument source):
- *  1. SCAN TO VERIFY pill appears in the shared authentication &
- *     verification footer (all verifiable docs) and on the POS receipt.
+ *  1. Trimmed verification footer (all verifiable docs): title/shield block
+ *     and SCAN TO VERIFY pill removed; digitally-generated line, official
+ *     body copy and QR kept. POS receipt keeps its QR caption.
  *  2. Legal footer reads "Scan QR Code to Verify" (not "No signature required").
  *  3. Delivery-note Vehicle No and the customer signature line share one row.
  */
@@ -52,14 +53,14 @@ const invoiceRecord: any = {
 };
 
 describe('document template tweaks', () => {
-  it('invoice footer matches the authentication & verification reference', async () => {
+  it('invoice footer matches the trimmed verification reference', async () => {
     const mapped: any = mapToInvoiceData(invoiceRecord, {} as any, 'INVOICE' as any);
     const secured: any = await attachDocumentSecurity(mapped, COMPANY);
     const text = extractPdfText(await renderPdf('INVOICE', secured));
-    expect(text).toContain('DOCUMENTAUTHENTICATION&VERIFICATION');
+    expect(text).not.toContain('DOCUMENTAUTHENTICATION&VERIFICATION');
+    expect(text).not.toContain('SCANTOVERIFY');
     expect(text).toContain('Digitallygenerated');
     expect(text).toContain('Verificationavailableonline');
-    expect(text).toContain('SCANTOVERIFY');
     expect(text).toContain('electronicallygeneratedandisvalidwithoutahandwrittensignature');
   }, 120000);
 

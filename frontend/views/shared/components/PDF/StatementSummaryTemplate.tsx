@@ -164,10 +164,10 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           </View>
         ))}
 
-          {/* Security Footer — Document Authentication & Verification block,
-              matches the approved reference exactly (shield + title,
-              digitally-generated line, official body copy, SCAN TO VERIFY
-              pill + QR, bottom rule). Flows once after the final content. */}
+          {/* Security Footer — digitally-generated line (kept tick circle),
+              official body copy, QR, bottom rule. The title/shield block and
+              SCAN TO VERIFY pill were removed per product direction. Flows
+              once after the final content. */}
           <View wrap={false} style={{ marginTop: 10, borderTopWidth: 0.5, borderColor: '#e2e8f0', paddingTop: 8, width: '100%' }}>
             <VerificationLabel fontScale={fontScale} />
             {(() => {
@@ -179,14 +179,6 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
                 <View style={{ flexDirection: 'column' }}>
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <View style={{ width: 22, height: 24, borderWidth: 1.8, borderColor: '#2563eb', backgroundColor: '#dbeafe', borderRadius: 3, alignItems: 'center', justifyContent: 'center' }}>
-                          <View style={{ width: 9, height: 5, borderLeftWidth: 1.8, borderBottomWidth: 1.8, borderColor: '#2563eb', transform: 'rotate(-45deg)', marginTop: -2 }} />
-                        </View>
-                        <Text style={{ fontSize: 10.5 * fontScale, fontWeight: 'bold', color: '#1e3a8a', letterSpacing: 0.4 }}>
-                          DOCUMENT AUTHENTICATION &amp; VERIFICATION
-                        </Text>
-                      </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
                         <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#10b981', alignItems: 'center', justifyContent: 'center' }}>
                           <View style={{ width: 6, height: 3.5, borderLeftWidth: 1.2, borderBottomWidth: 1.2, borderColor: '#ffffff', transform: 'rotate(-45deg)', marginTop: -1 }} />
@@ -203,13 +195,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
                     </View>
                     <View style={{ width: 1, backgroundColor: '#cbd5e1', alignSelf: 'stretch' }} />
                     <View style={{ width: footerQrSize + 18, alignItems: 'center' }}>
-                      <View style={{ backgroundColor: '#0b4da2', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                        <View style={{ width: 9, height: 13, borderWidth: 1, borderColor: '#ffffff', borderRadius: 2, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 1.2 }}>
-                          <View style={{ width: 2, height: 2, borderRadius: 1, backgroundColor: '#ffffff' }} />
-                        </View>
-                        <Text style={{ fontSize: 7.5 * fontScale, fontWeight: 'bold', color: '#ffffff', letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
-                      </View>
-                      <View style={{ marginTop: 6, alignItems: 'center' }}>
+                      <View style={{ alignItems: 'center' }}>
                         {qrUrl ? (
                           <Image src={qrUrl} style={{ width: footerQrSize, height: footerQrSize }} />
                         ) : (

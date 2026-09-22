@@ -243,13 +243,14 @@ export const verificationLabelStyle = {
 };
 
 /**
- * Deprecated: the DOCUMENT AUTHENTICATION & VERIFICATION header is now
- * rendered inside the shared SecurityFooter (PrimeDocument) so every
- * channel — fixed and flowing — matches the approved reference exactly.
+ * Deprecated: the verification footer is rendered inside the shared
+ * SecurityFooter (PrimeDocument) so every channel — fixed and flowing —
+ * matches. The footer keeps the digitally-generated line, official body
+ * copy and QR; the title/shield block and SCAN TO VERIFY pill were removed.
  * Kept as a null render so existing call sites
  * (<VerificationLabel /> + <SecurityFooter />) produce a single block
  * instead of a duplicated heading. Page-text assertions should target the
- * SecurityFooter title ('DOCUMENT AUTHENTICATION & VERIFICATION').
+ * kept SecurityFooter line ('Digitally generated').
  */
 export function VerificationLabel({ fontScale = 1 }: { fontScale?: number }) {
   void fontScale;

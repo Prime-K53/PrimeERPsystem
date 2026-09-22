@@ -271,55 +271,16 @@ const SecurityFooter = ({
   const footerQrSize = 72;
   const qrCodeDataUrl = resolvePdfQrCodeSource(String(data?.securityQrCodeDataUrl || '').trim());
 
-  // Document Authentication & Verification block — matches the approved
-  // reference: shield + title, digitally-generated line, official body copy,
-  // vertical divider, SCAN TO VERIFY pill + QR, bottom rule.
+  // Document Authentication & Verification block: digitally-generated line
+  // (kept tick circle), official body copy, vertical divider, QR, bottom
+  // rule. The "DOCUMENT AUTHENTICATION & VERIFICATION" title/shield block
+  // and the "SCAN TO VERIFY" pill were removed per product direction — the
+  // QR code itself (which encodes the verification URL) is unchanged.
   // Icons are drawn with Views (no icon font) so standard PDF fonts render
   // identically everywhere. Bullet (•) is WinAnsi-safe.
   const displayCompany = String(companyName || '').trim() || 'Prime Printing';
   const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, '').trim() || displayCompany;
   const titleColor = '#1e3a8a';
-  const shieldBlue = '#2563eb';
-  const shieldFill = '#dbeafe';
-
-  const headerRow = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-      <View
-        style={{
-          width: 22,
-          height: 24,
-          borderWidth: 1.8,
-          borderColor: shieldBlue,
-          backgroundColor: shieldFill,
-          borderRadius: 3,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <View
-          style={{
-            width: 9,
-            height: 5,
-            borderLeftWidth: 1.8,
-            borderBottomWidth: 1.8,
-            borderColor: shieldBlue,
-            transform: 'rotate(-45deg)',
-            marginTop: -2,
-          }}
-        />
-      </View>
-      <Text
-        style={{
-          fontSize: 10.5 * fontScale,
-          fontWeight: 'bold',
-          color: titleColor,
-          letterSpacing: 0.4,
-        }}
-      >
-        DOCUMENT AUTHENTICATION &amp; VERIFICATION
-      </Text>
-    </View>
-  );
 
   const subRow = (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
@@ -365,36 +326,7 @@ const SecurityFooter = ({
 
   const qrColumn = (
     <View style={{ width: footerQrSize + 18, alignItems: 'center' }}>
-      <View
-        style={{
-          backgroundColor: '#0b4da2',
-          borderRadius: 8,
-          paddingVertical: 4,
-          paddingHorizontal: 8,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 5,
-        }}
-      >
-        <View
-          style={{
-            width: 9,
-            height: 13,
-            borderWidth: 1,
-            borderColor: '#ffffff',
-            borderRadius: 2,
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            paddingBottom: 1.2,
-          }}
-        >
-          <View style={{ width: 2, height: 2, borderRadius: 1, backgroundColor: '#ffffff' }} />
-        </View>
-        <Text style={{ fontSize: 7.5 * fontScale, fontWeight: 'bold', color: '#ffffff', letterSpacing: 0.5 }}>
-          SCAN TO VERIFY
-        </Text>
-      </View>
-      <View style={{ marginTop: 6, alignItems: 'center' }}>
+      <View style={{ alignItems: 'center' }}>
         {!!qrCodeDataUrl ? (
           <Image src={qrCodeDataUrl} style={{ width: footerQrSize, height: footerQrSize }} />
         ) : (
@@ -407,7 +339,6 @@ const SecurityFooter = ({
   const contentRow = (
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <View style={{ flex: 1 }}>
-        {headerRow}
         {subRow}
         {bodyCopy}
       </View>
