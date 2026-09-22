@@ -1165,13 +1165,6 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                     confirmText: 'Convert',
                     onConfirm: async () => {
                         try {
-                            // First, mark all items as done before converting to invoice
-                            for (const orderItem of item.items) {
-                                if ((orderItem as any).processingStatus !== 'done') {
-                                    await markItemDone(item.id, orderItem.id);
-                                }
-                            }
-                            
                             const issuedDate = new Date().toISOString().split('T')[0];
                             const customer = customers.find((entry: any) =>
                                 entry.id === item.customerId || entry.name === item.customerName
@@ -1259,16 +1252,6 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                 const ticketId = await convertOrderToJobTicket(item);
                 notify(`Order ${item.id} successfully converted to Job Ticket ${ticketId}`, "success");
                 navigate('/sales-flow/job-tickets');
-            }
-            if (action.startsWith('mark_item_done:')) {
-                const itemId = action.split(':')[1];
-                try {
-                    await markItemDone(item.id, itemId);
-                    notify("Item marked as done", "success");
-                    if (selectedOrderForDetail) setSelectedOrderForDetail(null);
-                } catch (error: any) {
-                    notify(`Failed to mark item done: ${error.message}`, "error");
-                }
             }
         }
     };
