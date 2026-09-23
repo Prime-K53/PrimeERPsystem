@@ -35,6 +35,8 @@ import {
 import { generateCommunicationDraft } from '../../../services/communication/communicationAIService';
 import { validateDraftAgainstFacts } from '../../../services/communication/communicationValidation';
 import { sendCommunication } from '../../../services/communication/communicationSendService';
+import { isInvoicePurpose } from '../../../services/communication/invoiceAttachmentService';
+import { createGenerationGuard } from '../../../services/communication/communicationGeneration';
 import {
   findRecentInvoiceSend,
   getCustomerHistory,
@@ -119,6 +121,11 @@ const CommunicationCenter: React.FC = () => {
   // revalidation still apply before anything can send.
   const draftRef = useRef('');
   draftRef.current = draft;
+  // Generation identity: a late AI response for a superseded customer /
+  // purpose / context must never overwrite the operator's current work.
+  const generationGuardRef = useRef(createGenerationGuard());
+  const ctxRef = useRef<CommunicationContext | null>(null);
+  ctxRef.current = ctx;
   const noteVoice = useVoiceDictation((t) => setCustomNote((prev) => (prev ? `${prev} ${t}` : t)));
   const draftVoice = useVoiceDictation((t) => {
     const base = draftRef.current;
@@ -155,12 +162,26 @@ const CommunicationCenter: React.FC = () => {
   const currency = companyConfig?.currencySymbol || 'K';
 
   // Load ERP context whenever customer/purpose/invoice changes.
+  // Customer or purpose change invalidates EVERYTHING downstream: previous
+  // ERP facts, AI draft, validation, attachment selection, verification URL
+  // and any purpose-specific send payload. The next generation rebuilds from
+  // the new customer + new purpose (never relabels old context).
   useEffect(() => {
     if (!customerId) {
       setCtx(null);
       setStage('select');
       return;
     }
+    // Invalidate synchronously so no stale draft/preview can send meanwhile.
+    setDraft('');
+    setGeneratedDraft('');
+    setAiGenerated(false);
+    setAiWarning(null);
+    setValidation(null);
+    setSendResult(null);
+    setConfirmingSend(false);
+    setDuplicateWarning(null);
+    setStaleWarning(null);
     let cancelled = false;
     setCtxLoading(true);
     setCtxError(null);
@@ -196,18 +217,28 @@ const CommunicationCenter: React.FC = () => {
 
   const handleGenerate = async () => {
     if (!ctx) return;
+    // Capture generation identity BEFORE the async call: a response that
+    // arrives after the customer/purpose/context moved on is discarded.
+    const token = generationGuardRef.current.next(ctx.customer.id, ctx.purpose, ctx.contextVersion);
+    const requestCtx = ctx;
     setGenerating(true);
     setAiWarning(null);
     try {
-      const res = await generateCommunicationDraft(ctx, { tone, length, customNote: customNote.trim() || undefined });
+      const res = await generateCommunicationDraft(requestCtx, { tone, length, customNote: customNote.trim() || undefined });
+      const current = ctxRef.current;
+      if (!generationGuardRef.current.isCurrent(token)) return;
+      if (!current || current.snapshotId !== requestCtx.snapshotId) return;
       setDraft(res.text);
       setGeneratedDraft(res.text);
       setAiGenerated(res.aiGenerated);
       setAiWarning(res.warning);
-      setValidation(validateDraftAgainstFacts(res.text, ctx));
+      setValidation(validateDraftAgainstFacts(res.text, current));
       setStage('draft');
     } finally {
-      setGenerating(false);
+      const current = ctxRef.current;
+      if (generationGuardRef.current.isCurrent(token) && current && current.snapshotId === requestCtx.snapshotId) {
+        setGenerating(false);
+      }
     }
   };
 
@@ -243,6 +274,10 @@ const CommunicationCenter: React.FC = () => {
         return;
       }
       const focal = fresh.specificInvoice || fresh.latestInvoice;
+      // Invoice linkage is recorded ONLY for invoice purposes — a receipt /
+      // quotation / order / delivery send must never inherit invoice identity,
+      // attachment flags, or verification URLs from incidental invoice data.
+      const invoicePurpose = isInvoicePurpose(purpose);
       // sendCommunication re-validates the EXACT final payload at the boundary,
       // so an edited message can never bypass validation.
       const res = await sendCommunication({
@@ -262,9 +297,9 @@ const CommunicationCenter: React.FC = () => {
         tone,
         aiDraft: generatedDraft,
         finalMessage: draft.trim(),
-        invoiceId: focal?.id || null,
-        invoiceNumber: focal?.invoiceNumber || null,
-        verificationUrl: focal?.verificationUrl || null,
+        invoiceId: invoicePurpose ? focal?.id || null : null,
+        invoiceNumber: invoicePurpose ? focal?.invoiceNumber || null : null,
+        verificationUrl: invoicePurpose ? focal?.verificationUrl || null : null,
         hadAttachment: res.attachmentIncluded,
         attachmentFilename: res.attachmentFilename,
         attachmentIncluded: res.attachmentIncluded,
@@ -275,8 +310,12 @@ const CommunicationCenter: React.FC = () => {
         snapshotId: fresh.snapshotId,
         factsSnapshot: JSON.stringify({
           outstandingBalance: fresh.outstandingBalance,
-          invoice: focal ? { id: focal.id, number: focal.invoiceNumber, total: focal.total, paid: focal.paid, outstanding: focal.outstanding } : null,
-          verificationUrl: focal?.verificationUrl || null,
+          invoice: invoicePurpose && focal ? { id: focal.id, number: focal.invoiceNumber, total: focal.total, paid: focal.paid, outstanding: focal.outstanding } : null,
+          verificationUrl: invoicePurpose ? focal?.verificationUrl || null : null,
+          payment: fresh.lastPayment ? { id: fresh.lastPayment.id, receiptNumber: fresh.lastPayment.receiptNumber, amount: fresh.lastPayment.amount, allocatedInvoices: fresh.lastPayment.allocatedInvoiceNumbers } : null,
+          quotation: fresh.quotation ? { id: fresh.quotation.id, number: fresh.quotation.number, total: fresh.quotation.total } : null,
+          order: fresh.order ? { id: fresh.order.id, number: fresh.order.number, total: fresh.order.total, status: fresh.order.status } : null,
+          delivery: fresh.delivery ? { id: fresh.delivery.id, status: fresh.delivery.status } : null,
           fetchedAt: fresh.fetchedAt,
         }),
       });
@@ -461,19 +500,57 @@ const CommunicationCenter: React.FC = () => {
                 )}
               </div>
               <div style={{ background: '#fff', border: `1px solid ${hairline}`, borderRadius: 8, padding: 8 }}>
-                {focal ? (
-                  <>
-                    <div style={{ fontWeight: 700, color: ink }}>Invoice {focal.invoiceNumber} found</div>
-                    <div style={{ color: inkSoft }}>Date: {focal.date ? new Date(focal.date).toLocaleDateString() : '—'} · Due: {focal.dueDate ? new Date(focal.dueDate).toLocaleDateString() : '—'}</div>
-                    <div>Total {formatMoney(focal.total)} · Paid {formatMoney(focal.paid)} · Outstanding {formatMoney(focal.outstanding)}</div>
-                    <div style={{ marginTop: 4, wordBreak: 'break-all' }}>
-                      Verification: {focal.verificationUrl ? <a href={focal.verificationUrl} target="_blank" rel="noreferrer">{focal.verificationUrl}</a> : 'unavailable — will not guess a link'}
+                {isInvoicePurpose(purpose) ? (
+                  focal ? (
+                    <>
+                      <div style={{ fontWeight: 700, color: ink }}>Invoice {focal.invoiceNumber} found</div>
+                      <div style={{ color: inkSoft }}>Date: {focal.date ? new Date(focal.date).toLocaleDateString() : '—'} · Due: {focal.dueDate ? new Date(focal.dueDate).toLocaleDateString() : '—'}</div>
+                      <div>Total {formatMoney(focal.total)} · Paid {formatMoney(focal.paid)} · Outstanding {formatMoney(focal.outstanding)}</div>
+                      <div style={{ marginTop: 4, wordBreak: 'break-all' }}>
+                        Verification: {focal.verificationUrl ? <a href={focal.verificationUrl} target="_blank" rel="noreferrer">{focal.verificationUrl}</a> : 'unavailable — will not guess a link'}
+                      </div>
+                      <div>Attachment: actual ERP invoice document (PDF via document viewer)</div>
+                    </>
+                  ) : (
+                    <div style={{ color: inkSoft }}>
+                      {purposeMeta?.requiresInvoice ? 'No invoice available for this customer.' : 'No focal invoice for this purpose.'}
                     </div>
-                    <div>Attachment: actual ERP invoice document (PDF via document viewer)</div>
+                  )
+                ) : ctx.lastPayment ? (
+                  <>
+                    <div style={{ fontWeight: 700, color: ink }}>Receipt {ctx.lastPayment.receiptNumber} found</div>
+                    <div style={{ color: inkSoft }}>Date: {ctx.lastPayment.date ? new Date(ctx.lastPayment.date).toLocaleDateString() : '—'}{ctx.lastPayment.method ? ` · via ${ctx.lastPayment.method}` : ''}</div>
+                    <div>Amount {formatMoney(ctx.lastPayment.amount)}{ctx.lastPayment.allocatedInvoiceNumbers.length > 0 ? ` · Allocated to ${ctx.lastPayment.allocatedInvoiceNumbers.join(', ')}` : ''}</div>
+                    {ctx.lastPayment.remainingBalance !== null && (
+                      <div>Remaining balance {formatMoney(ctx.lastPayment.remainingBalance)}</div>
+                    )}
+                  </>
+                ) : ctx.quotation ? (
+                  <>
+                    <div style={{ fontWeight: 700, color: ink }}>Quotation {ctx.quotation.number} found</div>
+                    <div style={{ color: inkSoft }}>Date: {ctx.quotation.date ? new Date(ctx.quotation.date).toLocaleDateString() : '—'} · Status: {ctx.quotation.status || '—'}{ctx.quotation.validUntil ? ` · Valid until ${new Date(ctx.quotation.validUntil).toLocaleDateString()}` : ''}</div>
+                    <div>Total {formatMoney(ctx.quotation.total)}</div>
+                    {ctx.quotation.items.length > 0 && (
+                      <div style={{ color: inkSoft }}>{ctx.quotation.items.map((it) => `${it.name} × ${it.quantity}`).join('; ')}</div>
+                    )}
+                  </>
+                ) : ctx.order ? (
+                  <>
+                    <div style={{ fontWeight: 700, color: ink }}>Sales order {ctx.order.number} found</div>
+                    <div style={{ color: inkSoft }}>Date: {ctx.order.date ? new Date(ctx.order.date).toLocaleDateString() : '—'} · Status: {ctx.order.status || '—'}</div>
+                    <div>Total {formatMoney(ctx.order.total)}</div>
+                    {ctx.delivery && (
+                      <div style={{ marginTop: 4 }}>Delivery {ctx.delivery.id} · {ctx.delivery.status}{ctx.delivery.trackingNumber ? ` · Tracking ${ctx.delivery.trackingNumber}` : ''}</div>
+                    )}
+                  </>
+                ) : ctx.delivery ? (
+                  <>
+                    <div style={{ fontWeight: 700, color: ink }}>Delivery {ctx.delivery.id} found</div>
+                    <div>Status: {ctx.delivery.status || '—'}{ctx.delivery.trackingNumber ? ` · Tracking ${ctx.delivery.trackingNumber}` : ''}</div>
                   </>
                 ) : (
                   <div style={{ color: inkSoft }}>
-                    {purposeMeta?.requiresInvoice ? 'No invoice available for this customer.' : 'No focal invoice for this purpose.'}
+                    {purposeMeta?.requiresInvoice ? 'No invoice available for this customer.' : 'No focal document for this purpose.'}
                   </div>
                 )}
                 {ctx.company.paymentMethodsSummary && (
@@ -539,7 +616,7 @@ const CommunicationCenter: React.FC = () => {
               <div style={{ marginTop: 8, fontSize: 12, padding: 8, borderRadius: 8, background: validation?.ok ? tealBg : '#fde8e6', color: validation?.ok ? ink : danger }}>
                 {validation?.ok ? 'Facts validated against ERP context.' : (validation?.issues || []).map((i) => <div key={i.code + i.message}>• {i.message}</div>)}
               </div>
-              {focal && (
+              {isInvoicePurpose(purpose) && focal && (
                 <div style={{ marginTop: 8, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <span>Document: invoice {focal.invoiceNumber} (official ERP document)</span>

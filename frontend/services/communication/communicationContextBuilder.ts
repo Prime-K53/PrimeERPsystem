@@ -21,8 +21,13 @@ import type {
   CommunicationPurposeId,
   CompanyFacts,
   CustomerFacts,
+  DeliveryFacts,
   InvoiceFacts,
+  OrderFacts,
+  PaymentFacts,
+  QuotationFacts,
 } from './communicationTypes';
+import { getPurpose } from './communicationTypes';
 
 interface RawCustomer {
   id: string;
@@ -32,6 +37,68 @@ interface RawCustomer {
   contactName?: string | null;
   phone?: string | null;
   email?: string | null;
+}
+
+interface RawPayment {
+  id?: string;
+  customerId?: string;
+  customer_id?: string;
+  date?: string;
+  createdAt?: string;
+  created_at?: string;
+  amount?: number;
+  amountApplied?: number;
+  paymentMethod?: string;
+  payment_method?: string;
+  reference?: string;
+  allocations?: Array<{ invoiceId?: string; invoice_id?: string; amount?: number }>;
+}
+
+interface RawQuotation {
+  id: string;
+  customerId?: string;
+  customerName?: string;
+  quotationNumber?: string;
+  totalAmount?: number;
+  total?: number;
+  date?: string;
+  createdAt?: string;
+  created_at?: string;
+  validUntil?: string;
+  valid_until?: string;
+  status?: string;
+  items?: Array<{
+    name?: string; productName?: string; description?: string; title?: string;
+    quantity?: number; qty?: number; price?: number; unitPrice?: number; total?: number; lineTotal?: number;
+  }>;
+}
+
+interface RawOrder {
+  id: string;
+  customerId?: string;
+  customerName?: string;
+  orderNumber?: string;
+  total?: number;
+  totalAmount?: number;
+  status?: string;
+  orderDate?: string;
+  date?: string;
+  createdAt?: string;
+  created_at?: string;
+  deliveryDate?: string;
+}
+
+interface RawShipment {
+  id: string;
+  orderId?: string;
+  customerId?: string;
+  customerName?: string;
+  status?: string;
+  trackingNumber?: string;
+  estimatedDelivery?: string;
+  actualArrival?: string;
+  date?: string;
+  createdAt?: string;
 }
 
 interface RawInvoice {
@@ -135,8 +202,7 @@ export interface BuildContextOptions {
   openingBalanceOverride?: number;
 }
 
-export async function resolveCustomerFacts(customerId: string): Promise<{ customer: CustomerFacts; raw: RawCustomer }> {
-  const all = await dbService.getAll<RawCustomer>('customers');
+export async function resolveCustomerFacts(customerId: string): Promise<{ customer: CustomerFacts; raw: RawCustomer }> {  const all = await dbService.getAll<RawCustomer>('customers');
   const found = all.find((c) => String(c.id) === String(customerId));
   if (!found) throw new Error(`Customer not found: ${customerId}`);
   const businessName = getCustomerDisplayName({
@@ -157,22 +223,31 @@ export async function resolveCustomerFacts(customerId: string): Promise<{ custom
   };
 }
 
-export async function buildCommunicationContext(
-  purpose: CommunicationPurposeId,
-  customerId: string,
-  opts: BuildContextOptions = {},
-): Promise<CommunicationContext> {
-  const warnings: string[] = [];
-  const { customer, raw } = await resolveCustomerFacts(customerId);
-  const company = buildCompanyFacts();
+/** Monotonic build marker so regenerated contexts invalidate in-flight async work. */
+let contextSequence = 0;
 
+function toMoney(value: unknown): number {
+  return Number(value ?? 0) || 0;
+}
+
+function latestByDate<T>(rows: T[], pickDate: (row: T) => string | null | undefined): T[] {
+  return [...rows].sort((a, b) => {
+    const ta = new Date(pickDate(a) || 0).getTime() || 0;
+    const tb = new Date(pickDate(b) || 0).getTime() || 0;
+    if (tb !== ta) return tb - ta;
+    return String((b as { id?: unknown }).id).localeCompare(String((a as { id?: unknown }).id));
+  });
+}
+
+/** Invoice provider: full list + latest + explicitly chosen specific invoice. */
+async function resolveInvoiceDomain(
+  customerId: string,
+  displayName: string,
+  opts: BuildContextOptions,
+  warnings: string[],
+): Promise<{ invoices: InvoiceFacts[]; latestInvoice: InvoiceFacts | null; specificInvoice: InvoiceFacts | null }> {
   const allInvoices = opts.invoicesOverride ??
     (await dbService.getAll<RawInvoice>('invoices'));
-  const displayName = getCustomerDisplayName({
-    businessName: raw.businessName ?? null,
-    companyName: raw.companyName ?? null,
-    legacyCustomerName: raw.name ?? null,
-  });
   const mine = allInvoices.filter(
     (i) =>
       String(i.customerId || '') === String(customerId) ||
@@ -192,135 +267,288 @@ export async function buildCommunicationContext(
       specificInvoice = toInvoiceFacts(found as RawInvoice);
     }
   }
+  return { invoices, latestInvoice, specificInvoice };
+}
+
+/** Outstanding-balance provider (canonical ledger, never hand-rolled math). */
+async function resolveOutstandingBalance(
+  purpose: CommunicationPurposeId,
+  customerId: string,
+  displayName: string,
+  opts: BuildContextOptions,
+  warnings: string[],
+): Promise<number | null> {
+  void purpose;
+  void displayName;
+  try {
+    if (opts.invoicesOverride || opts.paymentsOverride || opts.openingBalanceOverride !== undefined) {
+      const { buildLedgerFromRecords } = await import('../customerLedger');
+      const allInvoices = opts.invoicesOverride ??
+        (await dbService.getAll<RawInvoice>('invoices'));
+      const mine = allInvoices.filter(
+        (i) =>
+          String(i.customerId || '') === String(customerId) ||
+          (displayName && String(i.customerName || '').toLowerCase() === displayName.toLowerCase()),
+      );
+      const payments = opts.paymentsOverride ?? [];
+      const ledger = buildLedgerFromRecords({
+        customerId,
+        invoices: mine as unknown as Array<Record<string, unknown>>,
+        payments: payments as Array<Record<string, unknown>>,
+        openingBalance: opts.openingBalanceOverride ?? 0,
+      });
+      return ledger.outstandingBalance;
+    }
+    return await getCustomerOutstanding(customerId);
+  } catch {
+    warnings.push('Outstanding balance is currently unavailable.');
+    return null;
+  }
+}
+
+/** Payment/receipt provider: the single latest customer payment, fully resolved
+ *  (receipt identifier + allocation targets). Deterministic — the AI never picks. */
+async function resolveLastPayment(
+  customerId: string,
+  opts: BuildContextOptions,
+  warnings: string[],
+): Promise<PaymentFacts | null> {
+  try {
+    const payments = (opts.paymentsOverride as RawPayment[] | undefined) ??
+      (await dbService.getAll<RawPayment>('customerPayments'));
+    const mineP = (payments as RawPayment[]).filter(
+      (p) => String(p.customerId || p.customer_id || '') === String(customerId),
+    );
+    const sorted = latestByDate(mineP, (p) => p.date || p.createdAt || p.created_at || null);
+    const lp = sorted[0];
+    if (!lp) {
+      warnings.push('No recorded payment found for this customer.');
+      return null;
+    }
+    const allocations = Array.isArray(lp.allocations) ? lp.allocations : [];
+    const allocatedInvoiceIds = allocations
+      .map((a) => String(a.invoiceId || a.invoice_id || '').trim())
+      .filter(Boolean);
+    let allocatedInvoiceNumbers: string[] = [];
+    let allocatedTotal = 0;
+    if (allocatedInvoiceIds.length > 0 || allocations.length > 0) {
+      try {
+        const allInvoices = await dbService.getAll<RawInvoice>('invoices');
+        const byId = new Map(allInvoices.map((i) => [String(i.id), i]));
+        allocatedInvoiceNumbers = allocatedInvoiceIds.map(
+          (id) => String(byId.get(id)?.invoiceNumber || byId.get(id)?.id || id),
+        );
+        allocatedTotal = Math.round(allocations.reduce((s, a) => s + toMoney(a.amount), 0) * 100) / 100;
+      } catch {
+        allocatedInvoiceNumbers = allocatedInvoiceIds;
+        allocatedTotal = Math.round(allocations.reduce((s, a) => s + toMoney(a.amount), 0) * 100) / 100;
+      }
+    }
+    const reference = String(lp.reference || '').trim();
+    return {
+      id: String(lp.id || ''),
+      receiptNumber: reference || String(lp.id || ''),
+      date: (lp.date || lp.createdAt || lp.created_at || null) as string | null,
+      amount: Math.round(toMoney(lp.amountApplied ?? lp.amount) * 100) / 100,
+      method: lp.paymentMethod || lp.payment_method ? String(lp.paymentMethod || lp.payment_method) : null,
+      allocatedInvoiceIds,
+      allocatedInvoiceNumbers,
+      allocatedTotal,
+      remainingBalance: null,
+    };
+  } catch {
+    warnings.push('Payment data is currently unavailable.');
+    return null;
+  }
+}
+
+const CLOSED_QUOTATION_STATUSES = new Set(['converted', 'cancelled', 'rejected', 'expired']);
+
+/** Quotation provider: latest OPEN quotation preferred, latest overall as fallback. */
+async function resolveQuotation(
+  customerId: string,
+  displayName: string,
+  warnings: string[],
+): Promise<QuotationFacts | null> {
+  try {
+    const quotes = await dbService.getAll<RawQuotation>('quotations');
+    const mineQ = quotes.filter(
+      (q) => String(q.customerId || '') === String(customerId) ||
+        (displayName && String(q.customerName || '').toLowerCase() === displayName.toLowerCase()),
+    );
+    if (mineQ.length === 0) {
+      warnings.push('No quotation found for this customer.');
+      return null;
+    }
+    const byDate = latestByDate(mineQ, (q) => q.date || q.createdAt || q.created_at || null);
+    const open = byDate.filter((q) => !CLOSED_QUOTATION_STATUSES.has(String(q.status || '').trim().toLowerCase()));
+    const q = (open.length > 0 ? open : byDate)[0];
+    const items = (Array.isArray(q.items) ? q.items : []).slice(0, 8).map((it) => {
+      const quantity = Math.floor(toMoney(it.quantity ?? it.qty));
+      const price = Math.round(toMoney(it.price ?? it.unitPrice) * 100) / 100;
+      const total = Math.round(Number(it.total ?? it.lineTotal ?? quantity * price) * 100) / 100;
+      return {
+        name: String(it.name || it.productName || it.description || it.title || 'Item'),
+        quantity,
+        price,
+        total: Number.isFinite(total) ? total : 0,
+      };
+    });
+    return {
+      id: String(q.id),
+      number: String(q.quotationNumber || q.id),
+      date: (q.date || q.createdAt || q.created_at || null) as string | null,
+      total: Math.round(toMoney(q.totalAmount ?? q.total) * 100) / 100,
+      validUntil: q.validUntil || q.valid_until || null,
+      status: String(q.status || ''),
+      items,
+    };
+  } catch {
+    warnings.push('Quotation data is currently unavailable.');
+    return null;
+  }
+}
+
+/** Sales-order provider: latest order by date (id order as tiebreak only). */
+async function resolveOrder(
+  customerId: string,
+  displayName: string,
+  warnings: string[],
+): Promise<OrderFacts | null> {
+  try {
+    const orders = await dbService.getAll<RawOrder>('orders');
+    const mineO = orders.filter(
+      (o) => String(o.customerId || '') === String(customerId) ||
+        (displayName && String(o.customerName || '').toLowerCase() === displayName.toLowerCase()),
+    );
+    if (mineO.length === 0) {
+      warnings.push('No sales order found for this customer.');
+      return null;
+    }
+    const o = latestByDate(mineO, (r) => r.orderDate || r.date || r.createdAt || r.created_at || null)[0];
+    return {
+      id: String(o.id),
+      number: String(o.orderNumber || o.id),
+      date: (o.orderDate || o.date || o.createdAt || o.created_at || null) as string | null,
+      total: Math.round(toMoney(o.totalAmount ?? o.total) * 100) / 100,
+      status: String(o.status || ''),
+      deliveryDate: o.deliveryDate || null,
+    };
+  } catch {
+    warnings.push('Order data is currently unavailable.');
+    return null;
+  }
+}
+
+/** Delivery provider: customer-scoped, preferring the shipment linked to the
+ *  focal order. Never returns another customer's shipment. */
+async function resolveDelivery(
+  customerId: string,
+  displayName: string,
+  focalOrderId: string | null,
+  warnings: string[],
+): Promise<DeliveryFacts | null> {
+  try {
+    const shipments = await dbService.getAll<RawShipment>('shipments');
+    const mineS = shipments.filter(
+      (s) => String(s.customerId || '') === String(customerId) ||
+        (displayName && String(s.customerName || '').toLowerCase() === displayName.toLowerCase()),
+    );
+    if (mineS.length === 0) {
+      warnings.push('No delivery/shipment found for this customer.');
+      return null;
+    }
+    const byDate = latestByDate(mineS, (s) => s.actualArrival || s.estimatedDelivery || s.date || s.createdAt || null);
+    const linked = focalOrderId ? byDate.find((s) => String(s.orderId || '') === String(focalOrderId)) : undefined;
+    const s = linked || byDate[0];
+    if (focalOrderId && String(s.orderId || '') !== '' && String(s.orderId) !== String(focalOrderId)) {
+      warnings.push('The latest shipment is not linked to the selected order.');
+    }
+    return {
+      id: String(s.id),
+      orderId: s.orderId ? String(s.orderId) : null,
+      status: String(s.status || ''),
+      trackingNumber: s.trackingNumber || null,
+      estimatedDelivery: s.estimatedDelivery || s.actualArrival || null,
+    };
+  } catch {
+    warnings.push('Delivery data is currently unavailable.');
+    return null;
+  }
+}
+
+export async function buildCommunicationContext(
+  purpose: CommunicationPurposeId,
+  customerId: string,
+  opts: BuildContextOptions = {},
+): Promise<CommunicationContext> {
+  // Explicit purpose-to-provider mapping: the selected purpose alone decides
+  // which ERP providers run. Anything not in the purpose's allow-list is
+  // never resolved and (defense in depth) stripped before return, so invoice
+  // facts can never leak into a quotation/order/delivery/payment context.
+  const allowed = new Set(getPurpose(purpose).allowedFacts);
+  const warnings: string[] = [];
+  const { customer, raw } = await resolveCustomerFacts(customerId);
+  const company = buildCompanyFacts();
+  const displayName = getCustomerDisplayName({
+    businessName: raw.businessName ?? null,
+    companyName: raw.companyName ?? null,
+    legacyCustomerName: raw.name ?? null,
+  });
+
+  const wantsInvoices =
+    allowed.has('invoices') || allowed.has('latestInvoice') || allowed.has('specificInvoice');
+
+  let invoices: InvoiceFacts[] = [];
+  let latestInvoice: InvoiceFacts | null = null;
+  let specificInvoice: InvoiceFacts | null = null;
+  if (wantsInvoices) {
+    const resolved = await resolveInvoiceDomain(customerId, displayName, opts, warnings);
+    if (allowed.has('invoices')) invoices = resolved.invoices;
+    if (allowed.has('latestInvoice')) latestInvoice = resolved.latestInvoice;
+    if (allowed.has('specificInvoice')) specificInvoice = resolved.specificInvoice;
+  }
 
   let outstandingBalance: number | null = null;
-  if (['payment_reminder', 'outstanding_balance', 'send_latest_invoice', 'send_specific_invoice'].includes(purpose)) {
-    try {
-      if (opts.invoicesOverride || opts.paymentsOverride || opts.openingBalanceOverride !== undefined) {
-        const { buildLedgerFromRecords } = await import('../customerLedger');
-        const payments = opts.paymentsOverride ?? [];
-        const ledger = buildLedgerFromRecords({
-          customerId,
-          invoices: mine as unknown as Array<Record<string, unknown>>,
-          payments: payments as Array<Record<string, unknown>>,
-          openingBalance: opts.openingBalanceOverride ?? 0,
-        });
-        outstandingBalance = ledger.outstandingBalance;
-      } else {
-        outstandingBalance = await getCustomerOutstanding(customerId);
-      }
-    } catch {
-      warnings.push('Outstanding balance is currently unavailable.');
-      outstandingBalance = null;
+  if (allowed.has('outstandingBalance')) {
+    outstandingBalance = await resolveOutstandingBalance(
+      purpose, customerId, displayName, opts, warnings,
+    );
+  }
+
+  let lastPayment: PaymentFacts | null = null;
+  if (allowed.has('lastPayment')) {
+    lastPayment = await resolveLastPayment(customerId, opts, warnings);
+    if (lastPayment && allowed.has('outstandingBalance') && outstandingBalance !== null) {
+      lastPayment = { ...lastPayment, remainingBalance: outstandingBalance };
     }
   }
 
-  let lastPayment: CommunicationContext['lastPayment'] = null;
-  if (purpose === 'payment_confirmation') {
-    try {
-      const payments = (opts.paymentsOverride as Array<{
-        id?: string; date?: string; createdAt?: string; amount?: number; amountApplied?: number; paymentMethod?: string; payment_method?: string;
-      }>) ?? (await dbService.getAll<Record<string, unknown>>('customerPayments'));
-      const mineP = (payments as Array<Record<string, unknown>>).filter(
-        (p) => String((p as { customerId?: string }).customerId || '') === String(customerId),
-      );
-      mineP.sort((a, b) => {
-        const ta = new Date(String((a as { date?: string }).date || (a as { createdAt?: string }).createdAt || 0)).getTime() || 0;
-        const tb = new Date(String((b as { date?: string }).date || (b as { createdAt?: string }).createdAt || 0)).getTime() || 0;
-        return tb - ta;
-      });
-      const lp = mineP[0] as { id?: string; date?: string; createdAt?: string; amount?: number; amountApplied?: number; paymentMethod?: string; payment_method?: string } | undefined;
-      if (lp) {
-        lastPayment = {
-          id: String(lp.id || ''),
-          date: (lp.date || lp.createdAt || null) as string | null,
-          amount: Number(lp.amountApplied ?? lp.amount ?? 0) || 0,
-          method: lp.paymentMethod || lp.payment_method ? String(lp.paymentMethod || lp.payment_method) : null,
-        };
-      } else {
-        warnings.push('No recorded payment found for this customer.');
-      }
-    } catch {
-      warnings.push('Payment data is currently unavailable.');
-    }
+  let quotation: QuotationFacts | null = null;
+  if (allowed.has('quotation')) {
+    quotation = await resolveQuotation(customerId, displayName, warnings);
   }
 
-  let quotation: CommunicationContext['quotation'] = null;
-  if (purpose === 'quotation_followup') {
-    try {
-      const quotes = await dbService.getAll<{
-        id: string; customerId?: string; customerName?: string; quotationNumber?: string;
-        totalAmount?: number; total?: number; validUntil?: string; status?: string; createdAt?: string;
-      }>('quotations');
-      const mineQ = quotes.filter(
-        (q) => String(q.customerId || '') === String(customerId) ||
-          (displayName && String(q.customerName || '').toLowerCase() === displayName.toLowerCase()),
-      );
-      mineQ.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      const q = mineQ[0];
-      if (q) {
-        quotation = {
-          id: String(q.id),
-          number: String(q.quotationNumber || q.id),
-          total: Number(q.totalAmount ?? q.total ?? 0) || 0,
-          validUntil: q.validUntil || null,
-          status: String(q.status || ''),
-        };
-      } else {
-        warnings.push('No quotation found for this customer.');
-      }
-    } catch {
-      warnings.push('Quotation data is currently unavailable.');
-    }
+  let order: OrderFacts | null = null;
+  if (allowed.has('order')) {
+    order = await resolveOrder(customerId, displayName, warnings);
   }
 
-  let order: CommunicationContext['order'] = null;
-  let delivery: CommunicationContext['delivery'] = null;
-  if (purpose === 'order_update' || purpose === 'delivery_notification') {
-    try {
-      const orders = await dbService.getAll<{
-        id: string; customerId?: string; total?: number; totalAmount?: number; status?: string; deliveryDate?: string;
-      }>('orders');
-      const mineO = orders.filter((o) => String(o.customerId || '') === String(customerId));
-      mineO.sort((a, b) => String(b.id).localeCompare(String(a.id)));
-      const o = mineO[0];
-      if (o) order = { id: String(o.id), total: Number(o.totalAmount ?? o.total ?? 0) || 0, status: String(o.status || ''), deliveryDate: o.deliveryDate || null };
-      else warnings.push('No sales order found for this customer.');
-    } catch {
-      warnings.push('Order data is currently unavailable.');
-    }
-    if (purpose === 'delivery_notification') {
-      try {
-        const shipments = await dbService.getAll<{
-          id: string; orderId?: string; status?: string; trackingNumber?: string; estimatedDelivery?: string;
-        }>('shipments');
-        const s = shipments[0];
-        if (s) {
-          delivery = {
-            id: String(s.id),
-            status: String(s.status || ''),
-            trackingNumber: s.trackingNumber || null,
-            estimatedDelivery: s.estimatedDelivery || null,
-          };
-        } else {
-          warnings.push('No delivery/shipment found.');
-        }
-      } catch {
-        warnings.push('Delivery data is currently unavailable.');
-      }
-    }
+  let delivery: DeliveryFacts | null = null;
+  if (allowed.has('delivery')) {
+    delivery = await resolveDelivery(customerId, displayName, order?.id || null, warnings);
   }
 
-  if ((purpose === 'send_latest_invoice') && !latestInvoice) {
+  // Purpose guardrails / honesty warnings.
+  if (purpose === 'send_latest_invoice' && !latestInvoice) {
     warnings.push('No invoice found for this customer — cannot send latest invoice.');
   }
-  if ((purpose === 'send_specific_invoice') && !specificInvoice) {
+  if (purpose === 'send_specific_invoice' && !specificInvoice) {
     warnings.push('Select a specific invoice to continue.');
   }
   if ((purpose === 'payment_reminder' || purpose === 'outstanding_balance') && outstandingBalance === 0) {
     warnings.push('This customer has no outstanding balance.');
   }
-
   const focal: InvoiceFacts | null = specificInvoice || latestInvoice;
   if ((purpose === 'send_latest_invoice' || purpose === 'send_specific_invoice') && focal && !focal.verificationUrl) {
     warnings.push('Verification URL is unavailable for this invoice (missing token or base URL). The message will note this instead of guessing a link.');
@@ -345,6 +573,7 @@ export async function buildCommunicationContext(
     warnings,
     snapshotId: snapshotIdFor(snapshotInput),
     fetchedAt: new Date().toISOString(),
+    contextVersion: ++contextSequence,
   };
   return ctx;
 }
@@ -378,6 +607,27 @@ export function diffFinancialFacts(
     if (bInv.outstanding !== aInv.outstanding) messages.push(`Invoice outstanding changed from ${formatMoney(bInv.outstanding)} to ${formatMoney(aInv.outstanding)}.`);
     if ((bInv.verificationUrl || null) !== (aInv.verificationUrl || null)) messages.push('Verification token/URL changed.');
     if (bInv.status !== aInv.status) messages.push(`Invoice status changed from ${bInv.status || 'unknown'} to ${aInv.status || 'unknown'}.`);
+  }
+  // Purpose focal documents: identity or key-figure changes also invalidate.
+  if ((before.quotation?.id || null) !== (after.quotation?.id || null)) {
+    messages.push(`Focal quotation changed from ${before.quotation?.number || 'none'} to ${after.quotation?.number || 'none'}.`);
+  } else if (before.quotation && after.quotation && before.quotation.total !== after.quotation.total) {
+    messages.push(`Quotation total changed from ${formatMoney(before.quotation.total)} to ${formatMoney(after.quotation.total)}.`);
+  }
+  if ((before.order?.id || null) !== (after.order?.id || null)) {
+    messages.push(`Focal order changed from ${before.order?.number || 'none'} to ${after.order?.number || 'none'}.`);
+  } else if (before.order && after.order && (before.order.total !== after.order.total || before.order.status !== after.order.status)) {
+    messages.push(`Order ${before.order.number} changed (total ${formatMoney(before.order.total)} → ${formatMoney(after.order.total)}, status ${before.order.status || 'unknown'} → ${after.order.status || 'unknown'}).`);
+  }
+  if ((before.delivery?.id || null) !== (after.delivery?.id || null)) {
+    messages.push(`Focal delivery changed from ${before.delivery?.id || 'none'} to ${after.delivery?.id || 'none'}.`);
+  } else if (before.delivery && after.delivery && before.delivery.status !== after.delivery.status) {
+    messages.push(`Delivery status changed from ${before.delivery.status || 'unknown'} to ${after.delivery.status || 'unknown'}.`);
+  }
+  if ((before.lastPayment?.id || null) !== (after.lastPayment?.id || null)) {
+    messages.push(`Focal payment changed from ${before.lastPayment?.receiptNumber || 'none'} to ${after.lastPayment?.receiptNumber || 'none'}.`);
+  } else if (before.lastPayment && after.lastPayment && before.lastPayment.amount !== after.lastPayment.amount) {
+    messages.push(`Payment amount changed from ${formatMoney(before.lastPayment.amount)} to ${formatMoney(after.lastPayment.amount)}.`);
   }
   return { changed: messages.length > 0, messages };
 }

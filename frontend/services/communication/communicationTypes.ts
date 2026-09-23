@@ -53,9 +53,9 @@ export interface CommunicationPurpose {
 export const COMMUNICATION_PURPOSES: CommunicationPurpose[] = [
   { id: 'welcome', label: 'Welcome New Customer', description: 'Greet a new customer with company info.', allowedFacts: ['customer', 'company'], requiresInvoice: false, supportsAttachment: false, supportsVerificationUrl: false },
   { id: 'payment_reminder', label: 'Payment Reminder', description: 'Remind about outstanding balance and relevant invoices.', allowedFacts: ['customer', 'company', 'outstandingBalance', 'invoices', 'paymentMethods'], requiresInvoice: false, supportsAttachment: false, supportsVerificationUrl: false },
-  { id: 'send_latest_invoice', label: 'Send Latest Invoice', description: 'Send the customer’s actual latest ERP invoice with document + verification link.', allowedFacts: ['customer', 'company', 'latestInvoice', 'paymentMethods', 'verificationUrl', 'document'], requiresInvoice: true, supportsAttachment: true, supportsVerificationUrl: true },
-  { id: 'send_specific_invoice', label: 'Send Specific Invoice', description: 'Send a chosen invoice with document + verification link.', allowedFacts: ['customer', 'company', 'specificInvoice', 'paymentMethods', 'verificationUrl', 'document'], requiresInvoice: true, supportsAttachment: true, supportsVerificationUrl: true },
-  { id: 'payment_confirmation', label: 'Invoice Payment Confirmation', description: 'Confirm a received payment against an invoice.', allowedFacts: ['customer', 'company', 'specificInvoice', 'lastPayment'], requiresInvoice: false, supportsAttachment: false, supportsVerificationUrl: false },
+  { id: 'send_latest_invoice', label: 'Send Latest Invoice', description: 'Send the customer’s actual latest ERP invoice with document + verification link.', allowedFacts: ['customer', 'company', 'outstandingBalance', 'latestInvoice', 'paymentMethods', 'verificationUrl', 'document'], requiresInvoice: true, supportsAttachment: true, supportsVerificationUrl: true },
+  { id: 'send_specific_invoice', label: 'Send Specific Invoice', description: 'Send a chosen invoice with document + verification link.', allowedFacts: ['customer', 'company', 'outstandingBalance', 'specificInvoice', 'paymentMethods', 'verificationUrl', 'document'], requiresInvoice: true, supportsAttachment: true, supportsVerificationUrl: true },
+  { id: 'payment_confirmation', label: 'Invoice Payment Confirmation', description: 'Confirm a received payment against an invoice.', allowedFacts: ['customer', 'company', 'specificInvoice', 'lastPayment', 'outstandingBalance'], requiresInvoice: false, supportsAttachment: false, supportsVerificationUrl: false },
   { id: 'outstanding_balance', label: 'Outstanding Balance Reminder', description: 'Statement-style balance reminder with invoice breakdown.', allowedFacts: ['customer', 'company', 'outstandingBalance', 'invoices', 'paymentMethods'], requiresInvoice: false, supportsAttachment: false, supportsVerificationUrl: false },
   { id: 'quotation_followup', label: 'Quotation Follow-up', description: 'Follow up on the latest open quotation.', allowedFacts: ['customer', 'company', 'quotation'], requiresInvoice: false, supportsAttachment: false, supportsVerificationUrl: false },
   { id: 'order_update', label: 'Order Update', description: 'Update on the latest sales order.', allowedFacts: ['customer', 'company', 'order'], requiresInvoice: false, supportsAttachment: false, supportsVerificationUrl: false },
@@ -85,6 +85,25 @@ export interface InvoiceFacts {
   hasDocument: boolean;
 }
 
+/** Authoritative payment/receipt facts — resolved deterministically by the
+ *  context builder (latest customer payment + its invoice allocations).
+ *  The AI never selects which payment or invoice to use. */
+export interface PaymentFacts {
+  id: string;
+  /** Official receipt/payment identifier (payment reference when set, else the record id). */
+  receiptNumber: string;
+  date: string | null;
+  amount: number;
+  method: string | null;
+  /** Invoice ids the payment was allocated to (may be empty for unallocated receipts). */
+  allocatedInvoiceIds: string[];
+  /** Human invoice numbers for the allocations, resolved from ERP invoices. */
+  allocatedInvoiceNumbers: string[];
+  allocatedTotal: number;
+  /** Customer remaining balance at fetch time (only when the purpose allows it). */
+  remainingBalance: number | null;
+}
+
 export interface CustomerFacts {
   id: string;
   businessName: string;
@@ -109,13 +128,45 @@ export interface CommunicationContext {
   invoices: InvoiceFacts[];
   latestInvoice: InvoiceFacts | null;
   specificInvoice: InvoiceFacts | null;
-  lastPayment: { id: string; date: string | null; amount: number; method: string | null } | null;
-  quotation: { id: string; number: string; total: number; validUntil: string | null; status: string } | null;
-  order: { id: string; total: number; status: string; deliveryDate: string | null } | null;
-  delivery: { id: string; status: string; trackingNumber: string | null; estimatedDelivery: string | null } | null;
+  lastPayment: PaymentFacts | null;
+  quotation: QuotationFacts | null;
+  order: OrderFacts | null;
+  delivery: DeliveryFacts | null;
   warnings: string[];
   snapshotId: string;
   fetchedAt: string;
+  /** Monotonic per-context generation marker used to discard stale async work. */
+  contextVersion: number;
+}
+
+/** Authoritative quotation facts — items included so follow-ups cite real lines. */
+export interface QuotationFacts {
+  id: string;
+  number: string;
+  date: string | null;
+  total: number;
+  validUntil: string | null;
+  status: string;
+  items: Array<{ name: string; quantity: number; price: number; total: number }>;
+}
+
+/** Authoritative sales-order facts. */
+export interface OrderFacts {
+  id: string;
+  number: string;
+  date: string | null;
+  total: number;
+  status: string;
+  deliveryDate: string | null;
+}
+
+/** Authoritative delivery/shipment facts — always linked to the focal order when one exists. */
+export interface DeliveryFacts {
+  id: string;
+  orderId: string | null;
+  status: string;
+  trackingNumber: string | null;
+  estimatedDelivery: string | null;
 }
 
 export interface FactValidationIssue {

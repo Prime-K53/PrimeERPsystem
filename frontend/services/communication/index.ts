@@ -5,3 +5,4 @@ export * from './communicationAIService';
 export * from './communicationHistoryService';
 export * from './communicationSendService';
 export * from './invoiceAttachmentService';
+export * from './communicationGeneration';
