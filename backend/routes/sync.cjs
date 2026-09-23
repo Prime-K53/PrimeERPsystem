@@ -89,8 +89,11 @@ const ALLOWED_TABLES = new Set([
   // procurement / maintenance
   'subcontract_orders', 'maintenance_logs',
 
-  // referral program — pending migration (0003/0004), not yet applied to live.
-  // Not in allow-list until the migration is applied to avoid dead-letter debt.
+  // referral program — single-company envelope tables, no tenant scoping.
+  // referralAnalytics is intentionally excluded (derived per-device snapshots).
+  // referral_event_history has no live table and no writers.
+  'customer_referrals', 'referral_rewards', 'referral_timeline',
+  'referral_audit_logs', 'referral_campaigns', 'referral_reversals',
 
   // engagement / loyalty
   'engagement_timeline', 'engagement_audit', 'engagement_points',

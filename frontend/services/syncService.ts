@@ -191,6 +191,16 @@ const STORE_TO_TABLE: Record<string, string> = {
   userPreferences: 'user_preferences',
   tasks: 'tasks',
   portalAds: 'portal_ads',
+  // Referral program (single-company envelope tables, no tenant scoping).
+  // referralAnalytics is intentionally excluded: snapshots are derived
+  // per-device with generated ids. referralEventHistory is excluded: it has
+  // no writers and no live cloud table.
+  referrals: 'customer_referrals',
+  referralRewards: 'referral_rewards',
+  referralTimeline: 'referral_timeline',
+  referralAuditLogs: 'referral_audit_logs',
+  referralCampaigns: 'referral_campaigns',
+  referralReversals: 'referral_reversals',
 };
 
 const TABLES_TO_SYNC = [
@@ -231,6 +241,9 @@ const TABLES_TO_SYNC = [
   'taxRates',
   'customerNotificationLogs',
   'portalAds',
+  // Referral program — authoritative + history stores (see STORE_TO_TABLE note).
+  'referrals', 'referralRewards', 'referralTimeline',
+  'referralAuditLogs', 'referralCampaigns', 'referralReversals',
 ];
 
 const getTable = (storeName: string): string => STORE_TO_TABLE[storeName] || storeName;
@@ -278,6 +291,61 @@ async function getLastSyncAt(table: string): Promise<string | null> {
  */
 async function setLastSyncAt(table: string, timestamp: string): Promise<void> {
   await durableSyncQueue.setMeta(`${LAST_SYNC_META_PREFIX}${table}`, timestamp);
+}
+
+// Local stores whose rows predate referral sync enrollment. Their original
+// queue operations were dead-lettered while the gateway allow-list excluded
+// referral tables, so nothing would ever re-upload them on its own.
+const REFERRAL_BACKFILL_STORES = [
+  'referrals',
+  'referralRewards',
+  'referralTimeline',
+  'referralAuditLogs',
+  'referralCampaigns',
+  'referralReversals',
+] as const;
+
+const REFERRAL_BACKFILL_META_KEY = 'referral_backfill_v1_done';
+
+/**
+ * One-time, idempotent backfill: re-put every existing row of the referral
+ * stores through the normal dbService.put path. Ids and domain fields are
+ * preserved untouched; the put only refreshes the local sync stamp and
+ * enqueues a standard `upsert` op (same mechanism as any local edit, fully
+ * covered by the gateway's id-by-id upsert, idempotency keys, and OCC
+ * version gate — replays can never duplicate rows).
+ *
+ * Runs at most once per device (durable meta flag). Rows that already have
+ * a pending mutation are skipped to avoid double-enqueue.
+ */
+export async function backfillReferralStoresOnce(): Promise<{ requeued: number }> {
+  try {
+    if (!SUPABASE_ENABLED) return { requeued: 0 };
+    const done = await durableSyncQueue.getMeta(REFERRAL_BACKFILL_META_KEY).catch(() => null);
+    if (done) return { requeued: 0 };
+    let requeued = 0;
+    for (const storeName of REFERRAL_BACKFILL_STORES) {
+      const rows = await dbService.getAll(storeName as never).catch(() => []);
+      for (const row of (rows || []) as Array<Record<string, unknown>>) {
+        const id = String(row?.id || '');
+        if (!id) continue;
+        const pending = await durableSyncQueue
+          .hasPendingMutation(getTable(storeName), id)
+          .catch(() => false);
+        if (pending) continue;
+        await dbService.put(storeName as never, row as never);
+        requeued += 1;
+      }
+    }
+    await durableSyncQueue.setMeta(REFERRAL_BACKFILL_META_KEY, '1').catch(() => {});
+    logger.info('[SyncService] referral backfill complete', { requeued });
+    return { requeued };
+  } catch (err) {
+    logger.warn('[SyncService] referral backfill failed — will retry on next start', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { requeued: 0 };
+  }
 }
 
 /**
@@ -692,6 +760,12 @@ export async function startPeriodicSync(
   subscribeToRemoteChanges().catch((err) => {
     logger.warn('[Sync] subscribeToRemoteChanges failed, falling back to polling:', err);
   });
+
+  // One-time referral backfill (idempotent, guarded internally). Requeues
+  // pre-enrollment local referral rows so Device-A-style records created
+  // before referral sync existed still reach Supabase through the normal
+  // push path. Fire-and-forget: must never block engine startup.
+  backfillReferralStoresOnce().catch(() => {});
 
   const { backgroundSyncService } = await import('./backgroundSyncService');
   logger.info('[SyncService] calling backgroundSyncService.start()');
