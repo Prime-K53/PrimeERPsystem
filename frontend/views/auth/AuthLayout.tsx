@@ -13,6 +13,7 @@ type Props = {
   backLink?: { to: string; label: string; external?: boolean };
   wide?: boolean;
   formPanelClassName?: string;
+  singleColumn?: boolean;
 };
 
 const ERP_FEATURES = [
@@ -27,7 +28,7 @@ const PORTAL_FEATURES = [
   { icon: KeyRound, label: 'Secure Payments', desc: 'Bank transfers verified by our finance team.' },
 ];
 
-const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand = true, brandName, brandTagline, backLink, wide = false, formPanelClassName = 'bg-[#FDFDFF]' }) => {
+const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand = true, brandName, brandTagline, backLink, wide = false, formPanelClassName = 'bg-[#FDFDFF]', singleColumn = false }) => {
   return (
     <div className="h-[100dvh] h-screen bg-[#101828] font-sans flex items-stretch lg:items-center justify-center p-3 sm:p-6 lg:p-10 relative overflow-hidden auth-split">
       <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
@@ -36,7 +37,8 @@ const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand
         <div className="absolute -bottom-48 -left-40 w-[560px] h-[560px] rounded-full blur-[130px] opacity-50" style={{ background: 'radial-gradient(circle, rgba(20,60,160,.35), transparent 65%)' }} />
         <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'radial-gradient(circle, #93c5fd 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
       </div>
-      <div className={`relative z-10 w-full ${wide ? 'max-w-[1160px]' : 'max-w-[1080px]'} h-full lg:h-auto lg:min-h-[520px] lg:max-h-[calc(100dvh-5rem)] my-0 lg:my-auto grid lg:grid-cols-2 rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-[0_32px_90px_-20px_rgba(0,0,0,0.65)] border border-white/10 bg-white auth-split`}>
+      <div className={`relative z-10 w-full ${singleColumn ? 'max-w-[560px]' : wide ? 'max-w-[1160px]' : 'max-w-[1080px]'} h-full lg:h-auto lg:min-h-[520px] lg:max-h-[calc(100dvh-5rem)] my-0 lg:my-auto grid ${singleColumn ? 'lg:grid-cols-1' : 'lg:grid-cols-2'} rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-[0_32px_90px_-20px_rgba(0,0,0,0.65)] border border-white/10 bg-white auth-split`}>
+        {!singleColumn && (
         <div className="relative hidden lg:flex flex-col justify-between overflow-y-auto p-12 xl:p-14 lg:min-h-0 lg:max-h-[calc(100dvh-5rem)] auth-scroll" style={{ background: 'linear-gradient(155deg, #1b3a9e 0%, #122a75 38%, #0a1c52 68%, #070f35 100%)' }}>
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
             <div className="absolute inset-0 opacity-[0.10]" style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
@@ -72,6 +74,7 @@ const SplitCardLayout: React.FC<Props> = ({ children, title, subtitle, showBrand
           </div>
           <div className="relative z-10 text-[12px] text-blue-100/50">© 2026 Prime ERP · Powered by PrimeERP</div>
         </div>
+        )}
         <div className={`relative ${formPanelClassName} flex items-start justify-center p-6 sm:p-10 lg:p-12 h-full lg:h-auto lg:max-h-[calc(100dvh-5rem)] overflow-y-auto auth-scroll overscroll-contain`}>
           <div className={`w-full ${wide ? 'max-w-[480px]' : 'max-w-[420px]'} py-2 my-auto min-h-min`}>
             {showBrand && (
@@ -128,6 +131,7 @@ const AuthLayout: React.FC<Props> = ({
   backLink,
   wide = false,
   formPanelClassName,
+  singleColumn = false,
 }) => {
   if (variant === 'split-card') {
     return <SplitCardLayout
@@ -139,6 +143,7 @@ const AuthLayout: React.FC<Props> = ({
       backLink={backLink}
       wide={wide}
       formPanelClassName={formPanelClassName}
+      singleColumn={singleColumn}
     >{children}</SplitCardLayout>;
   }
 

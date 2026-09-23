@@ -551,6 +551,19 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
     autoSyncSignatureRef.current = '';
   }, [examinationClass?.id, open]);
 
+  // Reset transient UI state when the dialog closes so a reopen always
+  // starts fresh (pending learner confirm, debounced learner update).
+  useEffect(() => {
+    if (!open) {
+      learnerConfirmPendingRef.current = false;
+      setConfirmState(prev => (prev.open ? { ...prev, open: false } : prev));
+      if (learnerUpdateTimeoutRef.current) {
+        clearTimeout(learnerUpdateTimeoutRef.current);
+        learnerUpdateTimeoutRef.current = null;
+      }
+    }
+  }, [open]);
+
   useEffect(() => {
     return () => {
       if (autoSyncTimeoutRef.current) {
@@ -711,7 +724,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
   const hairline = '#e4ddd1';
   const danger = '#b5493f';
 
-  if (!examinationClass) return null;
+  if (!open || !examinationClass) return null;
 
   return (
     <div style={{

@@ -1185,7 +1185,10 @@ const ExaminationBatchDetail: React.FC = () => {
 
       <ManageSubjectsDialog
         open={isManageSubjectsOpen}
-        onOpenChange={setIsManageSubjectsOpen}
+        onOpenChange={(nextOpen) => {
+          setIsManageSubjectsOpen(nextOpen);
+          if (!nextOpen) setSelectedClass(null);
+        }}
         examinationClass={selectedClass}
         onAddSubject={handleAddSubject}
         onRemoveSubject={handleRemoveSubject}

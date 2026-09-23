@@ -15,6 +15,7 @@ import { exportToCSV } from '../../utils/helpers';
 import { currencyService } from '../../services/currencyService';
 import { useFinance } from '../../context/FinanceContext';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
+import { derivePurchasePaymentStatus, getPurchaseTotal } from '../../utils/paymentUtils';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
 const amber = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f' };
@@ -75,8 +76,8 @@ const Suppliers: React.FC = () => {
                           phone.includes(searchQuery);
       const matchesStatus = filterStatus === 'All' || s.status === filterStatus;
       let matchesMetric = true;
-      if (selectedMetric === 'Overdue') { const hasOverdue = (purchases || []).some(p => p.supplierName === s.name && p.paymentStatus !== 'Paid' && p.paymentStatus !== 'Cancelled' && p.dueDate && isAfter(new Date(), parseISO(p.dueDate))); matchesMetric = hasOverdue; }
-      else if (selectedMetric === 'Open') { const hasOpen = (purchases || []).some(p => p.supplierName === s.name && (p.paymentStatus === 'Unpaid' || p.paymentStatus === 'Partial')); matchesMetric = hasOpen; }
+      if (selectedMetric === 'Overdue') { const hasOverdue = (purchases || []).some(p => p.supplierName === s.name && derivePurchasePaymentStatus(p) !== 'Paid' && derivePurchasePaymentStatus(p) !== 'Cancelled' && p.dueDate && isAfter(new Date(), parseISO(p.dueDate))); matchesMetric = hasOverdue; }
+      else if (selectedMetric === 'Open') { const hasOpen = (purchases || []).some(p => { const st = derivePurchasePaymentStatus(p); return p.supplierName === s.name && (st === 'Unpaid' || st === 'Partial'); }); matchesMetric = hasOpen; }
       else if (selectedMetric === 'Paid') { const hasPaid = supplierPayments.some(p => p.supplierId === s.id); matchesMetric = hasPaid; }
       return matchesSearch && matchesStatus && matchesMetric;
     });
@@ -87,8 +88,8 @@ const Suppliers: React.FC = () => {
     const today = new Date();
     const thirtyDaysAgo = subDays(today, 30);
     const totalBalance = suppliers.reduce((sum, s) => sum + getNumber(s.balance), 0);
-    const overduePayables = (purchases || []).filter(p => p.paymentStatus !== 'Paid' && p.paymentStatus !== 'Cancelled' && p.dueDate && isAfter(today, parseISO(p.dueDate))).reduce((sum, p) => sum + (getNumber(p.total) - getNumber(p.paidAmount)), 0);
-    const openBillsTotal = (purchases || []).filter(p => p.paymentStatus === 'Unpaid' || p.paymentStatus === 'Partial').reduce((sum, p) => sum + (getNumber(p.total) - getNumber(p.paidAmount)), 0);
+    const overduePayables = (purchases || []).filter(p => derivePurchasePaymentStatus(p) !== 'Paid' && derivePurchasePaymentStatus(p) !== 'Cancelled' && p.dueDate && isAfter(today, parseISO(p.dueDate))).reduce((sum, p) => sum + (getPurchaseTotal(p) - getNumber(p.paidAmount)), 0);
+    const openBillsTotal = (purchases || []).filter(p => { const st = derivePurchasePaymentStatus(p); return st === 'Unpaid' || st === 'Partial'; }).reduce((sum, p) => sum + (getPurchaseTotal(p) - getNumber(p.paidAmount)), 0);
     const paidLast30Days = supplierPayments.filter(p => isAfter(parseISO(p.date), thirtyDaysAgo)).reduce((sum, p) => sum + getNumber(p.amount), 0);
     const activeCount = suppliers.filter(s => s.status === 'Active').length;
     return { totalBalance, overduePayables, openBillsTotal, paidLast30Days, activeCount };

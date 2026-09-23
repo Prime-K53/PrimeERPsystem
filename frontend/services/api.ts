@@ -19,6 +19,7 @@ import { transactionService } from './transactionService';
 import { repriceMasterInventoryFromAdjustments } from './masterInventoryPricingService';
 import { generateNextId } from '../utils/helpers';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
+import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
 import { generateNextSalesInvoiceNumber } from './documentNumberService';
 import { normalizeInventoryItemPricing } from '../utils/pricing';
 import { examinationJobService } from './examinationJobService.ts';
@@ -390,7 +391,22 @@ export const api = {
 
   procurement: {
     getPurchases: () => handle(async () => {
-      return dbService.getAll<Purchase>('purchases');
+      const purchases = await dbService.getAll<Purchase>('purchases');
+      // Self-heal stale payment statuses (e.g. fully paid bills left at
+      // "Partial" by the old total-vs-totalAmount comparison bug). Corrected
+      // rows are persisted once so every consumer sees the right status.
+      const healed = await Promise.all(purchases.map(async (p) => {
+        const derived = derivePurchasePaymentStatus(p);
+        if (derived === (p as any).paymentStatus) return p;
+        const fixed = { ...(p as any), paymentStatus: derived };
+        try {
+          await dbService.put('purchases', fixed);
+        } catch (err) {
+          logger.warn('Failed to persist healed payment status for purchase', { purchaseId: p.id, error: err });
+        }
+        return fixed as Purchase;
+      }));
+      return healed;
     }, 'Procurement.GetPurchases'),
     savePurchase: (p: Purchase) => handle(async () => {
       checkAuth(['Admin', 'Accountant'], 'Procurement.SavePurchase');

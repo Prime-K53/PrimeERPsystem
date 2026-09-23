@@ -16,6 +16,7 @@ import LandingCostAllocation from './LandingCostAllocation';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import { mapToInvoiceData } from '../../../utils/pdfMapper';
 import { resolvePoLineUnitCost } from '../../../services/purchaseCosting';
+import { derivePurchasePaymentStatus, getPurchaseTotal } from '../../../utils/paymentUtils';
 import { attachDocumentSecurity } from '../../../utils/documentSecurity';
 import AIDocumentSummarizer from '../../../components/ai/AIDocumentSummarizer';
 import { useLocation } from 'react-router-dom';
@@ -74,7 +75,8 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
     }, [purchase, expenses, goodsReceipts]);
 
     const landingTotal = (purchase.landingCosts || []).reduce((s, c) => s + (c.amount || 0), 0);
-    const isPaid = purchase.paymentStatus === 'Paid';
+    const paymentStatus = derivePurchasePaymentStatus(purchase);
+    const isPaid = paymentStatus === 'Paid';
 
     /**
      * Permanent verification identity for this purchase order. Issued once
@@ -216,7 +218,7 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
                                         <p style={{fontSize:10,fontWeight:800,color:inkSoft,textTransform:'uppercase',letterSpacing:'.1em',margin:'0 0 4px'}}>Supplier Entity</p>
                                         <h3 style={{fontSize:20,fontWeight:700,color:ink,margin:0,lineHeight:1.3,fontFamily:"'DM Serif Display','Georgia',serif"}}>{(suppliers||[]).find(s=>s.id===purchase.supplierId)?.name||'Unknown Entity'}</h3>
                                         <div style={{marginTop:14,display:'flex',flexWrap:'wrap',gap:8}}>
-                                            {purchase.paymentStatus!=='Paid'&&purchase.status!=='Draft'&&purchase.status!=='Cancelled'&&onPayment&&(
+                                            {paymentStatus!=='Paid'&&purchase.status!=='Draft'&&purchase.status!=='Cancelled'&&onPayment&&(
                                                 <button onClick={()=>onPayment(purchase)} style={{flex:1,padding:'10px 16px',background:`linear-gradient(155deg,${teal[500]},${teal[700]})`,color:'#fff',borderRadius:12,border:'none',fontFamily:"'Inter','DM Sans',sans-serif",fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.04em',cursor:'pointer',boxShadow:'0 6px 16px -6px rgba(15,84,76,.55)',transition:'all .15s ease'}} onMouseEnter={e=>e.currentTarget.style.transform='translateY(-1px)'} onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}>Record Payment</button>
                                             )}
                                             {(purchase.status==='Ordered'||purchase.status==='Partially Received')&&(
@@ -227,11 +229,11 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
                                 </div>
                                 <div style={{background:paper,border:'1.4px solid #e4ddd1',borderRadius:20,padding:24,boxShadow:'0 2px 10px rgba(0,0,0,.05)',display:'flex',flexDirection:'column'}}>
                                     <div style={{fontSize:10,fontWeight:800,color:inkSoft,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Factory Price</div>
-                                    <div style={{fontSize:26,fontWeight:700,color:ink,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.2}}>{currency}{(purchase.total||0).toLocaleString()}</div>
+                                    <div style={{fontSize:26,fontWeight:700,color:ink,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.2}}>{currency}{getPurchaseTotal(purchase).toLocaleString()}</div>
                                 </div>
-                                <div style={{background:teal[900],borderRadius:20,padding:24,boxShadow:'0 20px 50px -20px rgba(0,0,0,.4)',display:'flex',flexDirection:'column'}}>
+                                <div style={{background:teal[900],borderRadius:20,padding:24,boxShadow:'0 20px 50px -10px rgba(0,0,0,.4)',display:'flex',flexDirection:'column'}}>
                                     <div style={{fontSize:10,fontWeight:800,color:teal[300],textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Landed Total</div>
-                                    <div style={{fontSize:26,fontWeight:700,color:'#fff',fontFamily:"'JetBrains Mono',monospace",lineHeight:1.2}}>{currency}{((purchase.total||0)+(landingTotal||0)).toLocaleString()}</div>
+                                    <div style={{fontSize:26,fontWeight:700,color:'#fff',fontFamily:"'JetBrains Mono',monospace",lineHeight:1.2}}>{currency}{(getPurchaseTotal(purchase)+(landingTotal||0)).toLocaleString()}</div>
                                 </div>
                             </div>
 

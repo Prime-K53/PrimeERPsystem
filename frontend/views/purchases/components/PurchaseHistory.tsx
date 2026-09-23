@@ -19,6 +19,7 @@ import { downloadBlob } from '../../../utils/helpers';
 import { attachDocumentSecurity } from '../../../utils/documentSecurity';
 import { ensureDocumentVerificationToken } from '../../../utils/documentVerification';
 import { dbService } from '../../../services/db';
+import { derivePurchasePaymentStatus, getPurchaseTotal } from '../../../utils/paymentUtils';
 import { TableEmptyState } from '../../../components/EmptyState';
 
 const paper = '#FEFDFB';
@@ -162,7 +163,7 @@ const HoverPurchaseMenu: React.FC<{ id: string; pos: { x: number; y: number }; d
     const { companyConfig } = useAuth();
     const currency = companyConfig.currencySymbol;
     if (!data) return null;
-    const total = (data.total ?? data.totalAmount ?? 0) as number;
+    const total = getPurchaseTotal(data);
     const paid = (data.paidAmount ?? 0) as number;
     const balance = Math.max(0, total - paid);
     return (
@@ -249,7 +250,7 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                 const supplierName = getSupplierName(po).toLowerCase();
                 const ref = (po.reference || '').toLowerCase();
                 const status = (po.status || '').toLowerCase();
-                const payment = (po.paymentStatus || '').toLowerCase();
+                const payment = derivePurchasePaymentStatus(po).toLowerCase();
                 return po.id.toLowerCase().includes(q) || supplierName.includes(q) || ref.includes(q) || status.includes(q) || payment.includes(q);
             });
         }
@@ -262,8 +263,8 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                     case 'supplierName': aVal = getSupplierName(a); bVal = getSupplierName(b); break;
                     case 'reference': aVal = a.reference || ''; bVal = b.reference || ''; break;
                     case 'dueDate': aVal = a.dueDate || ''; bVal = b.dueDate || ''; break;
-                    case 'total': aVal = a.total ?? a.totalAmount ?? 0; bVal = b.total ?? b.totalAmount ?? 0; break;
-                    case 'paymentStatus': aVal = a.paymentStatus || ''; bVal = b.paymentStatus || ''; break;
+                    case 'total': aVal = getPurchaseTotal(a); bVal = getPurchaseTotal(b); break;
+                    case 'paymentStatus': aVal = derivePurchasePaymentStatus(a) || ''; bVal = derivePurchasePaymentStatus(b) || ''; break;
                     case 'status': aVal = a.status || ''; bVal = b.status || ''; break;
                     default: aVal = a[sortConfig.field]; bVal = b[sortConfig.field];
                 }
@@ -352,7 +353,7 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                 const supplier = (suppliers || []).find(s => s.id === po.supplierId);
                 if (supplier?.contact) {
                     const phone = supplier.contact.replace(/\D/g, '');
-                    const msg = `Hello, regarding Bill ${po.id} — Vendor Ref: ${po.reference || 'N/A'} — Total: ${currency}${((po as any).total ?? (po as any).totalAmount ?? 0).toLocaleString()}. Please confirm receipt.`;
+                    const msg = `Hello, regarding Bill ${po.id} — Vendor Ref: ${po.reference || 'N/A'} — Total: ${currency}${getPurchaseTotal(po).toLocaleString()}. Please confirm receipt.`;
                     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
                 } else { notify("Supplier phone number not available", "error"); }
                 break;
@@ -364,8 +365,9 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                     notify(`Bill status changed to ${extra}`, 'success');
                 }
                 break;
-            case 'delete':
-                if (po.paymentStatus === 'Paid' || po.paymentStatus === 'Partial' || (po.paidAmount || 0) > 0) {
+            case 'delete': {
+                const deletePayStatus = derivePurchasePaymentStatus(po);
+                if (deletePayStatus === 'Paid' || deletePayStatus === 'Partial' || (po.paidAmount || 0) > 0) {
                     setAdminPasswordInput('');
                     setAdminPasswordModal({ open: true, po });
                     return;
@@ -375,6 +377,7 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                     notify("Bill Cancelled", "success");
                 }
                 break;
+            }
             case 'download_pdf': handleDownloadPDF(po); break;
         }
     };
@@ -426,7 +429,7 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
             <div style={{height:1,background:'#e4ddd1',margin:'4px 0'}}/>
             <button onClick={()=>handleAction('view',po)} style={miStyle('#23282A')} onMouseEnter={e=>e.currentTarget.style.background='#f5f4f0'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><FileText size={14}/> View Details</button>
             <button onClick={()=>handleAction('download_pdf',po)} style={miStyle('#1f8577')} onMouseEnter={e=>e.currentTarget.style.background='#eef7f6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><FileDown size={14}/> Download PDF</button>
-            {po.paymentStatus !== 'Paid' && po.status !== 'Draft' && po.status !== 'Cancelled' && onPayment && (
+            {derivePurchasePaymentStatus(po) !== 'Paid' && po.status !== 'Draft' && po.status !== 'Cancelled' && onPayment && (
                 <button onClick={()=>{setOpenMenuId(null);onPayment(po)}} style={miStyle('#1f8577')} onMouseEnter={e=>e.currentTarget.style.background='#eef7f6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><DollarSign size={14}/> Record Payment</button>
             )}
             {(po.status==='Draft'||po.status==='Ordered')&&(
@@ -526,8 +529,9 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                                 const isChecked = isSelected;
                                 const isMenuOpen = openMenuId===po.id;
                                 const supplierName = getSupplierName(po);
-                                const totalVal = (po.total ?? po.totalAmount ?? 0) as number;
-                                const isOverdue = po.dueDate && new Date(po.dueDate) < new Date() && po.paymentStatus !== 'Paid' && po.status !== 'Cancelled';
+                                const totalVal = getPurchaseTotal(po);
+                                const payStatus = derivePurchasePaymentStatus(po);
+                                const isOverdue = po.dueDate && new Date(po.dueDate) < new Date() && payStatus !== 'Paid' && po.status !== 'Cancelled';
                                 const isCancelled = po.status === 'Cancelled';
                                 return (
                                 <tr key={po.id} id={`bill-${po.id}`}
@@ -566,7 +570,7 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                                         <span className={isCancelled ? 'text-slate-400 line-through' : 'text-slate-900'}>{currency} {totalVal.toLocaleString()}</span>
                                     </td>
                                     <td className="table-body-cell text-center">
-                                        <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${getPaymentBadge(po.paymentStatus)}`}>{po.paymentStatus || 'Unpaid'}</span>
+                                        <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${getPaymentBadge(payStatus)}`}>{payStatus}</span>
                                     </td>
                                     <td className="table-body-cell text-center">
                                         <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${getStatusBadge(po.status)}`}>{po.status}</span>

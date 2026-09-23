@@ -1,6 +1,47 @@
 
 export type PaymentStatus = 'PARTIALLY PAID' | 'PAID' | 'OVERPAID';
 
+const toAmount = (value: unknown): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * Canonical bill/PO total. Creation paths historically wrote either
+ * `totalAmount` (new bill) or `total` (merged bill) — never both — so every
+ * Paid/Partial comparison must fall back across both fields. Comparing
+ * against a single missing field made `paid >= undefined` always false and
+ * froze fully paid bills at "Partial".
+ */
+export const getPurchaseTotal = (purchase: unknown): number => {
+    const p = (purchase || {}) as { totalAmount?: unknown; total?: unknown };
+    const totalAmount = toAmount(p.totalAmount);
+    const total = toAmount(p.total);
+    if (totalAmount > 0) return totalAmount;
+    if (total > 0) return total;
+    return totalAmount || total;
+};
+
+/**
+ * Derives the bill payment status (Unpaid / Partial / Paid) from paid amount
+ * vs canonical total. Workflow states that share the field (Cancelled,
+ * unpaid Approved) are preserved; anything contradicted by the amounts is
+ * corrected so stale stored statuses self-heal at read time.
+ */
+export const derivePurchasePaymentStatus = (purchase: unknown): string => {
+    const p = (purchase || {}) as { paymentStatus?: unknown; paidAmount?: unknown };
+    const stored = String(p.paymentStatus || '').trim();
+    if (stored === 'Cancelled') return 'Cancelled';
+    const total = getPurchaseTotal(purchase);
+    const paid = toAmount(p.paidAmount);
+    if (total > 0) {
+        if (paid >= total - 0.005) return 'Paid';
+        if (paid > 0) return 'Partial';
+        return stored === 'Approved' ? 'Approved' : 'Unpaid';
+    }
+    return stored || 'Unpaid';
+};
+
 export interface PaymentCalculation {
     paymentStatus: PaymentStatus;
     invoiceTotal: number;

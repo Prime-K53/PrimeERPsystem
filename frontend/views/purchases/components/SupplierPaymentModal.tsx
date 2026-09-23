@@ -5,6 +5,7 @@ import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
 import { useFinance } from '../../../context/FinanceContext';
 import { useAuth } from '../../../context/AuthContext';
 import { computeOwnBalances } from '../../../services/accountingEngine';
+import { getPurchaseTotal } from '../../../utils/paymentUtils';
 
 interface SupplierPaymentModalProps {
     purchase: Purchase;
@@ -22,7 +23,7 @@ const hairline = '#e4ddd1';
 export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purchase, onClose, onRecord }) => {
     const { accounts, ledger } = useFinance();
     const { companyConfig } = useAuth();
-    const total = purchase.totalAmount ?? purchase.total ?? 0;
+    const total = getPurchaseTotal(purchase);
     const paid = purchase.paidAmount ?? 0;
     const remainingBalance = Math.max(0, total - paid);
     const [amount, setAmount] = useState(remainingBalance.toString());

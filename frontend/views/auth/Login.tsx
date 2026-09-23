@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, Loader2, KeyRound, AlertCircle, Building2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, KeyRound, AlertCircle, Building2 } from 'lucide-react';
 import AuthLayout from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
 import { loginWithApi, ApiError, StaffUserInfo } from '../../services/authApiClient';
@@ -177,9 +177,7 @@ const Login: React.FC = () => {
   };
 
   const inputClass =
-    'w-full h-[52px] sm:h-12 pl-4 sm:pl-11 pr-4 bg-white border-[1.5px] sm:border rounded-xl sm:rounded-lg text-[15px] sm:text-sm text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none transition-colors duration-150 hover:border-slate-300 sm:hover:border-slate-400 focus:border-green-600 focus:ring-2 focus:ring-green-600/15 sm:focus:border-blue-600 sm:focus:ring-blue-600/15 disabled:opacity-60 disabled:bg-slate-50';
-  const inputIconClass =
-    'absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors duration-150 group-focus-within:text-blue-600 hidden sm:flex';
+    'w-full h-[52px] pl-4 pr-4 bg-white border-[1.5px] rounded-xl text-[15px] text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none transition-colors duration-150 hover:border-slate-300 focus:border-green-600 focus:ring-2 focus:ring-green-600/15 disabled:opacity-60 disabled:bg-slate-50';
   const companyLogoSrc = String(companyConfig?.logoBase64 || companyConfig?.logo || '').trim() || null;
   const errorId = 'login-error';
   const emailErrorId = 'login-email-error';
@@ -190,7 +188,7 @@ const Login: React.FC = () => {
       title="Your business, in perfect sync."
       brandTagline="Smart. Simple. Business Operations."
       showBrand={false}
-      formPanelClassName="bg-[#e9f7ef] sm:bg-[#FDFDFF]"
+      formPanelClassName="bg-[#e9f7ef]"
       backLink={{
         to: resolveCustomerPortalLoginUrl(),
         label: 'Customer portal →',
@@ -210,20 +208,8 @@ const Login: React.FC = () => {
         }
       `}</style>
       <div className="animate-slideUp">
-        {/* ── Desktop brand (unchanged) ── */}
-        <div className="hidden sm:flex items-center gap-3 mb-8">
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-600/25" style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8 100%)' }}>
-            <Lock size={20} />
-          </div>
-          <div>
-            <div className="font-extrabold text-[17px] tracking-tight text-slate-900 leading-none">
-              <>Prime <span className="text-blue-600">ERP</span></>
-            </div>
-            <div className="text-[12.5px] text-slate-500 mt-1">Smart. Simple. Business Operations.</div>
-          </div>
-        </div>
-        {/* ── Mobile logo (reference layout) ── */}
-        <div className="sm:hidden flex flex-col items-center text-center mt-2 mb-7">
+        {/* ── Company logo ── */}
+        <div className="flex flex-col items-center text-center mt-2 mb-7">
           {companyLogoSrc ? (
             <img
               src={companyLogoSrc}
@@ -244,22 +230,20 @@ const Login: React.FC = () => {
             </>
           )}
         </div>
-        {/* ── Heading (matches portal card) ── */}
-        <div className="mb-6 sm:mb-7">
-          <span className="sm:hidden flex items-center gap-1.5 mb-2.5" aria-hidden="true">
+        {/* ── Heading ── */}
+        <div className="mb-6">
+          <span className="flex items-center gap-1.5 mb-2.5" aria-hidden="true">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-700" />
             <span className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-blue-700">Secure sign-in</span>
           </span>
           <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight">
-            {mfaRequired
-              ? 'Check your authenticator'
-              : (<>Welcome <span className="sm:hidden text-blue-700">Back</span><span className="hidden sm:inline"> Back</span></>)}
+            {mfaRequired ? 'Check your authenticator' : (<>Welcome <span className="text-blue-700">Back</span></>)}
           </h1>
-          <span aria-hidden="true" className="sm:hidden block h-1 w-16 mt-3 rounded-full" style={{ background: 'linear-gradient(90deg, #1e3a8a, #3b82f6 35%, #d99a3f 75%, #f0b35c)' }} />
+          <span aria-hidden="true" className="block h-1 w-16 mt-3 rounded-full" style={{ background: 'linear-gradient(90deg, #1e3a8a, #3b82f6 35%, #d99a3f 75%, #f0b35c)' }} />
           <p className="text-[13.5px] text-slate-500 mt-2.5 leading-relaxed">
             {mfaRequired
               ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
-              : (<><span className="sm:hidden">To get started, please sign in using your username and password.</span><span className="hidden sm:inline">Sign in to manage sales, inventory, procurement and finance — synchronized live with PrimeERP.</span></>)}
+              : 'To get started, please sign in using your username and password.'}
           </p>
         </div>
 
@@ -341,12 +325,9 @@ const Login: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <label htmlFor="login-email" className="block text-[13px] font-semibold text-slate-800 mb-1.5">
-                    <span className="sm:hidden">Email</span><span className="hidden sm:inline">Email Address</span>
+                    Email
                   </label>
                   <div className="relative group">
-                    <div className={inputIconClass}>
-                      <Mail size={17} />
-                    </div>
                     <input
                       id="login-email"
                       type="email"
@@ -357,7 +338,7 @@ const Login: React.FC = () => {
                       spellCheck={false}
                       value={email}
                       onChange={(e) => { setEmail(e.target.value); if (fieldError) setFieldError(null); }}
-                      className={`${inputClass} border-green-500 sm:border-slate-300 ${fieldError ? '!border-rose-400 !bg-rose-50/50 focus:!border-rose-500 focus:!ring-rose-500/15' : ''}`}
+                      className={`${inputClass} border-green-500 ${fieldError ? '!border-rose-400 !bg-rose-50/50 focus:!border-rose-500 focus:!ring-rose-500/15' : ''}`}
                       placeholder="Email address"
                       autoComplete="email"
                       disabled={submitting}
@@ -380,21 +361,15 @@ const Login: React.FC = () => {
                     <label htmlFor="login-password" className="block text-[13px] font-semibold text-slate-800">
                       Password
                     </label>
-                    <Link to="/forgot-password" className="hidden sm:inline text-[13px] font-semibold text-blue-700 hover:text-blue-800 transition-colors shrink-0">
-                      Forgot your password?
-                    </Link>
                   </div>
                   <div className="relative group">
-                    <div className={inputIconClass}>
-                      <Lock size={17} />
-                    </div>
                     <input
                       id="login-password"
                       type={showPassword ? 'text' : 'password'}
                       enterKeyHint="done"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className={`${inputClass} border-slate-200 sm:border-slate-300 pr-12`}
+                      className={`${inputClass} border-slate-200 pr-12`}
                       placeholder="Password"
                       autoComplete="current-password"
                       disabled={submitting}
@@ -409,7 +384,7 @@ const Login: React.FC = () => {
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
-                  <div className="sm:hidden flex justify-end mt-2">
+                  <div className="flex justify-end mt-2">
                     <Link to="/forgot-password" className="text-[13px] font-semibold text-amber-500 hover:text-amber-600 transition-colors">
                       Forget Password?
                     </Link>
@@ -420,7 +395,7 @@ const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="w-full h-[52px] sm:h-12 text-white text-[15px] font-bold rounded-full sm:rounded-xl flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed bg-black sm:bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] sm:shadow-[0_10px_24px_-10px_rgba(29,78,216,0.55)] sm:hover:brightness-110 sm:hover:shadow-[0_10px_28px_-8px_rgba(29,78,216,0.55)]"
+                className="w-full h-[52px] text-white text-[15px] font-bold rounded-full flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed bg-black"
               >
                 {submitting ? (
                   <>
@@ -428,12 +403,12 @@ const Login: React.FC = () => {
                     <span>Signing in...</span>
                   </>
                 ) : (
-                  <><span className="sm:hidden">Log in</span><span className="hidden sm:inline">Sign In</span></>
+                  <span>Log in</span>
                 )}
               </button>
 
-              {/* ── Mobile-only social + signup (reference layout, Google is a placeholder) ── */}
-              <div className="sm:hidden">
+              {/* ── Social + signup (Google is a placeholder for now) ── */}
+              <div>
                 <div className="flex items-center gap-3 text-[12.5px] text-slate-400">
                   <span className="flex-1 h-px bg-slate-200" aria-hidden="true" />
                   or continue with
@@ -461,19 +436,6 @@ const Login: React.FC = () => {
                   </Link>
                 </p>
               </div>
-
-              <Link
-                to="/register-company"
-                className="hidden sm:flex items-center gap-3.5 p-4 rounded-2xl bg-amber-50/80 border border-amber-200/70 hover:border-amber-300 hover:bg-amber-50 transition-all group"
-              >
-                <span className="w-10 h-10 rounded-xl bg-white border border-amber-200 flex items-center justify-center shrink-0 shadow-sm">
-                  <KeyRound size={17} className="text-amber-600" />
-                </span>
-                <span className="min-w-0 text-left">
-                  <span className="block text-[13.5px] font-bold text-slate-900 leading-tight">Set up your workspace</span>
-                  <span className="block text-[12px] text-slate-500 mt-0.5">First time here? Create your company</span>
-                </span>
-              </Link>
             </form>
           )}
 

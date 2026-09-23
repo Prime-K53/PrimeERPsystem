@@ -16,6 +16,7 @@ import { PurchaseReceiveModal } from './purchases/components/PurchaseReceiveModa
 import { useLocation } from 'react-router-dom';
 import { generateNextId } from '../utils/helpers';
 import { resolvePoLineUnitCost, purchaseLineTotal } from '../services/purchaseCosting';
+import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
 import { ConfirmDialog, ConfirmDialogType } from '../components/ConfirmDialog';
 import { getDefaultDate, validateDateInFY } from '../utils/financialYearUtils';
 
@@ -237,14 +238,19 @@ const Purchases: React.FC = () => {
 
       try {
           await recordSupplierPayment(payment);
-          
-          const updatedPaidAmount = (paymentPurchase.paidAmount || 0) + payment.amount;
-          const updatedStatus = updatedPaidAmount >= paymentPurchase.total ? 'Paid' : 'Partial';
-          
+
+          // Only the allocations targeting this bill count toward its paid
+          // amount (a supplier payment can span multiple bills).
+          const allocated = (payment.allocations || [])
+              .filter(a => a.purchaseId === paymentPurchase.id)
+              .reduce((sum, a) => sum + (a.amount || 0), 0);
+          const applied = allocated > 0 ? allocated : payment.amount;
+          const updatedPaidAmount = (paymentPurchase.paidAmount || 0) + applied;
+
           const updatedPurchase = {
               ...paymentPurchase,
               paidAmount: updatedPaidAmount,
-              paymentStatus: updatedStatus
+              paymentStatus: derivePurchasePaymentStatus({ ...paymentPurchase, paidAmount: updatedPaidAmount })
           };
 
           updatePurchase(updatedPurchase);

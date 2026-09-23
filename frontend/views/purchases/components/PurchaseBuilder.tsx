@@ -11,6 +11,7 @@ import { localFileStorage } from '../../../services/localFileStorage';
 import { useNavigate } from 'react-router-dom';
 import { SupplierModal } from './SupplierModal';
 import { getDefaultDate, validateDateInFY } from '../../../utils/financialYearUtils';
+import { derivePurchasePaymentStatus, getPurchaseTotal } from '../../../utils/paymentUtils';
 
 const teal = { 50:'#eef7f6',100:'#d3ece9',200:'#a6d9d3',300:'#72c0b7',400:'#3fa294',500:'#1f8577',600:'#146b60',700:'#0f544c',800:'#0b3e39',900:'#082e2a' };
 const paper = '#FEFDFB';
@@ -58,8 +59,8 @@ export const PurchaseBuilder: React.FC<PurchaseBuilderProps> = ({ inventory, sup
         const supplier = suppliers.find(s => s.id === id);
         if (!supplier) return 0;
         return (purchases || [])
-            .filter(p => p.supplierId === id && p.paymentStatus !== 'Paid' && p.status !== 'Cancelled')
-            .reduce((sum, p) => sum + (p.totalAmount - (p.paidAmount || 0)), 0);
+            .filter(p => p.supplierId === id && derivePurchasePaymentStatus(p) !== 'Paid' && p.status !== 'Cancelled')
+            .reduce((sum, p) => sum + Math.max(0, getPurchaseTotal(p) - (p.paidAmount || 0)), 0);
     };
 
     const selectedSupplierObj = useMemo(() =>

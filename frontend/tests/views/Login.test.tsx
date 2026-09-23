@@ -70,16 +70,16 @@ beforeEach(() => {
 describe('admin Login', () => {
   it('keeps Sign In disabled until email and password are entered', () => {
     renderLogin();
-    const submit = screen.getByRole('button', { name: /sign in/i });
+    const submit = screen.getByRole('button', { name: 'Log in' });
     expect(submit).toBeDisabled();
     fillCredentials();
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 
   it('shows a field error for an invalid email and never calls the API', () => {
     renderLogin();
     fillCredentials('not-an-email', 's3cret!pw');
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
     expect(screen.getByRole('alert')).toHaveTextContent(/valid email/i);
     expect(mockApiLogin).not.toHaveBeenCalled();
     expect(legacyLogin).not.toHaveBeenCalled();
@@ -88,7 +88,7 @@ describe('admin Login', () => {
   it('establishes the session and navigates home on API success', async () => {
     renderLogin();
     fillCredentials();
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
     await waitFor(() => expect(establishSession).toHaveBeenCalledTimes(1));
     const [sessionUser, token] = establishSession.mock.calls[0];
     expect(sessionUser.email).toBe('admin@company.com');
@@ -101,7 +101,7 @@ describe('admin Login', () => {
     legacyLogin.mockResolvedValue('INVALID');
     renderLogin();
     fillCredentials();
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
     await waitFor(() => expect(legacyLogin).toHaveBeenCalledWith('admin@company.com', 's3cret!pw', undefined));
     expect(await screen.findByText(/invalid credentials/i)).toBeInTheDocument();
     // Password is cleared after a failed attempt; the email is kept.
@@ -114,7 +114,7 @@ describe('admin Login', () => {
     legacyLogin.mockResolvedValueOnce('MFA_REQUIRED').mockResolvedValueOnce('SUCCESS');
     renderLogin();
     fillCredentials();
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
     const codeInput = await screen.findByLabelText(/verification code/i);
     expect(codeInput).toBeInTheDocument();
     fireEvent.change(codeInput, { target: { value: '123456' } });
@@ -130,7 +130,7 @@ describe('admin Login', () => {
     legacyLogin.mockResolvedValue('EXPIRED');
     renderLogin();
     fillCredentials();
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
     expect(await screen.findByText(/password has expired/i)).toBeInTheDocument();
   });
 
@@ -138,7 +138,7 @@ describe('admin Login', () => {
     mockApiLogin.mockRejectedValue(new TypeError('Failed to fetch'));
     renderLogin();
     fillCredentials();
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
     expect(await screen.findByText(/cannot reach the server/i)).toBeInTheDocument();
   });
 

@@ -52,6 +52,7 @@ import { isInventoryBearingItem, resolveInventoryCostPerUnit, resolveInventoryQu
 import { resolveReceiptUnitCost, costAliasValues } from './purchaseCosting';
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
+import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
 
 const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'LG-REV-AR-'];
 
@@ -4591,7 +4592,10 @@ export const transactionService = {
                         // Update PO status
                         po.status = 'Received';
                         if (!po.paymentStatus || po.paymentStatus === 'Cancelled' || po.paymentStatus === 'Approved') {
-                            po.paymentStatus = (po.paidAmount || 0) > 0 ? 'Partial' : 'Unpaid';
+                            // Re-derive from amounts instead of blanket "Partial":
+                            // a fully paid PO with an Approved payment status
+                            // must land on Paid, not Partial.
+                            po.paymentStatus = derivePurchasePaymentStatus({ ...po, paymentStatus: undefined });
                         }
                         await purchaseStore.put(po);
                     }
@@ -6246,13 +6250,7 @@ export const transactionService = {
                         const po = await purchaseStore.get(allocation.purchaseId);
                         if (po) {
                             po.paidAmount = (po.paidAmount || 0) + allocation.amount;
-                            if (po.paidAmount >= po.total) {
-                                po.paymentStatus = 'Paid';
-                            } else if (po.paidAmount > 0) {
-                                po.paymentStatus = 'Partial';
-                            } else {
-                                po.paymentStatus = 'Unpaid';
-                            }
+                            po.paymentStatus = derivePurchasePaymentStatus(po);
                             await purchaseStore.put(po);
                         }
                     }
@@ -6362,13 +6360,7 @@ export const transactionService = {
                         const po = await purchaseStore.get(allocation.purchaseId);
                         if (po) {
                             po.paidAmount = Math.max(0, (po.paidAmount || 0) - allocation.amount);
-                            if (po.paidAmount <= 0) {
-                                po.paymentStatus = 'Unpaid';
-                            } else if (po.paidAmount < po.total) {
-                                po.paymentStatus = 'Partial';
-                            } else {
-                                po.paymentStatus = 'Paid';
-                            }
+                            po.paymentStatus = derivePurchasePaymentStatus(po);
                             await purchaseStore.put(po);
                         }
                     }

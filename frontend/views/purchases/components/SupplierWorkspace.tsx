@@ -20,6 +20,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { format, parseISO, isAfter } from 'date-fns';
 import { currencyService } from '../../../services/currencyService';
 import AISupplierScorecard from '../../../components/ai/AISupplierScorecard';
+import { derivePurchasePaymentStatus, getPurchaseTotal } from '../../../utils/paymentUtils';
 
 interface SupplierWorkspaceProps {
   supplier: Supplier;
@@ -58,15 +59,15 @@ export const SupplierWorkspace: React.FC<SupplierWorkspaceProps> = ({ supplier, 
     // Helper to safely get numeric values
     const getNumber = (value: any, fallback = 0) => (typeof value === 'number' && !isNaN(value) ? value : fallback);
 
-    const totalPurchased = supplierPurchases.reduce((sum, p) => sum + getNumber(p.total), 0);
+    const totalPurchased = supplierPurchases.reduce((sum, p) => sum + getPurchaseTotal(p), 0);
     const totalPaid = supplierPurchases.reduce((sum, p) => sum + getNumber(p.paidAmount), 0);
     const overduePayables = supplierPurchases
-      .filter(p => p.paymentStatus !== 'Paid' && p.paymentStatus !== 'Cancelled' && p.dueDate && isAfter(new Date(), parseISO(p.dueDate)))
-      .reduce((sum, p) => sum + (getNumber(p.total) - getNumber(p.paidAmount)), 0);
+      .filter(p => derivePurchasePaymentStatus(p) !== 'Paid' && derivePurchasePaymentStatus(p) !== 'Cancelled' && p.dueDate && isAfter(new Date(), parseISO(p.dueDate)))
+      .reduce((sum, p) => sum + (getPurchaseTotal(p) - getNumber(p.paidAmount)), 0);
 
     const ytdPurchases = supplierPurchases
       .filter(p => new Date(p.date).getFullYear() === new Date().getFullYear())
-      .reduce((sum, p) => sum + getNumber(p.total), 0);
+      .reduce((sum, p) => sum + getPurchaseTotal(p), 0);
 
     const lastBill = [...supplierPurchases].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
 
