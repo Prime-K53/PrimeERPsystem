@@ -246,10 +246,17 @@ const Login: React.FC = () => {
         </div>
         {/* ── Heading (matches portal card) ── */}
         <div className="mb-6 sm:mb-7">
+          <span className="sm:hidden flex items-center gap-1.5 mb-2.5" aria-hidden="true">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-700" />
+            <span className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-blue-700">Secure sign-in</span>
+          </span>
           <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight">
-            {mfaRequired ? 'Check your authenticator' : 'Welcome Back'}
+            {mfaRequired
+              ? 'Check your authenticator'
+              : (<>Welcome <span className="sm:hidden text-blue-700">Back</span><span className="hidden sm:inline"> Back</span></>)}
           </h1>
-          <p className="text-[13.5px] text-slate-500 mt-2 leading-relaxed">
+          <span aria-hidden="true" className="sm:hidden block h-1 w-16 mt-3 rounded-full" style={{ background: 'linear-gradient(90deg, #1e3a8a, #3b82f6 35%, #d99a3f 75%, #f0b35c)' }} />
+          <p className="text-[13.5px] text-slate-500 mt-2.5 leading-relaxed">
             {mfaRequired
               ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
               : (<><span className="sm:hidden">To get started, please sign in using your username and password.</span><span className="hidden sm:inline">Sign in to manage sales, inventory, procurement and finance — synchronized live with PrimeERP.</span></>)}
