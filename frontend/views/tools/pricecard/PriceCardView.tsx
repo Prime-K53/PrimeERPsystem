@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  formatPriceCardAmount,
   formatPriceCardTimestamp,
   type PriceCardData,
 } from '../../../services/priceCardService';
@@ -9,9 +8,13 @@ import {
  * PriceCardView — the standalone Price Card composition (540 × 675 px,
  * exported at 2× = 1080 × 1350 PNG via html2canvas).
  *
+ * Editorial cream/gold/serif design: paper card, double gold frame with
+ * corner accents, monogram mark, letterspaced labels, large serif price
+ * with gold currency, meta row, contact line and verification seal.
+ *
  * This exact DOM node is both the on-screen preview and the export source,
  * so preview and image always match. Inline styles only (html2canvas-safe:
- * hex colors, system fonts, no external CSS, no oklch).
+ * hex colors, Georgia/serif fallback stack, no external CSS, no oklch).
  *
  * Receives ONLY the customer-safe PriceCardData DTO — never full product or
  * customer records — so internal fields cannot leak into the image.
@@ -20,92 +23,118 @@ import {
 export const PRICE_CARD_EXPORT_WIDTH = 540;
 export const PRICE_CARD_EXPORT_HEIGHT = 675;
 
-const INK = '#23282a';
-const SOFT = '#5c6567';
-const FAINT = '#8a9494';
-const TEAL = '#0f544c';
-const TEAL_LIGHT = '#eef7f6';
-const PAPER = '#ffffff';
-const HAIRLINE = '#e4ddd1';
+const PAPER = '#FBF8F0';
+const INK = '#142138';
+const SOFT = '#566076';
+const FAINT = '#8891A0';
+const GOLD = '#A2812E';
+const GOLD_LINE = '#C7AC6A';
+const RULE = '#DCD6C6';
+const SERIF = "'Fraunces', Georgia, 'Times New Roman', serif";
+const SANS = "Inter, system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 interface Props {
   data: PriceCardData;
   cardRef?: React.Ref<HTMLDivElement>;
 }
 
-const BrandHeader: React.FC<{ data: PriceCardData }> = ({ data }) => {
-  const [logoOk, setLogoOk] = React.useState(true);
-  const logo = data.business.logoUrl && logoOk ? data.business.logoUrl : undefined;
+const formatAmount = (value: number): string =>
+  (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const formatIssued = (iso?: string): string =>
+  `Issued ${formatPriceCardTimestamp(iso).replace('•', '·')}`;
+
+const Corner: React.FC<{ position: React.CSSProperties }> = ({ position }) => (
+  <div style={{ position: 'absolute', width: 15, height: 15, border: '1.5px solid #A2812E', ...position }} />
+);
+
+const BrandMark: React.FC<{ data: PriceCardData }> = ({ data }) => {
+  const initial = (String(data.business.name || 'P').trim().charAt(0) || 'P').toUpperCase();
   return (
-    <div style={{ textAlign: 'center', marginBottom: 14 }}>
-      {logo ? (
-        <img
-          src={logo}
-          alt=""
-          onError={() => setLogoOk(false)}
-          style={{ height: 72, width: 'auto', maxWidth: 260, objectFit: 'contain', margin: '0 auto 10px', display: 'block' }}
-        />
-      ) : null}
-      <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: 2.5, color: TEAL }}>
-        {data.business.name.toUpperCase()}
+    <div style={{ textAlign: 'center' }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: '50%', border: `1px solid ${GOLD}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px',
+      }}>
+        <span style={{ fontFamily: SERIF, fontSize: 20, color: GOLD, lineHeight: 1 }}>{initial}</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-        <div style={{ flex: 1, height: 1, background: HAIRLINE }} />
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 3, color: FAINT }}>PRICE CARD</div>
-        <div style={{ flex: 1, height: 1, background: HAIRLINE }} />
+      <div style={{ fontFamily: SERIF, fontSize: 26, fontWeight: 500, letterSpacing: '0.02em', color: INK, lineHeight: 1.15 }}>
+        {data.business.name}
+      </div>
+      <div style={{ fontSize: 10, letterSpacing: '0.22em', color: SOFT, marginTop: 6, textTransform: 'uppercase' }}>
+        Official price card
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '62%', margin: '22px auto' }}>
+        <div style={{ flex: 1, height: 1, background: RULE }} />
+        <div style={{ width: 4, height: 4, background: GOLD, transform: 'rotate(45deg)', flexShrink: 0 }} />
+        <div style={{ flex: 1, height: 1, background: RULE }} />
       </div>
     </div>
   );
 };
 
-const ProductImage: React.FC<{ url?: string; name: string; large?: boolean }> = ({ url, name, large }) => {
-  const [ok, setOk] = React.useState(true);
-  if (!url || !ok) return null;
+const PriceFigure: React.FC<{ amount: number; currency: string; size?: number }> = ({ amount, currency, size = 46 }) => (
+  <div style={{ fontFamily: SERIF, fontSize: size, fontWeight: 500, color: INK, lineHeight: 1, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+    <span style={{ fontSize: '0.42em', verticalAlign: '0.32em', color: GOLD, marginRight: 4 }}>{currency}</span>
+    {formatAmount(amount)}
+  </div>
+);
+
+const CardFooter: React.FC<{ data: PriceCardData }> = ({ data }) => {
+  const contactBits = [data.business.phone, data.business.address].filter(Boolean);
   return (
-    <img
-      src={url}
-      alt=""
-      onError={() => setOk(false)}
-      style={{
-        width: '100%',
-        height: large ? 190 : 120,
-        objectFit: 'cover',
-        borderRadius: 10,
-        display: 'block',
-        marginBottom: 12,
-        background: TEAL_LIGHT,
-      }}
-    />
+    <div>
+      <div style={{ fontSize: 10.5, color: FAINT, textAlign: 'center', lineHeight: 1.55, maxWidth: '85%', margin: '0 auto 20px' }}>
+        Price valid at time of issue. Subject to change without notice.
+      </div>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', width: '100%',
+        paddingTop: 14, borderTop: `1px solid ${RULE}`, fontSize: 10.5, color: SOFT,
+      }}>
+        <span style={{ fontWeight: 600, color: INK, letterSpacing: '0.03em' }}>{data.reference}</span>
+        <span>{formatIssued(data.issuedAt)}</span>
+      </div>
+      {contactBits.length > 0 ? (
+        <div style={{ fontSize: 10, color: FAINT, textAlign: 'center', marginTop: 10, lineHeight: 1.6 }}>
+          {contactBits.join('  ·  ')}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16 }}>
+        <div style={{
+          width: 22, height: 22, borderRadius: '50%', background: GOLD,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <span style={{ fontFamily: SERIF, fontSize: 11, color: PAPER, lineHeight: 1 }}>
+            {(String(data.business.name || 'P').trim().charAt(0) || 'P').toUpperCase()}
+          </span>
+        </div>
+        <span style={{ fontSize: 9.5, letterSpacing: '0.03em', color: FAINT }}>
+          Verify with {data.business.name} before payment
+        </span>
+      </div>
+    </div>
   );
 };
 
 const SingleProduct: React.FC<{ data: PriceCardData }> = ({ data }) => {
   const line = data.lines[0];
-  const cur = data.business.currency;
+  const cur = (data.business.currency || 'K').trim() || 'K';
   return (
-    <div style={{ textAlign: 'center', padding: '2px 6px' }}>
-      <ProductImage url={line.imageUrl} name={line.productName} large />
-      <div style={{ fontSize: 30, fontWeight: 800, color: INK, lineHeight: 1.15, letterSpacing: -0.3 }}>
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ fontFamily: SERIF, fontSize: 21, fontWeight: 400, color: INK, lineHeight: 1.25 }}>
         {line.productName}
       </div>
-      {line.description ? (
-        <div style={{ fontSize: 13.5, color: SOFT, marginTop: 6, lineHeight: 1.45 }}>{line.description}</div>
-      ) : null}
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 3, color: FAINT, marginTop: 16 }}>PRICE</div>
-      <div style={{ fontSize: 56, fontWeight: 800, color: TEAL, letterSpacing: -1, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
-        {formatPriceCardAmount(line.unitPrice, cur)}
+      <div style={{ margin: '26px 0 24px' }}>
+        <PriceFigure amount={line.unitPrice} currency={cur} />
+        {line.unit ? (
+          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: SOFT, marginTop: 10 }}>
+            per {line.unit}
+          </div>
+        ) : null}
       </div>
-      {line.unit ? (
-        <div style={{ fontSize: 13, color: SOFT, marginTop: 2 }}>per {line.unit}</div>
-      ) : null}
       {line.quantity > 1 ? (
-        <div style={{
-          display: 'inline-block', marginTop: 12, background: TEAL_LIGHT, borderRadius: 10,
-          padding: '9px 18px', fontSize: 14.5, color: INK, fontVariantNumeric: 'tabular-nums',
-        }}>
-          {line.quantity} × {formatPriceCardAmount(line.unitPrice, cur)}
-          {' = '}
-          <span style={{ fontWeight: 800 }}>{formatPriceCardAmount(line.lineTotal, cur)}</span>
+        <div style={{ fontSize: 11, color: FAINT, fontVariantNumeric: 'tabular-nums' }}>
+          {line.quantity} × {cur} {formatAmount(line.unitPrice)} = {cur} {formatAmount(line.lineTotal)}
         </div>
       ) : null}
     </div>
@@ -113,39 +142,41 @@ const SingleProduct: React.FC<{ data: PriceCardData }> = ({ data }) => {
 };
 
 const MultiProduct: React.FC<{ data: PriceCardData }> = ({ data }) => {
-  const cur = data.business.currency;
+  const cur = (data.business.currency || 'K').trim() || 'K';
   return (
     <div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: INK, textAlign: 'center', marginBottom: 4, letterSpacing: 0.2 }}>
+      <div style={{ fontFamily: SERIF, fontSize: 20, fontWeight: 500, color: INK, textAlign: 'center', marginBottom: 2 }}>
         Price List
       </div>
-      <div style={{ fontSize: 12, color: FAINT, textAlign: 'center', marginBottom: 10 }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: FAINT, textAlign: 'center', marginBottom: 12 }}>
         {data.lines.length} items
       </div>
       <div>
         {data.lines.map((line, i) => (
-          <div key={i} style={{ padding: '10px 2px', borderTop: i === 0 ? `1px solid ${HAIRLINE}` : undefined, borderBottom: `1px solid ${HAIRLINE}` }}>
+          <div key={i} style={{ padding: '9px 2px', borderTop: `1px solid ${RULE}`, borderBottom: i === data.lines.length - 1 ? `1px solid ${RULE}` : undefined }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 17.5, fontWeight: 700, color: INK, lineHeight: 1.25 }}>{line.productName}</div>
-                {line.unit ? <div style={{ fontSize: 12, color: FAINT, marginTop: 1 }}>per {line.unit}</div> : null}
+                <div style={{ fontFamily: SERIF, fontSize: 16, color: INK, lineHeight: 1.3 }}>{line.productName}</div>
+                {line.unit ? <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: FAINT, marginTop: 2 }}>per {line.unit}</div> : null}
               </div>
-              <div style={{ fontSize: 19, fontWeight: 800, color: TEAL, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                {formatPriceCardAmount(line.unitPrice, cur)}
+              <div style={{ fontSize: 17, fontWeight: 500, fontFamily: SERIF, color: INK, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                <span style={{ fontSize: '0.55em', color: GOLD, marginRight: 3 }}>{cur}</span>
+                {formatAmount(line.unitPrice)}
               </div>
             </div>
             {line.quantity > 1 ? (
-              <div style={{ fontSize: 12.5, color: SOFT, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>
-                {line.quantity} × {formatPriceCardAmount(line.unitPrice, cur)} = {formatPriceCardAmount(line.lineTotal, cur)}
+              <div style={{ fontSize: 11, color: FAINT, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>
+                {line.quantity} × {cur} {formatAmount(line.unitPrice)} = {cur} {formatAmount(line.lineTotal)}
               </div>
             ) : null}
           </div>
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', marginTop: 12, padding: '0 2px' }}>
-        <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: SOFT }}>Total</div>
-        <div style={{ fontSize: 24, fontWeight: 800, color: TEAL, fontVariantNumeric: 'tabular-nums' }}>
-          {formatPriceCardAmount(data.grandTotal, cur)}
+        <div style={{ flex: 1, fontSize: 11, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: SOFT }}>Total</div>
+        <div style={{ fontSize: 24, fontWeight: 500, fontFamily: SERIF, color: INK, fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: '0.55em', color: GOLD, marginRight: 3 }}>{cur}</span>
+          {formatAmount(data.grandTotal)}
         </div>
       </div>
     </div>
@@ -153,7 +184,6 @@ const MultiProduct: React.FC<{ data: PriceCardData }> = ({ data }) => {
 };
 
 export const PriceCardView: React.FC<Props> = ({ data, cardRef }) => {
-  const contactBits = [data.business.phone, data.business.address].filter(Boolean);
   return (
     <div
       ref={cardRef}
@@ -162,43 +192,36 @@ export const PriceCardView: React.FC<Props> = ({ data, cardRef }) => {
         height: PRICE_CARD_EXPORT_HEIGHT,
         background: PAPER,
         color: INK,
-        fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', sans-serif",
-        padding: '30px 34px 24px',
+        fontFamily: SANS,
+        padding: 30,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        borderRadius: 2,
       }}
     >
-      <BrandHeader data={data} />
+      <div style={{
+        height: '100%',
+        border: `1px solid ${GOLD_LINE}`,
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        padding: '34px 30px 26px',
+      }}>
+        <div style={{ position: 'absolute', top: 7, left: 7, right: 7, bottom: 7, border: `1px solid ${RULE}`, pointerEvents: 'none' }} />
+        <Corner position={{ top: -1, left: -1, borderRight: 'none', borderBottom: 'none' }} />
+        <Corner position={{ top: -1, right: -1, borderLeft: 'none', borderBottom: 'none' }} />
+        <Corner position={{ bottom: -1, left: -1, borderRight: 'none', borderTop: 'none' }} />
+        <Corner position={{ bottom: -1, right: -1, borderLeft: 'none', borderTop: 'none' }} />
 
-      {data.customerName ? (
-        <div style={{ textAlign: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 11.5, color: FAINT }}>Prepared for </span>
-          <span style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>{data.customerName}</span>
-        </div>
-      ) : null}
+        <BrandMark data={data} />
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: 0 }}>
-        {data.lines.length === 1 ? <SingleProduct data={data} /> : <MultiProduct data={data} />}
-      </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: 0 }}>
+          {data.lines.length === 1 ? <SingleProduct data={data} /> : <MultiProduct data={data} />}
+        </div>
 
-      <div style={{ marginTop: 14 }}>
-        <div style={{ fontSize: 11.5, color: FAINT, textAlign: 'center', fontStyle: 'italic' }}>
-          Price valid at time of issue. Price subject to change without notice.
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-          <div style={{ fontSize: 11, color: FAINT, fontVariantNumeric: 'tabular-nums' }}>{data.reference}</div>
-          <div style={{ fontSize: 11, color: FAINT }}>Issued {formatPriceCardTimestamp(data.issuedAt)}</div>
-        </div>
-        {contactBits.length > 0 ? (
-          <div style={{ fontSize: 13, fontWeight: 700, color: INK, textAlign: 'center', marginTop: 6 }}>
-            {contactBits.join('  •  ')}
-          </div>
-        ) : null}
-        <div style={{ height: 1, background: HAIRLINE, margin: '10px 0 8px' }} />
-        <div style={{ fontSize: 10.5, color: FAINT, textAlign: 'center', lineHeight: 1.5 }}>
-          Official price information issued by {data.business.name}. Verify before payment.
-        </div>
+        <CardFooter data={data} />
       </div>
     </div>
   );
