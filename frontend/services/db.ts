@@ -404,6 +404,9 @@ const SUPABASE_CONFIGURED = isSupabaseConfigured;
 
 const LOCAL_ONLY_STORES = new Set([
   'idempotencyKeys',
+  // Single-company app: no tenant_id. customerNotificationLogs pulled from backend Edge
+  // Functions but local writes stay local (avoids noisy sync). Alerts/auditLogs are
+  // per-device operational logs — intentionally local, single-company, no cross-device sync.
   'customerNotificationLogs',
   'alerts', 'auditLogs',
   // Users are auth records only — no `users` table exists in Supabase
@@ -530,6 +533,8 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   orders: 'orders',
   boms: 'boms',
   taxRates: 'tax_rates',
+  customerPricingTiers: 'customerpricingtiers',
+  discountRules: 'discountrules',
   referrals: 'customer_referrals',
   referralRewards: 'referral_rewards',
   referralTimeline: 'referral_timeline',
@@ -539,11 +544,42 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   referralReversals: 'referral_reversals',
   referralEventHistory: 'referral_event_history',
   portalAds: 'portal_ads',
+  engagementPromotions: 'engagement_promotions',
   // Canonical purchase orders sync to the existing purchase_orders table
   // (previously unmapped, so canonical POs never reached the cloud and
   // public verification fell back to the legacy purchases table).
   purchaseOrders: 'purchase_orders',
   statementSnapshots: 'statement_snapshots',
+  // Fixed Assets — single-company, no tenant column (same envelope as 0001:894 `assets`)
+  fixedAssets: 'fixed_assets',
+  depreciationEntries: 'depreciation_entries',
+  assetDisposals: 'asset_disposals',
+  fixedAssetLocations: 'fixed_asset_locations',
+  fixedAssetCustodians: 'fixed_asset_custodians',
+  fixedAssetTransfers: 'fixed_asset_transfers',
+  fixedAssetRevaluations: 'fixed_asset_revaluations',
+  fixedAssetImpairments: 'fixed_asset_impairments',
+  fixedAssetMaintenance: 'fixed_asset_maintenance',
+  fixedAssetWarranty: 'fixed_asset_warranty',
+  fixedAssetInsurance: 'fixed_asset_insurance',
+  fixedAssetVerification: 'fixed_asset_verification',
+  fixedAssetReversals: 'fixed_asset_reversals',
+  // Loans / Equity / Year-End — single-company, no tenant column
+  loans: 'loans',
+  loanRepayments: 'loan_repayments',
+  ownerEquityTransactions: 'owner_equity_transactions',
+  accrualEntries: 'accrual_entries',
+  incomeSummaryEntries: 'income_summary_entries',
+  // Service Catalog + Utilities sub-ledgers — single-company, no tenant column
+  purchaseInvoices: 'purchase_invoices',
+  interestIncomeEntries: 'interest_income_entries',
+  prepayments: 'prepayments',
+  prepaymentAmortizations: 'prepayment_amortizations',
+  staffAdvances: 'staff_advances',
+  utilityExpenses: 'utility_expenses',
+  utilityPayments: 'utility_payments',
+  bankChargeEntries: 'bank_charge_entries',
+  payrollEntries: 'payroll_entries',
   serviceRecipes: 'service_recipes',
   serviceJobs: 'service_jobs',
   serviceResources: 'service_resources',

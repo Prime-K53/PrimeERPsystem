@@ -40,9 +40,12 @@ const safeJsonStringify = (value) => {
 // plus the realtime/extra tables. Kept server-side so the browser cannot
 // nominate arbitrary tables.
 const ALLOWED_TABLES = new Set([
-  // catalog / finance
+  // catalog / finance — single-company, no tenant_id
   'products', 'warehouses', 'accounts', 'settings',
   'ledger_entries', 'expenses', 'income', 'budgets', 'transfers', 'cheques',
+  // purchase_orders is canonical (db.ts:547); inventory_movements is legacy orphan
+  // (0001:1373 table exists but no frontend store writes it — kept allowed for
+  // backward compat, no tenant column).
   'purchase_orders', 'inventory_movements', 'financial_years', 'user_preferences',
 
   // customers / sales
@@ -61,6 +64,7 @@ const ALLOWED_TABLES = new Set([
   'material_batches', 'material_categories', 'inventory_transactions',
   'material_reservations', 'profit_margin_settings', 'market_adjustments',
   'market_adjustment_transactions', 'tax_rates',
+  'customerpricingtiers', 'discountrules',
 
   // payroll / HR
   'employees', 'payroll_runs', 'payslips', 'user_groups',
@@ -69,7 +73,7 @@ const ALLOWED_TABLES = new Set([
   'bank_accounts', 'bank_transactions', 'bank_statements',
   'bank_scheduled_payments', 'bank_exchange_rates', 'bank_fees',
   'bank_reconciliations', 'bank_adjustments', 'bank_cash_flow_forecasts',
-  'bank_alerts', 'bank_categories',
+  'bank_alerts', 'bank_categories', 'banking_attachments',
 
   // VAT / rounding
   'vat_transactions', 'vat_returns', 'rounding_logs',
@@ -84,7 +88,23 @@ const ALLOWED_TABLES = new Set([
   // marketing / communications
   'sms_campaigns', 'sms_templates', 'customer_notification_logs',
   'whatsapp_chats', 'whatsapp_templates', 'whatsapp_campaigns',
-  'whatsapp_automations', 'portal_ads',
+  'whatsapp_automations', 'portal_ads', 'statement_snapshots',
+
+  // fixed assets — 13 tables, single-company, no tenant scoping (same envelope as `assets`)
+  'fixed_assets', 'depreciation_entries', 'asset_disposals',
+  'fixed_asset_locations', 'fixed_asset_custodians', 'fixed_asset_transfers',
+  'fixed_asset_revaluations', 'fixed_asset_impairments', 'fixed_asset_maintenance',
+  'fixed_asset_warranty', 'fixed_asset_insurance', 'fixed_asset_verification', 'fixed_asset_reversals',
+
+  // loans / equity / year-end — 5 tables, single-company, no tenant scoping
+  'loans', 'loan_repayments', 'owner_equity_transactions',
+  'accrual_entries', 'income_summary_entries',
+
+  // service catalog + utilities sub-ledgers — 13 tables, single-company, no tenant scoping
+  'purchase_invoices', 'interest_income_entries',
+  'prepayments', 'prepayment_amortizations', 'staff_advances',
+  'utility_expenses', 'utility_payments', 'bank_charge_entries', 'payroll_entries',
+  'service_recipes', 'service_jobs', 'service_resources', 'service_consumptions',
 
   // procurement / maintenance
   'subcontract_orders', 'maintenance_logs',
