@@ -28,6 +28,7 @@ const resolveWorkflowErrorStatus = (error) => {
   if (code === batchWorkflow.WORKFLOW_VALIDATION_CODES.INVALID_TRANSITION) return 409;
   if (code === batchWorkflow.WORKFLOW_VALIDATION_CODES.APPROVAL_NOT_ALLOWED) return 409;
   if (code === batchWorkflow.WORKFLOW_VALIDATION_CODES.INVOICE_NOT_ALLOWED) return 409;
+  if (code === batchWorkflow.WORKFLOW_VALIDATION_CODES.REGENERATE_NOT_ALLOWED) return 409;
   return 500;
 };
 
@@ -637,6 +638,23 @@ router.post('/batches/:id/invoice', async (req, res) => {
   } catch (err) {
     console.error('[Examination] generate invoice error:', err);
     res.status(resolveWorkflowErrorStatus(err)).json({ error: 'Failed to generate invoice' });
+  }
+});
+
+router.post('/batches/:id/regenerate-invoice', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const idempotencyKey = req.headers['x-idempotency-key'] || req.body?.idempotency_key || req.body?.idempotencyKey;
+    const invoiceNumber = req.body?.invoiceNumber || req.body?.invoice_number;
+    const result = await examinationService.regenerateInvoice(req.params.id, userId, { idempotencyKey, invoiceNumber } || '');
+    res.json(result);
+  } catch (err) {
+    console.error('[Examination] regenerate invoice error:', err);
+    const message = String(err?.message || 'Failed to regenerate invoice');
+    if (message.toLowerCase().includes('cannot regenerate')) {
+      return res.status(resolveWorkflowErrorStatus(err)).json({ error: message });
+    }
+    res.status(resolveWorkflowErrorStatus(err)).json({ error: 'Failed to regenerate invoice' });
   }
 });
 

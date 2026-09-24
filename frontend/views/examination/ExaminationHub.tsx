@@ -75,6 +75,7 @@ const ExaminationHub: React.FC = () => {
     calculateBatch,
     approveBatch,
     generateInvoice,
+    regenerateInvoice,
     deleteBatch
   } = useExamination();
   const { refreshAllData } = useData();
@@ -239,7 +240,7 @@ const ExaminationHub: React.FC = () => {
     return {
       totalBatches: batches.length,
       approvedBatches: batches.filter((batch) => batch.status === 'Approved').length,
-      invoicedBatches: batches.filter((batch) => batch.status === 'Invoiced').length,
+      invoicedBatches: batches.filter((batch) => batch.status === 'Invoiced' || batch.status === 'Completed').length,
       totalAmount: batches.reduce((sum, batch) => sum + (batch.total_amount || 0), 0),
       calculatedBatches: calculatedBatches.length,
       totalTonerNeeded: calculatedBatches.reduce((sum, batch) => sum + getBatchTonerNeeded(batch), 0),
@@ -285,6 +286,7 @@ const ExaminationHub: React.FC = () => {
           icon: <CheckCircle size={12} />
         };
       case 'Invoiced':
+      case 'Completed':
         return {
           badgeStyle: { background: teal[500], color: '#fff', border: `1px solid ${teal[500]}` },
           icon: <DollarSign size={12} />
@@ -407,6 +409,40 @@ const ExaminationHub: React.FC = () => {
     } catch (error) {
       toast.error('Failed to generate invoice');
       logger.error('Invoice generation error:', error);
+    } finally {
+      setActionLoading(null);
+      setOpenMenuId(null);
+    }
+  };
+
+  const handleRegenerateInvoice = async (batch: any) => {
+    const previousRef = String(batch?.invoice_id || '').trim();
+    const confirmed = confirm(
+      previousRef
+        ? `Batch is already invoiced (${previousRef}). Regenerating will recalculate totals, void the previous unpaid invoice, and issue a new invoice. Paid invoices cannot be regenerated. Continue?`
+        : 'Batch is already invoiced. Regenerating will recalculate totals, void the previous unpaid invoice, and issue a new invoice. Continue?'
+    );
+    if (!confirmed) {
+      setOpenMenuId(null);
+      return;
+    }
+    setActionLoading(batch.id);
+    try {
+      const result = await regenerateInvoice(batch.id, 'Regenerated from batch list');
+      if (result.success) {
+        const voided = (result?.sync as { voidedInvoiceIds?: string[] } | undefined)?.voidedInvoiceIds;
+        toast.success(
+          voided && voided.length > 0
+            ? `Invoice regenerated (voided ${voided.length} previous invoice${voided.length === 1 ? '' : 's'})`
+            : 'Invoice regenerated successfully'
+        );
+        loadAllData();
+      } else {
+        toast.error('Failed to regenerate invoice');
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to regenerate invoice');
+      logger.error('Invoice regeneration error:', error);
     } finally {
       setActionLoading(null);
       setOpenMenuId(null);
@@ -827,7 +863,7 @@ const ExaminationHub: React.FC = () => {
                                   </button>
                                 )}
                                 
-                                {batch.status === 'Invoiced' && batch.invoice_id && (
+                                {(batch.status === 'Invoiced' || batch.status === 'Completed') && batch.invoice_id && (
                                   <button type="button" onClick={() => navigate(`/sales/invoice/${batch.invoice_id}`)}
                                     style={{
                                       width: '100%', padding: '8px 16px', textAlign: 'left', fontSize: 13,
@@ -838,6 +874,20 @@ const ExaminationHub: React.FC = () => {
                                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                                     <FileText size={14} color={teal[600]} />
                                     View Invoice
+                                  </button>
+                                )}
+
+                                {(batch.status === 'Invoiced' || batch.status === 'Completed') && (
+                                  <button type="button" onClick={() => handleRegenerateInvoice(batch)} disabled={actionLoading === batch.id}
+                                    style={{
+                                      width: '100%', padding: '8px 16px', textAlign: 'left', fontSize: 13,
+                                      color: ink, background: 'transparent', border: 'none',
+                                      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = teal[50]}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <RefreshCw size={14} color={amber[500]} />
+                                    Regenerate Invoice
                                   </button>
                                 )}
 

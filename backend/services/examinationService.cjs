@@ -7,6 +7,32 @@ const { auditService } = require('../auditService.cjs');
 const { toNumericValue, pickPositiveNumber } = require('./examinationSharedUtils.cjs');
 const FinanceService = require('./financeService.cjs');
 const { resolveMarketLedgerAccount, splitInvoiceLedgerAmounts } = require('./marketLedgerSplit.cjs');
+const { getDatabase } = require('../db.cjs');
+
+const runGet = (sql, params = []) => new Promise((resolve, reject) => {
+  try {
+    getDatabase().get(sql, params, (err, row) => (err ? reject(err) : resolve(row || null)));
+  } catch (err) {
+    reject(err);
+  }
+});
+const runQuery = (sql, params = []) => new Promise((resolve, reject) => {
+  try {
+    getDatabase().all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
+  } catch (err) {
+    reject(err);
+  }
+});
+const runRun = (sql, params = []) => new Promise((resolve, reject) => {
+  try {
+    getDatabase().run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve(this || {});
+    });
+  } catch (err) {
+    reject(err);
+  }
+});
 
 const PAGES_PER_SHEET = pricingEngine.PAGES_PER_SHEET;
 const TONER_PAGES_PER_KG = pricingEngine.TONER_PAGES_PER_KG;
@@ -4425,6 +4451,211 @@ const examinationService = {
       invoiceId: Number(invoiceId),
       created: true,
       idempotent: false,
+      invoice: mapBackendInvoiceToFrontendPayload({
+        invoiceRow,
+        batch,
+        customerName,
+        lineItems
+      })
+    };
+  },
+
+  regenerateInvoice: async (batchId, userId = 'System', options = {}) => {
+    await ensureExaminationInvoiceSchema();
+    const batch = await examinationService.getBatchById(batchId);
+    if (!batch) throw new Error('Batch not found');
+    batchWorkflow.assertCanRegenerateInvoice(batch.status);
+
+    const invoiceDraft = examinationInvoiceAdapter.createInvoiceFromBatch({
+      batchData: batch,
+      idempotencyKey: options?.idempotencyKey
+        || options?.idempotency_key
+        || `EXAM-BATCH-${String(batchId)}-REGEN-${Date.now()}`
+    });
+    const lineItems = invoiceDraft.lineItems;
+    const batchTotalAmount = invoiceDraft.batchTotalAmount;
+
+    const schoolLookupId = toNumericValue(batch.school_id);
+    const school = schoolLookupId !== null
+      ? await runGet('SELECT * FROM schools WHERE id = ?', [schoolLookupId])
+      : null;
+    let customer = null;
+    try {
+      const customerLookupId = String(batch.customer_id || batch.school_id || '').trim();
+      customer = customerLookupId
+        ? await runGet('SELECT * FROM customers WHERE id = ?', [customerLookupId])
+        : null;
+    } catch {
+      customer = null;
+    }
+    const customerName = String(school?.name || customer?.name || `School ${batch.school_id || ''}`);
+    const persistedSchoolId = school?.id ?? null;
+    const persistedCustomerId = customer?.id ?? (String(batch.customer_id || batch.school_id || '').trim() || null);
+
+    const existingInvoices = await runQuery(
+      `SELECT * FROM invoices WHERE origin_module = ? AND origin_batch_id = ? ORDER BY id DESC`,
+      [INVOICE_ORIGIN_EXAMINATION, String(batchId)]
+    );
+    const activeInvoices = (existingInvoices || []).filter((row) => {
+      const status = String(row?.status || '').trim().toLowerCase();
+      return status !== 'cancelled' && status !== 'canceled' && status !== 'void' && status !== 'voided';
+    });
+
+    for (const row of activeInvoices) {
+      const status = String(row?.status || '').trim().toLowerCase();
+      if (status === 'paid' || status === 'partial' || status === 'partially_paid') {
+        const err = new Error(
+          `Cannot regenerate invoice: existing invoice ${row?.invoice_number || row?.id} is ${row?.status}. Settle or void it first.`
+        );
+        err.workflowCode = batchWorkflow.WORKFLOW_VALIDATION_CODES.REGENERATE_NOT_ALLOWED;
+        throw err;
+      }
+    }
+
+    if (batch.invoice_id && activeInvoices.length === 0) {
+      const byBatchRef = await runGet(
+        `SELECT * FROM invoices WHERE (invoice_number = ? OR id = ?) ORDER BY id DESC LIMIT 1`,
+        [batch.invoice_id, batch.invoice_id]
+      );
+      if (byBatchRef) {
+        const status = String(byBatchRef?.status || '').trim().toLowerCase();
+        if (status === 'paid' || status === 'partial' || status === 'partially_paid') {
+          const err = new Error(
+            `Cannot regenerate invoice: existing invoice ${byBatchRef?.invoice_number || byBatchRef?.id} is ${byBatchRef?.status}. Settle or void it first.`
+          );
+          err.workflowCode = batchWorkflow.WORKFLOW_VALIDATION_CODES.REGENERATE_NOT_ALLOWED;
+          throw err;
+        }
+        activeInvoices.push(byBatchRef);
+      }
+    }
+
+    const previousInvoiceIds = activeInvoices.map((row) => Number(row?.id)).filter(Number.isFinite);
+    const previousInvoiceNumbers = activeInvoices
+      .map((row) => String(row?.invoice_number || row?.id || '').trim())
+      .filter(Boolean);
+
+    for (const row of activeInvoices) {
+      await runRun(
+        `UPDATE invoices SET status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [
+          'cancelled',
+          `${String(row?.notes || '')} [Voided by regeneration ${new Date().toISOString()} by ${userId}]`.trim().slice(0, 2000),
+          row.id
+        ]
+      );
+      try {
+        const finance = new FinanceService();
+        const reversalJournalId = randomUUID();
+        const total = toNumericValue(row?.total_amount) ?? 0;
+        if (total > 0) {
+          const allAccounts = await repo.getAll('chart_of_accounts');
+          const findByCode = (code) => allAccounts.find(
+            (a) => String(a.data?.code || a.code || '') === code
+              || String(a.data?.account_number || a.account_number || '') === code
+          );
+          const arAccount = findByCode('11310');
+          const revenueAccount = findByCode('41200');
+          if (arAccount && revenueAccount) {
+            await finance.saveLedgerEntry({
+              account_id: revenueAccount.id, entry_type: 'debit', amount: total,
+              currency: row?.currency || batch?.currency || 'MWK',
+              description: `Reversal of invoice #${row.id} (regen batch ${batchId})`,
+              reference_type: 'invoice', reference_id: String(row.id),
+              journal_id: reversalJournalId, entry_date: new Date().toISOString(), created_by: userId || null
+            });
+            await finance.saveLedgerEntry({
+              account_id: arAccount.id, entry_type: 'credit', amount: total,
+              currency: row?.currency || batch?.currency || 'MWK',
+              description: `Reversal of invoice #${row.id} (regen batch ${batchId})`,
+              reference_type: 'invoice', reference_id: String(row.id),
+              journal_id: reversalJournalId, entry_date: new Date().toISOString(), created_by: userId || null
+            });
+          }
+        }
+      } catch (reversalError) {
+        console.warn('[Examination] Invoice reversal ledger failed (non-blocking):', reversalError?.message || reversalError);
+      }
+    }
+
+    const dueDateIso = invoiceDraft.dueDateIso;
+    const lineItemsJson = stringifyDetails(lineItems);
+    const requestedInvoiceNumber = options?.invoiceNumber || options?.invoice_number;
+    let invoiceId = null;
+    const invoiceResult = await runRun(
+      `INSERT INTO invoices (
+        school_id, customer_id, customer_name, sub_account_name,
+        subtotal, total_amount, currency, status, due_date,
+        invoice_number, origin_module, origin_batch_id, idempotency_key,
+        line_items_json, notes, document_title, sales_account_id,
+        rounding_difference, rounding_method, adjustment_total, adjustment_snapshots_json,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [
+        persistedSchoolId,
+        persistedCustomerId,
+        customerName,
+        batch.sub_account_name || null,
+        batchTotalAmount,
+        batchTotalAmount,
+        invoiceDraft.currency,
+        'unpaid',
+        dueDateIso,
+        null,
+        invoiceDraft.originModule,
+        invoiceDraft.originBatchId,
+        invoiceDraft.idempotencyKey || null,
+        lineItemsJson,
+        `${invoiceDraft.invoiceNote} (regenerated)`,
+        invoiceDraft.documentTitle,
+        options?.salesAccountId || batch.sales_account_id || null,
+        toNumericValue(batch.rounding_adjustment_total) || 0,
+        batch.rounding_method || 'nearest_50',
+        toNumericValue(batch.calculated_adjustment_total) || 0,
+        batch.adjustment_snapshots_json || '[]']
+    );
+    invoiceId = Number(invoiceResult.lastID);
+    const logicalNumber = requestedInvoiceNumber || examinationInvoiceAdapter.buildExaminationLogicalInvoiceNumber(invoiceId);
+    await runRun(
+      'UPDATE invoices SET invoice_number = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [logicalNumber, invoiceId]
+    );
+
+    const invoiceRow = await runGet('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
+    if (!invoiceRow) {
+      throw new Error('Invoice regeneration failed: invoice not found after insert');
+    }
+    const linkedLogicalInvoiceId = await ensureExaminationInvoiceDocumentLink({
+      invoiceRow,
+      batch,
+      customerName,
+      lineItems,
+      userId
+    });
+
+    await runRun(
+      'UPDATE examination_batches SET status = ?, invoice_id = ?, total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      ['Completed', String(linkedLogicalInvoiceId || invoiceRow.invoice_number || invoiceId), batchTotalAmount, batchId]
+    );
+
+    await writeAuditLog({
+      userId,
+      action: 'REGENERATE_INVOICE',
+      entityType: 'ExaminationBatch',
+      entityId: batchId,
+      details: `Regenerated invoice #${invoiceId} (voided: ${previousInvoiceNumbers.join(', ') || 'none'})`
+    });
+
+    await postInvoiceLedger(invoiceId, invoiceRow);
+
+    return {
+      success: true,
+      invoiceId: Number(invoiceId),
+      created: true,
+      regenerated: true,
+      idempotent: false,
+      previousInvoiceIds,
+      previousInvoiceNumbers,
       invoice: mapBackendInvoiceToFrontendPayload({
         invoiceRow,
         batch,

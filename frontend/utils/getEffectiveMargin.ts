@@ -1,4 +1,4 @@
-import { resolveOfflineEffectiveMargin } from '../services/offlineProfitMargins';
+import { listOfflineMarginSettingsAsync, resolveOfflineEffectiveMargin } from '../services/offlineProfitMargins';
 
 export interface EffectiveMargin {
   margin_value: number;
@@ -23,6 +23,42 @@ export async function getEffectiveMargin(
   const localMargin = resolveOfflineEffectiveMargin(lineItemId, categoryId);
   if (useCache) cache.set(cacheKey, localMargin);
   return localMargin;
+}
+
+/**
+ * Canonical global-margin loader for examination pricing surfaces.
+ * Uses the async offline store (localStorage + IndexedDB fallback) so it
+ * matches the Settings > Profit Markup page, which can show a value that
+ * the synchronous localStorage-only path would miss (and would render as 0%).
+ */
+export async function getGlobalMargin(): Promise<EffectiveMargin> {
+  try {
+    const settings = await listOfflineMarginSettingsAsync();
+    const global = (settings || []).find((setting) => (
+      setting.scope === 'global'
+      && !setting.deleted_at
+      && (setting.is_active === true || setting.is_active === 1 || String(setting.is_active).toLowerCase() === 'true')
+    ));
+    if (global) {
+      invalidateMarginCache();
+      return {
+        margin_value: Number(global.margin_value) || 0,
+        margin_type: global.margin_type === 'fixed_amount' ? 'fixed_amount' : 'percentage',
+        source: 'global',
+        apply_volume_margins: Boolean(global.apply_volume_margins)
+      };
+    }
+  } catch {
+    // Fall through to the synchronous offline path below.
+  }
+  invalidateMarginCache();
+  return resolveOfflineEffectiveMargin(null, null);
+}
+
+export function formatMarginDisplay(margin: EffectiveMargin | null | undefined): string {
+  if (!margin || margin.source === 'system' || !(Number(margin.margin_value) > 0)) return '0%';
+  if (margin.margin_type === 'fixed_amount') return `MWK ${Number(margin.margin_value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `${Number(margin.margin_value).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
 }
 
 export function invalidateMarginCache(lineItemId?: string, categoryId?: string) {

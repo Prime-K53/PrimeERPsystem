@@ -132,6 +132,93 @@ export const mapExaminationPayloadToInvoice = (
   };
 };
 
+const collectBatchInvoiceKeys = (payload?: ExaminationGeneratedInvoicePayload): string[] => {
+  const keys = new Set<string>();
+  const add = (value: unknown) => {
+    const text = String(value || '').trim();
+    if (text) keys.add(text);
+  };
+  add(payload?.batchId);
+  const raw = payload as unknown as Record<string, unknown> | undefined;
+  add(raw?.origin_batch_id);
+  add(raw?.originBatchId);
+  return Array.from(keys);
+};
+
+export const findFinanceInvoicesForBatch = async (batchKeys: string | string[]): Promise<Array<Record<string, any>>> => {
+  const keys = (Array.isArray(batchKeys) ? batchKeys : [batchKeys])
+    .map((key) => String(key || '').trim())
+    .filter(Boolean);
+  if (keys.length === 0) return [];
+  const all = await dbService.getAll<Record<string, any>>('invoices').catch(() => []);
+  return (all || []).filter((invoice) => {
+    const candidates = [
+      invoice?.batchId,
+      invoice?.originBatchId,
+      invoice?.origin_batch_id,
+      invoice?.origin_batchId,
+      invoice?.reference
+    ].map((value) => String(value || '').trim());
+    if (candidates.some((candidate) => candidate && keys.includes(candidate))) return true;
+    const reference = String(invoice?.reference || '').toUpperCase();
+    return keys.some((key) => key && reference === `EXM-BATCH-${String(key).toUpperCase()}`);
+  });
+};
+
+export const persistRegeneratedExaminationInvoiceToFinance = async (
+  payload?: ExaminationGeneratedInvoicePayload,
+  options?: { previousInvoiceId?: string | null; reason?: string }
+): Promise<ExaminationInvoiceSyncResult & { voidedInvoiceIds?: string[] }> => {
+  if (!payload) {
+    return { synced: false, fallbackUsed: false, invoiceId: null, message: 'No invoice payload to sync.' };
+  }
+  const batchKeys = collectBatchInvoiceKeys(payload);
+  if (options?.previousInvoiceId) batchKeys.push(String(options.previousInvoiceId));
+  const existing = await findFinanceInvoicesForBatch(batchKeys);
+  const active = existing.filter((invoice) => {
+    const status = String(invoice?.status || '').trim().toLowerCase();
+    return status !== 'cancelled' && status !== 'voided' && status !== 'void';
+  });
+
+  for (const invoice of active) {
+    const status = String(invoice?.status || '').trim().toLowerCase();
+    const paidAmount = toNumber(invoice?.paidAmount, 0);
+    if (status === 'paid' || status === 'partial' || paidAmount > 0.005) {
+      return {
+        synced: false,
+        fallbackUsed: false,
+        invoiceId: null,
+        message: `Cannot regenerate: existing invoice ${invoice?.id} is ${invoice?.status} with payments applied. Void or refund it first.`
+      };
+    }
+  }
+
+  const voidedInvoiceIds: string[] = [];
+  for (const invoice of active) {
+    const invoiceId = String(invoice?.id || '').trim();
+    if (!invoiceId || invoiceId === String(payload?.invoiceNumber || payload?.id)) continue;
+    try {
+      await transactionService.voidInvoice(invoiceId, `Voided by examination invoice regeneration${options?.reason ? `: ${options.reason}` : ''}`);
+      voidedInvoiceIds.push(invoiceId);
+    } catch (error: any) {
+      const message = String(error?.message || '');
+      if (!message.toLowerCase().includes('already voided')) {
+        return {
+          synced: false,
+          fallbackUsed: false,
+          invoiceId: null,
+          voidedInvoiceIds,
+          message: message || `Failed to void previous invoice ${invoiceId}.`
+        };
+      }
+      voidedInvoiceIds.push(invoiceId);
+    }
+  }
+
+  const result = await persistExaminationInvoiceToFinance(payload);
+  return { ...result, voidedInvoiceIds };
+};
+
 export const persistExaminationInvoiceToFinance = async (
   payload?: ExaminationGeneratedInvoicePayload
 ): Promise<ExaminationInvoiceSyncResult> => {

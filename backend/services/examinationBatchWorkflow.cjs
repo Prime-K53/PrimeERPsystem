@@ -3,7 +3,8 @@ const WORKFLOW_VALIDATION_CODES = {
   INVALID_TRANSITION: 'INVALID_TRANSITION',
   BATCH_IMMUTABLE: 'BATCH_IMMUTABLE',
   APPROVAL_NOT_ALLOWED: 'APPROVAL_NOT_ALLOWED',
-  INVOICE_NOT_ALLOWED: 'INVOICE_NOT_ALLOWED'
+  INVOICE_NOT_ALLOWED: 'INVOICE_NOT_ALLOWED',
+  REGENERATE_NOT_ALLOWED: 'REGENERATE_NOT_ALLOWED'
 };
 
 const STATUS_ORDER = ['Draft', 'Calculated', 'Approved', 'Completed'];
@@ -80,6 +81,16 @@ const assertCanGenerateInvoice = (statusInput) => {
   }
 };
 
+const assertCanRegenerateInvoice = (statusInput) => {
+  const status = normalizeBatchStatus(statusInput);
+  if (status !== 'Approved' && status !== 'Completed') {
+    throw createWorkflowError(
+      'Only an approved or already-invoiced batch can have its invoice regenerated',
+      WORKFLOW_VALIDATION_CODES.REGENERATE_NOT_ALLOWED
+    );
+  }
+};
+
 const calculateApprovalMaterialDeductions = ({
   classes = [],
   paperItem,
@@ -139,5 +150,6 @@ module.exports = {
   resolveStatusAfterCalculation,
   assertCanApproveBatch,
   assertCanGenerateInvoice,
+  assertCanRegenerateInvoice,
   calculateApprovalMaterialDeductions
 };

@@ -112,10 +112,32 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
   const [confirmState, setConfirmState] = useState<{ open: boolean; title: string; message: string; confirmText?: string; type?: ConfirmDialogType; onConfirm?: () => void }>({ open: false, title: '', message: '' });
 
   useEffect(() => {
-    import('../../../utils/getEffectiveMargin').then(({ getEffectiveMargin }) => {
-      getEffectiveMargin(null, null, false).then(setGlobalMargin);
-    });
-  }, []);
+    let cancelled = false;
+    const loadGlobalMargin = () => {
+      import('../../../utils/getEffectiveMargin').then(({ getGlobalMargin }) => {
+        getGlobalMargin().then((margin) => {
+          if (!cancelled) setGlobalMargin(margin);
+        }).catch(() => {
+          if (!cancelled) setGlobalMargin({ margin_value: 0, margin_type: 'percentage', source: 'system' });
+        });
+      }).catch(() => {
+        if (!cancelled) setGlobalMargin({ margin_value: 0, margin_type: 'percentage', source: 'system' });
+      });
+    };
+    if (open) loadGlobalMargin();
+    const onDataChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || !detail.stores) return;
+      if (detail.stores.includes('profitMarginSettings') || detail.stores.includes('*')) {
+        loadGlobalMargin();
+      }
+    };
+    window.addEventListener('primeerp:data-changed', onDataChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('primeerp:data-changed', onDataChanged);
+    };
+  }, [open]);
 
   // Learner Count Management
   const [learnerCount, setLearnerCount] = useState<number>(0);
@@ -1219,12 +1241,26 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
                     <div>
                       <div className="text-xs font-semibold text-emerald-900">Base Profit Margin</div>
                       <div className="text-lg font-bold text-emerald-700">
-                        {globalMargin ? `${globalMargin.margin_value}%` : '0%'}
+                        {(() => {
+                          const value = Number(globalMargin?.margin_value) || 0;
+                          if (!globalMargin || globalMargin.source === 'system' || value <= 0) return '0%';
+                          if (String(globalMargin.margin_type).toLowerCase() === 'fixed_amount') {
+                            return `MWK ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+                          }
+                          return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+                        })()}
                       </div>
+                      {globalMargin?.source && globalMargin.source !== 'system' && (
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">
+                          Source: {String(globalMargin.source)}
+                          {globalMargin.margin_type === 'fixed_amount' ? ' · fixed amount' : ' · percentage'}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <p className="mt-2 text-[11px] text-emerald-700/80">
                     This margin is applied system-wide to calculate the final Total and Fee per Learner.
+                    Manage it in Settings &gt; Profit Markup.
                   </p>
                 </div>
               )}

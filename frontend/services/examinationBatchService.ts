@@ -931,11 +931,57 @@ export const examinationBatchService = {
       status: 'Invoiced'
     }));
     const invoicePayload = await buildLocalInvoicePayload(updatedBatch as any, payload);
+    await updateLocalBatch(String((localBatch as any).id || id), () => ({
+      invoice_id: invoicePayload.invoiceNumber
+    }));
     return {
       success: true,
       invoiceId: Date.now() * 1000 + Math.floor(Math.random() * 1000),
       created: true,
       idempotent: false,
+      invoice: invoicePayload
+    };
+  },
+
+  async regenerateInvoice(
+    id: string,
+    payload?: { idempotencyKey?: string; invoiceNumber?: string; reason?: string }
+  ): Promise<{
+    success: boolean;
+    invoiceId: number;
+    created?: boolean;
+    regenerated?: boolean;
+    idempotent?: boolean;
+    previousInvoiceId?: string | null;
+    invoice?: ExaminationGeneratedInvoicePayload;
+  }> {
+    const localBatch = await this.getBatch(id);
+    const status = String((localBatch as any)?.status || '').trim().toLowerCase();
+    if (status !== 'approved' && status !== 'invoiced' && status !== 'completed') {
+      throw new Error('Only an approved or already-invoiced batch can have its invoice regenerated');
+    }
+    const previousInvoiceId = String((localBatch as any)?.invoice_id || '').trim() || null;
+    const recalculated = await applyCalculatedBatchState(localBatch as any);
+    const updatedBatch = await updateLocalBatch(String((localBatch as any).id || id), () => ({
+      ...recalculated,
+      status: 'Invoiced'
+    }));
+    const invoicePayload = await buildLocalInvoicePayload(updatedBatch as any, {
+      idempotencyKey: payload?.idempotencyKey || `EXAM-BATCH-${String((localBatch as any).id || id)}-REGEN-${Date.now()}`,
+      invoiceNumber: payload?.invoiceNumber
+    });
+    invoicePayload.notes = `${invoicePayload.notes || ''} (regenerated${payload?.reason ? `: ${payload.reason}` : ''})`.trim();
+    invoicePayload.reference = payload?.idempotencyKey || invoicePayload.reference;
+    await updateLocalBatch(String((localBatch as any).id || id), () => ({
+      invoice_id: invoicePayload.invoiceNumber
+    }));
+    return {
+      success: true,
+      invoiceId: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+      created: true,
+      regenerated: true,
+      idempotent: false,
+      previousInvoiceId,
       invoice: invoicePayload
     };
   },

@@ -5,7 +5,8 @@ export const WORKFLOW_VALIDATION_CODES = {
   INVALID_TRANSITION: 'INVALID_TRANSITION',
   BATCH_IMMUTABLE: 'BATCH_IMMUTABLE',
   APPROVAL_NOT_ALLOWED: 'APPROVAL_NOT_ALLOWED',
-  INVOICE_NOT_ALLOWED: 'INVOICE_NOT_ALLOWED'
+  INVOICE_NOT_ALLOWED: 'INVOICE_NOT_ALLOWED',
+  REGENERATE_NOT_ALLOWED: 'REGENERATE_NOT_ALLOWED'
 } as const;
 
 export interface WorkflowError extends Error {
@@ -130,6 +131,16 @@ export const assertCanGenerateInvoice = (statusInput: unknown) => {
     throw createWorkflowError(
       'Batch must be approved before invoicing',
       WORKFLOW_VALIDATION_CODES.INVOICE_NOT_ALLOWED
+    );
+  }
+};
+
+export const assertCanRegenerateInvoice = (statusInput: unknown) => {
+  const status = normalizeBatchStatus(statusInput);
+  if (status !== 'Approved' && status !== 'Invoiced') {
+    throw createWorkflowError(
+      'Only an approved or already-invoiced batch can have its invoice regenerated',
+      WORKFLOW_VALIDATION_CODES.REGENERATE_NOT_ALLOWED
     );
   }
 };

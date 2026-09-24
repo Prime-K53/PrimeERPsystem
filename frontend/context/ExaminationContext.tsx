@@ -21,7 +21,7 @@ import { examinationBatchService, ExaminationGeneratedInvoicePayload } from '../
 import { dbService } from '../services/db';
 import { useSalesStore } from '../stores/salesStore';
 import { generateNextId } from '../utils/helpers';
-import { ExaminationInvoiceSyncResult, persistExaminationInvoiceToFinance } from '../services/examinationInvoiceSyncService';
+import { ExaminationInvoiceSyncResult, persistExaminationInvoiceToFinance, persistRegeneratedExaminationInvoiceToFinance } from '../services/examinationInvoiceSyncService';
 import { examinationNotificationService } from '../services/examinationNotificationService';
 import { examinationSyncService } from '../services/examinationSyncService';
 import { jobTicketConversionService } from '../services/jobTicketConversionService';
@@ -62,6 +62,16 @@ interface ExaminationContextType {
     idempotent?: boolean;
     invoice?: ExaminationGeneratedInvoicePayload;
     sync?: ExaminationInvoiceSyncResult;
+  }>;
+  regenerateInvoice: (id: string, reason?: string) => Promise<{
+    success: boolean;
+    invoiceId: number;
+    created?: boolean;
+    regenerated?: boolean;
+    idempotent?: boolean;
+    previousInvoiceId?: string | null;
+    invoice?: ExaminationGeneratedInvoicePayload;
+    sync?: ExaminationInvoiceSyncResult & { voidedInvoiceIds?: string[] };
   }>;
   convertBatchToJobTicket: (id: string) => Promise<string>;
 
@@ -606,6 +616,85 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
     }
   }, [batches, companyConfig?.currencySymbol, customers, schools, user?.id]);
 
+  const regenerateInvoice = useCallback(async (id: string, reason?: string) => {
+    setLoading(true);
+    try {
+      const sales = useSalesStore.getState().sales;
+      const invoiceNumber = generateNextId('examination_invoice', sales, companyConfig);
+
+      const result = await examinationBatchService.regenerateInvoice(id, {
+        idempotencyKey: `EXAM-BATCH-${id}-REGEN-${Date.now()}`,
+        invoiceNumber,
+        reason
+      });
+      let sync: (ExaminationInvoiceSyncResult & { voidedInvoiceIds?: string[] }) | undefined;
+      let syncedInvoicePayload: ExaminationGeneratedInvoicePayload | undefined;
+
+      if (result.success && result.invoice) {
+        const sourceBatch = batches.find(batch => batch.id === id);
+        const sourceSchoolId = String(sourceBatch?.school_id ?? result.invoice.customerId ?? '').trim();
+        const resolvedSchoolName = sourceSchoolId
+          ? schools.find((school) => String(school.id) === sourceSchoolId)?.name
+          : undefined;
+
+        const normalizedInvoicePayload: ExaminationGeneratedInvoicePayload = {
+          ...result.invoice,
+          customerName: resolvedSchoolName || result.invoice.customerName,
+          schoolName: resolvedSchoolName || result.invoice.schoolName,
+          origin_batch_id: sourceBatch?.batch_number || sourceBatch?.batchNumber || id,
+          batchId: sourceBatch?.batch_number || sourceBatch?.batchNumber || id
+        };
+
+        syncedInvoicePayload = normalizedInvoicePayload;
+        sync = await persistRegeneratedExaminationInvoiceToFinance(normalizedInvoicePayload, {
+          previousInvoiceId: result.previousInvoiceId,
+          reason
+        });
+        if (sync && !sync.synced) {
+          throw new Error(sync.message || 'Failed to regenerate invoice: previous invoice could not be replaced.');
+        }
+      }
+
+      if (result.success) {
+        const updatedBatch = await examinationBatchService.getBatch(id);
+        setBatches(prev => prev.map(b => b.id === id ? updatedBatch : b));
+
+        try {
+          await examinationNotificationService.createBatchNotification(
+            id,
+            'BATCH_INVOICED',
+            updatedBatch,
+            user?.id
+          );
+
+          const sourceSchoolId = String(updatedBatch?.school_id ?? syncedInvoicePayload?.customerId ?? '').trim();
+          const schoolRecord = schools.find((school) => String(school.id) === sourceSchoolId);
+          const customerRecord = customers.find((customer) =>
+            String(customer.id) === sourceSchoolId
+            || String(customer.name || '').trim().toLowerCase() === String(syncedInvoicePayload?.customerName || schoolRecord?.name || '').trim().toLowerCase()
+          );
+          const contactPhone = schoolRecord?.phone || customerRecord?.phone;
+          const customerName = syncedInvoicePayload?.customerName || schoolRecord?.name || customerRecord?.name;
+
+          if (syncedInvoicePayload && contactPhone && customerName) {
+            await customerNotificationService.triggerNotification('EXAMINATION_INVOICE', {
+              id: syncedInvoicePayload.invoiceNumber || syncedInvoicePayload.id,
+              customerName,
+              phoneNumber: contactPhone,
+              amount: `${companyConfig?.currencySymbol || syncedInvoicePayload.currency || ''}${Number(syncedInvoicePayload.totalAmount || 0).toLocaleString()}`,
+              dueDate: new Date(syncedInvoicePayload.dueDate || Date.now()).toLocaleDateString()
+            });
+          }
+        } catch (notificationError) {
+          logger.error('[Examination] Failed to create regenerate notification:', notificationError);
+        }
+      }
+      return { ...result, sync };
+    } finally {
+      setLoading(false);
+    }
+  }, [batches, companyConfig, customers, schools, user?.id]);
+
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
@@ -890,6 +979,7 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
     calculateBatch,
     approveBatch,
     generateInvoice,
+    regenerateInvoice,
     convertBatchToJobTicket: async (id: string) => {
       if (!user) {
         notify('You must be logged in to convert batches to job tickets.', 'error');

@@ -164,9 +164,31 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
   const [globalMargin, setGlobalMargin] = useState<any>(null);
 
   useEffect(() => {
-    import('../../utils/getEffectiveMargin').then(({ getEffectiveMargin }) => {
-      getEffectiveMargin(null, null, false).then(setGlobalMargin);
-    });
+    let cancelled = false;
+    const loadGlobalMargin = () => {
+      import('../../utils/getEffectiveMargin').then(({ getGlobalMargin }) => {
+        getGlobalMargin().then((margin) => {
+          if (!cancelled) setGlobalMargin(margin);
+        }).catch(() => {
+          if (!cancelled) setGlobalMargin({ margin_value: 0, margin_type: 'percentage', source: 'system' });
+        });
+      }).catch(() => {
+        if (!cancelled) setGlobalMargin({ margin_value: 0, margin_type: 'percentage', source: 'system' });
+      });
+    };
+    loadGlobalMargin();
+    const onDataChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || !detail.stores) return;
+      if (detail.stores.includes('profitMarginSettings') || detail.stores.includes('*')) {
+        loadGlobalMargin();
+      }
+    };
+    window.addEventListener('primeerp:data-changed', onDataChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('primeerp:data-changed', onDataChanged);
+    };
   }, []);
 
   useEffect(() => {
@@ -308,9 +330,24 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
   const { totalCost, feePerLearner } = useMemo(() => {
     const bom = totalBOMCost;
     const adjustmentRate = (adjustmentInfo.totalPercentage || 0) / 100;
-    const profitMargin = globalMargin ? (globalMargin.margin_value / 100) : 0;
     const learners = formData.number_of_learners;
+    const marginType = String(globalMargin?.margin_type || 'percentage').toLowerCase();
+    const marginValue = Number(globalMargin?.margin_value) || 0;
 
+    if (marginType === 'fixed_amount' && marginValue > 0) {
+      const adjustedCost = bom + (bom * adjustmentRate);
+      const total = adjustedCost + marginValue;
+      const rawFeePerLearner = learners > 0 ? total / learners : 0;
+      const precisionFee = Number(rawFeePerLearner.toFixed(2));
+      const roundedFeePerLearner = Math.ceil(precisionFee / 50) * 50;
+      const roundedTotal = learners > 0 ? roundedFeePerLearner * learners : total;
+      return {
+        totalCost: Number(roundedTotal.toFixed(2)),
+        feePerLearner: roundedFeePerLearner
+      };
+    }
+
+    const profitMargin = marginValue > 0 ? (marginValue / 100) : 0;
     const result = calculateExaminationPricing(bom, adjustmentRate, profitMargin, learners);
 
     return {

@@ -61,13 +61,14 @@ const btnGhostStyle: React.CSSProperties = {
 const ExaminationBatchDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { calculateBatch, deleteBatch, approveBatch, generateInvoice, createBatch, schools, loadAllData, convertBatchToJobTicket } = useExamination();
+  const { calculateBatch, deleteBatch, approveBatch, generateInvoice, regenerateInvoice, createBatch, schools, loadAllData, convertBatchToJobTicket } = useExamination();
   const { fetchFinanceData } = useFinance();
-  const { notify, checkPermission } = useAuth();
+  const { notify, checkPermission, companyConfig } = useAuth();
   const [batch, setBatch] = useState<ExaminationBatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [isApproving, setIsApproving] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [isRegeneratingInvoice, setIsRegeneratingInvoice] = useState(false);
 
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
   const [isManageSubjectsOpen, setIsManageSubjectsOpen] = useState(false);
@@ -212,6 +213,65 @@ const ExaminationBatchDetail: React.FC = () => {
           notify('Failed to generate invoice.', 'error');
         } finally {
           setIsGeneratingInvoice(false);
+        }
+      }
+    });
+  };
+
+  const handleRegenerateInvoice = async () => {
+    if (!batch) return;
+    const previousRef = String(batch.invoice_id || '').trim();
+    setConfirmDialog({
+      open: true,
+      title: 'Regenerate Invoice',
+      message: previousRef
+        ? `This batch is already invoiced (${previousRef}). Regenerating will recalculate current class totals, void the previous unpaid invoice, and issue a new invoice. Paid invoices cannot be regenerated. Continue?`
+        : 'This batch is already invoiced. Regenerating will recalculate current class totals, void the previous unpaid invoice, and issue a new invoice. Continue?',
+      type: 'warning',
+      onConfirm: async () => {
+        setIsRegeneratingInvoice(true);
+        try {
+          const result = await regenerateInvoice(batch.id, 'Regenerated from batch detail');
+          await fetchBatch();
+          await fetchFinanceData();
+
+          const syncedInvoiceId = result?.sync?.invoiceId || result?.invoice?.invoiceNumber || result?.invoice?.id || null;
+          const syncFailed = Boolean(result?.invoice) && Boolean(result?.sync) && !result.sync.synced;
+
+          if (syncFailed) {
+            notify(
+              result.sync?.message || 'Invoice regenerated, but local Sales Invoice sync failed.',
+              'error'
+            );
+            return;
+          }
+
+          const voided = (result?.sync as { voidedInvoiceIds?: string[] } | undefined)?.voidedInvoiceIds;
+          notify(
+            voided && voided.length > 0
+              ? `Invoice regenerated successfully (voided ${voided.length} previous invoice${voided.length === 1 ? '' : 's'}). Opened Sales Invoices.`
+              : 'Invoice regenerated successfully. Opened Sales Invoices.',
+            'success'
+          );
+
+          if (syncedInvoiceId) {
+            navigate('/sales-flow/invoices', {
+              state: {
+                action: 'view',
+                type: 'Invoice',
+                id: syncedInvoiceId,
+                filterInvoiceId: syncedInvoiceId,
+                source: 'examination'
+              }
+            });
+          } else {
+            navigate('/sales-flow/invoices');
+          }
+        } catch (error: any) {
+          logger.error('Error regenerating invoice:', error);
+          notify(error?.message || 'Failed to regenerate invoice.', 'error');
+        } finally {
+          setIsRegeneratingInvoice(false);
         }
       }
     });
@@ -588,7 +648,9 @@ const ExaminationBatchDetail: React.FC = () => {
     }
   };
 
-  const isLocked = batch?.status === 'Approved' || batch?.status === 'Invoiced';
+  const batchStatusNormalized = String(batch?.status || '').trim().toLowerCase();
+  const isInvoiced = batchStatusNormalized === 'invoiced' || batchStatusNormalized === 'completed';
+  const isLocked = batchStatusNormalized === 'approved' || isInvoiced;
   const { customers } = useExamination();
   const schoolName = schools.find((school) => String(school.id) === String(batch?.school_id))?.name 
     || customers.find(c => String(c.id) === String(batch?.school_id))?.name 
@@ -909,7 +971,23 @@ const ExaminationBatchDetail: React.FC = () => {
             </button>
           )}
 
-          {(batch.status === 'Approved' || batch.status === 'Invoiced') && (
+          {isInvoiced && (
+            <button type="button" onClick={handleRegenerateInvoice} disabled={isRegeneratingInvoice}
+              style={{ ...btnPrimaryStyle, background: amber[500], opacity: isRegeneratingInvoice ? 0.6 : 1 }}>
+              <RefreshCw size={14} />
+              {isRegeneratingInvoice ? 'Regenerating...' : 'Regenerate Invoice'}
+            </button>
+          )}
+
+          {isInvoiced && batch.invoice_id && (
+            <button type="button" onClick={() => navigate('/sales-flow/invoices', { state: { action: 'view', type: 'Invoice', id: batch.invoice_id, filterInvoiceId: batch.invoice_id, source: 'examination' } })}
+              style={{ ...btnGhostStyle, color: teal[800], borderColor: teal[200], background: teal[50] }}>
+              <FileText size={14} />
+              View Invoice {String(batch.invoice_id)}
+            </button>
+          )}
+
+          {(batch.status === 'Approved' || isInvoiced) && (
             <button type="button" onClick={() => setJobTicketConfirm({ open: true })}
               style={{ ...btnPrimaryStyle, background: danger }}>
               <Printer size={14} />

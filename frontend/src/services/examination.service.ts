@@ -9,6 +9,7 @@ import {
   assertBatchMutableForPricing,
   assertCanApproveBatch,
   assertCanGenerateInvoice,
+  assertCanRegenerateInvoice,
   assertValidStatusTransition,
   calculateApprovalMaterialDeductions,
   normalizeBatchStatus,
@@ -63,6 +64,12 @@ export interface ApproveBatchInput {
 export interface GenerateInvoiceInput {
   batchId: string;
   idempotencyKey?: string;
+}
+
+export interface RegenerateInvoiceInput {
+  batchId: string;
+  idempotencyKey?: string;
+  reason?: string;
 }
 
 export interface FullFlowInput {
@@ -252,6 +259,33 @@ export class ExaminationService {
     return {
       batch: updated,
       invoice
+    };
+  }
+
+  async regenerateInvoice(input: RegenerateInvoiceInput): Promise<InvoiceResult & { regenerated: true; previousInvoice?: ExaminationInvoiceDraft | null }> {
+    const batch = await this.getBatchByIdOrThrow(input.batchId);
+    assertCanRegenerateInvoice(batch.status);
+
+    const previousInvoice = (batch as { invoice?: ExaminationInvoiceDraft }).invoice ?? null;
+    const invoice = createInvoiceFromBatch({
+      batchData: batch,
+      idempotencyKey: input.idempotencyKey || `EXAM-BATCH-${batch.id}-REGEN-${Date.now()}`
+    });
+
+    const updated = await this.repository.updateBatch(batch.id, {
+      status: 'Invoiced',
+      invoice: {
+        ...invoice,
+        invoiceNote: `${invoice.invoiceNote} (regenerated${input.reason ? `: ${input.reason}` : ''})`
+      },
+      total_amount: invoice.batchTotalAmount
+    });
+
+    return {
+      batch: updated,
+      invoice,
+      regenerated: true,
+      previousInvoice
     };
   }
 

@@ -75,6 +75,22 @@ const parseInvoicePayload = (req: Request) => {
   return { idempotencyKey: idempotencyKey as string | undefined };
 };
 
+const parseRegeneratePayload = (req: Request) => {
+  const body = asObject(req.body ?? {});
+  const idempotencyKey = body.idempotencyKey;
+  if (idempotencyKey !== undefined && typeof idempotencyKey !== 'string') {
+    throw new HttpInputError('"idempotencyKey" must be a string when provided');
+  }
+  const reason = body.reason;
+  if (reason !== undefined && typeof reason !== 'string') {
+    throw new HttpInputError('"reason" must be a string when provided');
+  }
+  return {
+    idempotencyKey: idempotencyKey as string | undefined,
+    reason: (reason as string | undefined)?.slice(0, 500)
+  };
+};
+
 const resolveWorkflowStatus = (error: unknown) => {
   if (error instanceof HttpInputError) return 400;
   const code = String((error as { workflowCode?: string })?.workflowCode || '');
@@ -82,6 +98,7 @@ const resolveWorkflowStatus = (error: unknown) => {
   if (code === 'INVALID_TRANSITION') return 409;
   if (code === 'APPROVAL_NOT_ALLOWED') return 409;
   if (code === 'INVOICE_NOT_ALLOWED') return 409;
+  if (code === 'REGENERATE_NOT_ALLOWED') return 409;
   return 500;
 };
 
@@ -157,6 +174,23 @@ router.post('/api/examinations/:id/invoice', async (req, res) => {
   } catch (error) {
     res.status(resolveWorkflowStatus(error)).json({
       error: String((error as Error)?.message || 'Failed to generate examination invoice')
+    });
+  }
+});
+
+router.post('/api/examinations/:id/regenerate-invoice', async (req, res) => {
+  try {
+    const batchId = parseBatchId(req);
+    const payload = parseRegeneratePayload(req);
+    const result = await examinationService.regenerateInvoice({
+      batchId,
+      idempotencyKey: payload.idempotencyKey,
+      reason: payload.reason
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(resolveWorkflowStatus(error)).json({
+      error: String((error as Error)?.message || 'Failed to regenerate examination invoice')
     });
   }
 });

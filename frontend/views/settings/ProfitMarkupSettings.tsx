@@ -688,8 +688,8 @@ const ProfitMarkupSettings: React.FC = () => {
                 </div>
               </div>
               {globalSetting && (
-                <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-xs font-bold border border-blue-200">
-                  <CheckCircle2 size={12} /> Active: {fmtMargin(globalSetting.margin_value, globalSetting.margin_type)}
+                <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold border ${globalSetting.is_active ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                  <CheckCircle2 size={12} /> {globalSetting.is_active ? 'Active' : 'Inactive'}: {fmtMargin(globalSetting.margin_value, globalSetting.margin_type)}
                 </div>
               )}
             </div>
