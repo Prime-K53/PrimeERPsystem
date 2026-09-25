@@ -890,7 +890,13 @@ export const api = {
         adjustmentBreakdown
       } as unknown as Invoice;
 
-      await dbService.put('invoices', invoice);
+      // P1: this direct put bypasses processInvoice (which normally mints the
+      // token), so mint here with the single existing mechanism before the
+      // put enqueues. Idempotent: an existing token is never regenerated.
+      // Numbering (INV-series), ledger behaviour and everything else stay
+      // exactly as before.
+      const tokenedInvoice = ensureDocumentVerificationToken(invoice);
+      await dbService.put('invoices', tokenedInvoice);
 
       for (const e of selectedExams) {
         await dbService.put('examPapers', { ...e, status: 'invoiced', invoiceId: invoice.id });

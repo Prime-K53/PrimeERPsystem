@@ -4,6 +4,10 @@ const examinationService = require('../services/examinationService.cjs');
 const batchWorkflow = require('../services/examinationBatchWorkflow.cjs');
 const { validateBody, examinationSchemas, classSchemas, subjectSchemas, notificationSchemas } = require('../middleware/validation.cjs');
 const { sendSafeError } = require('../utils/errors.cjs');
+const {
+  isBackendExaminationInvoiceCreationBlocked,
+  backendExaminationInvoiceBlockedResponse,
+} = require('../services/examinationInvoiceQuarantine.cjs');
 
 const canOverrideSuggestedCost = (req) => {
   const role = String(req.user?.role || '').toLowerCase();
@@ -636,6 +640,14 @@ router.post('/batches/:id/approve', async (req, res) => {
 // verification. Canonical path: examinationBatchService.generateInvoice →
 // persistExaminationInvoiceToFinance → Supabase sync gateway.
 router.post('/batches/:id/invoice', async (req, res) => {
+  // P2 hard quarantine: refuse BEFORE any database write. No ERP production
+  // caller uses this route (verified: frontend SPA uses the offline-first
+  // canonical path; backend-internal references are dead ends or manual
+  // scripts). The bypass env exists only as an emergency escape hatch.
+  if (isBackendExaminationInvoiceCreationBlocked()) {
+    const blocked = backendExaminationInvoiceBlockedResponse();
+    return res.status(blocked.status).json(blocked.body);
+  }
   try {
     const userId = req.user?.id;
     const idempotencyKey = req.headers['x-idempotency-key'] || req.body?.idempotency_key || req.body?.idempotencyKey;
@@ -649,6 +661,11 @@ router.post('/batches/:id/invoice', async (req, res) => {
 });
 
 router.post('/batches/:id/regenerate-invoice', async (req, res) => {
+  // P2 hard quarantine — see /invoice route above.
+  if (isBackendExaminationInvoiceCreationBlocked()) {
+    const blocked = backendExaminationInvoiceBlockedResponse();
+    return res.status(blocked.status).json(blocked.body);
+  }
   try {
     const userId = req.user?.id;
     const idempotencyKey = req.headers['x-idempotency-key'] || req.body?.idempotency_key || req.body?.idempotencyKey;

@@ -572,7 +572,9 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
             };
 
         syncedInvoicePayload = normalizedInvoicePayload;
-        sync = await persistExaminationInvoiceToFinance(normalizedInvoicePayload);
+        sync = await persistExaminationInvoiceToFinance(normalizedInvoicePayload, {
+          companyConfig: companyConfig ?? null,
+        });
       }
 
       if (result.success) {
@@ -616,7 +618,7 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
     } finally {
       setLoading(false);
     }
-  }, [batches, companyConfig?.currencySymbol, customers, schools, user?.id]);
+  }, [batches, companyConfig, customers, schools, user?.id]);
 
   const regenerateInvoice = useCallback(async (id: string, reason?: string) => {
     setLoading(true);
@@ -651,7 +653,8 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         syncedInvoicePayload = normalizedInvoicePayload;
         sync = await persistRegeneratedExaminationInvoiceToFinance(normalizedInvoicePayload, {
           previousInvoiceId: result.previousInvoiceId,
-          reason
+          reason,
+          companyConfig: companyConfig ?? null,
         });
         if (sync && !sync.synced) {
           throw new Error(sync.message || 'Failed to regenerate invoice: previous invoice could not be replaced.');

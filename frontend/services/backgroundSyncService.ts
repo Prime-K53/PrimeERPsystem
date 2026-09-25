@@ -523,7 +523,7 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
     return 'failed';
   };
 
-  const resolveConflict = async (item: QueuedOperation, result: SyncOpResult): Promise<'success' | 'deadLetter' | 'conflict'> => {
+  const resolveConflict = async (item: QueuedOperation, result: SyncOpResult): Promise<'success' | 'deadLetter' | 'conflict' | 'failed'> => {
     const serverVersion = Number(result.server?.version ?? 0);
     const table = item.table;
     const recordId = item.recordId;
@@ -549,6 +549,79 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
 
     // Deletes are tombstones that always bind; a conflict only means a
     // concurrent upsert raced ahead of the delete — the delete intent stands.
+    // NARROW EXCEPTION (P0 examination canonical-ID guard): when the server
+    // row is a DIFFERENT examination invoice sharing this id, neither merge
+    // nor delete may touch the winner. Delegated to the examination-owned
+    // module; every other record flows through generic handling unchanged.
+    if (table === 'invoices') {
+      // Contained: an unexpected guard failure must never abort the batch
+      // settle loop and must never fall through to a merge. Retryable
+      // failure preserves all data (local row + queue op intact).
+      try {
+        const { tryResolveExaminationInvoiceCollision } = await import('./examinationInvoiceCollisionService');
+        const { dbService } = await import('./db');
+        const { examinationBatchService } = await import('./examinationBatchService');
+        const collision = await tryResolveExaminationInvoiceCollision(
+          {
+            id: item.id,
+            operationId: item.operationId ?? null,
+            table: item.table,
+            recordId: item.recordId,
+            operation: item.operation,
+            payload: item.payload,
+            conflictCount: item.conflictCount,
+          },
+          {
+            version: serverVersion,
+            updatedAt: result.server?.updatedAt ?? null,
+            data: (result.server?.data ?? null) as Record<string, unknown> | null,
+          },
+          {
+            listInvoices: () => dbService.getAll('invoices').catch(() => []) as Promise<Array<Record<string, unknown>>>,
+            saveInvoiceLocal: (invoice: Record<string, unknown>) => dbService.put('invoices', invoice),
+            removeInvoiceLocal: (id: string) => dbService.hardDelete('invoices', id),
+            listBatches: () => examinationBatchService.listBatches().catch(() => []) as Promise<Array<Record<string, unknown>>>,
+            updateBatchInvoiceLink: (batchId: string, invoiceId: string) =>
+              examinationBatchService.updateBatch(batchId, { invoice_id: invoiceId } as never).then(() => undefined),
+            completeQueueItem: (queueId: string) => durableSyncQueue.markCompleted(queueId),
+            deadLetterQueueItem: (queueId: string, reason: string) => durableSyncQueue.deadLetter(queueId, reason),
+            recordConflictAudit: (entry: { operationId: string | null; table: string; recordId: string | null; conflictedFields: string[]; resolved: 'auto' | 'review'; serverVersion: number }) =>
+              recordConflict(entry.resolved, entry.conflictedFields),
+            notifyUser: (event: string, data: unknown) => notify(event as SyncEventType, data),
+            numberingConfig: undefined,
+            ...(item.operation === 'delete'
+              ? { localRecord: (await dbService.get('invoices', String(recordId || '')).catch(() => null)) as unknown as Record<string, unknown> | null }
+              : {}),
+          }
+        );
+        if (collision.handled) {
+          if (collision.outcome === 'deadLetter') {
+            state.totalFailed++;
+          } else {
+            state.conflictsResolved++;
+            conflictsResolved++;
+          }
+          return collision.outcome;
+        }
+      } catch (guardError) {
+        const message = guardError instanceof Error ? guardError.message : String(guardError);
+        logger.warn('[BackgroundSync] examination collision guard failed — item retryable, never merged', {
+          table,
+          recordId,
+          error: message.slice(0, 200),
+        });
+        try {
+          await durableSyncQueue.markFailed(
+            item.id,
+            `Examination collision guard error (retryable, never merged): ${message}`
+          );
+        } catch {
+          // Queue itself unavailable; the item stays syncing for a later pass.
+        }
+        return 'failed';
+      }
+    }
+
     if (item.operation === 'delete') {
       await durableSyncQueue.markCompleted(item.id);
       state.conflictsResolved++;

@@ -29,6 +29,7 @@ import { mapExaminationPayloadToInvoice } from '../../services/examinationInvoic
 import { ExaminationGeneratedInvoicePayload } from '../../services/examinationBatchService';
 import { buildInvoiceVerificationUrl } from '../../utils/invoiceVerification';
 import { fieldLevelMerge } from '../../services/syncConflictResolver';
+import { resolveExaminationInvoiceCollision } from '../../services/examinationInvoiceCollisionService';
 
 const config = {
   transactionSettings: {
@@ -236,5 +237,135 @@ describe('Phase 8 — cross-device examination invoice lifecycle', () => {
 
   it('reverse ordering: second batch converted by Device B stays distinct', () => {
     runScenario('B');
+  });
+});
+
+describe('P0 — stale snapshot race: same candidate, A wins, B re-mints (never merges)', () => {
+  it('both devices mint EXM-X from the SAME snapshot; loser re-mints, winner byte-equivalent', async () => {
+    // 1-2. Common initial snapshot, handed INDEPENDENTLY to both devices.
+    const initialSnapshot = [{ id: 'EXM-0001', invoiceNumber: 'EXM-0001' }];
+
+    // 3-4. Both calculate BEFORE either sees the other's invoice → same candidate.
+    // This is the dangerous precondition the previous test never produced.
+    const candidateA = generateNextExaminationInvoiceNumber(initialSnapshot, config);
+    const candidateB = generateNextExaminationInvoiceNumber(initialSnapshot, config);
+    expect(candidateA).toBe(candidateB);
+    const exmX = candidateA;
+
+    // 5. A persists/syncs first: the server row v1 is A's invoice.
+    seq = 100;
+    const invA = mapExaminationPayloadToInvoice(
+      batchPayload(nextBatchId(), 'School A', 1000, exmX)
+    ) as unknown as Record<string, unknown>;
+    const server = {
+      version: 1,
+      updatedAt: '2026-09-21T00:00:00.000Z',
+      data: structuredClone(invA),
+    };
+    const syncedRows: Array<Record<string, unknown>> = [server.data];
+
+    // 6. B (still stale) persists locally under the same candidate, then its
+    // push collides: the gateway answers version_required + A's snapshot.
+    const invB = mapExaminationPayloadToInvoice(
+      batchPayload(nextBatchId(), 'School B', 2500, exmX)
+    ) as unknown as Record<string, unknown>;
+    const deviceBlocal = [structuredClone(invB)];
+
+    // 7. Exercise the ACTUAL production collision path (not a re-implementation):
+    // fake I/O deps over the scenario's in-memory stores.
+    const saved: Array<Record<string, unknown>> = [];
+    const removed: string[] = [];
+    const completed: string[] = [];
+    const deadLettered: Array<{ id: string; reason: string }> = [];
+    const audits: unknown[] = [];
+    const notices: Array<{ ev: string; data: unknown }> = [];
+    const batchLinks: Array<{ batchId: string; invoiceId: string }> = [];
+    const fakeBatches = [{ id: 'batch-b-uuid', batch_number: 'BTC-B-101', invoice_id: exmX }];
+
+    const invBForQueue = {
+      ...structuredClone(invB),
+      batchId: 'BTC-B-101',
+      origin_batch_id: 'BTC-B-101',
+      reference: 'EXAM-BATCH-BTC-B-101',
+    };
+    const result = await resolveExaminationInvoiceCollision(
+      {
+        id: 'op-b-1',
+        operationId: 'op-b-1',
+        table: 'invoices',
+        recordId: exmX,
+        operation: 'upsert',
+        payload: invBForQueue,
+      },
+      server,
+      {
+        listInvoices: async () => deviceBlocal.map((row) => ({ ...row })),
+        saveInvoiceLocal: async (invoice) => {
+          saved.push(invoice);
+          return invoice.id;
+        },
+        removeInvoiceLocal: async (id) => {
+          removed.push(id);
+        },
+        listBatches: async () => fakeBatches.map((batch) => ({ ...batch })),
+        updateBatchInvoiceLink: async (batchId, invoiceId) => {
+          batchLinks.push({ batchId, invoiceId });
+        },
+        completeQueueItem: async (queueId) => {
+          completed.push(queueId);
+        },
+        deadLetterQueueItem: async (id, reason) => {
+          deadLettered.push({ id, reason });
+        },
+        recordConflictAudit: async (entry) => {
+          audits.push(entry);
+        },
+        notifyUser: (ev, data) => {
+          notices.push({ ev, data });
+        },
+        numberingConfig: config,
+      }
+    );
+
+    // 8. B receives a NEW number (or an explicit safe conflict) — never a merge.
+    expect(result.handled).toBe(true);
+    expect(result.outcome).toBe('conflict');
+    expect(deadLettered).toEqual([]);
+    const newId = result.newInvoiceId;
+    expect(newId).toBeTruthy();
+    expect(newId).not.toBe(exmX);
+
+    // 10. B eventually holds a different canonical id with its content + token intact.
+    expect(saved).toHaveLength(1);
+    expect(saved[0].id).toBe(newId);
+    expect(saved[0].invoiceNumber).toBe(newId);
+    expect(saved[0].customerName).toBe('School B');
+    expect(saved[0].totalAmount).toBe(2500);
+    expect(saved[0].batchId).toBe('BTC-B-101');
+    expect(String(saved[0].verificationToken)).toMatch(TOKEN_64);
+    expect(saved[0].verificationToken).toBe(invB.verificationToken);
+    expect(Array.isArray(saved[0].items)).toBe(true);
+    // Stale identity retired locally; stale op completed so the old id is
+    // never applied remotely (winner untouched by construction).
+    expect(removed).toEqual([exmX]);
+    expect(completed).toEqual(['op-b-1']);
+    // Owning batch repointed to the fresh id.
+    expect(batchLinks).toEqual([{ batchId: 'batch-b-uuid', invoiceId: newId }]);
+    // B can open its re-minted invoice deterministically.
+    expect(findInvoiceByIdOrNumber(saved as Invoice[], newId)).toBe(saved[0]);
+
+    // 9. A's id/number/customer/totals/items/token remain byte/value equivalent.
+    expect(server.data.id).toBe(exmX);
+    expect(server.data.invoiceNumber).toBe(exmX);
+    expect(server.data.customerName).toBe('School A');
+    expect(server.data.totalAmount).toBe(1000);
+    expect(server.data.items).toEqual(invA.items);
+    expect(server.data.verificationToken).toBe(invA.verificationToken);
+
+    // 11. Both invoices verify independently once B's row commits.
+    syncedRows.push(saved[0]);
+    expect(verifierAccepts(syncedRows, exmX, String(invA.verificationToken))).toBe(true);
+    expect(verifierAccepts(syncedRows, String(newId), String(invB.verificationToken))).toBe(true);
+    expect(verifierAccepts(syncedRows, exmX, String(invB.verificationToken))).toBe(false);
   });
 });

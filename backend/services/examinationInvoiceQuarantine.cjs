@@ -44,6 +44,38 @@ const QUARANTINE_REASON =
   'and never mints verificationToken, so its invoices are invisible to the ERP invoice list and can never ' +
   'satisfy public verification. Use the canonical frontend path instead.';
 
+/**
+ * Hard-quarantine gate for the HTTP route layer (P2). Reads
+ * ALLOW_QUARANTINED_EXAMINATION_INVOICE (exact string 'true', case-insensitive).
+ *
+ * Default (unset/anything else): BLOCKED — the route must refuse before any
+ * database write. The escape hatch exists solely so an unforeseen production
+ * caller can be kept alive while it migrates; enabling it re-exposes the
+ * tokenless-invoice hazard documented above.
+ */
+const QUARANTINE_BYPASS_ENV = 'ALLOW_QUARANTINED_EXAMINATION_INVOICE';
+
+function isBackendExaminationInvoiceCreationBlocked() {
+  return String(process.env[QUARANTINE_BYPASS_ENV] || '').trim().toLowerCase() !== 'true';
+}
+
+function backendExaminationInvoiceBlockedResponse() {
+  const status = examinationBackendInvoiceStatus();
+  return {
+    status: 403,
+    body: {
+      error:
+        'Backend examination invoice creation is quarantined and blocked. ' +
+        'These invoices would be tokenless and invisible to the ERP invoice list and verification. ' +
+        `Use the canonical path instead: ${status.canonicalPath}`,
+      code: 'EXAMINATION_INVOICE_QUARANTINED',
+      quarantined: true,
+      verificationUnsupported: true,
+      canonicalPath: status.canonicalPath,
+    },
+  };
+}
+
 function examinationBackendInvoiceStatus() {
   return {
     quarantined: true,
@@ -66,6 +98,9 @@ function warnExaminationBackendInvoiceUsage(operation) {
 module.exports = {
   CANONICAL_EXAMINATION_INVOICE_PATH,
   QUARANTINE_REASON,
+  QUARANTINE_BYPASS_ENV,
   examinationBackendInvoiceStatus,
   warnExaminationBackendInvoiceUsage,
+  isBackendExaminationInvoiceCreationBlocked,
+  backendExaminationInvoiceBlockedResponse,
 };

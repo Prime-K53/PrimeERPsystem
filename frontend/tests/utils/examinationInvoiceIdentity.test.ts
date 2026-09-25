@@ -43,6 +43,14 @@ vi.mock('../../services/transactionService', () => ({
   },
 }));
 
+vi.mock('../../services/examinationBatchService', () => ({
+  examinationBatchService: {
+    listBatches: vi.fn(),
+    updateBatch: vi.fn(),
+    getBatch: vi.fn(),
+  },
+}));
+
 import { CompanyConfig } from '../../types';
 import {
   bumpTrailingDocumentSequence,
@@ -51,6 +59,9 @@ import {
 import {
   buildExaminationInvoiceViewState,
   findInvoiceByIdOrNumber,
+  findOwningExaminationBatchId,
+  getExaminationBatchLinkage,
+  isDistinctExaminationInvoiceCollision,
   isShadowExaminationInvoiceId,
   resolveExaminationInvoiceNavigationKey,
 } from '../../utils/invoiceIdentity';
@@ -63,6 +74,7 @@ import {
   persistExaminationInvoiceToFinance,
 } from '../../services/examinationInvoiceSyncService';
 import { ExaminationGeneratedInvoicePayload } from '../../services/examinationBatchService';
+import { examinationBatchService } from '../../services/examinationBatchService';
 import { fieldLevelMerge } from '../../services/syncConflictResolver';
 import { api } from '../../services/api';
 import { dbService } from '../../services/db';
@@ -383,5 +395,145 @@ describe('Phase 7 — canonical fields survive field-level merge (Device B pull)
     expect(merged.batchId).toBe('BTC-001');
     expect(merged.origin_batch_id).toBe('BTC-001');
     expect(Number(merged.version)).toBe(2);
+  });
+});
+
+describe('P0 — batch linkage and distinct-collision assessment (pure)', () => {
+  const examRow = (overrides: Record<string, unknown> = {}) => ({
+    id: 'EXM-0006',
+    invoiceNumber: 'EXM-0006',
+    origin_module: 'examination',
+    category: 'Examination',
+    batchId: 'BTC-B',
+    origin_batch_id: 'BTC-B',
+    reference: 'EXAM-BATCH-BTC-B',
+    verificationToken: 'b'.repeat(64),
+    ...overrides,
+  });
+
+  it('extracts batch keys across spellings, strips EXM-BATCH-, uppercases', () => {
+    expect(getExaminationBatchLinkage(examRow()).sort()).toEqual(['BTC-B']);
+    expect(
+      getExaminationBatchLinkage({ reference: 'exam-batch-btc-9', origin_module: 'examination' })
+    ).toEqual(['BTC-9']);
+    expect(
+      getExaminationBatchLinkage({
+        batchId: 'BTC-1',
+        conversionDetails: { sourceNumber: 'BTC-1' },
+      }).sort()
+    ).toEqual(['BTC-1']);
+    expect(getExaminationBatchLinkage({})).toEqual([]);
+    expect(getExaminationBatchLinkage(null)).toEqual([]);
+  });
+
+  it('detects disjoint examination batches sharing one id', () => {
+    const serverA = {
+      ...examRow(),
+      batchId: 'BTC-A',
+      origin_batch_id: 'BTC-A',
+      reference: 'EXAM-BATCH-BTC-A',
+      verificationToken: 'a'.repeat(64),
+    };
+    expect(isDistinctExaminationInvoiceCollision(examRow(), serverA)).toBe(true);
+  });
+
+  it('does not fire for same-batch edits (payments, status changes)', () => {
+    const edited = { ...examRow(), paidAmount: 200, status: 'Partial' };
+    expect(isDistinctExaminationInvoiceCollision(edited, examRow())).toBe(false);
+  });
+
+  it('does not fire for non-examination rows, tombstones, or linkage-less rows', () => {
+    const plain = { id: 'EXM-0006', invoiceNumber: 'EXM-0006', totalAmount: 5 };
+    expect(isDistinctExaminationInvoiceCollision(examRow(), plain)).toBe(false);
+    expect(isDistinctExaminationInvoiceCollision(plain, examRow())).toBe(false);
+    expect(
+      isDistinctExaminationInvoiceCollision(examRow(), { ...examRow(), deleted: true })
+    ).toBe(false);
+    // Only linkage left is the shared id itself → excluded → cannot prove distinct.
+    const legacyLocal = { ...examRow(), reference: 'EXM-0006' };
+    delete (legacyLocal as Record<string, unknown>).batchId;
+    delete (legacyLocal as Record<string, unknown>).origin_batch_id;
+    const legacyServer = { ...legacyLocal, verificationToken: 'a'.repeat(64) };
+    expect(isDistinctExaminationInvoiceCollision(legacyLocal, legacyServer)).toBe(false);
+  });
+
+  it('finds the owning batch by invoice link + linkage intersection only', () => {
+    const batches = [
+      { id: 'batch-b', batch_number: 'BTC-B', invoice_id: 'EXM-0006' },
+      { id: 'batch-a', batch_number: 'BTC-A', invoice_id: 'EXM-0006' },
+      { id: 'batch-c', batch_number: 'BTC-C', invoice_id: 'EXM-0009' },
+    ];
+    expect(findOwningExaminationBatchId(batches, ['BTC-B'], 'EXM-0006')).toBe('batch-b');
+    // Winner's batch also references the id but has no linkage intersection.
+    expect(findOwningExaminationBatchId(batches, ['BTC-B'], 'EXM-0009')).toBeNull();
+    expect(findOwningExaminationBatchId(batches, [], 'EXM-0006')).toBeNull();
+    expect(findOwningExaminationBatchId(batches, ['BTC-Z'], 'EXM-0006')).toBeNull();
+    expect(findOwningExaminationBatchId(null, ['BTC-B'], 'EXM-0006')).toBeNull();
+  });
+});
+
+describe('P0 — persist pre-flight re-mints on same-id occupant (synchronous)', () => {
+  const occupant = {
+    id: 'EXM-0006',
+    invoiceNumber: 'EXM-0006',
+    origin_module: 'examination',
+    batchId: 'BTC-OTHER',
+    origin_batch_id: 'BTC-OTHER',
+    reference: 'EXAM-BATCH-BTC-OTHER',
+    verificationToken: 'a'.repeat(64),
+    totalAmount: 1000,
+  };
+
+  beforeEach(() => {
+    vi.mocked(dbService.get).mockImplementation(async (store: never, id: string) => {
+      // Keyed get: occupant exists ONLY under its own canonical id.
+      if (String(store) === 'invoices' && String(id) === 'EXM-0006') return occupant as never;
+      return null as never;
+    });
+    vi.mocked(dbService.getAll).mockImplementation(async (store: never) => {
+      if (String(store) === 'invoices') return [occupant] as never;
+      return [] as never;
+    });
+    vi.mocked(api.finance.saveInvoice).mockResolvedValue({ success: true });
+    vi.mocked(examinationBatchService.listBatches).mockResolvedValue([
+      { id: 'batch-b-uuid', batch_number: 'BTC-001', invoice_id: 'EXM-0006' },
+    ] as never);
+    vi.mocked(examinationBatchService.updateBatch).mockResolvedValue({} as never);
+  });
+
+  it('re-mints locally, returns the fresh identity, repoints the owning batch', async () => {
+    // Freshly minted EXM-0006 collides with a different batch's occupant.
+    const colliding = buildPayload({ id: 'EXM-0006', invoiceNumber: 'EXM-0006' });
+    const result = await persistExaminationInvoiceToFinance(colliding, {
+      companyConfig: sharedConfig(),
+    });
+    expect(result.synced).toBe(true);
+    // Fresh number minted past the occupant (EXM-0006 taken → EXM-0007).
+    expect(result.invoiceId).toBe('EXM-0007');
+    const saved = vi.mocked(api.finance.saveInvoice).mock.calls[0][0] as Record<string, unknown>;
+    expect(String(saved.id)).toBe('EXM-0007');
+    expect(String(saved.invoiceNumber)).toBe('EXM-0007');
+    expect(String(saved.verificationToken)).toMatch(/^[0-9a-f]{64}$/);
+    // Owning batch repointed; occupant batch untouched (updateBatch once, ours).
+    expect(vi.mocked(examinationBatchService.updateBatch)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(examinationBatchService.updateBatch).mock.calls[0][0]).toBe('batch-b-uuid');
+    expect(
+      (vi.mocked(examinationBatchService.updateBatch).mock.calls[0][1] as Record<string, unknown>)
+        .invoice_id
+    ).toBe('EXM-0007');
+  });
+
+  it('proceeds unchanged when the occupant is the same batch (idempotent retry)', async () => {
+    const sameBatchOccupant = { ...occupant, batchId: 'BTC-001', origin_batch_id: 'BTC-001', reference: 'EXAM-BATCH-BTC-001' };
+    vi.mocked(dbService.get).mockImplementation(async (store: never, id: string) => {
+      if (String(store) === 'invoices' && String(id) === 'EXM-0001') return sameBatchOccupant as never;
+      return null as never;
+    });
+    const result = await persistExaminationInvoiceToFinance(buildPayload(), {
+      companyConfig: sharedConfig(),
+    });
+    expect(result.synced).toBe(true);
+    expect(result.invoiceId).toBe('EXM-0001');
+    expect(vi.mocked(examinationBatchService.updateBatch)).not.toHaveBeenCalled();
   });
 });

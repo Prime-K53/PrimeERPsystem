@@ -1,10 +1,16 @@
-import { Invoice } from '../types';
+import { CompanyConfig, Invoice } from '../types';
 import { api } from './api';
 import { dbService } from './db';
 import { transactionService } from './transactionService';
 import { ExaminationGeneratedInvoicePayload } from './examinationBatchService';
 import { enrichInvoiceWithBatchPricing } from '../utils/examinationInvoicePricing';
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
+import { generateNextExaminationInvoiceNumber } from '../utils/helpers';
+import {
+  findOwningExaminationBatchId,
+  getExaminationBatchLinkage,
+  isDistinctExaminationInvoiceCollision,
+} from '../utils/invoiceIdentity';
 
 export interface ExaminationInvoiceSyncResult {
   synced: boolean;
@@ -183,7 +189,7 @@ export const findFinanceInvoicesForBatch = async (batchKeys: string | string[]):
 
 export const persistRegeneratedExaminationInvoiceToFinance = async (
   payload?: ExaminationGeneratedInvoicePayload,
-  options?: { previousInvoiceId?: string | null; reason?: string }
+  options?: { previousInvoiceId?: string | null; reason?: string; companyConfig?: CompanyConfig | null }
 ): Promise<ExaminationInvoiceSyncResult & { voidedInvoiceIds?: string[] }> => {
   if (!payload) {
     return { synced: false, fallbackUsed: false, invoiceId: null, message: 'No invoice payload to sync.' };
@@ -231,12 +237,15 @@ export const persistRegeneratedExaminationInvoiceToFinance = async (
     }
   }
 
-  const result = await persistExaminationInvoiceToFinance(payload);
+  const result = await persistExaminationInvoiceToFinance(payload, {
+    companyConfig: options?.companyConfig ?? null,
+  });
   return { ...result, voidedInvoiceIds };
 };
 
 export const persistExaminationInvoiceToFinance = async (
-  payload?: ExaminationGeneratedInvoicePayload
+  payload?: ExaminationGeneratedInvoicePayload,
+  options?: { companyConfig?: CompanyConfig | null }
 ): Promise<ExaminationInvoiceSyncResult> => {
   if (!payload) {
     return { synced: false, fallbackUsed: false, invoiceId: null, message: 'No invoice payload to sync.' };
@@ -255,6 +264,70 @@ export const persistExaminationInvoiceToFinance = async (
   // processInvoice retry — persists and enqueues a tokened invoice. The
   // fallback path must never store/enqueue an untokened examination invoice.
   invoice = ensureInvoiceVerificationToken(invoice);
+
+  // P0 pre-flight: same-id occupant check. Catches same-device repeats and
+  // rows that arrived between number minting and this save (the occupant is
+  // a DIFFERENT examination invoice sharing our freshly minted id). Re-mints
+  // locally and returns the final identity synchronously. True cross-device
+  // staleness that survives this check is caught by the sync collision guard,
+  // which re-mints instead of merging — the same recordId is never blindly
+  // retried and the occupant (a possible sync winner) is never touched.
+  const occupant = await dbService
+    .get<Record<string, unknown>>('invoices', String(invoice.id))
+    .catch(() => undefined);
+  if (
+    occupant &&
+    isDistinctExaminationInvoiceCollision(
+      occupant,
+      invoice as unknown as Record<string, unknown>
+    )
+  ) {
+    const staleId = String(invoice.id);
+    const namespace = await dbService.getAll<Record<string, unknown>>('invoices').catch(() => []);
+    const freshId = generateNextExaminationInvoiceNumber(
+      [...(namespace || []), { id: staleId }] as Array<{
+        id?: unknown;
+        invoiceNumber?: unknown;
+        date?: unknown;
+      }>,
+      options?.companyConfig ?? null
+    );
+    if (!freshId || freshId === staleId) {
+      return {
+        synced: false,
+        fallbackUsed: false,
+        invoiceId: null,
+        message:
+          `Invoice ${staleId} is already occupied by a different examination invoice and no fresh ` +
+          `number could be minted. Resolve the conflict, then retry — nothing was merged or overwritten.`,
+      };
+    }
+    const remapped = {
+      ...(invoice as unknown as Record<string, unknown>),
+      id: freshId,
+      invoiceNumber: freshId,
+    } as Invoice & Record<string, unknown>;
+    if (String((invoice as unknown as Record<string, unknown>).reference ?? '') === staleId) {
+      (remapped as Record<string, unknown>).reference = freshId;
+    }
+    invoice = ensureInvoiceVerificationToken(remapped);
+    // Repoint ONLY the linkage-matched owning batch (best-effort: invoice
+    // correctness outranks the back-link).
+    try {
+      const { examinationBatchService } = await import('./examinationBatchService');
+      const batches = await examinationBatchService.listBatches().catch(() => []);
+      const ownerId = findOwningExaminationBatchId(
+        batches as Array<Record<string, unknown>>,
+        getExaminationBatchLinkage(payload as unknown as Record<string, unknown>),
+        staleId
+      );
+      if (ownerId) {
+        await examinationBatchService.updateBatch(ownerId, { invoice_id: freshId } as never);
+      }
+    } catch {
+      // Best-effort — the invoice below is still saved under its fresh id.
+    }
+  }
 
   try {
     await api.finance.saveInvoice(invoice);
