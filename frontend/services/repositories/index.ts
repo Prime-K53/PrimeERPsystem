@@ -130,6 +130,20 @@ const STORE_TO_TABLE: Record<string, string> = {
   customerPricingTiers: 'customer_pricing_tiers',
   idempotencyKeys: 'idempotency_keys',
   statementSnapshots: 'statement_snapshots',
+  // Service Catalog + Utilities sub-ledgers — single-company, no tenant column
+  purchaseInvoices: 'purchase_invoices',
+  interestIncomeEntries: 'interest_income_entries',
+  prepayments: 'prepayments',
+  prepaymentAmortizations: 'prepayment_amortizations',
+  staffAdvances: 'staff_advances',
+  utilityExpenses: 'utility_expenses',
+  utilityPayments: 'utility_payments',
+  bankChargeEntries: 'bank_charge_entries',
+  payrollEntries: 'payroll_entries',
+  serviceRecipes: 'service_recipes',
+  serviceJobs: 'service_jobs',
+  serviceResources: 'service_resources',
+  serviceConsumptions: 'service_consumptions',
 };
 
 const repoCache = new Map<string, BaseRepository<any>>();

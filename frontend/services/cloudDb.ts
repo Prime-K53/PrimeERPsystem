@@ -130,6 +130,10 @@ export const STORE_TO_TABLE: Record<string, string> = {
   utilityPayments: 'utility_payments',
   bankChargeEntries: 'bank_charge_entries',
   payrollEntries: 'payroll_entries',
+  serviceRecipes: 'service_recipes',
+  serviceJobs: 'service_jobs',
+  serviceResources: 'service_resources',
+  serviceConsumptions: 'service_consumptions',
 
   // Financial years & user preferences for cross-device sync
   financialYears: 'financial_years',
