@@ -23,6 +23,7 @@ import { OrderDetails } from './components/OrderDetails';
 import { OrderPaymentModal } from './components/OrderPaymentModal';
 import SubscriptionView from './components/SubscriptionView';
 import { parseTemplate, downloadBlob, resolveCustomerPaymentPolicy } from '../../utils/helpers';
+import { findInvoiceByIdOrNumber } from '../../utils/invoiceIdentity';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { localFileStorage } from '../../services/localFileStorage';
 import { OfflineImage } from '../../components/OfflineImage';
@@ -370,7 +371,10 @@ const Orders: React.FC = () => {
         }
         if (location.state?.action === 'view' && location.state.id) {
             if (location.state.type === 'Invoice') {
-                const inv = (invoices || []).find(i => i.id === location.state.id);
+                // Deterministic open: exact `id` first, exact `invoiceNumber`
+                // second (covers canonical number deep-links, including
+                // slash-containing numbers). Silent no-op when absent.
+                const inv = findInvoiceByIdOrNumber(invoices || [], location.state.id);
                 if (inv) setSelectedInvoiceForDetail(inv);
             }
         }

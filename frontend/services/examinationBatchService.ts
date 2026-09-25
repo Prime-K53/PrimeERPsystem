@@ -473,8 +473,15 @@ const buildLocalInvoicePayload = async (
   batch: Partial<ExaminationBatch> & Record<string, any>,
   payload?: { idempotencyKey?: string; invoiceNumber?: string }
 ): Promise<ExaminationGeneratedInvoicePayload> => {
-  const invoiceId = `local-exam-invoice-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  // ONE canonical identity: the payload id IS the invoice number.
+  // Never mint an opaque `local-exam-invoice-*` id — it is not a valid key in
+  // the canonical invoices namespace (local IndexedDB + Supabase PK) and must
+  // never reach persistence, sync, batch.invoice_id, or navigation.
+  // mapExaminationPayloadToInvoice (the authoritative payload → Invoice
+  // conversion) maps id := invoiceNumber, so this keeps
+  // Invoice.id === Invoice.invoiceNumber === batch.invoice_id by construction.
   const invoiceNumber = payload?.invoiceNumber || `EXM-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  const invoiceId = invoiceNumber;
   const schools = await dbService.getAll<any>('schools').catch(() => []);
   const customers = await dbService.getAll<any>('customers').catch(() => []);
   const schoolId = String(batch.school_id || '').trim();

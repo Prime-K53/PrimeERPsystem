@@ -28,6 +28,10 @@ import {
   X
 } from 'lucide-react';
 import { buildRecurringDraftFromExaminationBatch } from '../../utils/recurringConversion';
+import {
+  buildExaminationInvoiceViewState,
+  resolveExaminationInvoiceNavigationKey,
+} from '../../utils/invoiceIdentity';
 import '../inventory/inventory-reference.css';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -864,7 +868,22 @@ const ExaminationHub: React.FC = () => {
                                 )}
                                 
                                 {(batch.status === 'Invoiced' || batch.status === 'Completed') && batch.invoice_id && (
-                                  <button type="button" onClick={() => navigate(`/sales/invoice/${batch.invoice_id}`)}
+                                  <button type="button" onClick={() => {
+                                    // Canonical key only: batch.invoice_id is the
+                                    // persisted Invoice.id/Invoice.invoiceNumber.
+                                    // (No dead /sales/invoice/:id route exists;
+                                    // deep-link through the canonical list route.)
+                                    const canonicalId = resolveExaminationInvoiceNavigationKey({
+                                      invoiceNumber: batch.invoice_id,
+                                    });
+                                    if (canonicalId) {
+                                      navigate('/sales-flow/invoices', {
+                                        state: buildExaminationInvoiceViewState(canonicalId),
+                                      });
+                                    } else {
+                                      navigate('/sales-flow/invoices');
+                                    }
+                                  }}
                                     style={{
                                       width: '100%', padding: '8px 16px', textAlign: 'left', fontSize: 13,
                                       color: ink, background: 'transparent', border: 'none',

@@ -628,6 +628,13 @@ router.post('/batches/:id/approve', async (req, res) => {
   }
 });
 
+// QUARANTINED invoice-creation endpoints — see
+// services/examinationInvoiceQuarantine.cjs. These routes are preserved for
+// existing callers but must not gain new ones: invoices created here live
+// outside the canonical invoices namespace (no shared EXM sequence, no
+// verificationToken) and are invisible to the ERP invoice list and public
+// verification. Canonical path: examinationBatchService.generateInvoice →
+// persistExaminationInvoiceToFinance → Supabase sync gateway.
 router.post('/batches/:id/invoice', async (req, res) => {
   try {
     const userId = req.user?.id;

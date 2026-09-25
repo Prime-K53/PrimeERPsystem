@@ -9,6 +9,10 @@ import { Select } from '../../components/Select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { toast } from '../../components/Toast';
+import {
+  buildExaminationInvoiceViewState,
+  resolveExaminationInvoiceNavigationKey,
+} from '../../utils/invoiceIdentity';
 import { 
   Plus, DollarSign, Users, Calendar, Trash2, FileText, 
   ArrowLeft, Loader2, CheckCircle, AlertTriangle 
@@ -144,15 +148,17 @@ const InvoiceGroupManager: React.FC = () => {
     try {
       const result = await generateInvoiceForGroup(selectedGroupId);
       toast.success('Invoice generated successfully');
-      navigate('/sales-flow/invoices', {
-        state: {
-          action: 'view',
-          type: 'Invoice',
-          id: result.invoice_id,
-          filterInvoiceId: result.invoice_id,
-          source: 'examination'
-        }
+      // Canonical key only (never shadow/throwaway ids).
+      const canonicalId = resolveExaminationInvoiceNavigationKey({
+        syncInvoiceId: (result as { invoice_id?: unknown })?.invoice_id,
       });
+      if (canonicalId) {
+        navigate('/sales-flow/invoices', {
+          state: buildExaminationInvoiceViewState(canonicalId),
+        });
+      } else {
+        navigate('/sales-flow/invoices');
+      }
     } catch (error) {
       logger.error('Error generating invoice:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate invoice');

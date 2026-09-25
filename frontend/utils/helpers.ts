@@ -59,6 +59,67 @@ export const generateNextId = (type: string = 'ID', collection: any[] = [], conf
   return nextId;
 };
 
+export const EXAMINATION_INVOICE_TYPE = 'examination_invoice';
+
+export interface ExaminationInvoiceNumberSource {
+  id?: unknown;
+  invoiceNumber?: unknown;
+  date?: unknown;
+}
+
+/**
+ * Next examination invoice number, scanned against the canonical invoices
+ * collection (`invoices.id` is the canonical PK shared with Supabase).
+ *
+ * Both `id` and `invoiceNumber` spellings advance the sequence so a number
+ * stored under either field can never be re-minted. A collision-avoidance
+ * loop bumps the trailing numeric run until the candidate is unused, so even
+ * unparseable legacy numbers cannot be reissued.
+ *
+ * IMPORTANT: never scan the sales collection here — Sale ids (SALE-*) never
+ * match the EXM rule, so the sequence would never advance and every batch
+ * would receive the same canonical invoice id.
+ */
+export const generateNextExaminationInvoiceNumber = (
+  invoices: ExaminationInvoiceNumberSource[] = [],
+  config?: CompanyConfig
+): string => {
+  const probe: Array<{ id: string; date?: unknown }> = [];
+  for (const invoice of invoices || []) {
+    const id = String((invoice as { id?: unknown })?.id || '').trim();
+    const invoiceNumber = String((invoice as { invoiceNumber?: unknown })?.invoiceNumber || '').trim();
+    const date = (invoice as { date?: unknown })?.date;
+    if (id) probe.push({ id, date });
+    if (invoiceNumber && invoiceNumber !== id) probe.push({ id: invoiceNumber, date });
+  }
+
+  let candidate = generateSequentialId(EXAMINATION_INVOICE_TYPE, probe, config);
+  const used = new Set(probe.map((row) => row.id.trim().toUpperCase()).filter(Boolean));
+  let guard = 0;
+  while (used.has(candidate.trim().toUpperCase()) && guard < 10000) {
+    const bumped = bumpTrailingDocumentSequence(candidate);
+    if (!bumped || bumped === candidate) break;
+    candidate = bumped;
+    guard += 1;
+  }
+  assertInvoiceNumberFormat(candidate, config, EXAMINATION_INVOICE_TYPE);
+  return candidate;
+};
+
+/**
+ * Increment the trailing numeric run of a document number, preserving width
+ * and any prefix/extension/suffix (e.g. EXM-0001 -> EXM-0002,
+ * EXM-P726/0001 -> EXM-P726/0002, EXM-2026-000123 -> EXM-2026-000124).
+ * Returns null when the number has no trailing digits.
+ */
+export const bumpTrailingDocumentSequence = (documentNumber: string): string | null => {
+  const match = String(documentNumber || '').match(/^(.*?)(\d+)([^0-9]*)$/);
+  if (!match) return null;
+  const [, head, digits, tail] = match;
+  const next = String(Number(digits) + 1).padStart(digits.length, '0');
+  return `${head}${next}${tail}`;
+};
+
 export const generateSku = (category: string, collection: any[]) => {
   return generateCategorySku(category, collection);
 };

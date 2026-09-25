@@ -241,6 +241,18 @@ export class ExaminationService {
   }
 
   async generateInvoice(input: GenerateInvoiceInput): Promise<InvoiceResult> {
+    // QUARANTINED PATH (embedded harness server). The canonical ERP
+    // examination-invoice flow is examinationBatchService.generateInvoice →
+    // persistExaminationInvoiceToFinance (invoices store → Supabase sync
+    // gateway). Drafts built here live inside the batch record only: they
+    // are not canonical Invoices, carry no verificationToken, and must never
+    // be treated as the shared invoices-namespace identity.
+    if (typeof console !== 'undefined') {
+      console.warn(
+        '[QUARANTINED] frontend/src examination.service.generateInvoice: embedded draft only, ' +
+        'not a canonical invoice (no verificationToken, no shared EXM sequence).'
+      );
+    }
     const batch = await this.getBatchByIdOrThrow(input.batchId);
     assertCanGenerateInvoice(batch.status);
     assertValidStatusTransition(batch.status, 'Invoiced');
@@ -263,6 +275,13 @@ export class ExaminationService {
   }
 
   async regenerateInvoice(input: RegenerateInvoiceInput): Promise<InvoiceResult & { regenerated: true; previousInvoice?: ExaminationInvoiceDraft | null }> {
+    // QUARANTINED PATH — see generateInvoice above.
+    if (typeof console !== 'undefined') {
+      console.warn(
+        '[QUARANTINED] frontend/src examination.service.regenerateInvoice: embedded draft only, ' +
+        'not a canonical invoice (no verificationToken, no shared EXM sequence).'
+      );
+    }
     const batch = await this.getBatchByIdOrThrow(input.batchId);
     assertCanRegenerateInvoice(batch.status);
 

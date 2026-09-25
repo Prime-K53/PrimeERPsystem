@@ -22,6 +22,7 @@ import { currencyService } from '../../../services/currencyService';
 import { computePostEditCorrection } from '../../../services/transactions/_internal';
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { buildInvoiceVerificationUrl } from '../../../utils/invoiceVerification';
+import { findInvoiceByIdOrNumber } from '../../../utils/invoiceIdentity';
 import { resolveVerificationBaseUrl } from '../../../utils/documentVerification';
 
 interface InvoiceDetailsProps {
@@ -68,8 +69,14 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
     const [comments, setComments] = useState<Array<{ id: string; text: string; author: string; date: string }>>([]);
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
+    // Deterministic hydration: exact `id` first, exact `invoiceNumber`
+    // second (covers number-bearing deep-links). Never fuzzy-match here —
+    // opening a document must resolve to exactly one record. Falls back to
+    // the passed snapshot only when the store has no such invoice yet.
     const invoice = useMemo(() =>
-        invoices.find(i => i.id === initialInvoice.id) || initialInvoice
+        findInvoiceByIdOrNumber(invoices, initialInvoice?.id)
+        ?? findInvoiceByIdOrNumber(invoices, (initialInvoice as Record<string, unknown>)?.invoiceNumber)
+        ?? initialInvoice
         , [invoices, initialInvoice]);
 
     const isExaminationInvoice = String((invoice as Record<string, unknown>).originModule ?? (invoice as Record<string, unknown>).origin_module ?? '').toLowerCase() === 'examination'

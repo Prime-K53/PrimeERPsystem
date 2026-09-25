@@ -163,6 +163,10 @@ router.post('/api/examinations/:id/approve', async (req, res) => {
 });
 
 router.post('/api/examinations/:id/invoice', async (req, res) => {
+  // QUARANTINED endpoint (embedded harness server): returns an embedded
+  // batch draft, NOT a canonical invoice. Canonical ERP path:
+  // examinationBatchService.generateInvoice →
+  // persistExaminationInvoiceToFinance → Supabase sync gateway.
   try {
     const batchId = parseBatchId(req);
     const payload = parseInvoicePayload(req);
@@ -179,6 +183,7 @@ router.post('/api/examinations/:id/invoice', async (req, res) => {
 });
 
 router.post('/api/examinations/:id/regenerate-invoice', async (req, res) => {
+  // QUARANTINED endpoint — see /invoice route above.
   try {
     const batchId = parseBatchId(req);
     const payload = parseRegeneratePayload(req);

@@ -8,6 +8,7 @@ const { toNumericValue, pickPositiveNumber } = require('./examinationSharedUtils
 const FinanceService = require('./financeService.cjs');
 const { resolveMarketLedgerAccount, splitInvoiceLedgerAmounts } = require('./marketLedgerSplit.cjs');
 const { getDatabase } = require('../db.cjs');
+const { warnExaminationBackendInvoiceUsage } = require('./examinationInvoiceQuarantine.cjs');
 
 const runGet = (sql, params = []) => new Promise((resolve, reject) => {
   try {
@@ -4223,6 +4224,11 @@ const examinationService = {
   },
 
   generateInvoice: async (batchId, userId = 'System', options = {}) => {
+    // QUARANTINED PATH — see examinationInvoiceQuarantine.cjs. The canonical
+    // examination-invoice flow is the frontend offline-first path (invoices
+    // store → Supabase sync gateway). This backend writer is preserved for
+    // existing readers but must not gain new callers.
+    const quarantine = warnExaminationBackendInvoiceUsage('generateInvoice');
     const requestedInvoiceNumber = options?.invoiceNumber || options?.invoice_number;
     await ensureExaminationInvoiceSchema();
     const batch = await examinationService.getBatchById(batchId);
@@ -4307,6 +4313,11 @@ const examinationService = {
         invoiceId: Number(existingInvoice.id),
         created: false,
         idempotent: true,
+        // Quarantine flags (additive): this row lives outside the canonical
+        // invoices namespace and carries no verification token.
+        quarantined: quarantine.quarantined,
+        verificationUnsupported: quarantine.verificationUnsupported,
+        canonicalPath: quarantine.canonicalPath,
         invoice: mapBackendInvoiceToFrontendPayload({
           invoiceRow: existingInvoice,
           batch,
@@ -4451,6 +4462,11 @@ const examinationService = {
       invoiceId: Number(invoiceId),
       created: true,
       idempotent: false,
+      // Quarantine flags (additive): this row lives outside the canonical
+      // invoices namespace and carries no verification token.
+      quarantined: quarantine.quarantined,
+      verificationUnsupported: quarantine.verificationUnsupported,
+      canonicalPath: quarantine.canonicalPath,
       invoice: mapBackendInvoiceToFrontendPayload({
         invoiceRow,
         batch,
@@ -4461,6 +4477,8 @@ const examinationService = {
   },
 
   regenerateInvoice: async (batchId, userId = 'System', options = {}) => {
+    // QUARANTINED PATH — see examinationInvoiceQuarantine.cjs.
+    const quarantine = warnExaminationBackendInvoiceUsage('regenerateInvoice');
     await ensureExaminationInvoiceSchema();
     const batch = await examinationService.getBatchById(batchId);
     if (!batch) throw new Error('Batch not found');
@@ -4656,6 +4674,11 @@ const examinationService = {
       idempotent: false,
       previousInvoiceIds,
       previousInvoiceNumbers,
+      // Quarantine flags (additive): this row lives outside the canonical
+      // invoices namespace and carries no verification token.
+      quarantined: quarantine.quarantined,
+      verificationUnsupported: quarantine.verificationUnsupported,
+      canonicalPath: quarantine.canonicalPath,
       invoice: mapBackendInvoiceToFrontendPayload({
         invoiceRow,
         batch,

@@ -19,8 +19,7 @@ import { ExaminationJobState } from '../services/examinationJobService';
 import { examinationJobService } from '../services/examinationJobService';
 import { examinationBatchService, ExaminationGeneratedInvoicePayload } from '../services/examinationBatchService';
 import { dbService } from '../services/db';
-import { useSalesStore } from '../stores/salesStore';
-import { generateNextId } from '../utils/helpers';
+import { generateNextExaminationInvoiceNumber } from '../utils/helpers';
 import { ExaminationInvoiceSyncResult, persistExaminationInvoiceToFinance, persistRegeneratedExaminationInvoiceToFinance } from '../services/examinationInvoiceSyncService';
 import { examinationNotificationService } from '../services/examinationNotificationService';
 import { examinationSyncService } from '../services/examinationSyncService';
@@ -538,9 +537,12 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
   const generateInvoice = useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const sales = useSalesStore.getState().sales;
-      const invoiceNumber = generateNextId('examination_invoice', sales, companyConfig);
-      
+      // Canonical namespace: invoices.id is the shared primary key (local
+      // IndexedDB + Supabase). Scanning sales (SALE-*) would never advance
+      // the EXM sequence and would re-mint the same canonical id.
+      const existingInvoices = await dbService.getAll<{ id?: string; invoiceNumber?: string; date?: string }>('invoices').catch(() => []);
+      const invoiceNumber = generateNextExaminationInvoiceNumber(existingInvoices, companyConfig);
+
       const result = await examinationBatchService.generateInvoice(id, {
         idempotencyKey: `EXAM-BATCH-${id}`,
         invoiceNumber
@@ -619,8 +621,9 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
   const regenerateInvoice = useCallback(async (id: string, reason?: string) => {
     setLoading(true);
     try {
-      const sales = useSalesStore.getState().sales;
-      const invoiceNumber = generateNextId('examination_invoice', sales, companyConfig);
+      // Same canonical namespace as generateInvoice: scan invoices, never sales.
+      const existingInvoices = await dbService.getAll<{ id?: string; invoiceNumber?: string; date?: string }>('invoices').catch(() => []);
+      const invoiceNumber = generateNextExaminationInvoiceNumber(existingInvoices, companyConfig);
 
       const result = await examinationBatchService.regenerateInvoice(id, {
         idempotencyKey: `EXAM-BATCH-${id}-REGEN-${Date.now()}`,

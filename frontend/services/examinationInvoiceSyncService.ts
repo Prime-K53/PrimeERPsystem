@@ -4,6 +4,7 @@ import { dbService } from './db';
 import { transactionService } from './transactionService';
 import { ExaminationGeneratedInvoicePayload } from './examinationBatchService';
 import { enrichInvoiceWithBatchPricing } from '../utils/examinationInvoicePricing';
+import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
 
 export interface ExaminationInvoiceSyncResult {
   synced: boolean;
@@ -79,9 +80,23 @@ export const mapExaminationPayloadToInvoice = (
   const paidAmount = Math.max(0, Math.min(totalAmount, toNumber(payload?.paidAmount)));
   const sourceBatchNumber = String(payload?.batchId || payload?.origin_batch_id || '').trim();
   const acceptedBy = payload?.schoolName || payload?.customerName || 'Customer';
+  // Canonical identity: Invoice.id === Invoice.invoiceNumber (the EXM number).
+  // Producers guarantee payload.invoiceNumber is canonical; the payload id
+  // mirrors it (see buildLocalInvoicePayload).
+  const canonicalNumber = String(payload?.invoiceNumber || payload?.id);
+  // Verification token is minted HERE — at the authoritative payload →
+  // Invoice conversion — so every downstream writer (normal save, fallback
+  // direct put, durable sync queue) carries it. Uses the single existing
+  // implementation; existing tokens are never regenerated. processInvoice
+  // re-ensures idempotently, so this stays compatible.
+  const verificationToken = String(
+    ensureInvoiceVerificationToken({
+      verificationToken: (payload as unknown as Record<string, unknown>)?.verificationToken as string | undefined,
+    } as Invoice).verificationToken || ''
+  );
 
   return {
-    id: String(payload?.invoiceNumber || payload?.id),
+    id: canonicalNumber,
     date,
     dueDate,
     customerId: String(payload?.customerId || ''),
@@ -127,7 +142,8 @@ export const mapExaminationPayloadToInvoice = (
     originBatchId: payload?.origin_batch_id || '',
     origin_batch_id: payload?.origin_batch_id || '',
     backendInvoiceId: payload?.backendInvoiceId || '',
-    invoiceNumber: payload?.invoiceNumber || '',
+    invoiceNumber: canonicalNumber,
+    verificationToken,
     currency: payload?.currency || 'MWK'
   };
 };
@@ -234,6 +250,11 @@ export const persistExaminationInvoiceToFinance = async (
       invoice = enrichInvoiceWithBatchPricing(invoice, localBatch);
     }
   }
+  // Re-ensure after enrichment (spread-preserving, idempotent): from this
+  // point on, EVERY writer below — normal save, fallback direct put,
+  // processInvoice retry — persists and enqueues a tokened invoice. The
+  // fallback path must never store/enqueue an untokened examination invoice.
+  invoice = ensureInvoiceVerificationToken(invoice);
 
   try {
     await api.finance.saveInvoice(invoice);
