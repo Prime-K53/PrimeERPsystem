@@ -3,6 +3,8 @@ import {
   applyContractSignature,
   applySignatureVoid,
   assertAllowedContractTransition,
+  assertAllowedItemCreate,
+  assertAllowedItemWrite,
   generateNextContractNumber,
   isAllowedContractTransition,
   isAllowedItemTransition,
@@ -40,6 +42,77 @@ describe('contract lifecycle transitions', () => {
     expect(isAllowedItemTransition('consumed', 'cancelled')).toBe(true);
     expect(isAllowedItemTransition('consumed', 'reserved')).toBe(false);
     expect(isAllowedItemTransition('released', 'consumed')).toBe(false);
+  });
+
+  it('terminal states never return to active (or anywhere)', () => {
+    for (const terminal of ['completed', 'expired', 'cancelled']) {
+      for (const target of ['draft', 'pending_payment', 'active', 'suspended', 'completed', 'expired', 'cancelled']) {
+        expect(isAllowedContractTransition(terminal, target)).toBe(false);
+        expect(() => assertAllowedContractTransition(terminal, target)).toThrow(/not allowed/);
+      }
+    }
+  });
+
+  it('keeps the pending_payment chain and suspend/resume edges intact', () => {
+    expect(isAllowedContractTransition('draft', 'pending_payment')).toBe(true);
+    expect(isAllowedContractTransition('pending_payment', 'active')).toBe(true);
+    expect(isAllowedContractTransition('pending_payment', 'cancelled')).toBe(true);
+    expect(isAllowedContractTransition('active', 'suspended')).toBe(true);
+    expect(isAllowedContractTransition('suspended', 'active')).toBe(true);
+    expect(isAllowedContractTransition('suspended', 'cancelled')).toBe(true);
+    expect(isAllowedContractTransition('active', 'completed')).toBe(true);
+    expect(isAllowedContractTransition('active', 'expired')).toBe(true);
+    expect(isAllowedContractTransition('active', 'cancelled')).toBe(true);
+  });
+
+  it('intentionally requires pending_payment between draft and active', () => {
+    // draft → active direct is forbidden by design: activation evidence
+    // (paid invoice or explicit override) is collected on the
+    // pending_payment step, so activation can never skip the payment gate.
+    expect(isAllowedContractTransition('draft', 'active')).toBe(false);
+  });
+
+  it('intentionally requires resume before completing/expiring a suspended contract', () => {
+    // suspended → completed / suspended → expired are not edges: the
+    // operator resumes to active first, keeping terminal transitions
+    // single-sourced through the active state.
+    expect(isAllowedContractTransition('suspended', 'completed')).toBe(false);
+    expect(isAllowedContractTransition('suspended', 'expired')).toBe(false);
+  });
+});
+
+describe('assessment item write guards (wallet-first)', () => {
+  it('blocks direct reserved → consumed mutation (canonical op only)', () => {
+    expect(() =>
+      assertAllowedItemWrite({ status: 'reserved' }, { status: 'consumed' })
+    ).toThrow(/canonical wallet-first operation/);
+  });
+
+  it('blocks every edge out of consumed (compensating reversal required)', () => {
+    for (const target of ['reserved', 'released', 'cancelled']) {
+      expect(() => assertAllowedItemWrite({ status: 'consumed' }, { status: target })).toThrow(
+        /compensating reversal/
+      );
+    }
+  });
+
+  it('allows non-financial transitions and status-preserving writes', () => {
+    expect(() => assertAllowedItemWrite({ status: 'reserved' }, { status: 'released' })).not.toThrow();
+    expect(() => assertAllowedItemWrite({ status: 'reserved' }, { status: 'cancelled' })).not.toThrow();
+    expect(() =>
+      assertAllowedItemWrite({ status: 'consumed', id: 'a' }, { status: 'consumed', id: 'a', job_order_id: 'j' } as any)
+    ).not.toThrow();
+    expect(() => assertAllowedItemWrite(undefined, { status: 'reserved' })).not.toThrow();
+  });
+
+  it('still rejects lifecycle-map violations', () => {
+    expect(() => assertAllowedItemWrite({ status: 'released' }, { status: 'consumed' })).toThrow(/not allowed/);
+  });
+
+  it('new items must be born reserved', () => {
+    expect(() => assertAllowedItemCreate({ status: 'reserved' })).not.toThrow();
+    expect(() => assertAllowedItemCreate({} as any)).not.toThrow();
+    expect(() => assertAllowedItemCreate({ status: 'consumed' })).toThrow(/created reserved/);
   });
 });
 

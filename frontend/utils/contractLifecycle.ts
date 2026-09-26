@@ -54,6 +54,56 @@ export const isAllowedItemTransition = (
 };
 
 /**
+ * Canonical write-guard for assessment item records (wallet-first model).
+ *
+ * Financial edges must go through transactionService.consumeContractAssessment,
+ * which owns the wallet debit + ledger posting + idempotent reservation.
+ * Ordinary writers (UI handlers, store methods) must never flip these edges
+ * by direct status mutation:
+ *  - reserved → consumed is BLOCKED here (consume via the canonical operation).
+ *  - any edge OUT of consumed is BLOCKED here (a consumed assessment already
+ *    has exactly one wallet debit behind it; value recovery requires an
+ *    explicit compensating reversal, tracked separately — not a status flip).
+ * Status-preserving writes (job links, notes, scheduling fields) always pass.
+ * Lifecycle-map violations are still rejected with the map error.
+ */
+export const assertAllowedItemWrite = (
+  current: { status?: string } | null | undefined,
+  next: { status?: string } | null | undefined,
+): void => {
+  const from = String(current?.status || '');
+  const to = String(next?.status || '');
+  if (!current || from === to || !to) return;
+  if (from === 'reserved' && to === 'consumed') {
+    throw new Error(
+      'Direct status mutation reserved → consumed is blocked. Consume assessments only through the canonical wallet-first operation (consumeContractAssessment), which posts exactly one wallet debit and one ledger entry.',
+    );
+  }
+  if (from === 'consumed') {
+    throw new Error(
+      `Status change consumed → ${to} is blocked. A consumed assessment already has a wallet debit behind it; value recovery requires an explicit compensating reversal (tracked separately), not a status flip.`,
+    );
+  }
+  if (!isAllowedItemTransition(from, to)) {
+    throw new Error(`Assessment transition ${from} → ${to} is not allowed.`);
+  }
+};
+
+/**
+ * Canonical write-guard for brand-new assessment items. Items are born
+ * reserved; a consumed-at-birth record without a wallet debit behind it
+ * would corrupt the one-debit-per-consumption invariant.
+ */
+export const assertAllowedItemCreate = (next: { status?: string } | null | undefined): void => {
+  const to = String(next?.status || '');
+  if (to && to !== 'reserved') {
+    throw new Error(
+      `New assessment items must be created reserved (got '${to}'). Consumed state is reachable only through the canonical wallet-first operation.`,
+    );
+  }
+};
+
+/**
  * Next PC contract number, scanned from `contract_number` (never `id`:
  * contract ids are random uids, so scanning `id` always yields the start
  * number and mints duplicates). A uniqueness guard bumps past numbers

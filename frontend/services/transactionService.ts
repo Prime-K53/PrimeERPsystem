@@ -56,6 +56,18 @@ import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
 
 const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'LG-REV-AR-'];
 
+/**
+ * Same-tab serialization for contract assessment consumption. The
+ * idempotency-key reservation inside the operation is check-then-put, so two
+ * interleaved same-tab invocations (double-click, React duplicate render)
+ * could both pass the check before either writes. Chaining per-item promises
+ * closes that gap for the current tab — the same in-flight-guard precedent
+ * used by salesOrderStore.inFlightCreates. Cross-tab/cross-device races are
+ * still governed by deterministic ids + OCC version conflicts at sync (see
+ * consumeContractAssessment docs).
+ */
+const consumeContractLocks = new Map<string, Promise<void>>();
+
 function isOriginalArPosting(invoiceId: string, entry: any): boolean {
     if (String(entry?.referenceId || '') !== String(invoiceId)) return false;
     return AR_POSTING_PREFIXES.some((p) => String(entry?.id || '').startsWith(p));
@@ -5790,6 +5802,249 @@ export const transactionService = {
                 }
 
                 return { success: true };
+            }
+        );
+        return result;
+    },
+
+    /**
+     * Canonical wallet-first assessment consumption for Printing Contracts.
+     *
+     * ONE reserved→consumed transition == ONE wallet debit + ONE ledger posting.
+     * Everything happens inside a single executeAtomicOperation covering the
+     * contract, the item, the customer, the wallet transaction, the ledger
+     * entry and the idempotency key. All reads and validations run BEFORE the
+     * first write, so a validation failure can never leave partial state.
+     *
+     * Idempotency is structural, not best-effort:
+     *  - wallet transaction id is deterministic: `WTX-<assessmentItemId>-CONSUMED`
+     *  - idempotency key is deterministic: `wallet:assessment:<assessmentItemId>:consumed`
+     *    and is reserved FIRST via reserveIdempotencyKey (duplicate ⇒ throw)
+     *  - ledger entry id is derived from the wallet transaction id
+     * A retry/double-click/sync-replay therefore converges instead of
+     * duplicating: same keys → same rows → upsert-by-key, never a second debit.
+     */
+    async consumeContractAssessment(args: {
+        contractId: string;
+        assessmentItemId: string;
+        idempotencyKey?: string;
+        performedBy?: string;
+    }) {
+        const contractId = String(args?.contractId || '').trim();
+        const assessmentItemId = String(args?.assessmentItemId || '').trim();
+        if (!contractId) throw new Error('consumeContractAssessment: contractId is required.');
+        if (!assessmentItemId) throw new Error('consumeContractAssessment: assessmentItemId is required.');
+        // Serialize same-item invocations within this tab; a prior failure
+        // must not fail this call, so prior rejections are swallowed here
+        // (the fresh attempt re-validates everything itself).
+        const lockKey = `consume-contract-assessment:${contractId}:${assessmentItemId}`;
+        const previous = consumeContractLocks.get(lockKey) || Promise.resolve();
+        let releaseLock!: () => void;
+        const current = new Promise<void>((resolve) => { releaseLock = resolve; });
+        consumeContractLocks.set(lockKey, current);
+        try {
+            await previous.catch(() => {});
+            return await this.consumeContractAssessmentTx(args);
+        } finally {
+            if (consumeContractLocks.get(lockKey) === current) {
+                consumeContractLocks.delete(lockKey);
+            }
+            releaseLock();
+        }
+    },
+
+    /**
+     * Inner implementation behind the per-item mutex above. MUST only be
+     * called via consumeContractAssessment (same-tab serialization).
+     */
+    async consumeContractAssessmentTx(args: {
+        contractId: string;
+        assessmentItemId: string;
+        idempotencyKey?: string;
+        performedBy?: string;
+    }) {
+        const contractId = String(args?.contractId || '').trim();
+        const assessmentItemId = String(args?.assessmentItemId || '').trim();
+        const explicitKey = args?.idempotencyKey
+            ? String(args.idempotencyKey)
+            : `wallet:assessment:${assessmentItemId}:consumed`;
+        const walletTxId = `WTX-${assessmentItemId}-CONSUMED`;
+        const nowIso = new Date().toISOString();
+
+        const result = await dbService.executeAtomicOperation(
+            ['assessmentContracts', 'contractAssessments', 'customers', 'walletTransactions', 'ledger', 'accounts', 'idempotencyKeys'],
+            async (tx) => {
+                const contractStore = tx.objectStore('assessmentContracts');
+                const itemStore = tx.objectStore('contractAssessments');
+                const customerStore = tx.objectStore('customers');
+                const walletStore = tx.objectStore('walletTransactions');
+                const ledgerStore = tx.objectStore('ledger');
+
+                // ── Reads ──────────────────────────────────────────────
+                const contract = await contractStore.get(contractId);
+                if (!contract) {
+                    throw new Error(`consumeContractAssessment: contract ${contractId} not found. Nothing written.`);
+                }
+                const item = await itemStore.get(assessmentItemId);
+                if (!item) {
+                    throw new Error(`consumeContractAssessment: assessment item ${assessmentItemId} not found. Nothing written.`);
+                }
+
+                // ── Linkage: the item must belong to this contract ──────
+                if (String(item.contract_id || '') !== String(contract.id || contractId)) {
+                    throw new Error(`consumeContractAssessment: assessment ${assessmentItemId} does not belong to contract ${contractId}. Nothing written.`);
+                }
+
+                // ── Contract eligibility: only active contracts execute ──
+                const contractStatus = String(contract.status || '').trim().toLowerCase();
+                if (contractStatus !== 'active') {
+                    throw new Error(`consumeContractAssessment: contract ${contractId} is '${contract.status || 'unknown'}' — only active contracts can consume assessments. Nothing written.`);
+                }
+
+                // ── Item must be reserved (exactly once semantics) ──────
+                if (String(item.status || '') !== 'reserved') {
+                    throw new Error(`consumeContractAssessment: assessment ${assessmentItemId} is '${item.status || 'unknown'}' — only reserved assessments can be consumed. Nothing written.`);
+                }
+
+                // ── Price must be a positive, finite amount (schema CHECK
+                // agrees: chk_assessment_items_positive_price) ────────────
+                const price = toMoney(Number(item.item_price));
+                if (!Number.isFinite(price) || price <= 0) {
+                    throw new Error(`consumeContractAssessment: assessment ${assessmentItemId} has invalid price (${String(item.item_price)}). Refusing to charge. Nothing written.`);
+                }
+
+                // ── Customer + funds gate (inside the tx, not a UI pre-check)
+                const customerId = String(contract.customer_id || '');
+                if (!customerId) {
+                    throw new Error(`consumeContractAssessment: contract ${contractId} has no customer. Nothing written.`);
+                }
+                const customer = await customerStore.get(customerId);
+                if (!customer) {
+                    throw new Error(`consumeContractAssessment: customer ${customerId} not found. Nothing written.`);
+                }
+                const balance = toMoney(Number(customer.walletBalance || 0));
+                if (!Number.isFinite(balance) || !(balance >= price)) {
+                    throw new Error(`INSUFFICIENT_WALLET_FUNDS: required ${price.toFixed(2)}, available ${Number.isFinite(balance) ? balance.toFixed(2) : 'unknown'}. No wallet transaction created, no ledger posting, assessment remains reserved.`);
+                }
+
+                // ── Idempotency reservation FIRST among writes ──────────
+                await reserveIdempotencyKey(tx, 'contract_assessment_consume', assessmentItemId, explicitKey);
+
+                // ── Defensive: deterministic debit already present? ─────
+                // Unreachable through the normal path (the reservation above
+                // throws first), but a manual/backfilled row with the same
+                // deterministic id must never gain a sibling debit.
+                const priorTx = await walletStore.get(walletTxId);
+                if (priorTx) {
+                    throw new Error(`consumeContractAssessment: assessment ${assessmentItemId} already has consumption transaction ${walletTxId}. Refusing duplicate debit.`);
+                }
+
+                // ── Accounts (existing GL resolution, no new accounts) ──
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
+                const gl = getGLConfig();
+                // Economic meaning: spending down the customer's prepaid
+                // deposit liability into earned revenue — the same legs as
+                // immediate revenue recognition on completed orders.
+                const debitAccountId = resolveAcct(gl.customerDeposits || gl.customerDepositAccount);
+                const creditAccountId = resolveAcct(gl.salesRevenueAccount || gl.defaultSalesAccount || gl.incomeAccount);
+
+                const customerName = contract.customerName
+                    || (customer as any)?.name
+                    || (customer as any)?.customerName
+                    || '';
+                const contractNumber = contract.contract_number || contractId;
+                const itemLabel = item.assessment_name || assessmentItemId;
+
+                // ── Wallet debit (canonical Deduction, positive amount) ─
+                const walletTx: WalletTransaction = {
+                    id: walletTxId,
+                    customerId,
+                    customerName,
+                    date: nowIso,
+                    type: 'Deduction',
+                    amount: price,
+                    description: `Assessment consumption ${contractNumber} — ${itemLabel}`,
+                    reference: contractNumber,
+                    idempotencyKey: explicitKey,
+                    data: {
+                        type: 'ASSESSMENT_CONSUMPTION',
+                        contract_id: contract.id || contractId,
+                        contract_number: contractNumber,
+                        assessment_item_id: assessmentItemId,
+                        customer_id: customerId,
+                        amount: price,
+                        idempotencyKey: explicitKey,
+                        consumed_at: nowIso,
+                    },
+                } as WalletTransaction;
+                await walletStore.put(walletTx);
+                await customerStore.put({ ...customer, walletBalance: toMoney(balance - price) });
+
+                // ── Ledger posting (existing mechanism, no new accounts) ─
+                const ledgerEntry: LedgerEntry = {
+                    id: `LG-${walletTxId}`,
+                    date: nowIso,
+                    description: `Assessment consumption ${contractNumber} — ${itemLabel}`,
+                    debitAccountId,
+                    creditAccountId,
+                    amount: price,
+                    referenceId: assessmentItemId,
+                    reconciled: true,
+                    customerId,
+                    customerName,
+                };
+                await ledgerStore.put(ledgerEntry);
+
+                // ── Item + contract buckets (same tx, schema CHECKs hold) ─
+                // Reservation-coverage healing (documented, not silent): rows
+                // created before reservation accounting existed carry
+                // reserved_amount === 0 despite genuinely reserved items.
+                // Coverage is computed transparently here so consuming such an
+                // item debits exactly once and leaves truthful buckets, instead
+                // of throwing on (or clamping away) the shortfall.
+                const storedReserved = toMoney(Number(contract.reserved_amount || 0));
+                const storedConsumed = toMoney(Number(contract.consumed_amount || 0));
+                const effectiveReservedBefore = Math.max(storedReserved, price);
+                const newReserved = toMoney(effectiveReservedBefore - price);
+                const newConsumed = toMoney(storedConsumed + price);
+                if (!(newReserved >= 0) || !(newConsumed >= 0)) {
+                    throw new Error(`consumeContractAssessment: contract invariant violated for ${contractId} (reserved ${newReserved}, consumed ${newConsumed}). Aborting without writes applied after this point; earlier writes in this operation roll back with it.`);
+                }
+                await itemStore.put({
+                    ...item,
+                    status: 'consumed',
+                    consumed_at: nowIso,
+                    version: Number(item.version || 0) + 1,
+                });
+                await contractStore.put({
+                    ...contract,
+                    reserved_amount: newReserved,
+                    consumed_amount: newConsumed,
+                    updated_at: nowIso,
+                    version: Number(contract.version || 0) + 1,
+                });
+
+                return {
+                    success: true,
+                    walletTransactionId: walletTxId,
+                    ledgerEntryId: ledgerEntry.id,
+                    newBalance: toMoney(balance - price),
+                    contractId: contract.id || contractId,
+                    assessmentItemId,
+                };
             }
         );
         return result;

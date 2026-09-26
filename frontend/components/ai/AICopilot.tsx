@@ -7,7 +7,13 @@ import { useInventory } from '../../context/InventoryContext';
 import { useSales } from '../../context/SalesContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useProcurement } from '../../context/ProcurementContext';
-import { executeQuery, interpretQuery, generateQuerySuggestions } from '../../services/naturalLanguageReportingService';
+import {
+  answerCopilotQuestion,
+  buildAuthContext,
+  buildErpDataset,
+  emptyConversation,
+  type CopilotConversationState,
+} from '../../services/erpQuery';
 import { currencyService } from '../../services/currencyService';
 
 interface Message {
@@ -101,12 +107,25 @@ function formatCurrency(amount: number, currencySymbol: string = '$'): string {
 }
 
 export default function AICopilot() {
-  const { companyConfig, user } = useAuth();
+  const { companyConfig, user, checkPermission } = useAuth() as ReturnType<typeof useAuth> & {
+    checkPermission?: (permissionId: string) => boolean;
+  };
   const { inventory } = useInventory();
-  const { customers, sales } = useSales();
-  const { invoices, accounts, expenses, income } = useFinance();
-  const { purchases } = useProcurement();
+  const salesCtx = useSales() as ReturnType<typeof useSales> & {
+    quotations?: unknown[]; customerPayments?: unknown[]; shipments?: unknown[]; salesOrders?: unknown[];
+  };
+  const { customers, sales } = salesCtx;
+  const financeCtx = useFinance() as ReturnType<typeof useFinance> & {
+    deliveryNotes?: unknown[]; supplierPayments?: unknown[]; recurringInvoices?: unknown[];
+    walletTransactions?: unknown[];
+  };
+  const { invoices, accounts, expenses, income } = financeCtx;
+  const procurementCtx = useProcurement() as ReturnType<typeof useProcurement> & {
+    suppliers?: unknown[]; goodsReceipts?: unknown[];
+  };
+  const { purchases } = procurementCtx;
   const currencySymbol = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
+  const conversationRef = useRef<CopilotConversationState>(emptyConversation());
 
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -137,8 +156,6 @@ export default function AICopilot() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typing]);
 
-  const allData = { sales: sales || [], invoices: invoices || [], expenses: expenses || [], customers: customers || [], inventory: inventory || [], purchases: purchases || [] };
-
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = String(overrideText ?? input).trim();
     if (!text || typingRef.current) return;
@@ -150,41 +167,92 @@ export default function AICopilot() {
     await new Promise(resolve => setTimeout(resolve, 400));
 
     try {
-      const interpreted = interpretQuery(text);
-      const result = executeQuery(text, allData);
+      // ── General constrained ERP query layer (read-only, no SQL) ──
+      // Datasets come from the existing ERP contexts/stores (live data).
+      // The interpreter produces a validated ErpQuery; the executor computes
+      // counts/sums/groups deterministically; the LLM only explains results.
+      let extra: Record<string, readonly unknown[] | undefined> = {};
+      try {
+        const { useProductionStore } = await import('../../stores/productionStore');
+        const prodState = useProductionStore.getState() as unknown as Record<string, readonly unknown[]>;
+        extra.workOrders = (prodState.workOrders as readonly unknown[]) || [];
+        extra.boms = (prodState.boms as readonly unknown[]) || [];
+      } catch { /* production data optional — executor reports honestly when absent */ }
+      try {
+        const { dbService } = await import('../../services/db');
+        const [txns, referrals, examBatches] = await Promise.all([
+          dbService.getAll('inventoryTransactions').catch(() => []),
+          dbService.getAll('referrals').catch(() => []),
+          dbService.getAll('examinationBatches').catch(() => []),
+        ]);
+        extra.inventoryTransactions = (txns || []) as readonly unknown[];
+        extra.referrals = (referrals || []) as readonly unknown[];
+        extra.examinationBatches = (examBatches || []) as readonly unknown[];
+      } catch { /* offline/empty — executor reports honestly when absent */ }
 
-      if (result.type !== 'unknown' && result.data !== undefined) {
-        setMessages(prev => [...prev, { role: 'assistant', content: formatQueryResult(result, currencySymbol) }]);
+      const datasets = buildErpDataset({
+        orders: (salesCtx.salesOrders as unknown[] || []) as readonly unknown[],
+        quotations: (salesCtx.quotations as unknown[] || []) as readonly unknown[],
+        invoices: (invoices || []) as readonly unknown[],
+        customerPayments: (salesCtx.customerPayments as unknown[] || []) as readonly unknown[],
+        customers: (customers || []) as readonly unknown[],
+        suppliers: (procurementCtx.suppliers as unknown[] || []) as readonly unknown[],
+        products: (inventory || []) as readonly unknown[],
+        inventoryTransactions: extra.inventoryTransactions,
+        purchases: (purchases || []) as readonly unknown[],
+        expenses: (expenses || []) as readonly unknown[],
+        sales: (sales || []) as readonly unknown[],
+        deliveryNotes: (financeCtx.deliveryNotes as unknown[] || []) as readonly unknown[],
+        supplierPayments: (financeCtx.supplierPayments as unknown[] || []) as readonly unknown[],
+        income: (income || []) as readonly unknown[],
+        goodsReceipts: (procurementCtx.goodsReceipts as unknown[] || []) as readonly unknown[],
+        shipments: (salesCtx.shipments as unknown[] || []) as readonly unknown[],
+        walletTransactions: (financeCtx.walletTransactions as unknown[] || []) as readonly unknown[],
+        referrals: extra.referrals,
+        examinationBatches: extra.examinationBatches,
+        workOrders: extra.workOrders,
+        boms: extra.boms,
+        subscriptions: (financeCtx.recurringInvoices as unknown[] || []) as readonly unknown[],
+      });
+
+      const auth = buildAuthContext({
+        userId: (user as { id?: string })?.id,
+        role: (user as { role?: string })?.role,
+        isAdmin: String((user as { role?: string })?.role || '').toLowerCase() === 'admin' || !!(user as { isSuperAdmin?: boolean })?.isSuperAdmin,
+        checkPermission: typeof checkPermission === 'function' ? checkPermission : undefined,
+      });
+
+      const answer = answerCopilotQuestion({
+        question: text,
+        datasets,
+        auth,
+        conversation: conversationRef.current,
+        currencySymbol,
+      });
+      conversationRef.current = answer.conversation;
+
+      if (answer.answered) {
+        // Deterministic application-side result. The LLM explanation step uses
+        // ONLY this isolated entity result (see llmContext) — never the DB.
+        setMessages(prev => [...prev, { role: 'assistant', content: answer.text }]);
+      } else if (answer.clarification) {
+        setMessages(prev => [...prev, { role: 'assistant', content: answer.clarification }]);
+      } else if (answer.text) {
+        setMessages(prev => [...prev, { role: 'assistant', content: answer.text }]);
       } else {
-        const context = buildContext(
-          sales || [], inventory || [], customers || [], invoices || [],
-          accounts || [], expenses || [], income || [], purchases || [],
-          companyConfig?.companyName || 'Prime ERP',
-          user?.name || 'Admin',
-          currencySymbol
-        );
-        const systemPrompt = `You are Prime ERP AI Assistant. Answer the user's business question using the provided data. Use plain text only — no markdown formatting, no "**" bold, no bullet symbols. Use numbers and ${currencySymbol} currency format. Be concise: 3-5 sentences max.`;
-        const resp = await generateAIResponse(
-          `${context}\n\nUser Question: ${text}`,
-          systemPrompt
-        );
+        // Non-ERP question (e.g. how-to help): minimal company context only.
+        // Never dump ERP records here — context isolation.
+        const header = `COMPANY: ${companyConfig?.companyName || 'Prime ERP'}\nUSER: ${(user as { name?: string })?.name || 'Admin'}\nDATE: ${new Date().toLocaleDateString()}`;
+        const systemPrompt = `You are Prime ERP AI Assistant. Answer the user's question using only the context provided. Use plain text only — no markdown formatting, no "**" bold, no bullet symbols. Be concise: 3-5 sentences max. If the question needs live ERP numbers, say which ERP screen holds them instead of guessing.`;
+        const resp = await generateAIResponse(`${header}\n\nUser Question: ${text}`, systemPrompt);
         const cleaned = resp.replace(/\*\*/g, '').replace(/\*/g, '');
         setMessages(prev => [...prev, { role: 'assistant', content: cleaned }]);
       }
     } catch {
-      const context = buildContext(
-        sales || [], inventory || [], customers || [], invoices || [],
-        accounts || [], expenses || [], income || [], purchases || [],
-        companyConfig?.companyName || 'Prime ERP',
-        user?.name || 'Admin',
-        currencySymbol
-      );
       try {
-        const systemPrompt = `You are Prime ERP AI Assistant. Answer the user's business question using the provided data. Use plain text only — no markdown formatting, no "**" bold, no bullet symbols. Use numbers and ${currencySymbol} currency format. Be concise: 3-5 sentences max.`;
-        const resp = await generateAIResponse(
-          `${context}\n\nUser Question: ${text}`,
-          systemPrompt
-        );
+        const header = `COMPANY: ${companyConfig?.companyName || 'Prime ERP'}\nUSER: ${(user as { name?: string })?.name || 'Admin'}\nDATE: ${new Date().toLocaleDateString()}`;
+        const systemPrompt = `You are Prime ERP AI Assistant. Answer the user's question using only the context provided. Use plain text only — no markdown formatting, no "**" bold, no bullet symbols. Be concise: 3-5 sentences max.`;
+        const resp = await generateAIResponse(`${header}\n\nUser Question: ${text}`, systemPrompt);
         const cleaned = resp.replace(/\*\*/g, '').replace(/\*/g, '');
         setMessages(prev => [...prev, { role: 'assistant', content: cleaned }]);
       } catch {
@@ -194,7 +262,7 @@ export default function AICopilot() {
       typingRef.current = false;
       setTyping(false);
     }
-  }, [input, typing, sales, inventory, customers, invoices, accounts, expenses, income, purchases, companyConfig, user, allData]);
+  }, [input, typing, sales, inventory, customers, invoices, accounts, expenses, income, purchases, companyConfig, user, checkPermission, salesCtx, financeCtx, procurementCtx, currencySymbol]);
 
   const handleSendRef = useRef(handleSend);
   handleSendRef.current = handleSend;

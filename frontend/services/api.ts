@@ -1139,6 +1139,10 @@ export const api = {
     }, 'Finance.SaveScheduledPayment'),
 
     getWalletTransactions: () => handle(() => dbService.getAll<WalletTransaction>('walletTransactions'), 'Finance.GetWalletTransactions'),
+    consumeContractAssessment: (args: { contractId: string; assessmentItemId: string; idempotencyKey?: string }) => handle(() => {
+      checkAuth(['Admin', 'Accountant', 'Editor'], 'Finance.ConsumeContractAssessment');
+      return transactionService.consumeContractAssessment(args);
+    }, 'Finance.ConsumeContractAssessment'),
     saveWalletTransaction: (t: WalletTransaction) => handle(async () => {
       checkAuth(['Admin', 'Accountant'], 'Finance.SaveWalletTransaction');
       const result = await dbService.executeAtomicOperation(['walletTransactions', 'idempotencyKeys'], async (tx) => {

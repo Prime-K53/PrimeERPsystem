@@ -120,6 +120,54 @@ describe('buildPrintingContractDoc', () => {
   });
 });
 
+describe('wallet-first document semantics (commercial agreement, not receipt)', () => {
+  it('presents agreed commercial value and pricing, never a wallet balance', async () => {
+    const doc = await buildPrintingContractDoc({
+      contract: baseContract,
+      customerName: 'Acme School',
+      schoolName: 'Acme Primary',
+    });
+    // Agreed commercial figures present.
+    expect(doc.prepaidAmount).toBe(5000);
+    expect(doc.assessmentPrice).toBe(1250);
+    expect(doc.maxAssessments).toBe(4);
+    expect(doc.contractNumber).toBe('PC-0007');
+    // The document has no wallet-balance concept: no such key anywhere.
+    expect('walletBalance' in (doc as Record<string, unknown>)).toBe(false);
+    expect(JSON.stringify(doc)).not.toContain('walletBalance');
+  });
+
+  it('contains no per-assessment payment language', async () => {
+    const doc = await buildPrintingContractDoc({
+      contract: baseContract,
+      customerName: 'Acme School',
+    });
+    const text = JSON.stringify(doc).toLowerCase();
+    expect(text).not.toContain('pay per assessment');
+    expect(text).not.toContain('payment required per');
+    expect(text).not.toContain('amount due');
+    expect(text).not.toContain('outstanding');
+  });
+
+  it('keeps signatures, token passthrough and content hash intact', async () => {
+    const doc = await buildPrintingContractDoc({
+      contract: {
+        ...baseContract,
+        verificationToken: 'c'.repeat(64),
+        data: {
+          ...baseContract.data,
+          signatures: { company: sigBlock(), customer: sigBlock({ name: 'Peter Phiri' }), history: [] },
+        },
+      },
+      customerName: 'Acme School',
+    });
+    expect(doc.fullySigned).toBe(true);
+    expect(doc.verificationToken).toBe('c'.repeat(64));
+    expect(typeof doc.contentHash).toBe('string');
+    expect(doc.contentHash.length).toBeGreaterThan(16);
+  });
+});
+
 describe('content hash', () => {
   it('is deterministic for identical content', async () => {
     const a = await hashContractContent(stableStringify({ n: 'PC-1', v: 3 }));

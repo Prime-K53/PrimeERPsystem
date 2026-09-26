@@ -65,8 +65,10 @@ import {
  *   linked to a Job Order (operational execution) and/or an examination
  *   printing batch.
  * - Wallet stays the sole financial source of truth: contract.prepaid_amount
- *   is the commercial figure; Customer.walletBalance moves only at payment
- *   time (Deposit on activation, Deduction on job payment, Credit on refund).
+ *   is the commercial figure; Customer.walletBalance moves only through
+ *   wallet transactions (Deposit on activation evidence, automatic Deduction
+ *   on assessment consumption via the canonical operation, Credit on
+ *   cancellation refund) — never by direct UI mutation.
  * - Legacy `recurring_invoices` data is retained read-only (plan §14) under
  *   the collapsed "Legacy recurring billing" section — never converted.
  */
@@ -200,6 +202,7 @@ const PrintingContractsView: React.FC = () => {
   const addContractAmendment = useFinanceStore(s => s.addContractAmendment);
   const updateContractAmendment = useFinanceStore(s => s.updateContractAmendment);
   const addWalletTransaction = useFinanceStore(s => s.addWalletTransaction);
+  const consumeContractAssessment = useFinanceStore(s => s.consumeContractAssessment);
 
   const customers = useSalesStore(s => s.customers);
   const jobOrders = useSalesStore(s => s.jobOrders);
@@ -666,6 +669,12 @@ const PrintingContractsView: React.FC = () => {
         if (evidence.ok && evidence.kind === 'paid-invoice' && num(c.prepaid_amount) > 0) {
           // Wallet first: a failed posting aborts the transition instead
           // of leaving an active contract with silently missing money.
+          // LEGACY BEHAVIOR (preserved, not redesigned here): this deposit is
+          // a history row only — it does not move customer.walletBalance and
+          // posts no ledger entry. Activation therefore never manufactures
+          // spendable funds; consumption always enforces against the live
+          // walletBalance, and deposits reach it only through balance-updating
+          // flows (generic top-ups/payments). See the wallet-first diagnostic.
           await addWalletTransaction({
             id: '', customerId: c.customer_id, amount: num(c.prepaid_amount),
             type: 'Deposit', reference: c.contract_number, date: now,
@@ -862,18 +871,50 @@ const PrintingContractsView: React.FC = () => {
   const transitionItem = async (a: AssessmentContractItem, next: ItemStatus) => {
     const contract = (assessmentContracts || []).find(c => c.id === a.contract_id);
     if (!contract) { notify('Parent contract not found.', 'error'); return; }
+    // Financial guard: a consumed assessment already has exactly one wallet
+    // debit behind it. It must never be reverted by silent status flip
+    // (that would orphan real money); value recovery goes through explicit
+    // compensating reversal (tracked separately).
+    if (String(a.status || '') === 'consumed') {
+      notify('This assessment was already consumed and charged to the wallet. It cannot be reverted by status change — use contract cancellation/refund for value recovery.', 'error');
+      return;
+    }
+    // Canonical wallet-first path: reserved → consumed executes exactly one
+    // atomic wallet debit + ledger posting inside transactionService. The UI
+    // performs no financial writes or calculations itself.
+    if (next === 'consumed') {
+      try {
+        const result: any = await consumeContractAssessment({
+          contractId: contract.id,
+          assessmentItemId: a.id,
+        });
+        const charged = Number(a.item_price || 0);
+        const balanceSuffix = result && result.newBalance !== undefined && result.newBalance !== null
+          ? ` New wallet balance: ${currency}${Number(result.newBalance).toLocaleString()}.`
+          : '';
+        notify(`Assessment consumed — ${currency}${charged.toLocaleString()} debited from wallet.${balanceSuffix}`, 'success');
+      } catch (e: any) {
+        const message = String(e?.message || 'Assessment update failed.');
+        const funds = message.match(/required ([\d.]+), available ([\d.]+)/);
+        if (message.startsWith('INSUFFICIENT_WALLET_FUNDS') && funds) {
+          notify(`Insufficient wallet funds. Required: ${currency}${Number(funds[1]).toLocaleString()}. Available: ${currency}${Number(funds[2]).toLocaleString()}.`, 'error');
+        } else {
+          notify(`Assessment update failed: ${message}`, 'error');
+        }
+      }
+      return;
+    }
     const now = new Date().toISOString();
     const patch: Partial<AssessmentContractItem> = { status: next, updated_at: now, version: num(a.version) + 1 };
-    if (next === 'consumed') patch.consumed_at = now;
     if (next === 'released') patch.released_at = now;
     try {
       await updateContractAssessment({ ...a, ...patch } as AssessmentContractItem);
-      // Keep contract money buckets consistent (reserved → consumed / released).
+      // Non-financial transitions only (reserved → released/cancelled adjust
+      // the reserved bucket; consumed flows go through the canonical atomic
+      // op above and never reach here).
       let reserved = num(contract.reserved_amount);
       let consumed = num(contract.consumed_amount);
-      if (a.status === 'reserved' && next === 'consumed') { reserved -= num(a.item_price); consumed += num(a.item_price); }
       if (a.status === 'reserved' && (next === 'released' || next === 'cancelled')) { reserved -= num(a.item_price); }
-      if (a.status === 'consumed' && next === 'cancelled') { consumed -= num(a.item_price); }
       await updateAssessmentContract({
         ...contract, reserved_amount: Math.max(0, reserved), consumed_amount: Math.max(0, consumed),
         updated_at: now, version: num(contract.version) + 1,
@@ -1838,7 +1879,7 @@ const PrintingContractsView: React.FC = () => {
                     <div style={{ padding: 10, background: contractTeal[50], color: contractTeal[600], borderRadius: 8 }}><Landmark size={18} /></div>
                     <div style={{ fontSize: 12, color: contractInkSoft }}>
                       <p style={{ margin: 0 }}><b style={{ color: contractInk }}>Prepaid (commercial):</b> {money(fundsOf(selected).prepaid)} — recorded on the contract.</p>
-                      <p style={{ margin: '4px 0 0' }}><b style={{ color: contractInk }}>Wallet (financial truth):</b> moves only at payment time — Deposit on activation, Deduction on job payment, Credit on cancellation refund.</p>
+                      <p style={{ margin: '4px 0 0' }}><b style={{ color: contractInk }}>Wallet (financial truth):</b> moves at payment time — Deposit on activation, automatic Deduction when an assessment is consumed, Credit on cancellation refund. The contract authorizes assessment printing under the agreed scope and pricing; charges for executed assessments are automatically deducted from the customer's available wallet balance.</p>
                     </div>
                   </div>
                   {selectedWalletTx.length === 0

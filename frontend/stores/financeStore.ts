@@ -7,7 +7,7 @@ import { transactionService } from '../services/transactionService';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
 import { DEFAULT_ACCOUNTS } from '../constants';
 import { generateNextId } from '../utils/helpers';
-import { assertAllowedContractTransition, isAllowedItemTransition } from '../utils/contractLifecycle';
+import { assertAllowedContractTransition, assertAllowedItemWrite, assertAllowedItemCreate } from '../utils/contractLifecycle';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { customerNotificationService } from '../services/customerNotificationService';
 import { logger } from '../services/logger';
@@ -62,6 +62,15 @@ interface FinanceState {
   updateScheduledPayment: (payment: ScheduledPayment) => Promise<void>;
   
   addWalletTransaction: (tx: WalletTransaction) => Promise<void>;
+
+  consumeContractAssessment: (args: { contractId: string; assessmentItemId: string; idempotencyKey?: string }) => Promise<{
+    success: boolean;
+    walletTransactionId: string;
+    ledgerEntryId: string;
+    newBalance: number;
+    contractId: string;
+    assessmentItemId: string;
+  }>;
   
   addDeliveryNote: (note: DeliveryNote) => Promise<void>;
   updateDeliveryNote: (note: DeliveryNote) => Promise<void>;
@@ -350,6 +359,15 @@ addInvoice: async (invoice) => {
       await api.finance.saveWalletTransaction(newTx);
   },
 
+  consumeContractAssessment: async (args: { contractId: string; assessmentItemId: string; idempotencyKey?: string }) => {
+      // Canonical wallet-first consumption: the transactionService owns all
+      // writes (wallet debit + ledger + item + buckets, one atomic op).
+      // Refresh afterwards so contract, wallet and ledger views converge.
+      const result = await api.finance.consumeContractAssessment(args);
+      await get().fetchFinanceData();
+      return result;
+  },
+
   addDeliveryNote: async (note) => {
       const newNote = { ...note, id: note.id || generateNextId('DN', get().deliveryNotes) };
       set(state => ({ deliveryNotes: [...state.deliveryNotes, newNote] }));
@@ -470,16 +488,18 @@ addInvoice: async (invoice) => {
        await api.finance.deleteAssessmentContract(id);
    },
 
-   addContractAssessment: async (assessment: AssessmentContractItem) => {
-       set(state => ({ contractAssessments: [...state.contractAssessments, assessment] }));
-       await api.finance.saveContractAssessment(assessment);
-   },
+  addContractAssessment: async (assessment: AssessmentContractItem) => {
+    // New items are born reserved; consumed state is reachable only through
+    // the canonical wallet-first operation (consumeContractAssessment).
+    assertAllowedItemCreate(assessment);
+    set(state => ({ contractAssessments: [...state.contractAssessments, assessment] }));
+    await api.finance.saveContractAssessment(assessment);
+  },
     updateContractAssessment: async (assessment: AssessmentContractItem) => {
+        // Canonical write-guard: financial edges (reserved→consumed, anything
+        // out of consumed) cannot be performed by direct status mutation.
         const currentItem = get().contractAssessments.find(a => a.id === assessment.id);
-        if (currentItem && currentItem.status !== assessment.status
-            && !isAllowedItemTransition(currentItem.status, assessment.status)) {
-            throw new Error(`Assessment transition ${String(currentItem.status)} → ${String(assessment.status)} is not allowed.`);
-        }
+        assertAllowedItemWrite(currentItem, assessment);
         set(state => ({ contractAssessments: state.contractAssessments.map(a => a.id === assessment.id ? assessment : a) }));
         await api.finance.saveContractAssessment(assessment);
     },
