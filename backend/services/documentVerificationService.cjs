@@ -181,7 +181,9 @@ const REGISTRY = {
   },
   sales_order: {
     table: 'sales_orders',
-    idFields: ['id', 'orderNumber'],
+    // order_number is the canonical official field (P726 unified numbers and
+    // legacy backend officials live here); orderNumber is compatibility.
+    idFields: ['id', 'order_number', 'orderNumber'],
     statusOf: (o) => {
       const s = String(o.status || '').toLowerCase().trim();
       if (['cancelled', 'canceled', 'void', 'voided'].includes(s)) return 'CANCELLED';
@@ -192,7 +194,7 @@ const REGISTRY = {
     toSafe: (o, company, status) => ({
       verified: true,
       documentType: 'sales_order',
-      orderNumber: String(o.orderNumber || o.id || ''),
+      orderNumber: String(o.order_number || o.orderNumber || o.id || ''),
       orderDate: String(o.orderDate || o.date || ''),
       companyName: String(o.companyName || company),
       customerName: customerNameOf(o),

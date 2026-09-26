@@ -201,7 +201,10 @@ export function detectVerifiableDocumentType(data: any): VerifiableDocumentType 
   if (data.receiptNumber) return 'receipt';
   if (data.contractNumber) return 'printing_contract';
   if (data.quotationNumber || data.quotationId) return 'quotation';
-  if (data.orderNumber && String(data.orderNumber).startsWith('SO-')) return 'sales_order';
+  if (data.orderNumber && /^(SO-|ORD-)/.test(String(data.orderNumber))) return 'sales_order';
+  // Unified official numbers live in order_number for ANY configured series
+  // (current or historical — never gate recognition on the current series).
+  if (/^(SO|ORD)-[A-Za-z0-9]+\//.test(String((data as Record<string, unknown>).order_number ?? ''))) return 'sales_order';
   if (data.order_number || (data.orderNumber && String(data.orderNumber).startsWith('PO-'))) return 'purchase_order';
   if (data.dnNumber || data.deliveryNoteNumber || data.delivery_number) return 'delivery_note';
   if (data.statementNumber) return 'statement';
@@ -229,7 +232,8 @@ export function resolveVerifiableDocumentNumber(data: any, type: VerifiableDocum
     case 'quotation':
       return String(data?.quotationNumber ?? data?.quotationId ?? data?.number ?? data?.id ?? '').trim();
     case 'sales_order':
-      return String(data?.orderNumber ?? data?.number ?? data?.id ?? '').trim();
+      // Canonical official field first (order_number), legacy camelCase second.
+      return String(data?.order_number ?? data?.orderNumber ?? data?.number ?? data?.id ?? '').trim();
     case 'purchase_order':
       return String(data?.order_number ?? data?.orderNumber ?? data?.number ?? data?.id ?? '').trim();
     case 'delivery_note':

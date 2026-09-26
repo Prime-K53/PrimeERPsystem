@@ -15,6 +15,7 @@ const repo = require('./supabaseRepository.cjs');
 const { auditService } = require('../auditService.cjs');
 const emailService = require('./emailService.cjs');
 const workflowEngine = require('./workflowEngine.cjs');
+const salesOrderNumbering = require('./salesOrderNumbering.cjs');
 const promotionEngine = require('./promotionEngine.cjs');
 const promotionService = require('./promotionService.cjs');
 
@@ -1940,7 +1941,18 @@ const portalLifecycleService = {
     // list, the portal and the document chain all reference ONE order. Without
     // an erpOrderId a fresh canonical record is created as before.
     const orderId = erpOrderId || genId('so');
-    const orderNumber = await workflowEngine.nextYearScopedNumber('sales_orders', 'order_number', 'ORD');
+    // Unified P726 official number, shared atomic sequence. Conversions always
+    // carry the SO- prefix (origin QUOTATION_REQUEST); direct ERP orders get
+    // ORD- via the same counter in the sync gateway. Throws when the sequence
+    // store is unavailable — an official order must never be created unnumbered.
+    const orderNumber = await salesOrderNumbering.mintOfficialSalesOrderNumber(
+      {
+        source_request_id: requestId,
+        source_request_number: request.request_number,
+        reorder_of: request.reorder_of || null,
+      },
+      { originOverride: salesOrderNumbering.ORIGIN_CONVERSION }
+    );
 
     // Pricing-evidence preservation. Lines priced at submission already carry
     // their pricingBreakdown; any master-priced line still missing one (e.g.
@@ -2354,7 +2366,12 @@ const portalLifecycleService = {
     }
 
     const orderId = genId('so');
-    const orderNumber = await workflowEngine.nextYearScopedNumber('sales_orders', 'order_number', 'ORD');
+    // Unified P726 official number (conversion origin → SO- prefix), shared
+    // atomic sequence with direct ERP orders. See completeSalesOrder above.
+    const orderNumber = await salesOrderNumbering.mintOfficialSalesOrderNumber(
+      { quotation_id: id },
+      { originOverride: salesOrderNumbering.ORIGIN_CONVERSION }
+    );
     const itemsJson = JSON.stringify(
       quotation.items.map((item) => ({
         id: item.productId || genId('itm'),

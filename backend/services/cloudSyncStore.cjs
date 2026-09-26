@@ -178,73 +178,73 @@ async function listRows(table) {
   return out;
 }
 
-// ─── Sales order official-number minting ────────────────────────────────────
-// The canonical sales order number is backend-authoritative (`ORD-YYYY-######`).
-// Portal-created orders already get one server-side (portalLifecycleService).
-// Admin-created orders arrive here through the sync gateway with a provisional
-// or missing number, so the gateway mints the official number at write time.
-// Minting is idempotent: an already-official number in the payload is kept,
-// and a row that already carries an official number on the server is reused
-// (never re-minted) so retries cannot produce two numbers for one order.
-
-const SALES_ORDER_NUMBER_PATTERN = /^ORD-\d{4}-\d{6}$/;
-
-/**
- * Pure decision helper (unit-testable): returns the official number to use, or
- * null when one must be minted. `payloadNumber` is preferred; `rowNumber` is
- * the number already committed on the server (used for idempotent replays).
- */
-function pickSalesOrderNumber({ payload, rowNumber }) {
-  const has = (v) => typeof v === 'string' && v.trim().length > 0;
-  const data = payload && typeof payload === 'object' ? payload : {};
-  const payloadNumber = has(data.order_number)
-    ? data.order_number
-    : (has(data.orderNumber) && SALES_ORDER_NUMBER_PATTERN.test(data.orderNumber) ? data.orderNumber : null);
-  if (payloadNumber) return payloadNumber;
-  return has(rowNumber) ? rowNumber : null;
-}
-
-/**
- * Pure scanner (unit-testable): next sequence value across every committed
- * sales_orders row, reading both key spellings (`order_number` snake_case from
- * the portal, `orderNumber` camelCase from admin-synced records).
- */
-function nextSalesOrderNumber(rows) {
-  const year = new Date().getFullYear();
-  const prefixToken = `ORD-${year}-`;
-  let maxSeq = 0;
-  for (const row of rows || []) {
-    const data = row && typeof row === 'object'
-      ? (row.data && typeof row.data === 'object' ? row.data : row)
-      : {};
-    const value = String(data.order_number || data.orderNumber || '');
-    if (!value.startsWith(prefixToken)) continue;
-    const num = parseInt(value.slice(prefixToken.length), 10);
-    if (Number.isFinite(num) && num > maxSeq) maxSeq = num;
-  }
-  return `${prefixToken}${String(maxSeq + 1).padStart(6, '0')}`;
-}
+// ─── Unified P726 official Sales Order numbering ────────────────────────────
+// One global numeric sequence shared by both official prefixes:
+//   DIRECT_ERP origin (no source_request_id/number, no quotation_id) → ORD-P726/NNN
+//   QUOTATION_REQUEST origin (request/quotation linkage persisted)   → SO-P726/NNN
+// Numbers are claimed atomically (counter row lock — see salesOrderNumbering
+// + migration 0027). Never SELECT MAX()+1, never an in-memory counter.
+//
+// History rule: rows that already exist server-side keep their numbers
+// untouched. Only genuine creates can receive a fresh official number.
+// Provisional rows (orderNumberProvisional or non-official shapes like
+// ORDER-P726/…) are minted, never adopted.
+const salesOrderNumbering = require('./salesOrderNumbering.cjs');
 
 /**
  * Resolve the official sales order number for an incoming upsert. Returns the
- * number to stamp onto the payload, or null when the payload already carries a
- * settled official number (in which case nothing needs to be injected).
- * Never throws — the gateway must not block a business write on numbering.
+ * number to stamp onto payload.order_number (canonical field), or null when
+ * nothing should be stamped.
+ *
+ * Never throws — the gateway must not block a business write on numbering
+ * (callers treat throw as mint-skipped and save unnumbered for a later retry).
  */
 async function ensureSalesOrderNumber(payload) {
-  const settled = pickSalesOrderNumber({ payload, rowNumber: null });
-  if (settled) return settled;
-  let rowNumber = null;
+  const data = payload && typeof payload === 'object' ? payload : {};
+  const id = data.id;
+  let existing = null;
   try {
-    const existing = await getRow('sales_orders', payload.id);
-    rowNumber = existing && existing.data && typeof existing.data === 'object'
-      ? (existing.data.order_number || existing.data.orderNumber || null)
-      : null;
-  } catch { /* row missing or cloud unreachable — mint below */ }
-  const fromRow = pickSalesOrderNumber({ payload: {}, rowNumber });
-  if (fromRow) return fromRow;
-  const rows = await listRows('sales_orders');
-  return nextSalesOrderNumber(rows);
+    existing = id ? await getRow('sales_orders', id) : null;
+  } catch { existing = null; /* row missing or cloud unreachable — treat as create */ }
+  const serverData =
+    existing && existing.data && typeof existing.data === 'object' ? existing.data : null;
+
+  // Existing row: preserve history. Stamp back ONLY the server's own
+  // canonical number so a stale push cannot clobber it; never invent one.
+  // (A missing official number on an old row stays missing — history is
+  // immutable, and a later edit must not rewrite what the business saw.)
+  if (serverData) {
+    const serverOfficial = String(serverData.order_number || '').trim();
+    if (serverOfficial) return serverOfficial;
+    const serverCamel = String(serverData.orderNumber || '').trim();
+    if (
+      serverCamel &&
+      (salesOrderNumbering.isOfficialSalesOrderNumber(serverCamel) ||
+        salesOrderNumbering.isLegacyOfficialNumber(serverCamel))
+    ) {
+      return serverCamel;
+    }
+    return null;
+  }
+
+  // Genuine create: adopt a client-supplied official number only when it is a
+  // well-formed P726 number, explicitly non-provisional, prefix-consistent
+  // with the persisted origin, and currently unused (conversion pre-claims
+  // and legitimate replays take this path with zero counter waste).
+  const candidate = String(data.order_number || '').trim();
+  if (
+    candidate &&
+    salesOrderNumbering.isOfficialSalesOrderNumber(candidate) &&
+    data.orderNumberProvisional !== true &&
+    salesOrderNumbering.prefixMatchesOrigin(candidate, data) &&
+    !(await salesOrderNumbering.isOfficialNumberTaken(candidate, { excludeId: id }))
+  ) {
+    return candidate;
+  }
+
+  // Otherwise mint fresh from the shared atomic counter by persisted origin.
+  // Throws when the sequence store/config is unavailable (caller fails open).
+  return salesOrderNumbering.mintOfficialSalesOrderNumber(data);
 }
 
 /**
@@ -727,8 +727,28 @@ async function applyOp(op) {
           // without an official number and the next push re-runs the mint.
           console.warn(`[cloudSyncStore] sales_orders ${id} number mint skipped:`, mintErr?.message || mintErr);
         }
+        try {
+          result = await upsertRow(table, id, payload);
+        } catch (upsertErr) {
+          // A kept client-supplied number can lose an interleave race it
+          // should never have entered (unique index backstop). Consume ONE
+          // fresh value and retry once instead of failing forever; every
+          // other failure propagates to the normal retryable path below.
+          if (
+            salesOrderNumbering.isUniqueViolation(upsertErr) &&
+            salesOrderNumbering.isOfficialSalesOrderNumber(payload.order_number)
+          ) {
+            const fresh = await salesOrderNumbering.mintOfficialSalesOrderNumber(payload);
+            payload.order_number = fresh;
+            console.log(`[cloudSyncStore] sales_orders ${id} re-minted after conflict: ${fresh}`);
+            result = await upsertRow(table, id, payload);
+          } else {
+            throw upsertErr;
+          }
+        }
+      } else {
+        result = await upsertRow(table, id, payload);
       }
-      result = await upsertRow(table, id, payload);
     }
 
     // Optimistic-concurrency gate rejected the write: another device changed
@@ -798,8 +818,7 @@ module.exports = {
   recordIdempotency,
   countTombstones,
   purgeTombstones,
-  pickSalesOrderNumber,
-  nextSalesOrderNumber,
+  ensureSalesOrderNumber,
   getSyncGeneration,
   incrementSyncGeneration,
 };

@@ -2,13 +2,19 @@
  * Quotation Requests System — comprehensive tests for Issues 1-9.
  *
  * Covers:
- *   ISSUE 1 — Numbering: order requests get SO- prefix, official orders get ORD-
+ *   ISSUE 1 — Numbering: order requests get SO-YYYY request numbers;
+ *   official orders get SO-P726 (conversion) / ORD-P726 (direct) from one
+ *   shared sequence
  *   ISSUE 6 — Date formatting safety (inline logic from formatters.ts)
  *   ISSUE 8 — Reference numbers: source_request_number stored on official orders
  */
 
 const workflowEngine = require('../services/workflowEngine.cjs');
-const { pickSalesOrderNumber, nextSalesOrderNumber } = require('../services/cloudSyncStore.cjs');
+const {
+  determineSalesOrderOrigin,
+  isOfficialSalesOrderNumber,
+  prefixMatchesOrigin,
+} = require('../services/salesOrderNumbering.cjs');
 
 // ─── Inline date formatting helpers (mirrors frontend/utils/formatters.ts) ──
 
@@ -42,40 +48,27 @@ describe('ISSUE 1 — Request number prefixes', () => {
   });
 });
 
-// ─── ISSUE 1: Official order number prefix ──────────────────────────────────
+// ─── ISSUE 1: Official order number (unified P726, one shared sequence) ─────
 
-describe('ISSUE 1 — Official order number (ORD)', () => {
-  it('nextSalesOrderNumber mints ORD-YYYY-######', () => {
-    const number = nextSalesOrderNumber([]);
-    expect(number).toMatch(/^ORD-\d{4}-000001$/);
+describe('ISSUE 1 — Official order number (P726 unified)', () => {
+  it('conversion linkage yields the SO- prefix', () => {
+    expect(determineSalesOrderOrigin({ source_request_id: 'req-1' })).toBe('QUOTATION_REQUEST');
   });
 
-  it('pickSalesOrderNumber keeps official ORD snake_case number', () => {
-    expect(pickSalesOrderNumber({
-      payload: { id: 'so_1', order_number: 'ORD-2026-000042' },
-      rowNumber: null,
-    })).toBe('ORD-2026-000042');
+  it('direct rows yield the ORD- prefix', () => {
+    expect(determineSalesOrderOrigin({ customer_id: 'c-1' })).toBe('DIRECT_ERP');
   });
 
-  it('pickSalesOrderNumber keeps official ORD camelCase number', () => {
-    expect(pickSalesOrderNumber({
-      payload: { id: 'so_1', orderNumber: 'ORD-2026-000042' },
-      rowNumber: null,
-    })).toBe('ORD-2026-000042');
+  it('unified official shapes validate; legacy ORDER- does not', () => {
+    expect(isOfficialSalesOrderNumber('SO-P726/028')).toBe(true);
+    expect(isOfficialSalesOrderNumber('ORD-P726/026')).toBe(true);
+    expect(isOfficialSalesOrderNumber('ORDER-P726/026')).toBe(false);
   });
 
-  it('pickSalesOrderNumber rejects old SO- camelCase (now ORD-)', () => {
-    expect(pickSalesOrderNumber({
-      payload: { id: 'so_1', orderNumber: 'SO-2026-000042' },
-      rowNumber: null,
-    })).toBeNull();
-  });
-
-  it('pickSalesOrderNumber keeps legacy SO- snake_case (backwards compat)', () => {
-    expect(pickSalesOrderNumber({
-      payload: { id: 'so_1', order_number: 'SO-2026-000042' },
-      rowNumber: null,
-    })).toBe('SO-2026-000042');
+  it('prefix must match persisted origin (SO- kept only for conversions)', () => {
+    expect(prefixMatchesOrigin('SO-P726/028', { source_request_id: 'req-1' })).toBe(true);
+    expect(prefixMatchesOrigin('SO-P726/028', { customer_id: 'c-1' })).toBe(false);
+    expect(prefixMatchesOrigin('ORD-P726/026', { customer_id: 'c-1' })).toBe(true);
   });
 });
 
@@ -157,10 +150,10 @@ describe('Summary — all issues covered', () => {
     expect(workflowEngine.requestNumberPrefix('order')).toBe('SO');
   });
 
-  it('ISSUE 1: official order prefix is ORD (not SO)', () => {
-    const number = nextSalesOrderNumber([]);
-    expect(number.startsWith('ORD-')).toBe(true);
-    expect(number.startsWith('SO-')).toBe(false);
+  it('ISSUE 1: official P726 numbers share one sequence across SO-/ORD- prefixes', () => {
+    expect(isOfficialSalesOrderNumber('SO-P726/028')).toBe(true);
+    expect(isOfficialSalesOrderNumber('ORD-P726/026')).toBe(true);
+    expect(isOfficialSalesOrderNumber('ORDER-P726/026')).toBe(false);
   });
 
   it('ISSUE 6: no Invalid Date for any nullish input', () => {

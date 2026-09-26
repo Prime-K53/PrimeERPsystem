@@ -4,6 +4,7 @@ import { logger } from '@/services/logger';
 //   No rounding, no markup, no market adjustments in persistence layer.
 import { X, Save, Plus, Trash2, Calculator, Info, ShieldCheck, Building2, Package, Tag, Clock, Search, ChevronDown, Coins, UserPlus, Calendar, RefreshCw, Wallet, Mail, Layers, ExternalLink, FileText, Printer, FileDown, Eye, TrendingUp, Truck, Scale, Copy, Sparkles, AlertTriangle, Lightbulb, Image, History, AlertCircle, Check, FolderOpen, Link2 } from 'lucide-react';
 import { useOrders } from '../../../context/OrdersContext';
+import { useSalesOrderStore } from '../../../stores/salesOrderStore';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useSales } from '../../../context/SalesContext';
@@ -11,6 +12,7 @@ import { useInventory } from '../../../context/InventoryContext';
 import { useProcurement } from '../../../context/ProcurementContext';
 import { CartItem, Item, Invoice, ProductVariant, Account, OrderItem, OrderPayment, BOMTemplate, AdjustmentSnapshot, Customer, Supplier } from '../../../types';
 import { generateCustomerId, generateNextId, getDefaultPaymentTermsForSegment, resolveCustomerPaymentPolicy, roundToCurrency } from '../../../utils/helpers';
+import { salesOrderService } from '../../../services/salesOrderService';
 import { generateLocalId } from '../../../utils/idGeneration';
 import { pricingService, DynamicServicePricingResult } from '../../../services/pricingService';
 import { dbService } from '../../../services/db';
@@ -175,6 +177,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const { inventory, marketAdjustments, updateReservedStock, addItem } = useInventory();
     const { suppliers, addSupplier } = useProcurement();
     const { createOrder, orders } = useOrders();
+    const { salesOrders } = useSalesOrderStore();
     const { handlePreview } = useDocumentPreview();
     const navigate = useNavigate();
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
@@ -951,8 +954,20 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                     key = 'REC';
                     collection = recurringInvoices;
                 } else if (type === 'Order') {
-                    key = 'order';
-                    collection = orders || [];
+                    // Unified P726 model: new orders NEVER receive ORDER- numbers.
+                    // Mint a provisional SO- identity; the backend stamps the
+                    // official ORD-P726/SO-P726 number (by persisted origin) on
+                    // first sync. The provisional is display-only until then.
+                    // Scanned against salesOrders (the store this row will live
+                    // in) plus legacy orders so the provisional id is unique
+                    // everywhere it can be displayed.
+                    const provisionalScope = [...(salesOrders || []), ...(orders || [])];
+                    setFormData((prev: any) => ({
+                        ...prev,
+                        id: salesOrderService.generateProvisionalOrderId(provisionalScope, 'SO'),
+                        orderNumberProvisional: true,
+                    }));
+                    return;
                 } else if (type === 'Purchase') {
                     key = 'purchase';
                     collection = invoices;
@@ -966,11 +981,16 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 ? [...initialData.scheduledDates].map((date: any) => String(date))
                 : [];
             const resolvedRecurringStatus = normalizeRecurringStatus(initialData.status);
-            const fallbackId = initialData.id || generateNextId(
-                type === 'Quotation' ? 'quotation' : type === 'Recurring' ? 'REC' : type === 'Order' ? 'order' : type === 'Purchase' ? 'purchase' : 'invoice',
-                type === 'Quotation' ? quotations : type === 'Recurring' ? recurringInvoices : type === 'Order' ? (orders || []) : invoices,
-                companyConfig
-            );
+            // Unified P726 model: id-less Order drafts get a provisional SO-
+            // identity (never ORDER-); official numbering happens on sync.
+            const fallbackId = initialData.id || (type === 'Order'
+                ? salesOrderService.generateProvisionalOrderId(
+                    [...(salesOrders || []), ...(orders || [])], 'SO')
+                : generateNextId(
+                    type === 'Quotation' ? 'quotation' : type === 'Recurring' ? 'REC' : type === 'Purchase' ? 'purchase' : 'invoice',
+                    type === 'Quotation' ? quotations : type === 'Recurring' ? recurringInvoices : invoices,
+                    companyConfig
+                ));
 
             const editCustomer = initialData.customerId
                 ? customers.find((c: any) => c.id === initialData.customerId)

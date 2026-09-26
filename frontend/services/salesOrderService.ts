@@ -174,6 +174,70 @@ export const isOfficialNumber = (value?: string | null): boolean => {
   return Boolean(value) && /^(ORD-|SO-|ORD\/|SO\/)/i.test(String(value));
 };
 
+/** Unified official shape: SO-{series}/NNN (conversion) or ORD-{series}/NNN (direct). */
+export const SALES_ORDER_OFFICIAL_PATTERN = /^(SO|ORD)-([A-Za-z0-9]+)\/(\d+)$/i;
+export const LEGACY_OFFICIAL_NUMBER_PATTERN = /^ORD-\d{4}-\d{6}$/;
+
+export interface ParsedSalesOrderNumber {
+  kind: 'sales_order';
+  /** Inferred from the prefix — valid ONLY for reading historical numbers, never for creation provenance. */
+  origin: 'DIRECT' | 'CONVERSION';
+  series: string;
+  sequence: number;
+}
+
+/**
+ * Parse an official Sales Order number into structured parts, for ANY
+ * configured series (current or historical). Returns null when the value is
+ * not an official unified shape. Origin here is prefix-inferred and valid
+ * only for reading; creation decisions must use persisted provenance.
+ */
+export const parseOfficialSalesOrderNumber = (value?: string | null): ParsedSalesOrderNumber | null => {
+  const match = String(value || '').trim().match(SALES_ORDER_OFFICIAL_PATTERN);
+  if (!match) return null;
+  return {
+    kind: 'sales_order',
+    origin: match[1].toUpperCase() === 'SO' ? 'CONVERSION' : 'DIRECT',
+    series: String(match[2]).toUpperCase(),
+    sequence: Number(match[3]),
+  };
+};
+
+export const isOfficialSalesOrderNumber = (value?: string | null, series?: string | null): boolean => {
+  const parsed = parseOfficialSalesOrderNumber(value);
+  if (!parsed) return false;
+  if (series == null) return true;
+  return parsed.series === String(series).trim().toUpperCase();
+};
+
+/**
+ * Central canonical reader for the official Sales Order number
+ * (getSalesOrderOfficialNumber semantics):
+ *   1. `order_number` is authoritative — returned verbatim when non-empty.
+ *   2. Legacy `orderNumber` is fallback compatibility ONLY, and only when it
+ *      is an official-shaped number (unified official for the given series,
+ *      or any series when `series` is omitted so history stays readable;
+ *      legacy ORD-YYYY also accepted) that is not explicitly flagged
+ *      provisional.
+ *   3. Provisional values (flagged, or any SO-/ORDER-/bare shape) are NEVER
+ *      returned here — they must never be mistaken for official numbers.
+ * Returns undefined when the record has no official number yet.
+ */
+export const getSalesOrderOfficialNumber = (order: {
+  order_number?: unknown;
+  orderNumber?: unknown;
+  orderNumberProvisional?: unknown;
+} | null | undefined, series?: string | null): string | undefined => {
+  if (!order || typeof order !== 'object') return undefined;
+  const snake = String((order as Record<string, unknown>).order_number ?? '').trim();
+  if (snake) return snake;
+  if ((order as Record<string, unknown>).orderNumberProvisional === true) return undefined;
+  const camel = String((order as Record<string, unknown>).orderNumber ?? '').trim();
+  if (!camel) return undefined;
+  if (isOfficialSalesOrderNumber(camel, series ?? undefined) || LEGACY_OFFICIAL_NUMBER_PATTERN.test(camel)) return camel;
+  return undefined;
+};
+
 export const applyOfficialNumber = (order: SalesOrder, officialId: string, officialNumber: string): SalesOrder => {
   return {
     ...order,

@@ -338,7 +338,7 @@ const CustomerDeliveries: React.FC = () => {
               const vehicleNo = shipment.vehicle_no || '—';
               const destination = shipment.shipping_address || '—';
 
-              const displayOrderNumber = orderNumber.replace(/^ORD-/i, '');
+              const displayOrderNumber = orderNumber;
               const displayTrackingNumber = trackingNumber.replace(/^TRK-/i, '');
 
               const status = (shipment.status || '').toLowerCase();
@@ -481,7 +481,7 @@ const CustomerDeliveries: React.FC = () => {
         <DeliveryTrackingModal
           delivery={{
             id: selectedShipment.id,
-            orderId: (selectedShipment.order_number || selectedShipment.id.slice(0, 8)).replace(/^ORD-/i, ''),
+            orderId: (selectedShipment.order_number || selectedShipment.id.slice(0, 8)),
             trackingNumber: (selectedShipment.tracking_number || '—').replace(/^TRK-/i, ''),
             status: selectedShipment.status || 'processing',
             estimatedArrival: selectedShipment.estimated_delivery,

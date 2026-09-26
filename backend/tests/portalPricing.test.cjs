@@ -115,6 +115,12 @@ jest.mock('../auditService.cjs', () => ({
   auditService: { logEvent: jest.fn(async () => ({})) },
 }));
 
+jest.mock('../services/salesOrderNumbering.cjs', () => ({
+  ORIGIN_DIRECT: 'DIRECT_ERP',
+  ORIGIN_CONVERSION: 'QUOTATION_REQUEST',
+  mintOfficialSalesOrderNumber: jest.fn(async () => 'SO-P726/000001'),
+}));
+
 const lifecycle = require('../services/portalLifecycleService.cjs');
 const repo = require('../services/supabaseRepository.cjs');
 const promotionService = require('../services/promotionService.cjs');
@@ -369,6 +375,10 @@ describe('Portal order pricing evidence — capture, persistence, conversion', (
 
     const orderRow = store.sales_orders.get(so.id);
     expect(orderRow).toBeTruthy();
+
+    // Unified P726 model: conversions mint SO- from the shared counter.
+    expect(so.orderNumber).toBe('SO-P726/000001');
+    expect(orderRow.order_number).toBe('SO-P726/000001');
 
     const items = JSON.parse(orderRow.items);
     expect(items[0].pricingBreakdown).toEqual(expect.objectContaining({

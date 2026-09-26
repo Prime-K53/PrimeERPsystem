@@ -25,6 +25,9 @@ import {
   adoptQuotationRequestAsSalesOrder,
   migrateLegacyOrders,
   isOfficialNumber,
+  isOfficialSalesOrderNumber,
+  parseOfficialSalesOrderNumber,
+  getSalesOrderOfficialNumber,
   generateProvisionalOrderId,
   salesOrderService,
 } from '../../services/salesOrderService';
@@ -287,5 +290,105 @@ describe('number helpers', () => {
 
   it('generateProvisionalOrderId delegates to the shared id generator', () => {
     expect(generateProvisionalOrderId([])).toBe('SO-NEXT');
+  });
+});
+
+describe('unified P726 official numbers (getSalesOrderOfficialNumber)', () => {
+  it('prefers the authoritative order_number field verbatim', () => {
+    expect(
+      getSalesOrderOfficialNumber({ order_number: 'ORD-P726/026', orderNumber: 'SO-P726/001' })
+    ).toBe('ORD-P726/026');
+    expect(getSalesOrderOfficialNumber({ order_number: 'SO-P726/028' })).toBe('SO-P726/028');
+  });
+
+  it('falls back to legacy orderNumber only for official shapes', () => {
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORD-2026-000001' })).toBe('ORD-2026-000001');
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORDER-P726/034' })).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/001' })).toBe('SO-P726/001');
+  });
+
+  it('never mistakes provisional values for official numbers', () => {
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/001', orderNumberProvisional: true })).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORDER-P726/034' })).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: '' })).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({})).toBeUndefined();
+    expect(getSalesOrderOfficialNumber(null)).toBeUndefined();
+  });
+
+  it('recognises unified official vs legacy shapes', () => {
+    expect(isOfficialSalesOrderNumber('SO-P726/028')).toBe(true);
+    expect(isOfficialSalesOrderNumber('ORD-P726/026')).toBe(true);
+    expect(isOfficialSalesOrderNumber('ORDER-P726/026')).toBe(false);
+    expect(isOfficialSalesOrderNumber('ORD-2026-000001')).toBe(false);
+  });
+});
+
+describe('alternate series recognition (P727, no hard-coded P726)', () => {
+  it('parses any-series official numbers into structured parts', () => {
+    expect(parseOfficialSalesOrderNumber('SO-P727/002')).toEqual({
+      kind: 'sales_order',
+      origin: 'CONVERSION',
+      series: 'P727',
+      sequence: 2,
+    });
+    expect(parseOfficialSalesOrderNumber('ORD-P727/001')).toEqual({
+      kind: 'sales_order',
+      origin: 'DIRECT',
+      series: 'P727',
+      sequence: 1,
+    });
+    expect(parseOfficialSalesOrderNumber('ORDER-P727/001')).toBeNull();
+    expect(parseOfficialSalesOrderNumber('SO-P726/028')).toEqual({
+      kind: 'sales_order',
+      origin: 'CONVERSION',
+      series: 'P726',
+      sequence: 28,
+    });
+    expect(parseOfficialSalesOrderNumber('not-a-number')).toBeNull();
+    expect(parseOfficialSalesOrderNumber(null)).toBeNull();
+  });
+
+  it('recognises official numbers with or without a series filter', () => {
+    expect(isOfficialSalesOrderNumber('ORD-P727/001')).toBe(true);
+    expect(isOfficialSalesOrderNumber('SO-P727/002')).toBe(true);
+    expect(isOfficialSalesOrderNumber('SO-P727/002', 'P727')).toBe(true);
+    expect(isOfficialSalesOrderNumber('SO-P726/028', 'P727')).toBe(false);
+    expect(isOfficialSalesOrderNumber('SO-P726/028')).toBe(true);
+    expect(isOfficialSalesOrderNumber('ORDER-P727/001')).toBe(false);
+    expect(isOfficialSalesOrderNumber('ORD-2026-000001')).toBe(false);
+  });
+
+  it('reads historical P726 numbers even when the current series is P727', () => {
+    // Canonical snake field is verbatim for any series — history never gated.
+    expect(getSalesOrderOfficialNumber({ order_number: 'ORD-P726/028' }, 'P727')).toBe('ORD-P726/028');
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P727/002' }, 'P727')).toBe('SO-P727/002');
+    // Legacy camelCase fallback without a series filter also reads history.
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/028' })).toBe('SO-P726/028');
+    // ...while an explicit series filter validates allocation for THAT series.
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/028' }, 'P727')).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P727/002' }, 'P727')).toBe('SO-P727/002');
+  });
+
+  it('still rejects provisional values under any series', () => {
+    expect(
+      getSalesOrderOfficialNumber({ orderNumber: 'SO-P727/999', orderNumberProvisional: true }, 'P727')
+    ).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORDER-P727/001' }, 'P727')).toBeUndefined();
+  });
+
+  it('supports arbitrary configured series (TEST history seeds TEST)', () => {
+    expect(parseOfficialSalesOrderNumber('SO-TEST/007')).toEqual({
+      kind: 'sales_order',
+      origin: 'CONVERSION',
+      series: 'TEST',
+      sequence: 7,
+    });
+    // ORDER- is historical-only: recognized by the migration seed, but never
+    // an official shape at runtime (so legacy rows are minted fresh, not kept).
+    expect(parseOfficialSalesOrderNumber('ORDER-TEST/009')).toBeNull();
+    expect(isOfficialSalesOrderNumber('ORD-TEST/010')).toBe(true);
+    expect(isOfficialSalesOrderNumber('SO-TEST/011', 'TEST')).toBe(true);
+    expect(isOfficialSalesOrderNumber('SO-TEST/011', 'P726')).toBe(false);
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORD-TEST/010' })).toBe('ORD-TEST/010');
   });
 });

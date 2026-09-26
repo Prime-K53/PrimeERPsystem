@@ -106,6 +106,12 @@ jest.mock('../auditService.cjs', () => ({
   auditService: { logEvent: jest.fn(async () => ({})) },
 }));
 
+jest.mock('../services/salesOrderNumbering.cjs', () => ({
+  ORIGIN_DIRECT: 'DIRECT_ERP',
+  ORIGIN_CONVERSION: 'QUOTATION_REQUEST',
+  mintOfficialSalesOrderNumber: jest.fn(async () => 'SO-P726/000001'),
+}));
+
 const portalService = require('../services/portalService.cjs');
 const lifecycle = require('../services/portalLifecycleService.cjs');
 const repo = require('../services/supabaseRepository.cjs');

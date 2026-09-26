@@ -246,7 +246,9 @@ const CustomerPayments: React.FC = () => {
             const dateStr = p.date ? new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
             const refParts = [
               p.invoice_number ? `INV-${p.invoice_number}` : null,
-              p.order_number ? `ORD-${p.order_number}` : null,
+              // Official order numbers are stored verbatim (SO-P726/…, ORD-P726/…,
+              // ORD-YYYY-…): never prepend a prefix onto them.
+              p.order_number ? String(p.order_number) : null,
             ].filter(Boolean);
             const refText = refParts.length > 0 ? refParts.join(', ') : (p.reference || p.id.slice(0, 8));
 
