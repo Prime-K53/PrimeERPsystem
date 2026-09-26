@@ -562,6 +562,7 @@ export const durableSyncQueue = {
   // bumped retryCount, …). All legitimate flows settle items dequeued by the
   // owning cycle (status 'syncing'), so this changes no valid transition.
   async markCompleted(id: string, serverTimestamp?: string): Promise<void> {
+    if (!id || String(id).trim() === '') return;
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item) {
@@ -581,6 +582,7 @@ export const durableSyncQueue = {
   },
 
   async markFailed(id: string, error: string, overrideErrorType?: 'retryable' | 'permanent' | 'unauthorized'): Promise<void> {
+    if (!id || String(id).trim() === '') return;
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item) {
@@ -612,6 +614,7 @@ export const durableSyncQueue = {
    * item stays visible for manual review/retry.
    */
   async deadLetter(id: string, error: string): Promise<void> {
+    if (!id || String(id).trim() === '') return;
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item) {
@@ -632,6 +635,7 @@ export const durableSyncQueue = {
   },
 
   async retryDeadLetter(id: string): Promise<void> {
+    if (!id || String(id).trim() === '') return;
     const db = await getDb();
     const item = await db.get('operations', id);
     if (item && item.status === 'dead_letter') {
@@ -662,6 +666,7 @@ export const durableSyncQueue = {
    * single queue entry instead of spawning a duplicate op.
    */
   async requeue<T>(id: string, payload: T, updates: Partial<Pick<QueuedOperation, 'conflictCount'>> = {}): Promise<void> {
+    if (!id || String(id).trim() === '') return;
     const db = await getDb();
     const item = await db.get('operations', id);
     if (!item) return;
@@ -721,6 +726,7 @@ export const durableSyncQueue = {
   },
 
   async remove(id: string): Promise<void> {
+    if (!id || String(id).trim() === '') return;
     const db = await getDb();
     await db.delete('operations', id);
   },
@@ -783,8 +789,9 @@ export const durableSyncQueue = {
   },
 
   async getByOperationId(operationId: string): Promise<QueuedOperation | undefined> {
+    if (!operationId || String(operationId).trim() === '') return undefined;
     const db = await getDb();
-    const all = await db.getAllFromIndex('operations', 'by-operationId', operationId);
+    const all = await db.getAllFromIndex('operations', 'by-operationId', IDBKeyRange.only(operationId));
     return all[0];
   },
 
@@ -970,12 +977,14 @@ export const durableSyncQueue = {
   },
 
   async getMeta(key: string): Promise<unknown | undefined> {
+    if (!key || String(key).trim() === '') return undefined;
     const db = await getDb();
     const record = await db.get('meta', key);
     return record?.value;
   },
 
   async setMeta(key: string, value: unknown): Promise<void> {
+    if (!key || String(key).trim() === '') return;
     const db = await getDb();
     await db.put('meta', { key, value });
   },

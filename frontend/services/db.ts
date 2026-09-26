@@ -349,6 +349,12 @@ const emitDataChange = (stores: string[]) => {
     }
 };
 
+const isMissingIdbKey = (id: unknown): boolean => {
+    if (id === undefined || id === null) return true;
+    if (typeof id === 'string' && id.trim() === '') return true;
+    return false;
+};
+
 const getAllFromLegacyStore = async <T>(storeName: keyof NexusDB): Promise<T[]> => withDbRecovery(async (db) => {
     if (!db?.objectStoreNames?.contains?.(storeName as any)) {
         console.warn(`Object store "${storeName}" not found in IndexedDB.`);
@@ -358,13 +364,22 @@ const getAllFromLegacyStore = async <T>(storeName: keyof NexusDB): Promise<T[]> 
     const keys = await db.getAllKeys(storeName as any);
     const items: T[] = [];
     for (const key of keys) {
+        if (isMissingIdbKey(key)) continue;
         const item = await db.get(storeName as any, key);
         if (item !== undefined) items.push(item);
     }
     return items;
 });
 
-const getFromLegacyStore = async <T>(storeName: keyof NexusDB, id: string): Promise<T | undefined> => withDbRecovery(async (db) => {
+const getFromLegacyStore = async <T>(storeName: keyof NexusDB, id: string): Promise<T | undefined> => {
+    // Guard: IndexedDB throws "Failed to execute 'get' on 'IDBObjectStore': No key
+    // or key range specified." when the key is undefined/null/empty (e.g. an order
+    // line without productId, or a walk-in order without customerId). Return
+    // undefined so callers' existing `if (record)` checks handle it gracefully.
+    if (isMissingIdbKey(id)) {
+        return undefined;
+    }
+    return withDbRecovery(async (db) => {
     if (!db?.objectStoreNames?.contains?.(storeName as any)) {
         console.warn(`Object store "${storeName}" not found in IndexedDB.`);
         return undefined;
@@ -372,7 +387,8 @@ const getFromLegacyStore = async <T>(storeName: keyof NexusDB, id: string): Prom
     const record = await db.get(storeName as any, id) as T | undefined;
     if (!record) return undefined;
     return record;
-});
+    });
+};
 
 const writeQueues = new Map<string, Promise<void>>();
 
@@ -392,6 +408,11 @@ const putToLegacyStore = async <T>(storeName: keyof NexusDB, item: T): Promise<s
 };
 
 const deleteFromLegacyStore = async (storeName: keyof NexusDB, id: string): Promise<void> => {
+    // Guard: deleting with no key would throw the same cryptic IDB "No key or key
+    // range specified" error. No-op instead — there is nothing to remove.
+    if (isMissingIdbKey(id)) {
+        return;
+    }
     await withDbRecovery(async (db) => {
         if (!db?.objectStoreNames?.contains?.(storeName as any)) {
             return;
@@ -1041,12 +1062,19 @@ export const dbService = {
 
     async executeAtomicOperation<T>(stores: (keyof NexusDB)[], operation: (tx: any) => Promise<T>): Promise<T> {
         // Cloud-authoritative: delegate to cloud-aware put/get/delete when Supabase is available
+        // Guards: transactionService paths call store.get() with optional keys
+        // (e.g. item.productId, order.customerId). A missing key must resolve to
+        // undefined / no-op instead of throwing IDB "No key or key range specified".
         const cloudTx = {
             objectStore: (storeName: string) => ({
                 put: (item: any) => this.put(storeName as keyof NexusDB, item),
-                get: (id: string) => this.get(storeName as keyof NexusDB, id),
+                get: (id: string) => isMissingIdbKey(id)
+                    ? Promise.resolve(undefined)
+                    : this.get(storeName as keyof NexusDB, id),
                 getAll: () => this.getAll(storeName as keyof NexusDB),
-                delete: (id: string) => this.delete(storeName as keyof NexusDB, id),
+                delete: (id: string) => isMissingIdbKey(id)
+                    ? Promise.resolve()
+                    : this.delete(storeName as keyof NexusDB, id),
             }),
             done: Promise.resolve(),
         };
@@ -1153,6 +1181,9 @@ export const dbService = {
     },
 
     async get<T>(storeName: keyof NexusDB, id: string): Promise<T | undefined> {
+        if (isMissingIdbKey(id)) {
+            return undefined;
+        }
         return getFromLegacyStore<T>(storeName, id);
     },
 
@@ -1322,6 +1353,11 @@ export const dbService = {
     },
 
     async delete(storeName: keyof NexusDB, id: string, options: DeleteOptions = {}): Promise<void> {
+        // Missing id: throw a clear error instead of the cryptic IDB
+        // "No key or key range specified" so the UI can report what happened.
+        if (isMissingIdbKey(id)) {
+            throw new Error(`Cannot delete from ${String(storeName)}: missing id`);
+        }
         // Local-first: soft delete in IndexedDB immediately
         const existing = await getFromLegacyStore<any>(storeName, id);
         if (existing) {
@@ -1363,6 +1399,9 @@ export const dbService = {
      * after the delete has been confirmed by the cloud.
      */
     async hardDelete(storeName: keyof NexusDB, id: string): Promise<void> {
+        if (isMissingIdbKey(id)) {
+            return;
+        }
         await deleteFromLegacyStore(storeName, id);
         emitDataChange([String(storeName)]);
     },
@@ -1424,6 +1463,9 @@ export const dbService = {
     },
 
     async getFile(id: string): Promise<string | null> {
+        if (isMissingIdbKey(id)) {
+            return null;
+        }
         // Try cloud first when in cloud mode
         if (shouldUseCloud()) {
             try {
@@ -1442,6 +1484,9 @@ export const dbService = {
     },
 
     async getFileBlob(id: string): Promise<Blob | null> {
+        if (isMissingIdbKey(id)) {
+            return null;
+        }
         // Try cloud first when in cloud mode
         if (shouldUseCloud()) {
             try {

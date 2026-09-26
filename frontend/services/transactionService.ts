@@ -5978,6 +5978,9 @@ export const transactionService = {
     },
 
     async cancelOrder(orderId: string, reason: string) {
+        if (!orderId || String(orderId).trim() === '') {
+            throw new Error("Cannot cancel order: missing order id");
+        }
         const result = await dbService.executeAtomicOperation(
             ['salesOrders', 'inventory', 'ledger', 'customers', 'walletTransactions'],
             async (tx) => {
@@ -5997,9 +6000,12 @@ export const transactionService = {
                 }
                 if (orderCanonical === 'Fulfilled' || orderCanonical === 'Converted') throw new Error("Cannot cancel a completed order");
 
-                // 1. Release Reserved Stock
-                for (const item of order.items) {
-                    const invItem = await inventoryStore.get(item.productId);
+                // 1. Release Reserved Stock (skip lines without an inventory key —
+                // service/custom lines carry no productId and hold no reservation).
+                for (const item of order.items || []) {
+                    const productKey = item?.productId || item?.product_id || item?.itemId || item?.item_id;
+                    if (!productKey || String(productKey).trim() === '') continue;
+                    const invItem = await inventoryStore.get(productKey);
                     if (invItem) {
                         if (item.variantId && invItem.variants) {
                             const vIdx = invItem.variants.findIndex(v => v.id === item.variantId);
