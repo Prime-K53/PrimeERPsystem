@@ -347,6 +347,12 @@ app.use('/api/public/invoices', portalAuthLimiter({ windowMs: 15 * 60 * 1000, ma
 const documentVerifyRoutes = require('./routes/documentVerify.cjs');
 app.use('/api/public/documents', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), documentVerifyRoutes);
 
+// Public document download — read-only PDF download with PORTAL COPY
+// watermark. Reuses the same token verification as the verification
+// endpoint. Strictly GET; failures are generic 404s.
+const publicDocumentDownloadRoutes = require('./routes/publicDocumentDownload.cjs');
+app.use('/api/public/documents', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), publicDocumentDownloadRoutes);
+
 // Apply JWT verification to all /api routes (auth routes are skipped by verifyToken internally)
 app.use('/api', verifyToken);
 // Inject currency into requests

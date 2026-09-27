@@ -410,14 +410,40 @@ async function verifyDocument(documentType, documentNumber, token, deps) {
   } catch {
     return { ok: false };
   }
+  const entry = REGISTRY[documentType];
   const match = matchRow(documentType, clean, rows, supplied);
   if (!match) return { ok: false };
-  const entry = REGISTRY[documentType];
   return { ok: true, data: entry.toSafe(match, getConfig().company, entry.statusOf(match)) };
+}
+
+/**
+ * Returns the raw matched database row for a document type/number/token
+ * combination. Used by the public download endpoint to feed the
+ * authoritative renderer — the raw record (not the safe shape) is
+ * required because the renderer needs the full authoritative data.
+ * Returns null on any failure (same generic 404 semantics as verifyDocument).
+ */
+async function getDocumentRecord(documentType, documentNumber, token, deps) {
+  if (!REGISTRY[documentType]) return null;
+  const clean = sanitizeDocumentNumber(documentNumber);
+  const supplied = String(token || '').trim();
+  if (!clean || !supplied) return null;
+  const httpGet = deps && deps.httpGet;
+  let rows;
+  try {
+    rows = await fetchDocumentRows(documentType, clean, httpGet);
+  } catch {
+    return null;
+  }
+  const entry = REGISTRY[documentType];
+  const match = matchRow(documentType, clean, rows, supplied);
+  if (!match) return null;
+  return match;
 }
 
 module.exports = {
   verifyDocument,
+  getDocumentRecord,
   supportedDocumentTypes,
   mapInvoiceStatus,
   sanitizeDocumentNumber,
