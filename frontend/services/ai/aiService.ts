@@ -18,6 +18,30 @@ function getProvider(name: ProviderName): AIProvider {
   }
 }
 
+/**
+ * Shared provider defaults — single source of truth for provider switchers.
+ * Both Settings → AI configuration and Marketing Messages resolve defaults
+ * from here so the two UIs can never diverge.
+ */
+export const AI_PROVIDER_DEFAULTS: Record<string, { baseUrl: string; model: string }> = {
+  local: { baseUrl: 'http://localhost:11434/v1', model: 'llama3' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+};
+
+/**
+ * Normalize legacy provider names to the canonical taxonomy.
+ * The legacy Marketing Messages service historically used 'ollama' where
+ * Settings uses 'local' — both mean the same OpenAI-compatible local server.
+ */
+export function normalizeProviderName(name: unknown): ProviderName {
+  if (name === 'openrouter') return 'openrouter';
+  if (name === 'openai') return 'openai';
+  if (name === 'ollama' || name === 'local') return 'local';
+  if (name === 'custom') return 'custom';
+  return 'local';
+}
+
 function selectProvider(): AIProvider {
   try {
     const raw = localStorage.getItem('nexus_company_config');
@@ -45,6 +69,7 @@ class AIService {
   private currentModel = '';
   private currentBaseUrl = '';
   private currentApiKey = '';
+  private enabledFlag = true;
 
   constructor() {
     this.provider = selectProvider();
@@ -58,12 +83,17 @@ class AIService {
       const cfg = JSON.parse(raw)?.aiConfig;
       if (!cfg) return;
       if (cfg.provider) {
-        this.providerName = cfg.provider;
-        this.provider = getProvider(cfg.provider);
+        this.providerName = normalizeProviderName(cfg.provider);
+        this.provider = getProvider(this.providerName);
       }
-      if (cfg.model) this.currentModel = cfg.model;
-      if (cfg.baseUrl) this.currentBaseUrl = cfg.baseUrl;
-      if (cfg.apiKey) this.currentApiKey = cfg.apiKey;
+      // Canonical fields (Settings) + legacy aliases (Marketing Messages
+      // modal historically wrote `endpoint`, `openrouterApiKey`,
+      // `openrouterModel`). All read paths converge here so both UIs share
+      // one effective configuration.
+      if (cfg.model || cfg.openrouterModel) this.currentModel = cfg.model || cfg.openrouterModel;
+      if (cfg.baseUrl || cfg.endpoint) this.currentBaseUrl = cfg.baseUrl || cfg.endpoint;
+      if (cfg.apiKey || cfg.openrouterApiKey) this.currentApiKey = cfg.apiKey || cfg.openrouterApiKey;
+      if (typeof cfg.enabled === 'boolean') this.enabledFlag = cfg.enabled;
     } catch { /* ignore */ }
   }
 
@@ -71,42 +101,79 @@ class AIService {
     return this.providerName;
   }
 
-  getConfig(): { provider: ProviderName; model: string; baseUrl: string; apiKey: string } {
+  /**
+   * Debug/introspection helper — returns the effective provider/model/endpoint
+   * WITHOUT secrets, for production-safe logging and verification that
+   * Marketing Messages resolves the Settings-configured values.
+   */
+  getDebugInfo(): { provider: ProviderName; model: string; baseUrl: string; hasApiKey: boolean; configured: boolean; enabled: boolean } {
+    this.loadFromStorage();
+    const model = this.currentModel || '';
+    return {
+      provider: this.providerName,
+      model,
+      baseUrl: this.currentBaseUrl || '',
+      hasApiKey: !!this.currentApiKey,
+      configured: this.isConfigured(),
+      enabled: this.enabledFlag,
+    };
+  }
+
+  /** True when a generation attempt can reach a provider (local needs no key). */
+  isConfigured(): boolean {
+    this.loadFromStorage();
+    if (!this.enabledFlag) return false;
+    if (this.providerName === 'local') return !!(this.currentModel || this.currentBaseUrl);
+    return !!this.currentApiKey;
+  }
+
+  getConfig(): { provider: ProviderName; model: string; baseUrl: string; apiKey: string; enabled: boolean } {
+    this.loadFromStorage();
     return {
       provider: this.providerName,
       model: this.currentModel,
       baseUrl: this.currentBaseUrl,
       apiKey: this.currentApiKey,
+      enabled: this.enabledFlag,
     };
   }
 
-  saveConfig(config: { provider: ProviderName; model?: string; baseUrl?: string; apiKey?: string }) {
+  saveConfig(config: { provider: ProviderName | string; model?: string; baseUrl?: string; endpoint?: string; apiKey?: string; enabled?: boolean }) {
     try {
+      const provider = normalizeProviderName(config.provider);
       const raw = localStorage.getItem('nexus_company_config');
       const existing = raw ? JSON.parse(raw) : {};
+      const enabled = config.enabled ?? existing.aiConfig?.enabled ?? true;
+      const baseUrl = config.baseUrl ?? config.endpoint ?? existing.aiConfig?.baseUrl ?? existing.aiConfig?.endpoint ?? '';
+      const model = config.model ?? existing.aiConfig?.model ?? '';
+      const apiKey = config.apiKey ?? existing.aiConfig?.apiKey ?? '';
       existing.aiConfig = {
         ...(existing.aiConfig || {}),
-        provider: config.provider,
-        model: config.model ?? existing.aiConfig?.model ?? '',
-        baseUrl: config.baseUrl ?? existing.aiConfig?.baseUrl ?? '',
-        apiKey: config.apiKey ?? existing.aiConfig?.apiKey ?? '',
-        enabled: true,
+        provider,
+        model,
+        baseUrl,
+        // Legacy aliases so older readers converge on the same values.
+        endpoint: baseUrl,
+        apiKey,
+        enabled,
       };
       localStorage.setItem('nexus_company_config', JSON.stringify(existing));
-      this.providerName = config.provider;
-      this.provider = getProvider(config.provider);
-      if (config.model) this.currentModel = config.model;
-      if (config.baseUrl) this.currentBaseUrl = config.baseUrl;
-      if (config.apiKey) this.currentApiKey = config.apiKey;
+      this.providerName = provider;
+      this.provider = getProvider(provider);
+      this.enabledFlag = enabled;
+      if (config.model !== undefined) this.currentModel = config.model;
+      if (baseUrl !== undefined) this.currentBaseUrl = baseUrl;
+      if (config.apiKey !== undefined) this.currentApiKey = config.apiKey;
       // Sync the AI slice through the authoritative company-config store so
       // every device of the company receives it.
       const aiConfig = {
+        ...(existing.aiConfig || {}),
         provider: this.providerName,
         model: this.currentModel,
         baseUrl: this.currentBaseUrl,
+        endpoint: this.currentBaseUrl,
         apiKey: this.currentApiKey,
-        ...(existing.aiConfig || {}),
-        enabled: true,
+        enabled,
       };
       void patchStoredCompanyConfig({ aiConfig }).catch((e) => {
         logger.error('Failed to sync AI config to company store', e instanceof Error ? e : new Error('Unknown'));
@@ -126,13 +193,46 @@ class AIService {
   }
 
   private cfg(overrides?: Partial<AIConfig>): AIConfig {
+    this.loadFromStorage();
     const { model: overrideModel, ...rest } = overrides || {};
     return {
-      model: this.currentModel || overrideModel || 'llama3',
+      // Explicit per-call override wins; otherwise the Settings-configured
+      // model; 'llama3' is only the last-resort default when nothing is
+      // configured. Callers must NOT pass a hardcoded model here.
+      model: overrideModel || this.currentModel || 'llama3',
       baseUrl: this.currentBaseUrl || undefined,
       apiKey: this.currentApiKey || undefined,
       ...rest,
     };
+  }
+
+  /**
+   * Strict generation — resolves the CURRENT Settings configuration on every
+   * call (no caching) and lets provider errors propagate with their status
+   * codes intact so callers (e.g. Marketing Messages) can classify 429 /
+   * auth / model errors and keep secrets server-side. Never logs secrets.
+   */
+  async generateChatStrict(messages: ChatMessage[], overrides?: Partial<AIConfig>): Promise<string> {
+    const info = this.getDebugInfo();
+    logger.debug('[CentralAI] generateChatStrict via configured provider', {
+      provider: info.provider,
+      model: info.model || '(default)',
+    });
+    const text = await this.provider.generateChat(messages, this.cfg(overrides));
+    if (!text || !String(text).trim()) throw new Error('Empty AI response');
+    return text;
+  }
+
+  /** Strict text generation with the configured provider/model (throws). */
+  async generateTextStrict(prompt: string, systemInstruction?: string, overrides?: Partial<AIConfig>): Promise<string> {
+    const { AI_ASSISTANT_SYSTEM_INSTRUCTION } = P;
+    return this.generateChatStrict(
+      [
+        { role: 'system', content: systemInstruction || AI_ASSISTANT_SYSTEM_INSTRUCTION },
+        { role: 'user', content: prompt },
+      ],
+      overrides,
+    );
   }
 
   async *streamSystemDoc(prompt: string): AsyncGenerator<string> {
@@ -141,7 +241,7 @@ class AIService {
         { role: 'system', content: P.SYSTEM_DOC_SYSTEM_INSTRUCTION },
         { role: 'user', content: prompt },
       ];
-      const stream = this.provider.generateChatStream(messages, this.cfg({ model: 'llama3' }));
+      const stream = this.provider.generateChatStream(messages, this.cfg());
       for await (const chunk of stream) yield chunk;
     } catch (error: any) {
       logger.error('AI Streaming Error:', error);
@@ -155,7 +255,7 @@ class AIService {
         { role: 'system', content: P.SYSTEM_DOC_SYSTEM_INSTRUCTION_SHORT },
         { role: 'user', content: prompt },
       ];
-      return await this.provider.generateChat(messages, this.cfg({ model: 'llama3' }));
+      return await this.provider.generateChat(messages, this.cfg());
     } catch (error: any) {
       logger.error('AI API Error:', error);
       return 'Error generating documentation. Make sure your local AI server is running.';
@@ -168,7 +268,7 @@ class AIService {
         { role: 'system', content: systemInstruction || P.AI_ASSISTANT_SYSTEM_INSTRUCTION },
         { role: 'user', content: prompt },
       ];
-      return await this.provider.generateChat(messages, this.cfg({ model: 'llama3' }));
+      return await this.provider.generateChat(messages, this.cfg());
     } catch (error: any) {
       logger.error('AI API Error:', error);
       const msg = error?.message || '';
@@ -180,7 +280,7 @@ class AIService {
 
   async extractInvoiceData(imageBase64: string): Promise<any> {
     try {
-      const text = await this.provider.generateChat(buildImageMessages(imageBase64, P.INVOICE_EXTRACTION_PROMPT), this.cfg({ model: 'llama3' }));
+      const text = await this.provider.generateChat(buildImageMessages(imageBase64, P.INVOICE_EXTRACTION_PROMPT), this.cfg());
       return parseJSON(text);
     } catch (error) {
       logger.error('OCR Extraction Error:', error);
@@ -190,7 +290,7 @@ class AIService {
 
   async extractPaymentProofData(imageBase64: string): Promise<any> {
     try {
-      const text = await this.provider.generateChat(buildImageMessages(imageBase64, P.PAYMENT_PROOF_EXTRACTION_PROMPT), this.cfg({ model: 'llama3' }));
+      const text = await this.provider.generateChat(buildImageMessages(imageBase64, P.PAYMENT_PROOF_EXTRACTION_PROMPT), this.cfg());
       return parseJSON(text);
     } catch (error) {
       logger.error('Payment Proof Extraction Error:', error);
@@ -200,7 +300,7 @@ class AIService {
 
   async extractDeliveryNoteData(fileBase64: string): Promise<any> {
     try {
-      const text = await this.provider.generateChat(buildImageMessages(fileBase64, P.DELIVERY_NOTE_EXTRACTION_PROMPT), this.cfg({ model: 'llama3' }));
+      const text = await this.provider.generateChat(buildImageMessages(fileBase64, P.DELIVERY_NOTE_EXTRACTION_PROMPT), this.cfg());
       return parseJSON(text);
     } catch (error) {
       logger.error('DN Extraction Error:', error);
@@ -214,7 +314,7 @@ class AIService {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: [{ type: 'text', text: userPrompt }, { type: 'image_url', image_url: { url: fileBase64 } }] },
       ];
-      return await this.provider.generateChat(messages, this.cfg({ model: 'llama3' }));
+      return await this.provider.generateChat(messages, this.cfg());
     } catch (error) {
       logger.error('File Extraction Error:', error);
       throw error;
@@ -223,7 +323,7 @@ class AIService {
 
   async performOCR(images: string[], prompt?: string): Promise<string> {
     try {
-      return await this.provider.generateChat(buildMultiImageMessages(images, prompt || P.OCR_DEFAULT_PROMPT), this.cfg({ model: 'llama3' }));
+      return await this.provider.generateChat(buildMultiImageMessages(images, prompt || P.OCR_DEFAULT_PROMPT), this.cfg());
     } catch (error) {
       logger.error('OCR Error:', error);
       return 'Failed to perform OCR.';
@@ -232,7 +332,7 @@ class AIService {
 
   async suggestRestock(inventoryData: any[], salesData: any[]): Promise<any> {
     try {
-      const text = await this.provider.generateChat([{ role: 'user', content: P.buildRestockPrompt(inventoryData, salesData) }], this.cfg({ model: 'llama3' }));
+      const text = await this.provider.generateChat([{ role: 'user', content: P.buildRestockPrompt(inventoryData, salesData) }], this.cfg());
       const result = parseJSON(text);
       return Array.isArray(result) ? result : [];
     } catch (error) {
@@ -245,7 +345,7 @@ class AIService {
 
   async suggestProductPricing(productName: string, totalCost: number, category: string, wastePercentage = 0): Promise<any> {
     try {
-      const text = await this.provider.generateChat([{ role: 'user', content: P.buildPricingPrompt(productName, totalCost, category, wastePercentage) }], this.cfg({ model: 'llama3' }));
+      const text = await this.provider.generateChat([{ role: 'user', content: P.buildPricingPrompt(productName, totalCost, category, wastePercentage) }], this.cfg());
       const fb = { suggestedPrice: totalCost * 1.5, margin: 33.3, reasoning: 'Fallback', tiers: { small: totalCost * 1.5, medium: totalCost * 1.4, large: totalCost * 1.3 } };
       const parsed = parseJSON(text);
       return parsed ? { suggestedPrice: parsed.suggestedPrice ?? fb.suggestedPrice, margin: parsed.margin ?? fb.margin, reasoning: parsed.reasoning ?? fb.reasoning, tiers: parsed.tiers ?? fb.tiers } : fb;
@@ -265,7 +365,7 @@ class AIService {
       return await this.provider.generateChat([
         { role: 'system', content: P.BUSINESS_HEALTH_SYSTEM_INSTRUCTION },
         { role: 'user', content: P.buildBusinessHealthPrompt(snapshot) },
-      ], this.cfg({ model: 'llama3' }));
+      ], this.cfg());
     } catch {
       return '## Error Generating Report\nUnable to reach AI services.';
     }
@@ -276,7 +376,7 @@ class AIService {
       return await this.provider.generateChat([
         { role: 'system', content: P.FORECASTING_SYSTEM_INSTRUCTION },
         { role: 'user', content: P.buildForecastingPrompt(type, data) },
-      ], this.cfg({ model: 'llama3' }));
+      ], this.cfg());
     } catch { return 'Error analyzing data.'; }
   }
 
@@ -285,7 +385,7 @@ class AIService {
       return await this.provider.generateChat([
         { role: 'system', content: P.EXPENSE_ANALYSIS_SYSTEM_INSTRUCTION },
         { role: 'user', content: P.buildExpenseAnalysisPrompt(expenses) },
-      ], this.cfg({ model: 'llama3' }));
+      ], this.cfg());
     } catch { return 'Error analyzing expenses.'; }
   }
 

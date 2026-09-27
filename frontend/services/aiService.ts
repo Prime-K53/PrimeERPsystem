@@ -1,8 +1,28 @@
 import { logger } from '@/services/logger';
 import { patchStoredCompanyConfig } from '@/utils/companyConfigSync';
+import {
+  aiService as centralAI,
+  AI_PROVIDER_DEFAULTS,
+} from './ai/aiService';
+import type { ChatMessage } from './ai/types';
+
+/**
+ * Marketing AI service — COMPATIBILITY FACADE over the centralized AI service
+ * (frontend/services/ai/aiService.ts, managed through Settings → AI
+ * configuration).
+ *
+ * This module keeps the historical Marketing Messages API (smart replies,
+ * WhatsApp template generation, ad copy, sentiment) so existing screens keep
+ * working, but it performs NO provider/model selection of its own: every
+ * generation resolves the CURRENT Settings configuration through the central
+ * service on each call. There are no hardcoded models, providers, endpoints
+ * or API keys here — defaults are derived from the central
+ * AI_PROVIDER_DEFAULTS. Secrets are never logged and never leave this module
+ * except inside the authenticated provider request.
+ */
 
 export interface AIConfig {
-  provider: 'openai' | 'anthropic' | 'ollama' | 'openrouter';
+  provider: 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'local';
   apiKey: string;
   endpoint: string;
   model: string;
@@ -24,73 +44,98 @@ export interface GeneratedAdCopy {
   gradient: string;
 }
 
-const DEFAULT_CONFIG: AIConfig = {
-  provider: 'openai',
-  apiKey: '',
-  endpoint: 'https://api.openai.com/v1',
-  model: 'gpt-4o-mini',
-  enabled: false,
+/**
+ * Provider defaults derived from the central AI configuration — NOT a second
+ * source of truth. Only the `anthropic` entry is legacy-specific (the central
+ * Settings taxonomy does not offer Anthropic; stored Anthropic configs keep
+ * working through the legacy direct path below).
+ */
+export const PROVIDER_DEFAULTS: Record<string, { endpoint: string; model: string }> = {
+  openai: { endpoint: AI_PROVIDER_DEFAULTS.openai.baseUrl, model: AI_PROVIDER_DEFAULTS.openai.model },
+  anthropic: { endpoint: 'https://api.anthropic.com/v1', model: 'claude-3-haiku-20240307' },
+  ollama: { endpoint: AI_PROVIDER_DEFAULTS.local.baseUrl, model: AI_PROVIDER_DEFAULTS.local.model },
+  local: { endpoint: AI_PROVIDER_DEFAULTS.local.baseUrl, model: AI_PROVIDER_DEFAULTS.local.model },
+  openrouter: { endpoint: AI_PROVIDER_DEFAULTS.openrouter.baseUrl, model: AI_PROVIDER_DEFAULTS.openrouter.model },
 };
 
-const PROVIDER_DEFAULTS: Record<string, { endpoint: string; model: string }> = {
-  openai: { endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  anthropic: { endpoint: 'https://api.anthropic.com/v1', model: 'claude-3-haiku-20240307' },
-  ollama: { endpoint: 'http://localhost:11434/v1', model: 'llama3' },
-  openrouter: { endpoint: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
-};
+function readStoredProviderName(): string | null {
+  try {
+    const raw = localStorage.getItem('nexus_company_config');
+    if (!raw) return null;
+    const name = JSON.parse(raw)?.aiConfig?.provider;
+    return typeof name === 'string' ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+function toLegacyProvider(centralProvider: string): AIConfig['provider'] {
+  if (centralProvider === 'local' || centralProvider === 'ollama') return 'ollama';
+  if (centralProvider === 'openai') return 'openai';
+  if (centralProvider === 'openrouter') return 'openrouter';
+  if (centralProvider === 'anthropic') return 'anthropic';
+  return 'openai';
+}
 
 class AIService {
-  private config: AIConfig = DEFAULT_CONFIG;
-  private loaded = false;
-
-  private async ensureLoaded(): Promise<void> {
-    if (this.loaded) return;
-    try {
-      const raw = localStorage.getItem('nexus_company_config');
-      if (raw) {
-        const companyConfig = JSON.parse(raw);
-        const aiConfig = companyConfig?.aiConfig;
-        if (aiConfig) {
-          this.config = {
-            provider: aiConfig.provider || DEFAULT_CONFIG.provider,
-            apiKey: aiConfig.apiKey || aiConfig.openrouterApiKey || DEFAULT_CONFIG.apiKey,
-            endpoint: aiConfig.endpoint || aiConfig.baseUrl || DEFAULT_CONFIG.endpoint,
-            model: aiConfig.model || aiConfig.openrouterModel || DEFAULT_CONFIG.model,
-            enabled: true,
-          };
-          this.loaded = true;
-          return;
-        }
-      }
-      this.config = { ...DEFAULT_CONFIG };
-    } catch {
-      this.config = { ...DEFAULT_CONFIG };
-    }
-    this.loaded = true;
-  }
-
   async getConfig(): Promise<AIConfig> {
-    await this.ensureLoaded();
-    return { ...this.config };
+    // A stored Anthropic config predates the central taxonomy and is served
+    // verbatim so those workspaces keep working; everything else resolves
+    // through the central Settings configuration (single source of truth).
+    if (readStoredProviderName() === 'anthropic') {
+      try {
+        const raw = localStorage.getItem('nexus_company_config');
+        const stored = raw ? JSON.parse(raw)?.aiConfig : null;
+        return {
+          provider: 'anthropic',
+          apiKey: stored?.apiKey || '',
+          endpoint: stored?.endpoint || stored?.baseUrl || PROVIDER_DEFAULTS.anthropic.endpoint,
+          model: stored?.model || PROVIDER_DEFAULTS.anthropic.model,
+          enabled: stored?.enabled ?? true,
+        };
+      } catch {
+        /* fall through to central */
+      }
+    }
+    const central = centralAI.getConfig();
+    return {
+      provider: toLegacyProvider(central.provider),
+      apiKey: central.apiKey,
+      endpoint: central.baseUrl,
+      model: central.model,
+      enabled: central.enabled,
+    };
   }
 
   async saveConfig(config: Partial<AIConfig>): Promise<void> {
-    await this.ensureLoaded();
-    const merged = { ...this.config, ...config };
-    this.config = { ...merged, enabled: true };
-    try {
-      const raw = localStorage.getItem('nexus_company_config');
-      if (raw) {
-        const existing = JSON.parse(raw);
-        existing.aiConfig = { ...(existing.aiConfig || {}), ...config, enabled: true };
+    if (config.provider === 'anthropic' || (config.provider === undefined && readStoredProviderName() === 'anthropic')) {
+      // Legacy-only provider: persist directly with the historical field
+      // shape; generation uses the Anthropic direct path below.
+      try {
+        const raw = localStorage.getItem('nexus_company_config');
+        const existing = raw ? JSON.parse(raw) : {};
+        const merged = {
+          ...(existing.aiConfig || {}),
+          ...config,
+          provider: 'anthropic',
+          enabled: config.enabled ?? existing.aiConfig?.enabled ?? true,
+        };
+        existing.aiConfig = merged;
         localStorage.setItem('nexus_company_config', JSON.stringify(existing));
-      }
-      // Sync through the authoritative company-config store so the change
-      // propagates to every device of the company.
-      void patchStoredCompanyConfig({ aiConfig: { ...this.config, enabled: true } } as unknown as Partial<import('../types').CompanyConfig>).catch((e) => {
-        logger.error('Failed to sync AI config to company store', e instanceof Error ? e : new Error('Unknown'));
-      });
-    } catch (e) { logger.error("Operation failed", e as Error); }
+        void patchStoredCompanyConfig({ aiConfig: merged } as unknown as Partial<import('../types').CompanyConfig>).catch((e) => {
+          logger.error('Failed to sync AI config to company store', e instanceof Error ? e : new Error('Unknown'));
+        });
+      } catch (e) { logger.error('Operation failed', e as Error); }
+      return;
+    }
+    // Single write path: the central Settings-managed configuration.
+    centralAI.saveConfig({
+      provider: config.provider ?? centralAI.getConfig().provider,
+      model: config.model,
+      baseUrl: config.endpoint,
+      apiKey: config.apiKey,
+      enabled: config.enabled,
+    });
   }
 
   private buildSystemPrompt(context: string): string {
@@ -126,44 +171,51 @@ Format: {"title":"...","subtitle":"...","description":"...","badge":"...","ctaLa
     return prompts[context] || prompts.smartReply;
   }
 
+  /**
+   * Generation entry point. Resolves the CURRENT central (Settings-managed)
+   * provider/model on every call — never a cached or hardcoded selection —
+   * and lets provider errors propagate with status codes intact so callers
+   * can classify them (e.g. 429 rate-limit) without exposing raw payloads.
+   */
   private async callAPI(messages: { role: string; content: string }[]): Promise<string> {
-    const { provider, apiKey, endpoint, model } = this.config;
+    const config = await this.getConfig();
 
-    if (!apiKey && provider !== 'ollama') {
-      throw new Error('AI API key not configured. Go to Marketing Messages > AI Settings to configure.');
+    if (!config.enabled || (!config.apiKey && config.provider !== 'ollama' && config.provider !== 'local')) {
+      throw new Error('AI not configured. Go to Settings > AI to configure.');
     }
 
-    let url: string;
-    let headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    let body: any;
-
-    switch (provider) {
-      case 'anthropic': {
-        url = `${endpoint}/messages`;
-        headers['x-api-key'] = apiKey;
-        headers['anthropic-version'] = '2023-06-01';
-        body = {
-          model,
-          max_tokens: 1024,
-          messages: messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
-        };
-        break;
-      }
-      case 'openai':
-      case 'ollama':
-      case 'openrouter':
-      default: {
-        url = `${endpoint}/chat/completions`;
-        headers['Authorization'] = `Bearer ${apiKey}`;
-        body = { model, messages, max_tokens: 1024, temperature: 0.7 };
-        break;
-      }
+    // Legacy-only provider path (central taxonomy has no Anthropic provider).
+    if (config.provider === 'anthropic') {
+      return this.callAnthropic(messages, config);
     }
 
+    const info = centralAI.getDebugInfo();
+    // Production-safe instrumentation: provider + model only, never secrets.
+    logger.debug('[MarketingAI] generating via central AI service', {
+      provider: info.provider,
+      model: info.model || '(default)',
+    });
+    const chatMessages: ChatMessage[] = messages.map((m) => ({
+      role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
+      content: m.content,
+    }));
+    return centralAI.generateChatStrict(chatMessages);
+  }
+
+  private async callAnthropic(messages: { role: string; content: string }[], config: AIConfig): Promise<string> {
+    const url = `${config.endpoint}/messages`;
     const response = await fetch(url, {
       method: 'POST',
-      headers,
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': config.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_tokens: 1024,
+        messages: messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+      }),
     });
 
     if (!response.ok) {
@@ -172,16 +224,12 @@ Format: {"title":"...","subtitle":"...","description":"...","badge":"...","ctaLa
     }
 
     const data = await response.json();
-
-    if (provider === 'anthropic') {
-      return data.content?.[0]?.text || '';
-    }
-    return data.choices?.[0]?.message?.content || '';
+    return data.content?.[0]?.text || '';
   }
 
   async generateSmartReplies(chat: { customerName: string; messages: { content: string; direction: string }[] }): Promise<SmartReplySuggestion[]> {
-    await this.ensureLoaded();
-    if (!this.config.enabled || !this.config.apiKey) {
+    const config = await this.getConfig();
+    if (!config.enabled || (!config.apiKey && config.provider !== 'ollama' && config.provider !== 'local')) {
       return this.fallbackReplies(chat);
     }
 
@@ -203,14 +251,15 @@ Format: {"title":"...","subtitle":"...","description":"...","badge":"...","ctaLa
           label: s.label || 'Reply',
         }));
       }
-    } catch {
-      // Fallback to template-based suggestions
+    } catch (err) {
+      logger.debug('[MarketingAI] smart replies falling back to templates', {
+        reason: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+      });
     }
     return this.fallbackReplies(chat);
   }
 
   private fallbackReplies(chat: { customerName: string; messages: { content: string; direction: string }[] }): SmartReplySuggestion[] {
-    const name = chat.customerName || 'there';
     const lastMsg = chat.messages?.[chat.messages.length - 1]?.content?.toLowerCase() || '';
 
     if (lastMsg.includes('price') || lastMsg.includes('cost') || lastMsg.includes('how much')) {
@@ -250,8 +299,8 @@ Format: {"title":"...","subtitle":"...","description":"...","badge":"...","ctaLa
   }
 
   async generateTemplate(description: string): Promise<{ name: string; content: string; category: string; variables: string[] } | null> {
-    await this.ensureLoaded();
-    if (!this.config.enabled || !this.config.apiKey) return null;
+    const config = await this.getConfig();
+    if (!config.enabled || (!config.apiKey && config.provider !== 'ollama' && config.provider !== 'local')) return null;
 
     try {
       const response = await this.callAPI([
@@ -276,8 +325,8 @@ Format: {"title":"...","subtitle":"...","description":"...","badge":"...","ctaLa
   }
 
   async generateAdCopy(brief: { description: string; audience?: string; tone?: string }): Promise<GeneratedAdCopy | null> {
-    await this.ensureLoaded();
-    if (!this.config.enabled || !this.config.apiKey) {
+    const config = await this.getConfig();
+    if (!config.enabled || (!config.apiKey && config.provider !== 'ollama' && config.provider !== 'local')) {
       return this.fallbackAdCopy(brief);
     }
 
@@ -384,8 +433,8 @@ Format: {"title":"...","subtitle":"...","description":"...","badge":"...","ctaLa
   }
 
   async analyzeSentiment(text: string): Promise<{ sentiment: string; priority: string; summary: string; suggestedTags: string[] } | null> {
-    await this.ensureLoaded();
-    if (!this.config.enabled || !this.config.apiKey) {
+    const config = await this.getConfig();
+    if (!config.enabled || (!config.apiKey && config.provider !== 'ollama' && config.provider !== 'local')) {
       return {
         sentiment: 'neutral',
         priority: 'normal',
@@ -413,9 +462,9 @@ Format: {"title":"...","subtitle":"...","description":"...","badge":"...","ctaLa
   }
 
   async generateAIResponse(prompt: string, systemInstruction?: string): Promise<string> {
-    await this.ensureLoaded();
-    if (!this.config.enabled || !this.config.apiKey) {
-      throw new Error('AI not configured. Go to Marketing Messages > AI Settings to configure.');
+    const config = await this.getConfig();
+    if (!config.enabled || (!config.apiKey && config.provider !== 'ollama' && config.provider !== 'local')) {
+      throw new Error('AI not configured. Go to Settings > AI to configure.');
     }
 
     const messages: { role: string; content: string }[] = [];

@@ -179,10 +179,10 @@ const WhatsAppMarketingModal: React.FC<WhatsAppMarketingModalProps> = ({
         setSelectedTemplate('ai-generated');
         setActiveSection('message');
       } else {
-        alert('AI generation failed. Please check your AI settings in Marketing Messages.');
+        alert('AI generation is unavailable. Please check the AI configuration in Settings → AI configuration, then try again.');
       }
     } catch {
-      alert('Failed to generate template. Ensure AI is configured.');
+      alert('AI generation temporarily unavailable. Please retry shortly or check the AI configuration in Settings.');
     } finally {
       setGenerating(false);
     }

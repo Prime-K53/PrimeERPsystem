@@ -1,13 +1,16 @@
 /**
  * communicationAIService.ts — AI LANGUAGE layer (wording/tone only).
  *
- * Reuses the EXISTING AI integration (frontend/services/aiService.ts
- * generateAIResponse). No new provider, no new keys, no duplicate service.
- * Falls back to deterministic ERP templates when AI is unavailable so the
- * operator can always continue with verified facts.
+ * Uses the CENTRALIZED AI service (frontend/services/ai/aiService.ts,
+ * managed through Settings → AI configuration) via its strict generation
+ * API. No provider, model, key, endpoint or fallback selection lives here:
+ * the configured provider/model is resolved by the central service on every
+ * call. Falls back to deterministic ERP templates when AI is unavailable so
+ * the operator can always continue with verified facts.
  */
 
-import { aiService } from '../aiService';
+import { aiService } from '../ai/aiService';
+import { logger } from '../logger';
 import type {
   CommunicationContext,
   CommunicationLength,
@@ -134,6 +137,87 @@ export interface DraftOptions {
   customNote?: string;
 }
 
+export type AIErrorCode =
+  | 'rate_limited'
+  | 'auth'
+  | 'invalid_model'
+  | 'network'
+  | 'not_configured'
+  | 'unknown';
+
+export interface AIErrorClassification {
+  code: AIErrorCode;
+  status?: number;
+}
+
+/**
+ * Classify a provider/transport error WITHOUT exposing raw payloads.
+ * A 429 is a transient provider rate-limit — never an application-wide AI
+ * configuration failure — and is reported as such.
+ */
+export function classifyAIError(err: unknown): AIErrorClassification {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  const statusMatch = message.match(/\b(400|401|403|404|408|429|500|502|503|504)\b/);
+  const status = statusMatch ? Number(statusMatch[1]) : undefined;
+  if (/not configured|api key.*not configured|is not configured/i.test(message)) {
+    return { code: 'not_configured', status };
+  }
+  if (status === 429 || /rate.limit|rate_limited|temporarily rate-limited|too many requests/i.test(message)) {
+    return { code: 'rate_limited', status: status ?? 429 };
+  }
+  if (status === 401 || status === 403 || /unauthorized|invalid api key|incorrect api key|authentication/i.test(message)) {
+    return { code: 'auth', status };
+  }
+  if (status === 400 || /invalid model|not a valid model|model.*not found/i.test(message)) {
+    return { code: 'invalid_model', status };
+  }
+  if (/ECONNREFUSED|Failed to fetch|network|timeout|not reachable|unreachable|ENOTFOUND|fetch failed/i.test(message)) {
+    return { code: 'network', status };
+  }
+  return { code: 'unknown', status };
+}
+
+/**
+ * Strip raw provider payloads (JSON blobs, key material) from a message so
+ * normal users never see them. Full detail stays in server/dev logs.
+ */
+function sanitizeReason(message: string): string {
+  return message
+    .replace(/\{[\s\S]*\}/g, '')
+    .replace(/sk-[A-Za-z0-9\-_]+/g, '[redacted]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
+}
+
+/** Production-safe introspection: which Settings-configured AI is in effect. No secrets. */
+export function getActiveAIInfo(): { provider: string; model: string; hasApiKey: boolean; configured: boolean } {
+  const info = aiService.getDebugInfo();
+  return { provider: info.provider, model: info.model, hasApiKey: info.hasApiKey, configured: info.configured };
+}
+
+function userFacingWarning(classification: AIErrorClassification, err: unknown): string {
+  const templateSuffix = 'Used verified ERP template instead.';
+  switch (classification.code) {
+    case 'rate_limited':
+      return `AI generation temporarily unavailable — the configured AI provider is currently rate-limited. Please retry shortly or check the AI configuration in Settings. ${templateSuffix}`;
+    case 'auth':
+      return `AI is not configured correctly — please check the API key in Settings → AI configuration. ${templateSuffix}`;
+    case 'invalid_model':
+      return `The configured AI model was rejected by the provider. Please check the model in Settings → AI configuration. ${templateSuffix}`;
+    case 'not_configured':
+    case 'network':
+      return `AI is not configured or unreachable — used verified ERP template instead. Configure AI under Settings → AI configuration for polished wording.`;
+    default: {
+      const reason = err instanceof Error ? sanitizeReason(err.message) : '';
+      return reason
+        ? `AI generation failed (${reason}) — used verified ERP template instead.`
+        : `AI generation failed — used verified ERP template instead.`;
+    }
+  }
+}
+
 export function buildDraftPrompt(ctx: CommunicationContext, opts: DraftOptions): { system: string; user: string } {
   const system = ERP_GUARDRAIL;
   const user = `VERIFIED ERP FACTS (authoritative — copy values exactly):\n${factsBlock(ctx)}\n\nTASK: ${purposeInstruction(ctx, opts.customNote)}\n${TONE_HINT[opts.tone]}\n${LENGTH_HINT[opts.length]}\nCustomer: ${ctx.customer.businessName}${ctx.customer.contactName ? ` (contact: ${ctx.customer.contactName})` : ''}`;
@@ -183,21 +267,49 @@ function deterministicFallback(ctx: CommunicationContext, opts: DraftOptions): s
 export async function generateCommunicationDraft(
   ctx: CommunicationContext,
   opts: DraftOptions,
-): Promise<{ text: string; aiGenerated: boolean; warning: string | null }> {
+): Promise<{ text: string; aiGenerated: boolean; warning: string | null; errorCode?: AIErrorCode; provider?: string; model?: string }> {
   const { system, user } = buildDraftPrompt(ctx, opts);
+  // Debug-level instrumentation (no secrets): verifies at runtime that the
+  // Settings-configured provider/model is the one being called.
+  const active = getActiveAIInfo();
+  logger.debug('[MarketingAI] draft request via central AI service', {
+    provider: active.provider,
+    model: active.model || '(default)',
+  });
   try {
-    const raw = await aiService.generateAIResponse(user, system);
+    // Strict path: provider errors propagate with status codes so 429s are
+    // classified honestly instead of being masked by the template fallback.
+    const raw = await aiService.generateTextStrict(user, system);
     const cleaned = String(raw || '').trim();
     if (!cleaned) throw new Error('Empty AI response');
     // Post-inject authoritative values so numbers/URLs can never drift.
     const injected = injectFactsPostGeneration(cleaned, ctx);
-    return { text: injected, aiGenerated: true, warning: null };
+    logger.debug('[MarketingAI] draft generated via central AI service', {
+      provider: active.provider,
+      model: active.model || '(default)',
+      aiGenerated: true,
+    });
+    return { text: injected, aiGenerated: true, warning: null, provider: active.provider, model: active.model };
   } catch (err) {
     const fallback = injectFactsPostGeneration(deterministicFallback(ctx, opts), ctx);
-    const message = err instanceof Error ? err.message : 'AI unavailable';
-    const aiHint = /not configured|api key|connection|network|fetch|timeout/i.test(message)
-      ? 'AI is not configured or unreachable — used verified ERP template instead. Configure AI under Marketing Messages → AI Settings for polished wording.'
-      : `AI generation failed (${message}) — used verified ERP template instead.`;
-    return { text: fallback, aiGenerated: false, warning: aiHint };
+    const classification = classifyAIError(err);
+    // Full underlying error stays in logs for developers; the UI receives a
+    // clean, structured message with no raw provider JSON.
+    logger.error('[MarketingAI] AI draft generation failed, using ERP template fallback',
+      err instanceof Error ? err : new Error(String(err)),
+      {
+        provider: active.provider,
+        model: active.model || '(default)',
+        errorCode: classification.code,
+        status: classification.status,
+      });
+    return {
+      text: fallback,
+      aiGenerated: false,
+      warning: userFacingWarning(classification, err),
+      errorCode: classification.code,
+      provider: active.provider,
+      model: active.model,
+    };
   }
 }
