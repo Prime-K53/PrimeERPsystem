@@ -9,7 +9,7 @@ import {
     Order, OrderPayment, CustomerPayment, SupplierPayment, PurchaseAllocation, Supplier, VatTransaction, VATConfig,
     ConsumptionSnapshot, BOMTemplate, MarketAdjustment, MarketAdjustmentTransaction, TransactionAdjustmentSnapshot,
     Shipment, DeliveryNote, ProofOfDeliveryRecord, TransactionPricingSnapshot,
-    SalesOrder, SalesOrderItem
+    SalesOrder, SalesOrderItem, PurchaseInvoice
 } from '../types';
 import { BankAccount, BankTransaction } from '../types/banking';
 import { MultiCurrencyJournalEntry, MultiCurrencyTransactionLine, CurrencyGainLoss } from '../types/currency';
@@ -50,6 +50,15 @@ import {
 } from './inventoryAdjustmentAccounting';
 import { isInventoryBearingItem, resolveInventoryCostPerUnit, resolveInventoryQuantity } from '../utils/inventoryNormalization';
 import { resolveReceiptUnitCost, costAliasValues } from './purchaseCosting';
+import {
+    allocateLandingCosts,
+    sumSharesForReceiptLine,
+    normalizeLandingAllocationMethod,
+    splitLandingLineTax,
+    computeEntitlementCents,
+    computeConsumedVatCents,
+    type LandingAllocationResult,
+} from './landingAllocation';
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
@@ -67,6 +76,17 @@ const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'L
  * consumeContractAssessment docs).
  */
 const consumeContractLocks = new Map<string, Promise<void>>();
+
+/**
+ * Same-tab serialization for landing-cost consumption (same convention as
+ * consumeContractLocks above). GRN verification reads PO consumption events
+ * then appends its own; two interleaved same-tab verifies of different GRNs
+ * against one PO could otherwise both consume the same remaining amount
+ * before either writes. Chaining per-PO promises closes that gap for the
+ * current tab. Cross-tab races remain governed by deterministic ids and
+ * sync conflict handling, as with the contract precedent.
+ */
+const landingConsumptionLocks = new Map<string, Promise<void>>();
 
 function isOriginalArPosting(invoiceId: string, entry: any): boolean {
     if (String(entry?.referenceId || '') !== String(invoiceId)) return false;
@@ -4436,11 +4456,32 @@ export const transactionService = {
     },
 
     async processGoodsReceipt(grn: GoodsReceipt, performedBy?: string) {
-        return dbService.executeAtomicOperation(
-            ['inventory', 'goodsReceipts', 'purchases', 'ledger', 'suppliers', 'inventoryTransactions', 'idempotencyKeys', 'materialBatches', 'accounts'],
-            async (tx) => {
-                await reserveIdempotencyKey(tx, 'goods_receipt', grn.id, grn.idempotencyKey);
+        // Serialize same-PO landing consumption within this tab; a GRN
+        // without landing costs takes the direct path unchanged.
+        const needsLandingLock = !!(grn?.purchaseOrderId) && ((grn as any).landingCosts || []).some((c: any) => Number(c?.amount) >= 0.005);
+        if (!needsLandingLock) {
+            return this.processGoodsReceiptTx(grn, performedBy);
+        }
+        const lockKey = `landing-consume-grn:${grn.purchaseOrderId}`;
+        const previous = landingConsumptionLocks.get(lockKey) || Promise.resolve();
+        let releaseLock!: () => void;
+        const current = new Promise<void>((resolve) => { releaseLock = resolve; });
+        landingConsumptionLocks.set(lockKey, current);
+        try {
+            await previous.catch(() => {});
+            return await this.processGoodsReceiptTx(grn, performedBy);
+        } finally {
+            if (landingConsumptionLocks.get(lockKey) === current) {
+                landingConsumptionLocks.delete(lockKey);
+            }
+            releaseLock();
+        }
+    },
 
+    async processGoodsReceiptTx(grn: GoodsReceipt, performedBy?: string) {
+        return dbService.executeAtomicOperation(
+            ['inventory', 'goodsReceipts', 'purchases', 'purchaseInvoices', 'ledger', 'suppliers', 'inventoryTransactions', 'idempotencyKeys', 'materialBatches', 'accounts', 'vatTransactions'],
+            async (tx) => {
                 const inventoryStore = tx.objectStore('inventory');
                 const grnStore = tx.objectStore('goodsReceipts');
                 const purchaseStore = tx.objectStore('purchases');
@@ -4465,24 +4506,412 @@ export const transactionService = {
                 };
 
                 const gl = getGLConfig();
-                let totalValue = 0;
+                // Stock-bearing goods value (ex-landing) and capitalized landed
+                // value are tracked separately so the goods supplier is credited
+                // for goods only, each landing provider is credited for its own
+                // lines, and landing never leaks into the Purchases variance leg.
+                let goodsValue = 0;
+                let landedValue = 0;
                 // Non-stock (Product/Service) receipt value: never inventory —
                 // booked to Purchases so payables stay whole.
                 let nonStockValue = 0;
 
-                // Calculate landed cost allocation if landing costs exist on the GRN
-                const landingCostTotal = grn.landingCosts?.reduce((s: number, c: any) => s + (c.amount || 0), 0) || 0;
-                // GRN lines carry the PO's actual purchase price (any alias);
-                // never re-read the live inventory default here.
-                const grnTotalPurchaseValue = grn.items.reduce((s: number, i: any) => s + (resolveReceiptUnitCost(i) * (i.quantityReceived || 0)), 0);
+                // Negative landing amounts never post directly: credits flow
+                // only through the controlled correction flow (original →
+                // reversal → replacement). Fail closed with direction.
+                for (const c of ((grn.landingCosts || []) as any[])) {
+                    if (Number(c?.amount) < -0.005) {
+                        throw new Error(
+                            `Landing cost line ${c?.id || 'unknown'} on GRN ${grn.id} is negative ` +
+                            `(K${Number(c.amount).toFixed(2)}). Negative landing costs post only as controlled ` +
+                            `corrections linked to the original line — failing closed.`
+                        );
+                    }
+                }
+                // Capitalized landing set: lines at or above currency precision
+                // (K0.005). Zero lines (e.g. unfilled estimates) and sub-cent
+                // dust capitalize nothing — consistent with the 0.005 posting
+                // gates below.
+                const capitalizableLanding: any[] = ((grn.landingCosts || []) as any[])
+                    .filter((c: any) => Number(c?.amount) >= 0.005);
+                const landingCostTotal = capitalizableLanding.reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0);
+                // Tax split per line (pure, deterministic): RECOVERABLE_VAT
+                // diverts its portion to input-VAT posting (never inventory);
+                // WITHHOLDING and unrated recoverable lines throw here, before
+                // any reservation or mutation. Allocation/consumption operate
+                // on the capitalizable portion only.
+                const taxSplitByLine = new Map<string, {
+                    gross: number; capitalizable: number; recoverableVAT: number;
+                    rate: number; treatment: string; taxInclusive: boolean;
+                }>();
+                for (const cost of capitalizableLanding) {
+                    taxSplitByLine.set(String(cost.id), splitLandingLineTax(cost));
+                }
+                // VAT takes per line (journal stage reads this; hoisted to tx
+                // scope because the journal stage lives outside the pre-pass).
+                const vatTakeByLine = new Map<string, number>();
 
-                // 1. Update Inventory Stock and Cost (before saving GRN to get accurate totalValue).
+                // Authoritative allocation: one deterministic result per landing
+                // line, computed from THIS GRN snapshot only (never current PO
+                // state, prices, quantities or UI state). The method and shares
+                // are persisted on the GRN in section 3 for audit, reload and
+                // sync. Supported: VALUE, QUANTITY (see landingAllocation.ts).
+                let landingAllocation: LandingAllocationResult | null = null;
+                const billedLandingLineIds = new Set<string>();
+                // providerId -> supplier record for UNBILLED posting lines,
+                // resolved up front so an unresolvable provider fails the whole
+                // GRN clearly BEFORE the idempotency key is reserved.
+                const landingProviderRecords = new Map<string, any>();
+                // Pre-built (provider, inventory account) posting groups,
+                // validated pre-mutation; the journal stage only writes them.
+                const landingJournalGroups: {
+                    providerId: string; provider: any; account: string;
+                    amount: number; lineIds: string[]; detail: string[];
+                }[] = [];
+                // GRN consumption events for this verify, appended to the PO
+                // in section 2 (same atomic tx); journalIds backfilled below.
+                const grnConsumptionEvents: {
+                    id: string; landingCostId: string; kind: 'GRN';
+                    billId: null; grnId: string; amount: number; sourceAmount: number;
+                    method: string; providerId: string;
+                    accountSplits: { account: string; amount: number }[];
+                    journalIds: string[]; at: string;
+                    taxTreatment: string; taxAmount: number;
+                }[] = [];
+                if (landingCostTotal > 0) {
+                    const rawMethod = (grn as any).landingAllocationMethod ?? 'VALUE';
+                    const method = normalizeLandingAllocationMethod(rawMethod);
+                    if (!method) {
+                        throw new Error(
+                            `GRN ${grn.id} names unsupported landing-cost allocation method "${String(rawMethod)}". ` +
+                            `Supported methods: VALUE, QUANTITY.`
+                        );
+                    }
+                    const snapshotItems = (grn.items || []) as any[];
+                    const invRecords: any[] = [];
+                    for (const item of snapshotItems) {
+                        invRecords.push(await inventoryStore.get(item.itemId));
+                    }
+                    const isEligible = (lineIndex: number) => {
+                        const rec = invRecords[lineIndex];
+                        return !!rec && isInventoryBearingItem(rec);
+                    };
+                    // Lines already settled by a landing-cost bill post no new
+                    // journals here, but their consumable amounts stay in the
+                    // WAC basis so carrying cost and the bill's inventory debit
+                    // agree. Cancelled (reversed) bills settle nothing.
+                    for (const inv of await tx.objectStore('purchaseInvoices').getAll()) {
+                        if (inv && (inv as any).landingCostId && (inv as any).status !== 'cancelled') {
+                            billedLandingLineIds.add(String((inv as any).landingCostId));
+                        }
+                    }
+                    // Durable consumption state: remaining per line = source −
+                    // prior GRN-kind consumption events on the PO. BILL events
+                    // establish AP/debit but never reduce WAC-embedding
+                    // remaining. This GRN may only consume what remains.
+                    let poDocForConsumption: any = null;
+                    if (grn.purchaseOrderId) {
+                        try {
+                            poDocForConsumption = await purchaseStore.get(grn.purchaseOrderId);
+                        } catch {
+                            poDocForConsumption = null;
+                        }
+                    }
+                    const consumedByLine = new Map<string, number>();
+                    // Manual/standalone GRNs must not capitalize landing: with no
+                    // source PO there is no durable consumption state and no
+                    // cross-GRN basis. Plain manual GRNs without landing costs
+                    // pass through untouched (landingCostTotal == 0 skips all).
+                    if (!poDocForConsumption) {
+                        throw new Error(
+                            `GRN ${grn.id} carries landing costs but is not linked to a valid purchase order. ` +
+                            `Landing Cost financial posting requires a valid source PO/LandingCostItem — failing closed. ` +
+                            `Manual GRNs without landing costs are unaffected.`
+                        );
+                    }
+                    // Note: GRN snapshot lines need not be present on the PO:
+                    // the snapshot is the posted document authority (Prompt-4
+                    // §11). Consumption events keyed by LandingCostItem.id
+                    // track remaining regardless; drift between PO lines and
+                    // consumed snapshots surfaces through reconciliation.
+                    for (const ev of ((poDocForConsumption as any).landingConsumption || [])) {
+                        if (ev && (ev.kind === 'GRN' || ev.kind === 'CORRECTION') && ev.landingCostId) {
+                            const id = String(ev.landingCostId);
+                            consumedByLine.set(id, (consumedByLine.get(id) || 0) + (Number(ev.amount) || 0));
+                        }
+                    }
+                    // Cross-GRN proportional entitlement (integer cents): this
+                    // GRN consumes its share of each line's still-unconsumed
+                    // capitalizable amount, proportioned by its eligible
+                    // snapshot basis against the PO's total eligible basis in
+                    // the same method. First-GRN-takes-all is NOT used.
+                    const toCents = (v: number) => Math.round(v * 100);
+                    let poEligibleBasis = 0;
+                    for (const poLine of (((poDocForConsumption as any).items || []) as any[])) {
+                        const rec = await inventoryStore.get(poLine.itemId);
+                        if (!rec || !isInventoryBearingItem(rec)) {
+                            continue;
+                        }
+                        if (method === 'QUANTITY') {
+                            poEligibleBasis += Number(poLine.quantity ?? poLine.quantityReceived ?? 0) || 0;
+                        } else {
+                            poEligibleBasis += resolveReceiptUnitCost(poLine) * (Number(poLine.quantity ?? poLine.quantityReceived ?? 0) || 0);
+                        }
+                    }
+                    if (!(poEligibleBasis > 0)) {
+                        throw new Error(
+                            `GRN ${grn.id} cannot compute cross-GRN landing entitlement: the source PO has no eligible ` +
+                            `${method === 'QUANTITY' ? 'quantity' : 'value'} basis. Failing closed rather than guessing.`
+                        );
+                    }
+                    // This GRN's eligible basis in the same method.
+                    let grnEligibleBasis = 0;
+                    snapshotItems.forEach((item: any, lineIndex: number) => {
+                        if (!isEligible(lineIndex)) {
+                            return;
+                        }
+                        if (method === 'QUANTITY') {
+                            grnEligibleBasis += Number(item.quantityReceived) || 0;
+                        } else {
+                            grnEligibleBasis += resolveReceiptUnitCost(item) * (Number(item.quantityReceived) || 0);
+                        }
+                    });
+                    const consumableByLine = new Map<string, number>();
+                    // vatTakeByLine is hoisted to tx scope (declared above):
+                    // the journal stage reads the takes computed here.
+                    const vatConsumedByLine = new Map<string, number>();
+                    for (const ev of ((poDocForConsumption as any).landingConsumption || [])) {
+                        if (ev && ev.landingCostId && Number((ev as any).taxAmount) > 0) {
+                            const id = String(ev.landingCostId);
+                            vatConsumedByLine.set(id, (vatConsumedByLine.get(id) || 0) + Number((ev as any).taxAmount));
+                        }
+                    }
+                    let totalRemainingCents = 0;
+                    for (const cost of capitalizableLanding) {
+                        const id = String(cost.id);
+                        const split = taxSplitByLine.get(id)!;
+                        const sourceCapCents = toCents(split.capitalizable);
+                        const consumedCents = toCents(consumedByLine.get(id) || 0);
+                        const remainingCents = sourceCapCents - consumedCents;
+                        if (remainingCents < 0) {
+                            throw new Error(
+                                `Landing cost line ${id} on GRN ${grn.id} is over-consumed ` +
+                                `(capitalizable K${(sourceCapCents / 100).toFixed(2)}, already consumed K${(consumedCents / 100).toFixed(2)}). ` +
+                                `Consumption state inconsistent — failing closed before financial mutation.`
+                            );
+                        }
+                        totalRemainingCents += remainingCents;
+                        const entitlementCents = computeEntitlementCents(sourceCapCents, grnEligibleBasis, poEligibleBasis);
+                        const consumableCents = Math.min(entitlementCents, remainingCents);
+                        consumableByLine.set(id, consumableCents / 100);
+                        // VAT recovered proportionally to this GRN's consumed
+                        // share, capped by the line's VAT remainder.
+                        const lineVatCents = toCents(split.recoverableVAT);
+                        const vatRemainingCents = lineVatCents - toCents(vatConsumedByLine.get(id) || 0);
+                        vatTakeByLine.set(
+                            id,
+                            computeConsumedVatCents(
+                                consumableCents, toCents(split.gross), sourceCapCents,
+                                split.rate, split.taxInclusive, Math.max(0, vatRemainingCents),
+                            ) / 100
+                        );
+                    }
+                    if (totalRemainingCents > 0 && !(grnEligibleBasis > 0)) {
+                        throw new Error(
+                            `GRN ${grn.id} carries unconsumed landing costs but has no eligible receipt basis to allocate them to. ` +
+                            `Failing closed rather than guessing.`
+                        );
+                    }
+                    for (const cost of capitalizableLanding) {
+                        if (billedLandingLineIds.has(String(cost.id))) {
+                            continue;
+                        }
+                        // Lines with nothing left to consume post nothing and
+                        // need no provider validation.
+                        if (!(consumableByLine.get(String(cost.id))! > 0)) {
+                            continue;
+                        }
+                        const providerId = String(cost.providerId || '').trim();
+                        if (!providerId) {
+                            throw new Error(
+                                `Landing cost "${cost.category || 'Uncategorized'}" (K${Number(cost.amount).toFixed(2)}, line ${cost.id || 'unknown'}) on GRN ${grn.id} ` +
+                                `has no provider. Select the actual carrier/customs broker/supplier before verifying so the payable posts to the correct provider.`
+                            );
+                        }
+                        const provider = await supplierStore.get(providerId);
+                        if (!provider) {
+                            throw new Error(
+                                `Landing cost "${cost.category || 'Uncategorized'}" (K${Number(cost.amount).toFixed(2)}, line ${cost.id || 'unknown'}) on GRN ${grn.id} ` +
+                                `names unknown provider "${providerId}". Register the provider as a supplier first so the payable posts to the correct provider.`
+                            );
+                        }
+                        landingProviderRecords.set(providerId, provider);
+                    }
+                    const consumableLines = capitalizableLanding.filter(
+                        (c: any) => consumableByLine.get(String(c.id))! > 0
+                    );
+                    if (consumableLines.length > 0) {
+                        landingAllocation = allocateLandingCosts({
+                            receiptLines: snapshotItems.map((item: any) => ({
+                                itemId: String(item.itemId || ''),
+                                quantityReceived: Number(item.quantityReceived) || 0,
+                                unitCost: resolveReceiptUnitCost(item),
+                            })),
+                            isEligible,
+                            // Only the still-unconsumed remainder enters WAC:
+                            // the amount actually consumed by THIS GRN.
+                            landingLines: consumableLines.map((c: any) => ({
+                                id: String(c.id),
+                                amount: consumableByLine.get(String(c.id))!,
+                            })),
+                            method,
+                            resolveAccount: (lineIndex: number) => {
+                                const rec = invRecords[lineIndex];
+                                const line = snapshotItems[lineIndex];
+                                if (!rec || !isInventoryBearingItem(rec)) return null;
+                                const merged = {
+                                    ...(line as any),
+                                    type: (rec as any).type ?? (line as any).type,
+                                    inventoryRole: (rec as any).inventoryRole ?? (line as any).inventoryRole,
+                                };
+                                return resolveInventoryAccountFromItems([merged], accounts);
+                            },
+                        });
+                        // Snapshot persistence (written with the GRN in section 3).
+                        (grn as any).landingAllocationMethod = landingAllocation.method;
+                        (grn as any).landingAllocations = landingAllocation.shares;
+                        // Consumption events for this verify (journalIds and VAT
+                        // backfilled at posting). One event per consumed line,
+                        // billed or not: billed lines embed WAC without new
+                        // journals; unbilled lines embed and journalize.
+                        // sourceAmount is the capitalizable source the
+                        // entitlement was computed from.
+                        const at = new Date().toISOString();
+                        for (const cost of consumableLines) {
+                            const id = String(cost.id);
+                            const split = taxSplitByLine.get(id)!;
+                            grnConsumptionEvents.push({
+                                id: generateId('LCC'),
+                                landingCostId: id,
+                                kind: 'GRN',
+                                billId: null,
+                                grnId: grn.id,
+                                amount: consumableByLine.get(id)!,
+                                sourceAmount: split.capitalizable,
+                                method,
+                                providerId: String(cost.providerId || '').trim(),
+                                accountSplits: [],
+                                journalIds: [],
+                                at,
+                                taxTreatment: split.treatment,
+                                taxAmount: 0,
+                            });
+                        }
+                    }
+
+                    // Pre-build posting groups (UNBILLED consumable shares only)
+                    // and enforce the boundary invariant BEFORE any mutation:
+                    // journalled landing must equal the unbilled consumable
+                    // total exactly, and every posting share must carry a
+                    // resolved inventory account — otherwise fail closed here,
+                    // with the ledger, stock and idempotency key all untouched.
+                    // Per-line account splits are recorded onto this GRN's
+                    // consumption events for audit.
+                    if (landingAllocation) {
+                        const costById = new Map<string, any>(
+                            capitalizableLanding.map((c: any) => [String(c.id), c])
+                        );
+                        const grouped = new Map<string, {
+                            providerId: string; provider: any; account: string;
+                            amount: number; lineIds: string[]; detail: string[];
+                        }>();
+                        const lineSplits = new Map<string, { account: string; amount: number }[]>();
+                        for (const share of landingAllocation.shares) {
+                            if (!share.inventoryAccount) {
+                                if (billedLandingLineIds.has(share.landingCostId)) {
+                                    continue;
+                                }
+                                throw new Error(
+                                    `Cannot resolve an inventory account for landing share of line ${share.landingCostId} ` +
+                                    `on receipt line ${share.receiptLineKey} (item ${share.itemId}). ` +
+                                    `Failing closed before financial mutation.`
+                                );
+                            }
+                            const splits = lineSplits.get(share.landingCostId) || [];
+                            const existing = splits.find((s) => s.account === share.inventoryAccount);
+                            if (existing) {
+                                existing.amount += share.amount;
+                            } else {
+                                splits.push({ account: share.inventoryAccount, amount: share.amount });
+                            }
+                            lineSplits.set(share.landingCostId, splits);
+                            if (billedLandingLineIds.has(share.landingCostId)) {
+                                continue;
+                            }
+                            if (!(share.amount > 0)) {
+                                continue;
+                            }
+                            const cost = costById.get(share.landingCostId);
+                            const shareProviderId = String(cost?.providerId || '').trim();
+                            const shareProvider = landingProviderRecords.get(shareProviderId);
+                            if (!shareProvider) {
+                                throw new Error(
+                                    `Landing provider "${shareProviderId}" for line ${share.landingCostId} cannot be posted: supplier record missing.`
+                                );
+                            }
+                            if (!share.inventoryAccount) {
+                                throw new Error(
+                                    `Cannot resolve an inventory account for landing share of line ${share.landingCostId} ` +
+                                    `on receipt line ${share.receiptLineKey} (item ${share.itemId}). ` +
+                                    `Failing closed before financial mutation.`
+                                );
+                            }
+                            const key = `${shareProviderId}::${share.inventoryAccount}`;
+                            let group = grouped.get(key);
+                            if (!group) {
+                                group = {
+                                    providerId: shareProviderId, provider: shareProvider,
+                                    account: share.inventoryAccount, amount: 0, lineIds: [], detail: [],
+                                };
+                                grouped.set(key, group);
+                            }
+                            group.amount += share.amount;
+                            if (!group.lineIds.includes(share.landingCostId)) {
+                                group.lineIds.push(share.landingCostId);
+                                group.detail.push(`${cost?.category || 'Cost'} (${share.landingCostId})`);
+                            }
+                        }
+                        // Boundary invariant: journalled landing must equal the
+                        // unbilled CONSUMABLE total exactly — never lose, never
+                        // invent. (Consumable already reflects remaining.)
+                        const unbilledConsumable = [...consumableByLine.entries()]
+                            .filter(([id]) => !billedLandingLineIds.has(id))
+                            .reduce((s, [, v]) => s + v, 0);
+                        const groupedTotal = [...grouped.values()].reduce((s, g) => s + g.amount, 0);
+                        if (Math.abs(groupedTotal - unbilledConsumable) > 0.005) {
+                            throw new Error(
+                                `Landing journal grouping mismatch on GRN ${grn.id}: grouped K${groupedTotal.toFixed(2)} vs unbilled consumable K${unbilledConsumable.toFixed(2)}. ` +
+                                `Failing closed before financial mutation.`
+                            );
+                        }
+                        for (const ev of grnConsumptionEvents) {
+                            ev.accountSplits = lineSplits.get(ev.landingCostId) || [];
+                        }
+                        landingJournalGroups.push(...grouped.values());
+                    }
+                }
+
+                await reserveIdempotencyKey(tx, 'goods_receipt', grn.id, grn.idempotencyKey);
+
+                // 1. Update Inventory Stock and Cost (before saving GRN to get accurate totals).
                 // Eligibility-first: only Raw Material / Stationery lines are
                 // stock-bearing. Product/Service lines accrue no stock/WAC/
                 // batch/audit/inventory value; their purchase value is tracked
                 // separately for the Purchases (expense) leg below.
                 const timestamp = new Date().toISOString();
+                let receiptLineIndex = -1;
                 for (const item of grn.items) {
+                    receiptLineIndex += 1;
                     const invItem = await inventoryStore.get(item.itemId);
                     if (invItem && !isInventoryBearingItem(invItem)) {
                         nonStockValue += resolveReceiptUnitCost(item) * (item.quantityReceived || 0);
@@ -4493,12 +4922,16 @@ export const transactionService = {
                         const newStock = oldStock + item.quantityReceived;
                         const lineUnitCost = resolveReceiptUnitCost(item);
 
-                        // Calculate landed cost per unit for this item
+                        // Landed share from the persisted authoritative
+                        // allocation (includes billed lines for carrying cost;
+                        // billed lines post no new journals below).
                         let landedCostPerUnit = 0;
-                        if (landingCostTotal > 0 && grnTotalPurchaseValue > 0 && item.quantityReceived > 0) {
-                            const itemPurchaseValue = lineUnitCost * item.quantityReceived;
-                            const itemLandingShare = (itemPurchaseValue / grnTotalPurchaseValue) * landingCostTotal;
-                            landedCostPerUnit = itemLandingShare / item.quantityReceived;
+                        let itemLandingShare = 0;
+                        if (landingAllocation) {
+                            itemLandingShare = sumSharesForReceiptLine(landingAllocation.shares, String(receiptLineIndex));
+                            if (item.quantityReceived > 0) {
+                                landedCostPerUnit = itemLandingShare / item.quantityReceived;
+                            }
                         }
                         const effectiveUnitCost = lineUnitCost + landedCostPerUnit;
 
@@ -4514,7 +4947,8 @@ export const transactionService = {
                         Object.assign(invItem, costAliasValues(newCost));
                         await inventoryStore.put(invItem);
 
-                        totalValue += effectiveUnitCost * item.quantityReceived;
+                        goodsValue += lineUnitCost * item.quantityReceived;
+                        landedValue += itemLandingShare;
 
                         // Create inventory transaction audit trail
                         const transaction: any = {
@@ -4609,6 +5043,14 @@ export const transactionService = {
                             // must land on Paid, not Partial.
                             po.paymentStatus = derivePurchasePaymentStatus({ ...po, paymentStatus: undefined });
                         }
+                        // Append this verify's consumption events (immutable
+                        // history driving remaining for later GRNs).
+                        if (grnConsumptionEvents.length > 0) {
+                            const existing = Array.isArray((po as any).landingConsumption)
+                                ? (po as any).landingConsumption
+                                : [];
+                            (po as any).landingConsumption = [...existing, ...grnConsumptionEvents];
+                        }
                         await purchaseStore.put(po);
                     }
                 }
@@ -4617,27 +5059,145 @@ export const transactionService = {
                 await grnStore.put(grn);
 
                 // 4. Create Actual GRN Ledger Entries.
-                // Stock-bearing value → DR Inventory / CR AP. Non-stock
-                // (Product/Service) value → DR Purchases / CR AP so the
+                // Canonical landing-cost model:
+                //   goods value       → DR Inventory / CR goods-supplier AP
+                //   capitalized landing → DR Inventory / CR landing-provider AP
+                //     (one entry per landing provider, grouped by provider)
+                // Non-stock (Product/Service) value → DR Purchases / CR AP so the
                 // payable stays whole without capitalizing non-inventory.
-                const totalAmount = totalValue;
-                const grnTotalValue = totalValue + nonStockValue;
+                // The goods supplier is credited for goods (+ non-stock) ONLY;
+                // landing providers are credited for their own lines.
+                const goodsAmount = goodsValue;
+                const grnGoodsTotal = goodsValue + nonStockValue;
 
                 const inventoryAccountId = accounts.length > 0 ? resolveInventoryAccountFromItems(grn.items || [], accounts) : null;
+                const apAccountId = resolveAcct(gl.accountsPayable);
+                const goodsSupplierId = grn.supplierId || relatedPurchase?.supplierId;
 
-                // Debit Inventory, Credit AP
+                // Debit Inventory, Credit goods-supplier AP (goods only)
                 const inventoryEntry: LedgerEntry = {
                     id: generateId('LG-GRN-INV'),
                     date: grn.date,
                     description: `Goods Receipt #${grn.id}${relatedPurchase ? ` (PO: ${relatedPurchase.id})` : ''}`,
                     debitAccountId: inventoryAccountId || resolveAcct(gl.purchasesAccount || '51100'),
-                    creditAccountId: resolveAcct(gl.accountsPayable),
-                    amount: totalAmount,
+                    creditAccountId: apAccountId,
+                    amount: goodsAmount,
                     referenceId: grn.id,
                     reconciled: false,
-                    supplierId: grn.supplierId || relatedPurchase?.supplierId
+                    supplierId: goodsSupplierId
                 };
                 await ledgerStore.put(inventoryEntry);
+
+                // Debit Inventory, Credit landing-provider AP (capitalized landing).
+                // Only unbilled lines post here: lines already settled by a
+                // landing-cost bill keep their WAC allocation above (carrying
+                // cost) while their journals come from the bill — never both.
+                // Groups were built and validated pre-mutation above: one entry
+                // per (provider, inventory account) pair, credits per provider
+                // summing to that provider's unbilled total exactly.
+                if (landedValue > 0.005 && landingAllocation) {
+                    for (const group of landingJournalGroups) {
+                        const accountCode = accounts.find((a: any) => a.id === group.account)?.code || group.account;
+                        const providerName = group.provider?.name || group.providerId;
+                        const landingEntry: LedgerEntry = {
+                            id: generateId('LG-GRN-LC'),
+                            date: grn.date,
+                            description: `Landing cost capitalization - GRN #${grn.id}${relatedPurchase ? ` (PO: ${relatedPurchase.id})` : ''} - ${providerName} -> ${accountCode}: ${group.detail.join('; ')}`,
+                            debitAccountId: group.account,
+                            creditAccountId: apAccountId,
+                            amount: group.amount,
+                            referenceId: grn.id,
+                            reconciled: false,
+                            supplierId: group.providerId,
+                            landingCostIds: group.lineIds,
+                            landingProviderId: group.providerId,
+                        };
+                        await ledgerStore.put(landingEntry);
+                        // Backfill the journal id onto this GRN's consumption
+                        // events so each event traces to its exact postings.
+                        for (const lid of group.lineIds) {
+                            const ev = grnConsumptionEvents.find((e) => e.landingCostId === lid);
+                            if (ev && !ev.journalIds.includes(landingEntry.id)) {
+                                ev.journalIds.push(landingEntry.id);
+                            }
+                        }
+
+                        // Provider subledger: the landing obligation belongs to
+                        // the actual provider, never the goods supplier.
+                        group.provider.balance = (group.provider.balance || 0) + group.amount;
+                        await supplierStore.put(group.provider);
+                    }
+                    // Recoverable VAT legs (unbilled lines only; billed lines
+                    // recovered at bill time): DR input-VAT position / CR
+                    // provider AP, mirroring vatService input-VAT conventions
+                    // (entryType VAT_INPUT + VatTransaction row). Never
+                    // inventory. Provider balance grows by the VAT so the full
+                    // gross obligation stays whole. The VAT account resolves
+                    // only when VAT actually posts (fail-closed then).
+                    const vatTakes = capitalizableLanding
+                        .filter((c: any) => !billedLandingLineIds.has(String(c.id)))
+                        .map((c: any) => ({ id: String(c.id), take: vatTakeByLine.get(String(c.id)) || 0 }))
+                        .filter((t) => t.take > 0);
+                    const vatInAccount = vatTakes.length > 0 ? resolveAcct(gl.vatPayableAccount || '21210') : null;
+                    let postedVatTotal = 0;
+                    for (const { id, take } of vatTakes) {
+                        const cost = capitalizableLanding.find((c: any) => String(c.id) === id);
+                        const providerId = String(cost.providerId || '').trim();
+                        const provider = landingProviderRecords.get(providerId);
+                        const split = taxSplitByLine.get(id)!;
+                        const vatEntry: LedgerEntry = {
+                            id: generateId('LG-GRN-VAT'),
+                            date: grn.date,
+                            description: `Landing input VAT - GRN #${grn.id}${relatedPurchase ? ` (PO: ${relatedPurchase.id})` : ''} - ${provider?.name || providerId}: ${(cost as any).category || 'Cost'} K${take.toFixed(2)} at ${split.rate}% (${id})`,
+                            debitAccountId: vatInAccount,
+                            creditAccountId: apAccountId,
+                            amount: take,
+                            entryType: 'VAT_INPUT',
+                            referenceId: grn.id,
+                            reconciled: false,
+                            supplierId: providerId,
+                            landingCostIds: [id],
+                            landingProviderId: providerId,
+                        };
+                        validateLedgerBalance([vatEntry as any], `Landing input VAT ${grn.id}:${id}`);
+                        await ledgerStore.put(vatEntry);
+                        const vatTx: VatTransaction = {
+                            id: generateId('VAT_IN'),
+                            date: grn.date,
+                            type: 'Input',
+                            amount: take,
+                            rate: split.rate,
+                            vatAmount: take,
+                            reference: grn.id,
+                            description: `Recoverable VAT on landing cost line ${id} (GRN ${grn.id})`,
+                            isFiled: false,
+                            glEntryId: vatEntry.id,
+                            landingCostIds: [id],
+                            created_at: new Date().toISOString(),
+                        };
+                        await tx.objectStore('vatTransactions').put(vatTx);
+                        const ev = grnConsumptionEvents.find((e) => e.landingCostId === id);
+                        if (ev) {
+                            ev.taxAmount = (ev.taxAmount || 0) + take;
+                            if (!ev.journalIds.includes(vatEntry.id)) {
+                                ev.journalIds.push(vatEntry.id);
+                            }
+                        }
+                        if (provider) {
+                            provider.balance = (provider.balance || 0) + take;
+                            await supplierStore.put(provider);
+                        }
+                        postedVatTotal += take;
+                    }
+                    const expectedVatTotal = [...vatTakeByLine.entries()]
+                        .filter(([id]) => !billedLandingLineIds.has(id))
+                        .reduce((s, [, v]) => s + v, 0);
+                    if (Math.abs(postedVatTotal - expectedVatTotal) > 0.005) {
+                        throw new Error(
+                            `Landing VAT posting mismatch on GRN ${grn.id}: posted K${postedVatTotal.toFixed(2)} vs computed K${expectedVatTotal.toFixed(2)}.`
+                        );
+                    }
+                }
 
                 if (nonStockValue > 0.005) {
                     const nonStockEntry: LedgerEntry = {
@@ -4645,62 +5205,917 @@ export const transactionService = {
                         date: grn.date,
                         description: `Goods Receipt (non-stock) #${grn.id}${relatedPurchase ? ` (PO: ${relatedPurchase.id})` : ''}`,
                         debitAccountId: resolveAcct(gl.purchasesAccount || '51100'),
-                        creditAccountId: resolveAcct(gl.accountsPayable),
+                        creditAccountId: apAccountId,
                         amount: nonStockValue,
                         referenceId: grn.id,
                         reconciled: false,
-                        supplierId: grn.supplierId || relatedPurchase?.supplierId
+                        supplierId: goodsSupplierId
                     };
                     await ledgerStore.put(nonStockEntry);
                 }
 
-                // 5. Update Supplier Balance with actual GRN amount
-                const supplierId = grn.supplierId || relatedPurchase?.supplierId;
-                if (supplierId) {
-                    const supplier = await supplierStore.get(supplierId);
+                // 5. Update goods-supplier balance with the goods (+ non-stock)
+                // obligation only. Landing obligations were credited to each
+                // landing provider above.
+                if (goodsSupplierId) {
+                    const supplier = await supplierStore.get(goodsSupplierId);
                     if (supplier) {
-                        supplier.balance = (supplier.balance || 0) + grnTotalValue;
+                        supplier.balance = (supplier.balance || 0) + grnGoodsTotal;
                         await supplierStore.put(supplier);
                     }
                 }
 
-                // 6. Handle variance if GRN amount differs from PO amount
-                if (relatedPurchase && Math.abs(grnTotalValue - poAmount) > 0.01) {
-                    const variance = grnTotalValue - poAmount;
+                // 6. Handle variance if GRN goods amount differs from PO amount.
+                // Goods-only comparison: capitalized landing is posted by the
+                // landing entries above and must NOT flow into Purchases here.
+                if (relatedPurchase && Math.abs(grnGoodsTotal - poAmount) > 0.01) {
+                    const variance = grnGoodsTotal - poAmount;
                     // Variance accounting (proper): the difference between PO commitment and actual
-                    // GRN value goes to a Purchase Price Variance account (Purchases = 51100),
+                    // GRN goods value goes to a Purchase Price Variance account (Purchases = 51100),
                     // NOT to COGS. COGS is for goods already sold.
-                    // - variance > 0 (GRN more than PO, e.g. landed costs): Debit Purchases, Credit AP
-                    // - variance < 0 (GRN less than PO, e.g. discount/shortage): Debit AP, Credit Purchases
+                    // - variance > 0 (GRN goods more than PO, e.g. price increase): Debit Purchases, Credit AP
+                    // - variance < 0 (GRN goods less than PO, e.g. discount/shortage): Debit AP, Credit Purchases
                     const purchasesAccountId = resolveAcct(gl.purchasesAccount || '51100');
-                    const apAccountId = resolveAcct(gl.accountsPayable);
                     const varianceEntry: LedgerEntry = {
                         id: generateId('LG-GRN-VAR'),
                         date: grn.date,
-                        description: `GRN Variance - ${grn.id} (Actual: ${grnTotalValue.toFixed(2)} vs PO: ${poAmount.toFixed(2)})`,
+                        description: `GRN Variance - ${grn.id} (Actual goods: ${grnGoodsTotal.toFixed(2)} vs PO: ${poAmount.toFixed(2)})`,
                         debitAccountId: variance > 0 ? purchasesAccountId : apAccountId,
                         creditAccountId: variance > 0 ? apAccountId : purchasesAccountId,
                         amount: Math.abs(variance),
                         referenceId: grn.id,
                         reconciled: false,
-                        supplierId: supplierId
+                        supplierId: goodsSupplierId
                     };
                     await ledgerStore.put(varianceEntry);
 
                     // Adjust supplier balance to reflect the variance vs AP ledger
-                    if (supplierId) {
-                        const supplier = await supplierStore.get(supplierId);
+                    if (goodsSupplierId) {
+                        const supplier = await supplierStore.get(goodsSupplierId);
                         if (supplier) {
                             // variance > 0 means supplier balance is short vs what we recorded as AP
-                            // (we credited AP by full GRN amount, so supplier balance should match)
+                            // (we credited AP by full GRN goods amount, so supplier balance should match)
                             // No further adjustment needed - the AP ledger and supplier balance both
-                            // use totalAmount, so they remain in sync. The variance entry uses the
-                            // purchases account, NOT AP, so AP is unchanged from totalAmount.
+                            // use the goods amount, so they remain in sync. The variance entry uses the
+                            // purchases account, NOT AP, so AP is unchanged from the goods amount.
                         }
                     }
                 }
 
-                return { success: true, poReversed: !!relatedPurchase, variance: relatedPurchase ? totalAmount - poAmount : 0 };
+                return { success: true, poReversed: !!relatedPurchase, variance: relatedPurchase ? grnGoodsTotal - poAmount : 0 };
+            }
+        );
+    },
+
+    /**
+     * Post a Landing Cost bill as a proper AP transaction (purchase-invoice
+     * primitive), NOT an ordinary operating expense.
+     *
+     * Canonical posting per capitalized landing line:
+     *   DR applicable inventory account
+     *   CR landing-provider AP (provider subledger + balance)
+     *
+     * Mutual exclusion with GRN capitalization is enforced at this financial
+     * boundary in both directions:
+     *   - a line already billed here cannot be billed again (bill record +
+     *     idempotency key on the landing-line id);
+     *   - a line already capitalized by GRN verify (LG-GRN-LC carrying its id)
+     *     is rejected: bill first, GRN skips billed lines — never both.
+     * GRN capitalization (processGoodsReceipt) skips billed lines' journals
+     * while still allocating their amounts into WAC, so the bill's inventory
+     * debit and the GRN's carrying cost agree instead of double-posting.
+     */
+    async postLandingCostBill(input: { purchaseOrderId: string; landingCostId: string; invoiceNumber?: string; billDate?: string; dueDate?: string; performedBy?: string }) {
+        // Serialize same-line billing within this tab (same convention as
+        // the GRN landing lock above): two concurrent bills for one
+        // LandingCostItem.id must converge, never double-post.
+        const lockKey = `landing-bill:${input.purchaseOrderId}:${input.landingCostId}`;
+        const previous = landingConsumptionLocks.get(lockKey) || Promise.resolve();
+        let releaseLock!: () => void;
+        const current = new Promise<void>((resolve) => { releaseLock = resolve; });
+        landingConsumptionLocks.set(lockKey, current);
+        try {
+            await previous.catch(() => {});
+            return await this.postLandingCostBillTx(input);
+        } finally {
+            if (landingConsumptionLocks.get(lockKey) === current) {
+                landingConsumptionLocks.delete(lockKey);
+            }
+            releaseLock();
+        }
+    },
+
+    async postLandingCostBillTx(input: { purchaseOrderId: string; landingCostId: string; invoiceNumber?: string; billDate?: string; dueDate?: string; performedBy?: string }) {
+        return dbService.executeAtomicOperation(
+            ['purchases', 'purchaseInvoices', 'ledger', 'suppliers', 'idempotencyKeys', 'accounts', 'inventory', 'vatTransactions'],
+            async (tx) => {
+                const purchaseStore = tx.objectStore('purchases');
+                const invoiceStore = tx.objectStore('purchaseInvoices');
+                const ledgerStore = tx.objectStore('ledger');
+                const supplierStore = tx.objectStore('suppliers');
+                const inventoryStore = tx.objectStore('inventory');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
+
+                const gl = getGLConfig();
+
+                // 0. Resolve the authoritative landing line from the PO (single source).
+                const purchase = await purchaseStore.get(input.purchaseOrderId);
+                if (!purchase) {
+                    throw new Error(`Purchase order ${input.purchaseOrderId} not found; cannot bill landing cost line ${input.landingCostId}.`);
+                }
+                const line = ((purchase as any).landingCosts || []).find((c: any) => String(c?.id) === String(input.landingCostId));
+                if (!line) {
+                    throw new Error(`Landing cost line ${input.landingCostId} not found on PO ${input.purchaseOrderId}. Commit landing costs to the order first.`);
+                }
+                const amount = Number(line.amount) || 0;
+                if (amount < -0.005) {
+                    throw new Error(
+                        `Landing cost line ${input.landingCostId} is negative (K${amount.toFixed(2)}). ` +
+                        `Negative landing costs post only as controlled corrections linked to the original line — failing closed.`
+                    );
+                }
+                if (!(amount > 0)) {
+                    throw new Error(`Landing cost line ${input.landingCostId} has no positive amount to bill.`);
+                }
+                // Tax split (pure, deterministic): RECOVERABLE_VAT diverts its
+                // portion to input-VAT posting (never inventory); WITHHOLDING
+                // and unrated recoverable lines throw here. Capitalization,
+                // allocation and the bill journals below operate on the
+                // capitalizable portion; the provider obligation stays gross.
+                const billTax = splitLandingLineTax(line);
+                const billCapAmount = billTax.capitalizable;
+
+                // 1. Provider validation BEFORE any mutation or reservation.
+                const providerId = String(line.providerId || '').trim();
+                if (!providerId) {
+                    throw new Error(
+                        `Landing cost "${line.category || 'Uncategorized'}" (K${amount.toFixed(2)}, line ${line.id}) has no provider. ` +
+                        `Select the actual carrier/customs broker/supplier before posting it as a bill.`
+                    );
+                }
+                const provider = await supplierStore.get(providerId);
+                if (!provider) {
+                    throw new Error(
+                        `Landing cost "${line.category || 'Uncategorized'}" (K${amount.toFixed(2)}, line ${line.id}) ` +
+                        `names unknown provider "${providerId}". Register the provider as a supplier first.`
+                    );
+                }
+
+                // 2. Already billed? A landing line settles exactly one ACTIVE
+                // bill. Cancelled (reversed) bills settle nothing and do not
+                // block a corrected re-bill.
+                const existingInvoices = await invoiceStore.getAll();
+                const priorBill = existingInvoices.find((inv: any) => inv
+                    && String((inv as any).landingCostId || '') === String(line.id)
+                    && (inv as any).status !== 'cancelled');
+                if (priorBill) {
+                    throw new Error(`Landing cost line ${line.id} was already billed as ${priorBill.id}. A landing line cannot be billed twice.`);
+                }
+
+                // 3. Already GRN-capitalized? Unreversed GRN journals for this
+                // line mean the obligation already exists — billing again
+                // would manufacture a second obligation. Journals unwound by
+                // a mirror (reversesEntryId), and the mirrors themselves,
+                // establish nothing.
+                const ledgerRows = await ledgerStore.getAll();
+                const reversedIds = new Set(
+                    ledgerRows
+                        .filter((e: any) => e && (e as any).reversesEntryId)
+                        .map((e: any) => String((e as any).reversesEntryId))
+                );
+                const isMirrorRow = (e: any) =>
+                    /REVERSAL|CORRECTION/.test(String((e as any)?.entryType || '')) ||
+                    String(e?.id || '').includes('-REV') ||
+                    String(e?.id || '').startsWith('LG-GRN-LCR-') ||
+                    (e as any).reversesEntryId;
+                const capitalized = ledgerRows.find((e: any) =>
+                    Array.isArray((e as any).landingCostIds) && (e as any).landingCostIds.map(String).includes(String(line.id))
+                    && !reversedIds.has(String((e as any).id))
+                    && !isMirrorRow(e));
+                if (capitalized) {
+                    throw new Error(
+                        `Landing cost line ${line.id} was already capitalized by ${capitalized.id} (GRN ${capitalized.referenceId || 'unknown'}). ` +
+                        `Post the bill before verifying the GRN, not after.`
+                    );
+                }
+
+                // 4. Inventory debit distribution (fail-closed: no
+                // Purchases/expense fallback — that is exactly the treatment
+                // being eliminated). The line amount is allocated across the
+                // PO's stock-bearing lines with the PO's persisted method
+                // (default VALUE), and one bill journal posts per inventory
+                // account so multi-account POs distribute correctly.
+                const rawBillMethod = (purchase as any).landingAllocationMethod ?? 'VALUE';
+                const billMethod = normalizeLandingAllocationMethod(rawBillMethod);
+                if (!billMethod) {
+                    throw new Error(
+                        `PO ${purchase.id} names unsupported landing-cost allocation method "${String(rawBillMethod)}". ` +
+                        `Supported methods: VALUE, QUANTITY.`
+                    );
+                }
+                const poSnapshotItems = ((purchase as any).items || []) as any[];
+                const poInvRecords: any[] = [];
+                for (const poLine of poSnapshotItems) {
+                    poInvRecords.push(await inventoryStore.get(poLine.itemId));
+                }
+                const billAllocation = allocateLandingCosts({
+                    receiptLines: poSnapshotItems.map((poLine: any) => ({
+                        itemId: String(poLine.itemId || ''),
+                        quantityReceived: Number(poLine.quantity ?? poLine.quantityReceived ?? 0) || 0,
+                        unitCost: resolveReceiptUnitCost(poLine),
+                    })),
+                    isEligible: (lineIndex: number) => {
+                        const rec = poInvRecords[lineIndex];
+                        return !!rec && isInventoryBearingItem(rec);
+                    },
+                    landingLines: [{ id: String(line.id), amount: billCapAmount }],
+                    method: billMethod,
+                    resolveAccount: (lineIndex: number) => {
+                        const rec = poInvRecords[lineIndex];
+                        const poLine = poSnapshotItems[lineIndex];
+                        if (!rec || !isInventoryBearingItem(rec)) return null;
+                        const merged = {
+                            ...(poLine as any),
+                            type: (rec as any).type ?? (poLine as any).type,
+                            inventoryRole: (rec as any).inventoryRole ?? (poLine as any).inventoryRole,
+                        };
+                        return resolveInventoryAccountFromItems([merged], accounts);
+                    },
+                });
+                const apAccountId = resolveAcct(gl.accountsPayable);
+
+                await reserveIdempotencyKey(tx, 'landing_cost_bill', String(line.id));
+
+                const billId = generateId('LCB');
+                const billDate = input.billDate || new Date().toISOString();
+                const now = new Date().toISOString();
+                // One entry per inventory account; credits sum to the line
+                // amount exactly (engine exactness invariant).
+                const billGroups = new Map<string, { amount: number }>();
+                for (const share of billAllocation.shares) {
+                    if (!(share.amount > 0)) {
+                        continue;
+                    }
+                    if (!share.inventoryAccount) {
+                        throw new Error(
+                            `Cannot resolve an inventory account for landing bill line ${line.id} (item ${share.itemId}). ` +
+                            `Failing closed before financial mutation.`
+                        );
+                    }
+                    const grouped = billGroups.get(share.inventoryAccount) || { amount: 0 };
+                    grouped.amount += share.amount;
+                    billGroups.set(share.inventoryAccount, grouped);
+                }
+                const billedTotal = [...billGroups.values()].reduce((s, g) => s + g.amount, 0);
+                if (Math.abs(billedTotal - billCapAmount) > 0.005) {
+                    throw new Error(
+                        `Landing bill distribution mismatch for line ${line.id}: distributed K${billedTotal.toFixed(2)} vs capitalizable K${billCapAmount.toFixed(2)}. ` +
+                        `Failing closed before financial mutation.`
+                    );
+                }
+                const billEntryIds: string[] = [];
+                for (const [accountId, group] of billGroups) {
+                    const accountCode = accounts.find((a: any) => a.id === accountId)?.code || accountId;
+                    const entry: LedgerEntry = {
+                        id: generateId('LG-LCB'),
+                        date: billDate,
+                        description: `Landing cost bill - PO #${purchase.id} - ${provider?.name || providerId} -> ${accountCode}: ${(line.category || 'Cost')} K${amount.toFixed(2)} (${line.id})`,
+                        debitAccountId: accountId,
+                        creditAccountId: apAccountId,
+                        amount: group.amount,
+                        entryType: 'LANDING_COST_BILL',
+                        referenceId: billId,
+                        reconciled: false,
+                        supplierId: providerId,
+                        landingCostIds: [line.id],
+                        landingProviderId: providerId,
+                    };
+                    validateLedgerBalance([entry as any], `Landing cost bill ${billId}`);
+                    await ledgerStore.put(entry);
+                    billEntryIds.push(entry.id);
+                }
+
+                const invoice: PurchaseInvoice = {
+                    id: billId,
+                    supplier_id: providerId,
+                    invoice_number: input.invoiceNumber || billId,
+                    invoice_date: billDate,
+                    due_date: input.dueDate || billDate,
+                    purchase_order_id: purchase.id,
+                    status: 'pending',
+                    subtotal: billCapAmount,
+                    tax_amount: billTax.recoverableVAT,
+                    freight_amount: 0,
+                    discount_amount: 0,
+                    total_amount: amount,
+                    paid_amount: 0,
+                    notes: `Capitalized landing cost "${line.category || 'Cost'}" (${line.description || 'no description'}) for PO #${purchase.id}; settles landing line ${line.id}. Posts to inventory, not expense.${billTax.recoverableVAT > 0 ? ` Includes recoverable VAT K${billTax.recoverableVAT.toFixed(2)} at ${billTax.rate}%.` : ''}`,
+                    landingCostId: String(line.id),
+                    landingProviderId: providerId,
+                    created_at: now,
+                    updated_at: now,
+                };
+                await invoiceStore.put(invoice);
+
+                // Recoverable VAT (never inventory): DR input-VAT position /
+                // CR provider AP, mirroring vatService input-VAT conventions
+                // (entryType VAT_INPUT + VatTransaction row), plus provider
+                // balance, so the full gross obligation stays whole.
+                if (billTax.recoverableVAT > 0) {
+                    const vatInAccount = resolveAcct(gl.vatPayableAccount || '21210');
+                    const vatEntry: LedgerEntry = {
+                        id: generateId('LG-LCB-VAT'),
+                        date: billDate,
+                        description: `Landing input VAT - bill ${billId} - PO #${purchase.id} - ${provider?.name || providerId}: ${(line.category || 'Cost')} K${billTax.recoverableVAT.toFixed(2)} at ${billTax.rate}% (${line.id})`,
+                        debitAccountId: vatInAccount,
+                        creditAccountId: apAccountId,
+                        amount: billTax.recoverableVAT,
+                        entryType: 'VAT_INPUT',
+                        referenceId: billId,
+                        reconciled: false,
+                        supplierId: providerId,
+                        landingCostIds: [line.id],
+                        landingProviderId: providerId,
+                    };
+                    validateLedgerBalance([vatEntry as any], `Landing input VAT ${billId}`);
+                    await ledgerStore.put(vatEntry);
+                    billEntryIds.push(vatEntry.id);
+                    const vatTx: VatTransaction = {
+                        id: generateId('VAT_IN'),
+                        date: billDate,
+                        type: 'Input',
+                        amount: billTax.recoverableVAT,
+                        rate: billTax.rate,
+                        vatAmount: billTax.recoverableVAT,
+                        reference: billId,
+                        description: `Recoverable VAT on landing cost bill ${billId} (line ${line.id})`,
+                        isFiled: false,
+                        glEntryId: vatEntry.id,
+                        landingCostIds: [line.id],
+                        created_at: now,
+                    };
+                    await tx.objectStore('vatTransactions').put(vatTx);
+                }
+
+                // Durable BILL consumption marker on the PO: establishes the
+                // AP/debit side and freezes this line + the PO method against
+                // silent edits. It does NOT reduce WAC-embedding remaining —
+                // GRNs still allocate the line's capitalizable amount into
+                // carrying cost while posting no new journals for it.
+                {
+                    const existing = Array.isArray((purchase as any).landingConsumption)
+                        ? (purchase as any).landingConsumption
+                        : [];
+                    (purchase as any).landingConsumption = [
+                        ...existing,
+                        {
+                            id: generateId('LCC'),
+                            landingCostId: String(line.id),
+                            kind: 'BILL',
+                            billId,
+                            grnId: null,
+                            amount: billCapAmount,
+                            sourceAmount: billCapAmount,
+                            method: billMethod,
+                            providerId,
+                            accountSplits: [...billGroups.entries()].map(([account, group]) => ({ account, amount: group.amount })),
+                            journalIds: [...billEntryIds],
+                            at: now,
+                            taxTreatment: billTax.treatment,
+                            taxAmount: billTax.recoverableVAT,
+                        },
+                    ];
+                    await purchaseStore.put(purchase);
+                }
+
+                provider.balance = (provider.balance || 0) + amount;
+                await supplierStore.put(provider);
+
+                return { success: true, billId, ledgerEntryIds: billEntryIds };
+            }
+        );
+    },
+
+    /**
+     * Reverse an un-consumed landing-cost bill (controlled reversal).
+     * Allowed ONLY when the billed line has no GRN consumption events:
+     * once a GRN has embedded the line into WAC, unwinding requires the
+     * GRN-consumption correction path below, never a silent bill edit.
+     *
+     * Mirror legs (per bill account split + VAT leg), provider balance down,
+     * invoice → cancelled, REVERSAL event appended, bill idempotency key
+     * cleared so a corrected re-bill may proceed. Never deletes history.
+     */
+    async reverseLandingCostBill(input: { purchaseOrderId: string; landingCostId: string; billId?: string; reason?: string }) {
+        return dbService.executeAtomicOperation(
+            ['purchases', 'purchaseInvoices', 'ledger', 'suppliers', 'idempotencyKeys', 'accounts', 'vatTransactions'],
+            async (tx) => {
+                const purchaseStore = tx.objectStore('purchases');
+                const invoiceStore = tx.objectStore('purchaseInvoices');
+                const ledgerStore = tx.objectStore('ledger');
+                const supplierStore = tx.objectStore('suppliers');
+                const vatStore = tx.objectStore('vatTransactions');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
+                const gl = getGLConfig();
+                const apAccountId = resolveAcct(gl.accountsPayable);
+                const now = new Date().toISOString();
+
+                const purchase = await purchaseStore.get(input.purchaseOrderId);
+                if (!purchase) {
+                    throw new Error(`Purchase order ${input.purchaseOrderId} not found; cannot reverse landing bill.`);
+                }
+                const line = ((purchase as any).landingCosts || []).find((c: any) => String(c?.id) === String(input.landingCostId));
+                if (!line) {
+                    throw new Error(`Landing cost line ${input.landingCostId} not found on PO ${input.purchaseOrderId}.`);
+                }
+                const bill = (await invoiceStore.getAll()).find(
+                    (inv: any) => inv
+                        && String((inv as any).landingCostId || '') === String(line.id)
+                        && (!input.billId || String(inv.id) === String(input.billId))
+                        && (inv as any).status !== 'cancelled'
+                );
+                if (!bill) {
+                    throw new Error(`No active landing bill found for line ${line.id} on PO ${input.purchaseOrderId}.`);
+                }
+                // Guard: net GRN consumption (GRN events plus signed
+                // CORRECTION events) must be zero. A fully corrected-away
+                // consumption restores bill reversibility; anything still
+                // embedded needs the restatement path, not a bill reversal.
+                const events = (((purchase as any).landingConsumption || []) as any[]).filter(
+                    (e: any) => String(e?.landingCostId) === String(line.id)
+                );
+                const netGrnConsumed = events
+                    .filter((e: any) => e?.kind === 'GRN' || e?.kind === 'CORRECTION')
+                    .reduce((s: number, e: any) => s + (Number(e?.amount) || 0), 0);
+                if (netGrnConsumed > 0.005) {
+                    throw new Error(
+                        `Landing cost line ${line.id} still has K${netGrnConsumed.toFixed(2)} of GRN-embedded consumption; ` +
+                        `a bill reversal alone would strand carrying cost. ` +
+                        `Use the controlled GRN-consumption correction instead — failing closed.`
+                    );
+                }
+                const billEvent = events.find((e: any) => e?.kind === 'BILL' && String(e?.billId || '') === String(bill.id));
+
+                await reserveIdempotencyKey(tx, 'landing_bill_reversal', String(bill.id));
+
+                // Mirror every bill journal (inventory splits + VAT leg).
+                const originals = (await ledgerStore.getAll()).filter(
+                    (e: any) => String(e?.referenceId || '') === String(bill.id)
+                        && (String(e?.id || '').startsWith('LG-LCB'))
+                );
+                if (originals.length === 0) {
+                    throw new Error(`Bill ${bill.id} has no posted journals to reverse.`);
+                }
+                const reversalIds: string[] = [];
+                let reversedTotal = 0;
+                for (const orig of originals) {
+                    const isVatLeg = String(orig.id || '').includes('-VAT');
+                    const rev: LedgerEntry = {
+                        id: generateId(isVatLeg ? 'LG-LCB-VAT-REV' : 'LG-LCB-REV'),
+                        date: now,
+                        description: `REVERSAL: ${(orig as any).description || `landing bill ${bill.id}`} — ${input.reason || 'controlled bill reversal'}`,
+                        debitAccountId: (orig as any).creditAccountId,
+                        creditAccountId: (orig as any).debitAccountId,
+                        amount: Number((orig as any).amount) || 0,
+                        entryType: 'LANDING_BILL_REVERSAL',
+                        referenceId: String(bill.id),
+                        reconciled: false,
+                        supplierId: (orig as any).supplierId,
+                        landingCostIds: [line.id],
+                        landingProviderId: (orig as any).landingProviderId,
+                        reversesEntryId: (orig as any).id,
+                    };
+                    validateLedgerBalance([rev as any], `Landing bill reversal ${bill.id}`);
+                    await ledgerStore.put(rev);
+                    reversalIds.push(rev.id);
+                    reversedTotal += rev.amount;
+                    if (isVatLeg) {
+                        const vatTx: VatTransaction = {
+                            id: generateId('VAT_IN-REV'),
+                            date: now,
+                            type: 'Input',
+                            amount: -rev.amount,
+                            rate: Number((billEvent as any)?.taxRate ?? 0),
+                            vatAmount: -rev.amount,
+                            reference: String(bill.id),
+                            description: `REVERSAL of recoverable VAT on landing bill ${bill.id} (line ${line.id})`,
+                            isFiled: false,
+                            glEntryId: rev.id,
+                            landingCostIds: [line.id],
+                            reversalOf: (orig as any).glEntryId || orig.id,
+                            created_at: now,
+                        };
+                        await vatStore.put(vatTx);
+                    }
+                }
+
+                const provider = await supplierStore.get(String((bill as any).supplier_id));
+                if (provider) {
+                    provider.balance = (provider.balance || 0) - reversedTotal;
+                    await supplierStore.put(provider);
+                }
+                bill.status = 'cancelled';
+                bill.updated_at = now;
+                await invoiceStore.put(bill);
+
+                // REVERSAL marker (audit; AP/debit unwound above). The VAT
+                // take-back restores the line's VAT remainder for future GRNs.
+                {
+                    const existing = Array.isArray((purchase as any).landingConsumption)
+                        ? (purchase as any).landingConsumption
+                        : [];
+                    const vatTakenBack = originals
+                        .filter((o: any) => String(o.id || '').includes('-VAT'))
+                        .reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
+                    (purchase as any).landingConsumption = [
+                        ...existing,
+                        {
+                            id: generateId('LCC'),
+                            landingCostId: String(line.id),
+                            kind: 'REVERSAL',
+                            billId: String(bill.id),
+                            grnId: null,
+                            amount: 0,
+                            sourceAmount: Number(line.amount) || 0,
+                            method: (billEvent as any)?.method || (purchase as any).landingAllocationMethod || 'VALUE',
+                            providerId: String((bill as any).supplier_id || ''),
+                            accountSplits: [],
+                            journalIds: [...reversalIds],
+                            at: now,
+                            reversesEventId: (billEvent as any)?.id || null,
+                            taxTreatment: (billEvent as any)?.taxTreatment || null,
+                            taxAmount: vatTakenBack > 0 ? -vatTakenBack : 0,
+                        },
+                    ];
+                    await purchaseStore.put(purchase);
+                }
+                // Allow a corrected re-bill: the consumed line key is freed now
+                // that every journal it guarded has a mirror.
+                await clearIdempotencyKey(tx, 'landing_cost_bill', String(line.id));
+
+                return { success: true, billId: String(bill.id), reversalIds };
+            }
+        );
+    },
+
+    /**
+     * Controlled correction of GRN-consumed landing cost (pristine inventory
+     * only). Reverses one landing line's capitalization from one GRN:
+     * mirror AP/inventory journals, provider balance down, WAC value down
+     * (quantity untouched), matched untouched batches restored to purchase
+     * cost, corrective audit rows appended — history never edited.
+     *
+     * Fails closed when: a bill exists for the line (mixed state needs manual
+     * review), any OUT movement post-dates the GRN, current stock no longer
+     * covers the received quantity, or batches are missing/partially consumed.
+     * Sold/moved inventory can never be silently restated.
+     */
+    async correctLandingConsumption(input: { purchaseOrderId: string; landingCostId: string; grnId: string; reason?: string; performedBy?: string }) {
+        return dbService.executeAtomicOperation(
+            ['goodsReceipts', 'purchases', 'purchaseInvoices', 'ledger', 'suppliers', 'inventory', 'inventoryTransactions', 'materialBatches', 'idempotencyKeys', 'accounts', 'vatTransactions'],
+            async (tx) => {
+                const grnStore = tx.objectStore('goodsReceipts');
+                const purchaseStore = tx.objectStore('purchases');
+                const invoiceStore = tx.objectStore('purchaseInvoices');
+                const ledgerStore = tx.objectStore('ledger');
+                const supplierStore = tx.objectStore('suppliers');
+                const inventoryStore = tx.objectStore('inventory');
+                const invTxnStore = tx.objectStore('inventoryTransactions');
+                const batchStore = tx.objectStore('materialBatches');
+                const vatStore = tx.objectStore('vatTransactions');
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
+                const gl = getGLConfig();
+                const apAccountId = resolveAcct(gl.accountsPayable);
+                const vatInAccount = resolveAcct(gl.vatPayableAccount || '21210');
+                const now = new Date().toISOString();
+                const lineId = String(input.landingCostId);
+
+                const purchase = await purchaseStore.get(input.purchaseOrderId);
+                if (!purchase) {
+                    throw new Error(`Purchase order ${input.purchaseOrderId} not found; cannot correct landing consumption.`);
+                }
+                const grn = await grnStore.get(input.grnId);
+                if (!grn) {
+                    throw new Error(`GRN ${input.grnId} not found; cannot correct landing consumption.`);
+                }
+                // Mixed bill+GRN state needs manual review, never automation:
+                // an active bill alongside GRN consumption cannot be unwound
+                // one side at a time without orphaning the other side's
+                // accounting. (Cancelled bills are fully unwound already.)
+                const billForLine = (await invoiceStore.getAll()).find(
+                    (inv: any) => inv && String((inv as any).landingCostId || '') === lineId && (inv as any).status !== 'cancelled'
+                );
+                if (billForLine) {
+                    throw new Error(
+                        `Landing cost line ${lineId} has an active bill (${billForLine.id}) alongside GRN consumption. ` +
+                        `Mixed bill/capitalization states require manual review — failing closed.`
+                    );
+                }
+                const grnEvent = (((purchase as any).landingConsumption || []) as any[]).find(
+                    (e: any) => e?.kind === 'GRN' && String(e?.landingCostId) === lineId && String(e?.grnId || '') === String(input.grnId)
+                );
+                if (!grnEvent || !((Number(grnEvent.amount) || 0) > 0)) {
+                    throw new Error(`No GRN consumption of line ${lineId} by GRN ${input.grnId} exists to correct.`);
+                }
+                // Convergent retry: the same (line, GRN) correction requested
+                // twice must not post twice. Guards below validate live state
+                // and would trip on already-corrected data, so check the
+                // durable marker first.
+                const priorCorrection = (((purchase as any).landingConsumption || []) as any[]).find(
+                    (e: any) => e?.kind === 'CORRECTION' && String(e?.landingCostId) === lineId
+                        && String(e?.grnId || '') === String(input.grnId)
+                        && String(e?.correctsEventId || '') === String((grnEvent as any).id || '')
+                );
+                if (priorCorrection) {
+                    throw new Error(
+                        `Landing consumption of line ${lineId} by GRN ${input.grnId} was already corrected ` +
+                        `(${(priorCorrection as any).id}). Retry converges without another posting.`
+                    );
+                }
+                const line = ((purchase as any).landingCosts || []).find((c: any) => String(c?.id) === lineId);
+                const providerId = String(grnEvent.providerId || line?.providerId || '').trim();
+                if (!providerId) {
+                    throw new Error(`Cannot determine the provider for landing line ${lineId}; failing closed.`);
+                }
+                const provider = await supplierStore.get(providerId);
+                if (!provider) {
+                    throw new Error(`Landing provider "${providerId}" is not a known supplier; failing closed.`);
+                }
+                // Per-item landed shares from the GRN's persisted allocation
+                // (durable snapshot — never recomputed from live prices).
+                const shares = (((grn as any).landingAllocations || []) as any[]).filter(
+                    (s: any) => String(s?.landingCostId) === lineId && (Number(s?.amount) || 0) > 0
+                );
+                if (shares.length === 0) {
+                    throw new Error(`GRN ${input.grnId} holds no persisted allocation shares for line ${lineId}; cannot correct safely.`);
+                }
+                const perItem = new Map<string, { landedTotal: number; receivedQty: number; batchNumber?: string; effectiveUnitCost: number }>();
+                for (const share of shares) {
+                    const itemId = String(share.itemId || '');
+                    const agg = perItem.get(itemId) || { landedTotal: 0, receivedQty: 0, effectiveUnitCost: 0 };
+                    agg.landedTotal += Number(share.amount) || 0;
+                    agg.receivedQty += Number(share.quantity) || 0;
+                    perItem.set(itemId, agg);
+                }
+                // Pristine-inventory guards per affected item.
+                const grnTs = String(((await invTxnStore.getAll()) as any[])
+                    .find((t: any) => t && t.itemId && String(t.referenceId || '') === String(input.grnId) && t.type === 'IN')?.timestamp || '');
+                for (const [itemId, agg] of perItem) {
+                    const invItem = await inventoryStore.get(itemId);
+                    if (!invItem) {
+                        throw new Error(`Inventory item ${itemId} is missing; cannot correct safely.`);
+                    }
+                    if (!((Number(invItem.stock) || 0) >= agg.receivedQty && (Number(invItem.stock) || 0) > 0)) {
+                        throw new Error(
+                            `Item ${itemId} no longer holds the full received quantity (${agg.receivedQty}) on hand ` +
+                            `(stock ${(Number(invItem.stock) || 0)}). Sold/moved inventory cannot be restated silently — failing closed.`
+                        );
+                    }
+                    const laterOut = ((await invTxnStore.getAll()) as any[]).find(
+                        (t: any) => t && String(t.itemId || '') === itemId && t.type === 'OUT'
+                            && (!grnTs || String(t.timestamp || '') >= grnTs)
+                    );
+                    if (laterOut) {
+                        throw new Error(
+                            `Item ${itemId} has outbound movements at or after the GRN; historical COGS will not be rewritten — failing closed.`
+                        );
+                    }
+                    const grnLine = ((grn as any).items || []).find((l: any) => String(l?.itemId || '') === itemId);
+                    const inTxn = ((await invTxnStore.getAll()) as any[]).find(
+                        (t: any) => t && String(t.itemId || '') === itemId && String(t.referenceId || '') === String(input.grnId) && t.type === 'IN'
+                    );
+                    const effective = Number(inTxn?.effectiveUnitCost);
+                    if (grnLine?.batchNumber) {
+                        const batch = ((await batchStore.getAll()) as any[]).find(
+                            (b: any) => b && String(b.itemId || '') === itemId && String(b.batchNumber || '') === String(grnLine.batchNumber)
+                        );
+                        if (!batch || Number(batch.remainingQuantity) !== Number(batch.quantity) || Math.abs(Number(batch.costPerUnit) - effective) > 0.005) {
+                            throw new Error(
+                                `Batch ${grnLine.batchNumber} (${itemId}) is missing, partially consumed, or cost-drifted; ` +
+                                `batch-tracked corrections need manual review — failing closed.`
+                            );
+                        }
+                        agg.batchNumber = String(grnLine.batchNumber);
+                        agg.effectiveUnitCost = effective;
+                    } else {
+                        const stray = ((await batchStore.getAll()) as any[]).find(
+                            (b: any) => b && String(b.itemId || '') === itemId
+                                && Math.abs(Number(b.costPerUnit) - effective) <= 0.005
+                                && String(b.receivedDate || '').slice(0, 10) === String((grn as any).date || '').slice(0, 10)
+                        );
+                        if (stray) {
+                            throw new Error(
+                                `Item ${itemId} has a batch matching this GRN receipt that the GRN did not declare; ` +
+                                `cannot attribute safely — failing closed.`
+                            );
+                        }
+                        agg.effectiveUnitCost = effective;
+                    }
+                    if (!(agg.effectiveUnitCost > 0)) {
+                        throw new Error(`Cannot determine the booked unit cost for item ${itemId} on GRN ${input.grnId}; failing closed.`);
+                    }
+                }
+
+                await reserveIdempotencyKey(tx, 'landing_correction', `${input.grnId}:${lineId}`);
+
+                // Mirror the original posting groups (from the event's durable
+                // splits): DR provider AP / CR inventory, per account.
+                // reversesEntryId links each mirror to its original so later
+                // establishment checks treat reversed journals as unwound.
+                const originalLcEntries = (await ledgerStore.getAll()).filter(
+                    (e: any) => String(e?.id || '').startsWith('LG-GRN-LC')
+                        && String(e?.referenceId || '') === String(input.grnId)
+                        && Array.isArray((e as any).landingCostIds)
+                        && ((e as any).landingCostIds as unknown[]).map(String).includes(lineId)
+                );
+                const mirrorIds: string[] = [];
+                let mirroredTotal = 0;
+                for (const split of ((grnEvent as any).accountSplits || [])) {
+                    const splitAccount = resolveAcct(String(split.account));
+                    const splitAmount = Number(split.amount) || 0;
+                    if (!(splitAmount > 0)) {
+                        continue;
+                    }
+                    const mirror: LedgerEntry = {
+                        id: generateId('LG-GRN-LCR'),
+                        date: now,
+                        description: `CORRECTION: reverse landing capitalization - GRN #${input.grnId} - line ${lineId} -> ${split.account}: ${input.reason || 'controlled correction'}`,
+                        debitAccountId: apAccountId,
+                        creditAccountId: splitAccount,
+                        amount: splitAmount,
+                        entryType: 'LANDING_CORRECTION',
+                        referenceId: String(input.grnId),
+                        reconciled: false,
+                        supplierId: providerId,
+                        landingCostIds: [lineId],
+                        landingProviderId: providerId,
+                        reversesEntryId: originalLcEntries.find((o: any) => String((o as any).debitAccountId) === String(splitAccount))?.id || null,
+                    };
+                    validateLedgerBalance([mirror as any], `Landing correction ${input.grnId}:${lineId}`);
+                    await ledgerStore.put(mirror);
+                    mirrorIds.push(mirror.id);
+                    mirroredTotal += splitAmount;
+                }
+                // Mirror the VAT legs this GRN posted for the line.
+                let mirroredVat = 0;
+                const vatLegs = (await ledgerStore.getAll()).filter(
+                    (e: any) => String(e?.id || '').startsWith('LG-GRN-VAT')
+                        && String(e?.referenceId || '') === String(input.grnId)
+                        && Array.isArray((e as any).landingCostIds)
+                        && ((e as any).landingCostIds as unknown[]).map(String).includes(lineId)
+                );
+                for (const leg of vatLegs) {
+                    const mirror: LedgerEntry = {
+                        id: generateId('LG-GRN-VAT-REV'),
+                        date: now,
+                        description: `CORRECTION: reverse landing input VAT - GRN #${input.grnId} - line ${lineId}: ${input.reason || 'controlled correction'}`,
+                        debitAccountId: apAccountId,
+                        creditAccountId: String((leg as any).debitAccountId),
+                        amount: Number((leg as any).amount) || 0,
+                        entryType: 'LANDING_CORRECTION',
+                        referenceId: String(input.grnId),
+                        reconciled: false,
+                        supplierId: providerId,
+                        landingCostIds: [lineId],
+                        landingProviderId: providerId,
+                    };
+                    validateLedgerBalance([mirror as any], `Landing VAT correction ${input.grnId}:${lineId}`);
+                    await ledgerStore.put(mirror);
+                    mirrorIds.push(mirror.id);
+                    mirroredVat += mirror.amount;
+                    const vatTx: VatTransaction = {
+                        id: generateId('VAT_IN-REV'),
+                        date: now,
+                        type: 'Input',
+                        amount: -mirror.amount,
+                        rate: 0,
+                        vatAmount: -mirror.amount,
+                        reference: String(input.grnId),
+                        description: `REVERSAL of recoverable VAT on landing line ${lineId} (GRN ${input.grnId})`,
+                        isFiled: false,
+                        glEntryId: mirror.id,
+                        landingCostIds: [lineId],
+                        reversalOf: (leg as any).id,
+                        created_at: now,
+                    };
+                    await vatStore.put(vatTx);
+                }
+                // WAC value down (quantity untouched), batches restored, audit
+                // rows appended — history rows never edited.
+                for (const [itemId, agg] of perItem) {
+                    const invItem = await inventoryStore.get(itemId);
+                    const currentTotal = (Number(invItem.stock) || 0) * (Number(invItem.cost) || 0);
+                    const newTotal = currentTotal - agg.landedTotal;
+                    if (newTotal < -0.005) {
+                        throw new Error(`Correcting item ${itemId} would drive inventory value negative; failing closed.`);
+                    }
+                    const newCost = (Number(invItem.stock) || 0) > 0 ? newTotal / Number(invItem.stock) : 0;
+                    Object.assign(invItem, costAliasValues(newCost));
+                    await inventoryStore.put(invItem);
+                    if (agg.batchNumber) {
+                        const batch = ((await batchStore.getAll()) as any[]).find(
+                            (b: any) => b && String(b.itemId || '') === itemId && String(b.batchNumber || '') === agg.batchNumber
+                        );
+                        const landedPerUnit = agg.receivedQty > 0 ? agg.landedTotal / agg.receivedQty : 0;
+                        batch.costPerUnit = Math.max(0, Number(batch.costPerUnit) - landedPerUnit);
+                        batch.landedCostPerUnit = 0;
+                        await batchStore.put(batch);
+                    }
+                    await invTxnStore.put({
+                        id: generateId('TXN'),
+                        itemId,
+                        type: 'CORRECTION',
+                        quantity: 0,
+                        previousQuantity: Number(invItem.stock) || 0,
+                        newQuantity: Number(invItem.stock) || 0,
+                        unitCost: 0,
+                        totalCost: 0,
+                        landedCostPerUnit: agg.receivedQty > 0 ? -(agg.landedTotal / agg.receivedQty) : 0,
+                        landedCostTotal: -agg.landedTotal,
+                        effectiveUnitCost: newCost,
+                        reference: 'GRN_CORRECTION',
+                        referenceId: String(input.grnId),
+                        reason: `Controlled landing correction for line ${lineId}: ${input.reason || 'no reason given'}`,
+                        performedBy: (input as any).performedBy || 'System',
+                        timestamp: now,
+                    });
+                }
+                if (provider) {
+                    provider.balance = (provider.balance || 0) - mirroredTotal - mirroredVat;
+                    await supplierStore.put(provider);
+                }
+                // CORRECTION event releases remaining (negative amount); the
+                // original GRN event stays untouched for audit.
+                {
+                    const existing = Array.isArray((purchase as any).landingConsumption)
+                        ? (purchase as any).landingConsumption
+                        : [];
+                    (purchase as any).landingConsumption = [
+                        ...existing,
+                        {
+                            id: generateId('LCC'),
+                            landingCostId: lineId,
+                            kind: 'CORRECTION',
+                            billId: null,
+                            grnId: String(input.grnId),
+                            amount: -mirroredTotal,
+                            sourceAmount: Number(grnEvent.sourceAmount) || 0,
+                            method: (grnEvent as any).method || 'VALUE',
+                            providerId,
+                            accountSplits: [],
+                            journalIds: [...mirrorIds],
+                            at: now,
+                            correctsEventId: (grnEvent as any).id || null,
+                            taxTreatment: (grnEvent as any).taxTreatment || null,
+                            taxAmount: mirroredVat > 0 ? -mirroredVat : 0,
+                        },
+                    ];
+                    await purchaseStore.put(purchase);
+                }
+
+                return { success: true, mirrorIds };
             }
         );
     },
@@ -4966,6 +6381,67 @@ export const transactionService = {
                 const withIdentity = ensureDocumentVerificationToken(purchase as Purchase & { verificationToken?: string });
                 if (existing && (existing as any).verificationToken && !(withIdentity as any).verificationToken) {
                     (withIdentity as any).verificationToken = (existing as any).verificationToken;
+                }
+                // Landing-cost financial immutability: once a line has any
+                // BILL/GRN consumption event, its posted amount and provider
+                // are frozen; the PO method is frozen while any events exist.
+                // Corrections require a controlled reversal, never silent edit.
+                // Consumption history itself is append-only: a save that does
+                // not carry it cannot erase it.
+                if (existing) {
+                    const priorEvents = ((existing as any).landingConsumption || []) as any[];
+                    if (!Array.isArray((withIdentity as any).landingConsumption) && priorEvents.length > 0) {
+                        (withIdentity as any).landingConsumption = [...priorEvents];
+                    }
+                    if (priorEvents.length > 0) {
+                        const priorLines = new Map<string, any>(
+                            (((existing as any).landingCosts || []) as any[]).map((c: any) => [String(c?.id), c])
+                        );
+                        const nextLines = new Map<string, any>(
+                            (((purchase as any).landingCosts || []) as any[]).map((c: any) => [String(c?.id), c])
+                        );
+                        const touchedIds = new Set(priorEvents.map((e: any) => String(e?.landingCostId)));
+                        for (const id of touchedIds) {
+                            const before = priorLines.get(id);
+                            const after = nextLines.get(id);
+                            if (!after) {
+                                throw new Error(
+                                    `Landing cost line ${id} has posted financial activity (bill/capitalization) and cannot be removed from PO ${purchase.id}.`
+                                );
+                            }
+                            if (Number(after.amount) !== Number(before?.amount)) {
+                                throw new Error(
+                                    `Landing cost line ${id} has posted financial activity and its amount cannot be changed ` +
+                                    `(was K${Number(before?.amount || 0).toFixed(2)}). Use a controlled correction instead.`
+                                );
+                            }
+                            if (String(after.providerId || '') !== String(before?.providerId || '')) {
+                                throw new Error(
+                                    `Landing cost line ${id} has posted financial activity and its provider cannot be changed. ` +
+                                    `Use a controlled correction instead.`
+                                );
+                            }
+                            // Tax classification shapes posted VAT/inventory splits;
+                            // changing it under posted activity would silently
+                            // re-split history.
+                            for (const field of ['taxTreatment', 'vatRate', 'taxInclusive']) {
+                                if (String((after as any)?.[field] ?? '') !== String((before as any)?.[field] ?? '')) {
+                                    throw new Error(
+                                        `Landing cost line ${id} has posted financial activity and its ${field} cannot be changed. ` +
+                                        `Use a controlled correction instead.`
+                                    );
+                                }
+                            }
+                        }
+                        const beforeMethod = (existing as any).landingAllocationMethod ?? 'VALUE';
+                        const afterMethod = (purchase as any).landingAllocationMethod ?? 'VALUE';
+                        if (beforeMethod !== afterMethod) {
+                            throw new Error(
+                                `PO ${purchase.id} has posted landing-cost activity, so its allocation method cannot be changed ` +
+                                `from ${beforeMethod} to ${afterMethod}.`
+                            );
+                        }
+                    }
                 }
                 await store.put(withIdentity);
                 return { success: true };
@@ -6474,12 +7950,13 @@ export const transactionService = {
 
     async recordSupplierPayment(payment: SupplierPayment) {
         return dbService.executeAtomicOperation(
-            ['supplierPayments', 'purchases', 'ledger', 'suppliers', 'bankAccounts', 'bankTransactions', 'idempotencyKeys', 'accounts'],
+            ['supplierPayments', 'purchases', 'purchaseInvoices', 'ledger', 'suppliers', 'bankAccounts', 'bankTransactions', 'idempotencyKeys', 'accounts'],
             async (tx) => {
                 await reserveIdempotencyKey(tx, 'supplier_payment', payment.id, payment.idempotencyKey);
 
                 const paymentStore = tx.objectStore('supplierPayments');
                 const purchaseStore = tx.objectStore('purchases');
+                const invoiceStore = tx.objectStore('purchaseInvoices');
                 const supplierStore = tx.objectStore('suppliers');
                 const ledgerStore = tx.objectStore('ledger');
                 const bankAccountsStore = tx.objectStore('bankAccounts');
@@ -6503,6 +7980,46 @@ export const transactionService = {
                 // 1. Save the payment (with its permanent, idempotent
                 // verification token — single non-accounting field; all
                 // ledger/AP postings below are untouched).
+                // 1b. Generic invoice application (all supplier purchase
+                // invoices, landing bills included): allocation-linked
+                // invoices first, then oldest pending/partial. Paid amounts
+                // drive invoice status pending/partial/paid, so
+                // invoice.paid_amount always equals applied payments.
+                const invoiceApplications: { invoiceId: string; amount: number }[] = [];
+                {
+                    const linkedPOs = new Set(
+                        ((payment as any).allocations || []).map((a: any) => String(a?.purchaseId || a?.purchaseOrderId || ''))
+                    );
+                    const openInvoices = (await invoiceStore.getAll())
+                        .filter((inv: any) => inv
+                            && String(inv.supplier_id || '') === String(payment.supplierId)
+                            && (inv.status === 'pending' || inv.status === 'partial')
+                            && (Number(inv.total_amount) - Number(inv.paid_amount || 0)) > 0.005);
+                    openInvoices.sort((a: any, b: any) => {
+                        const aLinked = a.purchase_order_id && linkedPOs.has(String(a.purchase_order_id)) ? 0 : 1;
+                        const bLinked = b.purchase_order_id && linkedPOs.has(String(b.purchase_order_id)) ? 0 : 1;
+                        if (aLinked !== bLinked) return aLinked - bLinked;
+                        return String(a.invoice_date || '').localeCompare(String(b.invoice_date || ''));
+                    });
+                    let toApply = Number(payment.amount) || 0;
+                    for (const inv of openInvoices) {
+                        if (!(toApply > 0.005)) {
+                            break;
+                        }
+                        const outstanding = Number(inv.total_amount) - Number(inv.paid_amount || 0);
+                        if (!(outstanding > 0.005)) {
+                            continue;
+                        }
+                        const applied = Math.min(outstanding, toApply);
+                        inv.paid_amount = (Number(inv.paid_amount) || 0) + applied;
+                        inv.status = (Number(inv.total_amount) - Number(inv.paid_amount)) <= 0.005 ? 'paid' : 'partial';
+                        inv.updated_at = new Date().toISOString();
+                        await invoiceStore.put(inv);
+                        invoiceApplications.push({ invoiceId: inv.id, amount: applied });
+                        toApply -= applied;
+                    }
+                }
+                (payment as any).invoiceApplications = invoiceApplications;
                 await paymentStore.put(ensureDocumentVerificationToken({ ...(payment as any) }));
 
                 // 2. Update linked Purchase Orders
@@ -6586,7 +8103,7 @@ export const transactionService = {
 
     async voidSupplierPayment(paymentId: string) {
         return dbService.executeAtomicOperation(
-            ['supplierPayments', 'purchases', 'ledger', 'suppliers', 'bankAccounts', 'bankTransactions', 'idempotencyKeys', 'accounts'],
+            ['supplierPayments', 'purchases', 'purchaseInvoices', 'ledger', 'suppliers', 'bankAccounts', 'bankTransactions', 'idempotencyKeys', 'accounts'],
             async (tx) => {
                 await reserveIdempotencyKey(tx, 'supplier_payment_void', paymentId);
 
@@ -6632,6 +8149,23 @@ export const transactionService = {
                 if (supplier) {
                     supplier.balance = (supplier.balance || 0) + payment.amount;
                     await supplierStore.put(supplier);
+                }
+
+                // 2b. Reverse invoice applications recorded by
+                // recordSupplierPayment (generic primitive symmetry): subtract
+                // exactly what was applied; recompute pending/partial/paid.
+                // Payments predating application tracking carry no
+                // invoiceApplications and reverse nothing here.
+                for (const app of ((payment as any).invoiceApplications || [])) {
+                    const inv = await tx.objectStore('purchaseInvoices').get(String((app as any).invoiceId));
+                    if (!inv) {
+                        continue;
+                    }
+                    inv.paid_amount = Math.max(0, (Number(inv.paid_amount) || 0) - (Number((app as any).amount) || 0));
+                    const outstanding = Number(inv.total_amount) - Number(inv.paid_amount);
+                    inv.status = outstanding <= 0.005 ? 'paid' : (Number(inv.paid_amount) > 0.005 ? 'partial' : 'pending');
+                    inv.updated_at = new Date().toISOString();
+                    await tx.objectStore('purchaseInvoices').put(inv);
                 }
 
                 // 3. Mark Payment as Voided

@@ -119,7 +119,7 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
         }
     };
 
-    const handleUpdateLandingCosts = (costs: LandingCostItem[]) => { updatePurchase({ ...purchase, landingCosts: costs }); };
+    const handleUpdateLandingCosts = (costs: LandingCostItem[], method?: 'VALUE' | 'QUANTITY') => { updatePurchase({ ...purchase, landingCosts: costs, ...(method ? { landingAllocationMethod: method } : {}) }); };
     const handleEmail = () => { notify(`Email functionality for vendors is currently being updated.`, "info"); };
     const handleCancel = () => {
         setConfirmState({ open:true,title:'Cancel Order',message:'Are you sure you want to cancel this order?',type:'danger',confirmText:'Cancel Order',onConfirm:()=>{ updatePurchase({...purchase,status:'Cancelled'}); onClose(); }});

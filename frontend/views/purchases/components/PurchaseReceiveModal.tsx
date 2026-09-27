@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Package, ChevronRight, Scale } from 'lucide-react';
 import { inventoryResourceService } from '../../../services/inventoryResourceService';
+import { requiresGrnVerifyForLanding } from '../../../services/landingAllocation';
 import { resolveReceiptUnitCost } from '../../../services/purchaseCosting';
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { useInventory } from '../../../context/InventoryContext';
@@ -48,6 +49,15 @@ export const PurchaseReceiveModal: React.FC<PurchaseReceiveModalProps> = ({ purc
     const handleSubmit = async () => {
         setLoading(true); setError(null);
         try {
+            // Canonical-path guard: this quick-receive flow records lots and
+            // updates PO status WITHOUT journals, WAC landing allocation,
+            // consumption tracking or idempotency. A PO carrying capitalizable
+            // landing costs must go through GRN Verify (processGoodsReceipt),
+            // which is the single Landing Cost-aware accounting path.
+            const guard = requiresGrnVerifyForLanding(purchase);
+            if (guard) {
+                throw new Error(guard);
+            }
             const updatedItems = [...items];
             let allFullyReceived = true;
             for (let i = 0; i < updatedItems.length; i++) {

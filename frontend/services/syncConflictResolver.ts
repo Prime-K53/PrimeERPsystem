@@ -6,6 +6,33 @@ const METADATA_FIELDS = new Set([
 ]);
 
 /**
+ * Append-only financial event arrays: union by event id so a merge can never
+ * drop a bill/capitalization/correction/reversal event (landingConsumption).
+ * Events are immutable once written; the union of both sides is always the
+ * safe merge. Applies to PO documents carrying landing consumption history.
+ */
+const APPEND_ONLY_EVENT_ARRAY_FIELDS = new Set(['landingConsumption']);
+
+export function mergeLandingEventArrays(localVal: unknown, remoteVal: unknown): unknown[] | null {
+  if (!Array.isArray(localVal) && !Array.isArray(remoteVal)) return null;
+  const byId = new Map<string, unknown>();
+  for (const arr of [localVal, remoteVal]) {
+    if (!Array.isArray(arr)) {
+      continue;
+    }
+    for (const ev of arr) {
+      const id = ev && typeof ev === 'object' ? String((ev as any).id || '') : '';
+      if (id) {
+        if (!byId.has(id)) byId.set(id, ev);
+      } else {
+        byId.set(`noid-${byId.size}`, ev);
+      }
+    }
+  }
+  return [...byId.values()];
+}
+
+/**
  * Resolve conflict between local and remote records.
  * Uses server-authoritative `updated_at` as the truth, falls back to client `_updatedAt`.
  */
@@ -33,10 +60,16 @@ export function resolveConflict(
 
 export function mergeRecords(localRecord: any, remoteRecord: any): any {
   const winner = resolveConflict(localRecord, remoteRecord);
-  if (winner === 'local_wins') {
-    return { ...remoteRecord, ...localRecord, _updatedAt: new Date().toISOString() };
+  const base = winner === 'local_wins'
+    ? { ...remoteRecord, ...localRecord, _updatedAt: new Date().toISOString() }
+    : { ...localRecord, ...remoteRecord, _updatedAt: new Date().toISOString() };
+  // Append-only financial history (e.g. landingConsumption) unions by event
+  // id on top of the winner-takes-all merge so no event is ever lost.
+  for (const key of APPEND_ONLY_EVENT_ARRAY_FIELDS) {
+    const union = mergeLandingEventArrays(localRecord?.[key], remoteRecord?.[key]);
+    if (union) base[key] = union;
   }
-  return { ...localRecord, ...remoteRecord, _updatedAt: new Date().toISOString() };
+  return base;
 }
 
 /**
@@ -81,6 +114,17 @@ export function fieldLevelMerge(localRecord: any, remoteRecord: any): any {
     if (JSON.stringify(localVal) === JSON.stringify(remoteVal)) {
       merged[key] = localVal;
       continue;
+    }
+
+    // Append-only financial history unions by event id instead of
+    // last-write-wins: concurrent bill/capitalization events from two
+    // devices both survive the merge.
+    if (APPEND_ONLY_EVENT_ARRAY_FIELDS.has(key)) {
+      const union = mergeLandingEventArrays(localVal, remoteVal);
+      if (union) {
+        merged[key] = union;
+        continue;
+      }
     }
 
     const localFieldTime = localRecord[`${key}_updatedAt`]

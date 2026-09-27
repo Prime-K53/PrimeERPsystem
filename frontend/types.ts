@@ -1144,6 +1144,14 @@ export interface PurchaseInvoice {
   notes?: string;
   created_at: string;
   updated_at: string;
+  /**
+   * Landing-cost bill linkage (optional). A purchase invoice that bills a
+   * capitalized landing-cost line references the PO landing line it settles
+   * so GRN capitalization can skip already-billed lines instead of
+   * double-posting. No VAT/tax semantics attached yet.
+   */
+  landingCostId?: string;
+  landingProviderId?: string;
 }
 
 export interface PurchasePayment {
@@ -1170,6 +1178,12 @@ export interface SupplierPayment {
   reference?: string;
   notes?: string;
   created_at: string;
+  /**
+   * Per-invoice application of this payment (generic supplier-payment
+   * primitive): invoice.paid_amount must equal the sum of applied payments.
+   * Populated by recordSupplierPayment; reversed by voidSupplierPayment.
+   */
+  invoiceApplications?: { invoiceId: string; amount: number }[];
 }
 
 export interface Prepayment {
@@ -2836,6 +2850,54 @@ export interface LandingCostItem {
   purchaseItemId: string;
   cost: number;
   [key: string]: any;
+}
+
+/**
+ * Landing-cost tax classification (data-driven; no separate tax engine).
+ * - CAPITALIZE: whole amount capitalizable (default when absent).
+ * - CUSTOMS_DUTY: capitalizable acquisition cost, distinctly reported.
+ * - NONRECOVERABLE_TAX: capitalized per existing policy, distinctly reported.
+ * - RECOVERABLE_VAT: VAT portion posted as input VAT (never inventory);
+ *   only the net amount capitalizes. Requires vatRate.
+ * - WITHHOLDING: not supported by Prime's payment infrastructure — posting
+ *   a line so classified fails closed.
+ */
+export type LandingCostTaxTreatment =
+  | 'CAPITALIZE'
+  | 'CUSTOMS_DUTY'
+  | 'NONRECOVERABLE_TAX'
+  | 'RECOVERABLE_VAT'
+  | 'WITHHOLDING';
+
+/**
+ * Durable landing-cost consumption event (embedded on the Purchase).
+ * Immutable once written: GRN verify, landing-cost billing, reversals and
+ * corrections append events; nothing mutates or deletes them. Remaining for
+ * a line = source amount minus GRN-kind event amounts (CORRECTION events
+ * carry signed amounts that release remaining). BILL/REVERSAL events never
+ * reduce WAC-embedding remaining.
+ */
+export interface LandingConsumptionEvent {
+  id: string;
+  landingCostId: string;
+  kind: 'BILL' | 'GRN' | 'REVERSAL' | 'CORRECTION';
+  billId?: string | null;
+  grnId?: string | null;
+  /** Amount consumed into WAC (GRN, signed for CORRECTION) or established by the bill (BILL). */
+  amount: number;
+  /** Source line amount at consumption time (drift detection). */
+  sourceAmount: number;
+  method: 'VALUE' | 'QUANTITY';
+  providerId: string;
+  accountSplits: { account: string; amount: number }[];
+  journalIds: string[];
+  at: string;
+  /** Event this REVERSAL/CORRECTION reverses or corrects, when applicable. */
+  reversesEventId?: string | null;
+  /** Tax classification in force for the line at event time. */
+  taxTreatment?: LandingCostTaxTreatment | string | null;
+  /** Recoverable VAT portion diverted from capitalization (never inventory). */
+  taxAmount?: number | null;
 }
 
 export interface InvoiceAllocation {

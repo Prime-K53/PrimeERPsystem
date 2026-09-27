@@ -65,7 +65,7 @@ const GoodsReceived: React.FC = () => {
               if (extracted) {
                   const matchingPO = (purchases || []).find(po => po.id === extracted.purchaseOrderId || (extracted.purchaseOrderId && po.id.includes(extracted.purchaseOrderId)) || (extracted.reference && po.reference === extracted.reference));
                   const grnItems = (extracted.items || []).map((item: any) => { const matchedInv = (inventory || []).find(i => (i.name || '').toLowerCase().includes((item.name || '').toLowerCase()) || (item.name || '').toLowerCase().includes((i.name || '').toLowerCase())); return { itemId: matchedInv ? matchedInv.id : 'UNKNOWN', name: matchedInv ? matchedInv.name : item.name, orderedQty: item.qty || 0, quantityReceived: item.qty || 0, quantityRejected: 0, warehouseId: (warehouses && warehouses[0]?.id) || 'WH-MAIN', cost: matchedInv?.cost || 0, batchNumber: '', expiryDate: '' }; });
-                  setEditingGrn({ id: '', purchaseOrderId: matchingPO ? matchingPO.id : (extracted.purchaseOrderId || 'MANUAL'), date: extracted.date || getDefaultDate(), supplierId: matchingPO ? matchingPO.supplierId : (suppliers.find(s => (s.name || '').toLowerCase().includes((extracted.supplierName || '').toLowerCase()))?.id || 'UNKNOWN'), supplierName: extracted.supplierName || 'Unknown Supplier', status: 'Draft', items: grnItems, reference: extracted.reference || '', receivedBy: 'System AI', landingCosts: matchingPO?.landingCosts || [] });
+                  setEditingGrn({ id: '', purchaseOrderId: matchingPO ? matchingPO.id : (extracted.purchaseOrderId || 'MANUAL'), date: extracted.date || getDefaultDate(), supplierId: matchingPO ? matchingPO.supplierId : (suppliers.find(s => (s.name || '').toLowerCase().includes((extracted.supplierName || '').toLowerCase()))?.id || 'UNKNOWN'), supplierName: extracted.supplierName || 'Unknown Supplier', status: 'Draft', items: grnItems, reference: extracted.reference || '', receivedBy: 'System AI', landingCosts: matchingPO?.landingCosts || [], landingAllocationMethod: (matchingPO as any)?.landingAllocationMethod || 'VALUE' });
                   if (matchingPO) { setSelectedPO(matchingPO); notify(`Delivery Note matched to PO #${matchingPO.id}`, "success"); } else notify("Delivery Note scanned. No matching PO found, created as standalone.", "info");
                   setView('Form');
               } else notify("Could not extract data from the image.", "error");
@@ -83,7 +83,7 @@ const GoodsReceived: React.FC = () => {
           const unitCost = resolvePoLineUnitCost(item);
           return { itemId: item.itemId, name: item.name, orderedQty: item.quantity || 0, quantityReceived: Math.max(0, (item.quantity || 0) - (item.receivedQty || 0)), quantityRejected: 0, warehouseId: po.targetWarehouseId || (warehouses && warehouses[0]?.id) || 'WH-MAIN', cost: unitCost, unitPrice: unitCost, price: unitCost, batchNumber: '', expiryDate: '' };
       });
-      setEditingGrn({ purchaseOrderId: po.id, date: getDefaultDate(), supplierId: po.supplierId, supplierName: getSupplierName(po.supplierId), status: 'Draft', items: newItems, receivedBy: user?.name || 'Current User', landingCosts: po.landingCosts || [] });
+      setEditingGrn({ purchaseOrderId: po.id, date: getDefaultDate(), supplierId: po.supplierId, supplierName: getSupplierName(po.supplierId), status: 'Draft', items: newItems, receivedBy: user?.name || 'Current User', landingCosts: po.landingCosts || [], landingAllocationMethod: (po as any).landingAllocationMethod || 'VALUE' });
       setSelectedPO(po);
       setView('Form');
   };

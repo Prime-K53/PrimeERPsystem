@@ -6,21 +6,22 @@ import {
   PieChart, Activity, Truck, 
   RotateCcw, Save, Loader2, Printer
 } from 'lucide-react';
-import { Purchase, LandingCostItem, Expense } from '../../../types';
+import { Purchase, LandingCostItem } from '../../../types';
+import { transactionService } from '../../../services/transactionService';
+import { allocateLandingCosts, sumSharesForReceiptLine, getLandingLineState, type LandingAllocationMethod } from '../../../services/landingAllocation';
+import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { useAuth } from '../../../context/AuthContext';
-import { useFinance } from '../../../context/FinanceContext';
 import { useInventory } from '../../../context/InventoryContext';
 import { useProcurement } from '../../../context/ProcurementContext';
 
 interface LandingCostAllocationProps {
     purchase: Purchase;
-    onUpdate: (costs: LandingCostItem[]) => void;
+    onUpdate: (costs: LandingCostItem[], method?: LandingAllocationMethod) => void;
 }
 
 const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase, onUpdate }) => {
-    const { companyConfig, notify, user } = useAuth(); const { purchases = [] } = useProcurement();
-    const { addExpense } = useFinance();
-    const { updatePurchase } = useInventory();
+    const { companyConfig, notify } = useAuth(); const { purchases = [] } = useProcurement();
+    const { inventory = [], updatePurchase } = useInventory();
     const currency = companyConfig.currencySymbol;
 
     const supplierNames = useMemo(() => {
@@ -32,35 +33,63 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
     }, [purchases]);
     
     const [costs, setCosts] = useState<LandingCostItem[]>(purchase.landingCosts || []);
-    const [allocationMethod, setAllocationMethod] = useState<'Value' | 'Quantity'>('Value');
+    // Persisted allocation method (PO-owned). The toggle below is the only
+    // writer besides initial load; posting always uses the persisted value.
+    const [allocationMethod, setAllocationMethod] = useState<'Value' | 'Quantity'>(
+        (purchase as any).landingAllocationMethod === 'QUANTITY' ? 'Quantity' : 'Value'
+    );
+    const canonicalMethod: LandingAllocationMethod = allocationMethod === 'Quantity' ? 'QUANTITY' : 'VALUE';
     const [isSaving, setIsSaving] = useState(false);
+    // Financial immutability reflection (no redesign): lines with any
+    // bill/capitalization consumption event are locked — amount, provider,
+    // category and removal are disabled, and billing them again is blocked.
+    // The transaction boundary (processPurchaseOrder / bill / GRN) enforces
+    // the same rule; this only surfaces it.
+    const consumedLandingIds = useMemo(
+        () => new Set((((purchase as any).landingConsumption || []) as any[]).map((e: any) => String(e?.landingCostId))),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [purchase.id, JSON.stringify((purchase as any).landingConsumption || [])]
+    );
+    const isLineLocked = (id: string) => consumedLandingIds.has(String(id));
+    const isMethodLocked = consumedLandingIds.size > 0;
 
     const totalLandingCost = useMemo(() => (costs || []).reduce((sum, c) => sum + (c.amount || 0), 0), [costs]);
     const totalPurchaseValue = useMemo(() => (purchase.items || []).reduce((sum, i) => sum + ((i.cost || 0) * (i.quantity || 0)), 0), [purchase.items]);
     const totalPurchaseQty = useMemo(() => (purchase.items || []).reduce((sum, i) => sum + (i.quantity || 0), 0), [purchase.items]);
     const burdenRatio = totalPurchaseValue > 0 ? (totalLandingCost / totalPurchaseValue) * 100 : 0;
 
+    // Preview shares come from the SAME authoritative engine used at
+    // posting, so preview totals always equal posting totals for identical
+    // inputs. (Posting uses received quantities; the preview uses the PO's
+    // ordered quantities, which agree whenever fully received.)
     const allocatedItems = useMemo(() => {
-        return (purchase.items || []).map(item => {
-            const baseTotal = (item.cost || 0) * (item.quantity || 0);
-            let share = 0;
-            
-            if (allocationMethod === 'Value') {
-                share = totalPurchaseValue > 0 ? (baseTotal / totalPurchaseValue) * totalLandingCost : 0;
-            } else {
-                share = totalPurchaseQty > 0 ? ((item.quantity || 0) / totalPurchaseQty) * totalLandingCost : 0;
-            }
-
-            const unitBurden = (item.quantity || 0) > 0 ? share / (item.quantity || 0) : 0;
-            const landedUnitCost = (item.cost || 0) + unitBurden;
-
-            return {
-                ...item,
-                share,
-                landedUnitCost
-            };
-        });
-    }, [purchase.items, totalLandingCost, totalPurchaseValue, totalPurchaseQty, allocationMethod]);
+        const items = purchase.items || [];
+        const capitalizable = (costs || []).filter(c => Number((c as any).amount) >= 0.005);
+        try {
+            const result = allocateLandingCosts({
+                receiptLines: items.map((item: any) => ({
+                    itemId: String(item.itemId || ''),
+                    quantityReceived: Number(item.quantity ?? item.quantityReceived ?? 0) || 0,
+                    unitCost: Number(item.cost ?? item.cost_price ?? item.costPrice ?? 0) || 0,
+                })),
+                isEligible: (lineIndex: number) => {
+                    const line = (items as any[])[lineIndex];
+                    const record = (inventory || []).find((r: any) => String(r.id) === String(line?.itemId));
+                    return !!record && isInventoryBearingItem(record);
+                },
+                landingLines: capitalizable.map(c => ({ id: String(c.id), amount: Number((c as any).amount) })),
+                method: canonicalMethod,
+            });
+            return items.map((item: any, index: number) => {
+                const share = sumSharesForReceiptLine(result.shares, String(index));
+                const qty = Number(item.quantity ?? item.quantityReceived ?? 0) || 0;
+                const unitBurden = qty > 0 ? share / qty : 0;
+                return { ...item, share, landedUnitCost: (Number(item.cost) || 0) + unitBurden };
+            });
+        } catch {
+            return (items as any[]).map((item: any) => ({ ...item, share: 0, landedUnitCost: Number(item.cost) || 0 }));
+        }
+    }, [purchase.items, costs, canonicalMethod, inventory]);
 
     const handleAddCost = () => {
         const newCost: LandingCostItem = {
@@ -71,55 +100,63 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
         };
         const updated = [...costs, newCost];
         setCosts(updated);
-        onUpdate(updated);
+        onUpdate(updated, canonicalMethod);
     };
 
-    const handlePostAsBill = (cost: LandingCostItem) => {
+    const handlePostAsBill = async (cost: LandingCostItem) => {
         if (!cost.amount || cost.amount <= 0) {
             notify("Cannot post a zero-amount bill", "error");
             return;
         }
-        
-        const expense: Expense = {
-            id: '',
-            date: new Date().toISOString(),
-            amount: cost.amount,
-            category: 'Transport & Freight',
-            description: `Landing Cost (${cost.category}) for PO #${purchase.id}: ${cost.description}`,
-            recordedBy: user?.name || 'System',
-            status: 'Approved',
-            referenceId: purchase.id
-        };
+        if (!cost.providerId) {
+            notify("Select the actual provider (carrier) for this cost before posting it as a bill.", "error");
+            return;
+        }
 
-        addExpense(expense);
-        notify(`Vendor Bill created for ${cost.category}`, "success");
+        // Landing-cost bill = AP transaction (DR Inventory / CR provider AP),
+        // never an operating expense. The transaction boundary enforces
+        // single-billing and mutual exclusion with GRN capitalization.
+        try {
+            const res: any = await transactionService.postLandingCostBill({
+                purchaseOrderId: purchase.id,
+                landingCostId: cost.id,
+            });
+            if (res?.success) {
+                notify(`Landing bill posted for ${cost.category} — provider AP updated, nothing expensed.`, "success");
+            } else {
+                notify("Failed to post landing bill.", "error");
+            }
+        } catch (e: any) {
+            notify(e?.message || "Failed to post landing bill.", "error");
+        }
     };
 
     const updateCost = (id: string, field: keyof LandingCostItem, value: any) => {
         const updated = costs.map(c => c.id === id ? { ...c, [field]: value } : c);
         setCosts(updated);
-        onUpdate(updated);
+        onUpdate(updated, canonicalMethod);
     };
 
     const removeCost = (id: string) => {
         const updated = costs.filter(c => c.id !== id);
         setCosts(updated);
-        onUpdate(updated);
+        onUpdate(updated, canonicalMethod);
     };
 
     const handleClearAll = () => {
         if (confirm("Purge all recorded shipping expenses for this PO?")) {
             setCosts([]);
-            onUpdate([]);
+            onUpdate([], canonicalMethod);
         }
     };
 
     const handleFinalize = async () => {
         setIsSaving(true);
         try {
-            await updatePurchase({ 
-                ...purchase, 
+            await updatePurchase({
+                ...purchase,
                 landingCosts: costs,
+                landingAllocationMethod: canonicalMethod,
                 notes: (purchase.notes || '') + `\n[System]: Landing costs updated at ${new Date().toLocaleTimeString()}`
             });
             notify("Shipment burden profiles saved to Purchase Order.", "success");
@@ -139,7 +176,7 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
         };
         const updated = [...costs, newCost];
         setCosts(updated);
-        onUpdate(updated);
+        onUpdate(updated, canonicalMethod);
     };
 
     return (
@@ -194,6 +231,9 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                                 <Landmark size={16} className="text-blue-600"/> Shipment Expense Ledger
                             </h3>
                             <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tight">Secondary Vendor Invoices</p>
+                            {consumedLandingIds.size > 0 && (
+                                <p className="text-[10px] text-amber-700 font-bold uppercase mt-1 tracking-tight">Locked lines have posted bills/capitalization and cannot be edited</p>
+                            )}
                         </div>
                         <div className="flex gap-2">
                             <button 
@@ -225,8 +265,10 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                                         <div>
                                             <label className="text-label mb-1.5 block">Cost Category</label>
                                             <select 
-                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] font-semibold outline-none focus:border-blue-500"
+                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] font-semibold outline-none focus:border-blue-500 disabled:opacity-50"
                                                 value={cost.category}
+                                                disabled={isLineLocked(cost.id)}
+                                                title={isLineLocked(cost.id) ? 'Locked: this line has posted financial activity' : undefined}
                                                 onChange={e => updateCost(cost.id, 'category', e.target.value)}
                                             >
                                                 <option>Freight</option>
@@ -240,19 +282,35 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                                             <label className="text-label mb-1.5 block">Amount ({currency})</label>
                                             <input 
                                                 type="number" 
-                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] font-bold outline-none focus:border-blue-500 text-right finance-nums"
+                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] font-bold outline-none focus:border-blue-500 text-right finance-nums disabled:opacity-50"
                                                 value={cost.amount || ''}
+                                                disabled={isLineLocked(cost.id)}
+                                                title={isLineLocked(cost.id) ? 'Locked: this line has posted financial activity' : undefined}
                                                 onChange={e => updateCost(cost.id, 'amount', parseFloat(e.target.value))}
                                                 placeholder="0.00"
                                             />
+                                            {(() => {
+                                                const st = getLandingLineState(purchase as any, cost.id);
+                                                if ((st.consumed <= 0 && !st.billed && st.remaining === st.source) || st.source <= 0) {
+                                                    return null;
+                                                }
+                                                return (
+                                                    <p className="text-[10px] text-slate-500 font-semibold mt-1">
+                                                        Consumed {currency}{st.consumed.toLocaleString()} · Remaining {currency}{st.remaining.toLocaleString()}
+                                                        {st.billed ? ` · Billed (${st.billIds.join(', ') || 'bill posted'})` : ''}
+                                                    </p>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="col-span-1">
                                             <label className="text-label mb-1.5 block">Remit To (Carrier)</label>
                                             <select 
-                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] outline-none font-semibold"
+                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] outline-none font-semibold disabled:opacity-50"
                                                 value={cost.providerId}
+                                                disabled={isLineLocked(cost.id)}
+                                                title={isLineLocked(cost.id) ? 'Locked: this line has posted financial activity' : undefined}
                                                 onChange={e => updateCost(cost.id, 'providerId', e.target.value)}
                                             >
                                                 <option value="">-- Manual Provider --</option>
@@ -262,7 +320,8 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                                         <div className="col-span-1 flex items-end">
                                             <button 
                                                 onClick={() => handlePostAsBill(cost)}
-                                                disabled={!cost.amount || !cost.providerId}
+                                                disabled={!cost.amount || !cost.providerId || isLineLocked(cost.id)}
+                                                title={isLineLocked(cost.id) ? 'Already settled: this line has posted financial activity' : undefined}
                                                 className="w-full py-2 bg-white border border-slate-200 rounded-lg text-[13px] font-bold uppercase tracking-tight text-slate-600 hover:text-blue-600 hover:border-blue-200 disabled:opacity-30 transition-all flex items-center justify-center gap-2 shadow-sm"
                                             >
                                                 <FileCheck size={12}/> Post as Bill
@@ -271,7 +330,9 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                                     </div>
                                     <button 
                                         onClick={() => removeCost(cost.id)}
-                                        className="absolute -top-2 -right-2 bg-white border border-rose-100 text-rose-500 p-1.5 rounded-full shadow-md hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        disabled={isLineLocked(cost.id)}
+                                        title={isLineLocked(cost.id) ? 'Locked: this line has posted financial activity' : undefined}
+                                        className="absolute -top-2 -right-2 bg-white border border-rose-100 text-rose-500 p-1.5 rounded-full shadow-md hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
                                     >
                                         <Trash2 size={12}/>
                                     </button>
@@ -297,13 +358,17 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                         </h3>
                         <div className="flex gap-4 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 mb-8">
                             <button 
-                                onClick={() => setAllocationMethod('Value')}
+                                onClick={() => { setAllocationMethod('Value'); onUpdate(costs, 'VALUE'); }}
+                                disabled={isMethodLocked}
+                                title={isMethodLocked ? 'Locked: landing activity already posted under a method' : undefined}
                                 className={`flex-1 py-3 rounded-xl text-[12.5px] font-bold uppercase tracking-widest transition-all ${allocationMethod === 'Value' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
                             >
                                 Value-Proportional
                             </button>
                             <button 
-                                onClick={() => setAllocationMethod('Quantity')}
+                                onClick={() => { setAllocationMethod('Quantity'); onUpdate(costs, 'QUANTITY'); }}
+                                disabled={isMethodLocked}
+                                title={isMethodLocked ? 'Locked: landing activity already posted under a method' : undefined}
                                 className={`flex-1 py-3 rounded-xl text-[12.5px] font-bold uppercase tracking-widest transition-all ${allocationMethod === 'Quantity' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
                             >
                                 Unit-Proportional
