@@ -150,20 +150,76 @@ function resolveItemDescription(it) {
 }
 
 /**
+ * Public verification type (lowercase, underscore) -> canonical renderer
+ * DocType (uppercase) mapping.
+ *
+ * The public verification routes use lowercase underscore types
+ * (invoice, sales_order, ...) while the canonical renderer pipeline
+ * (validateDocumentData / mapToInvoiceData / PrimeDocument) matches
+ * UPPERCASE DocTypes (INVOICE, SALES_ORDER, PO, DELIVERY_NOTE, ...).
+ * Passing the public slug straight through silently drops the document
+ * into the renderer's generic fallback branch: line prices/amounts,
+ * subtotal/paid/balance, status badge, due date and thank-you text are
+ * all lost even though the record carries them.
+ *
+ * This maps ONLY the type token. Channel, security, and record data are
+ * untouched here. Unknown types pass through unchanged.
+ */
+const PUBLIC_TO_RENDERER_TYPE = {
+  invoice: 'INVOICE',
+  receipt: 'RECEIPT',
+  quotation: 'QUOTATION',
+  sales_order: 'SALES_ORDER',
+  purchase_order: 'PO',
+  delivery_note: 'DELIVERY_NOTE',
+  supplier_payment: 'SUPPLIER_PAYMENT',
+  statement: 'ACCOUNT_STATEMENT',
+  printing_contract: 'PRINTING_CONTRACT',
+};
+
+function toCanonicalRendererType(type) {
+  if (type === undefined || type === null) return type;
+  const raw = String(type).trim();
+  if (!raw) return raw;
+  if (PUBLIC_TO_RENDERER_TYPE[raw]) return PUBLIC_TO_RENDERER_TYPE[raw];
+  const lowered = raw.toLowerCase();
+  if (PUBLIC_TO_RENDERER_TYPE[lowered]) return PUBLIC_TO_RENDERER_TYPE[lowered];
+  return raw;
+}
+
+/**
  * Normalize a stored/mapped ERP record into the shape the canonical document
  * mapper expects (same as what the ERP finance layer feeds its renderer):
  * items[] as an array of {description, quantity, price, total, …} regardless
  * of whether the source spelled them line_items/items_json/name-vs-desc.
+ *
+ * Invoice field contract (matches frontend/utils/pdfMapper.ts mapToInvoiceData):
+ * - date: invoiceDate || invoice_date || orderDate || order_date || date
+ *         || nextRunDate || created_at || issuedAt || issued_at
+ * - dueDate: dueDate || due_date || due_at || validUntil || expiryDate
+ * - items: record.items only (populated here from historical aliases);
+ *          line price: price || unitPrice || unit_price || selling_price
+ *            || sellingPrice || unitCost || unit_cost || cost || rate
+ *          line total: total || lineTotal || line_total || lineTotalNet
+ *            || subtotal || totalAmount || amount || extendedPrice
+ *            || extended_price || qty*price
+ * - totals/status: preserved via spread (renderer reads totalAmount/total/
+ *   total_amount, paidAmount/amountPaid/paid_amount, subtotal, status and
+ *   derives balance as total - paid). Aliases below only fill MISSING
+ *   canonical keys; no accounting recalculation is introduced.
  */
-function normalizeRecordForRenderer(raw) {
+function normalizeRecordForRenderer(raw, type) {
   const record = { ...(raw || {}) };
-  
-  const invoiceDate = record.invoiceDate || record.invoice_number_date || record.invoice_date || record.date || record.orderDate || record.order_date || record.created_at || record.issued_at || record.issuedAt;
+
+  // Authoritative invoice date: same precedence as mapToInvoiceData.
+  // NOTE: `invoice_number_date` is intentionally NOT read (non-canonical;
+  // it appears nowhere else in the ERP and previously shadowed `date`).
+  const invoiceDate = record.invoiceDate || record.invoice_date || record.orderDate || record.order_date || record.date || record.nextRunDate || record.created_at || record.issuedAt || record.issued_at;
   if (invoiceDate) {
     record.date = invoiceDate;
     record.invoiceDate = invoiceDate;
   }
-  
+
   const dueDate = record.dueDate || record.due_date || record.due_at || record.validUntil || record.expiryDate;
   if (dueDate) {
     record.dueDate = dueDate;
@@ -176,25 +232,74 @@ function normalizeRecordForRenderer(raw) {
     record.payment_terms = paymentTerms;
   }
 
-  let items = Array.isArray(record.items) ? record.items : null;
-  if (!items) {
-    for (const key of ['line_items', 'lineItems', 'items_json']) {
-      const value = record[key];
-      if (Array.isArray(value)) { items = value; break; }
-      if (typeof value === 'string') {
-        try {
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed)) { items = parsed; break; }
-        } catch (_) { /* not JSON — skip */ }
+  // Canonical invoice-number alias for the renderer, which reads
+  // `invoiceNumber || id` (never `invoice_number` alone). Never overwrites
+  // an existing invoiceNumber; other document types keep their own numbers.
+  if (record.invoiceNumber === undefined || record.invoiceNumber === null || record.invoiceNumber === '') {
+    const aliased = record.invoice_number;
+    if (aliased !== undefined && aliased !== null && String(aliased).trim() !== '') {
+      record.invoiceNumber = aliased;
+    }
+  }
+
+  // Fill missing canonical financial aliases from existing values only.
+  // The renderer accepts every spelling below, but validation
+  // (resolveAmount) and downstream readers may prefer one spelling;
+  // filling the missing alias keeps all readers consistent.
+  const pickNumber = (...candidates) => {
+    for (const v of candidates) {
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        const n = Number(v);
+        if (Number.isFinite(n)) return v;
+        return v;
       }
+    }
+    return undefined;
+  };
+  const totalSource = pickNumber(record.totalAmount, record.total, record.total_amount, record.total_cost, record.subtotal);
+  if ((record.totalAmount === undefined || record.totalAmount === null || record.totalAmount === '') && totalSource !== undefined) {
+    record.totalAmount = totalSource;
+  }
+  if ((record.subtotal === undefined || record.subtotal === null || record.subtotal === '') && totalSource !== undefined) {
+    record.subtotal = totalSource;
+  }
+  const paidSource = pickNumber(record.paidAmount, record.amountPaid, record.paid_amount);
+  if ((record.paidAmount === undefined || record.paidAmount === null || record.paidAmount === '') && paidSource !== undefined) {
+    record.paidAmount = paidSource;
+  }
+  if ((record.amountPaid === undefined || record.amountPaid === null || record.amountPaid === '') && paidSource !== undefined) {
+    record.amountPaid = paidSource;
+  }
+
+  // Line items: treat an empty array as missing (never let `items: []`
+  // shadow a populated historical alias), accept JSON-string storage,
+  // and cover the full historical key set handled by the shared
+  // invoiceLineItemNormalization layer.
+  const readItemsArray = (value) => {
+    if (Array.isArray(value)) return value.length > 0 ? value : null;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.length > 0 ? parsed : null;
+      } catch (_) { /* not JSON — skip */ }
+    }
+    return null;
+  };
+  let items = readItemsArray(record.items);
+  if (!items) {
+    for (const key of ['line_items', 'lineItems', 'invoiceItems', 'invoice_items', 'lines', 'invoiceLines', 'lines_items', 'invoice_lines', 'line_items_json', 'lineItemsJson', 'items_json', 'itemsJson', 'invoice_items_json']) {
+      const found = readItemsArray(record[key]);
+      if (found) { items = found; break; }
     }
   }
   if (!items) items = [];
   record.items = items.map((it) => {
     const description = resolveItemDescription(it);
-    const quantity = Number(it?.quantity ?? it?.qty ?? 0) || 0;
-    const price = Number(it?.price ?? it?.unitPrice ?? it?.unit_price ?? it?.selling_price ?? 0) || 0;
-    const total = Number(it?.total ?? it?.lineTotal ?? it?.line_total ?? it?.subtotal ?? it?.totalAmount ?? (quantity * price)) || 0;
+    const quantity = Number(it?.quantity ?? it?.qty ?? it?.quantityOrdered ?? it?.qty_ordered ?? 0) || 0;
+    const price = Number(it?.price ?? it?.unitPrice ?? it?.unit_price ?? it?.selling_price ?? it?.sellingPrice ?? it?.unitCost ?? it?.unit_cost ?? it?.cost ?? it?.rate ?? 0) || 0;
+    const total = Number(it?.total ?? it?.lineTotal ?? it?.line_total ?? it?.lineTotalNet ?? it?.subtotal ?? it?.totalAmount ?? it?.amount ?? it?.extendedPrice ?? it?.extended_price ?? (quantity * price)) || 0;
     return {
       ...it,
       desc: description,
@@ -231,11 +336,15 @@ function normalizeRecordForRenderer(raw) {
  */
 async function renderOfficialPdf({ type, rawData, customers = [], channel, source } = {}) {
   const effectiveChannel = channel || (source === 'portal' ? 'portal' : 'erp');
+  // Canonicalize the public verification slug (lowercase) to the renderer's
+  // UPPERCASE DocType. Authenticated callers already pass canonical types;
+  // they pass through unchanged. The channel/watermark contract is untouched.
+  const canonicalType = toCanonicalRendererType(type);
   const render = await loadRenderer();
   const companyConfig = await getCompanyConfig();
   const buffer = await render({
-    type,
-    rawData: normalizeRecordForRenderer(rawData),
+    type: canonicalType,
+    rawData: normalizeRecordForRenderer(rawData, canonicalType),
     companyConfig,
     customers,
     channel: effectiveChannel,
@@ -259,6 +368,7 @@ module.exports = {
   isRendererAvailable,
   getCompanyConfig,
   normalizeRecordForRenderer,
+  toCanonicalRendererType,
   renderOfficialPdf,
   buildContentDisposition,
 };
