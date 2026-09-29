@@ -11,7 +11,7 @@ interface QuickPrintModalProps {
   tonerCostPerPage?: number;
   currency: string;
   staplePrice?: number;
-  onConfirm: (quantity: number, pages: number, total: number, type: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number) => void;
+  onConfirm: (quantity: number, pages: number, total: number, type: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number, customName?: string) => void;
   pinningItem?: {
     costPerUnit: number;
     conversionRate: number;
@@ -34,6 +34,7 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
 }) => {
   const [quantity, setQuantity] = useState(1);
   const [pagesPerCopy, setPagesPerCopy] = useState(1);
+  const [customName, setCustomName] = useState('');
   const [enableStapling, setEnableStapling] = useState(false);
   const [pricingMethod, setPricingMethod] = useState<'per_page' | 'per_sheet'>(type === 'photocopy' ? 'per_sheet' : 'per_page');
 
@@ -72,13 +73,17 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
   const profitMarginPct = materialCost > 0 ? ((profit / materialCost) * 100).toFixed(1) : '—';
 
   const handleConfirm = () => {
+    // Optional photocopy display name only: trimmed, never affects pages,
+    // copies, price, pinning or the total. Blank → default "Quick Photocopy".
+    const trimmedName = customName.trim() || undefined;
     if (pinningCost > 0) {
-      onConfirm(quantity, pagesPerCopy, finalTotal, type, pinningCost, quantity);
+      onConfirm(quantity, pagesPerCopy, finalTotal, type, pinningCost, quantity, trimmedName);
     } else {
-      onConfirm(quantity, pagesPerCopy, finalTotal, type, undefined, undefined);
+      onConfirm(quantity, pagesPerCopy, finalTotal, type, undefined, undefined, trimmedName);
     }
     setQuantity(1);
     setPagesPerCopy(1);
+    setCustomName('');
     setEnableStapling(false);
     setPricingMethod(type === 'photocopy' ? 'per_sheet' : 'per_page');
     onClose();
@@ -164,6 +169,17 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
                   style={{ border: 'none', padding: 0, fontSize: 14, fontWeight: 700, color: ink, width: '100%', background: 'transparent', outline: 'none', textAlign: 'center' }} />
               </div>
             </div>
+
+            {isPhotocopy && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 10 }}>Document / Item Name (optional)</div>
+                <input type="text" value={customName}
+                  onChange={e => setCustomName(e.target.value)}
+                  placeholder="Leave blank for Quick Photocopy"
+                  maxLength={120}
+                  style={{ border: `1.4px solid ${hairline}`, borderRadius: 10, padding: '8px 12px', fontSize: 13, fontWeight: 500, color: ink, width: '100%', background: '#fff', outline: 'none', marginBottom: 16, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+              </>
+            )}
 
             <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 10 }}>Pricing Method</div>
             {isPhotocopy ? (

@@ -199,7 +199,10 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
             <ItemizedTable
               columns={[
                 { header: 'Sn', accessor: '__sn', align: 'center' as const, width: '8%' },
-                { header: 'Description', accessor: 'name', wrapSafe: true },
+                { header: 'Description', accessor: 'name', wrapSafe: true, render: (_: any, dnItem: any) =>
+                  isQuickPhotocopyItem(dnItem)
+                    ? getQuickPhotocopyLineDisplay(dnItem, currency).name
+                    : dnItem.name },
                 {
                   header: 'Qty',
                   accessor: 'quantity',

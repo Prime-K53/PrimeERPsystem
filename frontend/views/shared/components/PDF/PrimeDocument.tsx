@@ -2588,12 +2588,13 @@ if (type === 'POS_RECEIPT') {
 
             {('items' in data ? data.items : []).map((item: any, i: number) => {
               // Quick Photocopy delivery: show pages ("13 pgs"), not sheets.
+              // Description uses the shared QP display name (customName-aware).
               const isQPDN = isQuickPhotocopyItem(item);
               const qpDN = isQPDN ? getQuickPhotocopyTotals(item) : null;
               return (
                 <View key={i} style={s.row}>
                   <Text style={s.colSn}>{i + 1}</Text>
-                  <Text style={s.colDesc}>{item.desc}</Text>
+                  <Text style={s.colDesc}>{isQPDN && qpDN ? getQuickPhotocopyLineDisplay(item, currency).name : item.desc}</Text>
                   <Text style={s.colQty}>{isQPDN && qpDN ? formatQuickPhotocopyQty(qpDN.totalPages) : item.qty}</Text>
                 </View>
               );

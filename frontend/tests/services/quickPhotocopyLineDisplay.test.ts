@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildQuickPhotocopyServiceDetails,
   calculateBillableSheets,
   calculateQuickPhotocopyAmount,
   getQuickPhotocopyLineDisplay,
   getQuickPhotocopyTotals,
   isQuickPhotocopyItem,
+  normalizeQuickPhotocopyCustomName,
   resolveQuickPhotocopyDisplayName,
 } from '../../services/quickPhotocopyService';
 
@@ -104,5 +106,94 @@ describe('Quick Photocopy compact line display (acceptance)', () => {
     expect(t.billableSheets).toBe(7);
     expect(t.unitPrice).toBe(150);
     expect(t.lineTotal).toBe(1050);
+  });
+});
+
+describe('Quick Photocopy optional custom display name', () => {
+  const withCustomName = (customName?: unknown) => {
+    const item: any = makeQP13();
+    // undefined → historical shape: no customName key at all.
+    if (customName === undefined) return item;
+    return {
+      ...item,
+      serviceDetails: { ...item.serviceDetails, customName },
+    };
+  };
+
+  it('A. undefined customName keeps the default display name', () => {
+    const item = withCustomName(undefined);
+    expect(item.serviceDetails.customName).toBeUndefined();
+    expect(resolveQuickPhotocopyDisplayName(item)).toBe('Quick Photocopy');
+    expect(getQuickPhotocopyLineDisplay(item, 'K').name).toBe('Quick Photocopy');
+  });
+
+  it('B. blank customName keeps the default display name', () => {
+    expect(resolveQuickPhotocopyDisplayName(withCustomName(''))).toBe('Quick Photocopy');
+  });
+
+  it('C. whitespace-only customName keeps the default display name', () => {
+    expect(resolveQuickPhotocopyDisplayName(withCustomName('   '))).toBe('Quick Photocopy');
+  });
+
+  it('D. custom name overrides the display name', () => {
+    const item = withCustomName('SIG Budget');
+    expect(resolveQuickPhotocopyDisplayName(item)).toBe('SIG Budget');
+    expect(getQuickPhotocopyLineDisplay(item, 'K').name).toBe('SIG Budget');
+  });
+
+  it('E. surrounding whitespace is trimmed, inner text preserved', () => {
+    expect(resolveQuickPhotocopyDisplayName(withCustomName('  SIG Budget  '))).toBe('SIG Budget');
+    expect(normalizeQuickPhotocopyCustomName('  SIG Budget  ')).toBe('SIG Budget');
+    expect(normalizeQuickPhotocopyCustomName('')).toBeUndefined();
+    expect(normalizeQuickPhotocopyCustomName('   ')).toBeUndefined();
+    expect(normalizeQuickPhotocopyCustomName(undefined)).toBeUndefined();
+    expect(normalizeQuickPhotocopyCustomName(null)).toBeUndefined();
+    expect(normalizeQuickPhotocopyCustomName(123 as any)).toBeUndefined();
+  });
+
+  it('F. quantity, pages, price and amount are identical with and without a custom name', () => {
+    const plain = getQuickPhotocopyTotals(withCustomName(undefined));
+    const custom = getQuickPhotocopyTotals(withCustomName('SIG Budget'));
+    expect(custom).toEqual(plain);
+    expect(custom.billableSheets).toBe(7);
+    expect(custom.totalPages).toBe(13);
+    expect(custom.unitPrice).toBe(150);
+    expect(custom.lineTotal).toBe(1050);
+    const plainDisplay = getQuickPhotocopyLineDisplay(withCustomName(undefined), 'K');
+    const customDisplay = getQuickPhotocopyLineDisplay(withCustomName('SIG Budget'), 'K');
+    expect(customDisplay.qty).toBe(plainDisplay.qty);
+    expect(customDisplay.rate).toBe(plainDisplay.rate);
+    expect(customDisplay.amount).toBe(plainDisplay.amount);
+    expect(customDisplay.qty).toBe('13 pgs');
+    expect(customDisplay.rate).toBe('K 150.00/sht');
+    expect(customDisplay.amount).toBe(1050);
+  });
+
+  it('G. identity and detection are unchanged by a custom name', () => {
+    const item = withCustomName('SIG Budget');
+    expect(item.itemId).toBe('SVC-PHOTOCOPY');
+    expect(item.sku).toBe('QUICK-PHOTO');
+    expect(isQuickPhotocopyItem(item)).toBe(true);
+  });
+
+  it('H. the resolver never mutates the source item', () => {
+    const item: any = withCustomName('SIG Budget');
+    const before = JSON.parse(JSON.stringify(item));
+    resolveQuickPhotocopyDisplayName(item);
+    getQuickPhotocopyLineDisplay(item, 'K');
+    expect(item).toEqual(before);
+  });
+
+  it('buildQuickPhotocopyServiceDetails omits blank names and trims meaningful ones', () => {
+    const blank = buildQuickPhotocopyServiceDetails(13, 1, PRICE_150, { customName: '   ' });
+    expect('customName' in blank).toBe(false);
+    expect(blank.billableSheets).toBe(7);
+    expect(blank.pricePerSheet).toBe(150);
+    const named = buildQuickPhotocopyServiceDetails(13, 1, PRICE_150, { customName: '  SIG Budget  ' });
+    expect(named.customName).toBe('SIG Budget');
+    expect(named.billableSheets).toBe(7);
+    expect(named.pricePerSheet).toBe(150);
+    const unset = buildQuickPhotocopyServiceDetails(13, 1, PRICE_150, { pinningCost: 0 });
+    expect('customName' in unset).toBe(false);
   });
 });

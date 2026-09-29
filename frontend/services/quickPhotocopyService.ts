@@ -214,11 +214,29 @@ export function formatQuickPhotocopyPriceLabel(unitPrice: number, currencySymbol
 }
 
 /**
- * Display name for a Quick Photocopy line: plain "Quick Photocopy".
+ * Normalize an optional Quick Photocopy custom display name.
+ * Returns the trimmed name when meaningful, otherwise undefined so the
+ * default "Quick Photocopy" fallback applies. Never throws; non-string
+ * values are treated as absent. Read-only — never mutates the input.
+ */
+export function normalizeQuickPhotocopyCustomName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/**
+ * Display name for a Quick Photocopy line.
+ * Precedence: meaningful serviceDetails.customName → existing stored name
+ * (name/productName/itemName/…) → desc/description → plain "Quick Photocopy".
  * Strips a legacy render-time rate suffix (" — .../sheet" / " — .../sht")
- * if one was ever persisted on the record. Display only — never mutates.
+ * from stored names if one was ever persisted on the record. A user-supplied
+ * customName is returned trimmed and verbatim (never suffix-stripped, so
+ * meaningful user text is preserved). Display only — never mutates.
  */
 export function resolveQuickPhotocopyDisplayName(item: any): string {
+  const custom = normalizeQuickPhotocopyCustomName(item?.serviceDetails?.customName);
+  if (custom !== undefined) return custom;
   const raw = String(
     item?.name ??
     item?.productName ??
@@ -235,7 +253,8 @@ export function resolveQuickPhotocopyDisplayName(item: any): string {
 /**
  * Single composition point for the Quick Photocopy line-item display,
  * shared by Order Form, POS and generated documents:
- * - name: "Quick Photocopy" (never carries the rate)
+ * - name: serviceDetails.customName when set, else "Quick Photocopy"
+ *   (never carries the rate)
  * - qty: "13 pgs" (entered pages, never sheets)
  * - rate: "K 150.00/sht" (shown exactly once, in the rate column)
  * - amount: billableSheets × pricePerSheet (unchanged math)
@@ -293,7 +312,10 @@ export function getQuickPhotocopyDocumentLine(
   };
 }
 
-/** Build serviceDetails payload for a new QP line (preserves both concepts). */
+/** Build serviceDetails payload for a new QP line (preserves both concepts).
+ * An optional `customName` may be supplied via `extra`; it is trimmed and
+ * only persisted when meaningful, otherwise omitted so the default
+ * "Quick Photocopy" display applies. Pricing/quantity fields untouched. */
 export function buildQuickPhotocopyServiceDetails(
   pagesPerCopy: number,
   copies: number,
@@ -301,12 +323,15 @@ export function buildQuickPhotocopyServiceDetails(
   extra?: Record<string, unknown>
 ): Record<string, unknown> {
   const calc = calculateQuickPhotocopyLine({ pagesPerCopy, copies, pricePerSheet });
+  const { customName, ...rest } = extra || {};
+  const normalizedCustomName = normalizeQuickPhotocopyCustomName(customName);
   return {
     pages: calc.pagesPerCopy,
     copies: calc.copies,
     totalPages: calc.totalPages,
     billableSheets: calc.billableSheets,
     pricePerSheet: calc.unitPrice,
-    ...(extra || {}),
+    ...(rest || {}),
+    ...(normalizedCustomName !== undefined ? { customName: normalizedCustomName } : {}),
   };
 }

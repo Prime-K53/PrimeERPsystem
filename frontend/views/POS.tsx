@@ -526,7 +526,7 @@ const POS: React.FC = () => {
     setQuickPrintModal({ open: true, type: 'printing', serviceName: undefined, serviceItemId: undefined });
   };
 
-const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number) => {
+const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number, customName?: string) => {
         const isPhotocopy = printType === 'photocopy';
         const isServiceItem = !!quickPrintModal.serviceItemId;
         // Quick Photocopy price is ALWAYS per physical sheet from Settings (never divided).
@@ -585,6 +585,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
                 ...buildQuickPhotocopyServiceDetails(pagesPerCopy, quantity, pricePerPage, {
                   pinningCost,
                   pinningCount,
+                  customName,
                 }),
               }
             : {
@@ -1692,8 +1693,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
               materialId: pinning.id
             };
           })()}
-          onConfirm={(quantity, pagesPerCopy, total, printType, pinningCost, pinningCount) => {
-            handleQuickPrintConfirm(quantity, pagesPerCopy, total, printType, pinningCost, pinningCount);
+          onConfirm={(quantity, pagesPerCopy, total, printType, pinningCost, pinningCount, customName) => {
+            handleQuickPrintConfirm(quantity, pagesPerCopy, total, printType, pinningCost, pinningCount, customName);
             setQuickPrintModal({ open: false, type: quickPrintModal.type, serviceName: quickPrintModal.serviceName, serviceItemId: quickPrintModal.serviceItemId });
           }}
           onClose={() => setQuickPrintModal({ open: false, type: quickPrintModal.type, serviceName: quickPrintModal.serviceName, serviceItemId: quickPrintModal.serviceItemId })}

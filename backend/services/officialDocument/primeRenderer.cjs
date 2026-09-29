@@ -233503,6 +233503,8 @@ function formatQuickPhotocopyPriceLabel(unitPrice, currencySymbol) {
   return `${cur} ${n5.toFixed(2)}/sht`;
 }
 function resolveQuickPhotocopyDisplayName(item) {
+  const custom = item?.serviceDetails?.customName;
+  if (typeof custom === "string" && custom.trim()) return custom.trim();
   const raw = String(
     item?.name ?? item?.productName ?? item?.product_name ?? item?.itemName ?? item?.desc ?? item?.description ?? "Quick Photocopy"
   );
@@ -235822,7 +235824,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
             const qpDN = isQPDN ? getQuickPhotocopyTotals(item) : null;
             return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: docStyles.row, children: [
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colSn, children: i2 + 1 }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: item.desc }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colDesc, children: isQPDN && qpDN ? getQuickPhotocopyLineDisplay(item, currency).name : item.desc }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: docStyles.colQty, children: isQPDN && qpDN ? formatQuickPhotocopyQty(qpDN.totalPages) : item.qty })
             ] }, i2);
           }),

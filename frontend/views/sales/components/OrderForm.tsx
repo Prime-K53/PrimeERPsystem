@@ -1404,7 +1404,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         }
     };
 
-    const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number) => {
+    const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number, customName?: string) => {
         const isPhotocopy = printType === 'photocopy';
         // Quick Photocopy price is ALWAYS per physical sheet from Settings (never divided).
         const pricePerPage = isPhotocopy
@@ -1457,6 +1457,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 ...buildQuickPhotocopyServiceDetails(pagesPerCopy, quantity, pricePerPage, {
                   pinningCost,
                   pinningCount,
+                  customName,
                 }),
               }
             : {
@@ -2953,7 +2954,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                                     <Image size={12} />
                                                                 </span>
                                                             )}
-                                                            <span>{item.name || invItem?.name || item.productName || 'Item'}</span>
+                                                            <span>{qpDisplay ? qpDisplay.name : (item.name || invItem?.name || item.productName || 'Item')}</span>
                                                         </td>
                                                         <td data-label="Qty" className="px-2 py-1 text-center text-sm text-slate-800">
                                                             {item.id?.startsWith('QUICK-')

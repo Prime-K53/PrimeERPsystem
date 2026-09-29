@@ -152,4 +152,30 @@ describe('Order Form Quick Photocopy line display', () => {
     expect(container.textContent).not.toContain('/sheet');
     expect(container.textContent).not.toContain('pages');
   });
+
+  it('shows SIG Budget when serviceDetails.customName is set, with unchanged qty/rate/amount', () => {
+    const base = makeQP13();
+    const { container } = render(
+      <OrderForm
+        type="Invoice"
+        initialData={{
+          customerName: 'Test Customer',
+          customerId: 'C-1',
+          items: [{
+            ...base,
+            serviceDetails: { ...base.serviceDetails, customName: 'SIG Budget' },
+          }],
+        }}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('SIG Budget')).toBeInTheDocument();
+    expect(screen.queryByText('Quick Photocopy')).not.toBeInTheDocument();
+    expect(screen.getByText('13 pgs')).toBeInTheDocument();
+    expect(screen.getByText('K 150.00/sht')).toBeInTheDocument();
+    expect(container.textContent).toContain('K1,050.00');
+    expect(container.textContent?.match(/\/sht/g)?.length ?? 0).toBe(1);
+  });
 });
