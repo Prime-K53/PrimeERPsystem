@@ -91,6 +91,41 @@ function getPortalLifecycleService() {
   return _portalLifecycleService;
 }
 
+let _supabaseProvisioning = null;
+let _supabaseProvisioningLoaded = false;
+function getSupabaseProvisioning() {
+  if (!_supabaseProvisioningLoaded) {
+    _supabaseProvisioningLoaded = true;
+    try {
+      _supabaseProvisioning = require('./supabasePortalAuthAdmin.cjs');
+    } catch {
+      _supabaseProvisioning = null;
+    }
+  }
+  return _supabaseProvisioning;
+}
+
+/**
+ * PHASE 4 hook: provision the approved Portal user into Supabase Auth.
+ *
+ * Returns undefined when the provisioning flag is OFF (approval shape stays
+ * byte-identical to pre-Phase-4). When ON, returns a SAFE status object —
+ * { status: 'provisioned' } or { status: 'pending', reason } — containing
+ * NO auth_user_id, NO tokens, NO links, NO secrets. Failures are caught
+ * here so business records are preserved and the result stays retryable.
+ */
+async function maybeProvisionSupabaseAuth({ portalUserId, email }) {
+  const svc = getSupabaseProvisioning();
+  if (!svc || !svc.isProvisioningEnabled()) return undefined;
+  try {
+    await svc.provisionPortalUser({ portalUserId, email });
+    return { status: 'provisioned' };
+  } catch (err) {
+    console.warn('[CustomerRegistration] Supabase Auth provisioning incomplete (retryable):', (err && err.code) || 'AUTH_PROVISIONING_FAILED');
+    return { status: 'pending', reason: (err && err.code) || 'AUTH_PROVISIONING_FAILED' };
+  }
+}
+
 // ─── Controlled lifecycle ──────────────────────────────────────────────────
 const REGISTRATION_REQUEST_STATUS = Object.freeze({
   PENDING: 'pending',
@@ -782,13 +817,24 @@ async function approveRequest(id, { reviewedBy, adminNotes, idempotencyKey, cont
   if (!request) throw new Error('Registration request not found');
   if (request.deleted_at || request.deletedAt) throw new Error('Registration request not found');
 
-  // Idempotency: already approved → return existing result
+  // Idempotency: already approved → return existing result. Under Phase 4
+  // (flag ON) this is also the provisioning RETRY path: re-approving an
+  // approved request never recreates customer/portal-user records but does
+  // retry an incomplete Auth mapping via the stored portal-user link.
   if (request.status === REGISTRATION_REQUEST_STATUS.APPROVED) {
-    return {
+    const base = {
       request: toAdminDto(request),
       alreadyApproved: true,
       linkedCustomerId: request.linked_customer_id || null,
     };
+    const svc = getSupabaseProvisioning();
+    if (!svc || !svc.isProvisioningEnabled()) return base;
+    const retryPortalUserId = request.linked_portal_user_id || null;
+    if (!retryPortalUserId) {
+      return { ...base, provisioning: { status: 'pending', reason: 'PORTAL_USER_UNRESOLVED' } };
+    }
+    const retryProvisioning = await maybeProvisionSupabaseAuth({ portalUserId: retryPortalUserId, email: null });
+    return { ...base, provisioning: retryProvisioning || { status: 'pending', reason: 'AUTH_PROVISIONING_FAILED' } };
   }
 
   assertTransition(request.status, REGISTRATION_REQUEST_STATUS.APPROVED);
@@ -845,6 +891,13 @@ async function approveRequest(id, { reviewedBy, adminNotes, idempotencyKey, cont
     const invite = await portalAuth.createInviteCode(portalUserId);
     inviteCode = invite.code;
 
+    // PHASE 4 (flag-gated): provision the Supabase Auth identity for the
+    // newly created Portal user. The legacy bcrypt password is never read,
+    // copied, or imported — the Auth user is passwordless and Portal
+    // invite-code activation remains the setup UX. A provisioning failure
+    // MUST NOT roll back business records; it surfaces as pending/retryable.
+    const provisioning = await maybeProvisionSupabaseAuth({ portalUserId, email: portalEmail });
+
     // Finalize referral if applicable
     if (request.referred_by_id) {
       try {
@@ -866,10 +919,13 @@ async function approveRequest(id, { reviewedBy, adminNotes, idempotencyKey, cont
       }
     }
 
-    // Update request with linked customer id
+    // Update request with linked customer id (and the portal-user link used
+    // by the Phase 4 provisioning retry path; envelope data only, no
+    // contract change — toAdminDto is intentionally untouched).
     const updated = await repo.upsert('customer_registration_requests', {
       ...approved,
       linked_customer_id: customerId,
+      linked_portal_user_id: portalUserId,
       updated_at: nowIso(),
     });
 
@@ -882,6 +938,7 @@ async function approveRequest(id, { reviewedBy, adminNotes, idempotencyKey, cont
       customerId,
       portalUserId,
       inviteCode,
+      ...(provisioning ? { provisioning } : {}),
     };
 
   } catch (err) {

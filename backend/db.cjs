@@ -1088,7 +1088,12 @@ const initDb = () => {
         // Customer Portal 2FA (Phase: portal security)
         { table: 'portal_users', column: 'two_factor_enabled', type: "INTEGER DEFAULT 0" },
         { table: 'portal_users', column: 'two_factor_secret', type: 'TEXT' },
-        { table: 'portal_users', column: 'two_factor_confirmed', type: "INTEGER DEFAULT 0" }
+        { table: 'portal_users', column: 'two_factor_confirmed', type: "INTEGER DEFAULT 0" },
+        // PHASE 1 Supabase Auth mapping (shadow-only): nullable, one Supabase
+        // user → at most one portal_users row (UNIQUE enforced on fresh DBs
+        // via CREATE TABLE; existing DBs gain the column without backfill).
+        // No FK to auth.users. No tenant/company dimension.
+        { table: 'portal_users', column: 'auth_user_id', type: 'TEXT' }
       ];
 
       // Process migrations: add missing columns to existing tables
@@ -2077,6 +2082,7 @@ const initDb = () => {
         phone TEXT,
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled', 'invited')),
         last_login_at TEXT,
+        auth_user_id TEXT UNIQUE,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
       )`);

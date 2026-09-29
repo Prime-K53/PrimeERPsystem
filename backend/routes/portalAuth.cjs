@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const portalAuthService = require('../services/portalAuthService.cjs');
+const { toPortalMeContract } = require('../services/supabasePortalIdentity.cjs');
 const { generatePortalToken, verifyPortalToken } = require('../middleware/portalAuth.cjs');
 const ReferralService = require('../services/referralService.cjs');
 const referralService = new ReferralService();
@@ -31,6 +32,8 @@ const pendingTwoFactor = new Map();
 const REFRESH_GRACE_MS = 60 * 1000;
 const recentRotations = new Map(); // tokenHash -> expiresAt (ms epoch)
 
+// UUID shape check for the Phase 5B-2B hybrid hook (mapping sanity only).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function recordRotationGrace(tokenHash) {
   recentRotations.set(tokenHash, Date.now() + REFRESH_GRACE_MS);
 }
@@ -133,6 +136,23 @@ router.post('/login-password', async (req, res) => {
     const ua = req.headers['user-agent'];
     const session = await portalAuthService.createSession(user.id, refreshToken, ip, ua);
     portalAuthService.recordLoginHistory(user.id, ip, ua).catch(() => {});
+    // Phase 5B-2B hybrid hook (best-effort, invisible to the contract below).
+    // Runs ONLY here — after full legacy auth (password + MFA branch) AND
+    // session creation. Establishes the Supabase Auth password from the
+    // request-scoped plaintext for the already-mapped identity. Any failure
+    // is swallowed (coded log only) so legacy login can never break because
+    // of migration. Missing mapping → skip silently (normal pre-migration).
+    try {
+      const mapped = await portalAuthService.getPortalUserById(user.id);
+      const authUserId = mapped && mapped.auth_user_id ? String(mapped.auth_user_id).trim() : '';
+      if (authUserId !== '' && String(mapped.id) === String(user.id) && UUID_RE.test(authUserId)) {
+        const { updateAuthUserPassword } = require('../services/supabasePortalAuthAdmin.cjs');
+        await updateAuthUserPassword(authUserId, password);
+        console.log('[PortalAuth] Supabase password established for portal user:', user.id);
+      }
+    } catch (hybridErr) {
+      console.warn('[PortalAuth] Supabase password sync skipped:', (hybridErr && hybridErr.code) || 'AUTH_SYNC_FAILED');
+    }
     res.json({
       message: 'Login successful',
       user: {
@@ -159,6 +179,13 @@ router.post('/refresh', async (req, res) => {
       return res.status(400).json({ error: 'Refresh token is required' });
     }
     if (typeof refresh_token !== 'string') {
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+    // Phase 3: /refresh stays legacy-only. Legacy refresh tokens are opaque
+    // hex strings (crypto.randomBytes hex) and NEVER contain '.'. Reject
+    // JWT-shaped input (Supabase access/refresh JWTs) explicitly so no JWT
+    // family can enter portal_sessions through this endpoint.
+    if (refresh_token.includes('.')) {
       return res.status(401).json({ error: 'Invalid or expired refresh token' });
     }
     const session = await portalAuthService.findSessionByRefreshToken(refresh_token);
@@ -297,33 +324,32 @@ router.post('/activate', async (req, res) => {
 });
 
 /**
- * LEGACY direct portal registration — TEMPORARY COMPATIBILITY STATE.
+ * LEGACY direct portal registration — RETIRED (Phase 3 operational gate).
  *
- * Business rule (approval-gated intake): public registration MUST become
+ * Business rule (approval-gated intake): public registration MUST go through
  *   Portal registration → Customer Registration Request (PENDING)
  *   → ERP admin review → APPROVE → official CUST-XXXX customer + credentials.
  *
- * This endpoint still creates an ACTIVE portal_users row and issues JWT +
- * refresh token on submit, which BYPASSES that approval gate. It is kept
- * functional ONLY because the separate portal frontend (Prime P on Desktop)
- * still calls POST /api/portal/auth/register and has not been migrated yet
- * (verified: no caller inside this ERP repo — no backend test and no ERP
- * frontend code references this route; see backend/tests/* and
- * frontend/services/*).
+ * The handler below used to create an ACTIVE portal_users row and issue JWT +
+ * refresh token on submit, which BYPASSED that approval gate. It is now
+ * unreachable: this route returns 410 Gone with migration guidance and
+ * creates NO customer, NO portal user, NO session, and NO tokens.
  *
- * New portal integrations MUST use POST /api/portal/registration-requests
+ * The original implementation is preserved below the retirement guard
+ * (unreachable) so rollback or later cleanup remains trivial. New portal
+ * integrations MUST use POST /api/portal/registration-requests
  * (backend/routes/registrationRequests.cjs), which creates exactly one
  * PENDING request and issues NO credentials.
- *
- * Migration tracker: once the portal frontend submits registration requests
- * instead, this route MUST be disabled (return 410 with migration guidance)
- * or converted into a thin alias that creates a PENDING request. The
- * `X-Portal-Register-Deprecated` response header and the
- * PORTAL_REGISTER_LEGACY_USED audit event below exist so the remaining
- * traffic is visible until then. DO NOT remove this comment without
- * completing the portal migration.
  */
 router.post('/register', async (req, res) => {
+  // Phase 3 retirement guard: fail closed BEFORE touching any service.
+  // No request data (including passwords) is echoed back.
+  return res.status(410).json({
+    error: 'Legacy portal self-registration has been retired',
+    code: 'PORTAL_REGISTER_RETIRED',
+    message: 'Use POST /api/portal/registration-requests to submit a registration request for staff approval.',
+  });
+  /* RETIRED IMPLEMENTATION (kept for rollback/cleanup reference only):
   res.set('X-Portal-Register-Deprecated', 'true; use POST /api/portal/registration-requests');
   try {
     const { companyName, contactName, email, password, phone, tier, referredByCode } = req.body || {};
@@ -464,6 +490,7 @@ router.post('/register', async (req, res) => {
     }
     res.status(500).json({ error: 'Registration failed. Please try again.' });
   }
+  END OF RETIRED IMPLEMENTATION */
 });
 
 router.post('/reset-password', async (req, res) => {
@@ -495,7 +522,13 @@ router.get('/me', verifyPortalToken, async (req, res) => {
   try {
     const user = await portalAuthService.getPortalUserById(req.portalUser.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    // PHASE 1: allow-list contract — identity/profile/business scope only.
+    // MUST NEVER include password_hash, two_factor_secret, raw two_factor_*
+    // flags, auth_user_id, data/version envelopes, or reset/session material.
+    // customer_id stays (Portal business scope); id stays (application
+    // identity). No `role` field: the Portal frontend session type carries
+    // no role and no caller requires it from this endpoint.
+    res.json(toPortalMeContract(user));
   } catch (err) {
     console.error('[PortalAuth] Get user error:', err);
     res.status(500).json({ error: 'Failed to get user' });

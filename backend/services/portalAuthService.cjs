@@ -247,8 +247,49 @@ const getPortalUserById = async (id) => {
   return repo.portalEntities.portal_users.getById(id);
 };
 
+/**
+ * PHASE 1 N:1 compatibility note.
+ *
+ * The database permits MULTIPLE portal_users rows per customer
+ * (customer_id is a non-unique index; only email is UNIQUE). This function
+ * preserves the HISTORICAL first-row-wins behavior (LIMIT 1) so every
+ * existing caller — loginWithCustomerId, activatePortalUser, admin
+ * auto-create/regenerate, bulk/single regenerate — behaves exactly as
+ * before in this phase. New multi-user workflows MUST use
+ * listPortalUsersByCustomerId below and make an explicit selection;
+ * silently taking rows[0] in new code is prohibited.
+ */
 const getPortalUserByCustomerId = async (customerId) => {
   return repo.portalEntities.portal_users.getByCustomerId(customerId);
+};
+
+/**
+ * PHASE 1 N:1 list primitive: returns EVERY portal_users row for a
+ * customer (empty array when none). No selection, no ranking — callers
+ * decide explicitly. Falls back to the single-row path on repository
+ * implementations that predate the primitive.
+ */
+const listPortalUsersByCustomerId = async (customerId) => {
+  const entities = repo.portalEntities && repo.portalEntities.portal_users;
+  if (entities && typeof entities.listByCustomerId === 'function') {
+    const rows = await entities.listByCustomerId(customerId);
+    return Array.isArray(rows) ? rows : [];
+  }
+  const single = await getPortalUserByCustomerId(customerId);
+  return single ? [single] : [];
+};
+
+/**
+ * PHASE 1 Supabase mapping lookup: auth.users.id → auth_user_id → row.
+ * Read-only passthrough; authorization decisions (active-status gate)
+ * live in supabasePortalIdentity.resolvePortalIdentity, not here.
+ */
+const getPortalUserByAuthUserId = async (authUserId) => {
+  const entities = repo.portalEntities && repo.portalEntities.portal_users;
+  if (entities && typeof entities.getByAuthUserId === 'function') {
+    return entities.getByAuthUserId(authUserId);
+  }
+  return null;
 };
 
 const getPortalUserByEmail = async (email) => {
@@ -516,6 +557,8 @@ module.exports = {
   findCustomerByPortalUserId,
   getPortalUserById,
   getPortalUserByCustomerId,
+  listPortalUsersByCustomerId,
+  getPortalUserByAuthUserId,
   getPortalUserByEmail,
   createPasswordReset,
   findValidPasswordReset,

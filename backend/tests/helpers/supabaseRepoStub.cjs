@@ -91,6 +91,12 @@ const repo = {
         state.usersByEmail.get(String(email || '').toLowerCase().trim()) || null,
       getByCustomerId: async (cid) =>
         [...state.usersById.values()].find(u => u.customer_id === cid) || null,
+      // PHASE 1 test support: N:1 list primitive + Supabase mapping lookup.
+      // getByCustomerId above keeps historical first-row-wins semantics.
+      listByCustomerId: async (cid) =>
+        [...state.usersById.values()].filter(u => u.customer_id === cid),
+      getByAuthUserId: async (sub) =>
+        [...state.usersById.values()].find(u => u.auth_user_id === sub) || null,
       upsert: async (row) => {
         const merged = { ...(state.usersById.get(row.id) || {}), ...row };
         state.usersById.set(row.id, merged);

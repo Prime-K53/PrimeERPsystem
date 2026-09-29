@@ -1043,6 +1043,14 @@ const portalEntities = {
     getById: (id) => getByIdFlat('portal_users', id),
     getByEmail: (email) => getAllFlat('portal_users', { email: `eq.${email}`, limit: 1 }).then(rows => rows?.[0] || null),
     getByCustomerId: (customerId) => getAllFlat('portal_users', { customer_id: `eq.${customerId}`, limit: 1 }).then(rows => rows?.[0] || null),
+    // PHASE 1 N:1 primitive: returns EVERY portal_users row for a customer.
+    // getByCustomerId above is the historical first-row-wins compatibility
+    // path and is intentionally left unchanged (see portalAuthService).
+    listByCustomerId: (customerId) => getAllFlat('portal_users', { customer_id: `eq.${customerId}` }),
+    // PHASE 1 Supabase mapping lookup: auth.users.id → auth_user_id.
+    // Fail-closed pre-migration: when the column does not exist yet the
+    // PostgREST filter 400s, request() returns null, and callers see [].
+    getByAuthUserId: (authUserId) => getAllFlat('portal_users', { auth_user_id: `eq.${authUserId}`, limit: 1 }).then(rows => rows?.[0] || null),
     upsert: (record) => upsertFlat('portal_users', record),
     update: (id, updates) => updateFlat('portal_users', id, updates),
   },

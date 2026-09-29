@@ -13,9 +13,8 @@
  *   - Applicant cancel is idempotent; terminal states reject cancel.
  *   - Admin endpoints: anonymous → 403, portal_customer → 403,
  *     staff → 200 + reject flow + double-reject 409.
- *   - Legacy POST /api/portal/auth/register still answers (portal not yet
- *     migrated) but is flagged deprecated — documents the temporary
- *     integration state from the approval-gate migration.
+  *   - Legacy POST /api/portal/auth/register is retired (410 Gone, Phase 3
+  *     gate) and creates nothing — documents the closed approval-gate bypass.
  */
 process.env.JWT_SECRET = 'test-jwt-secret-for-registration-tests';
 process.env.ALLOW_HEADER_AUTH = 'true';
@@ -336,7 +335,7 @@ describe('customerRegistration idempotency + routes', () => {
     });
   });
 
-  describe('legacy POST /api/portal/auth/register compatibility state', () => {
+  describe('legacy POST /api/portal/auth/register retired (Phase 3 gate)', () => {
     beforeEach(() => {
       portalAuthService.getPortalUserByEmail.mockResolvedValue(null);
       portalAuthService.registerPortalUser.mockImplementation(async (args) => ({
@@ -347,7 +346,7 @@ describe('customerRegistration idempotency + routes', () => {
       portalAuthService.createSession.mockResolvedValue({ id: 'sess_1' });
     });
 
-    it('still answers for the unmigrated portal but is flagged deprecated', async () => {
+    it('returns 410 Gone with migration guidance and creates nothing', async () => {
       const res = await request(buildLegacyAuthApp())
         .post('/api/portal/auth/register')
         .send({
@@ -356,15 +355,19 @@ describe('customerRegistration idempotency + routes', () => {
           email: 'legacy@example.com',
           password: 'legacy-pass-1',
         })
-        .expect(201);
+        .expect(410);
 
-      // Temporary bypass marker: fails after the portal migrates and this
-      // route is retired (410) — see the route comment in portalAuth.cjs.
-      expect(res.headers['x-portal-register-deprecated']).toMatch(/registration-requests/);
-      expect(res.body.access_token).toBeTruthy();
-      expect(auditService.logEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'PORTAL_REGISTER_LEGACY_USED' })
-      );
+      // Stable machine-readable retirement marker pointing at the approved flow.
+      expect(res.body.code).toBe('PORTAL_REGISTER_RETIRED');
+      expect(JSON.stringify(res.body)).toMatch(/registration-requests/);
+      // No password (or other sensitive request data) echoed back.
+      expect(JSON.stringify(res.body)).not.toMatch(/legacy-pass-1/);
+      expect(res.body.access_token).toBeUndefined();
+      expect(res.body.refresh_token).toBeUndefined();
+      // Retired guard runs before any service: no customer/user/session writes.
+      expect(portalAuthService.registerPortalUser).not.toHaveBeenCalled();
+      expect(portalAuthService.syncCustomerPortalData).not.toHaveBeenCalled();
+      expect(portalAuthService.createSession).not.toHaveBeenCalled();
     });
   });
 });

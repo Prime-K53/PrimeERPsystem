@@ -334,6 +334,20 @@ app.use('/api/portal/admin', portalAdminRoutes);
 // chain. Portal requests authenticate with portal JWTs.
 const portalRoutes = require('./routes/portal.cjs');
 const { verifyPortalToken } = require('./middleware/portalAuth.cjs');
+
+// PHASE 3 authoritative dual-auth (flag-gated).
+// verifyPortalToken is now the SINGLE Portal authentication decision point:
+// legacy-only when PORTAL_SUPABASE_DUAL_AUTH is OFF (safe default), legacy +
+// Supabase-mapped dual-family when ON. The old shadow observer below runs
+// ONLY in legacy-only mode so Supabase verification is never both
+// authoritative and shadow-authoritative (no duplicate verification).
+// When dual-auth is ON, the decision (and req.portalUser contract) already
+// carries the resolved identity, so the shadow pass has nothing to observe.
+const { isShadowEnabled, supabaseShadowMiddleware } = require('./services/supabasePortalIdentity.cjs');
+const { isDualAuthEnabled } = require('./middleware/portalAuth.cjs');
+if (isShadowEnabled() && !isDualAuthEnabled()) {
+  app.use('/api/portal', verifyPortalToken, supabaseShadowMiddleware);
+}
 app.use('/api/portal', verifyPortalToken, portalRoutes);
 
 // Public invoice QR verification — NO auth by design (customers scan the QR
