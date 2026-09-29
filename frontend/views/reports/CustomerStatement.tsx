@@ -18,7 +18,7 @@ import {
 import { exportToCSV } from '../../utils/helpers';
 import { useDocumentStore } from '../../stores/documentStore';
 import { mapToInvoiceData } from '../../utils/pdfMapper';
-import { createStatementSnapshot, type CreateStatementSnapshotInput } from '../../services/statementService';
+import { createStatementSnapshot, normalizeStatementLineItems, type CreateStatementSnapshotInput } from '../../services/statementService';
 import { buildDocumentVerificationUrl } from '../../utils/documentVerification';
 import type { StatementSnapshot } from '../../types';
 
@@ -42,6 +42,11 @@ interface DisplaySettings {
 
 const VOUCHER_TYPES = ['All', 'Invoice', 'Receipt', 'Credit Note', 'Debit Note', 'Adjustment'] as const;
 type VoucherType = typeof VOUCHER_TYPES[number];
+
+// Cap customer dropdown rows for render safety; when the cap hides matches
+// a notice tells the user to narrow the search (previously the list was
+// silently cut at 30 with no indication customers were missing).
+const CUSTOMER_DROPDOWN_LIMIT = 100;
 
 const CustomerStatement: React.FC = () => {
   const { companyConfig } = useAuth();
@@ -305,6 +310,17 @@ const CustomerStatement: React.FC = () => {
         debit: tx.debit,
         credit: tx.credit,
         runningBalance: tx.runningBalance,
+        // Bill-details lines are frozen into the snapshot only when the
+        // toggle is on; unchecked keeps the exact historical shape.
+        // Original date / status ride along under the same condition —
+        // they are the values the screen's bill-details block shows.
+        ...(displaySettings.showBillDetails
+          ? {
+              items: normalizeStatementLineItems(tx.items),
+              ...(tx.originalDate ? { originalDate: tx.originalDate } : {}),
+              ...(tx.status ? { status: tx.status } : {}),
+            }
+          : {}),
       })),
       totalInvoiced: totalDebit,
       totalReceived: totalCredit,
@@ -551,10 +567,11 @@ const CustomerStatement: React.FC = () => {
                 );
               }
               const q = customerSearch.trim().toLowerCase();
-              const matches = (customers || []).filter((c: any) => !q
+              const allMatches = (customers || []).filter((c: any) => !q
                 || getCustomerOptionLabel(c).toLowerCase().includes(q)
                 || String(c.phone || '').toLowerCase().includes(q)
-                || String(c.email || '').toLowerCase().includes(q)).slice(0, 30);
+                || String(c.email || '').toLowerCase().includes(q));
+              const matches = allMatches.slice(0, CUSTOMER_DROPDOWN_LIMIT);
               return (
                 <div className="relative" onBlur={() => setTimeout(() => setCustomerDropdownOpen(false), 150)}>
                   <Users size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10" />
@@ -586,6 +603,11 @@ const CustomerStatement: React.FC = () => {
                           </div>
                         </button>
                       ))}
+                      {allMatches.length > matches.length && (
+                        <div className="px-3 py-2 text-[11px] text-slate-500 bg-slate-50">
+                          Showing {matches.length} of {allMatches.length} customers — type to narrow the search…
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -983,12 +1005,12 @@ const CustomerStatement: React.FC = () => {
                                       <span className="w-24 text-right">Price</span>
                                       <span className="w-24 text-right">Total</span>
                                     </div>
-                                    {tx.items.map((item: any, iIdx: number) => (
+                                    {normalizeStatementLineItems(tx.items).map((line, iIdx: number) => (
                                       <div key={iIdx} className="flex gap-4 text-slate-500">
-                                        <span className="w-48 truncate">{item.desc || item.description || '—'}</span>
-                                        <span className="w-16 text-right">{item.qty ?? item.quantity ?? '—'}</span>
-                                        <span className="w-24 text-right">{item.price != null ? formatCurrency(item.price) : '—'}</span>
-                                        <span className="w-24 text-right">{item.total != null ? formatCurrency(item.total) : '—'}</span>
+                                        <span className="w-48 truncate" title={line.description}>{line.description}</span>
+                                        <span className="w-16 text-right">{line.qty ?? '—'}</span>
+                                        <span className="w-24 text-right">{line.price != null ? formatCurrency(line.price) : '—'}</span>
+                                        <span className="w-24 text-right">{line.total != null ? formatCurrency(line.total) : '—'}</span>
                                       </div>
                                     ))}
                                   </div>

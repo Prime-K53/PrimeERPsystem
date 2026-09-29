@@ -1713,6 +1713,13 @@ export interface GoodsReceipt {
  * customer activity does not alter it; corrections supersede it
  * (status SUPERSEDED + supersededBy) and issue a new snapshot.
  */
+export interface StatementLineItem {
+  description: string;
+  qty: number | null;
+  price: number | null;
+  total: number | null;
+}
+
 export interface StatementSnapshotTransaction {
   date: string;
   reference: string;
@@ -1720,6 +1727,12 @@ export interface StatementSnapshotTransaction {
   debit: number;
   credit: number;
   runningBalance: number;
+  /** Bill-details lines (persisted only when the statement was issued with Bill Details on). */
+  items?: StatementLineItem[];
+  /** Original invoice date for the bill-details block (same value the screen shows). */
+  originalDate?: string;
+  /** Ledger status for the bill-details block (same value the screen shows). */
+  status?: string;
 }
 
 export interface StatementSnapshot {

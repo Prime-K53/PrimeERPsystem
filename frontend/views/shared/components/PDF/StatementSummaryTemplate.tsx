@@ -24,6 +24,15 @@ const formatAmount = (amount: number) => {
   });
 };
 
+// DD/MM/YYYY, mirroring the statement screen's safeFormatDate. Snapshot
+// dates are ISO (yyyy-MM-dd); anything else passes through untouched.
+const formatStatementDate = (value: unknown): string => {
+  const s = String(value ?? '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return s || '—';
+};
+
 const pickFirstText = (...values: Array<unknown>) => {
   for (const value of values) {
     const normalized = String(value ?? '').trim();
@@ -153,8 +162,20 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           <Text style={{ flex: 1.3, fontSize: 10, fontWeight: 'bold', textAlign: 'right' }}>Balance</Text>
         </View>
 
-        {data.transactions.map((txn, i) => (
-          <View key={i} style={[s.row, { paddingHorizontal: 8, borderBottomColor: '#f1f5f9' }]}>
+        {data.transactions.map((txn, i) => {
+          // Bill-details lines frozen into the snapshot (present only when
+          // the statement was issued with Bill Details on). Unchecked keeps
+          // the existing row-only layout byte-identical.
+          const txnItems = Array.isArray((txn as any).items) ? (txn as any).items : [];
+          // Bill-details block mirrors the screen: meta row when an original
+          // date was frozen (unchecked snapshots carry no originalDate, so
+          // the compact layout is byte-identical), items table when lines
+          // were frozen.
+          const txnOriginalDate = String((txn as any).originalDate ?? '').trim();
+          const txnStatus = String((txn as any).status ?? '').trim();
+          return (
+          <React.Fragment key={i}>
+          <View style={[s.row, { paddingHorizontal: 8, borderBottomColor: '#f1f5f9' }]} wrap={false}>
             <Text style={{ flex: 1.2, fontSize: 9 }}>{txn.date}</Text>
             <Text style={{ flex: 1.5, fontSize: 9, fontWeight: 'bold' }}>{txn.reference}</Text>
             <Text style={{ flex: 2.5, fontSize: 9, color: '#475569' }}>{txn.memo || '-'}</Text>
@@ -162,7 +183,33 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
             <Text style={{ flex: 1, fontSize: 9, textAlign: 'right', color: txn.credit > 0 ? '#059669' : '#64748b' }}>{txn.credit > 0 ? formatAmount(txn.credit) : '-'}</Text>
             <Text style={{ flex: 1.3, fontSize: 9, textAlign: 'right', fontWeight: 'bold' }}>{formatAmount(txn.runningBalance)}</Text>
           </View>
-        ))}
+          {txnOriginalDate && (
+            <View key={`${i}-meta`} style={{ paddingHorizontal: 8, paddingTop: 2, flexDirection: 'row', backgroundColor: '#f8fafc' }}>
+              <Text style={{ flex: 1, fontSize: 8, color: '#64748b', fontStyle: 'italic' }}>Original date: {formatStatementDate(txnOriginalDate)}</Text>
+              <Text style={{ flex: 1, fontSize: 8, color: '#64748b', fontStyle: 'italic' }}>Status: {txnStatus || '—'}</Text>
+            </View>
+          )}
+          {txnItems.length > 0 && (
+            <View key={`${i}-items`} style={{ paddingHorizontal: 8, paddingTop: 2, paddingBottom: 4, backgroundColor: '#f8fafc' }}>
+              <View style={{ flexDirection: 'row', paddingVertical: 2 }}>
+                <Text style={{ flex: 3.5, fontSize: 7.5, fontWeight: 'bold', color: '#64748b' }}>Description</Text>
+                <Text style={{ flex: 1, fontSize: 7.5, fontWeight: 'bold', color: '#64748b', textAlign: 'right' }}>Qty</Text>
+                <Text style={{ flex: 1.4, fontSize: 7.5, fontWeight: 'bold', color: '#64748b', textAlign: 'right' }}>Price</Text>
+                <Text style={{ flex: 1.4, fontSize: 7.5, fontWeight: 'bold', color: '#64748b', textAlign: 'right' }}>Total</Text>
+              </View>
+              {txnItems.map((line: any, li: number) => (
+                <View key={li} style={{ flexDirection: 'row', paddingVertical: 1.5 }}>
+                  <Text style={{ flex: 3.5, fontSize: 8, color: '#475569' }}>{String(line?.description ?? '—')}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, color: '#475569', textAlign: 'right' }}>{line?.qty ?? '—'}</Text>
+                  <Text style={{ flex: 1.4, fontSize: 8, color: '#475569', textAlign: 'right' }}>{line?.price != null ? `${currency} ${formatAmount(Number(line.price))}` : '—'}</Text>
+                  <Text style={{ flex: 1.4, fontSize: 8, color: '#475569', textAlign: 'right' }}>{line?.total != null ? `${currency} ${formatAmount(Number(line.total))}` : '—'}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          </React.Fragment>
+          );
+        })}
 
           {/* Security Footer — digitally-generated line (kept tick circle),
               official body copy, QR, bottom rule. The title/shield block and

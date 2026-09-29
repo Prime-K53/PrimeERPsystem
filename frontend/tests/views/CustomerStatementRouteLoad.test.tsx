@@ -85,4 +85,75 @@ describe('CustomerStatement auto-loads customer from route state', () => {
     expect(screen.getByPlaceholderText('Search by name, phone, email…')).toBeInTheDocument();
     unmount();
   });
+
+  it('bill details render CartItem-shaped lines with computed totals', () => {
+    mocks.mockFinance.invoices = [
+      {
+        id: 'INV-1',
+        customerId: 'C-1',
+        date: '2026-09-05',
+        invoiceNumber: 'INV-1',
+        items: [{ id: 'PROD-PEN', name: 'Pen', quantity: 18, price: 6000 }],
+        totalAmount: 108000,
+        paidAmount: 0,
+        status: 'Unpaid',
+      },
+    ];
+    try {
+      renderAt({ customerId: 'C-1', customerName: 'Acme School' });
+      expectCustomerLoaded('Acme School');
+      // Bill Details off by default: no item rows.
+      expect(screen.queryByText('Pen')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText('Display Settings'));
+      fireEvent.click(screen.getByText('Bill Details'));
+      // name -> Description, quantity -> Qty, price -> Price, qty*price -> Total.
+      expect(screen.getByText('Pen')).toBeInTheDocument();
+      expect(screen.getByText('18')).toBeInTheDocument();
+      expect(screen.getByText('K6,000.00')).toBeInTheDocument();
+      // Item Total also matches the statement outstanding summary.
+      expect(screen.getAllByText('K108,000.00').length).toBeGreaterThanOrEqual(1);
+    } finally {
+      mocks.mockFinance.invoices = [];
+    }
+  });
+
+  it('customer dropdown shows all 65 customers instead of silently cutting at 30', () => {
+    mocks.mockSales.customers = Array.from({ length: 65 }, (_, i) => ({
+      id: `C-${i + 1}`,
+      name: `Customer ${i + 1}`,
+      phone: '',
+      email: '',
+    }));
+    try {
+      renderAt({});
+      fireEvent.focus(screen.getByPlaceholderText('Search by name, phone, email…'));
+      // Previously sliced at 30 — the last customer was unreachable.
+      expect(screen.getByText('Customer 65')).toBeInTheDocument();
+      expect(screen.queryByText(/Showing \d+ of \d+ customers/)).not.toBeInTheDocument();
+    } finally {
+      mocks.mockSales.customers = [
+        { id: 'C-1', name: 'Acme School', phone: '0991234567', email: 'acme@example.com' },
+        { id: 'C-2', name: 'Beta College', phone: '', email: '' },
+      ];
+    }
+  });
+
+  it('customer dropdown warns when the 100-row cap hides matches', () => {
+    mocks.mockSales.customers = Array.from({ length: 120 }, (_, i) => ({
+      id: `C-${i + 1}`,
+      name: `Customer ${i + 1}`,
+      phone: '',
+      email: '',
+    }));
+    try {
+      renderAt({});
+      fireEvent.focus(screen.getByPlaceholderText('Search by name, phone, email…'));
+      expect(screen.getByText('Showing 100 of 120 customers — type to narrow the search…')).toBeInTheDocument();
+    } finally {
+      mocks.mockSales.customers = [
+        { id: 'C-1', name: 'Acme School', phone: '0991234567', email: 'acme@example.com' },
+        { id: 'C-2', name: 'Beta College', phone: '', email: '' },
+      ];
+    }
+  });
 });

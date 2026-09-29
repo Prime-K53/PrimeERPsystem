@@ -23,6 +23,7 @@ vi.mock('../../services/db', () => ({
 import {
   createStatementSnapshot,
   getStatementSnapshot,
+  normalizeStatementLineItems,
   voidStatementSnapshot,
 } from '../../services/statementService';
 
@@ -102,5 +103,88 @@ describe('statement snapshots', () => {
     const b = await createStatementSnapshot({ ...INPUT, periodStart: '2026-09-01', periodEnd: '2026-09-30' }, null);
     expect((await getStatementSnapshot(a.statementNumber))?.status).toBe('VALID');
     expect(b.status).toBe('VALID');
+  });
+});
+
+describe('statement bill-details line normalization', () => {
+  it('reads CartItem-shaped lines (name/quantity/price, no desc/total)', () => {
+    expect(
+      normalizeStatementLineItems([{ name: 'Pen', quantity: 18, price: 6000 }])
+    ).toEqual([{ description: 'Pen', qty: 18, price: 6000, total: 108000 }]);
+  });
+
+  it('reads mapped desc/qty/price/total lines and keeps stored totals', () => {
+    expect(
+      normalizeStatementLineItems([{ desc: 'A4 Ream', qty: 10, price: 5000, total: 48000 }])
+    ).toEqual([{ description: 'A4 Ream', qty: 10, price: 5000, total: 48000 }]);
+  });
+
+  it('prefers the item name over the item description', () => {
+    expect(
+      normalizeStatementLineItems([
+        { name: 'Pen', description: 'Blue ballpoint pen for office use', quantity: 18, price: 6000 },
+      ])
+    ).toEqual([{ description: 'Pen', qty: 18, price: 6000, total: 108000 }]);
+  });
+
+  it('reads unitPrice/lineTotalNet aliases and blanks missing text', () => {
+    expect(
+      normalizeStatementLineItems([{ productName: 'Svc', quantity: 2, unitPrice: 150, lineTotalNet: 300 }])
+    ).toEqual([{ description: 'Svc', qty: 2, price: 150, total: 300 }]);
+    expect(normalizeStatementLineItems([{}])).toEqual([
+      { description: '—', qty: null, price: null, total: null },
+    ]);
+    expect(normalizeStatementLineItems(null)).toEqual([]);
+    expect(normalizeStatementLineItems('x' as any)).toEqual([]);
+  });
+
+  it('persists normalized items only when the issuer attached them', async () => {
+    const withItems = await createStatementSnapshot(
+      {
+        ...INPUT,
+        transactions: [
+          {
+            ...INPUT.transactions[0],
+            items: [{ name: 'Pen', quantity: 18, price: 6000 }],
+          },
+        ],
+      },
+      null
+    );
+    expect(withItems.transactions[0].items).toEqual([
+      { description: 'Pen', qty: 18, price: 6000, total: 108000 },
+    ]);
+
+    const withoutItems = await createStatementSnapshot(
+      { ...INPUT, periodStart: '2026-10-01', periodEnd: '2026-10-31' },
+      null
+    );
+    expect('items' in (withoutItems.transactions[0] as any)).toBe(false);
+  });
+
+  it('persists originalDate/status only when the issuer attached them', async () => {
+    const withMeta = await createStatementSnapshot(
+      {
+        ...INPUT,
+        transactions: [
+          {
+            ...INPUT.transactions[0],
+            originalDate: '2026-01-19',
+            status: 'Unpaid',
+            items: [{ name: 'Pen', quantity: 1, price: 100 }],
+          },
+        ],
+      },
+      null
+    );
+    expect(withMeta.transactions[0].originalDate).toBe('2026-01-19');
+    expect(withMeta.transactions[0].status).toBe('Unpaid');
+
+    const withoutMeta = await createStatementSnapshot(
+      { ...INPUT, periodStart: '2026-11-01', periodEnd: '2026-11-30' },
+      null
+    );
+    expect('originalDate' in (withoutMeta.transactions[0] as any)).toBe(false);
+    expect('status' in (withoutMeta.transactions[0] as any)).toBe(false);
   });
 });

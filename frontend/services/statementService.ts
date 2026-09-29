@@ -22,7 +22,7 @@
 import { dbService } from './db';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { generateNextId } from '../utils/helpers';
-import type { CompanyConfig, StatementSnapshot } from '../types';
+import type { CompanyConfig, StatementLineItem, StatementSnapshot } from '../types';
 import { logger } from './logger';
 
 const STORE = 'statementSnapshots' as const;
@@ -45,6 +45,9 @@ export interface CreateStatementSnapshotInput {
     debit: number;
     credit: number;
     runningBalance: number;
+    items?: StatementLineItem[];
+    originalDate?: string;
+    status?: string;
   }>;
   totalInvoiced: number;
   totalReceived: number;
@@ -53,6 +56,47 @@ export interface CreateStatementSnapshotInput {
 
 const round2 = (v: unknown): number =>
   Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+
+const toFiniteNumber = (v: unknown): number | null => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
+ * Normalize bill-details lines from any stored item shape into the
+ * canonical { description, qty, price, total } form.
+ *
+ * Stored invoice lines are CartItem-shaped (name/quantity/price, no
+ * desc/qty/total), while mapped receipt lines use desc/qty/price/total —
+ * reading only one spelling renders "—" columns. Total falls back to
+ * qty × price when no stored total exists (display-only; the statement
+ * Debit column remains the authoritative line amount).
+ * Pure and non-mutating.
+ */
+export function normalizeStatementLineItems(items: unknown): StatementLineItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.map((raw) => {
+    const item = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    const qty = toFiniteNumber(item.qty ?? item.quantity);
+    const price = toFiniteNumber(item.price ?? item.unitPrice);
+    let total = toFiniteNumber(
+      item.total ?? item.lineTotal ?? item.lineTotalNet
+    );
+    if (total === null && qty !== null && price !== null) {
+      total = round2(qty * price);
+    }
+    const description = String(
+      item.name ?? item.productName ?? item.desc ?? item.description ?? ''
+    ).trim();
+    return {
+      description: description || '—',
+      qty,
+      price,
+      total,
+    };
+  });
+}
 
 /**
  * Issue a new statement snapshot. Any still-VALID snapshot for the same
@@ -95,6 +139,20 @@ export async function createStatementSnapshot(
       debit: round2(t.debit),
       credit: round2(t.credit),
       runningBalance: round2(t.runningBalance),
+      // Bill-details lines survive only when the issuer attached them
+      // (CustomerStatement with Bill Details on). Absent otherwise, so
+      // snapshots issued with the toggle off keep their exact old shape.
+      // Original date / status ride along under the same condition — they
+      // are the values the screen's bill-details block shows.
+      ...(Array.isArray(t.items) && t.items.length > 0
+        ? { items: normalizeStatementLineItems(t.items) }
+        : {}),
+      ...(typeof t.originalDate === 'string' && t.originalDate.trim()
+        ? { originalDate: t.originalDate }
+        : {}),
+      ...(typeof t.status === 'string' && t.status.trim()
+        ? { status: t.status }
+        : {}),
     })),
     totalInvoiced: round2(input.totalInvoiced),
     totalReceived: round2(input.totalReceived),

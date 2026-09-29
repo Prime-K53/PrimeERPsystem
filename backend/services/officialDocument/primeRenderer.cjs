@@ -230840,8 +230840,16 @@ var StatementSchema = external_exports.object({
     memo: external_exports.string().optional(),
     debit: external_exports.number(),
     credit: external_exports.number(),
-    runningBalance: external_exports.number()
-  })),
+    runningBalance: external_exports.number(),
+    originalDate: external_exports.string().optional(),
+    status: external_exports.string().optional(),
+    items: external_exports.array(external_exports.object({
+      description: external_exports.string(),
+      qty: external_exports.number().nullable(),
+      price: external_exports.number().nullable(),
+      total: external_exports.number().nullable()
+    })).optional()
+  }).passthrough()),
   totalInvoiced: external_exports.number(),
   totalReceived: external_exports.number(),
   finalBalance: external_exports.number(),
@@ -232267,7 +232275,10 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
         memo: resolveFirstText(txn.memo, txn.description, txn.details),
         debit: toNum(txn.debit),
         credit: toNum(txn.credit),
-        runningBalance: toNum(txn.runningBalance ?? txn.balance)
+        runningBalance: toNum(txn.runningBalance ?? txn.balance),
+        ...(typeof txn.originalDate === "string" && txn.originalDate.trim() ? { originalDate: txn.originalDate } : {}),
+        ...(typeof txn.status === "string" && txn.status.trim() ? { status: txn.status } : {}),
+        ...(Array.isArray(txn.items) && txn.items.length > 0 ? { items: txn.items } : {})
       })),
       totalInvoiced: toNum(item.totalInvoiced ?? item.total_invoiced ?? statementTransactions.reduce((sum, txn) => sum + toNum(txn.debit), 0)),
       totalReceived: toNum(item.totalReceived ?? item.total_received ?? statementTransactions.reduce((sum, txn) => sum + toNum(txn.credit), 0)),
@@ -233658,14 +233669,44 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 10, fontWeight: "bold", textAlign: "right" }, children: "Credit" }),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.3, fontSize: 10, fontWeight: "bold", textAlign: "right" }, children: "Balance" })
         ] }),
-        data2.transactions.map((txn, i2) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.row, { paddingHorizontal: 8, borderBottomColor: "#f1f5f9" }], children: [
+        data2.transactions.map((txn, i2) => {
+          const txnItems = Array.isArray(txn.items) ? txn.items : [];
+          const txnOriginalDate = String(txn.originalDate ?? "").trim();
+          const txnStatus = String(txn.status ?? "").trim();
+          const fmtStatementDate = (v) => {
+            const s = String(v ?? "").trim();
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            return m ? `${m[3]}/${m[2]}/${m[1]}` : (s || "—");
+          };
+          return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.row, { paddingHorizontal: 8, borderBottomColor: "#f1f5f9" }], children: [
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.2, fontSize: 9 }, children: txn.date }),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.5, fontSize: 9, fontWeight: "bold" }, children: txn.reference }),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2.5, fontSize: 9, color: "#475569" }, children: txn.memo || "-" }),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.debit > 0 ? "#e11d48" : "#64748b" }, children: txn.debit > 0 ? formatAmount(txn.debit) : "-" }),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.credit > 0 ? "#059669" : "#64748b" }, children: txn.credit > 0 ? formatAmount(txn.credit) : "-" }),
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.3, fontSize: 9, textAlign: "right", fontWeight: "bold" }, children: formatAmount(txn.runningBalance) })
-        ] }, i2)),
+        ] }),
+          txnOriginalDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { paddingHorizontal: 8, paddingTop: 2, flexDirection: "row", backgroundColor: "#f8fafc" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 8, color: "#64748b", fontStyle: "italic" }, children: ["Original date: ", fmtStatementDate(txnOriginalDate)] }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 8, color: "#64748b", fontStyle: "italic" }, children: ["Status: ", txnStatus || "—"] })
+          ] }),
+          txnItems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { paddingHorizontal: 8, paddingTop: 2, paddingBottom: 4, backgroundColor: "#f8fafc" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 2 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3.5, fontSize: 7.5, fontWeight: "bold", color: "#64748b" }, children: "Description" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Qty" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Price" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Total" })
+            ] }),
+            ...txnItems.map((line, li) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 1.5 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3.5, fontSize: 8, color: "#475569" }, children: String(line?.description ?? "—") }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 8, color: "#475569", textAlign: "right" }, children: line?.qty ?? "—" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 8, color: "#475569", textAlign: "right" }, children: line?.price != null ? formatAmount(Number(line.price)) : "—" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 8, color: "#475569", textAlign: "right" }, children: line?.total != null ? formatAmount(Number(line.total)) : "—" })
+            ] }, li))
+          ] })
+        ] }, i2);
+        }),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: { marginTop: 10, borderTopWidth: 0.5, borderColor: "#e2e8f0", paddingTop: 8, width: "100%" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(VerificationLabel, { fontScale }),
           (() => {

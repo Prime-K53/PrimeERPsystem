@@ -208,6 +208,18 @@ export const StatementSchema = z.object({
     debit: z.number(),
     credit: z.number(),
     runningBalance: z.number(),
+    // Bill-details block (frozen only when the statement is issued with Bill
+    // Details on; absent otherwise). Explicit optional fields — required
+    // transaction validation is unchanged; without these, Zod strips the
+    // keys and the PDF renderer never sees them.
+    originalDate: z.string().optional(),
+    status: z.string().optional(),
+    items: z.array(z.object({
+      description: z.string(),
+      qty: z.number().nullable(),
+      price: z.number().nullable(),
+      total: z.number().nullable(),
+    })).optional(),
   })),
   totalInvoiced: z.number(),
   totalReceived: z.number(),

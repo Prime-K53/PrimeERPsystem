@@ -22,6 +22,11 @@ const inkSoft = '#5c6567';
 const hairline = '#e4ddd1';
 const danger = '#b5493f';
 
+// Cap customer dropdown rows for render safety; when the cap hides matches
+// a notice tells the user to narrow the search (previously the list was
+// silently cut at 30 with no indication customers were missing).
+const CLIENT_DROPDOWN_LIMIT = 100;
+
 interface AgingBucket { current: number; days1to30: number; days31to60: number; days61to90: number; over90: number; }
 interface LedgerTransaction { id: string; date: string; type: 'INVOICE' | 'PAYMENT' | 'POS_SALE'; reference: string; description: string; subAccount: string; debit: number; credit: number; balance: number; status?: string; }
 interface PreviewData { customerName: string; customerEmail?: string; customerPhone?: string; customerAddress?: string; statementDate: string; periodStart: string; periodEnd: string; openingBalance: number; transactions: LedgerTransaction[]; totalDebits: number; totalCredits: number; closingBalance: number; aging: AgingBucket; totalOutstanding: number; }
@@ -226,12 +231,14 @@ const ClientLedger: React.FC = () => {
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, marginTop: 4, maxHeight: 240, overflow: 'auto', background: paper, border: `1.4px solid ${hairline}`, borderRadius: 9, boxShadow: '0 12px 28px rgba(0,0,0,0.12)' }}>
                     {(() => {
                       const q = customerSearch.trim().toLowerCase();
-                      const matches = (customers || []).filter((c: any) => !q
+                      const allMatches = (customers || []).filter((c: any) => !q
                         || getCustomerOptionLabel(c).toLowerCase().includes(q)
                         || String(c.phone || '').toLowerCase().includes(q)
-                        || String(c.email || '').toLowerCase().includes(q)).slice(0, 30);
+                        || String(c.email || '').toLowerCase().includes(q));
+                      const matches = allMatches.slice(0, CLIENT_DROPDOWN_LIMIT);
                       if (matches.length === 0) return (<div style={{ padding: 12, fontSize: 12, color: inkSoft }}>No customers found.</div>);
-                      return matches.map((c: any) => (
+                      return (<>
+                      {matches.map((c: any) => (
                         <button key={c.id}
                           onClick={() => { setSelectedCustomerId(c.id); setSelectedSubAccountNames([]); setCustomerSearch(''); setCustomerDropdownOpen(false); }}
                           style={{ width: '100%', textAlign: 'left', padding: '8px 12px', cursor: 'pointer', background: 'transparent', border: 'none', borderBottom: `1px solid ${hairline}` }}
@@ -242,7 +249,13 @@ const ClientLedger: React.FC = () => {
                             {[String(c.phone || ''), String(c.email || '')].filter(Boolean).join(' · ') || 'No contact details'}
                           </div>
                         </button>
-                      ));
+                      ))}
+                      {allMatches.length > matches.length && (
+                        <div style={{ padding: '8px 12px', fontSize: 11, color: inkSoft, background: teal[50] }}>
+                          Showing {matches.length} of {allMatches.length} customers — type to narrow the search…
+                        </div>
+                      )}
+                      </>);
                     })()}
                   </div>
                 )}
