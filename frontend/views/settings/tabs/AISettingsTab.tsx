@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { aiService } from '../../../services/ai/aiService';
+import { aiService, AI_PROVIDER_DEFAULTS } from '../../../services/ai/aiService';
 import { ProviderName } from '../../../services/ai/types';
 import { Sparkles, Key, Globe, Cpu, CheckCircle2, XCircle, Loader2, ChevronDown, Search } from 'lucide-react';
 
@@ -9,11 +9,7 @@ const PROVIDER_OPTIONS: { value: ProviderName; label: string; desc: string }[] =
   { value: 'openai', label: 'OpenAI', desc: 'GPT-4, GPT-4o-mini and other OpenAI models' },
 ];
 
-const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; model: string }> = {
-  local: { baseUrl: 'http://localhost:11434/v1', model: 'llama3' },
-  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
-  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-};
+const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; model: string }> = AI_PROVIDER_DEFAULTS;
 
 interface OpenRouterModel {
   id: string;

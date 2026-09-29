@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useSales } from '../../context/SalesContext';
@@ -47,6 +48,8 @@ const CustomerStatement: React.FC = () => {
   const { invoices = [] } = useFinance();
   const { customers = [], customerPayments = [] } = useSales();
   const { safeOpenPreview } = useDocumentStore();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const currency = companyConfig?.currencySymbol ||
     currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
@@ -81,6 +84,27 @@ const CustomerStatement: React.FC = () => {
     () => customers.find((c: any) => c.id === filters.customerId),
     [customers, filters.customerId]
   );
+
+  // Auto-load the customer when navigated here from the customer card
+  // (Clients.tsx passes { state: { customerId, customerName } }) or via
+  // ?customerId=. The applied route customer is recorded so a later manual
+  // "Change"/clear is not immediately overridden by the same route state.
+  const appliedRouteCustomerRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const routeState = (location.state as { customerId?: string; selectedId?: string; customerName?: string } | null) || null;
+    const queryCustomerId = String(searchParams.get('customerId') || '').trim();
+    const stateCustomerId = String(routeState?.customerId || routeState?.selectedId || '').trim();
+    const stateCustomerName = String(routeState?.customerName || '').trim();
+    let nextCustomerId = queryCustomerId || stateCustomerId;
+    if (!nextCustomerId && stateCustomerName) nextCustomerId = customers.find(c => c.name === stateCustomerName)?.id || '';
+    if (!nextCustomerId) return;
+    if (appliedRouteCustomerRef.current === nextCustomerId && filters.customerId !== nextCustomerId) return;
+    if (customers.some(c => c.id === nextCustomerId) && filters.customerId !== nextCustomerId) {
+      setFilter('customerId', nextCustomerId);
+      appliedRouteCustomerRef.current = nextCustomerId;
+    }
+  }, [searchParams, location.state, customers, filters.customerId]);
 
   const customerInvoices = useMemo(() => {
     if (!filters.customerId) return [];

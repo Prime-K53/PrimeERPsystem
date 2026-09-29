@@ -209,6 +209,19 @@ export function detectVerifiableDocumentType(data: any): VerifiableDocumentType 
   if (data.dnNumber || data.deliveryNoteNumber || data.delivery_number) return 'delivery_note';
   if (data.statementNumber) return 'statement';
   if ((data.paymentNumber || data.paymentId) && (data.supplierName || data.supplier_id || data.supplierId)) return 'supplier_payment';
+  // Examination invoices verify as invoices (same `invoices` store, EXM-
+  // numbered). Explicit other-type fields above win; otherwise EXM identity
+  // or examination markers route here so hand-built preview payloads
+  // (official number only, no invoiceNumber/documentType) still verify
+  // instead of falling back to the legacy human-readable QR.
+  const examNumber = String(data.invoiceNumber || data.id || data.number || '');
+  const examModule = String(data.originModule || data.origin_module || '').toLowerCase();
+  const examTitle = String(data.documentTitle || data.document_title || '').toLowerCase();
+  if (
+    /^EXM-/i.test(examNumber) ||
+    examModule === 'examination' ||
+    examTitle.includes('examination invoice')
+  ) return 'invoice';
   const id = String(data.paymentNumber || data.paymentId || data.statementNumber || data.contractNumber || data.id || data.number || '');
   if (/^STMT-/i.test(id)) return 'statement';
   if (/^PC-/i.test(id)) return 'printing_contract';

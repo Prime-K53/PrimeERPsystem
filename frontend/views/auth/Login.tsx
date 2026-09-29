@@ -177,7 +177,7 @@ const Login: React.FC = () => {
   };
 
   const inputClass =
-    'w-full h-[52px] pl-4 pr-4 bg-white border-[1.5px] rounded-xl text-[15px] text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none transition-colors duration-150 hover:border-slate-300 focus:border-green-600 focus:ring-2 focus:ring-green-600/15 disabled:opacity-60 disabled:bg-slate-50';
+    'w-full h-[52px] pl-4 pr-4 bg-white border-[1.5px] rounded-xl text-[15px] text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none transition-colors duration-150 hover:border-slate-300 focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 disabled:opacity-60 disabled:bg-slate-50';
   const companyLogoSrc = String(companyConfig?.logoBase64 || companyConfig?.logo || '').trim() || null;
   const errorId = 'login-error';
   const emailErrorId = 'login-email-error';
@@ -188,7 +188,7 @@ const Login: React.FC = () => {
       title="Your business, in perfect sync."
       brandTagline="Smart. Simple. Business Operations."
       showBrand={false}
-      formPanelClassName="bg-[#e9f7ef]"
+      formPanelClassName="bg-[#FEFDFB]"
       backLink={{
         to: resolveCustomerPortalLoginUrl(),
         label: 'Customer portal →',
@@ -218,12 +218,12 @@ const Login: React.FC = () => {
             />
           ) : (
             <>
-              <div className="w-28 h-28 rounded-[28px] flex items-center justify-center text-white shadow-md" style={{ background: 'linear-gradient(135deg, #16a34a, #15803d 100%)' }}>
+              <div className="w-28 h-28 rounded-[28px] flex items-center justify-center text-white shadow-md" style={{ background: 'linear-gradient(135deg, #146b60, #1f8577 100%)' }}>
                 <Building2 size={52} />
               </div>
               <div className="mt-3">
                 <div className="font-extrabold text-[24px] tracking-tight leading-none text-slate-900">
-                  Prime <span className="text-green-600">ERP</span>
+                  Prime <span className="text-teal-700">ERP</span>
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">Smart. Simple. Business Operations.</div>
               </div>
@@ -233,13 +233,13 @@ const Login: React.FC = () => {
         {/* ── Heading ── */}
         <div className="mb-6">
           <span className="flex items-center gap-1.5 mb-2.5" aria-hidden="true">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-700" />
-            <span className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-blue-700">Secure sign-in</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-700" />
+            <span className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-teal-700">Secure sign-in</span>
           </span>
           <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight">
-            {mfaRequired ? 'Check your authenticator' : (<>Welcome <span className="text-blue-700">Back</span></>)}
+            {mfaRequired ? 'Check your authenticator' : (<>Welcome <span className="text-teal-700">Back</span></>)}
           </h1>
-          <span aria-hidden="true" className="block h-1 w-16 mt-3 rounded-full" style={{ background: 'linear-gradient(90deg, #1e3a8a, #3b82f6 35%, #d99a3f 75%, #f0b35c)' }} />
+          <span aria-hidden="true" className="block h-1 w-16 mt-3 rounded-full" style={{ background: 'linear-gradient(90deg, #062f2b, #146b60 35%, #d99a3f 75%, #f0b35c)' }} />
           <p className="text-[13.5px] text-slate-500 mt-2.5 leading-relaxed">
             {mfaRequired
               ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
@@ -266,7 +266,7 @@ const Login: React.FC = () => {
                   Verification code
                 </label>
                 <div className="relative group">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors duration-150 group-focus-within:text-blue-600 flex">
+                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors duration-150 group-focus-within:text-teal-600 flex">
                     <KeyRound size={17} />
                   </div>
                   <input
@@ -289,18 +289,18 @@ const Login: React.FC = () => {
                   {Array.from({ length: 6 }).map((_, i) => (
                     <span
                       key={i}
-                      className={`h-1.5 rounded-full transition-all duration-200 ${i < mfaCode.length ? 'w-6 bg-blue-600' : 'w-1.5 bg-slate-200'}`}
+                       className={`h-1.5 rounded-full transition-all duration-200 ${i < mfaCode.length ? 'w-6 bg-teal-700' : 'w-1.5 bg-slate-200'}`}
                     />
                   ))}
                 </div>
                 <p className="text-[12px] text-slate-500 mt-2.5 text-center">Enter the 6-digit code from your authenticator app.</p>
               </div>
 
-              <button
+               <button
                 type="submit"
                 disabled={!canVerifyMfa}
-                className="w-full h-12 text-white text-[15px] font-bold rounded-xl flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 hover:shadow-[0_10px_28px_-8px_rgba(29,78,216,0.55)]"
-                style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', boxShadow: '0 10px 24px -10px rgba(29,78,216,0.55)' }}
+                className="w-full h-12 text-white text-[15px] font-bold rounded-xl flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 hover:shadow-[0_10px_28px_-8px_rgba(20,107,96,0.55)]"
+                style={{ background: 'linear-gradient(135deg, #146b60 0%, #1f8577 100%)', boxShadow: '0 10px 24px -10px rgba(20,107,96,0.55)' }}
               >
                 {submitting ? (
                   <>
@@ -315,7 +315,7 @@ const Login: React.FC = () => {
                 type="button"
                 onClick={() => { setMfaRequired(false); setMfaCode(''); setError(null); }}
                 disabled={submitting}
-                className="w-full h-11 text-[13.5px] font-bold text-slate-500 hover:text-blue-600 rounded-xl border border-slate-200 bg-white hover:border-blue-300 transition-all disabled:opacity-50"
+                 className="w-full h-11 text-[13.5px] font-bold text-slate-500 hover:text-teal-700 rounded-xl border border-slate-200 bg-white hover:border-teal-300 transition-all disabled:opacity-50"
               >
                 ← Back to email &amp; password
               </button>
@@ -338,7 +338,7 @@ const Login: React.FC = () => {
                       spellCheck={false}
                       value={email}
                       onChange={(e) => { setEmail(e.target.value); if (fieldError) setFieldError(null); }}
-                      className={`${inputClass} border-green-500 ${fieldError ? '!border-rose-400 !bg-rose-50/50 focus:!border-rose-500 focus:!ring-rose-500/15' : ''}`}
+                       className={`${inputClass} border-teal-500 ${fieldError ? '!border-rose-400 !bg-rose-50/50 focus:!border-rose-500 focus:!ring-rose-500/15' : ''}`}
                       placeholder="Email address"
                       autoComplete="email"
                       disabled={submitting}
@@ -395,7 +395,8 @@ const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="w-full h-[52px] text-white text-[15px] font-bold rounded-full flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed bg-black"
+                className="w-full h-[52px] text-white text-[15px] font-bold rounded-full flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 hover:shadow-[0_10px_28px_-8px_rgba(20,107,96,.55)]"
+                style={{ background: 'linear-gradient(135deg, #146b60, #1f8577 100%)', boxShadow: '0 10px 24px -10px rgba(20,107,96,.55)' }}
               >
                 {submitting ? (
                   <>
@@ -419,7 +420,7 @@ const Login: React.FC = () => {
                   aria-disabled="true"
                   title="Google sign-in coming soon"
                   onClick={(e) => e.preventDefault()}
-                  className="mt-3 w-full h-[52px] rounded-full bg-[#eef3fb] hover:bg-[#e4edfa] text-slate-800 text-[15px] font-semibold flex items-center justify-center gap-2.5 transition-colors cursor-pointer"
+                  className="mt-3 w-full h-[52px] rounded-full bg-[#f0f4f2] hover:bg-[#e6ede9] text-slate-800 text-[15px] font-semibold flex items-center justify-center gap-2.5 transition-colors cursor-pointer"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
                     <path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.45c-.28 1.48-1.12 2.73-2.4 3.57v2.97h3.89c2.28-2.1 3.56-5.2 3.56-8.73z" />
@@ -431,7 +432,7 @@ const Login: React.FC = () => {
                 </button>
                 <p className="mt-6 text-center text-[13.5px] text-slate-500">
                   Are you new user?{' '}
-                  <Link to="/register-company" className="font-bold text-green-600 hover:text-green-700 transition-colors">
+                    <Link to="/register-company" className="font-bold text-teal-700 hover:text-teal-800 transition-colors">
                     Sign up
                   </Link>
                 </p>

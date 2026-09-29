@@ -188,6 +188,24 @@ const defaultAdminApi = {
 // errors free of credential material; the caller (login hook) treats them
 // as best-effort and never breaks legacy authentication because of them.
 
+// Classify a transport failure into a safe, coarse category without
+// touching bodies, configs, headers, or request data.
+function classifyTransportError(err) {
+  const status = err && err.response && err.response.status;
+  if (typeof status === 'number') {
+    return { httpStatus: status, errorClass: 'HTTP' };
+  }
+  const code = String((err && err.code) || '');
+  const message = String((err && err.message) || '');
+  if (/ECONNABORTED|ETIMEDOUT/i.test(code) || /timeout|timed\s?out/i.test(message)) {
+    return { httpStatus: null, errorClass: 'TIMEOUT' };
+  }
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ENETUNREACH|EPIPE|socket|network/i.test(code + ' ' + message)) {
+    return { httpStatus: null, errorClass: 'NETWORK' };
+  }
+  return { httpStatus: null, errorClass: 'UNKNOWN' };
+}
+
 async function updateAuthUserPassword(authUserId, plaintextPassword) {
   if (!isUuidShape(authUserId)) {
     throw codedError('INVALID_INPUT', 'A valid Auth user id is required');
@@ -205,7 +223,15 @@ async function updateAuthUserPassword(authUserId, plaintextPassword) {
     );
   } catch (err) {
     const status = err && err.response && err.response.status;
-    throw codedError('AUTH_PASSWORD_UPDATE_FAILED', `Supabase Auth password update failed (status ${status || 'unknown'})`);
+    // Public contract preserved (coded error, no credential material).
+    // Safe transport facts are attached for route-level diagnostics only:
+    // httpStatus (number|null) + errorClass (HTTP|TIMEOUT|NETWORK|UNKNOWN).
+    // Never the body, config, headers, or request data.
+    const failure = codedError('AUTH_PASSWORD_UPDATE_FAILED', `Supabase Auth password update failed (status ${status || 'unknown'})`);
+    const { httpStatus, errorClass } = classifyTransportError(err);
+    failure.httpStatus = httpStatus;
+    failure.errorClass = errorClass;
+    throw failure;
   }
   return { ok: true };
 }

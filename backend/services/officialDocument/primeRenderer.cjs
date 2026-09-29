@@ -231868,6 +231868,10 @@ function detectVerifiableDocumentType(data2) {
   if (data2.dnNumber || data2.deliveryNoteNumber || data2.delivery_number) return "delivery_note";
   if (data2.statementNumber) return "statement";
   if ((data2.paymentNumber || data2.paymentId) && (data2.supplierName || data2.supplier_id || data2.supplierId)) return "supplier_payment";
+  const examNumber = String(data2.invoiceNumber || data2.id || data2.number || "");
+  const examModule = String(data2.originModule || data2.origin_module || "").toLowerCase();
+  const examTitle = String(data2.documentTitle || data2.document_title || "").toLowerCase();
+  if (/^EXM-/i.test(examNumber) || examModule === "examination" || examTitle.includes("examination invoice")) return "invoice";
   const id = String(data2.paymentNumber || data2.paymentId || data2.statementNumber || data2.contractNumber || data2.id || data2.number || "");
   if (/^STMT-/i.test(id)) return "statement";
   if (/^PC-/i.test(id)) return "printing_contract";

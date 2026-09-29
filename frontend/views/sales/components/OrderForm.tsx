@@ -942,8 +942,17 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         });
     }, [analysis.adjustmentBreakdown]);
 
+    // Tracks which document the edit form was initialized from. Background
+    // sync/polling refreshes hand the form a new `invoices` array (and often
+    // a new `initialData` object) with identical content; re-initializing
+    // from it would wipe unsaved edits — e.g. a just-removed item reappears
+    // because the unsaved removal is not in `initialData.items` yet.
+    const editInitRef = useRef<string | null>(null);
+
     useEffect(() => {
-            if (!initialData) {
+        if (!initialData) {
+            // Create mode: nothing initialized from a document.
+            editInitRef.current = null;
                 let key = 'invoice';
                 let collection: any[] = invoices;
 
@@ -975,6 +984,12 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
             setFormData((prev: any) => ({ ...prev, id: generateNextId(key, collection, companyConfig) }));
         } else {
+            // Edit mode: initialize once per document. Skip when the same
+            // document id was already initialized so background refreshes
+            // never clobber unsaved edits (removed/edited items, totals).
+            const editKey = initialData.id ? String(initialData.id) : '';
+            if (editKey && editInitRef.current === editKey) return;
+            editInitRef.current = editKey || null;
             const clonedItems = Array.isArray(initialData.items) ? cloneSerializable(initialData.items) : [];
             const { items: normalizedItems, otherChargesCalculated: normalizedOtherCharges } = normalizeOtherCharges(clonedItems);
             const clonedScheduledDates = Array.isArray(initialData.scheduledDates)

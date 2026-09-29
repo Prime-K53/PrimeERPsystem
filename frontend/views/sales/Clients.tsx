@@ -924,7 +924,7 @@ export const Clients: React.FC = () => {
           onEdit={c => { setSelectedCardCustomer(null); handleEdit(c); }}
           onCreateInvoice={c => { setSelectedCardCustomer(null); navigate('/sales-flow/invoices', { state: { action: 'create', customer: c.name } }); }}
           onCreateQuote={c => { setSelectedCardCustomer(null); navigate('/sales-flow/orders', { state: { action: 'create', customer: c.name } }); }}
-          onStatement={c => { setSelectedCardCustomer(null); navigate('/revenue/contacts', { state: { customerId: c.id } }); }}
+          onStatement={c => { setSelectedCardCustomer(null); navigate('/revenue/contacts', { state: { customerId: c.id, customerName: c.name } }); }}
           onWhatsApp={c => { setSelectedCardCustomer(null); if (c.phone) window.open(`https://wa.me/${c.phone.replace(/[^0-9]/g, '')}`, '_blank'); }}
           onPortalUpdate={c => { updateCustomer(c).catch(() => {}); }}
         />

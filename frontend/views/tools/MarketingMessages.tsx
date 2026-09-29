@@ -13,7 +13,7 @@ import { dbService } from '../../services/db';
 import { useAuth } from '../../context/AuthContext';
 import { useSales } from '../../context/SalesContext';
 import { whatsAppMarketingService, WhatsAppTemplate, WhatsAppCampaign, AutomationFlow, WhatsAppChat } from '../../services/whatsAppMarketingService';
-import { aiService, SmartReplySuggestion, AIConfig } from '../../services/aiService';
+import { aiService, SmartReplySuggestion, AIConfig, PROVIDER_DEFAULTS } from '../../services/aiService';
 import { whatsappClient, WhatsAppAccount } from '../../services/whatsappClientService';
 import { currencyService } from '../../services/currencyService';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
@@ -1454,7 +1454,7 @@ const MarketingMessages: React.FC = () => {
                 </div>
                 <div>
                   <h2 style={{ fontSize: 17, fontWeight: 700, color: ink, margin: 0 }}>AI Settings</h2>
-                  <p style={{ fontSize: 12, color: inkSoft, margin: '2px 0 0' }}>Configure AI for smart replies & templates</p>
+                  <p style={{ fontSize: 12, color: inkSoft, margin: '2px 0 0' }}>Shared with Settings → AI configuration — changes apply everywhere</p>
                 </div>
               </div>
               <button onClick={() => setShowAISettings(false)} className="prime-btn-secondary" style={{ padding: 8, border: `1px solid ${hairline}`, borderRadius: 8, background: paper, cursor: 'pointer', display: 'flex' }}><X size={18} style={{ color: inkSoft }} /></button>
@@ -1478,7 +1478,7 @@ const MarketingMessages: React.FC = () => {
 
               <div>
                 <label className="prime-label" style={{ fontSize: 11, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>AI Provider</label>
-                <select value={aiConfig.provider} onChange={(e) => { const provider = e.target.value; const defaults: Record<string, { endpoint: string; model: string }> = { openai: { endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }, anthropic: { endpoint: 'https://api.anthropic.com/v1', model: 'claude-3-haiku-20240307' }, ollama: { endpoint: 'http://localhost:11434/v1', model: 'llama3' }, openrouter: { endpoint: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' } }; const def = defaults[provider] || defaults.openai; setAIConfig(prev => ({ ...prev, provider, endpoint: def.endpoint, model: def.model })); }} className="prime-select" style={{ width: '100%', padding: '8px 12px', border: `1.4px solid ${hairline}`, borderRadius: 9, fontSize: 13, color: ink, background: '#fff', outline: 'none', cursor: 'pointer', boxSizing: 'border-box' }}>
+                <select value={aiConfig.provider} onChange={(e) => { const provider = e.target.value; const def = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.openai; setAIConfig(prev => ({ ...prev, provider, endpoint: def.endpoint, model: def.model })); }} className="prime-select" style={{ width: '100%', padding: '8px 12px', border: `1.4px solid ${hairline}`, borderRadius: 9, fontSize: 13, color: ink, background: '#fff', outline: 'none', cursor: 'pointer', boxSizing: 'border-box' }}>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic</option>
                   <option value="openrouter">OpenRouter</option>

@@ -233,3 +233,49 @@ export function isDistinctExaminationInvoiceCollision(
   }
   return true;
 }
+
+export interface ExaminationPreviewVerification {
+  invoiceNumber: string;
+  documentType: 'invoice';
+  verificationToken?: string;
+}
+
+/**
+ * Verification identity for a hand-built examination preview payload
+ * (production preview builds FinancialDoc straight from batch rows, so it
+ * carries no invoiceNumber/documentType/token and its QR would otherwise
+ * fall back to the legacy human-readable payload — unverifiable).
+ *
+ * Resolves the canonical invoice record by exact id/invoiceNumber, then
+ * returns the official number + invoice document type + stored token
+ * (issuing one through `issueToken` when the record predates tokens).
+ * Returns null when no canonical record resolves — the caller then keeps
+ * the legacy QR (nothing verifiable exists for that number).
+ * Never throws: issuance failures resolve to an untokened identity.
+ */
+export async function resolveExaminationPreviewVerification(
+  invoiceId: unknown,
+  invoices: ReadonlyArray<Record<string, unknown>> | null | undefined,
+  issueToken?: (recordId: string) => Promise<string | null | undefined>
+): Promise<ExaminationPreviewVerification | null> {
+  const key = cleanNavigationKey(invoiceId);
+  if (!key || !Array.isArray(invoices)) return null;
+  const record = findInvoiceByIdOrNumber(invoices, key);
+  if (!record) return null;
+  const number =
+    cleanNavigationKey(record.invoiceNumber) ?? cleanNavigationKey(record.id);
+  if (!number) return null;
+  let token = String(record.verificationToken ?? '').trim() || undefined;
+  if (!token && issueToken) {
+    try {
+      const issued = await issueToken(String(record.id ?? key));
+      const trimmed = String(issued ?? '').trim();
+      if (trimmed) token = trimmed;
+    } catch {
+      // Offline-safe: preview keeps working; QR stays legacy until synced.
+    }
+  }
+  return token
+    ? { invoiceNumber: number, documentType: 'invoice', verificationToken: token }
+    : { invoiceNumber: number, documentType: 'invoice' };
+}

@@ -248,7 +248,7 @@ const PageLoader = () => (
 const ProtectedRoute: React.FC<{ permission: string, children: React.ReactNode }> = ({ permission, children }) => {
   const { user, checkPermission } = useAuth();
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
   if (!checkPermission(permission)) {
     return (
@@ -350,7 +350,7 @@ const AppLayout: React.FC = () => {
 
   useEffect(() => {
     if (!user) {
-      navigate('/login', { replace: true });
+      navigate('/', { replace: true });
     }
   }, [user, navigate]);
 
@@ -831,17 +831,6 @@ const PortalRoutes = (
   </React.Fragment>
 );
 
-// Portal-aware landing: portal.primeerp.com defaults to the customer portal
-// login. Every other host goes straight to the admin login — there is no
-// longer a chooser / Gateway page.
-function getLandingPath(): string {
-  const host = String(window.location.hostname || '').toLowerCase();
-  if (host === 'portal.primeerp.com' || host.endsWith('.portal.primeerp.com')) {
-    return '/portal/login';
-  }
-  return '/login';
-}
-
 // Portal-aware identity: the customer portal lives under /portal (hash or
 // clean path) or the portal.primeerp.com host. It gets its own branding
 // (PrimePORTAL) everywhere the ERP would otherwise show "Prime ERP System".
@@ -957,15 +946,15 @@ const RootNavigator: React.FC = () => {
       <PwaInstallProvider>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-          <Route path="/" element={<Navigate to={getLandingPath()} replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/setup" element={<SetupWizard />} />
-          <Route path="/register-company" element={<CreateCompany />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/install" element={<PwaInstallPage />} />
-          {PortalRoutes}
-            <Route path="*" element={<Navigate to={getLandingPath()} replace />} />
+            <Route path="/" element={<Login />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/setup" element={<SetupWizard />} />
+            <Route path="/register-company" element={<CreateCompany />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/install" element={<PwaInstallPage />} />
+            {PortalRoutes}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </PwaInstallProvider>

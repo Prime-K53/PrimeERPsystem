@@ -68,11 +68,19 @@ function seedLoginSuccess({ mapped = true, mfa = false } = {}) {
 
 function captureConsole() {
   const logged = [];
-  const orig = { log: console.log, warn: console.warn, error: console.error };
+  const orig = { log: console.log, info: console.info, warn: console.warn, error: console.error };
   console.log = (...a) => { logged.push(a.join(' ')); };
+  console.info = (...a) => { logged.push(a.join(' ')); };
   console.warn = (...a) => { logged.push(a.join(' ')); };
   console.error = (...a) => { logged.push(a.join(' ')); };
-  return { logged, restore: () => { console.log = orig.log; console.warn = orig.warn; console.error = orig.error; } };
+  return { logged, restore: () => { console.log = orig.log; console.info = orig.info; console.warn = orig.warn; console.error = orig.error; } };
+}
+
+// Extract parsed [PortalHybrid] events from captured console output.
+function hybridEvents(logged) {
+  return logged
+    .filter((line) => line.includes('[PortalHybrid]'))
+    .map((line) => JSON.parse(line.slice(line.indexOf('{'))));
 }
 
 beforeEach(() => {
@@ -283,5 +291,136 @@ describe('hybrid login hook', () => {
     // writes (session + login history) occur.
     expect(portalAuthService.createSession).toHaveBeenCalledTimes(1);
     expect(portalAuthService.recordLoginHistory).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('hybrid observability (5B-2M)', () => {
+  const adminModule = () => require('../services/supabasePortalAuthAdmin.cjs');
+  const realUpdate = adminServiceActual.updateAuthUserPassword;
+  afterEach(() => {
+    adminModule().updateAuthUserPassword = realUpdate;
+  });
+
+  async function loginAndCapture(body) {
+    const { logged, restore } = captureConsole();
+    let res;
+    try {
+      res = await request(buildApp())
+        .post('/api/portal/auth/login-password')
+        .send(body)
+        .expect(200);
+    } finally {
+      restore();
+    }
+    return { res, events: hybridEvents(logged), logged };
+  }
+
+  test('1: success produces HYBRID_ADMIN_UPDATE_SUCCEEDED', async () => {
+    adminModule().updateAuthUserPassword = jest.fn().mockResolvedValue({ ok: true });
+    const { events } = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    expect(events.map((e) => e.event)).toEqual([
+      'HYBRID_HOOK_ENTERED',
+      'HYBRID_ADMIN_UPDATE_ATTEMPTED',
+      'HYBRID_ADMIN_UPDATE_SUCCEEDED',
+    ]);
+    for (const e of events) {
+      expect(e.portalUserId).toBe('pusr_hyb_1');
+      expect(typeof e.timestamp).toBe('string');
+    }
+  });
+
+  test.each([400, 401, 403, 404, 500])('HTTP %i produces FAILED with httpStatus', async (status) => {
+    const err = new Error('x');
+    err.code = 'AUTH_PASSWORD_UPDATE_FAILED';
+    err.httpStatus = status;
+    err.errorClass = 'HTTP';
+    adminModule().updateAuthUserPassword = jest.fn().mockRejectedValue(err);
+    const { res, events } = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    expect(res.body.message).toBe('Login successful');
+    const failed = events.find((e) => e.event === 'HYBRID_ADMIN_UPDATE_FAILED');
+    expect(failed).toBeDefined();
+    expect(failed.failureCode).toBe('AUTH_PASSWORD_UPDATE_FAILED');
+    expect(failed.httpStatus).toBe(status);
+    expect(failed.errorClass).toBe('HTTP');
+  });
+
+  test('7: timeout produces errorClass=TIMEOUT', async () => {
+    const err = new Error('timeout of 8000ms exceeded');
+    err.code = 'AUTH_PASSWORD_UPDATE_FAILED';
+    err.httpStatus = null;
+    err.errorClass = 'TIMEOUT';
+    adminModule().updateAuthUserPassword = jest.fn().mockRejectedValue(err);
+    const { events } = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    const failed = events.find((e) => e.event === 'HYBRID_ADMIN_UPDATE_FAILED');
+    expect(failed.errorClass).toBe('TIMEOUT');
+    expect(failed.httpStatus).toBe('UNKNOWN');
+  });
+
+  test('8: network failure produces errorClass=NETWORK', async () => {
+    const err = new Error('socket hang up');
+    err.code = 'AUTH_PASSWORD_UPDATE_FAILED';
+    err.httpStatus = null;
+    err.errorClass = 'NETWORK';
+    adminModule().updateAuthUserPassword = jest.fn().mockRejectedValue(err);
+    const { events } = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    expect(events.find((e) => e.event === 'HYBRID_ADMIN_UPDATE_FAILED').errorClass).toBe('NETWORK');
+  });
+
+  test('9: unexpected exception produces errorClass=UNKNOWN', async () => {
+    adminModule().updateAuthUserPassword = jest.fn().mockRejectedValue(new Error('weird'));
+    const { events } = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    const failed = events.find((e) => e.event === 'HYBRID_ADMIN_UPDATE_FAILED');
+    expect(failed.errorClass).toBe('UNKNOWN');
+    expect(failed.failureCode).toBe('AUTH_PASSWORD_UPDATE_FAILED');
+  });
+
+  test('10/11/12: diagnostics leak no password, auth header, or service key', async () => {
+    const err = new Error('Supabase Auth password update failed (status 500)');
+    err.code = 'AUTH_PASSWORD_UPDATE_FAILED';
+    err.httpStatus = 500;
+    err.errorClass = 'HTTP';
+    adminModule().updateAuthUserPassword = jest.fn().mockRejectedValue(err);
+    const { logged } = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    const dump = logged.join('\n');
+    expect(dump).not.toContain(FAKE_PASSWORD);
+    expect(dump).not.toContain('Authorization');
+    expect(dump).not.toContain('sb_secret_hybrid_test_key');
+    expect(dump).not.toContain('Bearer');
+    expect(dump).not.toContain('hyb@example.com');
+  });
+
+  test('13/14: failed update still succeeds login with unchanged envelope', async () => {
+    const err = new Error('x');
+    err.code = 'AUTH_PASSWORD_UPDATE_FAILED';
+    err.httpStatus = 500;
+    err.errorClass = 'HTTP';
+    adminModule().updateAuthUserPassword = jest.fn().mockRejectedValue(err);
+    const { res } = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    expect(res.body.message).toBe('Login successful');
+    expect(res.body.user).toEqual({
+      id: 'pusr_hyb_1', customer_id: 'CUST-HYB', email: 'hyb@example.com',
+      full_name: 'Hyb User', phone: null,
+    });
+    expect(typeof res.body.access_token).toBe('string');
+  });
+
+  test('15: instrumentation creates no additional session', async () => {
+    adminModule().updateAuthUserPassword = jest.fn().mockResolvedValue({ ok: true });
+    await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    expect(portalAuthService.createSession).toHaveBeenCalledTimes(1);
+  });
+
+  test('mapping states emit MISSING/INVALID without Admin call', async () => {
+    const adminMock = adminModule();
+    adminMock.updateAuthUserPassword = jest.fn();
+    seedLoginSuccess({ mapped: false });
+    const first = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    expect(first.events.map((e) => e.event)).toEqual(['HYBRID_HOOK_ENTERED', 'HYBRID_MAPPING_MISSING']);
+    portalAuthService.getPortalUserById.mockResolvedValue({
+      id: 'pusr_other', customer_id: 'CUST-X', email: 'o@example.com', auth_user_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    });
+    const second = await loginAndCapture({ email: 'hyb@example.com', password: FAKE_PASSWORD });
+    expect(second.events.map((e) => e.event)).toEqual(['HYBRID_HOOK_ENTERED', 'HYBRID_MAPPING_INVALID']);
+    expect(adminMock.updateAuthUserPassword).not.toHaveBeenCalled();
   });
 });

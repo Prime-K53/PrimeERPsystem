@@ -10,9 +10,11 @@ vi.mock('../../services/db', () => ({
   },
 }));
 
-vi.mock('../../services/aiService', () => ({
+vi.mock('../../services/ai/aiService', () => ({
   aiService: {
-    generateAIResponse: vi.fn(),
+    generateTextStrict: vi.fn(),
+    generateChatStrict: vi.fn(),
+    getDebugInfo: vi.fn(() => ({ provider: 'openai', model: 'test-model', baseUrl: '', hasApiKey: true, configured: true, enabled: true })),
   },
 }));
 
@@ -32,7 +34,7 @@ vi.mock('../../services/whatsAppMarketingService', () => ({
 }));
 
 import { dbService } from '../../services/db';
-import { aiService } from '../../services/aiService';
+import { aiService } from '../../services/ai/aiService';
 import { whatsappClient } from '../../services/whatsappClientService';
 import { buildCommunicationContext, diffFinancialFacts } from '../../services/communication/communicationContextBuilder';
 import { validateDraftAgainstFacts, injectFactsPostGeneration } from '../../services/communication/communicationValidation';
@@ -148,18 +150,18 @@ describe('communication context (ERP facts)', () => {
 
 describe('AI draft generation (language only)', () => {
   it('passes verified ERP facts to the existing AI service', async () => {
-    vi.mocked(aiService.generateAIResponse).mockResolvedValue('Dear ABC School, your balance is K145,000.00.');
+    vi.mocked(aiService.generateTextStrict).mockResolvedValue('Dear ABC School, your balance is K145,000.00.');
     const ctx = await buildCommunicationContext('payment_reminder', 'C-ABC', {
       invoicesOverride: INVOICES as unknown as never, paymentsOverride: [], openingBalanceOverride: 0,
     });
     const res = await generateCommunicationDraft(ctx, { tone: 'professional', length: 'standard' });
     expect(res.aiGenerated).toBe(true);
-    const prompt = vi.mocked(aiService.generateAIResponse).mock.calls[0][0] as string;
+    const prompt = vi.mocked(aiService.generateTextStrict).mock.calls[0][0] as string;
     expect(prompt).toContain('ABC School');
   });
 
   it('falls back to deterministic ERP template when AI is unavailable', async () => {
-    vi.mocked(aiService.generateAIResponse).mockRejectedValue(new Error('AI not configured'));
+    vi.mocked(aiService.generateTextStrict).mockRejectedValue(new Error('AI not configured'));
     const ctx = await buildCommunicationContext('payment_reminder', 'C-ABC', {
       invoicesOverride: INVOICES as unknown as never, paymentsOverride: [], openingBalanceOverride: 0,
     });

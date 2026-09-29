@@ -21,8 +21,12 @@ vi.mock('../../services/db', () => ({
   },
 }));
 
-vi.mock('../../services/aiService', () => ({
-  aiService: { generateAIResponse: vi.fn() },
+vi.mock('../../services/ai/aiService', () => ({
+  aiService: {
+    generateTextStrict: vi.fn(),
+    generateChatStrict: vi.fn(),
+    getDebugInfo: vi.fn(() => ({ provider: 'openai', model: 'test-model', baseUrl: '', hasApiKey: true, configured: true, enabled: true })),
+  },
 }));
 
 vi.mock('../../services/whatsappClientService', () => ({
@@ -62,7 +66,7 @@ vi.mock('../../context/AuthContext', () => ({
 }));
 
 import { dbService } from '../../services/db';
-import { aiService } from '../../services/aiService';
+import { aiService } from '../../services/ai/aiService';
 
 function mockStores() {
   vi.mocked(dbService.getAll).mockImplementation(async (store: string) => {
@@ -84,7 +88,7 @@ describe('CommunicationCenter generatedDraft lifecycle', () => {
   it('switching customer clears the previous AI draft from the audit record', async () => {
     // First Generate → DRAFT-A, second Generate (after switch) → DRAFT-B.
     let calls = 0;
-    vi.mocked(aiService.generateAIResponse).mockImplementation(async () => {
+    vi.mocked(aiService.generateTextStrict).mockImplementation(async () => {
       calls += 1;
       return calls === 1 ? 'Hello ABC School, thank you.' : 'Hello XYZ Ltd, thank you.';
     });

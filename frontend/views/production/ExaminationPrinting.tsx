@@ -54,6 +54,8 @@ import { MarketAdjustment, BOMTemplate, ExamPricingResult, SubjectJob, Productio
 import { dbService } from '../../services/db';
 import { SafeFormulaEngine } from '../../services/formulaEngine';
 import { inventoryTransactionService } from '../../services/inventoryTransactionService';
+import { transactionService } from '../../services/transactionService';
+import { resolveExaminationPreviewVerification } from '../../utils/invoiceIdentity';
 import { currencyService } from '../../services/currencyService';
 import { NewExamJobModal } from './NewExamJobModal';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
@@ -73,7 +75,7 @@ const ExaminationPrinting: React.FC = () => {
   const { addSale, customers } = useSales();
   const { notify, user } = useAuth();
   const { inventory, updateStock, addItem } = useInventory();
-  const { postJournalEntry, addRecurringInvoice, recurringInvoices, deleteRecurringInvoice } = useFinance();
+  const { postJournalEntry, addRecurringInvoice, recurringInvoices, deleteRecurringInvoice, invoices } = useFinance();
   const { companyConfig, updateCompanyConfig } = useAuth();
 
   const [schools, setSchools] = useState<School[]>([]);
@@ -880,7 +882,7 @@ const ExaminationPrinting: React.FC = () => {
     });
   };
 
-  const handlePreviewInvoice = (batchId: string) => {
+  const handlePreviewInvoice = async (batchId: string) => {
     const batchExams = queue.filter(e => e.batch_id === batchId || e.invoiceId === batchId);
     if (batchExams.length === 0) return;
 
@@ -913,6 +915,16 @@ const ExaminationPrinting: React.FC = () => {
 
     const data: FinancialDoc = {
       number: first.invoiceId || first.batch_id,
+      // Verification identity (public QR): resolve the canonical invoice
+      // record so the preview carries the official number + stored token
+      // (issued when missing). Without these the QR falls back to the
+      // legacy human-readable payload and cannot be publicly verified.
+      ...(await resolveExaminationPreviewVerification(
+        first.invoiceId || first.batch_id,
+        invoices as any,
+        (recordId: string) =>
+          transactionService.getOrIssueInvoiceVerificationToken(recordId).then(r => r.token)
+      ).catch(() => null) ?? {}),
       date: new Date(first.created_at || Date.now()).toLocaleDateString(),
       clientName: first.school_name,
       address: customerAddress,

@@ -142,13 +142,40 @@ router.post('/login-password', async (req, res) => {
     // request-scoped plaintext for the already-mapped identity. Any failure
     // is swallowed (coded log only) so legacy login can never break because
     // of migration. Missing mapping → skip silently (normal pre-migration).
+    // Safe observability (Phase 5B-2M): structured events carry ONLY
+    // portalUserId + event + failureCode/httpStatus/errorClass + timestamp.
+    // Never email, password, hashes, UUIDs (except portalUserId), headers,
+    // bodies, tokens, or cookies.
+    const hybridDiag = (event, extra = {}) => {
+      console.info('[PortalHybrid] ' + JSON.stringify({
+        portalUserId: user.id,
+        event,
+        timestamp: new Date().toISOString(),
+        ...extra,
+      }));
+    };
     try {
+      hybridDiag('HYBRID_HOOK_ENTERED');
       const mapped = await portalAuthService.getPortalUserById(user.id);
       const authUserId = mapped && mapped.auth_user_id ? String(mapped.auth_user_id).trim() : '';
-      if (authUserId !== '' && String(mapped.id) === String(user.id) && UUID_RE.test(authUserId)) {
+      if (authUserId === '') {
+        hybridDiag('HYBRID_MAPPING_MISSING');
+      } else if (String(mapped.id) !== String(user.id) || !UUID_RE.test(authUserId)) {
+        hybridDiag('HYBRID_MAPPING_INVALID');
+      } else {
         const { updateAuthUserPassword } = require('../services/supabasePortalAuthAdmin.cjs');
-        await updateAuthUserPassword(authUserId, password);
-        console.log('[PortalAuth] Supabase password established for portal user:', user.id);
+        hybridDiag('HYBRID_ADMIN_UPDATE_ATTEMPTED');
+        try {
+          await updateAuthUserPassword(authUserId, password);
+          hybridDiag('HYBRID_ADMIN_UPDATE_SUCCEEDED');
+          console.log('[PortalAuth] Supabase password established for portal user:', user.id);
+        } catch (adminErr) {
+          hybridDiag('HYBRID_ADMIN_UPDATE_FAILED', {
+            failureCode: (adminErr && adminErr.code) || 'AUTH_PASSWORD_UPDATE_FAILED',
+            httpStatus: (adminErr && typeof adminErr.httpStatus === 'number') ? adminErr.httpStatus : 'UNKNOWN',
+            errorClass: (adminErr && adminErr.errorClass) || 'UNKNOWN',
+          });
+        }
       }
     } catch (hybridErr) {
       console.warn('[PortalAuth] Supabase password sync skipped:', (hybridErr && hybridErr.code) || 'AUTH_SYNC_FAILED');
