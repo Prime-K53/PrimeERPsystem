@@ -78,6 +78,45 @@ function classifyDiagRowShape(r) {
   }
 }
 
+// ─── Temporary upstream-error diagnostics (EXM-P726/021 only) ─────────────
+// Surfaces the Supabase/PostgREST rejection behind fetch failures. Logs only
+// non-sensitive upstream fields (status, error code/message/hint/details,
+// benign response headers, query path + filter structure). Never logs hosts
+// with credentials, keys, auth headers, tokens, or customer data. The wrapped
+// query is rethrown unchanged — lookup semantics are identical.
+function diagSafeUpstream(err) {
+  try {
+    const resp = err && err.response ? err.response : null;
+    const out = {
+      upstreamStatus: resp && resp.status ? Number(resp.status) : null,
+      upstreamCode: err && err.code ? String(err.code).slice(0, 80) : null,
+      upstreamMessage: null,
+      upstreamHint: null,
+      upstreamDetails: null,
+      upstreamHeaders: {},
+    };
+    const data = resp ? resp.data : null;
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      if (data.code !== undefined) out.upstreamCode = String(data.code).slice(0, 80);
+      if (data.message !== undefined) out.upstreamMessage = String(data.message).slice(0, 500);
+      if (data.hint !== undefined) out.upstreamHint = String(data.hint).slice(0, 500);
+      if (data.details !== undefined) out.upstreamDetails = String(data.details).slice(0, 500);
+      if (out.upstreamMessage === null) out.upstreamMessage = JSON.stringify(data).slice(0, 500);
+    } else if (data !== null && data !== undefined) {
+      out.upstreamMessage = String(data).slice(0, 500);
+    } else if (err && err.message) {
+      out.upstreamMessage = String(err.message).slice(0, 200);
+    }
+    const headers = resp && resp.headers && typeof resp.headers === 'object' ? resp.headers : {};
+    for (const k of ['content-type', 'content-length', 'date', 'server']) {
+      if (headers[k] !== undefined) out.upstreamHeaders[k] = String(headers[k]).slice(0, 120);
+    }
+    return out;
+  } catch {
+    return { upstreamStatus: null, upstreamCode: null, upstreamMessage: 'unavailable', upstreamHint: null, upstreamDetails: null, upstreamHeaders: {} };
+  }
+}
+
 function getConfig() {
   return {
     base: String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, ''),
@@ -401,20 +440,54 @@ async function fetchDocumentRows(type, documentNumber, httpGet, axiosImpl) {
   // query both envelope and flat shapes in one round trip.
   const flatOrs = entry.idFields.map((f) => `${f}.eq."${quoted}"`);
   const rows = [];
+  const diagFetch = type === DIAG_DOC_TYPE && documentNumber === DIAG_DOC_NUMBER;
   for (const table of tables) {
-    const { data } = await get(`${base}/rest/v1/${table}`, {
-      params: { select: '*', or: `(${ors.join(',')})`, limit: 5 },
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-      timeout: 15000,
-    });
-    if (Array.isArray(data)) rows.push(...data);
-    if (rows.length === 0) {
-      const flat = await get(`${base}/rest/v1/${table}`, {
-        params: { select: '*', or: `(${flatOrs.join(',')})`, limit: 5 },
+    const envelopeOr = `(${ors.join(',')})`;
+    let data;
+    try {
+      ({ data } = await get(`${base}/rest/v1/${table}`, {
+        params: { select: '*', or: envelopeOr, limit: 5 },
         headers: { apikey: key, Authorization: `Bearer ${key}` },
         timeout: 15000,
-      });
-      if (Array.isArray(flat.data)) rows.push(...flat.data);
+      }));
+    } catch (err) {
+      if (diagFetch) {
+        diagLog({
+          stage: 'upstream-error',
+          query: 'envelope',
+          method: 'GET',
+          path: `/rest/v1/${table}`,
+          paramNames: ['select', 'or', 'limit'],
+          orFilter: envelopeOr,
+          ...diagSafeUpstream(err),
+        });
+      }
+      throw err;
+    }
+    if (Array.isArray(data)) rows.push(...data);
+    if (rows.length === 0) {
+      const flatOr = `(${flatOrs.join(',')})`;
+      try {
+        const flat = await get(`${base}/rest/v1/${table}`, {
+          params: { select: '*', or: flatOr, limit: 5 },
+          headers: { apikey: key, Authorization: `Bearer ${key}` },
+          timeout: 15000,
+        });
+        if (Array.isArray(flat.data)) rows.push(...flat.data);
+      } catch (err) {
+        if (diagFetch) {
+          diagLog({
+            stage: 'upstream-error',
+            query: 'flat',
+            method: 'GET',
+            path: `/rest/v1/${table}`,
+            paramNames: ['select', 'or', 'limit'],
+            orFilter: flatOr,
+            ...diagSafeUpstream(err),
+          });
+        }
+        throw err;
+      }
     }
     if (rows.length > 0 && tables.length > 1) break;
   }
