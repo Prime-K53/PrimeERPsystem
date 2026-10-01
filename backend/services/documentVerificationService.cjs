@@ -37,6 +37,47 @@ const crypto = require('crypto');
 
 const GENERIC_FAILURE = 'Document could not be verified against Prime Printing records.';
 
+// ─── Temporary scoped diagnostics (EXM-P726/021 only, observational) ───────
+// READ-ONLY: logs structural facts for one invoice; never alters lookup
+// semantics, return values, or HTTP responses. Never logs token values,
+// secrets, headers, or customer data — only booleans, lengths, key names,
+// and one-way SHA-256 fingerprints.
+const DIAG_DOC_TYPE = 'invoice';
+const DIAG_DOC_NUMBER = 'EXM-P726/021';
+
+function diagFingerprint(value) {
+  try {
+    return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
+  } catch {
+    return 'unavailable';
+  }
+}
+
+function isDiagTarget(type, clean) {
+  return type === DIAG_DOC_TYPE && clean === DIAG_DOC_NUMBER;
+}
+
+function diagLog(fields) {
+  try {
+    console.log('[VerifyDiag]', JSON.stringify({ target: DIAG_DOC_NUMBER, ...fields }));
+  } catch {
+    // Diagnostics must never break verification.
+  }
+}
+
+function classifyDiagRowShape(r) {
+  try {
+    if (!r || typeof r !== 'object' || Array.isArray(r)) return 'ROW_SHAPE_UNEXPECTED';
+    if (r.data && typeof r.data === 'object' && !Array.isArray(r.data) && r.data.data && typeof r.data.data === 'object') {
+      return 'DOUBLE_WRAPPED_ENVELOPE';
+    }
+    if (r.data && typeof r.data === 'object' && !Array.isArray(r.data)) return 'CANONICAL_ENVELOPE';
+    return 'FLAT_ROW';
+  } catch {
+    return 'ROW_SHAPE_UNEXPECTED';
+  }
+}
+
 function getConfig() {
   return {
     base: String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, ''),
@@ -402,16 +443,108 @@ async function verifyDocument(documentType, documentNumber, token, deps) {
   if (!REGISTRY[documentType]) return { ok: false };
   const clean = sanitizeDocumentNumber(documentNumber);
   const supplied = String(token || '').trim();
-  if (!clean || !supplied) return { ok: false };
+  if (!clean || !supplied) {
+    if (String(documentType) === DIAG_DOC_TYPE && String(documentNumber || '').trim() === DIAG_DOC_NUMBER) {
+      diagLog({ stage: 'reject-input', clean: clean || null, tokenSupplied: Boolean(supplied) });
+    }
+    return { ok: false };
+  }
+  const diag = isDiagTarget(documentType, clean);
   const httpGet = deps && deps.httpGet;
+  if (diag) {
+    const cfg = getConfig();
+    diagLog({
+      stage: 'start',
+      documentType,
+      sanitizedDocumentNumber: clean,
+      tokenSupplied: true,
+      tokenLength: supplied.length,
+      tokenFingerprint: diagFingerprint(supplied),
+      registryTable: (REGISTRY[documentType].tables || [REGISTRY[documentType].table]).join(','),
+      idFields: REGISTRY[documentType].idFields,
+      storeConfigured: Boolean(cfg.base && cfg.key),
+    });
+  }
   let rows;
   try {
     rows = await fetchDocumentRows(documentType, clean, httpGet);
-  } catch {
+  } catch (err) {
+    if (diag) {
+      diagLog({
+        stage: 'store-error',
+        category: 'STORE_ERROR',
+        message: err && err.message ? String(err.message).slice(0, 200) : 'unknown',
+        code: err && err.code ? String(err.code).slice(0, 80) : null,
+        status: err && err.response && err.response.status ? Number(err.response.status) : null,
+      });
+    }
     return { ok: false };
+  }
+  if (diag) {
+    const list = Array.isArray(rows) ? rows : [];
+    const detail = list.slice(0, 5).map((r) => {
+      const shape = classifyDiagRowShape(r);
+      const d = (r && typeof r === 'object' && r.data && typeof r.data === 'object' && !Array.isArray(r.data)) ? r.data : r;
+      const dObj = d && typeof d === 'object' ? d : {};
+      const idMatch = String(dObj.id ?? '') === clean;
+      const numberMatch = String(dObj.invoiceNumber ?? '') === clean;
+      const storedLen = String(dObj.verificationToken || '').length;
+      return {
+        shape,
+        hasData: Boolean(r && typeof r === 'object' && r.data !== undefined),
+        dataType: r && typeof r === 'object' && r.data !== undefined ? (Array.isArray(r.data) ? 'array' : typeof r.data) : 'absent',
+        dataKeys: dObj && typeof dObj === 'object' ? Object.keys(dObj).slice(0, 25) : [],
+        idMatch,
+        invoiceNumberMatch: numberMatch,
+        hasVerificationToken: storedLen > 0,
+        verificationTokenLength: storedLen,
+        tokenFingerprint: storedLen > 0 ? diagFingerprint(dObj.verificationToken) : null,
+        tokenMatchesSupplied: storedLen > 0 ? timingSafeEqualHex(supplied, String(dObj.verificationToken || '')) : false,
+      };
+    });
+    const anyId = detail.some((x) => x.idMatch);
+    const anyNum = detail.some((x) => x.invoiceNumberMatch);
+    const anyTok = detail.some((x) => x.hasVerificationToken);
+    const doubleWrapped = detail.some((x) => x.shape === 'DOUBLE_WRAPPED_ENVELOPE');
+    diagLog({
+      stage: 'rows',
+      rowCount: list.length,
+      anyIdMatch: anyId,
+      anyInvoiceNumberMatch: anyNum,
+      anyVerificationTokenPresent: anyTok,
+      anyDoubleWrappedEnvelope: doubleWrapped,
+      rows: detail,
+    });
   }
   const entry = REGISTRY[documentType];
   const match = matchRow(documentType, clean, rows, supplied);
+  if (diag) {
+    if (match) {
+      diagLog({ stage: 'result', matched: true, category: 'MATCH' });
+    } else {
+      const list = Array.isArray(rows) ? rows : [];
+      let category = 'OTHER';
+      if (list.length === 0) {
+        category = 'NO_ROWS';
+      } else {
+        const ds = list.map((r) => (r && typeof r === 'object' && r.data && typeof r.data === 'object' && !Array.isArray(r.data) ? r.data : r));
+        const numHit = ds.some((d) => d && typeof d === 'object'
+          && (String(d.id ?? '') === clean || String(d.invoiceNumber ?? '') === clean));
+        if (!numHit) {
+          const innerHit = list.some((r) => {
+            const inner = r && typeof r === 'object' && r.data && typeof r.data === 'object' ? r.data.data : null;
+            return inner && typeof inner === 'object'
+              && (String(inner.id ?? '') === clean || String(inner.invoiceNumber ?? '') === clean);
+          });
+          category = innerHit ? 'ROW_SHAPE_UNEXPECTED' : 'NUMBER_NOT_FOUND';
+        } else {
+          const withTok = ds.some((d) => d && typeof d === 'object' && String(d.verificationToken || ''));
+          category = withTok ? 'TOKEN_MISMATCH' : 'TOKEN_MISSING';
+        }
+      }
+      diagLog({ stage: 'result', matched: false, category });
+    }
+  }
   if (!match) return { ok: false };
   return { ok: true, data: entry.toSafe(match, getConfig().company, entry.statusOf(match)) };
 }
