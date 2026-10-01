@@ -251,8 +251,25 @@ export const persistExaminationInvoiceToFinance = async (
     return { synced: false, fallbackUsed: false, invoiceId: null, message: 'No invoice payload to sync.' };
   }
 
-  let invoice = mapExaminationPayloadToInvoice(payload);
+  // Canonical-path guard: examination invoices MUST originate from a
+  // proper ExaminationContext (batchId + originModule). Callers lacking
+  // this context are redirected to the canonical path — they must NOT
+  // produce invoices in the `invoices` store, because those rows would
+  // be invisible to public document verification.
   const batchId = String(payload?.batchId || payload?.origin_batch_id || '').trim();
+  const originModule = String(payload?.originModule || payload?.origin_module || '').trim();
+  if (!batchId || originModule !== 'examination') {
+    return {
+      synced: false,
+      fallbackUsed: false,
+      invoiceId: null,
+      message:
+        'Rejected: non-canonical examination-invoice call (missing batchId or wrong originModule). ' +
+        'Use examinationBatchService.generateInvoice() — the backend and embedded draft paths are quarantined.',
+    };
+  }
+
+  let invoice = mapExaminationPayloadToInvoice(payload);
   if (batchId) {
     const localBatch = await dbService.get<any>('examinationBatches', batchId);
     if (localBatch) {
@@ -394,4 +411,47 @@ export const persistExaminationInvoiceToFinance = async (
       };
     }
   }
+};
+
+/**
+ * Non-destructive reconciliation for legacy tokenless examination invoices.
+ *
+ * Scans the `invoices` store for examination invoices that predate
+ * token minting (no verificationToken, EXM- numbered or originModule
+ * === 'examination'). For each tokenless record, mints a fresh
+ * verificationToken and persists it. Existing tokens are never
+ * overwritten. Returns the count of reconciled invoices.
+ *
+ * Safe to run repeatedly — idempotent.
+ */
+export const reconcileLegacyExaminationInvoices = async (): Promise<{
+  reconciled: number;
+  errors: string[];
+}> => {
+  const errors: string[] = [];
+  let reconciled = 0;
+  let all: Record<string, unknown>[] = [];
+  try {
+    all = (await dbService.getAll<Record<string, unknown>>('invoices')) || [];
+  } catch (err: any) {
+    errors.push(`scan failed: ${err?.message || 'unknown'}`);
+    return { reconciled, errors };
+  }
+  const rows = (all || []).filter((row) => {
+    if (!row || typeof row !== 'object') return false;
+    if (row.verificationToken) return false;
+    const id = String(row.id || row.invoiceNumber || '');
+    const originModule = String(row.originModule || row.origin_module || '');
+    return /^EXM-/i.test(id) || originModule === 'examination';
+  });
+  for (const row of rows) {
+    try {
+      const tokenedInvoice = ensureInvoiceVerificationToken(row as Invoice);
+      await dbService.put('invoices', tokenedInvoice);
+      reconciled++;
+    } catch (err: any) {
+      errors.push(`id=${String(row.id)}: ${err?.message || 'reconciliation failed'}`);
+    }
+  }
+  return { reconciled, errors };
 };
