@@ -1369,8 +1369,9 @@ class ExaminationJobService {
 
     const insufficient = lines.find(line => (stockById.get(line.itemId) || 0) < line.quantity);
     if (insufficient) {
-      throw new Error(
-        `Insufficient stock for ${insufficient.itemName}. Available: ${stockById.get(insufficient.itemId) || 0}, required: ${roundToCurrency(insufficient.quantity)}.`
+      logger.warn(
+        `Low stock for ${insufficient.itemName}. Available: ${stockById.get(insufficient.itemId) || 0}, required: ${roundToCurrency(insufficient.quantity)}. ` +
+        `Proceeding with sale/consumption anyway; stock may go negative.`
       );
     }
 
