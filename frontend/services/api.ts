@@ -898,6 +898,17 @@ export const api = {
       const tokenedInvoice = ensureDocumentVerificationToken(invoice);
       await dbService.put('invoices', tokenedInvoice);
 
+      // Phase 5 — Transport Budget sales allocation for legacy exam-batch
+      // invoices posted outside processInvoice (post-commit, fire-and-forget;
+      // duplicates dedupe on the economic idempotency key).
+      import('./transportBudgetSalesAllocation').then(
+        ({ allocateForPostedInvoice, defaultSalesAllocationDeps, fireAllocationHook }) =>
+          fireAllocationHook(
+            allocateForPostedInvoice(defaultSalesAllocationDeps, tokenedInvoice),
+            `invoice:${tokenedInvoice.id}`
+          )
+      );
+
       for (const e of selectedExams) {
         await dbService.put('examPapers', { ...e, status: 'invoiced', invoiceId: invoice.id });
       }

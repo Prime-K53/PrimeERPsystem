@@ -1,10 +1,22 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   attachDocumentSecurity,
   buildSecurityQrPayload,
 } from '../../utils/documentSecurity';
 import { detectVerifiableDocumentType } from '../../utils/documentVerification';
 import { resolveExaminationPreviewVerification } from '../../utils/invoiceIdentity';
+import {
+  persistExaminationInvoiceToFinance,
+  reconcileLegacyExaminationInvoices,
+} from '../../services/examinationInvoiceSyncService';
+
+const mockGetAll = vi.hoisted(() => vi.fn());
+const mockPut = vi.hoisted(() => vi.fn());
+const mockGet = vi.hoisted(() => vi.fn());
+
+vi.mock('../../services/db', () => ({
+  dbService: { getAll: mockGetAll, put: mockPut, get: mockGet },
+}));
 
 const TOK = 'f'.repeat(64);
 
@@ -109,4 +121,83 @@ describe('examination invoice public verifiability', () => {
   it('ExaminationPrinting view transforms with the new wiring', async () => {
     await expect(import('../../views/production/ExaminationPrinting')).resolves.toBeTruthy();
   }, 120000);
+});
+
+describe('canonical-path guard — persistExaminationInvoiceToFinance', () => {
+  it('rejects payloads with no batchId', async () => {
+    const result = await persistExaminationInvoiceToFinance({} as any);
+    expect(result.synced).toBe(false);
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.invoiceId).toBeNull();
+    expect(result.message).toContain('non-canonical');
+  });
+
+  it('rejects payloads with wrong originModule', async () => {
+    const result = await persistExaminationInvoiceToFinance({
+      batchId: 'BATCH-1',
+      originModule: 'sales',
+    } as any);
+    expect(result.synced).toBe(false);
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.invoiceId).toBeNull();
+    expect(result.message).toContain('non-canonical');
+  });
+
+  it('accepts payloads with batchId + originModule=examination', async () => {
+    mockGet.mockResolvedValue({ id: 'BATCH-1', total_amount: 1000, calculated_adjustment_total: 0, rounding_adjustment_total: 0, rounding_method: 'nearest_50', adjustment_snapshots_json: '[]' });
+    const result = await persistExaminationInvoiceToFinance({
+      batchId: 'BATCH-1',
+      originModule: 'examination',
+      id: 'EXM-TEST-1',
+      invoiceNumber: 'EXM-TEST-1',
+      totalAmount: 1000,
+      status: 'Unpaid',
+      date: '2026-01-01',
+      customerName: 'Test School',
+      items: [],
+    } as any);
+    expect(result.invoiceId).toBe('EXM-TEST-1');
+    expect(result.synced || result.fallbackUsed).toBeTruthy();
+  });
+});
+
+describe('reconcileLegacyExaminationInvoices', () => {
+  beforeEach(() => {
+    mockGetAll.mockReset();
+    mockPut.mockReset();
+    mockGet.mockReset();
+  });
+
+  it('reconciles tokenless examination invoices', async () => {
+    mockGetAll.mockResolvedValue([
+      { id: 'EXM-LEG-1', invoiceNumber: 'EXM-LEG-1', verificationToken: undefined },
+      { id: 'EXM-LEG-2', invoiceNumber: 'EXM-LEG-2', verificationToken: '' },
+      { id: 'REG-1', invoiceNumber: 'REG-1', verificationToken: 'existing-token' },
+    ]);
+    mockPut.mockResolvedValue(undefined);
+
+    const result = await reconcileLegacyExaminationInvoices();
+    expect(result.reconciled).toBe(2);
+    expect(result.errors).toEqual([]);
+    expect(mockPut).toHaveBeenCalledTimes(2);
+  });
+
+  it('never overwrites existing tokens', async () => {
+    mockGetAll.mockResolvedValue([
+      { id: 'EXM-HAS-TOKEN', invoiceNumber: 'EXM-HAS-TOKEN', verificationToken: 'already-there' },
+    ]);
+    mockPut.mockResolvedValue(undefined);
+
+    const result = await reconcileLegacyExaminationInvoices();
+    expect(result.reconciled).toBe(0);
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it('survives scan failures without throwing', async () => {
+    mockGetAll.mockRejectedValue(new Error('db down'));
+
+    const result = await reconcileLegacyExaminationInvoices();
+    expect(result.reconciled).toBe(0);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
 });

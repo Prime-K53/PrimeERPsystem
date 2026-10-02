@@ -25,6 +25,7 @@ import {
 } from './receiptCalculationService';
 import { logger } from './logger';
 import { salesOrderService } from './salesOrderService';
+import { produceVoidReversalSafely } from './transportBudgetVoidReversal';
 
 import {
     getCompanyConfig, getGLConfig, generateId, calculateBankBalance,
@@ -1268,7 +1269,7 @@ export const transactionService = {
                 };
                 await invoicesStore.put(invoice);
 
-                return { success: true, id: sale.id, _paidInvoice: invoiceStatus === 'Paid' && sale.customerId ? { id: invoiceId, status: invoiceStatus, customerId: sale.customerId, totalAmount: sale.totalAmount, paidAmount: invoicePaid, referredBy: sale.referredBy, referredByName: sale.referredByName } : null };
+                return { success: true, id: sale.id, _mirrorInvoiceId: invoiceId, _paidInvoice: invoiceStatus === 'Paid' && sale.customerId ? { id: invoiceId, status: invoiceStatus, customerId: sale.customerId, totalAmount: sale.totalAmount, paidAmount: invoicePaid, referredBy: sale.referredBy, referredByName: sale.referredByName } : null };
             }
         );
         if (saleResult?._paidInvoice) {
@@ -1278,6 +1279,21 @@ export const transactionService = {
                 )
             );
         }
+        // Phase 5 — Transport Budget sales allocation (post-commit,
+        // fire-and-forget like the referral hook above: never blocks posting,
+        // never rolls back the committed sale; safe to invoke twice via the
+        // Phase 4 economic-idempotency layer).
+        import('./transportBudgetSalesAllocation').then(
+            ({ allocateForPostedSale, defaultSalesAllocationDeps, fireAllocationHook }) =>
+                fireAllocationHook(
+                    allocateForPostedSale(
+                        defaultSalesAllocationDeps,
+                        sale,
+                        (saleResult as any)?._mirrorInvoiceId
+                    ),
+                    `sale:${sale.id}`
+                )
+        );
         return saleResult;
     },
 
@@ -2443,11 +2459,23 @@ export const transactionService = {
                 )
             );
         }
+        // Phase 5 — Transport Budget sales allocation (post-commit,
+        // fire-and-forget: order→invoice conversions allocate once on the
+        // invoice here; POS mirror invoices are suppressed inside the
+        // producer; repeats deduplicate on the economic idempotency key).
+        import('./transportBudgetSalesAllocation').then(
+            ({ allocateForPostedInvoice, defaultSalesAllocationDeps, fireAllocationHook }) =>
+                fireAllocationHook(
+                    allocateForPostedInvoice(defaultSalesAllocationDeps, invoice),
+                    `invoice:${invoice.id}`
+                )
+        );
         return _processInvoiceResult;
     },
 
     async convertQuotationToInvoice(quotationId: string, invoiceData: Invoice) {
-        return dbService.executeAtomicOperation(
+        let postedQuotationInvoice: Invoice | null = null;
+        const conversionResult = await dbService.executeAtomicOperation(
             ['quotations', 'invoices', 'inventory', 'ledger', 'customers', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'inventoryTransactions', 'accounts'],
             async (tx) => {
                 const quotationStore = tx.objectStore('quotations');
@@ -2630,9 +2658,23 @@ export const transactionService = {
                     await ledgerStore.put(arEntry);
                 }
 
+                postedQuotationInvoice = invoiceData;
                 return { success: true, id: invoiceData.id };
             }
         );
+        // Phase 5 — Transport Budget sales allocation for quotation-converted
+        // posted invoices (post-commit, fire-and-forget; duplicates dedupe).
+        if (postedQuotationInvoice) {
+            const convertedInvoice = postedQuotationInvoice;
+            import('./transportBudgetSalesAllocation').then(
+                ({ allocateForPostedInvoice, defaultSalesAllocationDeps, fireAllocationHook }) =>
+                    fireAllocationHook(
+                        allocateForPostedInvoice(defaultSalesAllocationDeps, convertedInvoice),
+                        `invoice:${convertedInvoice.id}`
+                    )
+            );
+        }
+        return conversionResult;
     },
 
     async convertQuotationToWorkOrder(quotationId: string, workOrderData: WorkOrder) {
@@ -2666,7 +2708,8 @@ export const transactionService = {
     },
 
     async convertJobOrderToInvoice(jobOrderId: string, invoiceData: Invoice) {
-        return dbService.executeAtomicOperation(
+        let postedJobInvoice: Invoice | null = null;
+        const jobConversionResult = await dbService.executeAtomicOperation(
             ['jobOrders', 'invoices', 'inventory', 'ledger', 'customers', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions'],
             async (tx) => {
                 const jobOrderStore = tx.objectStore('jobOrders');
@@ -2809,9 +2852,23 @@ export const transactionService = {
                     await ledgerStore.put(arEntry);
                 }
 
+                postedJobInvoice = invoiceData;
                 return { success: true, id: invoiceData.id };
             }
         );
+        // Phase 5 — Transport Budget sales allocation for job-order-converted
+        // posted invoices (post-commit, fire-and-forget; duplicates dedupe).
+        if (postedJobInvoice) {
+            const convertedInvoice = postedJobInvoice;
+            import('./transportBudgetSalesAllocation').then(
+                ({ allocateForPostedInvoice, defaultSalesAllocationDeps, fireAllocationHook }) =>
+                    fireAllocationHook(
+                        allocateForPostedInvoice(defaultSalesAllocationDeps, convertedInvoice),
+                        `invoice:${convertedInvoice.id}`
+                    )
+            );
+        }
+        return jobConversionResult;
     },
 
     async addCustomerPayment(payment: CustomerPayment) {
@@ -3737,6 +3794,16 @@ export const transactionService = {
                 return { success: true };
             }
         );
+
+        // Phase 6 — isolated Transport Budget full-void REVERSAL.
+        // The commercial void above MUST persist first: executeAtomicOperation
+        // provides no aggregate rollback, so the reversal is produced strictly
+        // AFTER commit. A failure here is logged/swallowed by
+        // produceVoidReversalSafely so the committed commercial void is never
+        // affected; a retry reuses the deterministic key
+        // REVERSAL:${economicKey}:VOID and converges via Phase 4 dedup.
+        await produceVoidReversalSafely({ id });
+
         return result;
     },
 

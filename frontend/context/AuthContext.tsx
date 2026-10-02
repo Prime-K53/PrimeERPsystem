@@ -15,6 +15,7 @@ import {
 import { publishSystemAlert } from '../services/systemAlertService';
 import { isPasswordProtectionEnabled, normalizeSecuritySettings, withNormalizedSecurityConfig } from '../utils/securitySettings';
 import { DEFAULT_SHARED_NUMBERING_RULE, normalizeCompanyNumberingConfig } from '../utils/numbering';
+import { normalizeTransportBudgetPolicy } from '../utils/transportBudgetPolicy';
 import { hydrateCompanyPdfAssets } from '../utils/companyAssetUtils';
 import { supabase } from '../services/supabaseClient';
 import type { AuthResult } from '../services/supabaseAuthService';
@@ -1408,6 +1409,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...(config.pricingSettings || {})
       }
     }));
+    // Transport budget policy: same normalization as the sync load path
+    // (valid passes through exactly; missing stays missing/disabled;
+    // malformed can never silently enable a rate). Setup flows need no
+    // equivalent step — company creation cannot carry this key yet.
+    if ('transportBudgetPolicy' in config) {
+      const policy = normalizeTransportBudgetPolicy(config.transportBudgetPolicy);
+      if (policy === undefined) {
+        delete (normalizedConfig as Partial<CompanyConfig>).transportBudgetPolicy;
+      } else {
+        normalizedConfig.transportBudgetPolicy = policy;
+      }
+    }
     setCompanyConfig(normalizedConfig);
     cacheCompanyConfig(normalizedConfig);
     void persistCompanyConfig(normalizedConfig).catch((error) => {

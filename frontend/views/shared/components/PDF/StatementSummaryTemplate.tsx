@@ -211,6 +211,14 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           );
         })}
 
+          {/* Thank-you line: identical wording/placement to invoice, receipt
+              and quotation so every document closes consistently. */}
+          <View wrap={false} style={{ marginTop: 10, alignItems: 'center' }}>
+            <Text style={{ fontSize: Number((12 * fontScale).toFixed(2)), color: '#334155' }}>
+              Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
+            </Text>
+          </View>
+
           {/* Security Footer — digitally-generated line (kept tick circle),
               official body copy, QR, bottom rule. The title/shield block and
               SCAN TO VERIFY pill were removed per product direction. Flows

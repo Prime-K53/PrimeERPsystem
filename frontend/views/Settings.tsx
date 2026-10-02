@@ -39,6 +39,11 @@ import {
 '../utils/pricing';
 import { derivePricingMode, isMarketPostingActive, isVatPostingActive } from '../utils/pricingMode';
 import {
+    getTransportBudgetPolicyState,
+    parseTransportBudgetRateInput,
+    resolveTransportBudgetPolicyDraft,
+} from '../utils/transportBudgetPolicy';
+import {
     createSharedNumberingConfig,
     DEFAULT_SHARED_NUMBERING_RULE,
     formatNumberingPreview,
@@ -469,6 +474,14 @@ const Settings: React.FC = () => {
     const [testResults, setTestResults] = useState<{ name: string, cases: number, status: string }[]>([]);
     const [systemInfo, setSystemInfo] = useState<any>(null);
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+    // Phase 3: Transport Budget policy drafts. `null` = untouched (follows the
+    // loaded CompanyConfig); a string = administrator input under edit. The
+    // drafts are parsed + validated on save — never coerced silently.
+    const [transportRateInput, setTransportRateInput] = useState<string | null>(null);
+    const [transportEffectiveFromInput, setTransportEffectiveFromInput] = useState<string | null>(null);
+    // Phase 3A: scheduled-change rows. `null` = untouched (follows the loaded
+    // CompanyConfig); an array = administrator input under edit.
+    const [transportScheduledInput, setTransportScheduledInput] = useState<Array<{ rate: string; effectiveFrom: string }> | null>(null);
     const [bomTemplates, setBomTemplates] = useState<any[]>([]);
     const [isRestoringBackup, setIsRestoringBackup] = useState(false);
     const [show2FASetup, setShow2FASetup] = useState(false);
@@ -548,6 +561,24 @@ const Settings: React.FC = () => {
         ...DEFAULT_PRICING_SETTINGS,
         ...(config.pricingSettings || {})
     };
+    // Phase 3: transport budget policy display state (configuration only).
+    const transportPolicyState = getTransportBudgetPolicyState(config);
+    const transportRateText = transportRateInput
+        ?? (config.transportBudgetPolicy !== undefined
+            ? String(config.transportBudgetPolicy.allocationRatePercent)
+            : '');
+    const transportEffectiveFromText = transportEffectiveFromInput
+        ?? config.transportBudgetPolicy?.effectiveFrom
+        ?? '';
+    const transportRateDraftError = transportRateInput !== null
+        ? (parseTransportBudgetRateInput(transportRateInput).error ?? undefined)
+        : undefined;
+    // Phase 3A: scheduled-change rows follow the stored policy until edited.
+    const transportScheduledDrafts = transportScheduledInput
+        ?? (config.transportBudgetPolicy?.scheduledChanges ?? []).map(e => ({
+            rate: String(e.allocationRatePercent),
+            effectiveFrom: e.effectiveFrom ?? '',
+        }));
     const [roundingAnalytics, setRoundingAnalytics] = React.useState<RoundingAnalytics>({ totalExtraProfit: 0, roundedTransactions: 0, byMethod: {} });
     React.useEffect(() => { getRoundingAnalytics().then(setRoundingAnalytics).catch(() => {}); }, []);
 
@@ -565,6 +596,11 @@ const Settings: React.FC = () => {
                 ...(companyConfig?.pricingSettings || {})
             }
         }) as CompanyConfig);
+        // A freshly loaded CompanyConfig supersedes any in-progress policy
+        // drafts (e.g. after save or cross-device sync).
+        setTransportRateInput(null);
+        setTransportEffectiveFromInput(null);
+        setTransportScheduledInput(null);
     }, [companyConfig]);
 
     useEffect(() => {
@@ -696,6 +732,34 @@ const Settings: React.FC = () => {
             return;
           }
           setValidationErrors({});
+        }
+
+        // Validate transport budget policy drafts (Phase 3 — configuration
+        // only: no allocation, ledger, or accounting behavior is affected).
+        // Untouched fields follow the loaded CompanyConfig; edited text is
+        // parsed strictly — invalid values abort the save, never coerce.
+        {
+          const rateText = transportRateInput
+            ?? (normalizedConfig.transportBudgetPolicy !== undefined
+              ? String(normalizedConfig.transportBudgetPolicy.allocationRatePercent)
+              : '');
+          const effectiveText = transportEffectiveFromInput
+            ?? normalizedConfig.transportBudgetPolicy?.effectiveFrom
+            ?? '';
+          const draft = resolveTransportBudgetPolicyDraft(rateText, effectiveText, transportScheduledDrafts);
+          const draftErrors = Object.entries(draft.errors);
+          if (draftErrors.length > 0) {
+            const errors: Record<string, string> = {};
+            for (const [path, message] of draftErrors) errors[path] = message;
+            setValidationErrors(errors);
+            notify(draftErrors[0][1], 'error');
+            return;
+          }
+          if (draft.policy === undefined) {
+            delete (normalizedConfig as Partial<CompanyConfig>).transportBudgetPolicy;
+          } else {
+            normalizedConfig.transportBudgetPolicy = draft.policy;
+          }
         }
 
         if (passwordProtectionEnabled && accessPassword && primaryAdminUser) {
@@ -1505,6 +1569,114 @@ const Settings: React.FC = () => {
                                             />
                                         </div>
                                         <p style={{ color: '#5c6567', marginTop: '6px', fontWeight: 500, fontStyle: 'italic' }}>Your progress percentage against this target will be tracked on the dashboard.</p>
+                                    </div>
+                                </section>
+
+                                <section style={{ border: '1px solid #D4D7DC', borderRadius: '12px', background: paper, overflow: 'hidden', marginTop: '24px' }}>
+                                    <div style={{ paddingLeft: '32px', paddingTop: '20px', borderBottom: '1px solid #D4D7DC', background: '#eef7f6', paddingRight: '32px', paddingBottom: '20px' }}>
+                                        <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#23282A' }}>Internal Transport Budget Allocation</h3>
+                                        <p style={{ color: '#5c6567', marginTop: '2px' }}>Management budgeting rate applied internally to qualifying sales. This is NOT a customer charge, tax, delivery fee, or invoice surcharge — customers never see it.</p>
+                                    </div>
+                                    <div style={{ padding: '32px' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '24px', maxWidth: '640px' }}>
+                                            <div>
+                                                <label style={labelStyle}>Allocation Rate (%)</label>
+                                                <div style={{ position: 'relative', maxWidth: '240px' }}>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        style={{ ...inputStyle, paddingRight: '40px' }}
+                                                        placeholder="e.g. 3"
+                                                        value={transportRateText}
+                                                        onChange={e => setTransportRateInput(e.target.value)}
+                                                    />
+                                                    <div style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', color: '#5c6567', fontSize: '12px', fontWeight: 700 }}>%</div>
+                                                </div>
+                                                {(getFieldError('transportBudgetPolicy.allocationRatePercent') || transportRateDraftError) && (
+                                                    <p style={{ color: danger, marginTop: '6px', fontSize: '12px', fontWeight: 600 }}>{getFieldError('transportBudgetPolicy.allocationRatePercent') || transportRateDraftError}</p>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Effective From (optional)</label>
+                                                <input
+                                                    type="date"
+                                                    style={{ ...inputStyle, maxWidth: '240px' }}
+                                                    value={transportEffectiveFromText}
+                                                    onChange={e => setTransportEffectiveFromInput(e.target.value)}
+                                                />
+                                                {getFieldError('transportBudgetPolicy.effectiveFrom') && (
+                                                    <p style={{ color: danger, marginTop: '6px', fontSize: '12px', fontWeight: 600 }}>{getFieldError('transportBudgetPolicy.effectiveFrom')}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <p style={{ color: '#5c6567', marginTop: '12px', fontWeight: 500, fontStyle: 'italic' }}>
+                                            {transportPolicyState === 'enabled'
+                                                ? `Currently active at ${config.transportBudgetPolicy?.allocationRatePercent}%${config.transportBudgetPolicy?.effectiveFrom ? ` for sales on or after ${config.transportBudgetPolicy.effectiveFrom}` : ''}. Historical allocations are never recalculated when this changes.`
+                                                : transportPolicyState === 'disabled'
+                                                    ? 'Currently set to 0% — internal allocation is disabled.'
+                                                    : 'No rate configured — internal allocation is disabled. Leave empty to keep it disabled.'}
+                                        </p>
+                                        <div style={{ marginTop: '20px', borderTop: '1px solid #D4D7DC', paddingTop: '16px', maxWidth: '640px' }}>
+                                            <label style={labelStyle}>Scheduled future rates</label>
+                                            <p style={{ color: '#5c6567', fontSize: '12px', marginTop: '2px', marginBottom: '12px' }}>Scheduling a future rate never replaces the current rate — each sale will use the latest rate effective on or before its business date.</p>
+                                            {transportScheduledDrafts.length === 0 && (
+                                                <p style={{ color: '#5c6567', fontSize: '12px', fontStyle: 'italic' }}>No scheduled changes.</p>
+                                            )}
+                                            {transportScheduledDrafts.map((row, index) => (
+                                                <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', alignItems: 'start', marginBottom: '12px' }}>
+                                                    <div>
+                                                        <div style={{ position: 'relative' }}>
+                                                            <input
+                                                                type="text"
+                                                                inputMode="decimal"
+                                                                style={{ ...inputStyle, paddingRight: '36px' }}
+                                                                placeholder="e.g. 5"
+                                                                value={row.rate}
+                                                                onChange={e => {
+                                                                    const next = transportScheduledDrafts.map((r, i) => i === index ? { ...r, rate: e.target.value } : r);
+                                                                    setTransportScheduledInput(next);
+                                                                }}
+                                                            />
+                                                            <div style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', color: '#5c6567', fontSize: '12px', fontWeight: 700 }}>%</div>
+                                                        </div>
+                                                        {getFieldError(`transportBudgetPolicy.scheduledChanges.${index}.allocationRatePercent`) && (
+                                                            <p style={{ color: danger, marginTop: '6px', fontSize: '12px', fontWeight: 600 }}>{getFieldError(`transportBudgetPolicy.scheduledChanges.${index}.allocationRatePercent`)}</p>
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <input
+                                                            type="date"
+                                                            style={inputStyle}
+                                                            value={row.effectiveFrom}
+                                                            onChange={e => {
+                                                                const next = transportScheduledDrafts.map((r, i) => i === index ? { ...r, effectiveFrom: e.target.value } : r);
+                                                                setTransportScheduledInput(next);
+                                                            }}
+                                                        />
+                                                        {getFieldError(`transportBudgetPolicy.scheduledChanges.${index}.effectiveFrom`) && (
+                                                            <p style={{ color: danger, marginTop: '6px', fontSize: '12px', fontWeight: 600 }}>{getFieldError(`transportBudgetPolicy.scheduledChanges.${index}.effectiveFrom`)}</p>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTransportScheduledInput(transportScheduledDrafts.filter((_, i) => i !== index))}
+                                                        style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #D4D7DC', background: '#fff', color: danger, fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            {getFieldError('transportBudgetPolicy.scheduledChanges') && (
+                                                <p style={{ color: danger, marginTop: '6px', fontSize: '12px', fontWeight: 600 }}>{getFieldError('transportBudgetPolicy.scheduledChanges')}</p>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => setTransportScheduledInput([...transportScheduledDrafts, { rate: '', effectiveFrom: '' }])}
+                                                style={{ marginTop: '4px', padding: '10px 16px', borderRadius: '10px', border: `1px solid ${teal[400]}`, background: teal[50], color: teal[700], fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                                            >
+                                                Schedule a future rate
+                                            </button>
+                                        </div>
                                     </div>
                                 </section>
                             </div>

@@ -138922,7 +138922,7 @@ __export(renderOfficialDocument_exports, {
   renderOfficialDocumentPdf: () => renderOfficialDocumentPdf
 });
 module.exports = __toCommonJS(renderOfficialDocument_exports);
-var import_react5 = __toESM(require_react(), 1);
+var import_react6 = __toESM(require_react(), 1);
 
 // ../node_modules/.pnpm/@react-pdf+primitives@4.3.0/node_modules/@react-pdf/primitives/lib/index.js
 var lib_exports = {};
@@ -230841,6 +230841,10 @@ var StatementSchema = external_exports.object({
     debit: external_exports.number(),
     credit: external_exports.number(),
     runningBalance: external_exports.number(),
+    // Bill-details block (frozen only when the statement is issued with Bill
+    // Details on; absent otherwise). Explicit optional fields — required
+    // transaction validation is unchanged; without these, Zod strips the
+    // keys and the PDF renderer never sees them.
     originalDate: external_exports.string().optional(),
     status: external_exports.string().optional(),
     items: external_exports.array(external_exports.object({
@@ -230849,7 +230853,7 @@ var StatementSchema = external_exports.object({
       price: external_exports.number().nullable(),
       total: external_exports.number().nullable()
     })).optional()
-  }).passthrough()),
+  })),
   totalInvoiced: external_exports.number(),
   totalReceived: external_exports.number(),
   finalBalance: external_exports.number(),
@@ -231871,7 +231875,8 @@ function detectVerifiableDocumentType(data2) {
   if (data2.receiptNumber) return "receipt";
   if (data2.contractNumber) return "printing_contract";
   if (data2.quotationNumber || data2.quotationId) return "quotation";
-  if (data2.orderNumber && String(data2.orderNumber).startsWith("SO-")) return "sales_order";
+  if (data2.orderNumber && /^(SO-|ORD-)/.test(String(data2.orderNumber))) return "sales_order";
+  if (/^(SO|ORD)-[A-Za-z0-9]+\//.test(String(data2.order_number ?? ""))) return "sales_order";
   if (data2.order_number || data2.orderNumber && String(data2.orderNumber).startsWith("PO-")) return "purchase_order";
   if (data2.dnNumber || data2.deliveryNoteNumber || data2.delivery_number) return "delivery_note";
   if (data2.statementNumber) return "statement";
@@ -231901,7 +231906,7 @@ function resolveVerifiableDocumentNumber(data2, type) {
     case "quotation":
       return String(data2?.quotationNumber ?? data2?.quotationId ?? data2?.number ?? data2?.id ?? "").trim();
     case "sales_order":
-      return String(data2?.orderNumber ?? data2?.number ?? data2?.id ?? "").trim();
+      return String(data2?.order_number ?? data2?.orderNumber ?? data2?.number ?? data2?.id ?? "").trim();
     case "purchase_order":
       return String(data2?.order_number ?? data2?.orderNumber ?? data2?.number ?? data2?.id ?? "").trim();
     case "delivery_note":
@@ -232275,10 +232280,7 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
         memo: resolveFirstText(txn.memo, txn.description, txn.details),
         debit: toNum(txn.debit),
         credit: toNum(txn.credit),
-        runningBalance: toNum(txn.runningBalance ?? txn.balance),
-        ...(typeof txn.originalDate === "string" && txn.originalDate.trim() ? { originalDate: txn.originalDate } : {}),
-        ...(typeof txn.status === "string" && txn.status.trim() ? { status: txn.status } : {}),
-        ...(Array.isArray(txn.items) && txn.items.length > 0 ? { items: txn.items } : {})
+        runningBalance: toNum(txn.runningBalance ?? txn.balance)
       })),
       totalInvoiced: toNum(item.totalInvoiced ?? item.total_invoiced ?? statementTransactions.reduce((sum, txn) => sum + toNum(txn.debit), 0)),
       totalReceived: toNum(item.totalReceived ?? item.total_received ?? statementTransactions.reduce((sum, txn) => sum + toNum(txn.credit), 0)),
@@ -233517,9 +233519,14 @@ function formatQuickPhotocopyPriceLabel(unitPrice, currencySymbol) {
   const n5 = toNonNegativeNumber(unitPrice, 0);
   return `${cur} ${n5.toFixed(2)}/sht`;
 }
+function normalizeQuickPhotocopyCustomName(value2) {
+  if (typeof value2 !== "string") return void 0;
+  const trimmed = value2.trim();
+  return trimmed ? trimmed : void 0;
+}
 function resolveQuickPhotocopyDisplayName(item) {
-  const custom = item?.serviceDetails?.customName;
-  if (typeof custom === "string" && custom.trim()) return custom.trim();
+  const custom2 = normalizeQuickPhotocopyCustomName(item?.serviceDetails?.customName);
+  if (custom2 !== void 0) return custom2;
   const raw = String(
     item?.name ?? item?.productName ?? item?.product_name ?? item?.itemName ?? item?.desc ?? item?.description ?? "Quick Photocopy"
   );
@@ -233539,6 +233546,9 @@ function getQuickPhotocopyLineDisplay(item, currencySymbol) {
   };
 }
 
+// views/shared/components/PDF/StatementSummaryTemplate.tsx
+var import_react5 = __toESM(require_react(), 1);
+
 // views/shared/components/PDF/PortalCopyWatermark.tsx
 var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
 var PortalCopyWatermark = () => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(View, { style: docStyles.portalWatermarkContainer, fixed: true, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { style: docStyles.portalWatermarkText, children: "PORTAL COPY" }) });
@@ -233550,6 +233560,12 @@ var formatAmount = (amount) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
+};
+var formatStatementDate = (value2) => {
+  const s4 = String(value2 ?? "").trim();
+  const m3 = s4.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m3) return `${m3[3]}/${m3[2]}/${m3[1]}`;
+  return s4 || "\u2014";
 };
 var pickFirstText = (...values) => {
   for (const value2 of values) {
@@ -233673,40 +233689,45 @@ var StatementSummaryTemplate = ({ data: data2, configOverride = null, channel = 
           const txnItems = Array.isArray(txn.items) ? txn.items : [];
           const txnOriginalDate = String(txn.originalDate ?? "").trim();
           const txnStatus = String(txn.status ?? "").trim();
-          const fmtStatementDate = (v) => {
-            const s = String(v ?? "").trim();
-            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-            return m ? `${m[3]}/${m[2]}/${m[1]}` : (s || "—");
-          };
-          return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.row, { paddingHorizontal: 8, borderBottomColor: "#f1f5f9" }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.2, fontSize: 9 }, children: txn.date }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.5, fontSize: 9, fontWeight: "bold" }, children: txn.reference }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2.5, fontSize: 9, color: "#475569" }, children: txn.memo || "-" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.debit > 0 ? "#e11d48" : "#64748b" }, children: txn.debit > 0 ? formatAmount(txn.debit) : "-" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.credit > 0 ? "#059669" : "#64748b" }, children: txn.credit > 0 ? formatAmount(txn.credit) : "-" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.3, fontSize: 9, textAlign: "right", fontWeight: "bold" }, children: formatAmount(txn.runningBalance) })
-        ] }),
-          txnOriginalDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { paddingHorizontal: 8, paddingTop: 2, flexDirection: "row", backgroundColor: "#f8fafc" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 8, color: "#64748b", fontStyle: "italic" }, children: ["Original date: ", fmtStatementDate(txnOriginalDate)] }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 8, color: "#64748b", fontStyle: "italic" }, children: ["Status: ", txnStatus || "—"] })
-          ] }),
-          txnItems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { paddingHorizontal: 8, paddingTop: 2, paddingBottom: 4, backgroundColor: "#f8fafc" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 2 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3.5, fontSize: 7.5, fontWeight: "bold", color: "#64748b" }, children: "Description" }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Qty" }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Price" }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Total" })
+          return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_react5.default.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: [docStyles.row, { paddingHorizontal: 8, borderBottomColor: "#f1f5f9" }], wrap: false, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.2, fontSize: 9 }, children: txn.date }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.5, fontSize: 9, fontWeight: "bold" }, children: txn.reference }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 2.5, fontSize: 9, color: "#475569" }, children: txn.memo || "-" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.debit > 0 ? "#e11d48" : "#64748b" }, children: txn.debit > 0 ? formatAmount(txn.debit) : "-" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 9, textAlign: "right", color: txn.credit > 0 ? "#059669" : "#64748b" }, children: txn.credit > 0 ? formatAmount(txn.credit) : "-" }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.3, fontSize: 9, textAlign: "right", fontWeight: "bold" }, children: formatAmount(txn.runningBalance) })
             ] }),
-            ...txnItems.map((line, li) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 1.5 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3.5, fontSize: 8, color: "#475569" }, children: String(line?.description ?? "—") }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 8, color: "#475569", textAlign: "right" }, children: line?.qty ?? "—" }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 8, color: "#475569", textAlign: "right" }, children: line?.price != null ? formatAmount(Number(line.price)) : "—" }),
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 8, color: "#475569", textAlign: "right" }, children: line?.total != null ? formatAmount(Number(line.total)) : "—" })
-            ] }, li))
-          ] })
-        ] }, i2);
+            txnOriginalDate && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { paddingHorizontal: 8, paddingTop: 2, flexDirection: "row", backgroundColor: "#f8fafc" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 8, color: "#64748b", fontStyle: "italic" }, children: [
+                "Original date: ",
+                formatStatementDate(txnOriginalDate)
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { flex: 1, fontSize: 8, color: "#64748b", fontStyle: "italic" }, children: [
+                "Status: ",
+                txnStatus || "\u2014"
+              ] })
+            ] }, `${i2}-meta`),
+            txnItems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { paddingHorizontal: 8, paddingTop: 2, paddingBottom: 4, backgroundColor: "#f8fafc" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 2 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3.5, fontSize: 7.5, fontWeight: "bold", color: "#64748b" }, children: "Description" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Qty" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Price" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 7.5, fontWeight: "bold", color: "#64748b", textAlign: "right" }, children: "Total" })
+              ] }),
+              txnItems.map((line2, li) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 1.5 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 3.5, fontSize: 8, color: "#475569" }, children: String(line2?.description ?? "\u2014") }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1, fontSize: 8, color: "#475569", textAlign: "right" }, children: line2?.qty ?? "\u2014" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 8, color: "#475569", textAlign: "right" }, children: line2?.price != null ? `${currency} ${formatAmount(Number(line2.price))}` : "\u2014" }),
+                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { flex: 1.4, fontSize: 8, color: "#475569", textAlign: "right" }, children: line2?.total != null ? `${currency} ${formatAmount(Number(line2.total))}` : "\u2014" })
+              ] }, li))
+            ] }, `${i2}-items`)
+          ] }, i2);
         }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(View, { wrap: false, style: { marginTop: 10, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { style: { fontSize: Number((12 * fontScale).toFixed(2)), color: "#334155" }, children: [
+          "Thank you for choosing ",
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+        ] }) }),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(View, { wrap: false, style: { marginTop: 10, borderTopWidth: 0.5, borderColor: "#e2e8f0", paddingTop: 8, width: "100%" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(VerificationLabel, { fontScale }),
           (() => {
@@ -235422,8 +235443,9 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   }
   const isConverted = "isConverted" in data2 && data2.isConverted;
   const conversionDetails = isConverted && "conversionDetails" in data2 ? dataAny.conversionDetails || null : null;
-  const isFromOrder = conversionDetails?.sourceType === "Order" || conversionDetails?.sourceType === "JobOrder";
-  const isFromQuotation = conversionDetails?.sourceType === "Quotation";
+  const normalizedSourceType = String(conversionDetails?.sourceType || "").trim().toLowerCase().replace(/[\s_]+/g, "");
+  const isFromOrder = normalizedSourceType === "order" || normalizedSourceType === "joborder" || normalizedSourceType === "salesorder";
+  const isFromQuotation = normalizedSourceType === "quotation";
   const isConvertedOrder = (type === "INVOICE" || type === "SALES_ORDER" || type === "ORDER") && isConverted;
   let title;
   if (type === "FISCAL_REPORT" && "reportName" in data2) {
@@ -235486,11 +235508,11 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
                 "Due Date: ",
                 formatDateOnly(String(data2.dueDate))
               ] }),
-              isFromQuotation && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
+              showConversionHistory && isFromQuotation && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
                 "Order Ref: ",
                 String(conversionDetails?.sourceNumber || "N/A")
               ] }),
-              isFromOrder && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
+              showConversionHistory && isFromOrder && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
                 "Original Order: ",
                 String(conversionDetails?.sourceNumber || "N/A")
               ] })
@@ -235505,7 +235527,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
               ] }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: "#64748b", marginTop: 2 }, children: [
                 "Order Ref: ",
-                String(isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : "orderNumber" in data2 && dataAny.orderNumber || "N/A")
+                String(showConversionHistory && isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : "orderNumber" in data2 && dataAny.orderNumber || "N/A")
               ] }),
               Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
                 "Due Date: ",
@@ -236489,7 +236511,7 @@ async function renderOfficialDocumentPdf(input) {
   const securedData = await attachDocumentSecurity(mappedData, input.companyConfig?.companyName);
   await initializePrimePdfFonts();
   const blob = await pdf(
-    (0, import_react5.createElement)(PrimeDocument, {
+    (0, import_react6.createElement)(PrimeDocument, {
       type,
       data: securedData,
       configOverride: input.companyConfig || null,

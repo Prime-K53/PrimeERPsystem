@@ -2,6 +2,7 @@ import { CompanyConfig } from '../types';
 import { DEFAULT_PRICING_SETTINGS } from '../services/pricingRoundingService';
 import { withNormalizedSecurityConfig } from './securitySettings';
 import { normalizeCompanyNumberingConfig } from './numbering';
+import { normalizeTransportBudgetPolicy } from './transportBudgetPolicy';
 import { dbService } from '../services/db';
 import { logger } from '../services/logger';
 
@@ -66,7 +67,7 @@ export function normalizeStoredCompanyConfig(
 
   const partial = raw as Partial<CompanyConfig>;
 
-  return withNormalizedSecurityConfig(normalizeCompanyNumberingConfig({
+  const normalized = withNormalizedSecurityConfig(normalizeCompanyNumberingConfig({
     ...defaults,
     ...partial,
     pricingSettings: {
@@ -74,6 +75,22 @@ export function normalizeStoredCompanyConfig(
       ...(partial.pricingSettings || {}),
     },
   }));
+
+  // Transport budget policy: valid values pass through untouched (rate kept
+  // exactly, no rounding); missing stays missing (disabled); malformed stored
+  // values fall back to missing (disabled) rather than enabling a rate.
+  // Only touched when the incoming object carries the key, so future
+  // defaults are never stripped by normalization.
+  if ('transportBudgetPolicy' in partial) {
+    const transportPolicy = normalizeTransportBudgetPolicy(partial.transportBudgetPolicy);
+    if (transportPolicy === undefined) {
+      delete (normalized as Partial<CompanyConfig>).transportBudgetPolicy;
+    } else {
+      normalized.transportBudgetPolicy = transportPolicy;
+    }
+  }
+
+  return normalized;
 }
 
 /**

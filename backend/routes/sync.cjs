@@ -115,6 +115,10 @@ const ALLOWED_TABLES = new Set([
   'customer_referrals', 'referral_rewards', 'referral_timeline',
   'referral_audit_logs', 'referral_campaigns', 'referral_reversals',
 
+  // transport budget event ledger — single-company append-only event store,
+  // no tenant scoping (Phase 4 infrastructure only; no producers).
+  'transport_budget_events',
+
   // engagement / loyalty
   'engagement_timeline', 'engagement_audit', 'engagement_points',
   'engagement_point_balances', 'engagement_cashback', 'engagement_membership_tiers',

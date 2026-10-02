@@ -121,7 +121,7 @@ export const PreviewModal = ({
     if (!data) return {};
     const r = data as Record<string, unknown>;
     return {
-      number: (r.number || r.invoiceNumber || r.documentNumber || r.orderNumber || r.salesOrderNumber || r.jobOrderNumber || r.quotationNumber || r.jobNumber || r.contractNumber || r.receiptNumber || '') as string,
+      number: (r.number || r.invoiceNumber || r.documentNumber || r.orderNumber || r.salesOrderNumber || r.jobOrderNumber || r.quotationNumber || r.jobNumber || r.contractNumber || r.receiptNumber || r.statementNumber || '') as string,
       customer: (r.clientName || r.customerName || (r.billTo as any)?.name || '') as string,
       // Receipts preview the payment record: the pill names the payment
       // that was received (canonical receipt badge), never the invoice's
@@ -143,6 +143,10 @@ export const PreviewModal = ({
       return String((data as any).reportName);
     if (type === 'SUBSCRIPTION') return 'Recurring Invoice';
     if (type === 'POS_RECEIPT') return 'POS Receipt';
+    if (type === 'ACCOUNT_STATEMENT' || type === 'ACCOUNT_STATEMENT_SUMMARY')
+      return docMeta.number
+        ? `Statement ${docMeta.number}`
+        : (docMeta.customer ? `Statement - ${docMeta.customer}` : 'Account Statement');
     if (type === 'INVOICE' || type === 'EXAMINATION_INVOICE')
       return docMeta.number ? `Invoice ${docMeta.number}` : 'Invoice Preview';
     if (type === 'QUOTATION') return 'Quotation Preview';

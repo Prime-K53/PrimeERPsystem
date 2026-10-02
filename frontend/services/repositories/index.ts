@@ -130,6 +130,8 @@ const STORE_TO_TABLE: Record<string, string> = {
   customerPricingTiers: 'customer_pricing_tiers',
   idempotencyKeys: 'idempotency_keys',
   statementSnapshots: 'statement_snapshots',
+  // Transport Budget event ledger — single-company append-only event store.
+  transportBudgetEvents: 'transport_budget_events',
   // Service Catalog + Utilities sub-ledgers — single-company, no tenant column
   purchaseInvoices: 'purchase_invoices',
   interestIncomeEntries: 'interest_income_entries',

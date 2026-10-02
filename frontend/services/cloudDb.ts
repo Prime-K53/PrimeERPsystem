@@ -100,6 +100,8 @@ export const STORE_TO_TABLE: Record<string, string> = {
   discountRules: 'discountrules',
   bankingAttachments: 'banking_attachments',
   statementSnapshots: 'statement_snapshots',
+  // Transport Budget event ledger — single-company append-only event store.
+  transportBudgetEvents: 'transport_budget_events',
   // Fixed Assets — single-company, no tenant column
   fixedAssets: 'fixed_assets',
   depreciationEntries: 'depreciation_entries',

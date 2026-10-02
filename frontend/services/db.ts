@@ -8,6 +8,7 @@ import {
 import type { Referral, ReferralReward } from '../types/referral';
 import type { ServiceRecipe, ServiceJob, ServiceResource, ServiceConsumptionRecord } from '../types';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
+import type { TransportBudgetEvent } from '../types/transportBudget';
 import type { PortalAd } from '../types/ads';
 import type { PurchaseLot } from '../types/inventory';
 import { calculateCustomerPaymentSnapshot } from './receiptCalculationService';
@@ -187,6 +188,9 @@ interface NexusDB extends DBSchema {
     serviceJobs: { key: string; value: ServiceJob; };
     serviceResources: { key: string; value: ServiceResource; };
     serviceConsumptions: { key: string; value: ServiceConsumptionRecord; };
+    // Transport Budget event ledger — single-company append-only event store
+    // (Phase 4 infrastructure only; no producers).
+    transportBudgetEvents: { key: string; value: TransportBudgetEvent; };
 
 }
 
@@ -194,7 +198,8 @@ const DB_NAME = 'PrimeERP_Final_v3_Clean';
 // v55: register the `engagementPromotions` store (PromotionsAdmin / PromotionsPanel / promotionPlugin).
 // v56: register the `statementSnapshots` store (immutable verifiable statement snapshots).
 // v57: register the `serviceRecipes`/`serviceJobs`/`serviceResources`/`serviceConsumptions` stores (service catalog execution).
-const DB_VERSION = 58;
+// v59: register the `transportBudgetEvents` store (Phase 4 append-only Transport Budget event ledger).
+const DB_VERSION = 59;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -572,6 +577,9 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   // public verification fell back to the legacy purchases table).
   purchaseOrders: 'purchase_orders',
   statementSnapshots: 'statement_snapshots',
+  // Transport Budget event ledger — single-company append-only event store
+  // (Phase 4 infrastructure only; envelope table transport_budget_events).
+  transportBudgetEvents: 'transport_budget_events',
   // Fixed Assets — single-company, no tenant column (same envelope as 0001:894 `assets`)
   fixedAssets: 'fixed_assets',
   depreciationEntries: 'depreciation_entries',
@@ -696,6 +704,8 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'purchaseOrders',
     'purchaseInvoices',
     'statementSnapshots',
+    // Transport Budget event ledger — append-only, single-company.
+    'transportBudgetEvents',
     'interestIncomeEntries',
     'prepayments',
     'prepaymentAmortizations',

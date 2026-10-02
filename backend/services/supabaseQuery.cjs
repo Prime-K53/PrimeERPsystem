@@ -94,18 +94,28 @@ async function getAll(query, params = []) {
 }
 
 async function run(query, params = [], callback) {
+  // Support the legacy (sql, callback) call shape used across index.cjs
+  // (e.g. sq.run("BEGIN TRANSACTION", cb) / sq.run("COMMIT", cb)). Without
+  // this normalization the callback lands in `params` and is never invoked,
+  // which hangs every transaction that uses the two-argument form.
+  if (typeof params === 'function') {
+    callback = params;
+    params = [];
+  }
   const table = extractTable(query);
   const trimmed = String(query || '').trim();
   try {
     if (/INSERT\s+INTO/i.test(trimmed)) {
       const id = String(params[0] || `gen_${Date.now()}`);
       const row = { id };
-      for (let i = 1; i < params.length; i++) {
-        const colMatch = trimmed.match(/\(([^)]+)\)\s*VALUES/i);
-        if (colMatch) {
-          const cols = colMatch[1].split(',').map(c => c.trim());
-          if (i - 1 < cols.length) row[cols[i - 1]] = params[i];
-        }
+      // Map each positional parameter to its matching column. The column list
+      // and the (?, ?, ...) values are aligned 1:1, so params[i] belongs to
+      // cols[i] — mapping to cols[i - 1] shifted every value by one column and
+      // persisted garbage rows for every sq.run() INSERT.
+      const colMatch = trimmed.match(/\(([^)]+)\)\s*VALUES/i);
+      const cols = colMatch ? colMatch[1].split(',').map(c => c.trim()) : [];
+      for (let i = 0; i < params.length && i < cols.length; i++) {
+        row[cols[i]] = params[i];
       }
       await repo.upsert(table, row);
       if (callback) callback(null, { lastID: id, changes: 1 });

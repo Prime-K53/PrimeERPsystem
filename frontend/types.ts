@@ -222,6 +222,48 @@ export interface RoundingRulesConfig {
   precision: number;
 }
 
+export interface TransportBudgetScheduledChange {
+  /**
+   * Scheduled allocation rate, same rules as the base rate
+   * (0-100, up to 4 decimal places; 0 = disabled from that date).
+   */
+  allocationRatePercent: number;
+  /**
+   * Required date-only string (YYYY-MM-DD) from which this scheduled rate
+   * applies. No timezone conversion — date-only lexicographic comparison.
+   */
+  effectiveFrom: string;
+}
+
+export interface TransportBudgetPolicy {
+  /**
+   * Internal transport budget allocation rate, as a percentage (0-100,
+   * up to 4 decimal places). 0 = valid disabled state (no allocation).
+   * The rate is snapshotted into each future allocation event at posting
+   * time; historical events are never recalculated when this changes.
+   * This is management/budgeting metadata only — never a customer charge,
+   * tax, delivery fee, or invoice surcharge.
+   */
+  allocationRatePercent: number;
+  /**
+   * Optional date-only string (YYYY-MM-DD) from which this rate applies.
+   * A future allocator interprets it as: the rate applies to sales whose
+   * business date is on or after this date (date-only lexicographic
+   * comparison, no timezone conversion). Absent = applies immediately.
+   */
+  effectiveFrom?: string;
+  /**
+   * Optional future-dated rate changes. Lets an administrator schedule a new
+   * rate (e.g. 5% from 2026-10-15) without losing the currently applicable
+   * rate. Entries must carry unique effective dates. Resolution is purely
+   * date-ordered: for a sale with business date D, the applicable entry is
+   * the latest one (base policy included) with effective date <= D.
+   * Absent or empty = no scheduled changes. Single-company configuration —
+   * no tenant/company scoping.
+   */
+  scheduledChanges?: TransportBudgetScheduledChange[];
+}
+
 export interface CompanyConfig {
   // Basic company info
   companyName: string;
@@ -257,6 +299,11 @@ export interface CompanyConfig {
   };
   vat: VATConfig;
   roundingRules: RoundingRulesConfig;
+  /**
+   * Optional internal transport budget allocation policy. Absent = allocation
+   * disabled. Single-company configuration — no tenant/company scoping.
+   */
+  transportBudgetPolicy?: TransportBudgetPolicy;
   notificationSettings: {
     customerActivityNotifications?: boolean;
     smsGatewayEnabled?: boolean;

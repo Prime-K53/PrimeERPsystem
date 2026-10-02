@@ -755,6 +755,30 @@ async function startServer() {
     }
   };
 
+  // ── Transport Budget sales-allocation dependency bundle (Phase 5A/5C) ──
+  // Shared by every direct-API lifecycle handler that may recognise a
+  // document (POST + PUT). The producer itself is reused verbatim — this only
+  // assembles its inputs: the canonical CompanyConfig policy source, the
+  // Phase 4 RPC append repository, and the clock. It is NEVER referenced by
+  // the sync route (POST /api/sync/ops stays pure event transport).
+  const buildTransportBudgetAllocationDeps = () => ({
+    getPolicy: async () => {
+      try {
+        const { getCompanyConfig } = require('./services/companyConfigService.cjs');
+        const config = await getCompanyConfig();
+        return config ? config.transportBudgetPolicy : undefined;
+      } catch {
+        return undefined; // unresolvable config = missing policy
+      }
+    },
+    repository: {
+      appendTransportBudgetEvent: (input) =>
+        require('./services/transportBudgetEventRepository.cjs')
+          .transportBudgetEventRepository.appendTransportBudgetEvent(input),
+    },
+    nowIso: () => new Date().toISOString(),
+  });
+
   app.get('/api/dashboard', requireRole('Admin', 'Manager', 'Cashier', 'Accountant', 'Viewer'), injectFinancialYear, async (req, res) => {
     const daysRaw = Number(req.query?.days);
     const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 120) : 30;
@@ -989,6 +1013,26 @@ async function startServer() {
                   console.error(`[BACKEND] Error committing sale #${id}:`, commitErr.message);
                   return res.status(500).json({ error: 'Failed to commit sale' });
                 }
+                // Phase 5A — Transport Budget sales allocation (post-commit,
+                // fire-and-forget exactly like the frontend posting funnels):
+                // never blocks the response, never rolls back the committed
+                // sale, deduplicates on the economic idempotency key
+                // SALES_ALLOCATION:{saleId}. Runs ONLY for records created by
+                // this REST endpoint — never for sync replay (POST /api/sync/ops).
+                try {
+                  const { allocateForApiSale, fireAllocationHook } = require('./services/transportBudgetSalesAllocation.cjs');
+                  // Phase 5A/5C shared dep bundle (canonical CompanyConfig +
+                  // Phase 4 RPC append). No logic duplicated across handlers.
+                  const allocationDeps = buildTransportBudgetAllocationDeps();
+                  const persistedSale = { id, date, totalAmount, status };
+                  fireAllocationHook(
+                    allocateForApiSale(allocationDeps, persistedSale),
+                    'POST /api/sales',
+                    id,
+                  );
+                } catch (hookSetupErr) {
+                  console.error(`[TransportBudget] sales allocation failed (endpoint=POST /api/sales, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+                }
                 res.json({
                   id,
                   date,
@@ -1071,6 +1115,28 @@ async function startServer() {
     const paymentsJson = JSON.stringify(payload.payments || []);
     const snapshotsJson = JSON.stringify(payload.adjustmentSnapshots || []);
 
+    // Phase 5C — recognition life-cycle. The allocation decision is based on
+    // the PRE-update persisted document (never the request body alone): a sale
+    // that crosses unrecognized -> recognized on this update must produce
+    // exactly one SALES_ALLOCATION; recognized -> recognized is a no-op.
+    const { isRecognizedSaleStatus } = require('./services/revenueRecognition.cjs');
+    const previous = await sq.getOne('SELECT * FROM sales WHERE id = ?', [id]);
+    const saleExists = Boolean(previous && previous.id);
+    const nextStatus = payload.status || 'Paid';
+    const effectiveDate = payload.date || new Date().toISOString();
+    const wasRecognized = saleExists && isRecognizedSaleStatus(previous.status);
+    const becomesRecognized = isRecognizedSaleStatus(nextStatus);
+
+    // Phase 5C guard (rule 5): once a sale is recognized its economic total is
+    // frozen by its existing allocation. Mutating it is a Phase 6 correction,
+    // so it is refused here rather than silently diverging from the allocation.
+    if (wasRecognized && Number(previous.total_amount || 0) !== totalAmount) {
+      return res.status(409).json({
+        error: 'Sale total cannot be changed after the sale is recognized. Reverse or correct it through the accounting workflow instead.',
+        code: 'RECOGNIZED_SALE_TOTAL_LOCKED',
+      });
+    }
+
     sq.run(
       `UPDATE sales SET
         date = ?, customer_id = ?, customer_name = ?, sub_account_name = ?,
@@ -1078,18 +1144,35 @@ async function startServer() {
         adjustment_snapshots_json = ?, status = ?, payment_method = ?, source = ?, items_json = ?, payments_json = ?
       WHERE id = ?`,
       [
-        payload.date || new Date().toISOString(),
+        effectiveDate,
         payload.customerId || payload.customer_id || 'walk-in',
         payload.businessName || payload.customerName || payload.customer_name || 'Walk-in',
         payload.subAccountName || payload.sub_account_name || 'Main',
         totalAmount, materialTotal, adjustmentTotal, profitMarginTotal, roundingTotal, otherCharges,
-        snapshotsJson, payload.status || 'Paid', payload.paymentMethod || null, payload.source || null,
+        snapshotsJson, nextStatus, payload.paymentMethod || null, payload.source || null,
         itemsJson, paymentsJson, id
       ],
       (error) => {
         if (error) {
           console.error(`[BACKEND] Error updating sale #${id}:`, error.message);
           return res.status(500).json({ error: 'Failed to update sale' });
+        }
+        // Phase 5C — allocate exactly once on the unrecognized -> recognized
+        // transition, using the POST-UPDATE persisted commercial values.
+        // recognized -> recognized and recognized -> unrecognized (reversal)
+        // are deliberately not handled here (the latter is Phase 6).
+        if (saleExists && !wasRecognized && becomesRecognized) {
+          try {
+            const { allocateForApiSale, fireAllocationHook } = require('./services/transportBudgetSalesAllocation.cjs');
+            const persistedSale = { id, date: effectiveDate, totalAmount, status: nextStatus };
+            fireAllocationHook(
+              allocateForApiSale(buildTransportBudgetAllocationDeps(), persistedSale),
+              'PUT /api/sales/:id',
+              id,
+            );
+          } catch (hookSetupErr) {
+            console.error(`[TransportBudget] sales allocation failed (endpoint=PUT /api/sales/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+          }
         }
         res.json({ id, success: true });
       }
@@ -2130,6 +2213,16 @@ async function startServer() {
       await validateFyDate('invoice_date', req.body);
       const { body } = req;
       const id = body.id || randomUUID();
+      // Phase 5A: persist the caller's actual invoice business date.
+      // Previously validated but never stored (diagnostic finding); the
+      // Transport Budget contract requires the document's business date and
+      // forbids substituting created_at / server time. Date-only (YYYY-MM-DD)
+      // at the resolution boundary; absent field stays absent — no invented
+      // dates, existing API behavior preserved.
+      const invoiceDateRaw = typeof body.invoice_date === 'string' ? body.invoice_date.trim() : '';
+      const invoiceDate = /^\d{4}-\d{2}-\d{2}/.exec(invoiceDateRaw)
+        ? invoiceDateRaw.slice(0, 10)
+        : (invoiceDateRaw || null);
       const payload = {
         id,
         customer_id: body.customer_id || null,
@@ -2141,6 +2234,7 @@ async function startServer() {
         payment_method: body.payment_method || null,
         due_date: body.due_date || null,
         invoice_number: body.invoice_number || null,
+        invoice_date: invoiceDate,
         other_charges: body.other_charges || 0,
         line_items: body.line_items || [],
         notes: body.notes || null,
@@ -2151,6 +2245,32 @@ async function startServer() {
       const result = await repo.upsert('invoices', payload);
       if (result) {
         portalLifecycleService.emitEntityChange('portal', { customerId: body.customer_id, docType: 'invoice', docId: id, status: body.status || 'unpaid', invoiceNumber: body.invoice_number });
+        // Phase 5A — Transport Budget sales allocation (post-persistence,
+        // fire-and-forget): qualifies ONLY on the persisted posted status
+        // (backend isPostedInvoiceStatus — never inferred from HTTP success);
+        // uses the persisted invoice_date as the business date (never
+        // created_at); deduplicates on SALES_ALLOCATION:{invoiceId}. Runs
+        // ONLY for records created by this REST endpoint — never for sync
+        // replay (POST /api/sync/ops). Allocation failures are logged loudly
+        // and never turn this successful invoice response into a 500.
+        try {
+          const { allocateForApiInvoice, fireAllocationHook } = require('./services/transportBudgetSalesAllocation.cjs');
+          // Phase 5A/5C shared dep bundle (canonical CompanyConfig +
+          // Phase 4 RPC append). No logic duplicated across handlers.
+          const allocationDeps = buildTransportBudgetAllocationDeps();
+          const persistedInvoice = {
+            id: result.id || id,
+            status: payload.status,
+            totalAmount: payload.total_amount,
+          };
+          fireAllocationHook(
+            allocateForApiInvoice(allocationDeps, persistedInvoice, payload.invoice_date),
+            'POST /api/invoices',
+            String(result.id || id),
+          );
+        } catch (hookSetupErr) {
+          console.error(`[TransportBudget] sales allocation failed (endpoint=POST /api/invoices, document=${result?.id || id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+        }
         return res.status(201).json({ id: result.id || id, ...body });
       }
       res.status(500).json({ error: 'Failed to create invoice' });
@@ -2167,6 +2287,24 @@ async function startServer() {
       const fields = [];
       const params = [];
       const allowed = ['customer_id', 'customer_name', 'subtotal', 'total_amount', 'currency', 'status', 'payment_method', 'paid_amount', 'due_date', 'invoice_number', 'other_charges', 'notes', 'document_title', 'line_items_json', 'sales_account_id'];
+      // Phase 5C — pre-update persisted state. Recognition transitions and the
+      // economic-total lock are decided against the stored invoice, never the
+      // request body alone.
+      const { isPostedInvoiceStatus } = require('./services/revenueRecognition.cjs');
+      const previous = await repo.getById('invoices', id);
+      const previousStatus = previous ? previous.status : undefined;
+      const wasRecognized = Boolean(previous) && isPostedInvoiceStatus(previousStatus);
+      const nextStatus = body.status !== undefined ? body.status : previousStatus;
+      const becomesRecognized = isPostedInvoiceStatus(nextStatus);
+      // Phase 5C guard (rule 5): refuse an economic-total change on an
+      // already-posted invoice (Phase 6 owns corrections/reversals).
+      if (wasRecognized && body.total_amount !== undefined
+          && Number(previous.total_amount || 0) !== Number(body.total_amount)) {
+        return res.status(409).json({
+          error: 'Invoice total cannot be changed after the invoice is posted. Reverse or correct it through the accounting workflow instead.',
+          code: 'RECOGNIZED_INVOICE_TOTAL_LOCKED',
+        });
+      }
       for (const field of allowed) {
         if (body[field] !== undefined) {
           fields.push(`${field} = ?`);
@@ -2192,6 +2330,28 @@ async function startServer() {
          }
          portalLifecycleService.emitEntityChange('portal', { customerId: body.customer_id, docType: 'invoice', docId: id, status: body.status, invoiceNumber: body.invoice_number, updatedFields });
          portalLifecycleService.emitEntityChange('admin', { customerId: body.customer_id, docType: 'invoice', docId: id, status: body.status, invoiceNumber: body.invoice_number, updatedFields });
+         // Phase 5C — allocate exactly once when this update promotes an
+         // unrecognized invoice into a posted state. Uses the persisted
+         // invoice_date as the business date (never created_at / server time);
+         // recognized -> recognized and recognized -> unrecognized (reversal)
+         // are not handled here.
+         if (previous && !wasRecognized && becomesRecognized) {
+           try {
+             const { allocateForApiInvoice, fireAllocationHook } = require('./services/transportBudgetSalesAllocation.cjs');
+             const persistedInvoice = {
+               id,
+               status: nextStatus,
+               totalAmount: body.total_amount !== undefined ? Number(body.total_amount) : Number(previous.total_amount || 0),
+             };
+             fireAllocationHook(
+               allocateForApiInvoice(buildTransportBudgetAllocationDeps(), persistedInvoice, previous.invoice_date),
+               'PUT /api/invoices/:id',
+               id,
+             );
+           } catch (hookSetupErr) {
+             console.error(`[TransportBudget] sales allocation failed (endpoint=PUT /api/invoices/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+           }
+         }
          res.json({ success: true, id });
        });
     } catch (err) {

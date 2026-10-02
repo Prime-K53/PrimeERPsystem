@@ -137,6 +137,30 @@ async function upsert(table, domainObject) {
   }
 }
 
+/**
+ * Call a PostgREST RPC (function in the public schema) with the service-role
+ * headers and return the JSON result (row or scalar), or null when Supabase
+ * is not configured. Used by narrowly-scoped, idempotent RPCs such as the
+ * Phase 4 `append_transport_budget_event` — never a substitute for table
+ * writes that have their own repository methods.
+ */
+async function callRpc(fnName, args = {}) {
+  if (!isConfigured()) return null;
+  try {
+    const { data } = await axios.post(
+      `${SUPABASE_URL}/rest/v1/rpc/${fnName}`,
+      args,
+      { headers: adminHeaders(), timeout: 20000 },
+    );
+    return data === undefined ? null : data;
+  } catch (err) {
+    const status = err.response && err.response.status;
+    const detail = err.response && err.response.data ? JSON.stringify(err.response.data) : '';
+    console.warn(`[SupabaseRepo] rpc ${fnName} failed (${status || err.message}): ${detail}`);
+    throw err;
+  }
+}
+
 async function softDelete(table, id) {
   if (!isConfigured()) return null;
   try {
@@ -1083,6 +1107,7 @@ module.exports = {
   getById,
   upsert,
   softDelete,
+  callRpc,
   count,
   ...entityQueries,
   // camelCase aliases for services that use them
