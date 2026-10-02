@@ -184,6 +184,7 @@ const UserManagement = lazyWithRetry('./views/admin/UserManagement', () => impor
 const ProfileActivity = lazyWithRetry('./views/admin/ProfileActivity', () => import('./views/admin/ProfileActivity'));
 const Profile = lazyWithRetry('./views/Profile', () => import('./views/Profile'));
 const SyncHealth = lazyWithRetry('./views/admin/SyncHealth', () => import('./views/admin/SyncHealth'));
+const ExaminationInvoiceDiag = lazyWithRetry('./views/admin/ExaminationInvoiceDiag', () => import('./views/admin/ExaminationInvoiceDiag'));
 const BOMRecipes = lazyWithRetry('./views/production/BOMRecipes', () => import('./views/production/BOMRecipes'));
 const DataImport = lazyWithRetry('./views/admin/DataImport', () => import('./views/admin/DataImport'));
 const GlobalSearch = lazyWithRetry('./views/GlobalSearch', () => import('./views/GlobalSearch'));
@@ -739,6 +740,7 @@ const AppLayout: React.FC = () => {
                 <Route path="/admin/users" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.users"><UserManagement /></ProtectedRoute></ErrorBoundary>} />
                 <Route path="/admin/profile" element={<ErrorBoundary name="Admin"><ProfileActivity /></ErrorBoundary>} />
                 <Route path="/admin/sync-health" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><SyncHealth /></ProtectedRoute></ErrorBoundary>} />
+                <Route path="/admin/examination-invoice-diag" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><ExaminationInvoiceDiag /></ProtectedRoute></ErrorBoundary>} />
                 <Route path="/profile" element={<ErrorBoundary name="Profile"><Profile /></ErrorBoundary>} />
                 <Route path="/settings" element={<ErrorBoundary name="Settings"><ProtectedRoute permission="admin.settings"><Settings /></ProtectedRoute></ErrorBoundary>} />
 
