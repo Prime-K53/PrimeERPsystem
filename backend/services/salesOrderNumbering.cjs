@@ -11,13 +11,20 @@
  * parameterized by the resolved series.
  *
  * Business rule (never infer origin from a prefix — origin comes from
- * persisted provenance fields):
- *   DIRECT_ERP origin (no source_request_id/number, no quotation_id)
+ * the explicit persisted `creation_source`, with request/quotation linkage
+ * as a backwards-compatible fallback):
+ *   DIRECT_ERP origin (explicit creation_source, or no linkage)
  *     → ORD-{series}/NNN
- *   QUOTATION_REQUEST origin (source_request_id/number or quotation_id set)
+ *   PORTAL_CONVERSION origin (explicit creation_source; legacy alias
+ *     QUOTATION_REQUEST, or source_request_id/number or quotation_id set)
  *     → SO-{series}/NNN
+ *   INVOICE_DERIVED origin (explicit creation_source for direct-invoice
+ *     orders that preserve the Order → Invoice chain)
+ *     → ORD-{series}/NNN (ERP family sequence, never portal SO)
  * Both prefixes consume ONE numeric sequence PER SERIES (migration 0027:
  * one counter row per series; different series never interfere).
+ * Missing/invalid sources never default to portal/SO — the safe fallback
+ * is DIRECT_ERP/ORD.
  *
  * Atomicity: numbers are claimed with the single-statement-per-series
  * Postgres function `claim_next_sales_order_number(series)` (row lock +
@@ -57,21 +64,74 @@ const LEGACY_ORD_YEAR_PATTERN = /^ORD-\d{4}-\d{6}$/;
 
 const ORIGIN_DIRECT = 'DIRECT_ERP';
 const ORIGIN_CONVERSION = 'QUOTATION_REQUEST';
+/** Canonical portal origin per business rules (SO sequence). Legacy alias: QUOTATION_REQUEST. */
+const ORIGIN_PORTAL = 'PORTAL_CONVERSION';
+/** Invoice-derived origin (direct-invoice Order → Invoice chain). Uses the ORD sequence. */
+const ORIGIN_INVOICE = 'INVOICE_DERIVED';
+
+const CREATION_SOURCES = Object.freeze([ORIGIN_DIRECT, ORIGIN_PORTAL, ORIGIN_INVOICE]);
 
 /**
- * Pure: decide origin from PERSISTED provenance fields (never from prefixes).
+ * Pure: normalize an explicit persisted creation source to its canonical
+ * value. Accepts the spec values DIRECT_ERP / PORTAL_CONVERSION /
+ * INVOICE_DERIVED plus the legacy QUOTATION_REQUEST portal alias (and
+ * common casings). Returns null when missing/invalid — callers must NOT
+ * treat null as portal/SO.
+ */
+function normalizeCreationSource(value) {
+  const text = String(value || '').trim().toUpperCase();
+  if (!text) return null;
+  if (text === ORIGIN_DIRECT) return ORIGIN_DIRECT;
+  if (text === ORIGIN_PORTAL) return ORIGIN_PORTAL;
+  if (text === ORIGIN_INVOICE) return ORIGIN_INVOICE;
+  if (text === ORIGIN_CONVERSION) return ORIGIN_PORTAL;
+  return null;
+}
+
+/**
+ * Pure: read the explicit persisted creation source from a domain record.
+ * Supports snake_case (Supabase data envelope) and camelCase (IndexedDB /
+ * frontend) spellings. Returns the canonical source or null.
+ */
+function readCreationSource(domain) {
+  const d = domain && typeof domain === 'object' ? domain : {};
+  const raw =
+    d.creation_source != null ? d.creation_source
+    : d.creationSource != null ? d.creationSource
+    : d.origin != null ? d.origin
+    : null;
+  return normalizeCreationSource(raw);
+}
+
+/**
+ * Pure: decide origin from the explicit persisted creation source first,
+ * with request/quotation linkage as a backwards-compatible fallback
+ * (never from number prefixes).
+ *
+ *   creation_source DIRECT_ERP      → DIRECT_ERP (ORD)
+ *   creation_source PORTAL_CONVERSION (+ legacy QUOTATION_REQUEST) → PORTAL (SO)
+ *   creation_source INVOICE_DERIVED → INVOICE_DERIVED (ORD, ERP family)
+ *   no explicit source + linkage   → QUOTATION_REQUEST (SO, legacy path)
+ *   no explicit source, no linkage → DIRECT_ERP (ORD, safe fallback)
  */
 function determineSalesOrderOrigin(domain) {
   const d = domain && typeof domain === 'object' ? domain : {};
+  const explicit = readCreationSource(d);
+  if (explicit === ORIGIN_DIRECT) return ORIGIN_DIRECT;
+  if (explicit === ORIGIN_PORTAL) return ORIGIN_PORTAL;
+  if (explicit === ORIGIN_INVOICE) return ORIGIN_INVOICE;
   const linked =
-    String(d.source_request_id || '').trim() ||
-    String(d.source_request_number || '').trim() ||
-    String(d.quotation_id || '').trim();
+    String(d.source_request_id || d.sourceRequestId || '').trim() ||
+    String(d.source_request_number || d.sourceRequestNumber || '').trim() ||
+    String(d.quotation_id || d.quotationId || '').trim();
   return linked ? ORIGIN_CONVERSION : ORIGIN_DIRECT;
 }
 
 function prefixForOrigin(origin) {
-  return origin === ORIGIN_CONVERSION ? 'SO' : 'ORD';
+  const normalized = normalizeCreationSource(origin) || origin;
+  if (normalized === ORIGIN_PORTAL || normalized === ORIGIN_CONVERSION) return 'SO';
+  // DIRECT_ERP, INVOICE_DERIVED and any unknown/safe fallback use ORD.
+  return 'ORD';
 }
 
 /**
@@ -110,14 +170,16 @@ function isOfficialSalesOrderNumber(value, series) {
 /**
  * Pure: does a candidate official number's prefix agree with the domain's
  * persisted origin? Guards adoption of client-supplied numbers (a direct-ERP
- * row must never keep an SO- number and vice versa). Series-agnostic: only
- * the origin prefix is compared, never any particular series value.
+ * or invoice-derived row must never keep an SO- number, and a portal row
+ * must never keep an ORD- number). Series-agnostic: only the origin prefix
+ * is compared, never any particular series value.
  */
 function prefixMatchesOrigin(candidate, domain) {
   const parsed = parseOfficialSalesOrderNumber(candidate);
   if (!parsed) return false;
-  const expected = prefixForOrigin(determineSalesOrderOrigin(domain));
-  return parsed.origin === (expected === 'SO' ? 'CONVERSION' : 'DIRECT');
+  const expectedPrefix = prefixForOrigin(determineSalesOrderOrigin(domain));
+  const candidatePrefix = parsed.origin === 'CONVERSION' ? 'SO' : 'ORD';
+  return candidatePrefix === expectedPrefix;
 }
 
 /**
@@ -276,10 +338,11 @@ function isUniqueViolation(err) {
 /**
  * Full mint for one official order in the CURRENT configured series:
  * resolve series → claim (that series' counter) → format.
- * `originOverride` forces a prefix ('SO' conversion callers pass
- * ORIGIN_CONVERSION explicitly); otherwise origin is derived from the
- * domain's persisted provenance fields. `seriesOverride` pins the series
- * (tests, tooling); otherwise the company config decides.
+ * `originOverride` forces a prefix (portal conversion callers pass
+ * ORIGIN_PORTAL/ORIGIN_CONVERSION explicitly for SO); otherwise origin is
+ * derived from the explicit creation_source with linkage fallback.
+ * `seriesOverride` pins the series (tests, tooling); otherwise the company
+ * config decides.
  */
 async function mintOfficialSalesOrderNumber(domain, deps) {
   const getConfig = (deps && deps.getCompanyConfig) || null;
@@ -311,6 +374,11 @@ module.exports = {
   LEGACY_ORD_YEAR_PATTERN,
   ORIGIN_DIRECT,
   ORIGIN_CONVERSION,
+  ORIGIN_PORTAL,
+  ORIGIN_INVOICE,
+  CREATION_SOURCES,
+  normalizeCreationSource,
+  readCreationSource,
   determineSalesOrderOrigin,
   prefixForOrigin,
   parseOfficialSalesOrderNumber,

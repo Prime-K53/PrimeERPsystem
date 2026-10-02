@@ -54,7 +54,19 @@ export const useSalesOrderStore = create<SalesOrderState>((set, get) => ({
   },
 
   createSalesOrder: async (order) => {
-    const canonical = salesOrderService.canonicalizeOrder(order);
+    // Manual ERP creation: stamp an explicit DIRECT_ERP source unless the
+    // caller already carries a portal/invoice origin or request linkage
+    // (adoption path sets PORTAL_CONVERSION itself).
+    const withSource = (() => {
+      const o: any = order || {};
+      const hasSource = o.creation_source != null || o.creationSource != null;
+      const hasLinkage = o.source_request_id || o.sourceRequestId
+        || o.source_request_number || o.sourceRequestNumber
+        || o.sourceRequestNumber || o.quotation_id || o.quotationId;
+      if (hasSource || hasLinkage) return order;
+      return { ...o, creation_source: 'DIRECT_ERP', creationSource: 'DIRECT_ERP' };
+    })();
+    const canonical = salesOrderService.canonicalizeOrder(withSource);
     const dedupeKey = canonical.idempotencyKey || canonical.id;
     if (inFlightCreates.has(dedupeKey)) throw new Error('Duplicate submit blocked — order already creating');
     inFlightCreates.add(dedupeKey);

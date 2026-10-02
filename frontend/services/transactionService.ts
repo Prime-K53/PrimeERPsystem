@@ -1939,7 +1939,7 @@ export const transactionService = {
             );
             if (dup) return null;
 
-            const orderId = salesOrderService.generateProvisionalOrderId(existing, 'SO');
+            const orderId = salesOrderService.generateProvisionalOrderId(existing, 'TMP');
 
             const items: SalesOrderItem[] = (invoice.items || []).map((it: CartItem, idx: number) => {
                 const quantity = Number(it.quantity ?? it.qty ?? 1);
@@ -1965,6 +1965,9 @@ export const transactionService = {
             const order: SalesOrder & { orderNumber?: string; customerName?: string; invoiceId?: string; invoiceNumber?: string; source?: string } = {
                 id: orderId,
                 orderNumber: orderId,
+                orderNumberProvisional: true,
+                creation_source: 'INVOICE_DERIVED',
+                creationSource: 'INVOICE_DERIVED',
                 quotationId: null,
                 customerId,
                 customerName: invoice.customerName,

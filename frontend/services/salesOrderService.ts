@@ -3,6 +3,7 @@ import { generateNextId } from '../utils/helpers';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import {
   SalesOrder,
+  SalesOrderCreationSource,
   SalesOrderItem,
   SalesOrderPayment,
   SalesOrderStatus,
@@ -13,7 +14,15 @@ import {
   isCanonicalStatus,
   isTerminalStatus,
   isProvisionalNumber,
+  normalizeCreationSource,
+  readCreationSource,
 } from '../types/salesOrder';
+
+export const CREATION_SOURCE_DIRECT: SalesOrderCreationSource = 'DIRECT_ERP';
+export const CREATION_SOURCE_PORTAL: SalesOrderCreationSource = 'PORTAL_CONVERSION';
+export const CREATION_SOURCE_INVOICE: SalesOrderCreationSource = 'INVOICE_DERIVED';
+/** Legacy portal alias, normalized to PORTAL_CONVERSION on write. */
+export const CREATION_SOURCE_LEGACY_PORTAL = 'QUOTATION_REQUEST';
 
 export interface SalesOrderContext {
   user?: { id?: string; name?: string } | null;
@@ -151,12 +160,18 @@ export const canonicalizeOrder = (raw: any): SalesOrder => {
   const normalized = normalizeTotals({ ...base, items, status, paymentStatus, invoiceStatus } as SalesOrder);
   const serverNumber = base.order_number || undefined;
   const orderNumber = serverNumber || base.orderNumber || base.id;
+  const explicitSource = readCreationSource(base);
   return {
     ...normalized,
+    // Persist both spellings so the sync gateway (snake_case) and the
+    // IndexedDB UI (camelCase) always agree on origin.
+    ...(explicitSource
+      ? { creation_source: explicitSource, creationSource: explicitSource }
+      : {}),
     orderNumber,
     orderNumberProvisional: base.orderNumberProvisional === true
       ? !serverNumber
-      : isProvisionalNumber(normalized) && !serverNumber,
+      : isProvisionalNumber({ ...normalized, orderNumber }) && !serverNumber,
     legacyStatus: legacyStatus && !isCanonicalStatus(legacyStatus) ? legacyStatus : base.legacyStatus,
     date: base.date || base.orderDate,
     orderDate: base.orderDate || base.date || new Date().toISOString(),
@@ -338,6 +353,8 @@ export const adoptQuotationRequestAsSalesOrder = async (
       const adopted = applyOfficialNumber(persisted, res.id || persisted.id, res.orderNumber || '');
       await deps.updateLocal({
         ...adopted,
+        creation_source: CREATION_SOURCE_PORTAL,
+        creationSource: CREATION_SOURCE_PORTAL,
         sourceRequestId: prefill.id,
         sourceRequestNumber: prefill.requestNumber,
         status: 'Confirmed',
@@ -387,7 +404,14 @@ export const migrateLegacyOrders = async (): Promise<MigrationReport> => {
   };
 };
 
-export const generateProvisionalOrderId = (existing: any[], prefix = 'SO'): string => {
+/**
+ * Mint a neutral client-side provisional id. TMP- is intentionally NOT an
+ * official prefix so it can never be mistaken for an SO/ORD number; the
+ * backend stamps the official ORD-/SO- order_number on first sync.
+ * Callers creating portal conversions may pass an explicitly ORD-shaped
+ * provisional instead; never pass 'SO'.
+ */
+export const generateProvisionalOrderId = (existing: any[], prefix = 'TMP'): string => {
   return generateNextId(prefix, existing);
 };
 
@@ -469,6 +493,8 @@ export const salesOrderService = {
   canTransition,
   assertCanTransition,
   canonicalizeStatus,
+  normalizeCreationSource,
+  readCreationSource,
   validateOrder,
   normalizeTotals,
   canonicalizeOrder,

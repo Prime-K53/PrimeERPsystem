@@ -152,13 +152,20 @@ const SalesOrders: React.FC = () => {
 
   const handleCreate = async (o: any) => {
     // Converting a portal request → the ERP record is saved first (offline-safe),
-    // then the backend ADOPTS it as the official sales order (SO-YYYY-######),
+    // then the backend ADOPTS it as the official sales order (SO-{series}/NNN),
     // links the request (marked converted) and notifies the customer. The local
     // record is then updated with the official number + request linkage so the
     // admin list never shows an "Unnumbered order" and ODR-… stays traceable.
     if (pendingOrderRequest) {
-      const orderId = o.id || salesOrderService.generateProvisionalOrderId(salesOrders, 'SO');
-      const orderToSave = { ...o, id: orderId };
+      const orderId = o.id || salesOrderService.generateProvisionalOrderId(salesOrders, 'TMP');
+      const orderToSave = {
+        ...o,
+        id: orderId,
+        orderNumber: o.orderNumber || orderId,
+        orderNumberProvisional: o.orderNumberProvisional ?? true,
+        creation_source: o.creation_source || o.creationSource || 'PORTAL_CONVERSION',
+        creationSource: o.creationSource || o.creation_source || 'PORTAL_CONVERSION',
+      };
       const result = await store.adoptQuotationRequest({
         id: pendingOrderRequest.requestId,
         requestNumber: pendingOrderRequest.requestNumber,

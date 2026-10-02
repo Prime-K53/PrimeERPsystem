@@ -1,19 +1,25 @@
 import type { Order } from '../../../types';
 
-/** An order is considered "converted to an invoice" once it has been invoiced. */
+/**
+ * An order is considered workflow-complete only when it has reached its
+ * legitimate terminal state via the explicit Order → Invoice conversion
+ * (status Converted) or fulfillment (status Fulfilled). Invoice existence
+ * alone (invoiceId/invoiceNumber/invoiceStatus) does NOT complete the
+ * Sales Order workflow — invoice status and order status are separate
+ * concepts. Kept under the historical name for backwards compatibility.
+ */
 export function isOrderInvoiced(order: any): boolean {
   if (!order) return false;
-  return (
-    order.status === 'Converted' ||
-    order.invoiceStatus === 'Invoiced' ||
-    !!order.invoiceId
-  );
+  const status = String(order.status || '').trim();
+  return status === 'Converted' || status === 'Fulfilled';
 }
 
 /**
  * Display status for an order on the Full Orders list.
- * Any order that has not yet been converted into an invoice is shown as
- * "Processing" (unless it has been cancelled).
+ * Terminal workflow states (Converted/Fulfilled) show as "Done"; cancelled
+ * stays "Cancelled"; everything else (Draft/Confirmed/Processing, including
+ * invoice-derived orders that merely carry an invoiceId) shows as
+ * "Processing" until an explicit terminal transition occurs.
  */
 export function getOrderDisplayStatus(order: Order | any): string {
   const status = (order && order.status) || '';

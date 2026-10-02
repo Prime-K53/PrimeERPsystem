@@ -4,6 +4,7 @@ import { useSalesOrderStore } from '../../stores/salesOrderStore';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import type { SalesOrderItem, SalesOrder } from '../../types';
+import { generateProvisionalOrderId } from '../../services/salesOrderService';
 import { Printer } from 'lucide-react';
 
 interface SalesOrderFormProps {
@@ -161,14 +162,30 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
   };
 
   const save = async () => {
+    // Manual ERP creation mints a neutral TMP- provisional identity with an
+    // explicit DIRECT_ERP source; the backend stamps the official ORD number
+    // on first sync. Status stays Draft (never Done).
+    const provisionalId = !order.id
+      ? generateProvisionalOrderId(useSalesOrderStore.getState().salesOrders || [], 'TMP')
+      : null;
     const orderToSave = {
       ...order,
+      ...(provisionalId
+        ? {
+          id: provisionalId,
+          orderNumber: provisionalId,
+          orderNumberProvisional: true,
+          creation_source: 'DIRECT_ERP',
+          creationSource: 'DIRECT_ERP',
+        }
+        : {}),
       subtotal: calculatedSubtotal,
       total: calculatedTotal,
-      orderDate: order.orderDate || new Date().toISOString()
+      orderDate: order.orderDate || new Date().toISOString(),
+      status: order.status || 'Draft',
     };
 
-    const isNew = !orderToSave.id;
+    const isNew = !order.id;
     try {
       if (isNew) {
         if (onCreate) await onCreate(orderToSave); else await createSalesOrder(orderToSave);

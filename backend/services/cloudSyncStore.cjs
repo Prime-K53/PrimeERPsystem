@@ -180,8 +180,10 @@ async function listRows(table) {
 
 // ─── Unified P726 official Sales Order numbering ────────────────────────────
 // One global numeric sequence shared by both official prefixes:
-//   DIRECT_ERP origin (no source_request_id/number, no quotation_id) → ORD-P726/NNN
-//   QUOTATION_REQUEST origin (request/quotation linkage persisted)   → SO-P726/NNN
+//   DIRECT_ERP origin (explicit creation_source, or no linkage)     → ORD-P726/NNN
+//   PORTAL_CONVERSION origin (explicit creation_source; legacy
+//     QUOTATION_REQUEST alias or request/quotation linkage)          → SO-P726/NNN
+//   INVOICE_DERIVED origin (explicit creation_source, Order→Invoice)→ ORD-P726/NNN
 // Numbers are claimed atomically (counter row lock — see salesOrderNumbering
 // + migration 0027). Never SELECT MAX()+1, never an in-memory counter.
 //

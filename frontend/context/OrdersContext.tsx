@@ -102,7 +102,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         notify('This quotation has already been converted to an order', 'warning');
         return existingOrder.id;
       }
-      const orderNumber = salesOrderService.generateProvisionalOrderId(orders, 'SO');
+      const orderNumber = salesOrderService.generateProvisionalOrderId(orders, 'TMP');
       const conversionDate = new Date().toLocaleDateString();
       const acceptedBy = quotation.customerName || 'Customer';
       const conversionDetails = {
@@ -150,6 +150,9 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         id: orderNumber,
         idempotencyKey: crypto.randomUUID(),
         orderNumber,
+        orderNumberProvisional: true,
+        creation_source: 'PORTAL_CONVERSION',
+        creationSource: 'PORTAL_CONVERSION',
         customerId: '', // Quotation might not have customerId directly, we might need to look it up by name
         customerName: quotation.customerName,
         orderDate: new Date().toISOString(),
@@ -209,7 +212,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const handleCreateOrder = async (data: any) => {
     try {
-      const orderNumber = data.orderNumber || data.id || salesOrderService.generateProvisionalOrderId(orders, 'SO');
+      const orderNumber = data.orderNumber || data.id || salesOrderService.generateProvisionalOrderId(orders, 'TMP');
 
       const subtotal = toNum(data.subtotal) || data.items.reduce((sum: number, it: any) => sum + (toNum(it.subtotal || (toNum(it.quantity || it.qty) * toNum(it.unitPrice || it.price || it.cost)))), 0);
       const discount = toNum(data.discount);
@@ -231,6 +234,11 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         id: orderNumber,
         idempotencyKey: crypto.randomUUID(),
         orderNumber,
+        orderNumberProvisional: (data as any).orderNumberProvisional ?? true,
+        creation_source: (data as any).creation_source || (data as any).creationSource
+          || ((data as any).quotationId || (data as any).quotation_id ? 'PORTAL_CONVERSION' : 'DIRECT_ERP'),
+        creationSource: (data as any).creationSource || (data as any).creation_source
+          || ((data as any).quotationId || (data as any).quotation_id ? 'PORTAL_CONVERSION' : 'DIRECT_ERP'),
         customerId: data.customerId || '',
         customerName: data.customerName || 'Walking Customer',
         orderDate: data.orderDate || data.date || new Date().toISOString(),

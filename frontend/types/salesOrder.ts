@@ -26,6 +26,52 @@ export type SalesOrderPaymentStatus = 'Unpaid' | 'Partially Paid' | 'Paid';
 
 export type SalesOrderInvoiceStatus = 'Not Invoiced' | 'Invoiced';
 
+/**
+ * Explicit persisted creation source/origin for Sales Orders.
+ * DIRECT_ERP       → ORD sequence (manual ERP orders, initial Draft)
+ * PORTAL_CONVERSION→ SO sequence (portal quotation/request conversion, Confirmed)
+ * INVOICE_DERIVED  → ORD sequence (direct-invoice Order → Invoice chain, Confirmed)
+ * QUOTATION_REQUEST is the legacy portal alias, normalized to PORTAL_CONVERSION.
+ */
+export type SalesOrderCreationSource =
+  | 'DIRECT_ERP'
+  | 'PORTAL_CONVERSION'
+  | 'INVOICE_DERIVED';
+
+export const SALES_ORDER_CREATION_SOURCES: readonly string[] = [
+  'DIRECT_ERP',
+  'PORTAL_CONVERSION',
+  'INVOICE_DERIVED',
+] as const;
+
+const LEGACY_PORTAL_SOURCE_ALIAS = 'QUOTATION_REQUEST';
+
+/** Normalize a persisted creation source (null when missing/invalid — never default to portal/SO). */
+export function normalizeCreationSource(value?: string | null): SalesOrderCreationSource | null {
+  const text = String(value || '').trim().toUpperCase();
+  if (!text) return null;
+  if (text === 'DIRECT_ERP') return 'DIRECT_ERP';
+  if (text === 'PORTAL_CONVERSION') return 'PORTAL_CONVERSION';
+  if (text === 'INVOICE_DERIVED') return 'INVOICE_DERIVED';
+  if (text === LEGACY_PORTAL_SOURCE_ALIAS) return 'PORTAL_CONVERSION';
+  return null;
+}
+
+/** Read the explicit creation source from either spelling (snake/camel). */
+export function readCreationSource(order: {
+  creation_source?: unknown;
+  creationSource?: unknown;
+  origin?: unknown;
+} | null | undefined): SalesOrderCreationSource | null {
+  if (!order || typeof order !== 'object') return null;
+  const raw =
+    (order as Record<string, unknown>).creation_source ??
+    (order as Record<string, unknown>).creationSource ??
+    (order as Record<string, unknown>).origin ??
+    null;
+  return normalizeCreationSource(typeof raw === 'string' ? raw : null);
+}
+
 export interface SalesOrderItem {
   id: string;
   productId: string;
@@ -109,6 +155,9 @@ export interface SalesOrder {
   sourceRequestNumber?: string;
   referenceDoc?: string;
   source?: string;
+  /** Explicit persisted creation source (snake + camel kept in sync for sync gateway). */
+  creation_source?: SalesOrderCreationSource | string;
+  creationSource?: SalesOrderCreationSource | string;
   conversionDetails?: SalesOrderConversionDetails;
   convertedAt?: string;
   convertedBy?: string;
@@ -253,8 +302,21 @@ export function displayStatus(status?: string | null): string {
   return canonicalizeStatus(status);
 }
 
-/** True when the record carries a provisional (client-minted) order number. */
+/**
+ * True when the record carries a provisional (client-minted) order number.
+ * Explicit flag wins. Otherwise official unified numbers
+ * (SO|ORD-{series}/NNN) and legacy ORD-YYYY-NNNNNN are NOT provisional;
+ * everything else (missing, TMP-, short SO-####/ORD-#### without a series
+ * slash, ORDER-, bare ids) IS provisional and must never be presented as
+ * the official Sales Order number.
+ */
+const OFFICIAL_UNIFIED_PATTERN = /^(SO|ORD)-([A-Za-z0-9]+)\/(\d+)$/i;
+const LEGACY_ORD_YEAR_PATTERN = /^ORD-\d{4}-\d{6}$/;
 export function isProvisionalNumber(order: Pick<SalesOrder, 'orderNumber' | 'orderNumberProvisional'>): boolean {
   if (order.orderNumberProvisional === true) return true;
-  return !order.orderNumber || !/^(SO-|SO\/)/i.test(order.orderNumber);
+  const value = String((order as { orderNumber?: unknown }).orderNumber || '').trim();
+  if (!value) return true;
+  if (OFFICIAL_UNIFIED_PATTERN.test(value)) return false;
+  if (LEGACY_ORD_YEAR_PATTERN.test(value)) return false;
+  return true;
 }

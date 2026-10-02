@@ -69,9 +69,14 @@ describe('canonicalizeOrder', () => {
   });
 
   it('keeps an official orderNumber and does not flag it provisional', () => {
-    const canonical = canonicalizeOrder(baseOrder({ orderNumber: 'SO-2026-000001' }));
-    expect(canonical.orderNumber).toBe('SO-2026-000001');
+    const canonical = canonicalizeOrder(baseOrder({ orderNumber: 'SO-P726/000001' }));
+    expect(canonical.orderNumber).toBe('SO-P726/000001');
     expect(canonical.orderNumberProvisional).toBe(false);
+  });
+
+  it('flags short non-series numbers as provisional (never official SO)', () => {
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'SO-2026-000001' })).orderNumberProvisional).toBe(true);
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'TMP-0001' })).orderNumberProvisional).toBe(true);
   });
 
   it('normalizes totals (totalAmount alias, remainingBalance)', () => {
@@ -288,8 +293,8 @@ describe('number helpers', () => {
     expect(isOfficialNumber(null)).toBe(false);
   });
 
-  it('generateProvisionalOrderId delegates to the shared id generator', () => {
-    expect(generateProvisionalOrderId([])).toBe('SO-NEXT');
+  it('generateProvisionalOrderId delegates to the shared id generator with a neutral TMP prefix', () => {
+    expect(generateProvisionalOrderId([])).toBe('TMP-NEXT');
   });
 });
 

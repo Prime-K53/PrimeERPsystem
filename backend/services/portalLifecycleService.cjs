@@ -1941,17 +1941,19 @@ const portalLifecycleService = {
     // list, the portal and the document chain all reference ONE order. Without
     // an erpOrderId a fresh canonical record is created as before.
     const orderId = erpOrderId || genId('so');
-    // Unified P726 official number, shared atomic sequence. Conversions always
-    // carry the SO- prefix (origin QUOTATION_REQUEST); direct ERP orders get
-    // ORD- via the same counter in the sync gateway. Throws when the sequence
-    // store is unavailable — an official order must never be created unnumbered.
+    // Unified P726 official number, shared atomic sequence. Portal conversions
+    // always carry the SO- prefix (explicit creation_source PORTAL_CONVERSION);
+    // direct ERP orders get ORD- via the same counter in the sync gateway.
+    // Throws when the sequence store is unavailable — an official order must
+    // never be created unnumbered.
     const orderNumber = await salesOrderNumbering.mintOfficialSalesOrderNumber(
       {
+        creation_source: salesOrderNumbering.ORIGIN_PORTAL,
         source_request_id: requestId,
         source_request_number: request.request_number,
         reorder_of: request.reorder_of || null,
       },
-      { originOverride: salesOrderNumbering.ORIGIN_CONVERSION }
+      { originOverride: salesOrderNumbering.ORIGIN_PORTAL }
     );
 
     // Pricing-evidence preservation. Lines priced at submission already carry
@@ -2022,6 +2024,8 @@ const portalLifecycleService = {
       const erpExisting = erpOrderId ? await repo.getById('sales_orders', erpOrderId) : null;
       const orderRecord = {
         ...(erpExisting || {}), id: orderId, order_number: orderNumber,
+        creation_source: salesOrderNumbering.ORIGIN_PORTAL,
+        creationSource: salesOrderNumbering.ORIGIN_PORTAL,
         source_request_id: requestId, source_request_number: request.request_number,
         reorder_of: request.reorder_of || null, reorder_of_number: request.reorder_of_number || null,
         customer_id: request.customer_id, customerId: request.customer_id,
@@ -2366,11 +2370,11 @@ const portalLifecycleService = {
     }
 
     const orderId = genId('so');
-    // Unified P726 official number (conversion origin → SO- prefix), shared
-    // atomic sequence with direct ERP orders. See completeSalesOrder above.
+    // Unified P726 official number (explicit PORTAL_CONVERSION → SO- prefix),
+    // shared atomic sequence with direct ERP orders. See completeSalesOrder.
     const orderNumber = await salesOrderNumbering.mintOfficialSalesOrderNumber(
-      { quotation_id: id },
-      { originOverride: salesOrderNumbering.ORIGIN_CONVERSION }
+      { creation_source: salesOrderNumbering.ORIGIN_PORTAL, quotation_id: id },
+      { originOverride: salesOrderNumbering.ORIGIN_PORTAL }
     );
     const itemsJson = JSON.stringify(
       quotation.items.map((item) => ({
@@ -2388,11 +2392,11 @@ const portalLifecycleService = {
     try {
       await runQuery(
         `INSERT INTO sales_orders
-           (id, order_number, quotation_id, source_request_id, source_request_number, customer_id, orderDate, deliveryDate, status, items,
+           (id, order_number, creation_source, quotation_id, source_request_id, source_request_number, customer_id, orderDate, deliveryDate, status, items,
             subtotal, discounts, tax, other_charges, total, notes,
             approved_by, approved_at, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )`,
-        [orderId, orderNumber, id, quotation.request_id || null, quotation.source_request_number || null, quotation.customer_id, now, deliveryDate || null, workflowEngine.SALES_ORDER_STATUS.CONFIRMED, itemsJson, quotation.subtotal, quotation.discount, quotation.tax_amount, quotation.delivery_fee, quotation.total, notes || `Converted from ${quotation.quotation_number}`, admin.id, now, admin.id, now, now]
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )`,
+        [orderId, orderNumber, salesOrderNumbering.ORIGIN_PORTAL, id, quotation.request_id || null, quotation.source_request_number || null, quotation.customer_id, now, deliveryDate || null, workflowEngine.SALES_ORDER_STATUS.CONFIRMED, itemsJson, quotation.subtotal, quotation.discount, quotation.tax_amount, quotation.delivery_fee, quotation.total, notes || `Converted from ${quotation.quotation_number}`, admin.id, now, admin.id, now, now]
       );
       orderCreated = true;
 

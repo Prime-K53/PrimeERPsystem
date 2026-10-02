@@ -942,6 +942,7 @@ const initDb = () => {
         id TEXT PRIMARY KEY,
         quotation_id TEXT,
         order_number TEXT,
+        creation_source TEXT,
         source_request_id TEXT,
         source_request_number TEXT,
         reorder_of TEXT,
@@ -993,6 +994,7 @@ const initDb = () => {
         { table: 'sales_orders', column: 'quotation_id', type: 'TEXT' },
         // Sales document chain (Phase: complete request architecture)
         { table: 'sales_orders', column: 'order_number', type: 'TEXT' },
+        { table: 'sales_orders', column: 'creation_source', type: 'TEXT' },
         { table: 'sales_orders', column: 'source_request_id', type: 'TEXT' },
         { table: 'sales_orders', column: 'source_request_number', type: 'TEXT' },
         { table: 'sales_orders', column: 'reorder_of', type: 'TEXT' },
