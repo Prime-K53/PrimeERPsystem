@@ -27,6 +27,7 @@
  */
 import { generateNextExaminationInvoiceNumber } from '../utils/helpers';
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
+import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import {
   findOwningExaminationBatchId,
   getExaminationBatchLinkage,
@@ -155,9 +156,21 @@ export async function resolveExaminationInvoiceCollision(
   const serverData = asRecord(server?.data);
   const oldId = String(item.recordId ?? payload.id ?? '');
   if (!oldId) return { handled: false };
+  // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+  await traceExamInvoice('collision-check', {
+    recordId: item.recordId,
+    id: payload.id,
+    invoiceNumber: payload.invoiceNumber,
+    verificationToken: payload.verificationToken,
+  }, { table: item.table, operation: item.operation });
   if (!isDistinctExaminationInvoiceCollision(payload, serverData)) return { handled: false };
 
   const failSafe = async (reason: string): Promise<CollisionHandling> => {
+    // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+    await traceExamInvoice('collision-deadletter', { id: oldId }, {
+      table: item.table,
+      reasonSnippet: reason.slice(0, 160) || null,
+    });
     await deps.deadLetterQueueItem(item.id, reason);
     await deps.recordConflictAudit({
       operationId: item.operationId ?? null,
@@ -252,6 +265,12 @@ export async function resolveExaminationInvoiceCollision(
     conflictedFields,
     serverVersion: Number(server?.version ?? 0),
   });
+  // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+  await traceExamInvoice('collision-remint', {
+    id: oldId,
+    invoiceNumber: newId,
+    verificationToken: payload.verificationToken,
+  }, { table: item.table });
   return {
     handled: true,
     outcome: 'conflict',

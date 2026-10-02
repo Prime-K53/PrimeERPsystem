@@ -7,6 +7,7 @@ import { isMarketAdjustmentActive } from '../utils/marketAdjustmentSemantics';
 import { broadcastMarketAdjustmentsChanged } from '../utils/marketAdjustmentUtils';
 import { examinationDb } from './examinationDb';
 import { newUlid } from '../utils/ulid';
+import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 
 export interface ExaminationInvoiceLineItem {
   id: string;
@@ -938,6 +939,11 @@ export const examinationBatchService = {
       status: 'Invoiced'
     }));
     const invoicePayload = await buildLocalInvoicePayload(updatedBatch as any, payload);
+    await traceExamInvoice('generate', {
+      id: invoicePayload.id,
+      invoiceNumber: invoicePayload.invoiceNumber,
+      originModule: (invoicePayload as any)?.origin_module,
+    }, { batchId: String((updatedBatch as any)?.id || id || '') || null });
     await updateLocalBatch(String((localBatch as any).id || id), () => ({
       invoice_id: invoicePayload.invoiceNumber
     }));
@@ -979,6 +985,11 @@ export const examinationBatchService = {
     });
     invoicePayload.notes = `${invoicePayload.notes || ''} (regenerated${payload?.reason ? `: ${payload.reason}` : ''})`.trim();
     invoicePayload.reference = payload?.idempotencyKey || invoicePayload.reference;
+    await traceExamInvoice('regenerate', {
+      id: invoicePayload.id,
+      invoiceNumber: invoicePayload.invoiceNumber,
+      originModule: (invoicePayload as any)?.origin_module,
+    }, { batchId: String((localBatch as any)?.id || id || '') || null });
     await updateLocalBatch(String((localBatch as any).id || id), () => ({
       invoice_id: invoicePayload.invoiceNumber
     }));

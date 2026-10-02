@@ -1,5 +1,6 @@
 import { durableSyncQueue, quarantineOperationsMissingGeneration, classifyError, QueuedOperation, QueueMetrics } from './durableSyncQueue';
 import { sendSyncOps, SyncOp, SyncOpResult, SyncAuthError } from './syncApiClient';
+import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { resolvePushConflict } from './syncConflictResolver';
 import { cloudDb } from './cloudDb';
 import { audit } from './syncAudit';
@@ -404,6 +405,19 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
       for (const result of response.results) {
         if (result.operationId) {
           const matchingItem = gatewayOps.find(g => g.op.operationId === result.operationId);
+          // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+          await traceExamInvoice('sync-gateway-result', {
+            recordId: matchingItem?.op.recordId,
+            id: (matchingItem?.op.payload as Record<string, unknown> | null)?.id,
+            invoiceNumber: (matchingItem?.op.payload as Record<string, unknown> | null)?.invoiceNumber,
+          }, {
+            table: matchingItem?.op.table ?? null,
+            operation: matchingItem?.op.operation ?? null,
+            ok: Boolean(result.ok),
+            errorSnippet: result.error ? String(result.error).slice(0, 160) : null,
+            retryable: result.retryable ?? null,
+            conflict: Boolean(result.conflict),
+          });
           logger.info('[BackgroundSync] op result', {
             table: matchingItem?.op.table,
             recordId: matchingItem?.op.recordId,
@@ -451,6 +465,18 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
         notify('sync-failure', { failed: gatewayOps.length, deadLetter: 0, totalBefore: gatewayOps.length, authorizationBlocked: true, status: err.status });
       }
       for (const { item } of gatewayOps) {
+        // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+        await traceExamInvoice('sync-transport-failure', {
+          recordId: item.recordId,
+          id: (item.payload as Record<string, unknown> | null)?.id,
+          invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
+        }, {
+          table: item.table,
+          operation: item.operation,
+          authBlocked: err instanceof SyncAuthError,
+          authStatus: err instanceof SyncAuthError ? err.status : null,
+          errorSnippet: errorMessage.slice(0, 160) || null,
+        });
         if (err instanceof SyncAuthError) {
           // Leave item in 'failed' with errorType='unauthorized' so retryFailed()
           // never auto-resets it. The queue drains again via resumeAfterAuth()
@@ -470,6 +496,12 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
     if (!result || result.ok) {
       logger.info('[BackgroundSync] settleItem COMPLETED', { table: item.table, recordId: item.recordId, operation: item.operation, hasResult: !!result, ok: result?.ok });
       await durableSyncQueue.markCompleted(item.id);
+      // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+      await traceExamInvoice('sync-settle', {
+        recordId: item.recordId,
+        id: (item.payload as Record<string, unknown> | null)?.id,
+        invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
+      }, { table: item.table, operation: item.operation, outcome: 'success' });
 
       // Stamp the server-stamped version back into the live record (bulkPut:
       // no re-enqueue) so the next edit carries a valid optimistic-concurrency
@@ -499,7 +531,17 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
     // another device committed a newer version. Holds a current server snapshot
     // so we can field-merge and requeue in place — no extra round-trip.
     if (result.conflict && result.server) {
-      return resolveConflict(item, result);
+      const conflictOutcome = await resolveConflict(item, result);
+      // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+      await traceExamInvoice('sync-settle', {
+        recordId: item.recordId,
+        id: (item.payload as Record<string, unknown> | null)?.id,
+        invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
+      }, {
+        table: item.table, operation: item.operation,
+        outcome: conflictOutcome, conflict: true,
+      });
+      return conflictOutcome;
     }
     // Per-op rejection from the gateway: dead-letter permanent errors,
     // keep retrying transient ones.
@@ -515,6 +557,17 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
     const errorMessage = result.error || 'Sync gateway rejected the operation';
     const permanent = result.retryable === false || classifyError(errorMessage) === 'permanent';
     logger.warn('[BackgroundSync] settleItem FAILED', { table: item.table, recordId: item.recordId, operation: item.operation, error: errorMessage.slice(0, 200), retryable: result.retryable, permanent, syncGeneration: item.syncGeneration });
+    // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+    await traceExamInvoice('sync-settle', {
+      recordId: item.recordId,
+      id: (item.payload as Record<string, unknown> | null)?.id,
+      invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
+    }, {
+      table: item.table, operation: item.operation,
+      outcome: permanent ? 'deadLetter' : 'failed',
+      errorSnippet: errorMessage.slice(0, 160) || null,
+      retryable: result.retryable ?? null,
+    });
     if (permanent) {
       await durableSyncQueue.deadLetter(item.id, errorMessage);
       return 'deadLetter';

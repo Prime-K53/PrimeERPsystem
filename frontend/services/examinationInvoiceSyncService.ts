@@ -11,6 +11,7 @@ import {
   getExaminationBatchLinkage,
   isDistinctExaminationInvoiceCollision,
 } from '../utils/invoiceIdentity';
+import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 
 export interface ExaminationInvoiceSyncResult {
   synced: boolean;
@@ -258,7 +259,18 @@ export const persistExaminationInvoiceToFinance = async (
   // be invisible to public document verification.
   const batchId = String(payload?.batchId || payload?.origin_batch_id || '').trim();
   const originModule = String(payload?.originModule || payload?.origin_module || '').trim();
+  await traceExamInvoice('persist-entry', {
+    id: (payload as any)?.id,
+    invoiceNumber: (payload as any)?.invoiceNumber,
+    originModule: (payload as any)?.originModule ?? (payload as any)?.origin_module,
+    verificationToken: (payload as any)?.verificationToken,
+  }, { batchIdPresent: Boolean(batchId), originModuleValue: originModule || null });
   if (!batchId || originModule !== 'examination') {
+    await traceExamInvoice('persist-guard-reject', {
+      id: (payload as any)?.id,
+      invoiceNumber: (payload as any)?.invoiceNumber,
+      originModule: (payload as any)?.originModule ?? (payload as any)?.origin_module,
+    }, { batchIdPresent: Boolean(batchId), originModuleValue: originModule || null });
     return {
       synced: false,
       fallbackUsed: false,
@@ -281,6 +293,12 @@ export const persistExaminationInvoiceToFinance = async (
   // processInvoice retry — persists and enqueues a tokened invoice. The
   // fallback path must never store/enqueue an untokened examination invoice.
   invoice = ensureInvoiceVerificationToken(invoice);
+  await traceExamInvoice('persist-mapped', {
+    id: (invoice as any)?.id,
+    invoiceNumber: (invoice as any)?.invoiceNumber,
+    originModule: (invoice as any)?.originModule ?? (invoice as any)?.origin_module,
+    verificationToken: (invoice as any)?.verificationToken,
+  });
 
   // P0 pre-flight: same-id occupant check. Catches same-device repeats and
   // rows that arrived between number minting and this save (the occupant is
@@ -348,6 +366,12 @@ export const persistExaminationInvoiceToFinance = async (
 
   try {
     await api.finance.saveInvoice(invoice);
+    await traceExamInvoice('persist-result', {
+      id: (invoice as any)?.id,
+      invoiceNumber: (invoice as any)?.invoiceNumber,
+      originModule: (invoice as any)?.originModule,
+      verificationToken: (invoice as any)?.verificationToken,
+    }, { synced: true, fallbackUsed: false });
     return { synced: true, fallbackUsed: false, invoiceId: String(invoice.id) };
   } catch (error: any) {
     // Clean up idempotency key from failed first attempt to prevent duplicate errors on retry
@@ -367,8 +391,21 @@ export const persistExaminationInvoiceToFinance = async (
     try {
       await dbService.put('invoices', invoice);
       savedLocally = true;
+      await traceExamInvoice('persist-fallback-saved', {
+        id: (invoice as any)?.id,
+        invoiceNumber: (invoice as any)?.invoiceNumber,
+        originModule: (invoice as any)?.originModule,
+        verificationToken: (invoice as any)?.verificationToken,
+      });
     } catch (fallbackError: any) {
       // If saving locally fails, return failure
+      await traceExamInvoice('persist-result', {
+        id: (invoice as any)?.id,
+        invoiceNumber: (invoice as any)?.invoiceNumber,
+      }, {
+        synced: false, fallbackUsed: true,
+        messageSnippet: String(fallbackError?.message || error?.message || '').slice(0, 160) || null,
+      });
       return {
         synced: false,
         fallbackUsed: true,
@@ -380,6 +417,15 @@ export const persistExaminationInvoiceToFinance = async (
     // Try to process the invoice locally to ensure ledger entries are created
     try {
       await transactionService.processInvoice(invoice);
+      await traceExamInvoice('persist-result', {
+        id: (invoice as any)?.id,
+        invoiceNumber: (invoice as any)?.invoiceNumber,
+        originModule: (invoice as any)?.originModule,
+        verificationToken: (invoice as any)?.verificationToken,
+      }, {
+        synced: true, fallbackUsed: true,
+        messageSnippet: String(error?.message || '').slice(0, 160) || null,
+      });
       return {
         synced: true,
         fallbackUsed: true,
@@ -403,6 +449,15 @@ export const persistExaminationInvoiceToFinance = async (
       }
 
       // Ledger posting failed, but invoice is saved locally
+      await traceExamInvoice('persist-result', {
+        id: (invoice as any)?.id,
+        invoiceNumber: (invoice as any)?.invoiceNumber,
+        originModule: (invoice as any)?.originModule,
+        verificationToken: (invoice as any)?.verificationToken,
+      }, {
+        synced: true, fallbackUsed: true,
+        messageSnippet: String(txError?.message || error?.message || '').slice(0, 160) || null,
+      });
       return {
         synced: true,
         fallbackUsed: true,

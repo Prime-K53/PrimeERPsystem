@@ -30,6 +30,7 @@ import { isCloudOnlyMode, isSupabaseConfigured, requireCloudSessionMessage } fro
 import { durableSyncQueue } from './durableSyncQueue';
 import { backgroundSyncService } from './backgroundSyncService';
 import { newId } from '../utils/ulid';
+import { traceExamInvoice, isExamDiagTarget } from '../utils/examinationInvoiceDiag';
 
 import { audit } from './syncAudit';
 
@@ -1213,24 +1214,59 @@ export const dbService = {
 
         const itemId = String(raw.id ?? '');
 
+        // Temporary diagnostic trace (EXM-P726/021 invoices only, read-only).
+        const examDiagInvoice = String(storeName) === 'invoices'
+            && isExamDiagTarget(raw.id, (raw as Record<string, unknown>).invoiceNumber);
+
         // Local-first: always write to IndexedDB, return immediately
         const localResultId = await putToLegacyStore(storeName, raw as T);
+        if (examDiagInvoice) {
+            await traceExamInvoice('db-put-local', {
+                id: raw.id,
+                invoiceNumber: (raw as Record<string, unknown>).invoiceNumber,
+                originModule: (raw as Record<string, unknown>).originModule
+                    ?? (raw as Record<string, unknown>).origin_module,
+                verificationToken: (raw as Record<string, unknown>).verificationToken,
+            }, { store: String(storeName) });
+        }
 
         // Background sync: queue to cloud and await durable sync queue insertion
         const isLocalOnly = LOCAL_ONLY_STORES.has(String(storeName));
         if (!isLocalOnly && itemId && !isCloudSource) {
             try {
                 const table = getCloudTable(String(storeName));
-                await durableSyncQueue.enqueue({
+                const queuedOp = await durableSyncQueue.enqueue({
                     table,
                     recordId: itemId,
                     operation: 'upsert',
                     payload: raw,
                 });
+                if (examDiagInvoice) {
+                    await traceExamInvoice('db-put-enqueued', {
+                        id: raw.id,
+                        invoiceNumber: (raw as Record<string, unknown>).invoiceNumber,
+                        originModule: (raw as Record<string, unknown>).originModule
+                            ?? (raw as Record<string, unknown>).origin_module,
+                        verificationToken: (raw as Record<string, unknown>).verificationToken,
+                    }, {
+                        table,
+                        opId: String((queuedOp as { id?: unknown })?.id ?? ''),
+                        opStatus: String((queuedOp as { status?: unknown })?.status ?? ''),
+                    });
+                }
                 backgroundSyncService.trigger().catch((triggerErr) => {
                     logger.warn(`[DB] backgroundSyncService.trigger() failed for ${storeName}/${itemId}:`, triggerErr);
                 });
             } catch (syncErr) {
+                if (examDiagInvoice) {
+                    await traceExamInvoice('db-put-enqueue-failed', {
+                        id: raw.id,
+                        invoiceNumber: (raw as Record<string, unknown>).invoiceNumber,
+                    }, {
+                        table: getCloudTable(String(storeName)),
+                        errorSnippet: String((syncErr as Error)?.message || syncErr || '').slice(0, 160) || null,
+                    });
+                }
                 logger.warn(`[DB] Sync enqueue failed for ${storeName}/${itemId}:`, syncErr);
                 throw syncErr;
             }

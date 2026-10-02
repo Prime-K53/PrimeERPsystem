@@ -20,6 +20,7 @@ import { examinationJobService } from '../services/examinationJobService';
 import { examinationBatchService, ExaminationGeneratedInvoicePayload } from '../services/examinationBatchService';
 import { dbService } from '../services/db';
 import { generateNextExaminationInvoiceNumber } from '../utils/helpers';
+import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { ExaminationInvoiceSyncResult, persistExaminationInvoiceToFinance, persistRegeneratedExaminationInvoiceToFinance } from '../services/examinationInvoiceSyncService';
 import { examinationNotificationService } from '../services/examinationNotificationService';
 import { examinationSyncService } from '../services/examinationSyncService';
@@ -543,6 +544,9 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
       const existingInvoices = await dbService.getAll<{ id?: string; invoiceNumber?: string; date?: string }>('invoices').catch(() => []);
       const invoiceNumber = generateNextExaminationInvoiceNumber(existingInvoices, companyConfig);
 
+      // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+      await traceExamInvoice('context-generate', { id: invoiceNumber, invoiceNumber }, { batchId: id });
+
       const result = await examinationBatchService.generateInvoice(id, {
         idempotencyKey: `EXAM-BATCH-${id}`,
         invoiceNumber
@@ -574,6 +578,15 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         syncedInvoicePayload = normalizedInvoicePayload;
         sync = await persistExaminationInvoiceToFinance(normalizedInvoicePayload, {
           companyConfig: companyConfig ?? null,
+        });
+        // Temporary diagnostic trace (EXM-P726/021 only, read-only).
+        await traceExamInvoice('context-persist-result', {
+          id: normalizedInvoicePayload.invoiceNumber,
+          invoiceNumber: normalizedInvoicePayload.invoiceNumber,
+        }, {
+          synced: Boolean(sync?.synced),
+          fallbackUsed: Boolean(sync?.fallbackUsed),
+          syncInvoiceId: sync?.invoiceId ?? null,
         });
       }
 
