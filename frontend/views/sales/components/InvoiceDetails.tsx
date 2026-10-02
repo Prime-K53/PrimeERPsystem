@@ -705,6 +705,13 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                                             const hasBom = item.bomBreakdown && item.bomBreakdown.length > 0;
                                                             const hasPricingBreakdown = item.pricingBreakdown || (item.adjustmentSnapshots && item.adjustmentSnapshots.length > 0);
                                                             const invItem = item.productId ? inventory.find((i: any) => i.id === item.productId) : null;
+                                                            // Item-detail link target: prefer the inventory match on
+                                                            // productId, fall back to a match on the line id.
+                                                            const lineInvItem = invItem ?? (item.id ? inventory.find((i: any) => i.id === item.id) : null);
+                                                            // Always-visible item number: line sku first, then the
+                                                            // matched inventory sku, then the stored references.
+                                                            const itemNumberText = item.sku || (lineInvItem as any)?.sku || item.productId || item.id || null;
+                                                            const itemDetailId = (lineInvItem as any)?.id || null;
                                                             const stockLevel = invItem ? Number(invItem.stock || 0) : null;
                                                             const reservedLevel = invItem ? Number(invItem.reserved || 0) : null;
                                                             const availableLevel = stockLevel != null && reservedLevel != null ? Math.max(0, stockLevel - reservedLevel) : null;
@@ -730,6 +737,17 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                                                                 )}
                                                                                 <div>
                                                                                     <p style={{ margin: 0, fontWeight: 600, color: ink, fontSize: 12 }}>{item.name || 'Unnamed item'}</p>
+                                                                                    {itemNumberText && (
+                                                                                        itemDetailId ? (
+                                                                                            <button onClick={() => { onClose(); navigate(`/supply-chain/inventory/${encodeURIComponent(itemDetailId)}`); }}
+                                                                                                title={`Open item ${itemNumberText} details`}
+                                                                                                style={{ display: 'block', margin: '2px 0 0', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: teal[600], fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2, textAlign: 'left' }}>
+                                                                                                #{itemNumberText}
+                                                                                            </button>
+                                                                                        ) : (
+                                                                                            <p style={{ margin: '2px 0 0', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: inkSoft }}>#{itemNumberText}</p>
+                                                                                        )
+                                                                                    )}
                                                                                     {item.description && <p style={{ margin: '2px 0 0', fontSize: 11, color: inkSoft }}>{item.description}</p>}
                                                                                     {item.type && (
                                                                                         <span style={{ display: 'inline-block', marginTop: 4, padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.04, background: teal[50], color: teal[700] }}>
