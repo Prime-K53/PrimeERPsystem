@@ -116,9 +116,8 @@ export const Money: React.FC<{
     color?: string;
     signed?: boolean;
     style?: React.CSSProperties;
-}> = ({ value, symbol, currencyCode, size = 13, weight = 700, color = ink, signed, style }) => {
+}> = ({ value, symbol, currencyCode, decimals = 2, size = 13, weight = 700, color = ink, signed, style }) => {
     const v = Number.isFinite(value) ? value : 0;
-    const decimals = decimals ?? 2;
     const body = Math.abs(v).toLocaleString(undefined, {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals,

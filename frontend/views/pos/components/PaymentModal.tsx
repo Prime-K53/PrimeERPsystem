@@ -51,7 +51,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     const submittingRef = useRef(false);
 
     const r2 = (v: number) => Math.round(v * 100) / 100;
-    const pointsConversionRate = companyConfig?.transactionSettings?.pos?.loyaltyRate || 0.10;
+    const pointsConversionRate = 0.10;
     const quickCashPresets = getQuickCashPresets(companyConfig?.currencySymbol);
 
     const quickCashBtn = (active: boolean): React.CSSProperties => ({
