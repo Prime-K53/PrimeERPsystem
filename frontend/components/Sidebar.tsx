@@ -283,8 +283,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           label: 'Procurement',
           path: '/procurement',
           icon: <CreditCard size={18} />,
-          hideSubMenu: true,
           subItems: [
+            { label: 'Bill History', path: '/procurement', icon: <FileText size={14} /> },
             { label: 'Vendor Bills', path: '/procurement/bills', icon: <FileText size={14} /> },
             { label: 'Supplier Payments', path: '/procurement/payments', icon: <Wallet size={14} /> },
             { label: 'Subcontracting', path: '/procurement/subcontracting', icon: <Share2 size={14} /> },

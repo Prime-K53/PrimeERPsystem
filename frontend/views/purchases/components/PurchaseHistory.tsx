@@ -3,7 +3,7 @@ import { logger } from '@/services/logger';
 import { useLocation } from 'react-router-dom';
 import { useHighlight } from '../../../hooks/useHighlight';
 import { TransactionRefLink } from '../../../components/TransactionRefLink';
-import { Package, CheckCircle, Eye, DollarSign, Trash2, ChevronRight, RefreshCw, Edit2, Layers, CheckSquare, Square, XCircle, FileText, Download, FileDown, Search, X, ArrowUp, ArrowDown, MoreVertical } from 'lucide-react';
+import { Package, CheckCircle, Eye, DollarSign, Trash2, ChevronRight, RefreshCw, Edit2, Layers, CheckSquare, Square, XCircle, FileText, Download, FileDown, Search, X, ArrowUp, ArrowDown, MoreVertical, Ship } from 'lucide-react';
 import { Purchase } from '../../../types';
 import { pdf } from '@react-pdf/renderer';
 import { PrimeDocument } from '../../shared/components/PDF/PrimeDocument';
@@ -34,6 +34,7 @@ interface PurchaseHistoryProps {
     onMerge: (ids: string[]) => void;
     onBatchDelete: (ids: string[]) => void;
     onPayment?: (purchase: Purchase) => void;
+    onLandingCosts?: (purchase: Purchase) => void;
 }
 
 const SortableTh: React.FC<{
@@ -219,7 +220,7 @@ const HoverPurchaseMenu: React.FC<{ id: string; pos: { x: number; y: number }; d
 
 const LIST_ITEMS_PER_PAGE = 10;
 
-export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, suppliers, onReceive, onView, onEdit, onMerge, onBatchDelete, onPayment }) => {
+export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, suppliers, onReceive, onView, onEdit, onMerge, onBatchDelete, onPayment, onLandingCosts }) => {
     const { companyConfig, notify } = useAuth(); const { updatePurchase } = useInventory();
     const { handlePreview } = useDocumentPreview();
     const currency = companyConfig.currencySymbol;
@@ -348,6 +349,7 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
         if (action !== 'toggle_status_menu') { setOpenMenuId(null); }
         switch (action) {
             case 'view': if (onView) onView(po); break;
+            case 'landing_costs': if (onLandingCosts) onLandingCosts(po); break;
             case 'edit': onEdit(po); break;
             case 'whatsapp':
                 const supplier = (suppliers || []).find(s => s.id === po.supplierId);
@@ -428,6 +430,9 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
             <button onClick={()=>{setOpenMenuId(null);handlePreview('PO',enrichPO(po))}} style={miStyle('#1f8577')} onMouseEnter={e=>e.currentTarget.style.background='#eef7f6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><Eye size={14}/> Preview Bill</button>
             <div style={{height:1,background:'#e4ddd1',margin:'4px 0'}}/>
             <button onClick={()=>handleAction('view',po)} style={miStyle('#23282A')} onMouseEnter={e=>e.currentTarget.style.background='#f5f4f0'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><FileText size={14}/> View Details</button>
+            {onLandingCosts && (
+                <button onClick={()=>handleAction('landing_costs',po)} style={miStyle('#1f8577')} onMouseEnter={e=>e.currentTarget.style.background='#eef7f6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><Ship size={14}/> Landing Costs</button>
+            )}
             <button onClick={()=>handleAction('download_pdf',po)} style={miStyle('#1f8577')} onMouseEnter={e=>e.currentTarget.style.background='#eef7f6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><FileDown size={14}/> Download PDF</button>
             {derivePurchasePaymentStatus(po) !== 'Paid' && po.status !== 'Draft' && po.status !== 'Cancelled' && onPayment && (
                 <button onClick={()=>{setOpenMenuId(null);onPayment(po)}} style={miStyle('#1f8577')} onMouseEnter={e=>e.currentTarget.style.background='#eef7f6'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><DollarSign size={14}/> Record Payment</button>
@@ -591,6 +596,11 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                                                 <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 line-through"><XCircle size={11}/> Cancelled</span>
                                             ):(
                                                 <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600"><CheckCircle size={11}/> Done</span>
+                                            )}
+                                            {onLandingCosts && (
+                                                <button onClick={(e)=>{e.stopPropagation();handleAction('landing_costs',po)}} className="p-1 md:p-1.5 text-slate-500 hover:text-blue-600 bg-slate-50 hover:bg-white border border-transparent hover:border-slate-200 rounded transition-all hidden sm:flex" title="Landing Costs" aria-label={`Landing costs for bill ${po.id}`}>
+                                                    <Ship size={14} />
+                                                </button>
                                             )}
                                             <button onClick={(e)=>{e.stopPropagation(); handleRowClick(e, po.id)}} className="p-1 md:p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors"><MoreVertical size={14} /></button>
                                         </div>

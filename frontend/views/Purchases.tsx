@@ -41,6 +41,11 @@ const Purchases: React.FC = () => {
   useModuleRefresh(refreshAllData, { interval: REFRESH_INTERVAL });
   const [showNewBillModal, setShowNewBillModal] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState<Purchase | null>(null);
+  const [detailTab, setDetailTab] = useState<'Overview' | 'Landing' | 'Related'>('Overview');
+  const openPurchaseDetail = (po: Purchase, tab: 'Overview' | 'Landing' | 'Related' = 'Overview') => {
+      setDetailTab(tab);
+      setSelectedPurchase(po);
+  };
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [paymentPurchase, setPaymentPurchase] = useState<Purchase | null>(null);
   const [receivingPurchase, setReceivingPurchase] = useState<Purchase | null>(null);
@@ -319,9 +324,10 @@ const Purchases: React.FC = () => {
       `}</style>
       
       {selectedPurchase && (
-          <PurchaseOrderDetail 
+          <PurchaseOrderDetail
               purchase={selectedPurchase}
               suppliers={suppliers}
+              initialTab={detailTab}
               onClose={() => setSelectedPurchase(null)}
               onReceive={handleReceive}
               onConvert={handleConvert}
@@ -406,7 +412,8 @@ const Purchases: React.FC = () => {
                  purchases={purchases}
                  suppliers={suppliers}
                  onReceive={handleReceive}
-                 onView={(po) => setSelectedPurchase(po)}
+                 onView={(po) => openPurchaseDetail(po, 'Overview')}
+                  onLandingCosts={(po) => openPurchaseDetail(po, 'Landing')}
                  onEdit={handleEditOrder}
                  onMerge={handleMergeOrders}
                  onBatchDelete={handleBatchDelete}

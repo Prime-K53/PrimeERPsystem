@@ -25,6 +25,9 @@ import { ConfirmDialog, ConfirmDialogType } from '../../../components/ConfirmDia
 
 const teal = { 50:'#eef7f6',100:'#d3ece9',200:'#a6d9d3',300:'#72c0b7',400:'#3fa294',500:'#1f8577',600:'#146b60',700:'#0f544c',800:'#0b3e39',900:'#082e2a' };
 const hairline = '#e4ddd1';
+const paper = '#FEFDFB';
+const ink = '#23282A';
+const inkSoft = '#5c6567';
 
 const getStatusColor = (status: string): string => {
     switch (status) {
@@ -46,16 +49,17 @@ interface PurchaseOrderDetailProps {
     onReceive: (id: string) => void;
     onConvert: (id: string) => void;
     onPayment?: (purchase: Purchase) => void;
+    initialTab?: 'Overview' | 'Landing' | 'Related';
 }
 
-const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, suppliers, onClose, onReceive, onConvert, onPayment }) => {
+const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, suppliers, onClose, onReceive, onConvert, onPayment, initialTab = 'Overview' }) => {
     const { companyConfig, notify } = useAuth();
     const { updatePurchase, goodsReceipts, inventory } = useInventory();
     const { expenses } = useFinance();
     const { handlePreview } = useDocumentPreview();
     const location = useLocation();
     const currency = companyConfig.currencySymbol;
-    const [activeTab, setActiveTab] = useState<'Overview' | 'Landing' | 'Related'>('Overview');
+    const [activeTab, setActiveTab] = useState<'Overview' | 'Landing' | 'Related'>(initialTab);
     const contentRef = useRef<HTMLDivElement>(null);
 
     const [confirmState, setConfirmState] = useState<{ open: boolean; title: string; message: string; confirmText?: string; type?: ConfirmDialogType; onConfirm?: () => void }>({ open: false, title: '', message: '' });
