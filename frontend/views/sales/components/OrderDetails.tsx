@@ -12,7 +12,9 @@ import { useLocation } from 'react-router-dom';
 import DocLink from '../../../components/DocLink';
 import TransactionPricingInsights from './TransactionPricingInsights';
 import { currencyService } from '../../../services/currencyService';
-import { getOrderDisplayStatus, getOrderStatusClass } from './orderStatusUtils';
+import { getOrderDisplayStatus, getOrderStatusClass } from
+'./orderStatusUtils';
+import { getSalesOrderDisplayNumber } from '../../../services/salesOrderService';
 
 interface OrderDetailsProps {
     order: Order;
@@ -68,7 +70,7 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
                         <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                                 <h1 className="sales-detail-title">
-                                    Order #{order.orderNumber}
+                                    Order #{getSalesOrderDisplayNumber(order)}
                                 </h1>
                                 <span className={`border ${getOrderStatusClass(displayStatus)}`} style={{
                                     padding: '2px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0

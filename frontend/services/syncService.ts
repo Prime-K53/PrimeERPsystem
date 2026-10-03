@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 import { dbService } from './db';
 import { mergeRecords, fieldLevelMerge } from './syncConflictResolver';
+import { adoptServerNumber } from './salesOrderService';
 import { durableSyncQueue, getLocalGeneration, setLocalGeneration } from './durableSyncQueue';
 import { logger } from './logger';
 import { initAudit, audit } from './syncAudit';
@@ -507,9 +508,20 @@ export async function pullRemoteChanges(
                   merged.serverUpdatedAt = cloudRecord.serverUpdatedAt;
                 }
                 merged._cloudSource = true;
-                await dbService.put(storeName, merged, { cloudSource: true });
+                // Sales orders: the merge adopts the server-stamped
+                // `order_number` (ORD-/SO-) but never reconciles the legacy
+                // `orderNumber` / `orderNumberProvisional` fields that the
+                // list/details render — adopt the canonical number here so a
+                // synced ERP order stops displaying its TMP- provisional.
+                await dbService.put(
+                  storeName,
+                  (storeName === 'salesOrders' ? adoptServerNumber(merged) : merged) as Record<string, unknown>,
+                  { cloudSource: true }
+                );
               } else {
-                mergedRecords.push(cloudRecord as Record<string, unknown>);
+                mergedRecords.push(
+                  (storeName === 'salesOrders' ? adoptServerNumber(cloudRecord) : cloudRecord) as Record<string, unknown>
+                );
               }
             }
             if (mergedRecords.length > 0) {
@@ -658,10 +670,20 @@ async function subscribeToRemoteChanges() {
                   }
                   merged._cloudSource = true;
                   /* SYNC-FORENSIC suppressed: REALTIME MERGE */
-                  await dbService.put(storeName, merged as Record<string, unknown>, { cloudSource: true });
+                  // Sales orders: adopt the server-canonical number so the
+                  // TMP- provisional is replaced (see pull path above).
+                  await dbService.put(
+                    storeName,
+                    (storeName === 'salesOrders' ? adoptServerNumber(merged) : merged) as Record<string, unknown>,
+                    { cloudSource: true }
+                  );
                 } else {
                   /* SYNC-FORENSIC suppressed: REALTIME NEW */
-                  await dbService.put(storeName, cloudRecord as Record<string, unknown>, { cloudSource: true });
+                  await dbService.put(
+                    storeName,
+                    (storeName === 'salesOrders' ? adoptServerNumber(cloudRecord) : cloudRecord) as Record<string, unknown>,
+                    { cloudSource: true }
+                  );
                 }
 
                 // ── FIX Bug #1 ───────────────────────────────────────────────

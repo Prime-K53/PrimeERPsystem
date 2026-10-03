@@ -17,7 +17,9 @@ import { resolveTransactionPricingSummary } from '../../../utils/pricingBreakdow
 import { formatDate } from '../../../utils/formatters';
 import { Edit2, Trash2, Star, List, LayoutGrid, CheckCircle, Check, Clock, User, Calendar, Box, Eye, Send, Copy, Plus, Phone, ChevronRight, FileText, FileCheck, Briefcase, Mail, MessageCircle, Repeat, XCircle, Archive, History as HistoryIcon, Users, RefreshCw, ArrowUp, ArrowDown, Link as LinkIcon, Paperclip, CalendarClock, AlertTriangle, Download, Truck, MoreVertical, Play, Pause, Package, DollarSign, TrendingUp, Zap, Target, PlayCircle, Coins, Wallet, ShoppingBag, Printer, Search, X, ArrowUpRight, MessageSquare } from 'lucide-react';
 import { TableEmptyState } from '../../../components/EmptyState';
-import { getOrderDisplayStatus, getOrderStatusClass } from './orderStatusUtils';
+import { getOrderDisplayStatus, getOrderStatusClass } from
+'./orderStatusUtils';
+import { getSalesOrderDisplayNumber } from '../../../services/salesOrderService';
 
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1';
 
@@ -444,7 +446,7 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                             <div key={item.id} className="prime-card hover:shadow-md transition-shadow" style={{ background: paper, borderRadius: 14, border: `1.4px solid ${hairline}`, padding: 16 }}>
                                 <div className="flex justify-between items-start mb-3">
                                     <div>
-                                        <p className="text-[10px] font-bold text-[#1f8577] uppercase tracking-wider">{item.orderNumber}</p>
+                                        <p className="text-[10px] font-bold text-[#1f8577] uppercase tracking-wider">{getSalesOrderDisplayNumber(item)}</p>
                                         <h4 className="font-bold text-[#23282A] truncate max-w-[150px]">{item.customerName}</h4>
                                     </div>
                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${item.status === 'Completed' ? 'bg-[#d3ece9] text-[#0f544c] border-[#a6d9d3]' :
@@ -532,7 +534,7 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                                         </td>
                                         <td className="table-body-cell text-left font-mono font-bold truncate">
                                             <DocLink
-                                                docNumber={o.orderNumber}
+                                                docNumber={getSalesOrderDisplayNumber(o)}
                                                 targetPage="/sales-flow/orders"
                                                 rowId={`ord-${o.id}`}
                                                 currentPage={location.pathname}

@@ -262,6 +262,39 @@ export const applyOfficialNumber = (order: SalesOrder, officialId: string, offic
   };
 };
 
+/**
+ * Adopt the server-canonical official number into a local record landing
+ * from sync (pull or realtime merge). The merge adopts `order_number` but
+ * never reconciles the legacy `orderNumber` / `orderNumberProvisional`
+ * compatibility fields — and the Sales Orders list/details render the raw
+ * `orderNumber` — so without this the provisional TMP- number is displayed
+ * forever even though the backend stamped ORD-. The row id is preserved
+ * (the cloud row keeps the provisional id; only the number fields change).
+ * No-op when the record carries no official number yet.
+ */
+export const adoptServerNumber = (order: any): any => {
+  const official = getSalesOrderOfficialNumber(order);
+  if (!official) return order;
+  return {
+    ...order,
+    order_number: official,
+    orderNumber: official,
+    orderNumberProvisional: false,
+  };
+};
+
+/**
+ * Display number for a Sales Order row: the canonical official number when
+ * the record has one (post-sync), otherwise the stored provisional/id
+ * (pre-sync). Never renders undefined.
+ */
+export const getSalesOrderDisplayNumber = (order: any): string => {
+  return (
+    getSalesOrderOfficialNumber(order) ??
+    String(order?.orderNumber ?? order?.order_number ?? order?.id ?? '')
+  );
+};
+
 export const markInvoiced = (order: SalesOrder, invoiceId: string, invoiceNumber?: string | null): SalesOrder => ({
   ...order,
   invoiceId,
@@ -500,6 +533,8 @@ export const salesOrderService = {
   canonicalizeOrder,
   isOfficialNumber,
   applyOfficialNumber,
+  adoptServerNumber,
+  getSalesOrderDisplayNumber,
   markInvoiced,
   buildInvoiceFromOrder,
   assertTenantSafe,

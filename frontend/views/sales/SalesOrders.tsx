@@ -381,7 +381,7 @@ const SalesOrders: React.FC = () => {
                     }}
                   >
                     <div style={{ padding: '12px 14px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: inkSoft, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.orderNumber || o.id}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: inkSoft, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{salesOrderService.getSalesOrderDisplayNumber(o)}</span>
                       <span style={{
                         display: 'inline-block',
                         padding: '3px 10px',
@@ -441,7 +441,7 @@ const SalesOrders: React.FC = () => {
                   const sc = statusBadgeColors[o.status] || { bg: paper, color: inkSoft, border: hairline };
                   return (
                     <tr key={o.id} style={{ borderBottom: `1px solid ${hairline}` }}>
-                      <td style={{ padding: '10px 14px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: ink, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{o.orderNumber || o.id}</td>
+                      <td style={{ padding: '10px 14px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: ink, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{salesOrderService.getSalesOrderDisplayNumber(o)}</td>
                       <td style={{ padding: '10px 14px', color: ink }} className="hidden md:table-cell">{o.customerId || '-'}</td>
                       <td style={{ padding: '10px 14px', color: inkSoft, fontSize: 13, whiteSpace: 'nowrap' }} className="hidden md:table-cell">{new Date(o.orderDate).toLocaleDateString()}</td>
                       <td style={{ padding: '10px 14px' }}>
