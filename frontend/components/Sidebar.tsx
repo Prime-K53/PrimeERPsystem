@@ -289,6 +289,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
             { label: 'Supplier Payments', path: '/procurement/payments', icon: <Wallet size={14} /> },
             { label: 'Subcontracting', path: '/procurement/subcontracting', icon: <Share2 size={14} /> },
             { label: 'Expense Log', path: '/procurement/expenses', icon: <TrendingUp size={14} /> },
+            { label: 'Transport Expenses', path: '/procurement/transport-expenses', icon: <Truck size={14} /> },
           ]
         },
       ]

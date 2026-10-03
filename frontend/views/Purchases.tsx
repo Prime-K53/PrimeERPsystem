@@ -19,6 +19,12 @@ import { resolvePoLineUnitCost, purchaseLineTotal } from '../services/purchaseCo
 import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
 import { ConfirmDialog, ConfirmDialogType } from '../components/ConfirmDialog';
 import { getDefaultDate, validateDateInFY } from '../utils/financialYearUtils';
+import {
+  openTransactionRef,
+  transactionRefKey,
+  transactionRefUnavailableMessage,
+  useTransactionRefTarget,
+} from '../hooks/useTransactionRefDeepLink';
 
 const teal = { 50:'#eef7f6',100:'#d3ece9',200:'#a6d9d3',300:'#72c0b7',400:'#3fa294',500:'#1f8577',600:'#146b60',700:'#0f544c',800:'#0b3e39',900:'#082e2a' };
 const amber = { 100:'#fbead0',300:'#eec27a',500:'#d99a3f',600:'#b97e2b' };
@@ -61,6 +67,28 @@ const Purchases: React.FC = () => {
        window.history.replaceState({}, document.title);
      }
    }, [location.state]);
+
+  // Universal clickable transaction references: purchase bills / purchase
+  // orders opened from statements, ledgers, audit logs and search results.
+  const txRef = useTransactionRefTarget();
+  const txRefKey = transactionRefKey(txRef);
+  const lastTxRefKeyRef = React.useRef('');
+
+  React.useEffect(() => {
+    if (!txRef || !txRefKey || txRefKey === lastTxRefKeyRef.current) return;
+    if (txRef.type !== 'purchase' && txRef.type !== 'purchase-order') return;
+    if (purchases === undefined || purchases === null) return;
+
+    const outcome = openTransactionRef(purchases as any[], txRef);
+    if (outcome.status === 'none') return;
+    if (outcome.status === 'ok' && outcome.record) {
+      setSelectedPurchase(outcome.record as Purchase);
+    }
+    lastTxRefKeyRef.current = txRefKey;
+    if (outcome.status === 'missing' || outcome.status === 'ambiguous') {
+      notify(transactionRefUnavailableMessage(outcome), 'error');
+    }
+  }, [txRefKey, purchases]);
   
   const handleOrderFormSave = async (data: any, asDraft?: boolean, reason?: string, andPay?: boolean) => {
       const dateError = validateDateInFY(data.date || data.orderDate);

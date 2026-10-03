@@ -93,6 +93,30 @@ export class TransportBudgetReversalError extends Error {
 }
 
 /**
+ * Phase 8D: consumption-reversal integrity failures. The database trigger is
+ * authoritative across devices; these fail-fast mirrors keep the local
+ * client from queueing events the trigger will reject. A dedicated class
+ * (parallel to, never merged with, TransportBudgetReversalError) keeps the
+ * allocation-reversal contract hermetic.
+ */
+export class TransportBudgetConsumptionReversalError extends Error {
+  readonly code:
+    | 'TARGET_MISSING'
+    | 'TARGET_NOT_REVERSIBLE'
+    | 'ALREADY_REVERSED'
+    | 'CAP_EXCEEDED';
+
+  constructor(
+    code: TransportBudgetConsumptionReversalError['code'],
+    message: string,
+  ) {
+    super(message);
+    this.name = 'TransportBudgetConsumptionReversalError';
+    this.code = code;
+  }
+}
+
+/**
  * Phase 7E: single-correction integrity failures. The database trigger is
  * authoritative across devices; these fail-fast mirrors keep the local
  * client from queueing events the trigger will reject.
@@ -285,6 +309,32 @@ export class TransportBudgetRepository {
     });
   }
 
+  /**
+   * Phase 8D: append-only consumption-reversal primitive (structural only —
+   * no outbound producer exists in this phase).
+   * Fails closed unless the target OUTBOUND_CONSUMPTION exists locally,
+   * is unreversed, and the full amount satisfies the frozen contract.
+   */
+  async appendConsumptionReversal(
+    input: Omit<NewTransportBudgetEventInput, 'kind'> & {
+      kind?: 'CONSUMPTION_REVERSAL';
+    },
+  ): Promise<TransportBudgetAppendResult> {
+    if (
+      input.kind !== undefined &&
+      input.kind !== 'CONSUMPTION_REVERSAL'
+    ) {
+      throw new TransportBudgetConsumptionReversalError(
+        'TARGET_NOT_REVERSIBLE',
+        'appendConsumptionReversal only accepts CONSUMPTION_REVERSAL events.',
+      );
+    }
+    return this.appendTransportBudgetEvent({
+      ...input,
+      kind: 'CONSUMPTION_REVERSAL',
+    });
+  }
+
   async getTransportBudgetEvent(
     id: string,
   ): Promise<TransportBudgetEvent | null> {
@@ -396,6 +446,31 @@ export class TransportBudgetRepository {
     return { total, count };
   }
 
+  /**
+   * Phase 8D: cumulative consumption-reversal position for one outbound
+   * consumption (amounts > 0). Under FULL ONLY cardinality this is at most
+   * one row; the sum form keeps the check correct even if a second row
+   * ever slips past the local pre-check (the database unique index still
+   * rejects it).
+   */
+  async getConsumptionReversalTotal(
+    eventId: string,
+  ): Promise<{ total: number; count: number }> {
+    const all = (await this.store.getAll()) || [];
+    let total = 0;
+    let count = 0;
+    for (const entry of all) {
+      if (
+        entry?.kind === 'CONSUMPTION_REVERSAL' &&
+        (entry.reversesEventId ?? null) === String(eventId)
+      ) {
+        total += Number(entry.amount) || 0;
+        count += 1;
+      }
+    }
+    return { total, count };
+  }
+
   private async appendInner(
     input: NewTransportBudgetEventInput,
   ): Promise<TransportBudgetAppendResult> {
@@ -448,6 +523,13 @@ export class TransportBudgetRepository {
       await this.assertCorrectibleTarget(event);
     }
 
+    // 4c. Phase 8D: consumption-reversal structural integrity +
+    //     single-reversal + full-amount rule (fail-fast mirror of the
+    //     database trigger, which remains authoritative across devices).
+    if (event.kind === 'CONSUMPTION_REVERSAL') {
+      await this.assertConsumptionReversibleTarget(event);
+    }
+
     // 4c. Phase 7E: source-cap pre-check for snapshot-carrying INBOUND
     //     consumption (fail-fast mirror; the trigger is authoritative).
     //     Snapshot-less rows predate hardening and bypass this check.
@@ -493,6 +575,58 @@ export class TransportBudgetRepository {
       throw new TransportBudgetReversalError(
         'CAP_EXCEEDED',
         `Cumulative reversals would exceed allocation ${targetId} (remaining ${Number(target.amount) + total}, requested ${Math.abs(Number(event.amount))}).`,
+      );
+    }
+  }
+
+  /**
+   * Phase 8D: consumption-reversal structural integrity. Fail-fast mirror of
+   * the database trigger: target must exist and be OUTBOUND_CONSUMPTION,
+   * at most one reversal may target it (SINGLE/FULL ONLY), and the amount
+   * must equal abs(original). No snapshots are carried (null hygiene).
+   */
+  private async assertConsumptionReversibleTarget(
+    event: TransportBudgetEvent,
+  ): Promise<void> {
+    const targetId = String(event.reversesEventId || '');
+    if (!targetId) {
+      throw new TransportBudgetConsumptionReversalError(
+        'TARGET_MISSING',
+        'CONSUMPTION_REVERSAL requires reversesEventId.',
+      );
+    }
+    const target = await this.store.get(targetId);
+    if (!target) {
+      throw new TransportBudgetConsumptionReversalError(
+        'TARGET_MISSING',
+        `Consumption reversal target ${targetId} does not exist.`,
+      );
+    }
+    if (target.kind !== 'OUTBOUND_CONSUMPTION') {
+      throw new TransportBudgetConsumptionReversalError(
+        'TARGET_NOT_REVERSIBLE',
+        `Only OUTBOUND_CONSUMPTION events are consumption-reversible (target ${targetId} is ${target.kind}).`,
+      );
+    }
+    // Single-reversal rule (the database unique index is the
+    // cross-process backstop).
+    const { count } = await this.getConsumptionReversalTotal(targetId);
+    if (count > 0) {
+      throw new TransportBudgetConsumptionReversalError(
+        'ALREADY_REVERSED',
+        `Consumption ${targetId} was already reversed (ALREADY_REVERSED).`,
+      );
+    }
+    // Full-reversal rule: amount must equal abs(original). Partial
+    // reversals are not supported (no partial-void source lifecycle).
+    const expected = Math.abs(Number(target.amount));
+    if (
+      !(Number(event.amount) > 0) ||
+      Math.abs(Number(event.amount) - expected) > 0.000001
+    ) {
+      throw new TransportBudgetConsumptionReversalError(
+        'CAP_EXCEEDED',
+        `Consumption reversal must equal original consumption ${targetId} (expected ${expected}, requested ${Number(event.amount)}).`,
       );
     }
   }

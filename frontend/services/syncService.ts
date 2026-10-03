@@ -129,6 +129,8 @@ const STORE_TO_TABLE: Record<string, string> = {
   statementSnapshots: 'statement_snapshots',
   // Transport Budget event ledger — single-company append-only event store.
   transportBudgetEvents: 'transport_budget_events',
+  // Authoritative courier/transport expense source (Phase 7J).
+  transportExpenses: 'transport_expenses',
   // Fixed Assets — single-company, no tenant column
   fixedAssets: 'fixed_assets',
   depreciationEntries: 'depreciation_entries',
@@ -288,6 +290,8 @@ const TABLES_TO_SYNC = [
   'statementSnapshots',
   // Transport Budget event ledger — append-only event stream, single-company.
   'transportBudgetEvents',
+  // Authoritative courier/transport expense source (Phase 7J).
+  'transportExpenses',
   // Fixed Assets — single-company, no tenant column (pull + realtime)
   'fixedAssets', 'depreciationEntries', 'assetDisposals',
   'fixedAssetLocations', 'fixedAssetCustodians', 'fixedAssetTransfers',

@@ -18,6 +18,7 @@
  */
 const express = require('express');
 const cloudSyncStore = require('../services/cloudSyncStore.cjs');
+const { validateProductsPayload } = require('../services/variantSku.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
 const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRole: resolveAuthRole, normalize: normalizeRole } = require('../middleware/roles.cjs');
 
@@ -119,6 +120,10 @@ const ALLOWED_TABLES = new Set([
   // no tenant scoping (Phase 4 infrastructure only; no producers).
   'transport_budget_events',
 
+  // authoritative courier/transport expense source — single-company envelope
+  // table, no tenant scoping (Phase 7J prerequisite, not a budget producer).
+  'transport_expenses',
+
   // engagement / loyalty
   'engagement_timeline', 'engagement_audit', 'engagement_points',
   'engagement_point_balances', 'engagement_cashback', 'engagement_membership_tiers',
@@ -194,6 +199,51 @@ function validatePortalAdPayload(op) {
     }
   }
   return null;
+}
+
+// ─── products (inventory item) payload validation ───────────────────────────
+// Inventory items and their variants are one SKU namespace. The gateway owns
+// the authoritative check: it mints a missing variant id/SKU onto the payload
+// and rejects any SKU collision with another parent item or variant. Frontend
+// validation is only immediate feedback — this is the real gate.
+//
+// The products table is small (one row per inventory item) so the full row set
+// is fetched once per batch and reused.
+let productsRowsCache = { at: 0, rows: null };
+const PRODUCTS_INDEX_TTL_MS = 15000;
+
+async function loadProductsRows() {
+  const now = Date.now();
+  if (productsRowsCache.rows && now - productsRowsCache.at < PRODUCTS_INDEX_TTL_MS) {
+    return productsRowsCache.rows;
+  }
+  const rows = await cloudSyncStore.listRows('products');
+  productsRowsCache = { at: now, rows };
+  return rows;
+}
+
+async function validateProductsOp(op) {
+  if (op.operation === 'delete') return null;
+  const payload = op.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const variants = Array.isArray(payload.variants) ? payload.variants : [];
+  // Only variant-bearing writes pay for the namespace lookup.
+  if (variants.length === 0 && isBlankSku(payload.sku)) return null;
+
+  let rows = [];
+  try {
+    rows = await loadProductsRows();
+  } catch (err) {
+    // Never block an inventory write because the namespace probe failed; the
+    // variant ids/SKUs are still stamped, so the next write re-checks.
+    console.warn(`[sync] products SKU index unavailable: ${err?.message || err}`);
+    return null;
+  }
+  return validateProductsPayload(payload, rows);
+}
+
+function isBlankSku(sku) {
+  return String(sku == null ? '' : sku).trim() === '';
 }
 
 router.post('/ops', async (req, res) => {
@@ -279,6 +329,21 @@ router.post('/ops', async (req, res) => {
         if (adError) {
           console.warn(`[sync] portal_ads validation rejected ${op?.operationId}`, { error: adError });
           results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: adError, retryable: false });
+          continue;
+        }
+      }
+
+      if (table === 'products') {
+        let productsError = null;
+        try {
+          productsError = await validateProductsOp(op);
+        } catch (err) {
+          console.error('[sync] products validation error:', err?.message || err);
+          productsError = null;
+        }
+        if (productsError) {
+          console.warn(`[sync] products validation rejected ${op?.operationId}`, { error: productsError });
+          results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: productsError, retryable: false });
           continue;
         }
       }

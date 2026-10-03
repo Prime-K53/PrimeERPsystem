@@ -132,6 +132,8 @@ const STORE_TO_TABLE: Record<string, string> = {
   statementSnapshots: 'statement_snapshots',
   // Transport Budget event ledger — single-company append-only event store.
   transportBudgetEvents: 'transport_budget_events',
+  // Authoritative courier/transport expense source (Phase 7J).
+  transportExpenses: 'transport_expenses',
   // Service Catalog + Utilities sub-ledgers — single-company, no tenant column
   purchaseInvoices: 'purchase_invoices',
   interestIncomeEntries: 'interest_income_entries',

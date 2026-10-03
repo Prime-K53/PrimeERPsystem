@@ -9,6 +9,8 @@ import { useFinance } from '../../context/FinanceContext';
 import { OwnerEquityTransaction } from '../../types';
 import { formatCurrency, getDefaultDate } from '../../utils/helpers';
 import { currencyService } from '../../services/currencyService';
+import { TransactionRefLink } from '../../components/TransactionRefLink';
+import { resolveOriginatingTransactionRef } from '../../utils/transactionRef';
 
 /* Shared Add-Customer chrome — single source of truth for all Finance Hub tabs */
 import {
@@ -330,7 +332,24 @@ const OwnerEquity: React.FC = () => {
                                                         <p style={{ fontWeight: 600, fontSize: 13, color: ink, margin: 0 }}>{tx.description}</p>
                                                         <p style={{ fontSize: 11, color: inkSoft, margin: 0 }}>
                                                             {tx.reference && (
-                                                                <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{tx.reference}</span>
+                                                                (() => {
+                                                                    // Link only when the row names the transaction it came from.
+                                                                    const origin = resolveOriginatingTransactionRef({
+                                                                        referenceType: tx.transaction_type,
+                                                                        referenceId: tx.id,
+                                                                        reference: tx.reference,
+                                                                    });
+                                                                    if (!origin) {
+                                                                        return <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{tx.reference}</span>;
+                                                                    }
+                                                                    return (
+                                                                        <TransactionRefLink
+                                                                            type={origin.type}
+                                                                            id={origin.id}
+                                                                            number={origin.number || tx.reference}
+                                                                        />
+                                                                    );
+                                                                })()
                                                             )}
                                                             {tx.reference && <span> • </span>}
                                                             {tx.owner_name && (

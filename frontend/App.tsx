@@ -136,6 +136,7 @@ const RecurringProfiles = lazyWithRetry('./views/examination/RecurringProfiles',
 const ExaminationPrinting = lazyWithRetry('./views/production/ExaminationPrinting', () => import('./views/production/ExaminationPrinting'));
 const Subcontracting = lazyWithRetry('./views/purchases/Subcontracting', () => import('./views/purchases/Subcontracting'));
 const Expenses = lazyWithRetry('./views/accounts/Expenses', () => import('./views/accounts/Expenses'));
+const TransportExpenses = lazyWithRetry('./views/accounts/TransportExpenses', () => import('./views/accounts/TransportExpenses'));
 const IncomeView = lazyWithRetry('./views/accounts/Income', () => import('./views/accounts/Income'));
 const ChartOfAccounts = lazyWithRetry('./views/accounts/ChartOfAccounts', () => import('./views/accounts/ChartOfAccounts'));
 const FinancialReports = lazyWithRetry('./views/accounts/FinancialReports', () => import('./views/accounts/FinancialReports'));
@@ -527,10 +528,10 @@ const AppLayout: React.FC = () => {
                       <span className="text-[9px] font-bold text-[#5c6567] uppercase tracking-widest">Live Transaction Interface</span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setIsPosModalOpen(false)}
-                    className="p-2 hover:bg-[#eef7f6] rounded-lg text-[#5c6567] hover:text-[#0b3e39] transition-all"
-                  >
+<button
+                     onClick={() => { if (!window.confirm('Close terminal? Any unsaved work will be lost.')) return; setIsPosModalOpen(false); }}
+                     className="p-2 hover:bg-[#eef7f6] rounded-lg text-[#5c6567] hover:text-[#0b3e39] transition-all"
+                   >
                     <X size={20} />
                   </button>
                 </div>
@@ -667,6 +668,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/procurement/suppliers" element={<ProtectedRoute permission="procurement.view"><Suppliers /></ProtectedRoute>} />
                   <Route path="/procurement/subcontracting" element={<Subcontracting />} />
                   <Route path="/procurement/expenses" element={<ProtectedRoute permission="accounts.view"><Expenses /></ProtectedRoute>} />
+                  <Route path="/procurement/transport-expenses" element={<ProtectedRoute permission="accounts.view"><TransportExpenses /></ProtectedRoute>} />
                   <Route path="/procurement/payments" element={<ProtectedRoute permission="procurement.view"><Payments /></ProtectedRoute>} />
                 </Route>
 

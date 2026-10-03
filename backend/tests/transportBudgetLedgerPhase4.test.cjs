@@ -289,15 +289,18 @@ describe('Phase 5 — sales allocation producer scope guard', () => {
       .readdirSync(dir)
       .filter((name) => /transport/i.test(name))
       .sort();
-    // Phase 7E ledger hardening (0032) and the Phase 7G-1 snapshot amendment
-    // (0033) are the approved exceptions: they extend the LEDGER contract
-    // (CONSUMPTION_CORRECTION kind/linkage/caps/snapshots) without adding
-    // any producer. Producer phases must still reuse the schema.
+    // Phase 7E ledger hardening (0032), the Phase 7G-1 snapshot amendment
+    // (0033) and the Phase 8D consumption-reversal contract (0035) are the
+    // approved exceptions: they extend the LEDGER contract
+    // (CONSUMPTION_CORRECTION kind/linkage/caps/snapshots, CONSUMPTION_REVERSAL
+    // kind/linkage/cap) without adding any producer. Producer phases must
+    // still reuse the schema.
     expect(transportMigrations).toEqual([
       '0029_transport_budget_events.sql',
       '0030_transport_budget_ledger_hardening.sql',
       '0032_transport_budget_consumption_correction.sql',
       '0033_transport_budget_correction_source_snapshot.sql',
+      '0035_transport_budget_consumption_reversal.sql',
     ]);
   });
 });

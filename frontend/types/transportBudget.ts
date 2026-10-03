@@ -15,6 +15,9 @@
  *   CONSUMPTION_CORRECTION amount > 0 (Phase 7E: single positive delta
  *     linked to one INBOUND_CONSUMPTION via correctsEventId; REVERSAL is
  *     never reused for consumption correction)
+ *   CONSUMPTION_REVERSAL  amount > 0   (Phase 8D: single full positive
+ *     reversal linked to one OUTBOUND_CONSUMPTION via reversesEventId;
+ *     REVERSAL stays allocation-only)
  *
  * Identity model (do not conflate the two):
  *   id             = physical record identity (client-generated UUID before
@@ -32,13 +35,14 @@
 export const TRANSPORT_BUDGET_STORE_NAME = 'transportBudgetEvents' as const;
 export const TRANSPORT_BUDGET_TABLE_NAME = 'transport_budget_events' as const;
 
-/** Exactly the five canonical event kinds. No speculative types. */
+/** Exactly the six canonical event kinds. No speculative types. */
 export const TRANSPORT_BUDGET_EVENT_KINDS = [
   'SALES_ALLOCATION',
   'REVERSAL',
   'INBOUND_CONSUMPTION',
   'OUTBOUND_CONSUMPTION',
   'CONSUMPTION_CORRECTION',
+  'CONSUMPTION_REVERSAL',
 ] as const;
 
 export type TransportBudgetEventKind =
@@ -62,14 +66,14 @@ export interface TransportBudgetEvent {
   /**
    * Generic source document/event identity (e.g. future sale, Landing Cost
    * event, or delivery/expense source). Required for SALES_ALLOCATION,
-   * optional for consumptions, forbidden for REVERSAL (which links via
-   * reversesEventId instead).
+   * optional for consumptions, forbidden for REVERSAL and
+   * CONSUMPTION_REVERSAL (which link via reversesEventId instead).
    */
   sourceEventId: string | null;
   /**
    * Source-document amount snapshot in canonical currency units (2dp).
    * Required (> 0) for SALES_ALLOCATION; otherwise optional metadata.
-   * Forbidden for REVERSAL.
+   * Forbidden for REVERSAL and CONSUMPTION_REVERSAL.
    */
   sourceAmount: number | null;
   /**
@@ -80,9 +84,9 @@ export interface TransportBudgetEvent {
   allocationRatePercent: number | null;
   /**
    * Signed budget movement in canonical currency units (2dp), authoritative
-   * as supplied by the producer. Positive for SALES_ALLOCATION and
-   * CONSUMPTION_CORRECTION, negative for REVERSAL and both consumptions.
-   * Never edited after creation.
+   * as supplied by the producer. Positive for SALES_ALLOCATION,
+   * CONSUMPTION_CORRECTION and CONSUMPTION_REVERSAL; negative for REVERSAL
+   * and both consumptions. Never edited after creation.
    */
   amount: number;
   /**
@@ -102,10 +106,11 @@ export interface TransportBudgetEvent {
   /** Future-compatible journal metadata. ALWAYS empty in Phase 4. */
   journalIds: null;
   /**
-   * Link to the reversed event (physical `id` of a SALES_ALLOCATION).
-   * Present if and only if kind === 'REVERSAL'. Immutable once set.
-   * Never carried by CONSUMPTION_CORRECTION (which links via
-   * correctsEventId instead).
+   * Link to the reversed event. For kind === 'REVERSAL': physical `id` of a
+   * SALES_ALLOCATION. For kind === 'CONSUMPTION_REVERSAL': physical `id` of
+   * an OUTBOUND_CONSUMPTION. Present if and only if kind is 'REVERSAL' or
+   * 'CONSUMPTION_REVERSAL'. Immutable once set. Never carried by
+   * CONSUMPTION_CORRECTION (which links via correctsEventId instead).
    */
   reversesEventId: string | null;
   /**

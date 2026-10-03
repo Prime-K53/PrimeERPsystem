@@ -4,6 +4,8 @@ import { ArrowLeft, History, Search, X } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
 import { currencyService } from '../../services/currencyService';
+import { TransactionRefLink } from '../../components/TransactionRefLink';
+import { resolveOriginatingTransactionRef } from '../../utils/transactionRef';
 
 /**
  * General ledger explorer — target of "Audit Ledger Entries" from invoices
@@ -124,7 +126,25 @@ const LedgerExplorer: React.FC = () => {
                                 {filtered.map((entry: any) => (
                                     <tr key={entry.id} className="hover:bg-slate-50">
                                         <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{entry.date ? new Date(entry.date).toLocaleDateString() : '—'}</td>
-                                        <td className="py-3 px-4 font-mono font-bold text-slate-600 whitespace-nowrap">{entry.referenceId || entry.reference || entry.id}</td>
+                                        <td className="py-3 px-4 font-mono font-bold text-slate-600 whitespace-nowrap">
+                                            {(() => {
+                                                // Only open the originating transaction when the
+                                                // ledger row actually carries that metadata —
+                                                // otherwise the reference stays plain text.
+                                                const origin = resolveOriginatingTransactionRef(entry);
+                                                const text = entry.referenceId || entry.reference || entry.id;
+                                                if (!origin) return <span>{text}</span>;
+                                                return (
+                                                    <TransactionRefLink
+                                                        type={origin.type}
+                                                        id={origin.id}
+                                                        number={origin.number || text}
+                                                        label={text}
+                                                        className="text-slate-600"
+                                                    />
+                                                );
+                                            })()}
+                                        </td>
                                         <td className="py-3 px-4">
                                             <div className="font-bold text-slate-700">{entry.description || '—'}</div>
                                             {entry.customerName && <div className="text-[10px] text-slate-400">{entry.customerName}</div>}

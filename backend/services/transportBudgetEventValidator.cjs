@@ -32,6 +32,7 @@ const TRANSPORT_BUDGET_EVENT_KINDS = Object.freeze([
   'INBOUND_CONSUMPTION',
   'OUTBOUND_CONSUMPTION',
   'CONSUMPTION_CORRECTION',
+  'CONSUMPTION_REVERSAL',
 ]);
 
 /** Generic identity charset (also enforced by the database CHECKs). */
@@ -195,10 +196,13 @@ function validateTransportBudgetEvent(input, nowIso = new Date().toISOString()) 
     } else if (kind !== null) {
       // Sign is VALIDATED here but STORED as supplied (never inferred).
       // Phase 7E: SALES_ALLOCATION and CONSUMPTION_CORRECTION generate /
-      // restore budget (> 0); every other kind consumes it (< 0). Global
+      // restore budget (> 0); every other kind consumes it (< 0). Phase 8D:
+      // CONSUMPTION_REVERSAL restores outbound budget (> 0). Global
       // overdraft is ALLOWED, so no balance floor is checked here.
       if (
-        (kind === 'SALES_ALLOCATION' || kind === 'CONSUMPTION_CORRECTION') &&
+        (kind === 'SALES_ALLOCATION' ||
+          kind === 'CONSUMPTION_CORRECTION' ||
+          kind === 'CONSUMPTION_REVERSAL') &&
         !(amount > 0)
       ) {
         issue(
@@ -210,6 +214,7 @@ function validateTransportBudgetEvent(input, nowIso = new Date().toISOString()) 
       } else if (
         kind !== 'SALES_ALLOCATION' &&
         kind !== 'CONSUMPTION_CORRECTION' &&
+        kind !== 'CONSUMPTION_REVERSAL' &&
         !(amount < 0)
       ) {
         issue(
@@ -413,23 +418,35 @@ function validateTransportBudgetEvent(input, nowIso = new Date().toISOString()) 
       'reversesEventId must match the identity charset (max 200 chars).',
     );
   } else if (kind !== null) {
-    if (kind === 'REVERSAL' && reversesEventId === null) {
+    if (
+      (kind === 'REVERSAL' || kind === 'CONSUMPTION_REVERSAL') &&
+      reversesEventId === null
+    ) {
       issue(
         issues,
         'MISSING_REVERSAL_LINK',
         'reversesEventId',
-        'REVERSAL events must reference the reversed event.',
+        `${kind} events must reference the reversed event.`,
       );
     }
-    if (kind !== 'REVERSAL' && reversesEventId !== null) {
+    if (
+      kind !== 'REVERSAL' &&
+      kind !== 'CONSUMPTION_REVERSAL' &&
+      reversesEventId !== null
+    ) {
       issue(
         issues,
         'FORBIDDEN_REVERSAL_LINK',
         'reversesEventId',
-        `Only REVERSAL events may carry reversesEventId (kind is ${kind}).`,
+        `Only REVERSAL and CONSUMPTION_REVERSAL events may carry reversesEventId (kind is ${kind}).`,
       );
     }
-    if (kind === 'REVERSAL' && reversesEventId !== null && id !== null && reversesEventId === id) {
+    if (
+      (kind === 'REVERSAL' || kind === 'CONSUMPTION_REVERSAL') &&
+      reversesEventId !== null &&
+      id !== null &&
+      reversesEventId === id
+    ) {
       issue(
         issues,
         'FORBIDDEN_REVERSAL_LINK',
@@ -537,6 +554,38 @@ function validateTransportBudgetEvent(input, nowIso = new Date().toISOString()) 
         'FORBIDDEN_CORRECTION_LINK',
         'correctsEventId',
         'REVERSAL must not carry correctsEventId (corrections link via CONSUMPTION_CORRECTION only).',
+      );
+    }
+  }
+  if (kind === 'CONSUMPTION_REVERSAL') {
+    // Phase 8D null-snapshot hygiene (mirrors REVERSAL): economics derive
+    // from the reversed OUTBOUND_CONSUMPTION target, verified at append.
+    if (
+      sourceEventId !== null ||
+      sourceAmount !== null ||
+      allocationRatePercent !== null
+    ) {
+      issue(
+        issues,
+        'FORBIDDEN_SOURCE_FIELDS',
+        'sourceEventId',
+        'CONSUMPTION_REVERSAL must not carry sourceEventId/sourceAmount/allocationRatePercent (its economics derive from the reversed event).',
+      );
+    }
+    if (method !== null || providerId !== null) {
+      issue(
+        issues,
+        'FORBIDDEN_SOURCE_FIELDS',
+        'method',
+        'CONSUMPTION_REVERSAL must not carry method/providerId (its economics derive from the reversed event).',
+      );
+    }
+    if (correctsEventId !== null) {
+      issue(
+        issues,
+        'FORBIDDEN_CORRECTION_LINK',
+        'correctsEventId',
+        'CONSUMPTION_REVERSAL must not carry correctsEventId.',
       );
     }
   }

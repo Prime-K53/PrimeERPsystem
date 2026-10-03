@@ -376,6 +376,7 @@ const currencyMiddleware = new CurrencyMiddleware(currencyService);
 app.use('/api', currencyMiddleware.injectCurrency());
 // Supabase query adapter for inline routes migrating from SQLite
 const sq = require('./services/supabaseQuery.cjs');
+const { validateProductsPayload } = require('./services/variantSku.cjs');
 
 // ERP sync gateway: single write path for all business data from the
 // offline-first client's durable sync queue. Validates the JWT (Supabase or
@@ -3733,6 +3734,52 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
   });
 });
 
+  // ── Shared SKU namespace helpers (parent items AND variants) ──────────────
+  // The ERP keeps parent items + variants in `products` (the sync gateway's
+  // authoritative table) while this legacy REST surface writes `inventory`.
+  // Both feed the SAME SKU namespace, so a parent SKU created here must not
+  // collide with a parent item or a variant SKU already stored in `products`.
+  let productsSkuIndexCache = { at: 0, rows: null };
+  const PRODUCTS_SKU_INDEX_TTL_MS = 15000;
+
+  async function loadProductsRowsForSkuIndex() {
+    const now = Date.now();
+    if (productsSkuIndexCache.rows && now - productsSkuIndexCache.at < PRODUCTS_SKU_INDEX_TTL_MS) {
+      return productsSkuIndexCache.rows;
+    }
+    const rows = await sq.getAll('SELECT * FROM products', []);
+    productsSkuIndexCache = { at: now, rows };
+    return rows;
+  }
+
+  async function assertSkuFreeInProductsNamespace(sku, excludeId) {
+    let rows = [];
+    try {
+      rows = await loadProductsRowsForSkuIndex();
+    } catch (err) {
+      // Fail open on the probe only; the parent-SKU check above still applies.
+      console.warn('[Inventory] products SKU index unavailable:', err?.message || err);
+      return null;
+    }
+    const key = String(sku || '').trim().toUpperCase();
+    if (!key) return null;
+    for (const row of rows || []) {
+      const data = (row && row.data && typeof row.data === 'object') ? row.data : (row || {});
+      const rowId = String((row && row.id) || data.id || '');
+      if (excludeId && rowId === String(excludeId)) continue;
+      const itemName = String(data.name || '');
+      if (String(data.sku || '').trim().toUpperCase() === key) {
+        return `Inventory item with SKU '${sku}' already exists ("${itemName || rowId}").`;
+      }
+      const variants = Array.isArray(data.variants) ? data.variants : [];
+      for (const variant of variants) {
+        if (!variant || String(variant.sku || '').trim().toUpperCase() !== key) continue;
+        return `Inventory item with SKU '${sku}' already exists (variant "${variant.name || variant.id || ''}" of "${itemName || rowId}").`;
+      }
+    }
+    return null;
+  }
+
   // 2. GET Inventory
   app.get('/api/inventory', checkPermission('view_inventory'), async (req, res) => {
     try {
@@ -3783,7 +3830,9 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
       const isProtected = body.is_protected ? 1 : 0;
       const now = new Date().toISOString();
 
-      // Business Uniqueness Check: SKU must be unique
+      // Business Uniqueness Check: SKU must be unique across the WHOLE
+      // inventory namespace (parent items in this table AND every parent item
+      // / variant SKU stored in `products`).
       if (sku) {
         const existing = await new Promise((resolve, reject) => {
           sq.getOne(
@@ -3799,6 +3848,21 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
             sku 
           });
         }
+        const variantConflict = await assertSkuFreeInProductsNamespace(sku);
+        if (variantConflict) {
+          return res.status(409).json({ error: variantConflict, code: 'SKU_ALREADY_EXISTS', sku });
+        }
+      }
+
+      // Variants carried on a legacy create get the same stable id + unique
+      // SKU treatment as the sync gateway (canonical rule, one implementation).
+      const variantPayload = { ...body, id, name, sku };
+      const variantError = validateProductsPayload(variantPayload, await loadProductsRowsForSkuIndex());
+      if (variantError) {
+        return res.status(409).json({ error: variantError, code: 'SKU_ALREADY_EXISTS' });
+      }
+      if (Array.isArray(variantPayload.variants) && variantPayload.variants.length > 0) {
+        body.variants = variantPayload.variants;
       }
 
       // Perform clean INSERT
@@ -3888,6 +3952,20 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
             sku: skuTrimmed
           });
         }
+        const variantConflict = await assertSkuFreeInProductsNamespace(skuTrimmed, id);
+        if (variantConflict) {
+          return res.status(409).json({ error: variantConflict, code: 'SKU_ALREADY_EXISTS', sku: skuTrimmed });
+        }
+      }
+
+      // Same canonical variant identity rule as create / sync gateway.
+      if (Array.isArray(body.variants) && body.variants.length > 0) {
+        const variantPayload = { ...body, id };
+        const variantError = validateProductsPayload(variantPayload, await loadProductsRowsForSkuIndex());
+        if (variantError) {
+          return res.status(409).json({ error: variantError, code: 'SKU_ALREADY_EXISTS' });
+        }
+        body.variants = variantPayload.variants;
       }
 
       fields.push('updated_at = CURRENT_TIMESTAMP');

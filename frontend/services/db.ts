@@ -9,6 +9,7 @@ import type { Referral, ReferralReward } from '../types/referral';
 import type { ServiceRecipe, ServiceJob, ServiceResource, ServiceConsumptionRecord } from '../types';
 import type { ReferralTimelineEntry, ReferralAuditEntry, ReferralCampaign, ReferralAnalytics, ReversalRequest, ReferralEvent } from '../types/referral-extended';
 import type { TransportBudgetEvent } from '../types/transportBudget';
+import type { TransportExpense } from '../types';
 import type { PortalAd } from '../types/ads';
 import type { PurchaseLot } from '../types/inventory';
 import { calculateCustomerPaymentSnapshot } from './receiptCalculationService';
@@ -191,6 +192,9 @@ interface NexusDB extends DBSchema {
     // Transport Budget event ledger — single-company append-only event store
     // (Phase 4 infrastructure only; no producers).
     transportBudgetEvents: { key: string; value: TransportBudgetEvent; };
+    // Authoritative outbound courier/transport expense source (Phase 7J).
+    // Header + embedded lines[]; status machine DRAFT → POSTED → VOIDED.
+    transportExpenses: { key: string; value: TransportExpense; };
 
 }
 
@@ -199,7 +203,8 @@ const DB_NAME = 'PrimeERP_Final_v3_Clean';
 // v56: register the `statementSnapshots` store (immutable verifiable statement snapshots).
 // v57: register the `serviceRecipes`/`serviceJobs`/`serviceResources`/`serviceConsumptions` stores (service catalog execution).
 // v59: register the `transportBudgetEvents` store (Phase 4 append-only Transport Budget event ledger).
-const DB_VERSION = 59;
+// v60: register the `transportExpenses` store (Phase 7J authoritative courier/transport expense source).
+const DB_VERSION = 60;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -580,6 +585,8 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   // Transport Budget event ledger — single-company append-only event store
   // (Phase 4 infrastructure only; envelope table transport_budget_events).
   transportBudgetEvents: 'transport_budget_events',
+  // Authoritative courier/transport expense source (Phase 7J).
+  transportExpenses: 'transport_expenses',
   // Fixed Assets — single-company, no tenant column (same envelope as 0001:894 `assets`)
   fixedAssets: 'fixed_assets',
   depreciationEntries: 'depreciation_entries',
@@ -706,6 +713,8 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'statementSnapshots',
     // Transport Budget event ledger — append-only, single-company.
     'transportBudgetEvents',
+    // Authoritative courier/transport expense source (Phase 7J).
+    'transportExpenses',
     'interestIncomeEntries',
     'prepayments',
     'prepaymentAmortizations',

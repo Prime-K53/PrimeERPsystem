@@ -1587,6 +1587,79 @@ export interface Expense {
   [key: string]: any;
 }
 
+/**
+ * TransportExpense — Phase 7J authoritative outbound courier/transport
+ * expense source (prerequisite for future OUTBOUND_CONSUMPTION; NOT a
+ * Transport Budget event itself).
+ *
+ * Single-company internal supplier/expense document. Transport authority
+ * comes from the machine `classification` on each line
+ * (`OUTBOUND_TRANSPORT`), never from free-text category matching. Posted
+ * rows are immutable (status machine DRAFT → POSTED → VOIDED enforced by
+ * the service and migration 0034); voids are separate reversal rows.
+ */
+export const TRANSPORT_EXPENSE_LINE_CLASSIFICATIONS = [
+  'OUTBOUND_TRANSPORT',
+  'NON_TRANSPORT',
+] as const;
+
+export type TransportExpenseLineClassification =
+  (typeof TRANSPORT_EXPENSE_LINE_CLASSIFICATIONS)[number];
+
+export type TransportExpenseStatus = 'DRAFT' | 'POSTED' | 'VOIDED';
+
+export type TransportExpenseSettlementMode = 'AP' | 'CASH';
+
+export interface TransportExpenseLine {
+  /** Stable line identity within the document. */
+  id: string;
+  description: string;
+  /** Positive 2dp transport/non-transport amount. */
+  amount: number;
+  /** Machine classification — never inferred from text. */
+  classification: TransportExpenseLineClassification;
+  /** Supplier/provider row identity (existing suppliers table). */
+  supplierId: string;
+  /**
+   * Resolved debit account for NON_TRANSPORT lines (chosen at creation,
+   * validated at posting). OUTBOUND_TRANSPORT lines always resolve to the
+   * dedicated transport expense account and must not set this.
+   */
+  accountId?: string;
+}
+
+export interface TransportExpense {
+  /** Stable client-generated identity (offline-safe, never regenerated). */
+  id: string;
+  /** Deterministic business idempotency key (never random/timestamp). */
+  idempotencyKey: string;
+  status: TransportExpenseStatus;
+  /** Accounting/business date (YYYY-MM-DD). */
+  businessDate: string;
+  /** Posting timestamp (ISO-8601). */
+  occurredAt: string;
+  /** Local creation timestamp (ISO-8601). */
+  createdAt: string;
+  /** Document-level default provider (informational; authority is per line). */
+  supplierId: string | null;
+  /** AP (supplier liability) or CASH (direct settlement). */
+  settlementMode: TransportExpenseSettlementMode;
+  /** Resolved settlement account (AP 21110 or bank/cash account id). */
+  settlementAccountId: string | null;
+  /** Resolved debit account for transport lines (dedicated account). */
+  expenseAccountId: string | null;
+  lines: TransportExpenseLine[];
+  /** Must equal the sum of line amounts. */
+  totalAmount: number;
+  currency: string;
+  /** Authoritative journal identity after POST (null while DRAFT). */
+  journalId: string | null;
+  /** Present iff this row is a void reversal of another expense. */
+  reversesExpenseId: string | null;
+  /** True for system-created void-reversal rows. */
+  isReversal: boolean;
+}
+
 export interface RecurringInvoice {
   id: string;
   customerId?: string;

@@ -20,6 +20,11 @@ import { extractDeliveryNoteData } from '../../services/geminiService';
 import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils';
 import { resolvePoLineUnitCost } from '../../services/purchaseCosting';
+import {
+  transactionRefKey,
+  transactionRefUnavailableMessage,
+  useTransactionRefTarget,
+} from '../../hooks/useTransactionRefDeepLink';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
 const amber = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f' };
@@ -44,6 +49,36 @@ const GoodsReceived: React.FC = () => {
   const [selectedPO, setSelectedPO] = useState<Purchase | null>(null);
   const magicScanRef = useRef<HTMLInputElement>(null);
   const [isScanning, setIsScanning] = useState(false);
+
+  // Universal clickable transaction references: a GRN reference opens the
+  // History tab with that note isolated. Nothing is written.
+  const txRef = useTransactionRefTarget();
+  const txRefKey = transactionRefKey(txRef);
+  const lastTxRefKeyRef = useRef('');
+
+  React.useEffect(() => {
+    if (!txRef || !txRefKey || txRefKey === lastTxRefKeyRef.current) return;
+    if (txRef.type !== 'grn') return;
+    if (goodsReceipts === undefined || goodsReceipts === null) return;
+
+    const key = txRef.id || txRef.number;
+    const match = (goodsReceipts as any[]).filter(g =>
+      [g?.id, g?.reference, g?.grnNumber].some(v => String(v ?? '').trim() === key));
+    if (match.length === 1) {
+      setActiveTab('History');
+      setSearchTerm(match[0]?.reference || match[0]?.id || key);
+    } else {
+      notify(
+        transactionRefUnavailableMessage({
+          status: match.length > 1 ? 'ambiguous' : 'missing',
+          ref: txRef,
+        }),
+        'error',
+      );
+    }
+    lastTxRefKeyRef.current = txRefKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [txRefKey, goodsReceipts]);
 
   const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || id;
   const getItemName = (id: string) => inventory.find(i => i.id === id)?.name || id;

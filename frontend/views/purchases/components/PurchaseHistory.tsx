@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { logger } from '@/services/logger';
 import { useLocation } from 'react-router-dom';
 import { useHighlight } from '../../../hooks/useHighlight';
-import { DocLink } from '../../../components/DocLink';
+import { TransactionRefLink } from '../../../components/TransactionRefLink';
 import { Package, CheckCircle, Eye, DollarSign, Trash2, ChevronRight, RefreshCw, Edit2, Layers, CheckSquare, Square, XCircle, FileText, Download, FileDown, Search, X, ArrowUp, ArrowDown, MoreVertical } from 'lucide-react';
 import { Purchase } from '../../../types';
 import { pdf } from '@react-pdf/renderer';
@@ -548,7 +548,7 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                                         </button>
                                     </td>
                                     <td className="table-body-cell text-left font-mono text-slate-500 font-bold truncate">
-                                        <DocLink docNumber={po.id} targetPage="/procurement/bills" rowId={`bill-${po.id}`} currentPage={location.pathname} />
+                                        <TransactionRefLink type="purchase" id={po.id} number={po.reference || po.poNumber || po.id} label={po.id} />
                                     </td>
                                     <td className="table-body-cell text-left font-normal truncate hidden sm:table-cell">{po.date ? new Date(po.date).toLocaleDateString() : '-'}</td>
                                     <td className="table-body-cell text-left font-medium text-slate-900 truncate">
