@@ -169,6 +169,7 @@ const appendSalesAllocation = async (deps, input) => {
     method: null,
     providerId: null,
     reversesEventId: null,
+    correctsEventId: null,
     businessDate,
     occurredAt: deps.nowIso(),
   });

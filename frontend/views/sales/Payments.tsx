@@ -16,6 +16,7 @@ import { ClientModal } from './components/ClientModal';
 import { DocLink } from '../../components/DocLink';
 import { generateNextId, roundFinancial } from '../../utils/helpers';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
+import { getOrderOutstanding, isOrderPaymentEligible } from './components/orderStatusUtils';
 import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils';
 import { useProcurement } from '../../context/ProcurementContext';
 import { useBankingStore } from '../../context/BankingContext';
@@ -627,7 +628,7 @@ const Payments: React.FC = () => {
     const { companyConfig, notify, user, allUsers } = useAuth();
     const { customerPayments, addCustomerPayment, updateCustomerPayment, deleteCustomerPayment, permanentlyDeleteCustomerPayment, customers, sales, addCustomer, updateCustomer } = useSales();
     const { invoices, updateInvoice, getDocumentVerificationToken } = useFinance();
-    const { orders, recordPayment: recordOrderPayment, updateOrderStatus } = useOrders();
+    const { orders, recordPayment: recordOrderPayment } = useOrders();
     const { suppliers } = useProcurement();
     const { postJournalEntry, supplierPayments = [], recordSupplierPayment, updateSupplierPayment, voidSupplierPayment } = useFinance();
     const { purchases = [] } = useProcurement();
@@ -948,7 +949,11 @@ const Payments: React.FC = () => {
     }, [refreshModuleData]);
 
     const excessAmount = useMemo(() => {
-        const totalAllocated = allocations.reduce((s, a) => s + a.amount, 0);
+        // Coerce like the trim effect below: allocation amounts originate from
+        // `<input type="number">`, so they can be strings. Summing them raw made
+        // `s + a.amount` concatenate, reporting a bogus excess (and hiding a
+        // genuine one) as soon as two allocations were present.
+        const totalAllocated = allocations.reduce((s, a) => s + (Number(a.amount) || 0), 0);
         return Math.max(0, (Number(formData.amount) || 0) - totalAllocated);
     }, [formData.amount, allocations]);
 
@@ -1010,22 +1015,30 @@ const Payments: React.FC = () => {
                         amount: location.state.amount
                     }]);
                 } else if (!location.state.isTopUp) {
+                    // Mirror `availableInvoices` exactly: the prefill total and the
+                    // pre-allocated amounts must not include documents the modal
+                    // would then refuse to show, otherwise the header amount and
+                    // the allocation table disagree on open.
                     const unpaid = invoices.filter(i =>
                         (i.customerName === customerName || i.customerId === customerId) &&
-                        i.status !== 'Paid' && i.status !== 'Draft'
+                        i.status !== 'Paid' &&
+                        i.status !== 'Draft' &&
+                        i.status !== 'Cancelled' &&
+                        i.status !== 'Void'
                     );
                     const unpaidOrders = orders.filter(o =>
                         (o.customerName === customerName || o.customerId === customerId) &&
-                        o.status === 'Processing'
+                        isOrderPaymentEligible(o)
                     );
-                    const totalDue = unpaid.reduce((s, i) => s + (i.totalAmount - (i.paidAmount || 0)), 0) +
-                        unpaidOrders.reduce((s, o) => s + (o.totalAmount - (o.paidAmount || 0)), 0);
+                    const invoiceDue = (i: any) => Math.max(0, (Number(i.totalAmount) || 0) - (Number(i.paidAmount) || 0));
+                    const totalDue = unpaid.reduce((s, i) => s + invoiceDue(i), 0) +
+                        unpaidOrders.reduce((s, o) => s + getOrderOutstanding(o), 0);
 
-                    setFormData(prev => ({ ...prev, amount: totalDue }));
+                    setFormData(prev => ({ ...prev, amount: roundFinancial(totalDue) }));
 
                     const initialAllocations = [
-                        ...unpaid.map(i => ({ invoiceId: i.id, amount: i.totalAmount - (i.paidAmount || 0) })),
-                        ...unpaidOrders.map(o => ({ invoiceId: '', orderId: o.id, amount: o.totalAmount - (o.paidAmount || 0) }))
+                        ...unpaid.map(i => ({ invoiceId: i.id, amount: invoiceDue(i) })),
+                        ...unpaidOrders.map(o => ({ invoiceId: '', orderId: o.id, amount: getOrderOutstanding(o) }))
                     ];
 
                     // If a specific invoiceId was provided, only allocate to that invoice
@@ -1034,11 +1047,11 @@ const Payments: React.FC = () => {
                         if (specificUnpaid.length > 0) {
                             setAllocations(specificUnpaid.map(i => ({
                                 invoiceId: i.id,
-                                amount: i.totalAmount - (i.paidAmount || 0)
+                                amount: invoiceDue(i)
                             })));
                             setFormData(prev => ({
                                 ...prev,
-                                amount: specificUnpaid[0].totalAmount - (specificUnpaid[0].paidAmount || 0)
+                                amount: roundFinancial(invoiceDue(specificUnpaid[0]))
                             }));
                         } else {
                             setAllocations(initialAllocations);
@@ -1049,11 +1062,11 @@ const Payments: React.FC = () => {
                             setAllocations(specificOrder.map(o => ({
                                 invoiceId: '',
                                 orderId: o.id,
-                                amount: o.totalAmount - (o.paidAmount || 0)
+                                amount: getOrderOutstanding(o)
                             })));
                             setFormData(prev => ({
                                 ...prev,
-                                amount: specificOrder[0].totalAmount - (specificOrder[0].paidAmount || 0)
+                                amount: roundFinancial(getOrderOutstanding(specificOrder[0]))
                             }));
                         } else {
                             setAllocations(initialAllocations);
@@ -1143,7 +1156,9 @@ const Payments: React.FC = () => {
 
                 for (const doc of combined) {
                     if (remaining <= 0) break;
-                    const due = (doc as any).totalAmount - ((doc as any).paidAmount || 0);
+                    const due = doc.docType === 'order'
+                        ? getOrderOutstanding(doc)
+                        : Math.max(0, (Number((doc as any).totalAmount) || 0) - (Number((doc as any).paidAmount) || 0));
                     const amt = Math.min(remaining, due);
                     if (amt > 0) {
                         if (doc.docType === 'invoice') {
@@ -1198,12 +1213,17 @@ const Payments: React.FC = () => {
                 await addCustomerPayment(newPayment as CustomerPayment);
             }
 
-            // Process order allocations - record payment against each order
+            // Process order allocations - record payment against each order.
+            // `recordOrderPayment` already maintains paidAmount/remainingBalance
+            // and derives paymentStatus, so the previous follow-up
+            // `updateOrderStatus(orderId, 'Paid' | 'Partially Paid')` was
+            // redundant. It also fed legacy payment-only strings into a
+            // workflow-status API, where they canonicalize to 'Confirmed' and
+            // trip the terminal-transition guard — aborting the save after the
+            // customer payment had already been posted.
             for (const alloc of orderAllocations) {
                 const order = orders.find(o => o.id === alloc.orderId);
                 if (!order) continue;
-                const newPaid = (order.paidAmount || 0) + alloc.amount;
-                const newStatus = newPaid >= order.totalAmount ? 'Paid' : 'Partially Paid';
                 await recordOrderPayment(alloc.orderId, {
                     id: `OP-${Date.now()}-${alloc.orderId}`,
                     orderId: alloc.orderId,
@@ -1213,7 +1233,6 @@ const Payments: React.FC = () => {
                     recordedBy: user?.name || 'System',
                     reference: formData.reference || `Payment via ${finalId}`
                 });
-                await updateOrderStatus(alloc.orderId, newStatus);
             }
 
             // Show success modal first — then user chooses to preview
@@ -1309,19 +1328,32 @@ const Payments: React.FC = () => {
         return baseInvoices;
     }, [invoices, formData.customerName, formData.subAccountName, location.state]);
 
+    /**
+     * Orders that can still be settled by a customer payment.
+     *
+     * Eligibility is status-aware via `isOrderPaymentEligible`. The previous
+     * `o.status === 'Processing'` literal was the regression: `orders` comes
+     * from `useOrders()`, which serves the legacy projection of canonical sales
+     * orders, and that projection rewrites `status` to 'Paid' / 'Partially Paid'
+     * / 'Converted' as soon as an order is invoiced or partially paid. Matching
+     * the literal therefore hid almost every genuinely payable order.
+     *
+     * Customer matching accepts either the id or the display name so an order
+     * saved under the legacy customer name still matches the picker, which
+     * stores the business display name.
+     */
     const availableOrders = useMemo(() => {
-        if (!formData.customerName) return [];
+        if (!formData.customerName && !formData.customerId) return [];
 
-        const baseOrders = orders.filter(o => {
-            const customerMatch = o.customerName === formData.customerName;
+        return orders.filter(o => {
+            const customerMatch = (!!formData.customerId && o.customerId === formData.customerId)
+                || o.customerName === formData.customerName;
             const subAccountMatch = !formData.subAccountName ||
                 formData.subAccountName === 'Main' ||
                 o.subAccountName === formData.subAccountName;
-            const statusMatch = o.status === 'Processing';
-            return customerMatch && subAccountMatch && statusMatch;
+            return customerMatch && subAccountMatch && isOrderPaymentEligible(o);
         });
-        return baseOrders;
-    }, [orders, formData.customerName, formData.subAccountName]);
+    }, [orders, formData.customerId, formData.customerName, formData.subAccountName]);
 
     const handleAutoAllocate = () => {
         let remaining = Number(formData.amount);
@@ -1337,7 +1369,9 @@ const Payments: React.FC = () => {
 
         for (const doc of combined) {
             if (remaining <= 0) break;
-            const due = (doc as any).totalAmount - ((doc as any).paidAmount || 0);
+            const due = doc.docType === 'order'
+                ? getOrderOutstanding(doc)
+                : Math.max(0, (Number((doc as any).totalAmount) || 0) - (Number((doc as any).paidAmount) || 0));
             const amt = Math.min(remaining, due);
             if (doc.docType === 'invoice') {
                 newAllocations.push({ invoiceId: doc.id, amount: amt });
@@ -1836,7 +1870,7 @@ const Payments: React.FC = () => {
                                                         );
                                                     })}
                                                     {availableOrders.map(order => {
-                                                        const due = order.totalAmount - (order.paidAmount || 0);
+                                                        const due = getOrderOutstanding(order);
                                                         const alloc = allocations.find(a => a.orderId === order.id);
                                                         return (
                                                             <tr key={`ord-${order.id}`} style={{ borderTop:'1px solid #e4ddd1' }}>
@@ -1877,7 +1911,7 @@ const Payments: React.FC = () => {
 
                                         {allocations.length > 0 && (
                                             <div style={{ marginTop:6, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:8, fontSize:12 }}>
-                                                <span style={{ color:'#5c6567', fontWeight:500 }}>Allocated: <span style={{ fontWeight:700, color:'#23282A', fontFamily:"'JetBrains Mono',monospace" }}>{currency}{allocations.reduce((s, a) => s + a.amount, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
+                                                <span style={{ color:'#5c6567', fontWeight:500 }}>Allocated: <span style={{ fontWeight:700, color:'#23282A', fontFamily:"'JetBrains Mono',monospace" }}>{currency}{allocations.reduce((s, a) => s + (Number(a.amount) || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
                                                 {excessAmount > 0.01 && (
                                                     <span style={{ color:'#146b60', fontWeight:500 }}>Excess: <span style={{ fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>{currency}{excessAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
                                                 )}

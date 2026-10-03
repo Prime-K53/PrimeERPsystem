@@ -309,6 +309,7 @@ const appendSalesAllocation = async (
       method: null,
       providerId: null,
       reversesEventId: null,
+      correctsEventId: null,
       businessDate,
       occurredAt: deps.nowIso(),
     });

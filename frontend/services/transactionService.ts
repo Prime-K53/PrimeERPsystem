@@ -4537,23 +4537,49 @@ export const transactionService = {
         // Serialize same-PO landing consumption within this tab; a GRN
         // without landing costs takes the direct path unchanged.
         const needsLandingLock = !!(grn?.purchaseOrderId) && ((grn as any).landingCosts || []).some((c: any) => Number(c?.amount) >= 0.005);
+        let result: any;
         if (!needsLandingLock) {
-            return this.processGoodsReceiptTx(grn, performedBy);
-        }
-        const lockKey = `landing-consume-grn:${grn.purchaseOrderId}`;
-        const previous = landingConsumptionLocks.get(lockKey) || Promise.resolve();
-        let releaseLock!: () => void;
-        const current = new Promise<void>((resolve) => { releaseLock = resolve; });
-        landingConsumptionLocks.set(lockKey, current);
-        try {
-            await previous.catch(() => {});
-            return await this.processGoodsReceiptTx(grn, performedBy);
-        } finally {
-            if (landingConsumptionLocks.get(lockKey) === current) {
-                landingConsumptionLocks.delete(lockKey);
+            result = await this.processGoodsReceiptTx(grn, performedBy);
+        } else {
+            const lockKey = `landing-consume-grn:${grn.purchaseOrderId}`;
+            const previous = landingConsumptionLocks.get(lockKey) || Promise.resolve();
+            let releaseLock!: () => void;
+            const current = new Promise<void>((resolve) => { releaseLock = resolve; });
+            landingConsumptionLocks.set(lockKey, current);
+            try {
+                await previous.catch(() => {});
+                result = await this.processGoodsReceiptTx(grn, performedBy);
+            } finally {
+                if (landingConsumptionLocks.get(lockKey) === current) {
+                    landingConsumptionLocks.delete(lockKey);
+                }
+                releaseLock();
             }
-            releaseLock();
         }
+        // Phase 7F: post-commit inbound consumption producer (fire-and-forget,
+        // same pattern as the sales-allocation hooks below). The Landing Cost
+        // GRN transaction already committed: a transport failure never fails
+        // the GRN and stays retryable through the deterministic economic key
+        // (INBOUND_CONSUMPTION:{landingCostId}:{grnId}).
+        import('./transportBudgetInboundConsumption').then(
+            ({
+                produceInboundConsumptionSafely,
+                defaultInboundConsumptionDeps,
+                fireInboundConsumptionHook,
+            }) =>
+                fireInboundConsumptionHook(
+                    produceInboundConsumptionSafely(defaultInboundConsumptionDeps, {
+                        grnId: (grn as any)?.id,
+                        grnDate: (grn as any)?.date,
+                        landingCosts: (((grn as any)?.landingCosts || []) as any[]),
+                        events: (result as any)?.grnConsumptionEvents || [],
+                    }),
+                    String((grn as any)?.id || ''),
+                ),
+        ).catch(() => {
+            // Module load failure must not affect the committed GRN either.
+        });
+        return result;
     },
 
     async processGoodsReceiptTx(grn: GoodsReceipt, performedBy?: string) {
@@ -5340,7 +5366,7 @@ export const transactionService = {
                     }
                 }
 
-                return { success: true, poReversed: !!relatedPurchase, variance: relatedPurchase ? grnGoodsTotal - poAmount : 0 };
+                return { success: true, poReversed: !!relatedPurchase, variance: relatedPurchase ? grnGoodsTotal - poAmount : 0, grnConsumptionEvents };
             }
         );
     },

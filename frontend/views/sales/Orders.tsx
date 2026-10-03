@@ -167,6 +167,16 @@ const Orders: React.FC = () => {
       title: string;
       onConfirm: (reason: string) => void;
     }>({ open: false, title: '', onConfirm: () => {} });
+    // Quotation -> Order re-conversion is allowed. When the quotation already
+    // maps to an order, the user picks: replace that order (reusing its exact
+    // official number) or mint a second, independent order.
+    const [reconvertModal, setReconvertModal] = useState<{
+      open: boolean;
+      existingOrderId: string;
+      existingOrderNumber: string;
+      onReplace: () => void;
+      onCreateNew: () => void;
+    }>({ open: false, existingOrderId: '', existingOrderNumber: '', onReplace: () => {}, onCreateNew: () => {} });
     const [cancelReasonText, setCancelReasonText] = useState('');
     const [paymentAmountModal, setPaymentAmountModal] = useState<{
       open: boolean;
@@ -807,10 +817,33 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
         }
 
         if (action === 'convert_to_order' && activeView === 'Quotations') {
-            if (item.status === 'Converted') {
-                notify('This quotation has already been converted to an order.', 'warning');
+            // A quotation may be converted more than once. If it already maps to
+            // an order, ask what "convert again" means rather than silently
+            // refusing: reuse the existing order's exact number (replacing it),
+            // or create a separate new order.
+            const existingOrder = orders.find(o => o.quotationId === item.id);
+
+            const runConversion = async (reuseOrderId?: string) => {
+                const orderId = await convertQuotationToOrder(
+                    item,
+                    reuseOrderId ? { reuseOrderId } : undefined
+                );
+                if (orderId) {
+                    setActiveTab('Orders');
+                }
+            };
+
+            if (existingOrder) {
+                setReconvertModal({
+                    open: true,
+                    existingOrderId: existingOrder.id,
+                    existingOrderNumber: existingOrder.orderNumber || existingOrder.id,
+                    onReplace: () => { runConversion(existingOrder.id); },
+                    onCreateNew: () => { runConversion(); },
+                });
                 return;
             }
+
             const confirmed = await confirm({
                 title: 'Convert to Order',
                 message: "Convert this quotation to an active order? This will mark the quotation as 'Converted'.",
@@ -819,10 +852,7 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                 cancelText: 'Cancel'
             });
             if (confirmed) {
-                const orderId = await convertQuotationToOrder(item);
-                if (orderId) {
-                    setActiveTab('Orders');
-                }
+                await runConversion();
             }
             return;
         }
@@ -2153,6 +2183,89 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                 cancelText={confirmState.cancelText}
                 type={confirmState.type || 'question'}
             />
+
+            {reconvertModal.open && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setReconvertModal(m => ({ ...m, open: false }));
+                        }
+                    }}
+                >
+                    <div className="w-full max-w-md animate-in zoom-in-95 duration-200" role="dialog" aria-modal="true">
+                        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                            <div className="flex items-center justify-between py-4 px-6 border-b border-slate-100">
+                                <h2 className="text-lg font-semibold text-slate-800">Convert to Order</h2>
+                                <button
+                                    onClick={() => setReconvertModal(m => ({ ...m, open: false }))}
+                                    className="text-slate-400 hover:text-slate-600 transition-colors text-xl font-bold"
+                                    type="button"
+                                    aria-label="Close"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="px-6 py-5">
+                                <p className="text-sm text-slate-600 leading-relaxed">
+                                    This quotation was already converted to order{' '}
+                                    <span className="font-semibold text-slate-800">{reconvertModal.existingOrderNumber}</span>.
+                                    Convert it again as:
+                                </p>
+
+                                <div className="mt-4 flex flex-col gap-3">
+                                    <button
+                                        onClick={() => {
+                                            const { onReplace } = reconvertModal;
+                                            setReconvertModal(m => ({ ...m, open: false }));
+                                            onReplace();
+                                        }}
+                                        className="text-left p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all"
+                                        type="button"
+                                    >
+                                        <span className="block text-sm font-semibold text-slate-800">
+                                            Replace order {reconvertModal.existingOrderNumber}
+                                        </span>
+                                        <span className="block text-xs text-slate-500 mt-1">
+                                            Overwrite the existing order, keeping its exact number. Any payments already recorded
+                                            against it are not carried over.
+                                        </span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            const { onCreateNew } = reconvertModal;
+                                            setReconvertModal(m => ({ ...m, open: false }));
+                                            onCreateNew();
+                                        }}
+                                        className="text-left p-4 border border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all"
+                                        type="button"
+                                    >
+                                        <span className="block text-sm font-semibold text-slate-800">
+                                            Create a new order
+                                        </span>
+                                        <span className="block text-xs text-slate-500 mt-1">
+                                            Keep order {reconvertModal.existingOrderNumber} as-is and generate a separate new
+                                            order from this quotation.
+                                        </span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
+                                <button
+                                    onClick={() => setReconvertModal(m => ({ ...m, open: false }))}
+                                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all"
+                                    type="button"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {cancelReasonModal.open && (
                 <div

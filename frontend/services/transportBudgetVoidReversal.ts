@@ -130,6 +130,7 @@ export function buildVoidReversalInput(
     // Exact negative of the ORIGINAL allocation amount (never today's total).
     amount: -Number(original.amount),
     reversesEventId: String(original.id),
+    correctsEventId: null,
     idempotencyKey: voidReversalIdempotencyKey(economicKey),
     businessDate: String(original.businessDate),
     // Phase 4 field hygiene: REVERSAL must not carry source identity/rate.

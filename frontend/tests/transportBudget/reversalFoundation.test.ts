@@ -93,6 +93,7 @@ const allocationEvent = (
   accountSplits: null,
   journalIds: null,
   reversesEventId: null,
+  correctsEventId: null,
   businessDate: '2026-09-30',
   occurredAt: '2026-09-30T10:00:00.000Z',
   createdAt: '2026-09-30T10:00:00.000Z',

@@ -212,14 +212,24 @@ export function validateTransportBudgetEvent(
       );
     } else if (kind !== null) {
       // Sign is VALIDATED here but STORED as supplied (never inferred).
-      if (kind === 'SALES_ALLOCATION' && !(amount > 0)) {
+      // Phase 7E: SALES_ALLOCATION and CONSUMPTION_CORRECTION generate /
+      // restore budget (> 0); every other kind consumes it (< 0). Global
+      // overdraft is ALLOWED, so no balance floor is checked here.
+      if (
+        (kind === 'SALES_ALLOCATION' || kind === 'CONSUMPTION_CORRECTION') &&
+        !(amount > 0)
+      ) {
         issue(
           issues,
           'INVALID_SIGN',
           'amount',
-          'SALES_ALLOCATION amount must be positive.',
+          `${kind} amount must be positive.`,
         );
-      } else if (kind !== 'SALES_ALLOCATION' && !(amount < 0)) {
+      } else if (
+        kind !== 'SALES_ALLOCATION' &&
+        kind !== 'CONSUMPTION_CORRECTION' &&
+        !(amount < 0)
+      ) {
         issue(
           issues,
           'INVALID_SIGN',
@@ -466,6 +476,63 @@ export function validateTransportBudgetEvent(
     }
   }
 
+  // --- correctsEventId (structural shape; target/cap enforced at append) --
+  // Phase 7E: present if and only if kind === 'CONSUMPTION_CORRECTION'.
+  // reversesEventId remains exclusively associated with REVERSAL.
+  const correctsEventId = toNullableTrimmed(candidate.correctsEventId);
+  if (
+    candidate.correctsEventId !== null &&
+    candidate.correctsEventId !== undefined &&
+    typeof candidate.correctsEventId !== 'string'
+  ) {
+    issue(
+      issues,
+      'MISSING_CORRECTION_LINK',
+      'correctsEventId',
+      'correctsEventId must be a string or null.',
+    );
+  } else if (
+    correctsEventId !== null &&
+    !IDENTITY_PATTERN.test(correctsEventId)
+  ) {
+    issue(
+      issues,
+      'MISSING_CORRECTION_LINK',
+      'correctsEventId',
+      'correctsEventId must match the identity charset (max 200 chars).',
+    );
+  } else if (kind !== null) {
+    if (kind === 'CONSUMPTION_CORRECTION' && correctsEventId === null) {
+      issue(
+        issues,
+        'MISSING_CORRECTION_LINK',
+        'correctsEventId',
+        'CONSUMPTION_CORRECTION events must reference the corrected consumption.',
+      );
+    }
+    if (kind !== 'CONSUMPTION_CORRECTION' && correctsEventId !== null) {
+      issue(
+        issues,
+        'FORBIDDEN_CORRECTION_LINK',
+        'correctsEventId',
+        `Only CONSUMPTION_CORRECTION events may carry correctsEventId (kind is ${kind}).`,
+      );
+    }
+    if (
+      kind === 'CONSUMPTION_CORRECTION' &&
+      correctsEventId !== null &&
+      id !== null &&
+      correctsEventId === id
+    ) {
+      issue(
+        issues,
+        'FORBIDDEN_CORRECTION_LINK',
+        'correctsEventId',
+        'A correction cannot reference itself.',
+      );
+    }
+  }
+
   // --- per-kind field matrix -------------------------------------------------
   if (kind === 'SALES_ALLOCATION') {
     if (sourceEventId === null) {
@@ -509,6 +576,14 @@ export function validateTransportBudgetEvent(
         'REVERSAL must not carry sourceEventId/sourceAmount/allocationRatePercent (its economics derive from the reversed event).',
       );
     }
+    if (correctsEventId !== null) {
+      issue(
+        issues,
+        'FORBIDDEN_CORRECTION_LINK',
+        'correctsEventId',
+        'REVERSAL must not carry correctsEventId (corrections link via CONSUMPTION_CORRECTION only).',
+      );
+    }
   }
   if (kind === 'INBOUND_CONSUMPTION' || kind === 'OUTBOUND_CONSUMPTION') {
     if (allocationRatePercent !== null) {
@@ -517,6 +592,98 @@ export function validateTransportBudgetEvent(
         'FORBIDDEN_RATE',
         'allocationRatePercent',
         `${kind} must not carry allocationRatePercent.`,
+      );
+    }
+    if (correctsEventId !== null) {
+      issue(
+        issues,
+        'FORBIDDEN_CORRECTION_LINK',
+        'correctsEventId',
+        `Only CONSUMPTION_CORRECTION events may carry correctsEventId (kind is ${kind}).`,
+      );
+    }
+  }
+  if (kind === 'SALES_ALLOCATION') {
+    if (correctsEventId !== null) {
+      issue(
+        issues,
+        'FORBIDDEN_CORRECTION_LINK',
+        'correctsEventId',
+        'SALES_ALLOCATION must not carry correctsEventId.',
+      );
+    }
+  }
+  if (kind === 'CONSUMPTION_CORRECTION') {
+    // Frozen Phase 7D-2 contract: deliberate duplicate-field rule —
+    // sourceEventId MUST equal correctsEventId (both carry the original
+    // INBOUND_CONSUMPTION event ID); snapshots are frozen copies.
+    if (sourceEventId === null) {
+      issue(
+        issues,
+        'INVALID_SOURCE_EVENT_ID',
+        'sourceEventId',
+        'CONSUMPTION_CORRECTION requires sourceEventId (= correctsEventId).',
+      );
+    } else if (sourceEventId !== correctsEventId) {
+      issue(
+        issues,
+        'MISSING_CORRECTION_LINK',
+        'sourceEventId',
+        'CONSUMPTION_CORRECTION requires sourceEventId = correctsEventId.',
+      );
+    }
+    if (sourceAmount === null) {
+      issue(
+        issues,
+        'INVALID_SOURCE_AMOUNT',
+        'sourceAmount',
+        'CONSUMPTION_CORRECTION requires sourceAmount (= abs(original consumption amount)).',
+      );
+    } else if (!(sourceAmount > 0)) {
+      issue(
+        issues,
+        'INVALID_SOURCE_AMOUNT',
+        'sourceAmount',
+        'CONSUMPTION_CORRECTION requires sourceAmount > 0.',
+      );
+    }
+    if (method === null) {
+      issue(
+        issues,
+        'INVALID_METHOD',
+        'method',
+        'CONSUMPTION_CORRECTION requires method (= LANDING_COST_FREIGHT).',
+      );
+    } else if (method !== 'LANDING_COST_FREIGHT') {
+      issue(
+        issues,
+        'INVALID_METHOD',
+        'method',
+        'CONSUMPTION_CORRECTION method must be LANDING_COST_FREIGHT.',
+      );
+    }
+    if (providerId === null) {
+      issue(
+        issues,
+        'INVALID_PROVIDER_ID',
+        'providerId',
+        'CONSUMPTION_CORRECTION requires providerId (original provider snapshot).',
+      );
+    }
+    if (allocationRatePercent !== null) {
+      issue(
+        issues,
+        'FORBIDDEN_RATE',
+        'allocationRatePercent',
+        'CONSUMPTION_CORRECTION must not carry allocationRatePercent.',
+      );
+    }
+    if (reversesEventId !== null) {
+      issue(
+        issues,
+        'FORBIDDEN_REVERSAL_LINK',
+        'reversesEventId',
+        'CONSUMPTION_CORRECTION must not carry reversesEventId.',
       );
     }
   }
@@ -546,6 +713,7 @@ export function validateTransportBudgetEvent(
       accountSplits: null,
       journalIds: null,
       reversesEventId,
+      correctsEventId,
       businessDate: businessDate as string,
       occurredAt: occurredAt as string,
       createdAt,
@@ -585,6 +753,7 @@ export function sameEconomicPayload(
     (a.method ?? null) === (b.method ?? null) &&
     (a.providerId ?? null) === (b.providerId ?? null) &&
     (a.reversesEventId ?? null) === (b.reversesEventId ?? null) &&
+    (a.correctsEventId ?? null) === (b.correctsEventId ?? null) &&
     a.businessDate === b.businessDate &&
     a.occurredAt === b.occurredAt
   );

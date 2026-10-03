@@ -11,6 +11,7 @@ import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, summarizePr
 import { canonicalizeStatus } from '../types/salesOrder';
 import { salesOrderService } from '../services/salesOrderService';
 import { getCustomerDisplayName } from '../utils/customerDisplay';
+import { dbService } from '../services/db';
 
 interface OrdersContextType {
   orders: Order[];
@@ -22,7 +23,10 @@ interface OrdersContextType {
   cancelOrder: (id: string, reason: string) => Promise<void>;
   deleteSalesOrder: (id: string) => Promise<void>;
   getOrderById: (id: string) => Order | undefined;
-  convertQuotationToOrder: (quotation: Quotation) => Promise<string>;
+  convertQuotationToOrder: (
+    quotation: Quotation,
+    options?: { reuseOrderId?: string },
+  ) => Promise<string>;
 }
 
 const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
@@ -32,6 +36,13 @@ const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
  * (Orders tab, Payments, reports) with a legacy-compatible `status` so existing
  * comparisons ('Completed', 'Paid', 'Converted', ...) keep working unchanged.
  * All writes translate back to the canonical model.
+ *
+ * The legacy `status` is LOSSY: a single canonical workflow status collapses
+ * into several legacy strings once invoicing/payment state is folded in
+ * (e.g. canonical 'Processing' + 'Partially Paid' -> 'Partially Paid',
+ *  canonical 'Processing' + Invoiced -> 'Converted'). Consumers that need the
+ * real workflow state (payment eligibility, gating, reporting) must read
+ * `canonicalStatus`, which is carried through verbatim and is never rewritten.
  */
 export const toLegacyOrder = (o: SalesOrder): Order => {
   const status = canonicalizeStatus(o.status);
@@ -41,7 +52,7 @@ export const toLegacyOrder = (o: SalesOrder): Order => {
   else if (o.invoiceStatus === 'Invoiced') legacyStatus = 'Converted';
   else if (o.paymentStatus === 'Paid') legacyStatus = 'Paid';
   else if (o.paymentStatus === 'Partially Paid') legacyStatus = 'Partially Paid';
-  return { ...o, status: legacyStatus } as unknown as Order;
+  return { ...o, status: legacyStatus, canonicalStatus: status } as unknown as Order;
 };
 
 export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -95,14 +106,50 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const handleConvertQuotationToOrder = async (quotation: Quotation): Promise<string> => {
-    try {
-      const existingOrder = orders.find(o => o.quotationId === quotation.id);
-      if (existingOrder) {
-        notify('This quotation has already been converted to an order', 'warning');
-        return existingOrder.id;
+  /**
+   * Convert a quotation into a sales order.
+   *
+   * Re-conversion is allowed. Callers that pass `reuseOrderId` replace the
+   * existing order in place, reusing its exact official number; otherwise a
+   * fresh provisional number is minted so both orders coexist. Deciding
+   * between the two is the caller's job — the UI asks the user — so this
+   * layer stays a pure, side-effect-free switch rather than a silent dedupe.
+   */
+  /**
+   * Release the stock held by an order that is about to be overwritten.
+   * Mirrors the release step in transactionService.cancelOrder. Lines without an
+   * inventory key (services/custom lines) hold no reservation and are skipped.
+   */
+  const releaseOrderStockReservation = async (order: Order) => {
+    for (const item of (order.items || []) as any[]) {
+      const productKey = item?.productId || item?.product_id || item?.itemId || item?.item_id;
+      if (!productKey || String(productKey).trim() === '') continue;
+      const invItem = await dbService.get<any>('inventory', productKey);
+      if (!invItem) continue;
+      const quantity = Number(item.quantity ?? item.qty ?? 0) || 0;
+      if (item.variantId && Array.isArray(invItem.variants)) {
+        const vIdx = invItem.variants.findIndex((v: any) => v.id === item.variantId);
+        if (vIdx !== -1) {
+          invItem.variants[vIdx].reserved = Math.max(0, (invItem.variants[vIdx].reserved || 0) - quantity);
+        }
       }
-      const orderNumber = salesOrderService.generateProvisionalOrderId(orders, 'TMP');
+      invItem.reserved = Math.max(0, (invItem.reserved || 0) - quantity);
+      await dbService.put('inventory', invItem);
+    }
+  };
+
+  const handleConvertQuotationToOrder = async (
+    quotation: Quotation,
+    options?: { reuseOrderId?: string }
+  ): Promise<string> => {
+    try {
+      const reuseTarget = options?.reuseOrderId
+        ? orders.find(o => o.id === options.reuseOrderId)
+        : undefined;
+      const replacing = !!reuseTarget;
+      const orderNumber = reuseTarget
+        ? (reuseTarget.orderNumber || reuseTarget.id)
+        : salesOrderService.generateProvisionalOrderId(orders, 'TMP');
       const conversionDate = new Date().toLocaleDateString();
       const acceptedBy = quotation.customerName || 'Customer';
       const conversionDetails = {
@@ -147,10 +194,16 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const totalAmount = subtotal - discount;
 
         const newOrder: Order & Record<string, any> = {
-        id: orderNumber,
+        // When replacing, keep the target's PRIMARY KEY so the write overwrites
+        // that record. Deriving the id from orderNumber instead would insert a
+        // second row and leave the original order behind — the opposite of
+        // "replace", and a silent duplicate.
+        id: reuseTarget ? reuseTarget.id : orderNumber,
         idempotencyKey: crypto.randomUUID(),
         orderNumber,
-        orderNumberProvisional: true,
+        // A replaced order has already been through numbering, so its
+        // provisional flag must survive the overwrite.
+        orderNumberProvisional: reuseTarget ? reuseTarget.orderNumberProvisional : true,
         creation_source: 'PORTAL_CONVERSION',
         creationSource: 'PORTAL_CONVERSION',
         customerId: '', // Quotation might not have customerId directly, we might need to look it up by name
@@ -194,6 +247,14 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
 
+      // Replacing overwrites the target record, and `createOrder` reserves stock
+      // for every line. The outgoing order's reservation is never released by an
+      // overwrite, so stock would be double-reserved (or permanently leaked) on
+      // every replacement. Release it first, mirroring the cancelOrder path.
+      if (reuseTarget) {
+        await releaseOrderStockReservation(reuseTarget);
+      }
+
       await store.createFinancialOrder(newOrder as unknown as SalesOrder);
       await triggerSalesOrderNotification(newOrder);
 
@@ -202,7 +263,12 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         await salesContext.updateQuotation({ ...quotation, status: 'Converted' });
       }
 
-      notify("Quotation converted to Order successfully", "success");
+      notify(
+        replacing
+          ? `Quotation converted to Order ${orderNumber} (replaced the previous order)`
+          : "Quotation converted to Order successfully",
+        "success"
+      );
       return newOrder.id;
     } catch (error: any) {
       notify(`Failed to convert quotation: ${error.message}`, "error");

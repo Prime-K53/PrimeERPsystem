@@ -756,6 +756,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } finally {
         clearTimeout(failsafe);
         setIsInitialized(true);
+        // Phase 6E — single startup trigger for full-void REVERSAL recovery
+        // reconciliation. Runs once per app boot on every init path (online,
+        // offline, local-only, setup-incomplete): a bounded local scan for
+        // Cancelled invoices missing their deterministic REVERSAL, repaired
+        // exclusively through the existing produceVoidReversalSafely()
+        // producer. Fire-and-forget and error-swallowed so startup/sync can
+        // never break; no timer, no daemon, no render-path coupling.
+        import('../services/transportBudgetVoidRecovery').then(
+          ({ requestVoidRecoveryReconciliation }) => {
+            requestVoidRecoveryReconciliation().catch(() => {});
+          },
+        ).catch(() => {});
       }
 
       const lastBackup = localStorage.getItem('prime_erp_backup_date');

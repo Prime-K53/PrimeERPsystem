@@ -10,12 +10,12 @@
  * generated client-side, so an offline-created event keeps its identity
  * through queue -> server -> pull without duplicates.
  *
- * Deliberately NOT extending BaseRepository: its update()/softDelete()
- * primitives violate append-only ledger semantics. This repository exposes
- * append + read primitives only:
- *   appendTransportBudgetEvent / appendReversal /
- *   getTransportBudgetEvent / findTransportBudgetEventByIdempotencyKey /
- *   listTransportBudgetEvents / getReversalTotal
+  * Deliberately NOT extending BaseRepository: its update()/softDelete()
+  * primitives violate append-only ledger semantics. This repository exposes
+  * append + read primitives only:
+  *   appendTransportBudgetEvent / appendReversal / appendCorrection /
+  *   getTransportBudgetEvent / findTransportBudgetEventByIdempotencyKey /
+  *   listTransportBudgetEvents / getReversalTotal / getCorrectionTotal
  *
  * There are intentionally NO business-specific producers here
  * (no allocateSale / consumeLandingCost / consumeDelivery). Those belong to
@@ -88,6 +88,30 @@ export class TransportBudgetReversalError extends Error {
   ) {
     super(message);
     this.name = 'TransportBudgetReversalError';
+    this.code = code;
+  }
+}
+
+/**
+ * Phase 7E: single-correction integrity failures. The database trigger is
+ * authoritative across devices; these fail-fast mirrors keep the local
+ * client from queueing events the trigger will reject.
+ */
+export class TransportBudgetCorrectionError extends Error {
+  readonly code:
+    | 'TARGET_MISSING'
+    | 'TARGET_NOT_CORRECTIBLE'
+    | 'ALREADY_CORRECTED'
+    | 'CORRECTION_CAP_EXCEEDED'
+    | 'SNAPSHOT_MISMATCH'
+    | 'SOURCE_CAP_EXCEEDED';
+
+  constructor(
+    code: TransportBudgetCorrectionError['code'],
+    message: string,
+  ) {
+    super(message);
+    this.name = 'TransportBudgetCorrectionError';
     this.code = code;
   }
 }
@@ -235,6 +259,32 @@ export class TransportBudgetRepository {
     return this.appendTransportBudgetEvent({ ...input, kind: 'REVERSAL' });
   }
 
+  /**
+   * Phase 7E: append-only correction primitive (structural only — no
+   * Landing Cost producer logic; no producer exists in this phase).
+   * Fails closed unless the target INBOUND_CONSUMPTION exists locally,
+   * is uncorrected, and the delta + snapshots satisfy the frozen contract.
+   */
+  async appendCorrection(
+    input: Omit<NewTransportBudgetEventInput, 'kind'> & {
+      kind?: 'CONSUMPTION_CORRECTION';
+    },
+  ): Promise<TransportBudgetAppendResult> {
+    if (
+      input.kind !== undefined &&
+      input.kind !== 'CONSUMPTION_CORRECTION'
+    ) {
+      throw new TransportBudgetCorrectionError(
+        'TARGET_NOT_CORRECTIBLE',
+        'appendCorrection only accepts CONSUMPTION_CORRECTION events.',
+      );
+    }
+    return this.appendTransportBudgetEvent({
+      ...input,
+      kind: 'CONSUMPTION_CORRECTION',
+    });
+  }
+
   async getTransportBudgetEvent(
     id: string,
   ): Promise<TransportBudgetEvent | null> {
@@ -322,6 +372,30 @@ export class TransportBudgetRepository {
     return { total, count };
   }
 
+  /**
+   * Phase 7E: cumulative correction position for one consumption (amounts
+   * > 0). Under SINGLE cardinality this is at most one row; the sum form
+   * keeps the cap check correct even if a second row ever slips past the
+   * local pre-check (the database unique index still rejects it).
+   */
+  async getCorrectionTotal(
+    eventId: string,
+  ): Promise<{ total: number; count: number }> {
+    const all = (await this.store.getAll()) || [];
+    let total = 0;
+    let count = 0;
+    for (const entry of all) {
+      if (
+        entry?.kind === 'CONSUMPTION_CORRECTION' &&
+        (entry.correctsEventId ?? null) === String(eventId)
+      ) {
+        total += Number(entry.amount) || 0;
+        count += 1;
+      }
+    }
+    return { total, count };
+  }
+
   private async appendInner(
     input: NewTransportBudgetEventInput,
   ): Promise<TransportBudgetAppendResult> {
@@ -367,6 +441,25 @@ export class TransportBudgetRepository {
       await this.assertReversibleTarget(event);
     }
 
+    // 4b. Phase 7E: correction structural integrity + single-correction +
+    //     correction cap + snapshot discipline (fail-fast mirror of the
+    //     database trigger, which remains authoritative across devices).
+    if (event.kind === 'CONSUMPTION_CORRECTION') {
+      await this.assertCorrectibleTarget(event);
+    }
+
+    // 4c. Phase 7E: source-cap pre-check for snapshot-carrying INBOUND
+    //     consumption (fail-fast mirror; the trigger is authoritative).
+    //     Snapshot-less rows predate hardening and bypass this check.
+    if (
+      event.kind === 'INBOUND_CONSUMPTION' &&
+      event.sourceEventId !== null &&
+      event.sourceAmount !== null &&
+      event.sourceAmount > 0
+    ) {
+      await this.assertSourceCap(event);
+    }
+
     // 5. Durable local persistence first (offline-safe), then make sure
     // the cloud write is queued (the default store already enqueued via
     // dbService.put; custom stores rely on this top-up instead).
@@ -400,6 +493,127 @@ export class TransportBudgetRepository {
       throw new TransportBudgetReversalError(
         'CAP_EXCEEDED',
         `Cumulative reversals would exceed allocation ${targetId} (remaining ${Number(target.amount) + total}, requested ${Math.abs(Number(event.amount))}).`,
+      );
+    }
+  }
+
+  private async assertCorrectibleTarget(
+    event: TransportBudgetEvent,
+  ): Promise<void> {
+    const targetId = String(event.correctsEventId || '');
+    if (!targetId) {
+      throw new TransportBudgetCorrectionError(
+        'TARGET_MISSING',
+        'CONSUMPTION_CORRECTION requires correctsEventId.',
+      );
+    }
+    // Intentional duplicate-field rule: both fields carry the original id.
+    if (String(event.sourceEventId || '') !== targetId) {
+      throw new TransportBudgetCorrectionError(
+        'SNAPSHOT_MISMATCH',
+        `CONSUMPTION_CORRECTION requires sourceEventId = correctsEventId (${targetId}).`,
+      );
+    }
+    const target = await this.store.get(targetId);
+    if (!target) {
+      throw new TransportBudgetCorrectionError(
+        'TARGET_MISSING',
+        `Correction target ${targetId} does not exist.`,
+      );
+    }
+    if (target.kind !== 'INBOUND_CONSUMPTION') {
+      throw new TransportBudgetCorrectionError(
+        'TARGET_NOT_CORRECTIBLE',
+        `Only INBOUND_CONSUMPTION events are correctible (target ${targetId} is ${target.kind}).`,
+      );
+    }
+    // Frozen snapshots: copies of the original consumption.
+    if (Number(event.sourceAmount) !== Math.abs(Number(target.amount))) {
+      throw new TransportBudgetCorrectionError(
+        'SNAPSHOT_MISMATCH',
+        `CONSUMPTION_CORRECTION sourceAmount must equal abs(original consumption amount) for target ${targetId}.`,
+      );
+    }
+    if (
+      !target.providerId ||
+      String(event.providerId || '') !== String(target.providerId)
+    ) {
+      throw new TransportBudgetCorrectionError(
+        'SNAPSHOT_MISMATCH',
+        `CONSUMPTION_CORRECTION providerId must match the original consumption provider for target ${targetId}.`,
+      );
+    }
+    // Posting-date rule: the correction period must not precede the
+    // original consumption period.
+    if (String(event.businessDate || '') < String(target.businessDate || '')) {
+      throw new TransportBudgetCorrectionError(
+        'SNAPSHOT_MISMATCH',
+        `CONSUMPTION_CORRECTION businessDate must not precede the original consumption businessDate for target ${targetId}.`,
+      );
+    }
+    // Single-correction rule (the database unique index is the
+    // cross-process backstop).
+    const { total, count } = await this.getCorrectionTotal(targetId);
+    if (count > 0) {
+      throw new TransportBudgetCorrectionError(
+        'ALREADY_CORRECTED',
+        `Consumption ${targetId} was already corrected (ALREADY_CORRECTED).`,
+      );
+    }
+    void total;
+    // Correction cap: 0 < amount <= abs(original). Full equality (net 0)
+    // is valid; over-correction is always rejected.
+    const ceiling = Math.abs(Number(target.amount));
+    if (!(Number(event.amount) > 0) || Number(event.amount) - ceiling > 0.000001) {
+      throw new TransportBudgetCorrectionError(
+        'CORRECTION_CAP_EXCEEDED',
+        `Correction would exceed original consumption ${targetId} (ceiling ${ceiling}, requested ${Number(event.amount)}).`,
+      );
+    }
+  }
+
+  /**
+   * Phase 7E source-cap pre-check: for one Landing scope
+   * (sourceEventId), net consumption after this append must not exceed the
+   * authoritative snapshot. Corrections are resolved through their parent
+   * consumption rows. Global overdraft is ALLOWED, so no global-balance
+   * read happens here.
+   */
+  private async assertSourceCap(
+    event: TransportBudgetEvent,
+  ): Promise<void> {
+    const scope = String(event.sourceEventId || '');
+    const capCandidates: number[] = [Number(event.sourceAmount) || 0];
+    const all = (await this.store.getAll()) || [];
+    let consumed = 0;
+    const inboundIds = new Set<string>();
+    for (const entry of all) {
+      if (
+        entry?.kind === 'INBOUND_CONSUMPTION' &&
+        (entry.sourceEventId ?? null) === scope
+      ) {
+        consumed += Math.abs(Number(entry.amount) || 0);
+        inboundIds.add(String(entry.id));
+        if (entry.sourceAmount !== null && entry.sourceAmount !== undefined) {
+          capCandidates.push(Number(entry.sourceAmount) || 0);
+        }
+      }
+    }
+    let corrected = 0;
+    for (const entry of all) {
+      if (
+        entry?.kind === 'CONSUMPTION_CORRECTION' &&
+        inboundIds.has(String(entry.correctsEventId || ''))
+      ) {
+        corrected += Number(entry.amount) || 0;
+      }
+    }
+    const cap = Math.max(...capCandidates);
+    const requested = Math.abs(Number(event.amount) || 0);
+    if (consumed - corrected + requested - cap > 0.000001) {
+      throw new TransportBudgetCorrectionError(
+        'SOURCE_CAP_EXCEEDED',
+        `Inbound consumption would exceed source cap ${cap} for source ${scope} (already consumed ${consumed}, corrected ${corrected}, requested ${requested}).`,
       );
     }
   }

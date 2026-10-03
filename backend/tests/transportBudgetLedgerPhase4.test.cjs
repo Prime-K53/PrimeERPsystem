@@ -289,9 +289,13 @@ describe('Phase 5 — sales allocation producer scope guard', () => {
       .readdirSync(dir)
       .filter((name) => /transport/i.test(name))
       .sort();
+    // Phase 7E ledger hardening (0032) is the approved exception: it extends
+    // the LEDGER contract (CONSUMPTION_CORRECTION kind/linkage/caps) without
+    // adding any producer. Producer phases must still reuse the schema.
     expect(transportMigrations).toEqual([
       '0029_transport_budget_events.sql',
       '0030_transport_budget_ledger_hardening.sql',
+      '0032_transport_budget_consumption_correction.sql',
     ]);
   });
 });
