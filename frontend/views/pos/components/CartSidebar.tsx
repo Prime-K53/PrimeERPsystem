@@ -44,6 +44,7 @@ interface CartSidebarProps {
     onPark: () => void;
     onReturn: () => void;
     onPay: () => void;
+    isBusy?: boolean;
     totals: { subtotal: number, total: number };
     adjustmentSummary?: { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; }[];
     pricingSummary?: {
@@ -69,7 +70,7 @@ interface CartSidebarProps {
 }
 
 export const CartSidebar: React.FC<CartSidebarProps> = ({
-    cart, sales, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, updatePrice, resetPriceOverride, removeFromCart, clearCart, onPark, onReturn, onPay, totals, adjustmentSummary, pricingSummary, rounding, manualDiscountPercent = 0, onManualDiscountChange
+    cart, sales, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, updatePrice, resetPriceOverride, removeFromCart, clearCart, onPark, onReturn, onPay, isBusy = false, totals, adjustmentSummary, pricingSummary, rounding, manualDiscountPercent = 0, onManualDiscountChange
 }) => {
     const { companyConfig } = useAuth();
     const { invoices } = useFinance();
@@ -241,7 +242,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                     <div style={{ flex: 1, position: 'relative' }}>
                         {showDiscountInput ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <input type="number" value={discountPercent} min={0} max={100} onChange={e => onManualDiscountChange?.(Math.min(100, Math.max(0, Number(e.target.value))))}
+                                <input type="number" value={discountPercent} min={0} max={100} onChange={e => { const n = Number(e.target.value); onManualDiscountChange?.(Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0); }}
                                     style={{ flex: 1, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 12.5, fontWeight: 600, padding: '7px 6px', borderRadius: 4, border: '1px solid #a03c3c', textAlign: 'center', background: '#fff', color: '#a03c3c', outline: 'none', width: 0 }} />
                                 <span style={{ fontSize: 11, color: '#a03c3c', fontWeight: 600, whiteSpace: 'nowrap' }}>%</span>
                                 <button onClick={() => { setShowDiscountInput(false); }}
@@ -256,9 +257,9 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                             </button>
                         )}
                     </div>
-                    <button onClick={onPay} disabled={cart.length === 0}
-                        style={{ flex: 1, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 12.5, fontWeight: 600, padding: '7px 0', borderRadius: 4, border: 'none', cursor: 'pointer', textAlign: 'center', background: '#2563EB', color: '#fff', opacity: cart.length === 0 ? 0.5 : 1 }}>
-                        Proceed
+                    <button onClick={onPay} disabled={cart.length === 0 || isBusy}
+                        style={{ flex: 1, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 12.5, fontWeight: 600, padding: '7px 0', borderRadius: 4, border: 'none', cursor: (cart.length === 0 || isBusy) ? 'not-allowed' : 'pointer', textAlign: 'center', background: '#2563EB', color: '#fff', opacity: (cart.length === 0 || isBusy) ? 0.5 : 1 }}>
+                        {isBusy ? 'Calculating…' : 'Proceed'}
                     </button>
                 </div>
             </div>

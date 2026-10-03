@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Copy, Printer, Sparkles, X, ChevronRight } from 'lucide-react';
+import { useModalA11y } from '../utils/useModalA11y';
 
 interface QuickPrintModalProps {
   open: boolean;
@@ -37,6 +38,7 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
   const [customName, setCustomName] = useState('');
   const [enableStapling, setEnableStapling] = useState(false);
   const [pricingMethod, setPricingMethod] = useState<'per_page' | 'per_sheet'>(type === 'photocopy' ? 'per_sheet' : 'per_page');
+  const a11yRef = useModalA11y(open, onClose, 'Quick Print');
 
   const totalPages = quantity * pagesPerCopy;
   const totalSheets = type === 'photocopy' ? quantity * Math.ceil(pagesPerCopy / 2) : totalPages;
@@ -96,7 +98,7 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
   const fc = (v: number) => `${currency}${v.toFixed(2)}`;
 
   return (
-    <div style={{
+    <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Quick Print" style={{
       position: 'fixed', inset: 0, zIndex: 9999,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'rgba(15, 23, 42, 0.6)',

@@ -6,25 +6,27 @@ import { useAuth } from '../context/AuthContext';
 import { useFinance } from '../context/FinanceContext';
 import { useSales } from '../context/SalesContext';
 import { useInventory } from '../context/InventoryContext';
-import { useProduction } from '../context/ProductionContext';
-import { CartItem, Item, Sale, PaymentDetail, HeldOrder, ZReport, BOMTemplate } from '../types';
+import { CartItem, Item, Sale, PaymentDetail, HeldOrder, ZReport } from '../types';
 import { ProductGrid } from './pos/components/ProductGrid';
 import { CartSidebar } from './pos/components/CartSidebar';
 import { PaymentModal } from './pos/components/PaymentModal';
-import { CustomerModal, HeldOrdersModal, ReturnsModal, ServiceCalculatorModal } from './pos/components/PosModals';
+import { CustomerModal, HeldOrdersModal, ServiceCalculatorModal } from './pos/components/PosModals';
+import ReturnsModal from './pos/components/ReturnsModal';
+import { RegisterSummaryModal } from './pos/components/RegisterSummaryModal';
+import { QuickReceiptModal } from './pos/components/QuickReceiptModal';
 import BatchPickerModal from './pos/components/BatchPickerModal';
 import QuickPrintModal from '../components/QuickPrintModal';
 import { inventoryTransactionService } from '../services/inventoryTransactionService';
 import { resolveCustomerPrice, getApplicableDiscounts, applyDiscounts, incrementDiscountUsage, getCustomerPricingTier } from '../services/customerPricingService';
 import { calculateItemTax } from '../services/taxRateService';
-import { FileText, Printer, X, Plus, Clock as ClockIcon, User as UserIcon, Copy, TrendingUp, DollarSign, ShieldCheck, Landmark, RefreshCw, BookOpen, Eye, CheckCircle, FileDown, Gift } from 'lucide-react';
+import { FileText, Copy, TrendingUp, CheckCircle, FileDown } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { PrimeDocument } from './shared/components/PDF/PrimeDocument';
 import { PreviewModal } from './shared/components/PDF/PreviewModal';
 import { PosReceiptSchema, PrimeDocData } from './shared/components/PDF/schemas';
 import { hardwareService } from '../services/hardwareService';
 import { transactionService } from '../services/transactionService';
-import { pricingService, DynamicServicePricingResult } from '../services/pricingService';
+import { DynamicServicePricingResult } from '../services/pricingService';
 import { dbService } from '../services/db';
 import { buildPosReceiptDoc } from '../services/receiptCalculationService';
 import { api } from '../services/api';
@@ -34,28 +36,50 @@ import { logger } from '../services/logger';
 import { generateNextId, roundToCurrency, formatNumber, downloadBlob } from '../utils/helpers';
 import { isIncomeAccount } from '../utils/accountType';
 import { attachDocumentSecurity } from '../utils/documentSecurity';
-import { initializePrimePdfFonts, resolvePrimeTemplateSettings, getStoredCompanyConfig } from './shared/components/PDF/templateSettings';
-import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredRoundingDifference, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../utils/pricing';
+import { initializePrimePdfFonts } from './shared/components/PDF/templateSettings';
+import { resolveStoredCost, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../utils/pricing';
 import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/pricingEngine';
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 import { PrintingPOSIntegrator, isPrintingService, createProductionJobsFromSale } from '../components/printing/PrintingPOSIntegrator';
 import { usePrintingStore } from '../stores/printingStore';
 import { getCustomerDisplayName } from '../utils/customerDisplay';
-import {
-  buildQuickPhotocopyServiceDetails,
-  calculateBillableSheets,
-  calculateTotalPages,
-  getQuickPhotocopyLineDisplay,
-  getQuickPhotocopyPricePerSheet,
-  isQuickPhotocopyItem,
-} from '../services/quickPhotocopyService';
+import { getQuickPhotocopyLineDisplay, isQuickPhotocopyItem } from '../services/quickPhotocopyService';
+import { buildQuickPrintCartLine } from './pos/utils/quickPrintCartLine';
+import { buildStoredPricingState, getErrorMessage } from './pos/utils/posPricingState';
+import { ACCOUNT_IDS } from '../constants';
+
+type ItemQuote = {
+  itemId: string;
+  lineTotal: number;
+  manualDiscount: number;
+  discount: number;
+  discountRuleIds: string[];
+  taxRate: number;
+  taxName: string;
+  taxAmount: number;
+  taxableAmount: number;
+  finalUnitPrice: number;
+  discountedLineTotal: number;
+};
+
+type CheckoutQuote = {
+  selectedCustomer: any;
+  customerId: string;
+  customerSegment: string;
+  itemQuotes: ItemQuote[];
+  itemTaxDetails: { itemId: string; rate: number; name: string; taxAmount: number }[];
+  totalDiscount: number;
+  totalTax: number;
+  payableTotal: number;
+  chargeTotal: number;
+  appliedRuleIds: string[];
+};
 
 const POS: React.FC = () => {
   const { companyConfig, user, allUsers, notify, addAlert, updateCompanyConfig } = useAuth();
   const { sales, customers, parkOrder, heldOrders, retrieveOrder, generateZReport, fetchSalesData } = useSales();
-  const { invoices, accounts } = useFinance();
+  const { accounts } = useFinance();
   const { inventory, updateReservedStock } = useInventory();
-  const { addBOM } = useProduction();
   const { postZReportToLedger, fetchFinanceData } = useFinance();
   const currency = companyConfig.currencySymbol;
 
@@ -65,6 +89,8 @@ const POS: React.FC = () => {
   const [manualDiscountPercent, setManualDiscountPercent] = useState(0);
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentSession, setPaymentSession] = useState<{ total: number; orderNumber: string } | null>(null);
+  const [isQuoting, setIsQuoting] = useState(false);
   const [showReturnsModal, setShowReturnsModal] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showHeldOrdersModal, setShowHeldOrdersModal] = useState(false);
@@ -96,7 +122,6 @@ const POS: React.FC = () => {
     type: 'photocopy'
   });
    const [selectedSalesAccountId, setSelectedSalesAccountId] = useState('41100');
-  const [bomTemplates, setBomTemplates] = useState<BOMTemplate[]>([]);
 
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [zReportData, setZReportData] = useState<ZReport | null>(null);
@@ -162,20 +187,6 @@ const POS: React.FC = () => {
 
     return parsed.data;
   };
-
-  useEffect(() => {
-    let mounted = true;
-    dbService.getAll<BOMTemplate>('bomTemplates')
-      .then((templates) => {
-        if (mounted) setBomTemplates(templates || []);
-      })
-      .catch((err) => {
-        logger.error('Failed to load BOM templates for POS service pricing', err);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const formatServiceDescription = (lineItem: any) => {
     // Quick Photocopy: the receipt template renders qty ("13 pgs") and rate
@@ -245,28 +256,46 @@ const POS: React.FC = () => {
   }, [companyConfig.transactionSettings?.posDefaultCustomer, customers]);
 
   // Global Keyboard Shortcuts for POS
+  const anyModalOpen = showPaymentModal || showCustomerModal || showHeldOrdersModal || showReturnsModal || showZReport || !!selectedServiceForCalculator || previewState.isOpen || !!quickReceiptSale;
   useEffect(() => {
     if (companyConfig.transactionSettings?.pos?.enableShortcuts === false) return;
 
     const handleGlobalPOS = (e: KeyboardEvent) => {
+      // Shortcuts must never fire while a POS modal is open — F10 would
+      // re-quote mid-payment and Ctrl+H would park (clear) the cart.
+      if (anyModalOpen) { if (e.key.startsWith('F')) e.preventDefault(); return; }
+      const target = e.target as HTMLElement | null;
+      const isTyping = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || !!target.isContentEditable);
       if (e.key === 'F1') { e.preventDefault(); setShowCustomerModal(true); }
       if (e.key === 'F2') { e.preventDefault(); handleQuickPhotocopy(); }
       if (e.key === 'F3') { e.preventDefault(); handleQuickTypePrinting(); }
       if (e.key === 'F10') { e.preventDefault(); handlePay(); }
-      if (e.ctrlKey && e.key === 'h') { e.preventDefault(); handleParkOrder(); }
+      if (e.ctrlKey && e.key === 'h' && !isTyping) { e.preventDefault(); handleParkOrder(); }
     };
     window.addEventListener('keydown', handleGlobalPOS);
     return () => window.removeEventListener('keydown', handleGlobalPOS);
-  }, [cart, selectedCustomerName, companyConfig.transactionSettings?.pos?.enableShortcuts]);
+  }, [cart, selectedCustomerName, companyConfig.transactionSettings?.pos?.enableShortcuts, anyModalOpen]);
 
-  const handlePay = () => {
-    if (cart.length === 0) return;
+  const handlePay = async () => {
+    if (cart.length === 0 || isQuoting) return;
     if (companyConfig.transactionSettings?.pos?.requireCustomer && !selectedCustomerName) {
       notify("Customer selection is required for this transaction", "error");
       setShowCustomerModal(true);
       return;
     }
-    setShowPaymentModal(true);
+    setIsQuoting(true);
+    try {
+      const quote = await buildCheckoutQuote();
+      setPaymentSession({
+        total: quote.chargeTotal,
+        orderNumber: generateNextId('POS', sales, companyConfig)
+      });
+      setShowPaymentModal(true);
+    } catch (error) {
+      notify(getErrorMessage(error), 'error');
+    } finally {
+      setIsQuoting(false);
+    }
   };
 
   const round2 = (v: number) => Math.round(v * 100) / 100;
@@ -323,30 +352,6 @@ const POS: React.FC = () => {
 
     return summary.filter((entry) => Math.abs(entry.totalAmount) > 0.0001);
   }, [cart]);
-
-  const roundingAccumulation = Number(pricingSummary.roundingTotal || 0);
-
-  const buildStoredPricingState = (source: any, fallbackCost: number, adjustmentTotalValue: number) => {
-    const storedSellingPrice = resolveStoredSellingPrice(source);
-    const storedCalculatedPrice = resolveStoredCalculatedPrice(source);
-    const storedRoundingDifference = resolveStoredRoundingDifference(source);
-    const normalizedPrice = storedSellingPrice > 0
-      ? storedSellingPrice
-      : roundToCurrency(storedCalculatedPrice + storedRoundingDifference);
-    const normalizedCalculatedPrice = storedCalculatedPrice > 0
-      ? storedCalculatedPrice
-      : roundToCurrency(normalizedPrice - storedRoundingDifference);
-    const normalizedRoundingDifference = roundToCurrency(
-      storedRoundingDifference || (normalizedPrice - normalizedCalculatedPrice)
-    );
-
-    return {
-      price: normalizedPrice,
-      calculatedPrice: normalizedCalculatedPrice,
-      roundingDifference: normalizedRoundingDifference,
-      marginAmount: roundToCurrency(normalizedPrice - fallbackCost - adjustmentTotalValue - normalizedRoundingDifference)
-    };
-  };
 
   const commitAddToCart = async (item: any, batchSelections?: { batchId: string; batchNumber: string; quantity: number }[], absoluteQty?: boolean) => {
     if (item.type !== 'Service') {
@@ -526,82 +531,36 @@ const POS: React.FC = () => {
     setQuickPrintModal({ open: true, type: 'printing', serviceName: undefined, serviceItemId: undefined });
   };
 
-const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing', pinningCost?: number, pinningCount?: number, customName?: string) => {
-        const isPhotocopy = printType === 'photocopy';
-        const isServiceItem = !!quickPrintModal.serviceItemId;
-        // Quick Photocopy price is ALWAYS per physical sheet from Settings (never divided).
-        const pricePerPage = isPhotocopy
-          ? getQuickPhotocopyPricePerSheet(companyConfig)
-          : (companyConfig.transactionSettings?.pos?.typePrintingPrice ?? 5.00);
+const handleQuickPrintConfirm = (
+    quantity: number,
+    pagesPerCopy: number,
+    total: number,
+    printType: 'photocopy' | 'printing',
+    pinningCost?: number,
+    pinningCount?: number,
+    customName?: string
+  ) => {
+    const quickItem = buildQuickPrintCartLine({
+      printType,
+      quantity,
+      pagesPerCopy,
+      total,
+      pinningCost,
+      pinningCount,
+      customName,
+      serviceItemId: quickPrintModal.serviceItemId,
+      serviceName: quickPrintModal.serviceName,
+      currencySymbol: currency,
+      companyConfig,
+      inventory,
+    });
 
-        const costPerPage = isPhotocopy
-          ? calculatePhotocopyCostPerPage(inventory)
-          : calculateTypePrintingCostPerPage(inventory);
-
-        // Billing: billableSheets = copies × ceil(pagesPerCopy / 2). Financial
-        // total stays billableSheets × pricePerSheet (via QuickPrintModal `total`).
-        const totalPages = isPhotocopy
-          ? calculateTotalPages(pagesPerCopy, quantity)
-          : pagesPerCopy * quantity;
-        const totalSheets = isPhotocopy ? calculateBillableSheets(pagesPerCopy, quantity) : totalPages;
-        const materialCost = costPerPage * totalPages;
-
-        const finalPrice = total;
-        const unitCostPerCopy = totalPages > 0 ? materialCost : 0;
-
-        const quickItem: CartItem = {
-          id: `QUICK-${isPhotocopy ? 'PHOTO' : 'PRINT'}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          itemId: isPhotocopy ? 'SVC-PHOTOCOPY' : (quickPrintModal.serviceItemId || 'SVC-TYPE-PRINT'),
-          name: isPhotocopy ? 'Quick Photocopy' : (quickPrintModal.serviceName || 'Type & Printing'),
-          sku: isPhotocopy ? 'QUICK-PHOTO' : (quickPrintModal.serviceItemId ? `SVC-PRINT-${quickPrintModal.serviceItemId.slice(-6)}` : 'QUICK-PRINT'),
-          desc: isPhotocopy ? 'Quick Photocopy' : (quickPrintModal.serviceName || 'Type & Printing'),
-          price: pricePerPage,
-          cost: materialCost / totalSheets,
-          cost_price: materialCost / totalSheets,
-          quantity: totalSheets,
-          pagesOverride: pagesPerCopy,
-          category: 'Service',
-          type: 'Service',
-          unit: isPhotocopy ? 'sheet' : 'page',
-          pages: pagesPerCopy,
-          stock: 9999,
-          minStockLevel: 0,
-          adjustedPrice: finalPrice,
-          priceLocked: true,
-          lockedUnitPricePerCopy: finalPrice,
-          lockedUnitCostPerCopy: unitCostPerCopy,
-          // Preserve both concepts explicitly: pages (customer request) +
-          // billableSheets (billing quantity). quantity stays sheets so the
-          // existing quantity × price financial path is unchanged.
-          ...(isPhotocopy
-            ? {
-                billableSheets: totalSheets,
-                qpPages: pagesPerCopy,
-                qpCopies: quantity,
-              }
-            : {}),
-          serviceDetails: isPhotocopy
-            ? {
-                ...buildQuickPhotocopyServiceDetails(pagesPerCopy, quantity, pricePerPage, {
-                  pinningCost,
-                  pinningCount,
-                  customName,
-                }),
-              }
-            : {
-                pages: pagesPerCopy,
-                copies: quantity,
-                pinningCost: pinningCost,
-                pinningCount: pinningCount,
-              },
-    } as CartItem;
-
-        // Add to cart (stapling cost is included in item price)
-        setCart(prev => [...prev, quickItem]);
-        notify(`${quantity}x${pagesPerCopy} pages added to cart`, 'success');
-      };
+    setCart(prev => [...prev, quickItem]);
+    notify(`${quantity}x${pagesPerCopy} pages added to cart`, 'success');
+  };
 
   const updatePrice = (id: string, newPrice: number) => {
+    if (!Number.isFinite(newPrice) || newPrice < 0) return;
     setCart(prev => prev.map(item => {
       if (item.id === id) {
         const currentCost = Number(item.cost || item.cost_price || 0);
@@ -786,12 +745,13 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
   };
 
   const updateQuantity = async (id: string, value: number, isAbsolute?: boolean) => {
+    if (!Number.isFinite(value)) return;
     const itemInCart = cart.find(i => i.id === id);
     if (!itemInCart) return;
 
     const oldQty = itemInCart.quantity;
     const newQty = Math.max(1, isAbsolute ? value : oldQty + value);
-    if (newQty < 1) return;
+    if (!Number.isFinite(newQty) || newQty < 1) return;
 
     if (itemInCart.serviceDetails) {
       const cartItem = itemInCart;
@@ -1039,22 +999,6 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
     })));
   };
 
-  const getErrorMessage = (err: unknown) => {
-    if (err instanceof Error) return err.message || String(err);
-    if (typeof err === 'string') return err;
-    if (err && typeof err === 'object') {
-      const anyErr = err as Record<string, unknown>;
-      if (typeof anyErr.message === 'string' && anyErr.message.trim()) return anyErr.message;
-      if (typeof anyErr.name === 'string' && anyErr.name.trim()) return anyErr.name;
-      try {
-        return JSON.stringify(err);
-      } catch {
-        return String(err);
-      }
-    }
-    return 'Unknown error';
-  };
-
   const handleCustomerSelect = (name: string) => {
     setSelectedCustomerName(name);
     setSelectedSubAccount('Main');
@@ -1069,8 +1013,107 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
     notify("Order Parked", 'success');
   };
 
+  const handleRetrieveOrder = (o: HeldOrder) => {
+    if (!window.confirm(`Retrieve order for ${o.customerName}? This will replace the current cart.`)) return;
+    setCart(o.items);
+    retrieveOrder(o.id);
+    setShowHeldOrdersModal(false);
+  };
+
+  /**
+   * Single source of truth for what the customer owes. The SAME function is
+   * used to show the total in the payment modal and to finalize the sale, so
+   * the collected amount and the recorded bill can never disagree.
+   */
+  const buildCheckoutQuote = async (): Promise<CheckoutQuote> => {
+    const selectedCustomer = (customers || []).find((c: any) => getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === selectedCustomerName);
+    const customerId = selectedCustomer?.id || selectedCustomerName || 'walk-in';
+    const customerSegment = selectedCustomer?.segment || '';
+
+    const allDiscounts = selectedCustomer
+      ? await getApplicableDiscounts(selectedCustomer.id, customerSegment, undefined, total)
+      : [];
+
+    const items = processedItems;
+    const allLineTotal = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+    const totalManualDiscount = manualDiscountPercent > 0 && allLineTotal > 0 ? round2(allLineTotal * (manualDiscountPercent / 100)) : 0;
+
+    let totalDiscount = 0;
+    let totalTax = 0;
+    const itemQuotes: ItemQuote[] = [];
+    const itemTaxDetails: { itemId: string; rate: number; name: string; taxAmount: number }[] = [];
+    const ruleIds = new Set<string>();
+
+    for (const item of items as any[]) {
+      const qty = item.quantity || 1;
+      const unitPrice = item.price || 0;
+      const lineTotal = unitPrice * qty;
+
+      const manualDiscountForItem = totalManualDiscount > 0 ? round2((lineTotal / allLineTotal) * totalManualDiscount) : 0;
+      const baseForRules = round2(lineTotal - manualDiscountForItem);
+
+      let discountTotal = manualDiscountForItem;
+      let appliedRuleIds: string[] = [];
+      if (allDiscounts.length > 0 && item.type !== 'Service') {
+        const catDiscounts = allDiscounts.filter(d =>
+          d.scope === 'global' ||
+          (d.scope === 'category' && d.scopeValue === item.category) ||
+          (d.scope === 'item_specific' && d.scopeValue === item.id) ||
+          (d.scope === 'customer_specific') ||
+          (d.scope === 'customer_segment')
+        );
+        if (catDiscounts.length > 0) {
+          const result = applyDiscounts(baseForRules, qty, unitPrice, catDiscounts);
+          discountTotal += baseForRules - result.discountedTotal;
+          appliedRuleIds = result.appliedDiscounts.map(r => r.ruleId);
+          appliedRuleIds.forEach(id => ruleIds.add(id));
+        }
+      }
+
+      const discountedLineTotal = round2(baseForRules - (discountTotal - manualDiscountForItem));
+      const finalUnitPrice = qty > 0 ? round2(discountedLineTotal / qty) : unitPrice;
+
+      const baseItem = item.parentId ? inventory.find(i => i.id === item.parentId) || item : item;
+      const taxResult = await calculateItemTax(baseItem, finalUnitPrice, qty, customerId);
+      totalTax += taxResult.taxAmount;
+      totalDiscount += discountTotal;
+      itemTaxDetails.push({ itemId: item.id, rate: taxResult.rate, name: taxResult.name, taxAmount: taxResult.taxAmount });
+
+      itemQuotes.push({
+        itemId: item.id,
+        lineTotal,
+        manualDiscount: manualDiscountForItem,
+        discount: round2(discountTotal),
+        discountRuleIds: appliedRuleIds,
+        taxRate: taxResult.rate,
+        taxName: taxResult.name,
+        taxAmount: taxResult.taxAmount,
+        taxableAmount: taxResult.taxableAmount,
+        finalUnitPrice,
+        discountedLineTotal
+      });
+    }
+
+    return {
+      selectedCustomer,
+      customerId,
+      customerSegment,
+      itemQuotes,
+      itemTaxDetails,
+      totalDiscount,
+      totalTax,
+      payableTotal,
+      chargeTotal: round2(payableTotal + totalTax),
+      appliedRuleIds: Array.from(ruleIds)
+    };
+  };
+
   const handleCompletePayment = async (payments: PaymentDetail[], excessHandling?: 'Change' | 'Wallet') => {
+    const cartSnapshot = [...cart];
+    const deductions: { itemId: string; warehouseId: string; quantity: number; batchId?: string; unitCost?: number }[] = [];
     try {
+      const quote = await buildCheckoutQuote();
+
       const [persistedSales, idempotencyKeys] = await Promise.all([
         dbService.getAll<Sale>('sales'),
         dbService.getAll<any>('idempotencyKeys')
@@ -1084,110 +1127,64 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           .filter(Boolean)
       );
 
-      let idCollection = knownSales.slice();
-      let saleId = generateNextId('POS', idCollection, companyConfig);
+      let idCollection: any[] = knownSales.slice();
+      // Seed from the order number shown in the payment modal so what the
+      // cashier saw matches the final sale id whenever it is still free.
+      let saleId = paymentSession?.orderNumber || generateNextId('POS', idCollection, companyConfig);
       while (blockedSaleIds.has(saleId) || idCollection.some((entry: any) => String(entry?.id || '').trim() === saleId)) {
         idCollection = [...idCollection, { id: saleId, date: new Date().toISOString() } as Record<string, unknown>];
         saleId = generateNextId('POS', idCollection, companyConfig);
       }
 
       const totalPaid = round2(payments.reduce((s, p) => s + p.amount, 0));
-      const changeDue = round2(Math.max(totalPaid - payableTotal, 0));
+      const finalTotal = quote.chargeTotal;
+      if (totalPaid < finalTotal - 0.01) {
+        throw new Error(`Payment shortfall: ${currency}${formatNumber(finalTotal)} due but ${currency}${formatNumber(totalPaid)} tendered. Close payment to recalculate the bill.`);
+      }
+      const changeDue = round2(Math.max(totalPaid - finalTotal, 0));
 
-      // Resolve customer tier/segment for pricing
-      const selectedCustomer = (customers || []).find((c: any) => getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === selectedCustomerName);
-      const customerId = selectedCustomer?.id || selectedCustomerName || 'walk-in';
-      const customerSegment = selectedCustomer?.segment || '';
+      const { selectedCustomer, customerId, itemQuotes, itemTaxDetails, totalDiscount, totalTax, appliedRuleIds } = quote;
 
-      // Apply customer pricing, discounts, and tax to each item
-      let totalDiscount = 0;
-      let totalTax = 0;
-      const itemTaxDetails: { itemId: string; rate: number; name: string; taxAmount: number }[] = [];
-
-      const processesedItemsWithSnapshots = processedItems.map((item: any) => {
+      const itemsWithSnapshots = processedItems.map((item: any) => {
         let snapshots = resolveItemAdjustmentSnapshots(item);
         const isSmartPricingVariant = !!item.parentId && !!item.smartPricingSnapshot;
 
         if ((!snapshots || snapshots.length === 0) && item.type !== 'Service' && !isSmartPricingVariant) {
-          const activeAdjs: any[] = [];
           snapshots = [];
         }
 
         return { ...item, adjustmentSnapshots: snapshots };
       });
 
-      // Apply discount rules
-      const allDiscounts = selectedCustomer
-        ? await getApplicableDiscounts(selectedCustomer.id, customerSegment, undefined, total)
-        : [];
+      const saleItems = itemsWithSnapshots.map((item: any) => {
+        const q = itemQuotes.find(x => x.itemId === item.id);
+        if (!q) throw new Error(`Pricing quote is missing for ${item.name}. Close payment to recalculate the bill.`);
 
-      const allLineTotal = processesedItemsWithSnapshots.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
-      const totalManualDiscount = manualDiscountPercent > 0 && allLineTotal > 0 ? round2(allLineTotal * (manualDiscountPercent / 100)) : 0;
-
-      const saleItems = await Promise.all(processesedItemsWithSnapshots.map(async (item: any) => {
-        const qty = item.quantity || 1;
-        const unitPrice = item.price || 0;
-        const lineTotal = unitPrice * qty;
-
-        const manualDiscountForItem = totalManualDiscount > 0 ? round2((lineTotal / allLineTotal) * totalManualDiscount) : 0;
-        const baseForRules = round2(lineTotal - manualDiscountForItem);
-
-        // Apply rule-based discounts on top of manual discount
-        let discountTotal = manualDiscountForItem;
-        let appliedRuleIds: string[] = [];
-        if (allDiscounts.length > 0 && item.type !== 'Service') {
-          const catDiscounts = allDiscounts.filter(d =>
-            d.scope === 'global' ||
-            (d.scope === 'category' && d.scopeValue === item.category) ||
-            (d.scope === 'item_specific' && d.scopeValue === item.id) ||
-            (d.scope === 'customer_specific') ||
-            (d.scope === 'customer_segment')
-          );
-          if (catDiscounts.length > 0) {
-            const result = applyDiscounts(baseForRules, qty, unitPrice, catDiscounts);
-            discountTotal += baseForRules - result.discountedTotal;
-            appliedRuleIds = result.appliedDiscounts.map(r => r.ruleId);
-          }
+        // Increment discount usage counters (fire and forget, like before)
+        for (const ruleId of q.discountRuleIds) {
+          incrementDiscountUsage(ruleId).catch(() => {});
         }
-
-        const discountedLineTotal = round2(baseForRules - (discountTotal - manualDiscountForItem));
-        const finalUnitPrice = qty > 0 ? round2(discountedLineTotal / qty) : unitPrice;
-
-        // Calculate tax on final discounted unit price
-        const baseItem = item.parentId ? inventory.find(i => i.id === item.parentId) || item : item;
-        const taxResult = await calculateItemTax(baseItem, finalUnitPrice, qty, customerId);
-        totalTax += taxResult.taxAmount;
-        itemTaxDetails.push({ itemId: item.id, rate: taxResult.rate, name: taxResult.name, taxAmount: taxResult.taxAmount });
-
-        // Increment discount usage counters
-        for (const ruleId of appliedRuleIds) {
-          await incrementDiscountUsage(ruleId).catch(() => {});
-        }
-
-        totalDiscount += discountTotal;
 
         return attachPricingBreakdown({
           ...item,
           productId: item.productId || item.itemId || item.id,
           productName: item.name,
-          unitPrice,
-          subtotal: lineTotal,
-          discount: round2(discountTotal),
-          discountRuleIds: appliedRuleIds,
-          taxRate: taxResult.rate,
-          taxName: taxResult.name,
-          taxAmount: taxResult.taxAmount,
-          taxableAmount: taxResult.taxableAmount,
+          unitPrice: item.price || 0,
+          subtotal: q.lineTotal,
+          discount: q.discount,
+          discountRuleIds: q.discountRuleIds,
+          taxRate: q.taxRate,
+          taxName: q.taxName,
+          taxAmount: q.taxAmount,
+          taxableAmount: q.taxableAmount,
           productionCostSnapshot: item.productionCostSnapshot,
           adjustmentSnapshots: item.adjustmentSnapshots,
           desc: item.desc
         });
-      }));
+      });
 
       const pricingSummary = summarizePricingBreakdown(saleItems);
       const aggregatedSnapshots = aggregateMarketAdjustmentSnapshots(saleItems);
-      const totalCost = pricingSummary.materialTotal;
-      const finalTotal = round2(payableTotal + totalTax);
 
         const saleData: Sale = {
           id: saleId,
@@ -1207,124 +1204,164 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           bill_total: finalTotal,
           cash_tendered: round2(totalPaid),
           change_due: round2(changeDue),
-         adjustmentTotal: pricingSummary.adjustmentTotal,
-         adjustmentSnapshots: aggregatedSnapshots,
-         // SmartPricing revenue analytics fields
-         profitMarginTotal: pricingSummary.profitMarginTotal,
-         roundingTotal: pricingSummary.roundingTotal,
-         roundingDifference: pricingSummary.roundingTotal,
-         materialTotal: pricingSummary.materialTotal,
-         material_total_cost: pricingSummary.materialTotal,
-         taxTotal: round2(totalTax),
-         taxDetails: itemTaxDetails,
+          excessAmount: changeDue > 0 ? round2(changeDue) : undefined,
+          excessHandling: changeDue > 0 ? (excessHandling || 'Change') : undefined,
+          adjustmentTotal: pricingSummary.adjustmentTotal,
+          adjustmentSnapshots: aggregatedSnapshots,
+          // SmartPricing revenue analytics fields
+          profitMarginTotal: pricingSummary.profitMarginTotal,
+          roundingTotal: pricingSummary.roundingTotal,
+          roundingDifference: pricingSummary.roundingTotal,
+          materialTotal: pricingSummary.materialTotal,
+          material_total_cost: pricingSummary.materialTotal,
+          taxTotal: round2(totalTax),
+          taxDetails: itemTaxDetails,
           discountTotal: round2(totalDiscount),
           referredBy: selectedCustomer?.referredById || '',
           referredByName: selectedCustomer?.referredByName || '',
           salesAccountId: selectedSalesAccountId,
         };
 
-      // Price validation removed - payableTotal already reflects correct item pricing
-      // calculateSellingPrice was producing false mismatches due to margin/adjustment discrepancies
-
-      // Deduct from tracked batches FIRST (before creating sale) to detect failures early
+      // Deduct from tracked batches FIRST (before creating sale) to detect failures early.
+      // If createSale fails afterwards, every deduction we made is reversed below
+      // so a retry does not silently leak stock.
       const warehouseId = companyConfig.transactionSettings?.defaultPOSWarehouse || 'WH-MAIN';
-      for (const cartItem of cart) {
-        const selections = cartItem.batchSelections;
-        if (selections && selections.length > 0) {
-          for (const sel of selections) {
-            const dedResult = await inventoryTransactionService.deductInventory({
-              itemId: cartItem.parentId || cartItem.id || cartItem.itemId,
-              warehouseId,
-              quantity: sel.quantity,
-              batchId: sel.batchId,
-              reason: `POS Sale #${saleId}`,
-              reference: 'POS',
-              referenceId: saleId,
-              performedBy: user?.name || 'Cashier'
-            });
-            if (!dedResult.success) {
-              throw new Error(`Batch deduction failed for ${cartItem.name}: ${dedResult.error}`);
+      try {
+        for (const cartItem of cartSnapshot) {
+          const selections = cartItem.batchSelections;
+          if (selections && selections.length > 0) {
+            for (const sel of selections) {
+              const dedResult = await inventoryTransactionService.deductInventory({
+                itemId: cartItem.parentId || cartItem.id || cartItem.itemId,
+                warehouseId,
+                quantity: sel.quantity,
+                batchId: sel.batchId,
+                reason: `POS Sale #${saleId}`,
+                reference: 'POS',
+                referenceId: saleId,
+                performedBy: user?.name || 'Cashier'
+              });
+              if (!dedResult.success) {
+                throw new Error(`Batch deduction failed for ${cartItem.name}: ${dedResult.error}`);
+              }
+              if (!dedResult.alreadyProcessed) {
+                deductions.push({
+                  itemId: cartItem.parentId || cartItem.id || cartItem.itemId,
+                  warehouseId,
+                  quantity: sel.quantity,
+                  batchId: sel.batchId,
+                  unitCost: dedResult.transaction?.unitCost
+                });
+              }
             }
           }
         }
-      }
 
-      await api.sales.createSale(saleData);
-
-      // Refresh data across modules
-      await Promise.all([
-        fetchSalesData?.(),
-        fetchFinanceData?.()
-      ]);
-
-      // Trigger customer notification if customer has a phone number
-      const customerPhone = selectedCustomer?.phone;
-      if (customerPhone) {
-        customerNotificationService.triggerNotification('SALES_ORDER', {
-          id: saleId,
-          customerName: selectedCustomerName || 'Walk-in',
-          phoneNumber: customerPhone,
-          amount: `${currency}${formatNumber(payableTotal)}`,
-        }).catch((err: any) => logger.error('[POS] Notification failed', err));
-      }
-
-      const persistedSale = await dbService.get<Sale>('sales', saleId);
-      const receiptSale: Sale = persistedSale || {
-        ...saleData,
-        excessHandling: (excessHandling || 'Change') as 'Change' | 'Wallet',
-        excessAmount: changeDue
-      };
-      setLastSale(receiptSale);
-      setShowPaymentModal(false);
-
-      await addAlert?.({
-        id: `ALERT-SALE-${saleId}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        title: 'POS Sale Completed',
-        message: `Sale #${saleId} posted for ${receiptSale.customerName || 'Walk-in Customer'} (${currency}${formatNumber(payableTotal)}).`,
-        type: 'SUCCESS',
-        module: 'POS',
-        severity: 'Low',
-        actionUrl: '/pos',
-        date: new Date().toISOString(),
-        read: false
-      });
-
-      const previewData = await buildValidatedPosReceipt(receiptSale);
-
-      // Only show receipt preview if user has the toggle on
-      if (autoPreviewReceipt) {
-        setPreviewState({
-          isOpen: true,
-          type: 'POS_RECEIPT',
-          data: previewData
-        });
-      } else {
-        setQuickReceiptSale(receiptSale);
-      }
-
-      if (companyConfig.transactionSettings?.autoPrintReceipt) {
-        if (hardwareService.isConnected()) {
-          try {
-            await hardwareService.printPosReceipt(previewData, companyConfig);
-          } catch (printError) {
-            logger.error('Auto-print failed:', printError);
-            notify('Auto-print failed. Receipt preview is available.', 'warning');
-          }
-        } else {
-          notify('Auto-print is enabled but no printer is connected.', 'warning');
+        await api.sales.createSale(saleData);
+      } catch (commitError) {
+        for (const d of deductions) {
+          await inventoryTransactionService.reverseDeduction({
+            itemId: d.itemId,
+            warehouseId: d.warehouseId,
+            quantity: d.quantity,
+            batchId: d.batchId,
+            unitCost: d.unitCost,
+            reason: `POS Sale #${saleId} rolled back`,
+            reference: 'POS-ROLLBACK',
+            referenceId: saleId,
+            performedBy: user?.name || 'Cashier'
+          }).catch((err: unknown) => logger.error('[POS] Failed to roll back inventory deduction:', err));
         }
+        throw commitError;
       }
 
-      // Create production jobs for printing services
-      const { addProductionJob, createProductionJob } = usePrintingStore.getState();
-      createProductionJobsFromSale(cart, saleId, addProductionJob, createProductionJob);
-
+      // ---- SALE COMMITTED ----
+      // Everything below is best-effort: a failure here must never make the
+      // cashier charge the customer again, so close the checkout first and
+      // never rethrow past this point.
+      setShowPaymentModal(false);
+      setPaymentSession(null);
       clearCart(true);
-      notify(`Sale #${saleId} completed`, 'success');
+
+      try {
+        // Refresh data across modules
+        await Promise.all([
+          fetchSalesData?.(),
+          fetchFinanceData?.()
+        ]);
+
+        // Trigger customer notification if customer has a phone number
+        const customerPhone = selectedCustomer?.phone;
+        if (customerPhone) {
+          customerNotificationService.triggerNotification('SALES_ORDER', {
+            id: saleId,
+            customerName: selectedCustomerName || 'Walk-in',
+            phoneNumber: customerPhone,
+            amount: `${currency}${formatNumber(finalTotal)}`,
+          }).catch((err: any) => logger.error('[POS] Notification failed', err));
+        }
+
+        const persistedSale = await dbService.get<Sale>('sales', saleId);
+        const receiptSale: Sale = persistedSale || saleData;
+        setLastSale(receiptSale);
+
+        await addAlert?.({
+          id: `ALERT-SALE-${saleId}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          title: 'POS Sale Completed',
+          message: `Sale #${saleId} posted for ${receiptSale.customerName || 'Walk-in Customer'} (${currency}${formatNumber(finalTotal)}).`,
+          type: 'SUCCESS',
+          module: 'POS',
+          severity: 'Low',
+          actionUrl: '/pos',
+          date: new Date().toISOString(),
+          read: false
+        });
+
+        try {
+          const previewData = await buildValidatedPosReceipt(receiptSale);
+
+          // Only show receipt preview if user has the toggle on
+          if (autoPreviewReceipt) {
+            setPreviewState({
+              isOpen: true,
+              type: 'POS_RECEIPT',
+              data: previewData
+            });
+          } else {
+            setQuickReceiptSale(receiptSale);
+          }
+
+          if (companyConfig.transactionSettings?.autoPrintReceipt) {
+            if (hardwareService.isConnected()) {
+              try {
+                await hardwareService.printPosReceipt(previewData, companyConfig);
+              } catch (printError) {
+                logger.error('Auto-print failed:', printError);
+                notify('Auto-print failed. Receipt preview is available.', 'warning');
+              }
+            } else {
+              notify('Auto-print is enabled but no printer is connected.', 'warning');
+            }
+          }
+        } catch (receiptError) {
+          logger.error('[POS] Receipt build failed:', receiptError);
+          notify(`Sale #${saleId} recorded, but the receipt could not be built: ${getErrorMessage(receiptError)}`, 'warning');
+        }
+
+        // Create production jobs for printing services
+        const { addProductionJob, createProductionJob } = usePrintingStore.getState();
+        createProductionJobsFromSale(cartSnapshot, saleId, addProductionJob, createProductionJob);
+
+        notify(`Sale #${saleId} completed`, 'success');
+      } catch (postError) {
+        logger.error('[POS] Post-sale step failed:', postError);
+        notify(`Sale #${saleId} recorded, but a follow-up step failed: ${getErrorMessage(postError)}`, 'warning');
+      }
     } catch (error: any) {
       const message = getErrorMessage(error);
       logger.error('POS Sale Error:', error, message);
       notify(message || 'Error processing sale', 'error');
+      throw error; // PaymentModal keeps the checkout open and shows this inline
     }
   };
 
@@ -1381,7 +1418,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
   const handleCloseRegister = async () => {
     if (!zReportData) return;
     setIsClosingDrawer(true);
-     const bankAccId = accounts.find((a: any) => a.code === '11210')?.id || '11210';
+     const bankAccId = accounts.find((a: any) => a.code === ACCOUNT_IDS.BANK)?.id || ACCOUNT_IDS.BANK;
     await postZReportToLedger(zReportData, bankAccId);
     setIsClosingDrawer(false);
     setShowZReport(false);
@@ -1474,6 +1511,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
             onPark={handleParkOrder}
             onReturn={() => setShowReturnsModal(true)}
             onPay={handlePay}
+            isBusy={isQuoting}
             totals={{ subtotal: total, total }}
             manualDiscountPercent={manualDiscountPercent}
             onManualDiscountChange={setManualDiscountPercent}
@@ -1484,141 +1522,45 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       </div>
 
       {showZReport && zReportData && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-[2px]">
-          <div className="bg-[#FEFDFB] w-full max-w-sm rounded-xl shadow-2xl overflow-hidden flex flex-col border border-[#e4ddd1]">
-            <div className="px-6 py-4 border-b border-[#e4ddd1] bg-[#eef7f6] flex justify-between items-center">
-              <h2 className="text-sm font-bold text-[#23282A] flex items-center gap-2 uppercase tracking-wider"><TrendingUp size={16} className="text-[#1f8577]" /> Register Summary</h2>
-              <button onClick={() => setShowZReport(false)} className="text-[#5c6567] hover:text-[#b5493f]"><X size={20} /></button>
-            </div>
-            <div id="register-details" className="flex-1 overflow-y-auto p-8 text-sm bg-[#FEFDFB]">
-              <div className="text-center border-b border-[#e4ddd1] pb-6 mb-6">
-                <h1 className="font-bold text-lg text-[#23282A] uppercase tracking-tight">{companyConfig.companyName}</h1>
-                <p className="text-[#5c6567] text-xs mt-1 font-medium">Daily Sales Summary</p>
-              </div>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center"><span className="text-[#5c6567]">Gross Sales</span><span className="font-bold text-[#23282A]">{currency}{formatNumber(zReportData.totalSales)}</span></div>
-                <div className="flex justify-between items-center"><span className="text-[#5c6567]">Cash in Drawer</span><span className="font-bold text-[#1f8577]">{currency}{formatNumber(zReportData.cashSales)}</span></div>
-                <div className="flex justify-between items-center"><span className="text-[#5c6567]">Card Terminal</span><span className="font-bold text-[#23282A]">{currency}{formatNumber(zReportData.cardSales)}</span></div>
-              </div>
-              <div className="mt-8 p-4 bg-[#eef7f6] rounded-xl border border-[#e4ddd1] text-[11px] text-[#5c6567] leading-relaxed">
-                Closing the register will automatically transfer the cash balance to the Main Ledger account.
-              </div>
-            </div>
-            <div className="p-6 bg-[#eef7f6] border-t border-[#e4ddd1]">
-              <button
-                onClick={handleCloseRegister}
-                disabled={isClosingDrawer}
-                className="w-full py-3.5 text-white rounded-full font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-sm" style={{ background: 'linear-gradient(155deg, #1f8577, #0f544c)' }}>
-                {isClosingDrawer ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                {isClosingDrawer ? 'Posting to Ledger...' : 'Close Register & Post'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RegisterSummaryModal
+          zReportData={zReportData}
+          companyName={companyConfig.companyName}
+          currencySymbol={currency}
+          isClosing={isClosingDrawer}
+          onClose={() => setShowZReport(false)}
+          onConfirm={handleCloseRegister}
+        />
       )}
 
       {quickReceiptSale && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 50,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(15, 23, 42, 0.6)', padding: '40px 20px',
-          fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: '#23282A', lineHeight: 1.5
-        }}>
-          <div style={{
-            width: 420, maxWidth: '100%', maxHeight: '92vh',
-            background: '#FEFDFB', borderRadius: 14,
-            boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
-            display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative'
-          }}>
-            {/* Header */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '16px 20px 12px',
-              borderBottom: '1px solid #e4ddd1',
-              background: '#eef7f6'
-            }}>
-              <h2 style={{ fontSize: 13.5, fontWeight: 700, color: '#23282A', margin: 0, display: 'flex', alignItems: 'center', gap: 8, letterSpacing: 0.01 }}>
-                <CheckCircle size={16} style={{ color: '#1f8577' }} /> Sale Successful
-              </h2>
-              <button onClick={() => setQuickReceiptSale(null)} style={{ color: '#5c6567', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color .15s ease' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#b5493f'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#5c6567'; }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 8px' }}>
-              <div style={{ textAlign: 'center', marginBottom: 18 }}>
-                <h1 style={{ fontSize: 20, fontWeight: 700, color: '#23282A', margin: '0 0 4px', letterSpacing: 0.2 }}>{companyConfig.companyName}</h1>
-                <p style={{ fontSize: 12, color: '#5c6567', margin: 0, fontWeight: 500 }}>Receipt #{quickReceiptSale.id}</p>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#FEFDFB', borderRadius: 8, border: '1px solid #e4ddd1' }}>
-                  <span style={{ fontSize: 12, color: '#5c6567', fontWeight: 500 }}>Customer</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#23282A' }}>{quickReceiptSale.customerName || 'Walk-in'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#FEFDFB', borderRadius: 8, border: '1px solid #e4ddd1' }}>
-                  <span style={{ fontSize: 12, color: '#5c6567', fontWeight: 500 }}>Total Amount</span>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: '#23282A', fontVariantNumeric: 'tabular-nums' }}>{currency}{formatNumber(quickReceiptSale.totalAmount)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#FEFDFB', borderRadius: 8, border: '1px solid #e4ddd1' }}>
-                  <span style={{ fontSize: 12, color: '#5c6567', fontWeight: 500 }}>Paid Amount</span>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: '#23282A', fontVariantNumeric: 'tabular-nums' }}>{currency}{formatNumber(quickReceiptSale.cash_tendered || quickReceiptSale.totalAmount)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#FEFDFB', borderRadius: 8, border: '1px solid #e4ddd1' }}>
-                  <span style={{ fontSize: 12, color: '#5c6567', fontWeight: 500 }}>Change Due</span>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1f8577', fontVariantNumeric: 'tabular-nums' }}>{currency}{formatNumber(quickReceiptSale.change_due || 0)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div style={{ display: 'flex', gap: 10, padding: '14px 20px', borderTop: '1px solid #e4ddd1', background: '#eef7f6' }}>
-              <button
-                onClick={async () => {
-                  const receiptData = await buildValidatedPosReceipt(quickReceiptSale);
-                  setQuickReceiptSale(null);
-                  setPreviewState({ isOpen: true, type: 'POS_RECEIPT', data: receiptData });
-                }}
-                style={{ flex: 1, padding: '8px 12px', background: 'linear-gradient(155deg, #1f8577, #0f544c)', color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: '0 6px 16px -6px rgba(15,84,76,.55)', transition: 'all .15s ease' }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 16px -6px rgba(15,84,76,.55)'; }}
-              >
-                <FileText size={15} /> Full Receipt
-              </button>
-              <button
-                onClick={() => setQuickReceiptSale(null)}
-                style={{ flex: 1, padding: '8px 12px', background: '#FEFDFB', border: '1.4px solid #e4ddd1', color: '#5c6567', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .15s ease' }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#eef7f6'; e.currentTarget.style.color = '#0f544c'; e.currentTarget.style.borderColor = '#a6d9d3'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = '#FEFDFB'; e.currentTarget.style.color = '#5c6567'; e.currentTarget.style.borderColor = '#e4ddd1'; }}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
+        <QuickReceiptModal
+          sale={quickReceiptSale}
+          companyName={companyConfig.companyName}
+          currencySymbol={currency}
+          onClose={() => setQuickReceiptSale(null)}
+          onFullReceipt={async () => {
+            const receiptData = await buildValidatedPosReceipt(quickReceiptSale);
+            setQuickReceiptSale(null);
+            setPreviewState({ isOpen: true, type: 'POS_RECEIPT', data: receiptData });
+          }}
+        />
       )}
 
       {showPaymentModal && (
         <PaymentModal
-          total={payableTotal}
+          total={paymentSession?.total ?? payableTotal}
           onComplete={handleCompletePayment}
-          onCancel={() => setShowPaymentModal(false)}
+          onCancel={() => { setShowPaymentModal(false); setPaymentSession(null); }}
           customerName={selectedCustomerName}
-          availableCredit={0}
           walletBalance={customers.find((c: any) => getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === selectedCustomerName || c.id === selectedCustomerName)?.walletBalance || 0}
           loyaltyPoints={customers.find((c: any) => getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name }) === selectedCustomerName || c.id === selectedCustomerName)?.loyaltyPoints || 0}
           totalProfitMargin={pricingSummary.profitMarginTotal}
-          subAccountName={selectedSubAccount}
           adjustmentSummary={cartAdjustmentSummary}
-          roundingAccumulation={roundingAccumulation}
-          orderNumber={generateNextId('POS', sales, companyConfig)}
+          orderNumber={paymentSession?.orderNumber ?? generateNextId('POS', sales, companyConfig)}
         />
       )}
       {showCustomerModal && <CustomerModal onSelect={handleCustomerSelect} onClose={() => setShowCustomerModal(false)} />}
-      {showHeldOrdersModal && <HeldOrdersModal orders={heldOrders} onRetrieve={(o) => { setCart(o.items); retrieveOrder(o.id); setShowHeldOrdersModal(false); }} onClose={() => setShowHeldOrdersModal(false)} />}
+      {showHeldOrdersModal && <HeldOrdersModal orders={heldOrders} onRetrieve={handleRetrieveOrder} onClose={() => setShowHeldOrdersModal(false)} />}
       {showReturnsModal && <ReturnsModal sales={sales} onProcess={handleProcessRefund} onClose={() => setShowReturnsModal(false)} />}
       {selectedServiceForCalculator && (
         <ServiceCalculatorModal

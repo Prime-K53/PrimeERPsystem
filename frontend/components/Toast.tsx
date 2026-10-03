@@ -86,7 +86,7 @@ const Toast: React.FC = () => {
   };
 
   return (
-    <div className={`fixed bottom-8 right-8 z-[100] bg-white border-l-4 ${getBorderColor()} shadow-premium rounded-xl p-5 flex items-start gap-4 min-w-[340px] animate-toast-in`}>
+    <div className={`fixed bottom-8 right-8 z-[100000] bg-white border-l-4 ${getBorderColor()} shadow-premium rounded-xl p-5 flex items-start gap-4 min-w-[340px] animate-toast-in`}>
       <div className="mt-0.5 bg-slate-50 p-2 rounded-lg">{getIcon()}</div>
       <div className="flex-1 min-w-0">
         <h4 className="font-black text-slate-900 text-xs uppercase tracking-widest mb-1">{activeNotification.type}</h4>

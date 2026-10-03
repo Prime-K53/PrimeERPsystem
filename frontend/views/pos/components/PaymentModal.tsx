@@ -1,25 +1,23 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Banknote, CreditCard, Smartphone, Briefcase, X, Wallet, Award, Clock, CheckCircle2, AlertCircle, ArrowLeftRight } from 'lucide-react';
 import type { PaymentDetail } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
-import { useFinance } from '../../../context/FinanceContext';
 import { useBankingStore } from '../../../context/BankingContext';
 import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
 import { currencyService } from '../../../services/currencyService';
-
 import { formatNumber } from '../../../utils/helpers';
+import { useModalA11y } from '../../../utils/useModalA11y';
+import { formatAmount, formatMoney, formatSignedMoney, getQuickCashPresets } from '../../../utils/posMoney';
+import { FOCUS_RING, NUMERIC_FONT, danger, type } from '../theme';
 
 interface PaymentModalProps {
     total: number;
     onComplete: (paymentMethods: PaymentDetail[], excessHandling?: 'Change' | 'Wallet') => void;
     onCancel: () => void;
     customerName: string | null;
-    availableCredit: number;
     walletBalance: number;
     loyaltyPoints?: number;
-    subAccountName?: string;
     adjustmentSummary?: { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; }[];
-    roundingAccumulation?: number;
     totalProfitMargin?: number;
     orderNumber: string;
 }
@@ -36,40 +34,51 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     onComplete,
     onCancel,
     customerName,
-    availableCredit: _availableCredit,
     walletBalance,
     loyaltyPoints = 0,
-    subAccountName: _subAccountName,
     adjustmentSummary = [],
-    roundingAccumulation: _roundingAccumulation = 0,
     totalProfitMargin = 0,
     orderNumber
 }) => {
-    const { companyConfig, notify } = useAuth(); const { invoices } = useFinance();
+    const { companyConfig, notify } = useAuth();
     const { accounts: bankAccounts, fetchBankingData } = useBankingStore();
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
     const [splitPayments, setSplitPayments] = useState<PaymentDetail[]>([]);
-    const [remainingDue, setRemainingDue] = useState(total);
     const [currentPaymentAmount, setCurrentPaymentAmount] = useState(() => (Number.isFinite(total) ? total.toFixed(2) : ''));
-    const [changeDue, setChangeDue] = useState(0);
     const [activePaymentMethod, setActivePaymentMethod] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [inlineError, setInlineError] = useState<string | null>(null);
+    const submittingRef = useRef(false);
+
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const pointsConversionRate = companyConfig?.transactionSettings?.pos?.loyaltyRate || 0.10;
+    const quickCashPresets = getQuickCashPresets(companyConfig?.currencySymbol);
+
+    const quickCashBtn = (active: boolean): React.CSSProperties => ({
+        flex: '1 1 90px',
+        textAlign: 'center',
+        padding: '8px 10px',
+        border: `1.4px solid ${hairline}`,
+        borderRadius: 8,
+        fontFamily: NUMERIC_FONT,
+        fontSize: 12.5,
+        color: inkSoft,
+        cursor: 'pointer',
+        background: active ? '#eef7f6' : paper,
+        transition: 'all .12s',
+    });
 
     const handleCancel = useCallback(() => {
+        // Guarded so an in-flight commit can never be dismissed out from under
+        // its own error reporting.
+        if (submittingRef.current) return;
         setActivePaymentMethod(null);
+        setInlineError(null);
         onCancel();
     }, [onCancel]);
 
-    useEffect(() => {
-        const val = parseFloat(currentPaymentAmount);
-        if (!isNaN(val) && val > total) {
-            setChangeDue(val - total);
-        } else {
-            setChangeDue(0);
-        }
-    }, [currentPaymentAmount, total]);
-
-    const pointsConversionRate = 0.10;
+    // Escape is suppressed while a sale is submitting — see handleCancel.
+    const a11yRef = useModalA11y(true, handleCancel, 'Payment', { closeOnEscape: !isSubmitting });
 
     useEffect(() => {
         fetchBankingData?.();
@@ -81,10 +90,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         }
     }, [bankAccounts?.length, fetchBankingData]);
 
+    // Re-seed the tender field only when it is empty/zero and the bill total
+    // changes — never while the cashier is typing.
     useEffect(() => {
-        if (splitPayments.length === 0 && (currentPaymentAmount === '' || Number(currentPaymentAmount) === 0)) {
-            setCurrentPaymentAmount(Number.isFinite(total) ? total.toFixed(2) : '');
-            setRemainingDue(total);
+        if (splitPayments.length === 0 && total > 0) {
+            setCurrentPaymentAmount(prev => {
+                const parsed = parseFloat(prev);
+                if (prev === '' || !Number.isFinite(parsed) || parsed === 0) return total.toFixed(2);
+                return prev;
+            });
         }
     }, [total, splitPayments.length]);
 
@@ -93,44 +107,62 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         return Number.isFinite(parsed) ? parsed : 0;
     }, [currentPaymentAmount]);
 
-    const effectiveRemainingDue = useMemo(() => {
-        if (splitPayments.length > 0) return remainingDue;
-        return Math.max(0, total - typedAmount);
-    }, [splitPayments.length, remainingDue, total, typedAmount]);
+    const splitPaid = useMemo(
+        () => r2(splitPayments.reduce((sum, p) => sum + p.amount, 0)),
+        [splitPayments]
+    );
 
-const canCompleteSale = useMemo(() => {
-  const totalPaid = splitPayments.reduce((sum, p) => sum + p.amount, 0) + typedAmount;
-  return totalPaid >= total - 0.01;
-}, [splitPayments, typedAmount, total]);
+    // Single source of truth: everything is derived from committed splits plus
+    // the amount currently in the tender field. No imperative writers.
+    const tenderedTotal = useMemo(() => r2(splitPaid + typedAmount), [splitPaid, typedAmount]);
+    const changeDue = useMemo(() => Math.max(0, r2(tenderedTotal - total)), [tenderedTotal, total]);
+    const effectiveRemainingDue = useMemo(() => Math.max(0, r2(total - tenderedTotal)), [tenderedTotal, total]);
+
+    const canCompleteSale = useMemo(() => {
+        if (tenderedTotal <= 0) return false;
+        return tenderedTotal >= total - 0.01;
+    }, [tenderedTotal, total]);
 
     const handleComplete = useCallback(async () => {
-        if (isSubmitting) return;
-        const paymentsToSubmit: PaymentDetail[] = splitPayments.length > 0
-            ? splitPayments
-            : (
-                typedAmount > 0
-                    ? [{ method: 'Cash', amount: typedAmount, accountId: ACCOUNT_IDS.CASH_DRAWER }]
-                    : []
-            );
+        if (submittingRef.current) return;
+        // Mirrors exactly what will be submitted below — committed splits plus
+        // any unmethoded tender in the input (defaulting to Cash).
+        const paymentsToSubmit: PaymentDetail[] = [
+            ...splitPayments,
+            ...(typedAmount > 0 ? [{
+                id: `PMT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                method: 'Cash',
+                amount: typedAmount,
+                accountId: ACCOUNT_IDS.CASH_DRAWER,
+                date: new Date().toISOString()
+            }] : [])
+        ];
         const totalPaid = paymentsToSubmit.reduce((sum, p) => sum + p.amount, 0);
 
         if (paymentsToSubmit.length === 0) {
+            setInlineError("Select a payment method or enter amount received.");
             notify("Select a payment method or enter amount received.", "error");
             return;
         }
 
         if (totalPaid < total - 0.01) {
+            setInlineError("Amount tendered cannot be less than bill total.");
             notify("Amount tendered cannot be less than bill total.", "error");
             return;
         }
 
         try {
+            submittingRef.current = true;
             setIsSubmitting(true);
+            setInlineError(null);
             await Promise.resolve(onComplete(paymentsToSubmit, 'Change'));
             setActivePaymentMethod(null);
         } catch (error: any) {
-            notify(error?.message || 'Error processing sale', 'error');
+            const message = error?.message || 'Error processing sale';
+            setInlineError(message);
+            notify(message, 'error');
         } finally {
+            submittingRef.current = false;
             setIsSubmitting(false);
         }
     }, [isSubmitting, splitPayments, typedAmount, total, onComplete, notify]);
@@ -138,6 +170,7 @@ const canCompleteSale = useMemo(() => {
     const addPaymentMethod = useCallback((accountId: string) => {
         const amountInput = parseFloat(currentPaymentAmount);
         if (isNaN(amountInput) || amountInput <= 0) {
+            setInlineError("Please enter a valid positive payment amount.");
             notify("Please enter a valid positive payment amount.", "error");
             return;
         }
@@ -145,23 +178,21 @@ const canCompleteSale = useMemo(() => {
         let method: string;
         if (accountId === 'WALLET') {
             if (amountInput > walletBalance) {
-                notify(`Insufficient wallet balance. Available: ${currency}${formatNumber(walletBalance)}`, "error");
+                const message = `Insufficient wallet balance. Available: ${currency}${formatNumber(walletBalance)}`;
+                setInlineError(message);
+                notify(message, "error");
                 return;
             }
             method = 'Wallet';
         } else if (accountId === 'LOYALTY') {
             const availableValue = loyaltyPoints * pointsConversionRate;
             if (amountInput > availableValue) {
-                notify(`Insufficient loyalty points. Max value: ${currency}${formatNumber(availableValue)}`, "error");
+                const message = `Insufficient loyalty points. Max value: ${currency}${formatNumber(availableValue)}`;
+                setInlineError(message);
+                notify(message, "error");
                 return;
             }
             method = 'Loyalty';
-        } else if (accountId === 'CREDIT') {
-            if (amountInput > creditStatus.available) {
-                notify(`Insufficient credit limit. Available: ${currency}${formatNumber(creditStatus.available)}`, "error");
-                return;
-            }
-            method = 'Credit';
         } else {
             const account = DEFAULT_ACCOUNTS.find(a => a.id === accountId);
             if (!account) return;
@@ -169,36 +200,36 @@ const canCompleteSale = useMemo(() => {
                 (accountId === ACCOUNT_IDS.MOBILE_MONEY || account.name.includes('Mobile') ? 'Mobile Money' : 'Bank Transfer');
         }
 
-        const newSplit = [...splitPayments, { method, amount: amountInput, accountId }];
+        const newSplit: PaymentDetail[] = [...splitPayments, {
+            id: `PMT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            method,
+            amount: amountInput,
+            accountId,
+            date: new Date().toISOString()
+        }];
         setSplitPayments(newSplit);
-
+        setInlineError(null);
         setActivePaymentMethod(accountId);
 
-        const newPaid = newSplit.reduce((sum, p) => sum + p.amount, 0);
-        const newRemaining = total - newPaid;
-
-        if (newPaid > total) {
-            setChangeDue(newPaid - total);
-        } else {
-            setChangeDue(0);
-        }
-
-        setRemainingDue(newRemaining > 0.01 ? newRemaining : 0);
-        setCurrentPaymentAmount(newRemaining > 0.01 ? newRemaining.toFixed(2) : '');
-    }, [currentPaymentAmount, splitPayments, total, notify]);
+        const nextDue = r2(total - newSplit.reduce((sum, p) => sum + p.amount, 0));
+        setCurrentPaymentAmount(nextDue > 0.01 ? nextDue.toFixed(2) : '');
+    }, [currentPaymentAmount, splitPayments, total, notify, currency, walletBalance, loyaltyPoints]);
 
     useEffect(() => {
         const handleGlobalKeys = (e: KeyboardEvent) => {
-            if (e.key === 'Enter' && canCompleteSale) handleComplete();
+            if (e.key === 'Enter' && !submittingRef.current && canCompleteSale) {
+                e.preventDefault();
+                handleComplete();
+            }
              if (e.altKey) {
-                 if (e.key === '1') addPaymentMethod('11110');
-                 if (e.key === '2') addPaymentMethod('11210');
+                 if (e.key === '1') addPaymentMethod(ACCOUNT_IDS.CASH_DRAWER);
+                 if (e.key === '2') addPaymentMethod(ACCOUNT_IDS.BANK);
                  if (e.key === '3') addPaymentMethod(ACCOUNT_IDS.MOBILE_MONEY);
              }
         };
         window.addEventListener('keydown', handleGlobalKeys);
         return () => window.removeEventListener('keydown', handleGlobalKeys);
-    }, [canCompleteSale, handleComplete, handleCancel, addPaymentMethod]);
+    }, [canCompleteSale, handleComplete, addPaymentMethod]);
 
     const normalizedBankAccounts = useMemo(() => {
         return (bankAccounts || []).filter(acc => acc.status !== 'Closed');
@@ -252,26 +283,13 @@ const canCompleteSale = useMemo(() => {
     const mobileBalance = mobileBankAccount?.availableBalance ?? mobileBankAccount?.balance;
     const formatBalance = (value?: number) => (value === undefined ? '--' : `${currency}${formatNumber(value)}`);
 
-    const hasAdjustments = adjustmentSummary && adjustmentSummary.length > 0;
     const adjustmentTotal = useMemo(() => {
         if (!adjustmentSummary || adjustmentSummary.length === 0) return 0;
         return adjustmentSummary.reduce((sum, adj) => sum + (adj.totalAmount || 0), 0);
     }, [adjustmentSummary]);
-    const roundingTotal = Number.isFinite(_roundingAccumulation) ? _roundingAccumulation : 0;
-
-    const creditStatus = useMemo(() => {
-        if (!customerName) return { available: 0, blocked: true, reason: 'Walk-in' };
-        const subLimit = 0;
-        const currentBalance = (invoices || [])
-            .filter((i: any) => i.customerName === customerName && i.status !== 'Paid' && i.status !== 'Draft' && i.status !== 'Cancelled')
-            .reduce((acc: number, inv: any) => acc + ((inv.totalAmount || 0) - (inv.paidAmount || 0)), 0);
-        const available = Math.max(0, subLimit - currentBalance);
-        const blocked = true;
-        return { available, blocked, reason: 'Credit Disabled', limit: subLimit };
-    }, [customerName, invoices]);
 
     return (
-        <div style={{
+        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Payment" style={{
             position: 'fixed', inset: 0, zIndex: 9999,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'rgba(15, 23, 42, 0.6)',
@@ -303,11 +321,13 @@ const canCompleteSale = useMemo(() => {
                             <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>{orderNumber}</p>
                         </div>
                     </div>
-                    <button onClick={handleCancel} aria-label="Close" style={{
+                    <button onClick={handleCancel} aria-label={isSubmitting ? undefined : 'Close payment'} disabled={isSubmitting} style={{
                         width: 32, height: 32, borderRadius: 8,
                         border: `1px solid ${hairline}`, background: paper, color: inkSoft,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer', transition: 'all .15s ease'
+                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                        opacity: isSubmitting ? 0.45 : 1,
+                        transition: 'all .15s ease'
                     }}
                         onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
                         onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
@@ -326,7 +346,11 @@ const canCompleteSale = useMemo(() => {
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', fontSize: 13 }}>
                             <span style={{ color: inkSoft }}>Adjustments</span>
-                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, color: ink }}>+{currency}{formatNumber(adjustmentTotal)}</span>
+                            {/* Was `+{currency}{amount}` — rendered "+K-50.00" whenever a
+                                market adjustment was negative (e.g. a discount). */}
+                            <span style={{ ...type.money, fontSize: 13, fontWeight: 600, color: adjustmentTotal < 0 ? danger : ink }}>
+                                {formatSignedMoney(adjustmentTotal, currency, companyConfig?.currencySymbol)}
+                            </span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', fontSize: 13 }}>
                             <span style={{ color: inkSoft }}>Margin</span>
@@ -358,31 +382,45 @@ const canCompleteSale = useMemo(() => {
                     </div>
 
                     <div style={{ flex: 1, padding: '18px 22px 14px', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Amount received</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', border: `1.4px solid ${hairline}`, borderRadius: 9, padding: '0 14px', height: 48 }}>
-                                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, color: inkSoft, marginRight: 8, fontSize: 17 }}>{currency}</span>
-                                <input type="text" inputMode="decimal"
-                                    style={{ border: 'none', outline: 'none', fontFamily: "'JetBrains Mono',monospace", fontSize: 17, fontWeight: 500, width: '100%', color: ink, background: 'transparent' }}
-                                    placeholder="0.00" value={currentPaymentAmount}
+                        <label htmlFor="pos-tender-amount" style={{ ...type.sectionLabel, color: inkSoft, marginBottom: 6, display: 'block' }}>
+                            Amount received
+                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+                            <div style={{ flex: '1 1 180px', display: 'flex', alignItems: 'center', border: `1.4px solid ${hairline}`, borderRadius: 9, padding: '0 14px', height: 48 }}>
+                                <span aria-hidden="true" style={{ ...type.numeric, fontWeight: 600, color: inkSoft, marginRight: 8, fontSize: 17 }}>{currency}</span>
+                                {/* Previously had NO label element and NO aria-label — the most
+                                    important input in POS announced as "edit text, blank". */}
+                                <input
+                                    id="pos-tender-amount"
+                                    type="text"
+                                    inputMode="decimal"
+                                    aria-describedby="pos-tender-remaining"
+                                    style={{ border: 'none', outline: 'none', fontFamily: NUMERIC_FONT, fontSize: 17, fontWeight: 500, width: '100%', color: ink, background: 'transparent' }}
+                                    placeholder="0.00"
+                                    value={currentPaymentAmount}
                                     onChange={e => { const val = e.target.value; if (val === '' || /^\d*\.?\d*$/.test(val)) setCurrentPaymentAmount(val); }}
-                                    autoFocus />
+                                    onFocus={e => { e.currentTarget.parentElement!.style.boxShadow = FOCUS_RING; }}
+                                    onBlur={e => { e.currentTarget.parentElement!.style.boxShadow = 'none'; }}
+                                    autoFocus
+                                />
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: 9, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Remaining</div>
-                                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 17, fontWeight: 700, color: teal[600] }}>
-                                    {currency}{formatNumber(effectiveRemainingDue || 0)}
+                                <div id="pos-tender-remaining" style={{ ...type.sectionLabel, fontSize: 9, color: inkSoft, letterSpacing: 0.06 }}>
+                                    Remaining
+                                </div>
+                                <div style={{ ...type.money, fontSize: 17, color: teal[600] }}>
+                                    {formatMoney(effectiveRemainingDue, currency, companyConfig?.currencySymbol)}
                                 </div>
                             </div>
                         </div>
 
                         <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Payment method</div>
                         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                             {[
-                                 { id: '11110', icon: Banknote, label: 'Cash' },
-                                 { id: '11210', icon: CreditCard, label: 'Bank' },
-                                 { id: ACCOUNT_IDS.MOBILE_MONEY, icon: Smartphone, label: 'Mobile' },
-                             ].map(btn => {
+                         {[
+                                  { id: ACCOUNT_IDS.CASH_DRAWER, icon: Banknote, label: 'Cash' },
+                                  { id: ACCOUNT_IDS.BANK, icon: CreditCard, label: 'Bank' },
+                                  { id: ACCOUNT_IDS.MOBILE_MONEY, icon: Smartphone, label: 'Mobile' },
+                              ].map(btn => {
                                 const isActive = activePaymentMethod === btn.id;
                                 const Icon = btn.icon;
                                 return (
@@ -427,18 +465,31 @@ const canCompleteSale = useMemo(() => {
                             )}
                         </div>
 
-                        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                            {[
-                                { label: 'Exact', onClick: () => setCurrentPaymentAmount(Number.isFinite(total) ? total.toFixed(2) : '') },
-                                { label: `+${currency}5,000`, onClick: () => setCurrentPaymentAmount(prev => (Number(prev) + 5000).toFixed(2)) },
-                                { label: `+${currency}10,000`, onClick: () => setCurrentPaymentAmount(prev => (Number(prev) + 10000).toFixed(2)) },
-                            ].map(q => (
-                                <div key={q.label} onClick={q.onClick}
-                                    style={{ flex: 1, textAlign: 'center', padding: '8px 0', border: `1.4px solid ${hairline}`, borderRadius: 7, fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5, color: inkSoft, cursor: 'pointer' }}>
-                                    {q.label}
-                                </div>
-                            ))}
-                        </div>
+                        {/* Tender presets were hardcoded to 5,000 / 10,000 regardless of currency,
+                which is meaningless for USD/EUR and too small for JPY. */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                    <button
+                        type="button"
+                        onClick={() => setCurrentPaymentAmount(Number.isFinite(total) ? total.toFixed(2) : '')}
+                        style={quickCashBtn(false)}
+                        onFocus={e => { e.currentTarget.style.boxShadow = FOCUS_RING; }}
+                        onBlur={e => { e.currentTarget.style.boxShadow = 'none'; }}
+                    >
+                        Exact
+                    </button>
+                    {quickCashPresets.map(amount => (
+                        <button
+                            key={amount}
+                            type="button"
+                            onClick={() => setCurrentPaymentAmount(prev => (Number(prev) + amount).toFixed(2))}
+                            style={quickCashBtn(false)}
+                            onFocus={e => { e.currentTarget.style.boxShadow = FOCUS_RING; }}
+                            onBlur={e => { e.currentTarget.style.boxShadow = 'none'; }}
+                        >
+                            {`+${currency}${formatAmount(amount, companyConfig?.currencySymbol)}`}
+                        </button>
+                    ))}
+                </div>
 
                         {splitPayments.length > 0 && (
                             <div style={{ marginBottom: 12 }}>
@@ -448,14 +499,21 @@ const canCompleteSale = useMemo(() => {
                                         <div key={i} style={{ background: teal[50], padding: '5px 10px', borderRadius: 7, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, border: `1px solid ${teal[100]}` }}>
                                             <span style={{ fontWeight: 600, color: teal[600] }}>{p.method}</span>
                                             <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, color: ink }}>{currency}{formatNumber(p.amount)}</span>
-                                            <button onClick={() => {
-                                                setSplitPayments(prev => prev.filter((_, idx) => idx !== i));
-                                                setActivePaymentMethod(null);
-                                                const totalPaid = splitPayments.filter((_, idx) => idx !== i).reduce((s, x) => s + x.amount, 0);
-                                                setRemainingDue(total - totalPaid);
-                                                setChangeDue(0);
-                                                setCurrentPaymentAmount((total - totalPaid).toFixed(2));
-                                            }} style={{ border: 'none', background: 'none', cursor: 'pointer', color: inkSoft, padding: 0, fontSize: 14 }}>&times;</button>
+                                            <button
+                                                type="button"
+                                                aria-label={`Remove ${p.method} payment of ${currency}${formatNumber(p.amount)}`}
+                                                onClick={() => {
+                                                    const remainingSplits = splitPayments.filter((_, idx) => idx !== i);
+                                                    setSplitPayments(remainingSplits);
+                                                    setActivePaymentMethod(null);
+                                                    const totalPaid = remainingSplits.reduce((s, x) => s + x.amount, 0);
+                                                    const nextDue = r2(total - totalPaid);
+                                                    setCurrentPaymentAmount(nextDue > 0.01 ? nextDue.toFixed(2) : '');
+                                                }}
+                                                style={{ border: 'none', background: 'none', cursor: 'pointer', color: inkSoft, padding: 2, fontSize: 16, lineHeight: 1, borderRadius: 4, display: 'flex' }}
+                                                onFocus={e => { e.currentTarget.style.boxShadow = FOCUS_RING; }}
+                                                onBlur={e => { e.currentTarget.style.boxShadow = 'none'; }}
+                                            >&times;</button>
                                         </div>
                                     ))}
                                 </div>
@@ -466,6 +524,14 @@ const canCompleteSale = useMemo(() => {
                             <div style={{ background: teal[50], border: `1px solid ${teal[200]}`, borderRadius: 8, padding: '8px 12px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontSize: 12, fontWeight: 600, color: teal[600] }}>Change due</span>
                                 <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 17, fontWeight: 700, color: teal[600] }}>{currency}{formatNumber(changeDue)}</span>
+                            </div>
+                        )}
+
+                        {inlineError && (
+                            <div role="alert" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <AlertCircle size={14} color="#dc2626" />
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#b5493f', flex: 1 }}>{inlineError}</span>
+                                <button onClick={() => setInlineError(null)} aria-label="Dismiss error" style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b5493f', padding: 0, fontSize: 14 }}>&times;</button>
                             </div>
                         )}
 
@@ -485,9 +551,23 @@ const canCompleteSale = useMemo(() => {
                     </div>
                 </div>
 
-                <div onClick={handleCancel} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '11px 24px', borderTop: `1px solid ${hairline}`, fontSize: 13, color: inkSoft, cursor: 'pointer' }}>
+                <button
+                    type="button"
+                    onClick={handleCancel}
+                    disabled={isSubmitting}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 5, width: '100%',
+                        padding: '11px 24px', borderTop: `1px solid ${hairline}`, border: 'none',
+                        borderRadius: 0, background: 'transparent',
+                        fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
+                        color: inkSoft, cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                        opacity: isSubmitting ? 0.5 : 1, textAlign: 'left',
+                    }}
+                    onFocus={e => { e.currentTarget.style.boxShadow = `inset ${FOCUS_RING}`; }}
+                    onBlur={e => { e.currentTarget.style.boxShadow = 'none'; }}
+                >
                     &larr; Back to register
-                </div>
+                </button>
             </div>
         </div>
     );

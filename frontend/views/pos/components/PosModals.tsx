@@ -8,6 +8,7 @@ import { useFinance } from '../../../context/FinanceContext';
 import { useInventory } from '../../../context/InventoryContext';
 import { useSales } from '../../../context/SalesContext';
 import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
+import { useModalA11y } from '../../../utils/useModalA11y';
 import { hardwareService } from '../../../services/hardwareService';
 import { generateAccountNumber, roundFinancial, formatNumber, roundToCurrency } from '../../../utils/helpers';
 import { bomService } from '../../../services/bomService';
@@ -132,6 +133,7 @@ export const PrintingVariantModal: React.FC<{
         adjustmentSnapshots: [] as Array<{ name: string; type: string; value: number; calculatedAmount: number }>
     });
     const [quantity, setQuantity] = useState(1);
+    const a11yRef = useModalA11y(true, onClose, 'Configure Variant');
 
     useEffect(() => {
         let mounted = true;
@@ -185,7 +187,7 @@ export const PrintingVariantModal: React.FC<{
                 adjustmentSnapshots: result.adjustmentSnapshots
             });
         } else if (bom) {
-            const result = bomService.calculateVariantBOM(bom, { attributes } as Record<string, unknown>, materials);
+            const result = bomService.calculateVariantBOM(bom, { attributes: attributes as Record<string, any> }, materials);
             const cost = roundFinancial(result.totalProductionCost);
 
             let price = product.price;
@@ -196,7 +198,7 @@ export const PrintingVariantModal: React.FC<{
             setPricingState({
                 baseCost: cost,
                 adjustmentTotal: 0,
-                sellingPrice: roundToCurrency(cost),
+                sellingPrice: roundToCurrency(Number.isFinite(price) && price > 0 ? price : cost),
                 adjustmentBreakdown: [],
                 adjustmentSnapshots: []
             });
@@ -215,9 +217,9 @@ export const PrintingVariantModal: React.FC<{
             parentId: product.id,
             name: variantName,
             attributes: attributes,
-            quantity: quantity,
-            price: pricingState.sellingPrice,
-            cost: pricingState.baseCost,
+            quantity: Number.isFinite(quantity) && quantity >= 1 ? Math.floor(quantity) : 1,
+            price: Number.isFinite(pricingState.sellingPrice) && pricingState.sellingPrice > 0 ? pricingState.sellingPrice : 0,
+            cost: Number.isFinite(pricingState.baseCost) ? pricingState.baseCost : 0,
             adjustmentTotal: pricingState.adjustmentTotal,
             adjustmentSnapshots: pricingState.adjustmentSnapshots,
             pagesOverride: attributes.number_of_pages
@@ -226,7 +228,7 @@ export const PrintingVariantModal: React.FC<{
     };
 
     return (
-        <div style={modalOverlay} onClick={onClose}>
+        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Configure Variant" style={modalOverlay} onClick={onClose}>
             <div style={{ ...modalCard, width: 520 }} onClick={(e) => e.stopPropagation()}>
                 <div style={accentBar} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
@@ -253,12 +255,13 @@ export const PrintingVariantModal: React.FC<{
                             <input type="number"
                                 style={{ width: '100%', padding: '8px 10px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
                                 placeholder="e.g. 5"
-                                onChange={e => handleAttributeChange('number_of_pages', parseInt(e.target.value))}
+                                onChange={e => { const n = parseInt(e.target.value, 10); handleAttributeChange('number_of_pages', Number.isFinite(n) && n >= 1 ? n : 1); }}
                             />
                         </div>
                         <div>
                             <label style={{ fontSize: 10, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 4, display: 'block' }}>Paper Type</label>
                             <select style={{ width: '100%', padding: '8px 10px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
+                                value={attributes.paper_type ?? ''}
                                 onChange={e => handleAttributeChange('paper_type', e.target.value)}>
                                 <option value="">Select...</option>
                                 <option value="A4 80g">A4 80g</option>
@@ -271,7 +274,7 @@ export const PrintingVariantModal: React.FC<{
                             <input type="number"
                                 style={{ width: '100%', padding: '8px 10px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, fontWeight: 700, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
                                 value={quantity}
-                                onChange={e => setQuantity(parseInt(e.target.value))}
+                                onChange={e => { const raw = e.target.value; const q = raw === '' ? 1 : parseInt(raw, 10); setQuantity(Number.isFinite(q) && q >= 1 ? Math.floor(q) : 1); }}
                             />
                         </div>
                     </div>
@@ -315,6 +318,7 @@ export const ServiceCalculatorModal: React.FC<{
     const [sellingPrice, setSellingPrice] = useState<number>(0);
     const [priceManuallySet, setPriceManuallySet] = useState(false);
     const [bomTemplate, setBomTemplate] = useState<any>(null);
+    const a11yRef = useModalA11y(true, onClose, 'Printing Service');
 
     const sp = service.smartPricing || service.pricingConfig;
     const hasSmartPricing = !!sp;
@@ -456,7 +460,35 @@ export const ServiceCalculatorModal: React.FC<{
 
     useEffect(() => { if (enginePricing && !priceManuallySet && enginePricing.totalPrice > 0) setSellingPrice(enginePricing.totalPrice); }, [enginePricing, priceManuallySet]);
 
-    const ap = enginePricing; if (!ap) return null;
+    const ap = enginePricing;
+    if (!ap) {
+        return (
+        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Printing Service" style={modalOverlay} onClick={onClose}>
+                <div style={{ ...modalCard, width: 640, maxHeight: '92vh' }} onClick={(e) => e.stopPropagation()}>
+                    <div style={accentBar} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <div style={iconBox}><Printer size={19} color="#fff" /></div>
+                            <div>
+                                <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: amber[500], marginBottom: 5 }}>Printing Service</div>
+                                <h1 style={{ fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400, fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2, lineHeight: 1.1 }}>{service.name}</h1>
+                            </div>
+                        </div>
+                        <button onClick={onClose} aria-label="Close" style={closeBtn}
+                            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+                        ><X size={15} /></button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: inkSoft }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Calculating pricing…</div>
+                            <div style={{ fontSize: 12 }}>This may take a moment for complex services.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
     const fc = (v: number) => `${currencySymbol}${formatNumber(v)}`;
     const profit = roundToCurrency(sellingPrice - (ap?.totalCost || 0));
     const isLoss = profit < 0;
@@ -466,7 +498,7 @@ export const ServiceCalculatorModal: React.FC<{
     const handleConfirm = () => onConfirm({ ...ap, totalPrice: sellingPrice, unitPricePerCopy: copies > 0 ? roundToCurrency(sellingPrice / copies) : 0, calculatedTotalPrice: ap.totalPrice, marginAmount: profit, priceLocked: true, lockedTotalPrice: sellingPrice, lockedUnitPricePerCopy: copies > 0 ? roundToCurrency(sellingPrice / copies) : 0, lockedUnitCostPerCopy: copies > 0 ? roundToCurrency(ap.totalCost / copies) : 0 });
 
     return (
-        <div style={modalOverlay} onClick={onClose}>
+        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Printing Service" style={modalOverlay} onClick={onClose}>
             <div style={{ ...modalCard, width: 640, maxHeight: '92vh' }} onClick={(e) => e.stopPropagation()}>
                 <div style={accentBar} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
@@ -626,11 +658,12 @@ export const CustomerModal: React.FC<{
     const [newCustomerName, setNewCustomerName] = useState('');
     const [newCustomerContact, setNewCustomerContact] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
+    const [activeIndex, setActiveIndex] = useState(0);
+    const a11yRef = useModalA11y(true, onClose, 'Select Customer');
 
     const customerNames = useMemo(() => {
         const names = new Set<string>();
         customers?.forEach(c => {
-            // Business Name — never the contact name.
             const label = getCustomerOptionLabel(c);
             if (label && label !== 'Unknown customer') names.add(label);
         });
@@ -646,6 +679,23 @@ export const CustomerModal: React.FC<{
         return customerNames.filter(name => name.toLowerCase().includes(term));
     }, [customerNames, searchTerm]);
 
+    useEffect(() => { setActiveIndex(0); }, [filteredCustomerNames]);
+
+    // Escape is owned by useModalA11y (registered in the capture phase). This
+    // handler used to also fire onClose, so a single Escape press invoked the
+    // dismiss handler twice.
+    useEffect(() => {
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') return;
+            if (filteredCustomerNames.length === 0) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, filteredCustomerNames.length - 1)); }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, 0)); }
+            if (e.key === 'Enter') { e.preventDefault(); const name = filteredCustomerNames[activeIndex]; if (name) onSelect(name); }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [filteredCustomerNames, activeIndex, onSelect]);
+
     const handleQuickAdd = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newCustomerName) return;
@@ -654,8 +704,8 @@ export const CustomerModal: React.FC<{
         onClose();
     };
 
-    return (
-        <div style={modalOverlay} onClick={onClose}>
+return (
+        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Parked Orders" style={modalOverlay} onClick={onClose}>
             <div style={{ ...modalCard, width: 520, maxHeight: '82vh' }} onClick={(e) => e.stopPropagation()}>
                 <div style={accentBar} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
@@ -748,22 +798,23 @@ export const CustomerModal: React.FC<{
                                 <p style={{ fontSize: 13, fontWeight: 500, color: inkSoft, textAlign: 'center' }}>
                                     {searchTerm ? `No matches for "${searchTerm}"` : 'No customers found'}
                                 </p>
-                                <p style={{ fontSize: 11, color: hairline, marginTop: 4, textAlign: 'center' }}>
+                                <p style={{ fontSize: 11, color: inkSoft, marginTop: 4, textAlign: 'center' }}>
                                     {searchTerm ? 'Try adjusting your search criteria' : 'Add a new customer to get started'}
                                 </p>
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                {filteredCustomerNames.map(name => {
+                                {filteredCustomerNames.map((name, idx) => {
                                     const custInvoices = invoices.filter(i => i.customerName === name && i.status !== 'Paid' && i.status !== 'Draft');
                                     const custDebt = custInvoices.reduce((sum, i) => sum + (i.totalAmount - (i.paidAmount || 0)), 0);
                                     const initials = name.charAt(0).toUpperCase();
+                                    const isActive = idx === activeIndex;
 
                                     return (
                                         <button key={name} onClick={() => onSelect(name)}
-                                            style={{ width: '100%', textAlign: 'left', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: 'none', cursor: 'pointer', background: 'transparent', borderBottom: `1px solid ${teal[50]}`, transition: 'all .12s', fontFamily: 'inherit', fontSize: 13.5, color: ink }}
+                                            style={{ width: '100%', textAlign: 'left', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: 'none', cursor: 'pointer', background: isActive ? teal[50] : 'transparent', borderBottom: `1px solid ${teal[50]}`, transition: 'all .12s', fontFamily: 'inherit', fontSize: 13.5, color: ink }}
                                             onMouseEnter={e => e.currentTarget.style.background = teal[50]}
-                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                            onMouseLeave={e => e.currentTarget.style.background = isActive ? teal[50] : 'transparent'}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
                                                 <div style={{
                                                     width: 36, height: 36, borderRadius: 8, background: teal[50], color: inkSoft,
@@ -800,7 +851,7 @@ export const CustomerModal: React.FC<{
                         )}
                     </div>
                     <div style={{ padding: '8px 20px', background: teal[50], borderTop: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: 10, color: hairline, fontFamily: "'JetBrains Mono', monospace" }}>↑↓ navigate &middot; ↵ select &middot; esc close</span>
+                        <span style={{ fontSize: 10, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>↑↓ navigate &middot; ↵ select &middot; esc close</span>
                         <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 4,
                             fontSize: 10, fontWeight: 700, border: `1px solid rgba(15,84,76,0.2)`,
@@ -818,10 +869,12 @@ export const HeldOrdersModal: React.FC<{
     orders: HeldOrder[];
     onRetrieve: (o: HeldOrder) => void;
     onClose: () => void;
-}> = ({ orders, onRetrieve, onClose }) => (
-    <div style={modalOverlay} onClick={onClose}>
-        <div style={{ ...modalCard, width: 520, maxHeight: '82vh' }} onClick={(e) => e.stopPropagation()}>
-            <div style={accentBar} />
+}> = ({ orders, onRetrieve, onClose }) => {
+    const a11yRef = useModalA11y(true, onClose, 'Parked Orders');
+    return (
+        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Select Variant" style={modalOverlay} onClick={onClose}>
+            <div style={{ ...modalCard, width: 520, maxHeight: '82vh' }} onClick={(e) => e.stopPropagation()}>
+                <div style={accentBar} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <div style={iconBox}><Clock size={19} color="#fff" /></div>
@@ -876,141 +929,6 @@ export const HeldOrdersModal: React.FC<{
                     </div>
                 )}
             </div>
-        </div>
-    </div>
-);
-
-// --- Returns Modal ---
-export const ReturnsModal: React.FC<{
-    sales: Sale[];
-    onProcess: (saleId: string, items: any[], accountId: string) => void;
-    onClose: () => void;
-}> = ({ sales, onProcess, onClose }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
-    const [returnItems, setReturnItems] = useState<{ itemId: string, qty: number }[]>([]);
-    const [refundAccountId, setRefundAccountId] = useState(ACCOUNT_IDS.CASH_DRAWER);
-
-    const cashBankAccounts = useMemo(() =>
-        DEFAULT_ACCOUNTS.filter(acc => [ACCOUNT_IDS.CASH_DRAWER, ACCOUNT_IDS.BANK, ACCOUNT_IDS.MOBILE_MONEY].includes(acc.id)),
-        []);
-
-    const handleSearch = () => {
-        const sale = sales.find(s => s.id === searchTerm);
-        if (sale) setSelectedSale(sale); else alert("Sale not found");
-    };
-
-    const toggleItem = (itemId: string, max: number) => {
-        setReturnItems(prev => {
-            if (prev.find(i => i.itemId === itemId)) return prev.filter(i => i.itemId !== itemId);
-            return [...prev, { itemId, qty: max }];
-        });
-    };
-
-    return (
-        <div style={modalOverlay} onClick={onClose}>
-            <div style={{ ...modalCard, width: 560, maxHeight: '82vh' }} onClick={(e) => e.stopPropagation()}>
-                <div style={accentBar} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <div style={iconBox}><ArrowRight size={19} color="#fff" style={{ transform: 'rotate(180deg)' }} /></div>
-                        <div>
-                            <h1 style={{
-                                fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400,
-                                fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
-                            }}>Process Return</h1>
-                            <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>Refund items from a sale</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} aria-label="Close" style={closeBtn}
-                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
-                    ><X size={15} /></button>
-                </div>
-                <div style={{ padding: '16px 24px', borderBottom: `1px solid ${hairline}` }}>
-                    <div style={{ display: 'flex', gap: 10, maxWidth: 400 }}>
-                        <input type="text" placeholder="e.g. REC-1234"
-                            value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                            style={{ flex: 1, padding: '8px 12px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
-                            onFocus={e => { e.currentTarget.style.borderColor = teal[400]; e.currentTarget.style.background = teal[50]; }}
-                            onBlur={e => { e.currentTarget.style.borderColor = hairline; e.currentTarget.style.background = paper; }} />
-                        <button onClick={handleSearch}
-                            style={{
-                                ...tealBtn, fontSize: 12, padding: '8px 20px',
-                            }}>
-                            Search
-                        </button>
-                    </div>
-                </div>
-                <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
-                    {selectedSale ? (
-                        <div style={{ padding: '16px 24px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                                <p style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Select items to refund</p>
-                                <span style={{
-                                    padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700,
-                                    background: amber[100], color: amber[600], border: `1px solid ${amber[300]}`
-                                }}>POS Sale</span>
-                            </div>
-                            {selectedSale.items.map(item => {
-                                const isSelected = returnItems.some(r => r.itemId === item.id);
-                                return (
-                                    <div key={item.id}
-                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 8, cursor: 'pointer', transition: 'all .12s', border: `1px solid ${isSelected ? teal[200] : 'transparent'}`, background: isSelected ? teal[50] : 'transparent', marginBottom: 4 }}
-                                        onClick={() => toggleItem(item.id, item.quantity)}
-                                        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = teal[50]; }}
-                                        onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                            <div style={{
-                                                width: 20, height: 20, borderRadius: 4,
-                                                border: `1.4px solid ${isSelected ? teal[600] : hairline}`,
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                background: isSelected ? teal[600] : 'transparent',
-                                                transition: 'all .12s'
-                                            }}>
-                                                {isSelected && <CheckCircle size={14} color="#fff" />}
-                                            </div>
-                                            <div>
-                                                <div style={{ fontWeight: 700, color: ink, fontSize: 13 }}>{item.name}</div>
-                                                <div style={{ fontSize: 11, color: inkSoft }}>{item.quantity} units @ ${item.price}</div>
-                                            </div>
-                                        </div>
-                                        <div style={{ fontWeight: 700, color: ink }}>${formatNumber(item.quantity * item.price)}</div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: inkSoft }}>
-                            <Search size={48} style={{ marginBottom: 16, opacity: 0.2 }} />
-                            <p style={{ fontSize: 14, fontWeight: 500 }}>Search for a sale to begin refund</p>
-                        </div>
-                    )}
-                </div>
-                <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-                    padding: '14px 24px 18px', borderTop: `1px solid ${hairline}`,
-                    background: teal[50]
-                }}>
-                    <div>
-                        <label style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.06, textTransform: 'uppercase', color: inkSoft, marginBottom: 4, display: 'block' }}>Pay Refund From</label>
-                        <select value={refundAccountId} onChange={(e) => setRefundAccountId(e.target.value)}
-                            style={{ padding: '7px 10px', border: `1.4px solid ${hairline}`, borderRadius: 7, fontSize: 13, fontWeight: 700, color: ink, background: paper, outline: 'none', fontFamily: 'inherit', minWidth: 180 }}>
-                            {cashBankAccounts.map(acc => (
-                                <option key={acc.id} value={acc.id}>{acc.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <button onClick={() => selectedSale && onProcess(selectedSale.id, returnItems, refundAccountId)}
-                        disabled={returnItems.length === 0}
-                        style={{
-                            ...dangerBtn, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.04,
-                            opacity: returnItems.length === 0 ? 0.5 : 1,
-                            cursor: returnItems.length === 0 ? 'not-allowed' : 'pointer'
-                        }}>
-                        Complete Refund
-                    </button>
-                </div>
             </div>
         </div>
     );
@@ -1028,13 +946,14 @@ export const VariantSelectorModal: React.FC<{
 
     const isStationery = product.type === 'Stationery' || product.type === 'Product';
     const shouldSkipConfigure = isStationery || (product.variants && product.variants.length > 0);
+    const a11yRef = useModalA11y(true, onClose, 'Select Variant');
 
     const handleVariantClick = (v: ProductVariant) => {
         onSelect({ ...normalizeStoredPricing(v as unknown as Record<string, unknown>), quantity } as unknown as ProductVariant);
     };
 
     return (
-        <div style={modalOverlay} onClick={onClose}>
+        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Select Variant" style={modalOverlay} onClick={onClose}>
             <div style={{ ...modalCard, width: 520, maxHeight: '82vh' }} onClick={(e) => e.stopPropagation()}>
                 <div style={accentBar} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
@@ -1070,6 +989,12 @@ export const VariantSelectorModal: React.FC<{
                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                             <div style={{ flex: 1 }}>
                                 <div style={{ fontWeight: 700, color: ink, fontSize: 13 }}>{v.name}</div>
+                                {/* The variant's OWN persisted SKU. */}
+                                {v.sku && (
+                                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: inkSoft, marginTop: 2 }}>
+                                        {v.sku}
+                                    </div>
+                                )}
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
                                     {Object.entries(v.attributes || {}).map(([attrKey, val]) => (
                                         <span key={attrKey}

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, Plus, PauseCircle, Printer, Book, Scissors, Image, Layout, PenTool, Box, Briefcase, Layers, FileText, Grid, Hash } from 'lucide-react';
 import { Item, ProductVariant } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
@@ -72,18 +72,40 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
         { label: 'Service', match: (p: Item) => p.type === 'Service' || p.category === 'Service' },
     ] as const;
 
+    const term = searchTerm.toLowerCase();
     const filteredProducts = saleableInventory.filter(p => {
         const group = categoryGroups.find(g => g.label === activeCategory);
-        return (group ? group.match(p) : true) &&
-            (p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (p.barcode && p.barcode.toLowerCase().includes(searchTerm.toLowerCase())));
+        if (group && !group.match(p)) return false;
+        if (!term) return true;
+        if (p.name.toLowerCase().includes(term)) return true;
+        if (p.sku.toLowerCase().includes(term)) return true;
+        if (p.barcode && p.barcode.toLowerCase().includes(term)) return true;
+        // A variant SKU (or variant name) must be able to find its parent, so
+        // the cashier can then pick the variant. Variant identity itself still
+        // travels as variant.id, never as the SKU.
+        return (p.variants || []).some(v =>
+            String(v?.name || '').toLowerCase().includes(term) ||
+            String(v?.sku || '').toLowerCase().includes(term));
     });
 
-    // Barcode lookup: exact match on barcode regardless of category filter
-    const barcodeMatch = searchTerm.trim()
-        ? saleableInventory.find(p => p.barcode && p.barcode.toLowerCase() === searchTerm.trim().toLowerCase())
+    // Barcode / SKU lookup: exact match regardless of the category filter. A
+    // scanner (or a typed variant SKU) that resolves to a single variant adds
+    // that variant straight to the cart.
+    const exactTerm = searchTerm.trim().toLowerCase();
+    const barcodeMatch = exactTerm
+        ? saleableInventory.find(p => p.barcode && p.barcode.toLowerCase() === exactTerm)
         : null;
+
+    const exactVariantMatch = useMemo(() => {
+        if (!exactTerm) return null;
+        for (const parent of saleableInventory) {
+            const variant = (parent.variants || []).find(
+                v => String(v?.sku || '').trim().toLowerCase() === exactTerm,
+            );
+            if (variant) return { parent, variant };
+        }
+        return null;
+    }, [exactTerm, saleableInventory]);
 
     // Detect scanner vs manual typing by measuring inter-key timing
     const detectScannerInput = (): boolean => {
@@ -101,31 +123,6 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
             setSearchTerm('');
         }
         handleItemClick(item);
-    };
-
-    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            const term = searchTerm.trim();
-            if (!term) return;
-
-            // 1) Exact barcode match (fast path for scanner)
-            if (barcodeMatch) {
-                autoAddItem(barcodeMatch);
-                return;
-            }
-
-            // 2) Single filtered result — auto-add
-            if (filteredProducts.length === 1) {
-                autoAddItem(filteredProducts[0]);
-                return;
-            }
-
-            // 3) Multiple results — select first with keyboard nav
-            if (filteredProducts.length > 0) {
-                setActiveIndex(0);
-            }
-        }
     };
 
     const gridCols = viewMode === 'List' ? 1 : viewMode === 'Small' ? 8 : (companyConfig.transactionSettings?.pos?.gridColumns || 5);
@@ -158,7 +155,11 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
             ...selectedProductForVariants,
             id: variant.id,
             parentId: selectedProductForVariants.id,
+            // The VARIANT's own persisted SKU. SKU is display/business data —
+            // the relational identity stays `variantId` / the parentId above.
             sku: variant.sku,
+            variantId: variant.id,
+            variantSku: variant.sku,
             name: variant.name,
             price: resolveStoredSellingPrice(variant) || 0,
             cost: resolveStoredCost(variant) || 0,
@@ -182,6 +183,39 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
 
         addToCart(variantItem);
         setSelectedProductForVariants(null);
+    };
+
+    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const term = searchTerm.trim();
+        if (!term) return;
+
+        // 1) Exact barcode match (fast path for scanner)
+        if (barcodeMatch) {
+            autoAddItem(barcodeMatch);
+            return;
+        }
+
+        // 2) Exact VARIANT SKU — the variant goes straight in the cart. The
+        // line still references variant.id; the SKU only selected it.
+        if (exactVariantMatch) {
+            setSelectedProductForVariants(exactVariantMatch.parent);
+            handleVariantSelect(exactVariantMatch.variant);
+            setSearchTerm('');
+            return;
+        }
+
+        // 3) Single filtered result — auto-add
+        if (filteredProducts.length === 1) {
+            autoAddItem(filteredProducts[0]);
+            return;
+        }
+
+        // 4) Multiple results — select first with keyboard nav
+        if (filteredProducts.length > 0) {
+            setActiveIndex(0);
+        }
     };
 
     const { activeIndex, setActiveIndex } = useKeyboardListNavigation({
