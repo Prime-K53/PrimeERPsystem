@@ -8,6 +8,8 @@ import {
 import { format } from 'date-fns';
 import { AuditLogEntry } from '../../../types';
 import { exportToCSV } from '../../../utils/helpers';
+import { TransactionRefLink } from '../../../components/TransactionRefLink';
+import { resolveOriginatingTransactionRef } from '../../../utils/transactionRef';
 
 interface AuditTimelineProps {
     logs?: AuditLogEntry[];
@@ -192,7 +194,24 @@ export const AuditTimeline: React.FC<AuditTimelineProps> = ({
                                             <div className="flex flex-col">
                                                 <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{log.entityType}</span>
                                                 <span className="text-[10px] font-mono font-bold text-slate-900 bg-slate-100 px-1 py-0.5 rounded border border-slate-200 inline-block w-fit">
-                                                    {log.entityId}
+                                                    {(() => {
+                                                        // Only link to the record when the audit row
+                                                        // identifies its entity type reliably.
+                                                        const origin = resolveOriginatingTransactionRef({
+                                                            referenceType: log.entityType,
+                                                            referenceId: log.entityId,
+                                                        });
+                                                        if (!origin) return log.entityId;
+                                                        return (
+                                                            <TransactionRefLink
+                                                                type={origin.type}
+                                                                id={origin.id}
+                                                                number={origin.number || log.entityId}
+                                                                label={log.entityId}
+                                                                className="text-[10px]"
+                                                            />
+                                                        );
+                                                    })()}
                                                 </span>
                                             </div>
                                         </td>

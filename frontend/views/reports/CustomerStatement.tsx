@@ -21,6 +21,7 @@ import { mapToInvoiceData } from '../../utils/pdfMapper';
 import { createStatementSnapshot, normalizeStatementLineItems, type CreateStatementSnapshotInput } from '../../services/statementService';
 import { buildDocumentVerificationUrl } from '../../utils/documentVerification';
 import type { StatementSnapshot } from '../../types';
+import { TransactionRefLink } from '../../components/TransactionRefLink';
 
 interface FilterState {
   customerId: string;
@@ -169,6 +170,10 @@ const CustomerStatement: React.FC = () => {
       description: string; debit: number; credit: number; runningBalance: number;
       status: string; type: string; outstanding: boolean; originalDate: string | null;
       items: any[];
+      /** Transaction type behind the voucher number (drives click-through). */
+      refType: 'invoice' | 'payment';
+      refId: string;
+      refNumber: string;
     }> = [];
 
     let running = runningOpen;
@@ -184,18 +189,28 @@ const CustomerStatement: React.FC = () => {
       let docNumber = '';
       let reference = '';
       let originalDate: string | null = null;
+      let refType: 'invoice' | 'payment' = 'invoice';
+      let refNumber = '';
       if (tx.type === 'payment') {
+        refType = 'payment';
         docNumber = meta?.receiptNumber || tx.id;
         reference = meta?.reference || meta?.invoiceId || '';
         originalDate = meta?.date || meta?.createdAt || tx.date;
+        refNumber = meta?.receiptNumber || '';
       } else if (tx.type === 'credit_note') {
+        // A credit note is an invoice-family record; it opens in the invoices
+        // module, keyed by the originating invoice id.
+        refType = 'invoice';
         docNumber = meta?.invoiceNumber || tx.id;
         reference = meta?.reference || meta?.orderNumber || '';
         originalDate = meta?.date || tx.date;
+        refNumber = meta?.invoiceNumber || '';
       } else {
+        refType = 'invoice';
         docNumber = meta?.invoiceNumber || tx.id;
         reference = meta?.reference || meta?.orderNumber || '';
         originalDate = meta?.date || tx.date;
+        refNumber = meta?.invoiceNumber || '';
       }
 
       let outstanding = false;
@@ -226,6 +241,9 @@ const CustomerStatement: React.FC = () => {
         outstanding,
         originalDate,
         items: txItems,
+        refType,
+        refId: String(tx.id || ''),
+        refNumber,
       });
     }
 
@@ -961,7 +979,15 @@ const CustomerStatement: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-[11px] font-mono text-slate-600 font-medium">{tx.docNumber}</td>
+                          <td className="px-3 py-2.5 text-[11px] font-mono text-slate-600 font-medium">
+                            <TransactionRefLink
+                              type={tx.refType}
+                              id={tx.refId}
+                              number={tx.refNumber || tx.docNumber}
+                              label={tx.docNumber}
+                              className="text-[11px]"
+                            />
+                          </td>
                           <td className="px-3 py-2.5 text-[11px] font-mono text-slate-400">{tx.reference || '—'}</td>
                           <td className="px-3 py-2.5">
                             <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${typeColor[tx.type] || typeColor.Other}`}>

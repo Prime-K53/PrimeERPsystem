@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { currencyService } from '../../services/currencyService';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
+import { TransactionRefLink } from '../../components/TransactionRefLink';
 import { paymentCredit } from '../../services/customerLedger';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useDocumentStore } from '../../stores/documentStore';
@@ -421,7 +422,22 @@ const ClientLedger: React.FC = () => {
                           )}
                         </div>
                       </td>
-                      <td style={{ padding: '10px 16px', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: inkSoft }}>{entry.referenceId || entry.id?.slice(-8)}</td>
+                      <td style={{ padding: '10px 16px', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: inkSoft }}>
+                        {(() => {
+                          // Ledger rows name their originating document type; only
+                          // link when that metadata is present.
+                          const rowType = String(entry.type || '').toUpperCase();
+                          const refType = rowType === 'INVOICE' ? 'invoice'
+                            : rowType === 'PAYMENT' ? 'payment'
+                            : rowType === 'POS_SALE' ? 'invoice'
+                            : null;
+                          const text = entry.referenceId || entry.id?.slice(-8);
+                          if (!refType || !text) return text;
+                          return (
+                            <TransactionRefLink type={refType} id={entry.referenceId || entry.id} label={text} />
+                          );
+                        })()}
+                      </td>
                       <td style={{ padding: '10px 16px', color: inkSoft, fontSize: 12 }}>{entry.subAccountName || 'Main'}</td>
                       <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: danger }}>{entry.isDebit ? formatCurrency(entry.amount) : '—'}</td>
                       <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: teal[600] }}>{entry.isCredit ? formatCurrency(entry.amount) : '—'}</td>

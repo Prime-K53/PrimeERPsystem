@@ -8,13 +8,13 @@ import { Order, OrderPayment, OrderItem } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useOrders } from '../../../context/OrdersContext';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
-import { useLocation } from 'react-router-dom';
-import DocLink from '../../../components/DocLink';
+import { useInventoryStore } from '../../../stores/inventoryStore';
 import TransactionPricingInsights from './TransactionPricingInsights';
 import { currencyService } from '../../../services/currencyService';
 import { getOrderDisplayStatus, getOrderStatusClass } from
 './orderStatusUtils';
 import { getSalesOrderDisplayNumber } from '../../../services/salesOrderService';
+import LineItemDescription from './LineItemDescription';
 
 interface OrderDetailsProps {
     order: Order;
@@ -35,7 +35,7 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
     const { companyConfig, notify } = useAuth();
     const { orders = [] } = useOrders();
     const { handlePreview } = useDocumentPreview();
-    const location = useLocation();
+    const { inventory = [] } = useInventoryStore();
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
 
     const order = useMemo(() =>
@@ -127,10 +127,12 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
                                                     <tr key={idx} style={{ borderBottom: `1px solid ${hairline}` }}>
                                                         <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: inkSoft }}>{idx + 1}</td>
                                                         <td style={{ padding: '10px 16px' }}>
-                                                            <div style={{ fontWeight: 600, color: ink }}>{item.productName}</div>
-                                                            <div style={{ fontSize: 11, color: inkSoft, marginTop: 2 }}>
-                                                                <DocLink docNumber={item.productId} targetPage="/inventory" rowId={`item-${item.productId}`} currentPage={location.pathname} />
-                                                            </div>
+                                                            <LineItemDescription
+                                                                line={item}
+                                                                inventory={inventory}
+                                                                name={item.productName}
+                                                                onClose={onClose}
+                                                            />
                                                         </td>
                                                         <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: ink }}>{item.quantity}</td>
                                                         <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 500, color: ink }}>{currency}{(item.unitPrice || 0).toLocaleString()}</td>

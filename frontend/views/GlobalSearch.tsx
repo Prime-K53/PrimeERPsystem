@@ -10,6 +10,7 @@ import { useProcurement } from '../context/ProcurementContext';
 import { askBusinessQuestion } from '../services/geminiService';
 import { getCustomerOptionLabel } from '../utils/customerDisplay';
 import ReactMarkdown from 'react-markdown';
+import { TransactionRefLink } from '../components/TransactionRefLink';
 
 const toSafeNumber = (val: any): number => {
     const n = Number(val);
@@ -204,13 +205,19 @@ const GlobalSearch: React.FC = () => {
                 title="Sales & Invoices"
                 icon={ShoppingCart}
                 data={results.sales}
-                link="/sales-flow/payments"
+                link="/sales-flow/invoices"
                 renderItem={(sale: any) => ({
-                    action: () => navigate('/sales-flow/payments'),
+                    action: () => navigate('/sales-flow/invoices'),
                     content: (
                         <div>
                             <div className="flex justify-between items-center mb-1">
-                                <span className="font-mono text-xs font-bold text-blue-600">{sale.id}</span>
+                                <TransactionRefLink
+                                    type="invoice"
+                                    id={sale.id}
+                                    number={sale.invoiceNumber || sale.id}
+                                    label={sale.id}
+                                    className="text-xs"
+                                />
                                 <span className="text-xs text-slate-500">{new Date(sale.date).toLocaleDateString()}</span>
                             </div>
                             <div className="flex items-center gap-2 mb-1">

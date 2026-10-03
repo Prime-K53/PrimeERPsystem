@@ -102,7 +102,10 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
       return {
         ...item,
         name: item.name ?? item.productName ?? item.product_name ?? item.itemName ?? item.item_name ?? item.title ?? item.desc ?? item.description ?? 'Item',
-        sku: item.sku ?? item.itemId ?? item.id ?? '',
+        // A variant line must print the VARIANT's SKU, never the parent's.
+        // `variantSku` is stamped onto the line by the transaction builders when
+        // the variant is known; otherwise the line's own sku is authoritative.
+        sku: item.variantSku ?? item.sku ?? item.itemId ?? item.id ?? '',
         quantity: qty,
         unitPrice,
         total,

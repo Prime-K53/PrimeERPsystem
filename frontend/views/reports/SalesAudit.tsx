@@ -11,6 +11,7 @@ import {
     Receipt, XCircle, CheckCircle, RefreshCw
 } from 'lucide-react';
 import { currencyService } from '../../services/currencyService';
+import { TransactionRefLink } from '../../components/TransactionRefLink';
 import { Sale, CustomerPayment } from '../../types';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -336,7 +337,7 @@ const SalesAudit: React.FC = () => {
                                     <tr key={sale.id} style={{ borderBottom: `1.4px solid ${teal[50]}` }}
                                         onMouseEnter={e => e.currentTarget.style.background = teal[50]}
                                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                        <td style={s.td}>{sale.id.slice(-8)}</td>
+                                        <td style={s.td}><TransactionRefLink type="invoice" id={sale.id} label={sale.id.slice(-8)} /></td>
                                         <td style={s.td}>{sale.customerName || 'Walk-in'}</td>
                                         <td style={s.td}><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{getPaymentMethodIcon(sale.paymentMethod)}<span style={{ color: inkSoft, fontSize: 12 }}>{sale.paymentMethod}</span></span></td>
                                         <td style={s.tdRight}><strong>{formatCurrency(sale.totalAmount || sale.total || 0)}</strong></td>
@@ -354,7 +355,7 @@ const SalesAudit: React.FC = () => {
                         <table style={{ width: '100%', textAlign: 'left', fontSize: 13, borderCollapse: 'collapse' }}>
                             <thead>
                                 <tr style={{ borderBottom: `1.4px solid ${teal[100]}` }}>
-                                    {['Date', 'Customer', 'Method', 'Amount'].map(h => (
+                                    {['Reference', 'Date', 'Customer', 'Method', 'Amount'].map(h => (
                                         <th key={h} style={h === 'Amount' ? s.thRight : s.th}>{h}</th>
                                     ))}
                                 </tr>
@@ -364,6 +365,14 @@ const SalesAudit: React.FC = () => {
                                     <tr key={payment.id} style={{ borderBottom: `1.4px solid ${teal[50]}` }}
                                         onMouseEnter={e => e.currentTarget.style.background = teal[50]}
                                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                        <td style={s.td}>
+                                            <TransactionRefLink
+                                                type="payment"
+                                                id={payment.id}
+                                                number={payment.receiptNumber || payment.id}
+                                                label={payment.receiptNumber || payment.id}
+                                            />
+                                        </td>
                                         <td style={s.td}>{format(parseISO(payment.date), 'MMM dd')}</td>
                                         <td style={s.td}>{payment.customerName}</td>
                                         <td style={s.td}>{payment.paymentMethod}</td>
@@ -371,7 +380,7 @@ const SalesAudit: React.FC = () => {
                                     </tr>
                                 ))}
                                 {auditData.recentPayments.length === 0 && (
-                                    <tr><td colSpan={4} style={{ padding: '24px 16px', textAlign: 'center', color: inkSoft, fontStyle: 'italic', fontSize: 12 }}>No payments recorded</td></tr>
+                                    <tr><td colSpan={5} style={{ padding: '24px 16px', textAlign: 'center', color: inkSoft, fontStyle: 'italic', fontSize: 12 }}>No payments recorded</td></tr>
                                 )}
                             </tbody>
                         </table>

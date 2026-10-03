@@ -18,6 +18,12 @@ import PaymentRequests, { PaymentRequestStats } from './PaymentRequests';
 import { markAlertsReadForActionUrl, NOTIFICATION_UPDATE_EVENT } from '../../services/systemAlertService';
 import { QuotationRequestList } from './components/SalesLists';
 import { useDocumentStore } from '../../stores/documentStore';
+import {
+  transactionRefKey,
+  transactionRefUnavailableMessage,
+  useTransactionRefTarget,
+} from '../../hooks/useTransactionRefDeepLink';
+import { TransactionRefLink } from '../../components/TransactionRefLink';
 import { downloadPdfSource } from '../shared/components/PDF/pdfPreviewUtils';
 
 const teal = {
@@ -462,6 +468,29 @@ const { companyConfig } = useAuth();
   };
   const activeTabMeta = tabMeta[tab] || tabMeta.inbox;
   const [selectedRequest, setSelectedRequest] = useState<AdminQuotationRequest | null>(null);
+
+  // Universal clickable transaction references: open a specific request.
+  const txRef = useTransactionRefTarget();
+  const txRefKey = transactionRefKey(txRef);
+  const lastTxRefKeyRef = useRef('');
+  useEffect(() => {
+    if (!txRef || !txRefKey || txRefKey === lastTxRefKeyRef.current) return;
+    if (txRef.type !== 'quotation-request') return;
+    if (!Array.isArray(requests)) return;
+    const key = (txRef.id || txRef.number).trim();
+    const matches = requests.filter((r: any) => String(r?.id ?? '') === key || String(r?.request_number ?? '').trim() === key);
+    if (matches.length === 1) {
+      setTab('inbox');
+      setSelectedRequest(matches[0]);
+      lastTxRefKeyRef.current = txRefKey;
+      return;
+    }
+    lastTxRefKeyRef.current = txRefKey;
+    setError(transactionRefUnavailableMessage({
+      status: matches.length > 1 ? 'ambiguous' : 'missing',
+      ref: txRef,
+    }));
+  }, [txRefKey, requests]);
   const [selectedQuotation, setSelectedQuotation] = useState<AdminQuotation | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AdminSalesOrder | null>(null);
   const [menuState, setMenuState] = useState<{ id: string; type: 'request' | 'quotation' | 'order'; x: number; y: number } | null>(null);
@@ -987,7 +1016,7 @@ const { companyConfig } = useAuth();
                 <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: inkSoft }}>No rejected, cancelled or converted requests.</td></tr>
               ) : activeRequests.map((r) => (
                 <tr key={r.id} style={{ borderTop: `1px solid ${hairline}` }}>
-                  <td style={{ padding: '10px 14px', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{r.request_number}</td>
+                  <td style={{ padding: '10px 14px', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}><TransactionRefLink type="quotation-request" id={r.id} number={r.request_number} /></td>
                   <td style={{ padding: '10px 14px' }}>{customerNameMap[r.customer_id] || r.customer_name || 'Unknown Customer'}</td>
                   <td style={{ padding: '10px 14px' }}>{formatDate(r.created_at)}</td>
                   <td style={{ padding: '10px 14px', textAlign: 'center' }}><StatusPill meta={requestStatusMeta} status={r.status} /></td>

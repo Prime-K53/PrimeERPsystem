@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useHighlight } from '../../../hooks/useHighlight';
-import { DocLink } from '../../../components/DocLink';
+import { TransactionRefLink } from '../../../components/TransactionRefLink';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import { useAuth } from '../../../context/AuthContext';
 import { Quotation, Invoice, JobOrder, RecurringInvoice, DeliveryNote, CartItem, SalesExchange, Order } from '../../../types';
@@ -314,11 +314,11 @@ export const SalesOrderList: React.FC<ListProps<JobOrder>> = (props) => {
                                         onMouseLeave={onMouseLeave}
                                     >
                                         <td className="table-body-cell text-left font-mono font-bold truncate">
-                                            <DocLink
-                                                docNumber={o.id}
-                                                targetPage="/sales-flow/sales-orders"
-                                                rowId={`so-${o.id}`}
-                                                currentPage={location.pathname}
+                                            <TransactionRefLink
+                                                type="job-order"
+                                                id={o.id}
+                                                number={o.jobOrderNumber || o.orderNumber || o.number || o.id}
+                                                label={o.id}
                                             />
                                         </td>
                                         <td className="table-body-cell text-left font-normal truncate hidden sm:table-cell">{new Date(o.date).toLocaleDateString()}</td>
@@ -533,11 +533,10 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                                             />
                                         </td>
                                         <td className="table-body-cell text-left font-mono font-bold truncate">
-                                            <DocLink
-                                                docNumber={getSalesOrderDisplayNumber(o)}
-                                                targetPage="/sales-flow/orders"
-                                                rowId={`ord-${o.id}`}
-                                                currentPage={location.pathname}
+                                            <TransactionRefLink
+                                                type="order"
+                                                id={o.id}
+                                                number={getSalesOrderDisplayNumber(o)}
                                             />
                                         </td>
                                         <td className="table-body-cell text-left font-normal truncate hidden sm:table-cell">{new Date(o.orderDate).toLocaleDateString()}</td>
@@ -866,11 +865,11 @@ export const SalesExchangeList: React.FC<ListProps<SalesExchange>> = (props) => 
                                         />
                                     </td>
                                     <td className="table-body-cell text-center font-mono font-bold truncate">
-                                        <DocLink
-                                            docNumber={ex.exchange_number || ex.id}
-                                            targetPage="/sales-flow/exchanges"
-                                            rowId={`ex-${ex.id}`}
-                                            currentPage={location.pathname}
+                                        <TransactionRefLink
+                                            type="exchange"
+                                            id={ex.id}
+                                            number={ex.exchange_number || ex.exchangeNumber || ex.number || ex.id}
+                                            label={ex.exchange_number || ex.id}
                                         />
                                     </td>
                                     <td className="table-body-cell text-center font-normal truncate hidden sm:table-cell">{new Date(ex.exchange_date).toLocaleDateString()}</td>
@@ -1194,11 +1193,11 @@ export const InvoiceList: React.FC<ListProps<Invoice>> = (props) => {
                                                 />
                                             </td>
                                             <td className="table-body-cell text-left font-mono text-slate-500 font-bold truncate">
-                                                <DocLink
-                                                    docNumber={inv.id}
-                                                    targetPage="/sales-flow/invoices"
-                                                    rowId={`inv-${inv.id}`}
-                                                    currentPage={location.pathname}
+                                                <TransactionRefLink
+                                                    type={String(inv.originModule || '').toLowerCase() === 'examination' ? 'examination-invoice' : 'invoice'}
+                                                    id={inv.id}
+                                                    number={inv.invoiceNumber || inv.invoice_number || inv.id}
+                                                    label={inv.id}
                                                 />
                                             </td>
                                             <td className="table-body-cell text-left font-normal truncate hidden sm:table-cell">{new Date(inv.date).toLocaleDateString()}</td>
@@ -1455,11 +1454,11 @@ export const QuotationList: React.FC<ListProps<Quotation>> = (props) => {
                                             />
                                         </td>
                                         <td className="table-body-cell text-left font-mono font-bold truncate">
-                                            <DocLink
-                                                docNumber={q.id}
-                                                targetPage="/sales-flow/quotations"
-                                                rowId={`qt-${q.id}`}
-                                                currentPage={location.pathname}
+                                            <TransactionRefLink
+                                                type="quotation"
+                                                id={q.id}
+                                                number={q.quotationNumber || q.quotation_number || q.number || q.id}
+                                                label={q.id}
                                             />
                                         </td>
                                         <td className="table-body-cell text-left font-normal truncate hidden sm:table-cell">{new Date(q.date).toLocaleDateString()}</td>
@@ -1633,11 +1632,11 @@ export const RecurringList: React.FC<ListProps<RecurringInvoice>> = (props) => {
                                         onMouseLeave={onMouseLeave}
                                     >
                                         <td className="table-body-cell text-center font-mono font-bold truncate">
-                                            <DocLink
-                                                docNumber={sub.id}
-                                                targetPage="/sales-flow/recurring"
-                                                rowId={`sub-${sub.id}`}
-                                                currentPage={location.pathname}
+                                            <TransactionRefLink
+                                                type="subscription"
+                                                id={sub.id}
+                                                number={sub.recurringId || sub.number || sub.id}
+                                                label={sub.id}
                                             />
                                     </td>
                                     <td className="table-body-cell text-center font-medium text-slate-900 truncate">{sub.customerName}</td>

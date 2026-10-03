@@ -25,6 +25,7 @@ import { useProcurement } from '../context/ProcurementContext';
 import {
   TrendingUp, TrendingDown, DollarSign, Clock, Briefcase, Users, ChevronDown, User, MessageSquare, Calculator, FileText, Zap, ArrowRight, ChevronRight, Sparkles, Database, BarChart2, X, ArrowUp, ArrowDown, Building2, Wallet, Inbox, Calendar, CalendarDays, Check, Download } from 'lucide-react';
 import WhatsAppMarketingModal from '../components/WhatsAppMarketingModal';
+import { TransactionRefLink } from '../components/TransactionRefLink';
 import { adminLifecycle } from '../services/adminPortalClient';
 
 import { useDashboardStore } from '../stores/dashboardStore';
@@ -1272,7 +1273,15 @@ const DashboardContent: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#1e293b' }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#a855f7' }} />
-              {lastActiveJob ? `${lastActiveJob.jobNo || lastActiveJob.orderNo || 'Job Order'}` : 'No active jobs'}
+              {lastActiveJob ? (
+                <TransactionRefLink
+                  type="job-order"
+                  id={lastActiveJob.id}
+                  number={lastActiveJob.jobNo || lastActiveJob.jobOrderNumber || lastActiveJob.orderNo}
+                  label={`${lastActiveJob.jobNo || lastActiveJob.orderNo || 'Job Order'}`}
+                  className="text-[11px]"
+                />
+              ) : 'No active jobs'}
             </div>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed', backgroundColor: '#f5f3ff', padding: '1px 8px', borderRadius: 6 }}>{lastActiveJob ? (lastActiveJob.status || 'Active') : 'Stable'}</div>
           </div>

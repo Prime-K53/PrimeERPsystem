@@ -48,6 +48,12 @@ import { verificationStoreForDocType } from '../../utils/documentVerification';
 import { initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
 import { currencyService } from '../../services/currencyService';
 import { useConfirmDialog, ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
+import {
+    openTransactionRef,
+    transactionRefKey,
+    transactionRefUnavailableMessage,
+    useTransactionRefTarget,
+} from '../../hooks/useTransactionRefDeepLink';
 import { adminLifecycle } from '../../services/adminPortalClient';
 
 const SUBSCRIPTION_STATUSES = ['Draft', 'Active', 'Paused', 'Cancelled', 'Expired'] as const;
@@ -401,6 +407,74 @@ const Orders: React.FC = () => {
             navigate(location.pathname, { replace: true, state: null });
         }
     }, [location, invoices]);
+
+    // Universal clickable transaction references (see utils/transactionRef).
+    // The reference identity travels in the query string, so refresh, direct
+    // URL entry and back/forward all reopen the same record. Guarded by a ref
+    // so a background data refresh cannot re-open a detail the user closed.
+    const txRef = useTransactionRefTarget();
+    const txRefKey = transactionRefKey(txRef);
+    const lastTxRefKeyRef = useRef('');
+
+    useEffect(() => {
+        if (!txRef || !txRefKey || txRefKey === lastTxRefKeyRef.current) return;
+
+        // Records hydrate asynchronously. Keep waiting while the relevant
+        // collection is still undefined; an empty array means "loaded, none".
+        const collectionFor = (type: string) => {
+            switch (type) {
+                case 'invoice':
+                case 'examination-invoice': return invoices;
+                case 'quotation': return quotations;
+                case 'order': return orders;
+                case 'job-order': return jobOrders;
+                case 'exchange': return salesExchanges;
+                default: return [];
+            }
+        };
+        const collection = collectionFor(txRef.type);
+        if (collection === undefined || collection === null) return;
+
+        const outcome = ((): ReturnType<typeof openTransactionRef> => {
+            switch (txRef.type) {
+                case 'invoice':
+                case 'examination-invoice': {
+                    const r = openTransactionRef(invoices, txRef);
+                    if (r.status === 'ok' && r.record) setSelectedInvoiceForDetail(r.record as Invoice);
+                    return r;
+                }
+                case 'quotation': {
+                    const r = openTransactionRef(quotations, txRef);
+                    if (r.status === 'ok' && r.record) setSelectedQuotationForDetail(r.record as Quotation);
+                    return r;
+                }
+                case 'order': {
+                    const r = openTransactionRef(orders, txRef);
+                    if (r.status === 'ok' && r.record) setSelectedOrderForDetail(r.record as Order);
+                    return r;
+                }
+                case 'job-order': {
+                    const r = openTransactionRef(jobOrders, txRef);
+                    if (r.status === 'ok' && r.record) setSelectedJobOrderForDetail(r.record as JobOrder);
+                    return r;
+                }
+                case 'exchange': {
+                    const r = openTransactionRef(salesExchanges, txRef);
+                    if (r.status === 'ok' && r.record) setSelectedExchangeForDetail(r.record);
+                    return r;
+                }
+                default:
+                    return { status: 'none' as const };
+            }
+        })();
+
+        if (outcome.status === 'none') return;
+        lastTxRefKeyRef.current = txRefKey;
+        if (outcome.status === 'missing' || outcome.status === 'ambiguous') {
+            notify(transactionRefUnavailableMessage(outcome), 'error');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [txRefKey, invoices, quotations, orders, jobOrders, salesExchanges]);
 
     const handleCreate = () => {
         setEditingItem(null);

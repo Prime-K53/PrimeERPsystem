@@ -23,6 +23,7 @@ import { normalizeSignatureDataUrl, validateSignatureUploadFile } from '../../ut
 import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { enrichDocumentCustomerData } from '../../utils/documentCustomerData';
 import { getPlaceholder } from '../../constants/placeholders';
+import { readTransactionRefFromSearch } from '../../utils/transactionRef';
 
 const teal = {
   50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7',
@@ -95,11 +96,22 @@ const ShippingManager: React.FC = () => {
             const fromSearch = new URLSearchParams(window.location.search || '');
             const s = fromSearch.get('dn') || fromSearch.get('query');
             if (s && s.trim()) return s.trim();
+            // Universal clickable transaction reference (utils/transactionRef).
+            const tx = readTransactionRefFromSearch(window.location.search || '');
+            if (tx && (tx.type === 'delivery-note' || tx.type === 'grn')) {
+                const key = tx.id || tx.number;
+                if (key) return key;
+            }
             const hash = window.location.hash || '';
             const qIdx = hash.indexOf('?');
             if (qIdx >= 0) {
                 const hp = new URLSearchParams(hash.slice(qIdx + 1));
-                return ((hp.get('dn') || hp.get('query')) || '').trim();
+                const fromHash = ((hp.get('dn') || hp.get('query')) || '').trim();
+                if (fromHash) return fromHash;
+                const txHash = readTransactionRefFromSearch(hash.slice(qIdx + 1));
+                if (txHash && (txHash.type === 'delivery-note' || txHash.type === 'grn')) {
+                    return txHash.id || txHash.number;
+                }
             }
         } catch { /* ignore — no deep link */ }
         return '';

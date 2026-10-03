@@ -33,6 +33,12 @@ import {
   resolveExaminationInvoiceNavigationKey,
 } from '../../utils/invoiceIdentity';
 import '../inventory/inventory-reference.css';
+import {
+  transactionRefKey,
+  transactionRefUnavailableMessage,
+  useTransactionRefTarget,
+} from '../../hooks/useTransactionRefDeepLink';
+import { TransactionRefLink } from '../../components/TransactionRefLink';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
 const amber = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f' };
@@ -97,6 +103,40 @@ const ExaminationHub: React.FC = () => {
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Universal clickable transaction references: an examination batch reference
+  // that only carries a display number is resolved to its record id here and
+  // then handed to the existing detail route. Read-only — no batch is touched.
+  const txRef = useTransactionRefTarget();
+  const txRefKey = transactionRefKey(txRef);
+  const lastTxRefKeyRef = React.useRef('');
+
+  useEffect(() => {
+    if (!txRef || !txRefKey || txRefKey === lastTxRefKeyRef.current) return;
+    if (txRef.type !== 'examination-batch') return;
+    if (!Array.isArray(batches)) return;
+
+    const key = (txRef.id || txRef.number).trim();
+    const matches = batches.filter((b: any) =>
+      [b?.id, b?.batch_number, b?.batchNumber].some(v => String(v ?? '').trim() === key));
+    lastTxRefKeyRef.current = txRefKey;
+
+    if (matches.length === 1) {
+      const batch = matches[0];
+      const batchRef = String(batch.batch_number || batch.batchNumber || batch.id || '').trim();
+      navigate(`/examination/batches/${batch.id}`, { state: { name: batchRef }, replace: true });
+      return;
+    }
+    // An id-only reference whose route already points at the detail page needs
+    // no resolution — leave it alone.
+    if (matches.length === 0 && txRef.id) return;
+    toast.error(
+      transactionRefUnavailableMessage({
+        status: matches.length > 1 ? 'ambiguous' : 'missing',
+        ref: txRef,
+      }),
+    );
+  }, [txRefKey, batches, navigate]);
   
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -757,7 +797,14 @@ const ExaminationHub: React.FC = () => {
                           />
                         </td>
                         <td style={{ padding: '8px 12px' }}>
-                          <div style={{ fontWeight: 600, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>{batchReference || batch.id}</div>
+                          <div style={{ fontWeight: 600, color: ink, fontFamily: "'JetBrains Mono', monospace" }}>
+                            <TransactionRefLink
+                              type="examination-batch"
+                              id={batch.id}
+                              number={batchReference}
+                              label={batchReference || batch.id}
+                            />
+                          </div>
                         </td>
                         <td style={{ padding: '8px 12px', color: inkSoft }}>
                           {schoolName}

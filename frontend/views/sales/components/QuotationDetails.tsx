@@ -8,10 +8,12 @@ import {
 import { Quotation } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useSales } from '../../../context/SalesContext';
+import { useInventoryStore } from '../../../stores/inventoryStore';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import { useDocumentVerificationLink } from '../../../hooks/useDocumentVerificationLink';
 import { AuditTimeline } from '../../shared/components/AuditTimeline';
 import TransactionPricingInsights from './TransactionPricingInsights';
+import LineItemDescription from './LineItemDescription';
 import { currencyService } from '../../../services/currencyService';
 
 interface QuotationDetailsProps {
@@ -32,6 +34,7 @@ const danger = '#b5493f';
 export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: initialQuotation, onClose, onEdit, onAction }) => {
   const { companyConfig, notify } = useAuth();
   const { quotations = [] } = useSales();
+  const { inventory = [] } = useInventoryStore();
   const { handlePreview } = useDocumentPreview();
   const { copyVerificationLink, openVerificationLink } = useDocumentVerificationLink();
   const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
@@ -185,8 +188,14 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
                           <tr key={idx} style={{ borderBottom: `1px solid ${hairline}` }}>
                             <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600, color: inkSoft }}>{idx + 1}</td>
                             <td style={{ padding: '10px 16px' }}>
-                              <p style={{ margin: 0, fontWeight: 600, color: ink }}>{item.name}</p>
-                              {item.description && <p style={{ margin: '2px 0 0', fontSize: 11, color: inkSoft }}>{item.description}</p>}
+                              <LineItemDescription
+                                line={item}
+                                inventory={inventory}
+                                name={item.name}
+                                description={item.description}
+                                type={item.type}
+                                onClose={onClose}
+                              />
                             </td>
                             <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 700, color: ink }}>{item.quantity}</td>
                             <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: ink }}>{currency}{item.price.toLocaleString()}</td>

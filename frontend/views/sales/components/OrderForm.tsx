@@ -1647,7 +1647,11 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                 ...selectedProductForVariants,
                 id: variant.id,
                 parentId: selectedProductForVariants.id,
+                // The VARIANT's own persisted SKU (display/business data). The
+                // relational identity remains the stable `variant.id`.
                 sku: variant.sku,
+                variantId: variant.id,
+                variantSku: variant.sku,
                 name: variant.name,
                 price: resolveStoredSellingPrice(variant) || 0,
                 selling_price: resolveStoredSellingPrice(variant) || 0,

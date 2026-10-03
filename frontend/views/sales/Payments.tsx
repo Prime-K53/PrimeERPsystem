@@ -13,7 +13,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useHighlight } from '../../hooks/useHighlight';
 import { useDocumentVerificationLink } from '../../hooks/useDocumentVerificationLink';
 import { ClientModal } from './components/ClientModal';
-import { DocLink } from '../../components/DocLink';
+import { TransactionRefLink } from '../../components/TransactionRefLink';
+import {
+    openTransactionRef,
+    transactionRefKey,
+    transactionRefUnavailableMessage,
+    useTransactionRefTarget,
+} from '../../hooks/useTransactionRefDeepLink';
 import { generateNextId, roundFinancial } from '../../utils/helpers';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { getOrderOutstanding, isOrderPaymentEligible } from './components/orderStatusUtils';
@@ -893,6 +899,35 @@ const Payments: React.FC = () => {
     });
     const [supplierAllocations, setSupplierAllocations] = useState<PurchaseAllocation[]>([]);
     const [selectedSupplierPayment, setSelectedSupplierPayment] = useState<SupplierPayment | null>(null);
+
+    // Universal clickable transaction references: receipts / payments / supplier
+    // payments opened from statements, reports, ledgers and search results.
+    const txRef = useTransactionRefTarget();
+    const txRefKey = transactionRefKey(txRef);
+    const lastTxRefKeyRef = useRef('');
+
+    useEffect(() => {
+        if (!txRef || !txRefKey || txRefKey === lastTxRefKeyRef.current) return;
+
+        const isSupplierRef = txRef.type === 'supplier-payment';
+        if (isProcurement !== isSupplierRef) return;
+
+        const collection = isSupplierRef ? supplierPayments : customerPayments;
+        if (collection === undefined || collection === null) return;
+
+        const outcome = openTransactionRef(collection as any[], txRef);
+        if (outcome.status === 'none') return;
+
+        if (outcome.status === 'ok' && outcome.record) {
+            if (isSupplierRef) setSelectedSupplierPayment(outcome.record as SupplierPayment);
+            else setSelectedPayment(outcome.record as CustomerPayment);
+        }
+        lastTxRefKeyRef.current = txRefKey;
+        if (outcome.status === 'missing' || outcome.status === 'ambiguous') {
+            notify(transactionRefUnavailableMessage(outcome), 'error');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [txRefKey, isProcurement, customerPayments, supplierPayments]);
 
     const handleContextMenu = (e: React.MouseEvent, id: string) => {
         e.preventDefault();
@@ -1959,11 +1994,11 @@ const Payments: React.FC = () => {
                                                 >
                                                     <td className="table-body-cell text-[#5c6567] font-normal"><div className="flex items-center gap-2"><Calendar size={12} /> {new Date(payment.date).toLocaleDateString()}</div></td>
                                                     <td className="table-body-cell"><span className="font-mono text-[10px] font-bold text-[#5c6567] tracking-tight">
-                                                        <DocLink
-                                                            docNumber={payment.id}
-                                                            targetPage={isProcurement ? "/procurement/payments" : "/sales-flow/payments"}
-                                                            rowId={(isProcurement ? "spmt-" : "pmt-") + payment.id}
-                                                            currentPage={location.pathname}
+                                                        <TransactionRefLink
+                                                            type={isProcurement ? 'supplier-payment' : 'payment'}
+                                                            id={payment.id}
+                                                            number={payment.receiptNumber || payment.reference || payment.id}
+                                                            label={payment.id}
                                                         />
                                                     </span></td>
                                                     <td className="table-body-cell font-bold text-[#23282A]">{payment.customerName}</td>
@@ -2062,11 +2097,11 @@ const Payments: React.FC = () => {
                                             >
                                                 <td className="table-body-cell text-[#5c6567]"><Calendar size={12} className="inline mr-2" /> {new Date(payment.date).toLocaleDateString()}</td>
                                                 <td className="table-body-cell font-mono text-[10px] font-bold text-[#5c6567]">
-                                                    <DocLink
-                                                        docNumber={payment.id}
-                                                        targetPage={isProcurement ? "/procurement/payments" : "/sales-flow/payments"}
-                                                        rowId={`spmt-${payment.id}`}
-                                                        currentPage={location.pathname}
+                                                    <TransactionRefLink
+                                                        type="supplier-payment"
+                                                        id={payment.id}
+                                                        number={payment.reference || payment.id}
+                                                        label={payment.id}
                                                     />
                                                 </td>
                                                 <td className="table-body-cell font-bold text-[#23282A]">{suppliers.find(s => s.id === payment.supplierId)?.name || 'Unknown Supplier'}</td>

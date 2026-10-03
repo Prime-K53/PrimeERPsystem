@@ -23,7 +23,10 @@ import { computePostEditCorrection } from '../../../services/transactions/_inter
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { buildInvoiceVerificationUrl } from '../../../utils/invoiceVerification';
 import { findInvoiceByIdOrNumber } from '../../../utils/invoiceIdentity';
+import { resolveTransactionDestination } from '../../../utils/transactionRef';
+import { TransactionRefLink } from '../../../components/TransactionRefLink';
 import { resolveVerificationBaseUrl } from '../../../utils/documentVerification';
+import LineItemDescription from './LineItemDescription';
 
 interface InvoiceDetailsProps {
     invoice: Invoice;
@@ -705,13 +708,8 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                                             const hasBom = item.bomBreakdown && item.bomBreakdown.length > 0;
                                                             const hasPricingBreakdown = item.pricingBreakdown || (item.adjustmentSnapshots && item.adjustmentSnapshots.length > 0);
                                                             const invItem = item.productId ? inventory.find((i: any) => i.id === item.productId) : null;
-                                                            // Item-detail link target: prefer the inventory match on
-                                                            // productId, fall back to a match on the line id.
-                                                            const lineInvItem = invItem ?? (item.id ? inventory.find((i: any) => i.id === item.id) : null);
-                                                            // Always-visible item number: line sku first, then the
-                                                            // matched inventory sku, then the stored references.
-                                                            const itemNumberText = item.sku || (lineInvItem as any)?.sku || item.productId || item.id || null;
-                                                            const itemDetailId = (lineInvItem as any)?.id || null;
+                                                            // Stock levels resolve from the productId match; the item-detail
+                                                            // link and item number come from the shared LineItemDescription.
                                                             const stockLevel = invItem ? Number(invItem.stock || 0) : null;
                                                             const reservedLevel = invItem ? Number(invItem.reserved || 0) : null;
                                                             const availableLevel = stockLevel != null && reservedLevel != null ? Math.max(0, stockLevel - reservedLevel) : null;
@@ -735,26 +733,14 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                                                                         {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                                                                                     </button>
                                                                                 )}
-                                                                                <div>
-                                                                                    <p style={{ margin: 0, fontWeight: 600, color: ink, fontSize: 12 }}>{item.name || 'Unnamed item'}</p>
-                                                                                    {itemNumberText && (
-                                                                                        itemDetailId ? (
-                                                                                            <button onClick={() => { onClose(); navigate(`/supply-chain/inventory/${encodeURIComponent(itemDetailId)}`); }}
-                                                                                                title={`Open item ${itemNumberText} details`}
-                                                                                                style={{ display: 'block', margin: '2px 0 0', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: teal[600], fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2, textAlign: 'left' }}>
-                                                                                                #{itemNumberText}
-                                                                                            </button>
-                                                                                        ) : (
-                                                                                            <p style={{ margin: '2px 0 0', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: inkSoft }}>#{itemNumberText}</p>
-                                                                                        )
-                                                                                    )}
-                                                                                    {item.description && <p style={{ margin: '2px 0 0', fontSize: 11, color: inkSoft }}>{item.description}</p>}
-                                                                                    {item.type && (
-                                                                                        <span style={{ display: 'inline-block', marginTop: 4, padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.04, background: teal[50], color: teal[700] }}>
-                                                                                            {item.type}
-                                                                                        </span>
-                                                                                    )}
-                                                                                </div>
+                                                                                <LineItemDescription
+                                                                                    line={item}
+                                                                                    inventory={inventory}
+                                                                                    name={item.name}
+                                                                                    description={item.description}
+                                                                                    type={item.type}
+                                                                                    onClose={onClose}
+                                                                                />
                                                                             </div>
                                                                         </td>
                                                                         <td style={{ padding: '10px 8px', textAlign: 'center' }}>
@@ -958,13 +944,23 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                             <TruckIcon size={14} color={teal[600]} /> Delivery note
                                         </h3>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                            <span style={{ fontSize: 12, fontWeight: 700, color: teal[600] }}>{linkedDeliveryNote.id}</span>
+                                            <span style={{ fontSize: 12, fontWeight: 700, color: teal[600] }}>
+                                                <TransactionRefLink
+                                                    type="delivery-note"
+                                                    id={linkedDeliveryNote.id}
+                                                    number={linkedDeliveryNote.dnNumber || linkedDeliveryNote.deliveryNoteNumber || linkedDeliveryNote.id}
+                                                />
+                                            </span>
                                             <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: linkedDeliveryNote.status === 'Delivered' ? '#ecfdf5' : linkedDeliveryNote.status === 'Cancelled' ? '#fef2f2' : amber[100], color: linkedDeliveryNote.status === 'Delivered' ? '#059669' : linkedDeliveryNote.status === 'Cancelled' ? '#dc2626' : '#d97706' }}>
                                                 {linkedDeliveryNote.status}
                                             </span>
                                         </div>
                                         <p style={{ margin: '0 0 4px', fontSize: 10, color: inkSoft }}>{new Date(linkedDeliveryNote.date).toLocaleDateString()}</p>
-                                        <button onClick={() => { onClose(); navigate('/supply-chain/shipping?dn=' + encodeURIComponent(linkedDeliveryNote.id)); }}
+                                        <button onClick={() => {
+                                            const target = resolveTransactionDestination({ type: 'delivery-note', id: linkedDeliveryNote.id, number: linkedDeliveryNote.dnNumber || linkedDeliveryNote.id });
+                                            if (!target) return;
+                                            onClose(); navigate(target.to);
+                                        }}
                                             style={{ width: '100%', padding: '6px 12px', borderRadius: 6, border: `1px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                                             View delivery note <ExternalLink size={11} />
                                         </button>
@@ -976,8 +972,14 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
                                         <h3 style={{ margin: '0 0 8px', fontSize: 11, color: inkSoft, display: 'flex', alignItems: 'center', gap: 6 }}>
                                             <FileText size={14} color={teal[600]} /> Source quotation
                                         </h3>
-                                        <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 700, color: teal[600] }}>{quotationRef}</p>
-                                        <button onClick={() => { onClose(); navigate('/sales-flow/quotations/' + encodeURIComponent(quotationRef)); }}
+                                        <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 700, color: teal[600] }}>
+                                            <TransactionRefLink type="quotation" number={quotationRef} />
+                                        </p>
+                                        <button onClick={() => {
+                                            const target = resolveTransactionDestination({ type: 'quotation', number: quotationRef });
+                                            if (!target) return;
+                                            onClose(); navigate(target.to);
+                                        }}
                                             style={{ width: '100%', padding: '6px 12px', borderRadius: 6, border: `1px solid ${teal[200]}`, cursor: 'pointer', background: teal[50], color: teal[700], fontWeight: 600, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                                             View quotation <ExternalLink size={11} />
                                         </button>
