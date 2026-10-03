@@ -6,6 +6,7 @@ import { api } from '../services/api';
 import { dbService } from '../services/db';
 import { SEED_ITEM_IDS, SEED_ITEMS, MOCK_WAREHOUSES } from '../constants';
 import { generateLocalId } from '../utils/idGeneration';
+import { assertItemVariantIdentities } from '../services/variantSkuService';
 import { validateMinimumMarkup } from '../services/pricingValidationService';
 
 import { transactionService } from '../services/transactionService';
@@ -156,7 +157,13 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       validationTimestamp: new Date().toISOString(),
     };
     const id = newItem.id || await resolveNextInventoryId(get().inventory, newItem.type);
-    const savedItem = { ...newItem, id };
+    // Canonical variant identity: every variant gets a stable id + a globally
+    // unique SKU. Throws on a collision with any other parent item or variant.
+    const identified = assertItemVariantIdentities(
+      { ...newItem, id },
+      { allItems: get().inventory.filter((i) => i.id !== id) },
+    );
+    const savedItem = identified.item;
     set(state => ({
       inventory: [...state.inventory.filter(i => i.id !== id), savedItem]
     }));
@@ -181,6 +188,13 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     }
 
     const previous = get().inventory.find(i => i.id === item.id);
+    // Same canonical validation/generation as create, so an edit can never
+    // introduce a duplicate variant SKU. Editing a variant to its OWN current
+    // SKU is explicitly allowed.
+    const identified = assertItemVariantIdentities(item, {
+      allItems: get().inventory.filter((i) => i.id !== item.id),
+    });
+    item = identified.item;
     const sellPriceVal = Number(item.sellingPrice || item.selling_price || item.price || 0);
     const costPriceVal = Number(item.costPrice || item.cost_price || item.cost || 0);
     const updatedItem = {

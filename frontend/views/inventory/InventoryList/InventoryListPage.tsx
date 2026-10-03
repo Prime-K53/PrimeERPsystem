@@ -478,7 +478,13 @@ const handleProduce = useCallback((item: Item) => {
   const searchFiltered = filteredForTab.filter(i => {
     const q = tabSearch.toLowerCase();
     if (!q) return true;
-    return (i.name || '').toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q);
+    if ((i.name || '').toLowerCase().includes(q)) return true;
+    if ((i.sku || '').toLowerCase().includes(q)) return true;
+    // Variant name and variant SKU participate in the same search.
+    return (i.variants || []).some(v =>
+      String(v?.name || '').toLowerCase().includes(q) ||
+      String(v?.sku || '').toLowerCase().includes(q)
+    );
   });
 
   return (
@@ -862,16 +868,16 @@ const handleProduce = useCallback((item: Item) => {
                               const vSp = v.sellingPrice || p.sellingPrice || p.price || 0;
                               const vMargin = vCp > 0 ? ((vSp - vCp) / vCp * 100).toFixed(1) : '0.0';
                               return (
-                                <tr key={`${p.id}-v-${vIdx}`} className="pp-variant-row" onClick={() => handleViewItem(p)} style={{cursor:'pointer', background:'#F8FAFC'}}>
-                                  <td></td>
-                                  <td></td>
+                                <tr key={`${p.id}-v-${vIdx}`} className="pp-variant-row" onClick={() => handleViewItem(p)} style={{cursor:'pointer', background:'#F8FAFC'}}><td></td>
+                                  {/* The variant's OWN SKU — never the parent's SKU. */}
+                                  <td className="mono text-xs" style={{fontFamily:'IBM Plex Mono,monospace', color:'#5c6567'}}>{esc(v.sku || '—')}</td>
                                   <td className="text-xs text-slate-500 pl-6">↳ {esc(v.name || 'Standard')}</td>
                                   <td></td>
                                   <td className="num mono text-xs" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(vCp, currencySymbol)}</td>
                                   <td className="num mono text-xs" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(vSp, currencySymbol)}</td>
-                                  <td className="num mono text-xs" style={{fontFamily:'IBM Plex Mono,monospace', fontWeight: 700, color: Number(vMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{vMargin}%</td>
+                                  <td className="num mono text-xs" style={{fontFamily: 'IBM Plex Mono,monospace', fontWeight: 700, color: Number(vMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{vMargin}%</td>
                                   <td className="num mono text-xs" style={{fontFamily:'IBM Plex Mono,monospace'}}>
-                                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Not stocked</span>
+                                    <span style={{ color: num(v.stock) > 0 ? '#23282A' : '#94a3b8', fontSize: 12 }}>{num(v.stock)}</span>
                                   </td>
                                   <td></td>
                                 </tr>
@@ -1054,14 +1060,15 @@ const handleProduce = useCallback((item: Item) => {
                               const vCp = v.costPrice || v.basePrice || p.costPrice || p.cost || 0;
                               const vSp = v.sellingPrice || p.sellingPrice || p.price || 0;
                               const vMargin = vCp > 0 ? ((vSp - vCp) / vCp * 100).toFixed(1) : '0.0';
-                              return (
-                                <tr key={`${p.id}-v-${vIdx}`} className="pp-variant-row" onClick={() => handleViewItem(p)} style={{cursor:'pointer', background:'#F8FAFC'}}>
+                              return (<tr key={`${p.id}-v-${vIdx}`} className="pp-variant-row" onClick={() => handleViewItem(p)} style={{cursor:'pointer', background:'#F8FAFC'}}>
                                   <td></td>
+                                  {/* The variant's OWN SKU — never the parent's SKU. */}
+                                  <td className="mono text-xs" style={{fontFamily:'IBM Plex Mono,monospace', color:'#5c6567'}}>{esc(v.sku || '—')}</td>
                                   <td className="text-xs text-slate-500 pl-6">↳ {esc(v.name || 'Standard')}</td>
                                   <td></td>
                                   <td className="num mono text-xs" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(vCp, currencySymbol)}</td>
                                   <td className="num mono text-xs" style={{fontFamily:"'Inter',sans-serif", fontVariantNumeric:'tabular-nums', fontWeight:600}}>{money(vSp, currencySymbol)}</td>
-                                  <td className="num mono text-xs" style={{fontFamily:'IBM Plex Mono,monospace', fontWeight: 700, color: Number(vMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{vMargin}%</td>
+                                  <td className="num mono text-xs" style={{fontFamily: 'IBM Plex Mono,monospace', fontWeight: 700, color: Number(vMargin) >= resolveMinimumMarkup(p) ? '#1f8577' : '#b5493f'}}>{vMargin}%</td>
                                   <td className="num mono text-xs" style={{fontFamily:'IBM Plex Mono,monospace'}}>
                                     <span className="pp-stepper" style={{fontSize:12}}>
                                       <button onClick={e => { e.stopPropagation(); adjustStock({...p, stock: v.stock, id: v.id || p.id}, -1); }}>&minus;</button>

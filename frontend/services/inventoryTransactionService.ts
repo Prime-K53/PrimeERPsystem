@@ -136,6 +136,96 @@ class InventoryTransactionService {
     }
   }
 
+  /**
+   * Compensates a previous deductInventory() call (same item/batch/warehouse).
+   * The original OUT transaction is removed so that retrying the failed
+   * operation with the same reference/referenceId re-deducts instead of being
+   * skipped by the idempotency guard.
+   */
+  async reverseDeduction(request: InventoryDeductionRequest & { unitCost?: number }): Promise<InventoryDeductionResult> {
+    const { itemId, warehouseId, quantity, batchId, reason, reference, referenceId, performedBy, unitCost } = request;
+
+    try {
+      if (quantity <= 0) {
+        return { success: false, error: 'Reversal quantity must be greater than zero' };
+      }
+
+      const item = await dbService.get<any>('inventory', itemId);
+      if (!item) {
+        return { success: false, error: 'Item not found' };
+      }
+
+      const transactionDate = new Date().toISOString();
+
+      if (batchId) {
+        const batches = await dbService.getAll<MaterialBatch>('materialBatches');
+        const batch = batches.find(b => b.id === batchId && b.itemId === itemId);
+        if (batch) {
+          const restored = batch.remainingQuantity + quantity;
+          await dbService.put('materialBatches', {
+            ...batch,
+            remainingQuantity: restored,
+            status: restored > 0 ? 'active' as const : 'depleted' as const,
+            updatedAt: transactionDate
+          });
+        }
+      }
+
+      const transaction: InventoryTransaction = {
+        id: generateOpaqueId('TXN'),
+        itemId,
+        warehouseId,
+        batchId,
+        type: 'IN',
+        quantity,
+        previousQuantity: item.stock || 0,
+        newQuantity: (item.stock || 0) + quantity,
+        unitCost: unitCost ?? resolveInventoryCostPerUnit(item),
+        totalCost: quantity * (unitCost ?? resolveInventoryCostPerUnit(item)),
+        reference,
+        referenceId,
+        reason,
+        performedBy,
+        timestamp: transactionDate
+      };
+      await dbService.put('inventoryTransactions', transaction);
+
+      await dbService.put('inventory', { ...item, stock: (item.stock || 0) + quantity });
+
+      if (warehouseId) {
+        const warehouseInventoryList = await dbService.getAll<WarehouseInventory>('warehouseInventory');
+        const whInv = warehouseInventoryList.find(w => w.itemId === itemId && w.warehouseId === warehouseId);
+        if (whInv) {
+          await dbService.put('warehouseInventory', {
+            ...whInv,
+            quantity: (whInv.quantity || 0) + quantity,
+            available: (whInv.available || 0) + quantity,
+            lastUpdated: transactionDate
+          });
+        }
+      }
+
+      if (reference && referenceId) {
+        const existingTxns = await dbService.getAll<InventoryTransaction>('inventoryTransactions');
+        const original = existingTxns.find(t =>
+          t.reference === reference &&
+          t.referenceId === referenceId &&
+          t.itemId === itemId &&
+          t.batchId === (batchId || undefined) &&
+          t.type === 'OUT'
+        );
+        if (original) {
+          await dbService.delete('inventoryTransactions', original.id);
+        }
+      }
+
+      return { success: true, transaction };
+    } catch (error) {
+      logger.error('[InventoryTransactionService] Error reversing deduction:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
   async addInventory(request: InventoryAdditionRequest): Promise<InventoryDeductionResult> {
     const { itemId, warehouseId, quantity, batchId, unitCost, reason, reference, referenceId, performedBy, supplierId, supplierName, expiryDate } = request;
 

@@ -46,8 +46,8 @@ export const VariantsTab: React.FC<Props> = ({ item }) => {
   ];
 
   const columns = showPages(item)
-    ? ['Name & Attr', 'Pages', 'Cost Price', 'Selling Price', 'Markup', 'Active']
-    : ['Name & Attr', 'Cost Price', 'Selling Price', 'Markup', 'Active'];
+    ? ['Variant', 'SKU', 'Pages', 'Cost Price', 'Selling Price', 'Stock', 'Markup', 'Active']
+    : ['Variant', 'SKU', 'Cost Price', 'Selling Price', 'Stock', 'Markup', 'Active'];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -75,7 +75,7 @@ export const VariantsTab: React.FC<Props> = ({ item }) => {
                   color: inkSoft,
                   textTransform: 'uppercase',
                   letterSpacing: 0.5,
-                  textAlign: ['Cost Price', 'Selling Price', 'Markup', 'Pages'].includes(h) ? 'right' as const : h === 'Active' ? 'center' as const : 'left' as const
+                  textAlign: ['Cost Price', 'Selling Price', 'Markup', 'Pages', 'Stock'].includes(h) ? 'right' as const : h === 'Active' ? 'center' as const : 'left' as const
                 }}>
                   {h}
                 </th>
@@ -99,6 +99,10 @@ export const VariantsTab: React.FC<Props> = ({ item }) => {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <td style={{ padding: '12px 16px', fontWeight: 600, color: ink }}>{v.name}</td>
+                  {/* The variant's OWN persisted SKU — never the parent's. */}
+                  <td style={{ padding: '12px 16px', fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: inkSoft }}>
+                    {v.sku || '—'}
+                  </td>
                   {showPages(item) && (
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <input
@@ -116,6 +120,7 @@ export const VariantsTab: React.FC<Props> = ({ item }) => {
                   )}
                   <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: '#111827' }}>{autoCp.toFixed(2)}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', color: '#111827', fontWeight: 600 }}>{sp.toFixed(2)}</td>
+                  <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontVariantNumeric: 'tabular-nums', color: ink }}>{v.stock || 0}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'Inter', sans-serif", fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: marginOk ? t[500] : danger }}>
                     {margin.toFixed(1)}%
                   </td>

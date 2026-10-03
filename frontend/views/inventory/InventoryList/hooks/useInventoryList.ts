@@ -130,6 +130,8 @@ export function useInventoryList() {
     const s = debouncedSearch.toLowerCase().trim();
 
     if (s) {
+      // A variant is findable by its own name, its own SKU, its parent item
+      // name and the parent SKU — all four, per the inventory search contract.
       result = result.filter(item =>
         (item.name || '').toLowerCase().includes(s) ||
         (item.sku || '').toLowerCase().includes(s) ||
@@ -137,7 +139,11 @@ export function useInventoryList() {
         (item.qrCode || '').toLowerCase().includes(s) ||
         (item.supplierSku || '').toLowerCase().includes(s) ||
         (item.description || '').toLowerCase().includes(s) ||
-        (item.brand || '').toLowerCase().includes(s)
+        (item.brand || '').toLowerCase().includes(s) ||
+        (item.variants || []).some(v =>
+          String(v?.name || '').toLowerCase().includes(s) ||
+          String(v?.sku || '').toLowerCase().includes(s)
+        )
       );
     }
 

@@ -3,6 +3,7 @@ import type { Item, FinishingOption } from '../../../types';
 import { useInventory } from '../../../context/InventoryContext';
 import { useAuth } from '../../../context/AuthContext';
 import { generateAutoSKU } from '../../../utils/skuGenerator';
+import { buildVariantSkuBase, buildSkuRegistry, describeSkuConflict } from '../../../services/variantSkuService';
 import { currencyService } from '../../../services/currencyService';
 import { aiService } from '../../../services/ai/aiService';
 import { ConfirmDialog, ConfirmDialogType } from '../../../components/ConfirmDialog';
@@ -355,6 +356,42 @@ function Field({ label, required, children, hint }: { label: string; required?: 
   );
 }
 
+/** Column layout shared by every variant editor row (name | SKU | … | remove). */
+const VARIANT_GRID = '1.3fr 1.2fr 1fr 0.8fr 0.8fr auto';
+/** Stationery variant rows carry the extra Qty/Pack / Pack Cost columns. */
+const STAT_VARIANT_GRID = '1.2fr 1.2fr 0.7fr 0.8fr 0.8fr 0.8fr auto';
+
+/**
+ * Variant SKU editor cell. Shows the persisted SKU when there is one, otherwise
+ * the deterministic generated default, and surfaces a global-uniqueness error
+ * (the same rule the store and the backend enforce on save).
+ */
+const VariantSkuInput: React.FC<{
+  value: string;
+  generated: string;
+  error?: string;
+  onChange: (value: string) => void;
+}> = ({ value, generated, error, onChange }) => {
+  const shown = value.trim() || generated;
+  const placeholder = `Auto: ${generated}`;
+  return (
+    <input
+      type="text"
+      style={{
+        ...s.variantInput,
+        ...s.mono,
+        fontSize: 12,
+        borderColor: error ? VAR_STYLES.ink900 : VAR_STYLES.line,
+        outline: error ? `1px solid ${VAR_STYLES.ink900}` : 'none',
+      }}
+      value={value.trim()}
+      placeholder={placeholder}
+      title={error || `Will be saved as ${shown}`}
+      onChange={e => onChange(e.target.value)}
+    />
+  );
+};
+
 export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allItems, sourceTab }) => {
   const { addItem, updateItem, deleteItem } = useInventory();
   const { companyConfig, notify, user: USER } = useAuth();
@@ -387,7 +424,7 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
   const [rawCategory, setRawCategory] = useState<string>('');
 
   // Product
-  const [variants, setVariants] = useState<{ name: string; bomCost: number; cost: number; selling: number; bomPages?: number; bomCovers?: number; bomStaples?: number; bomTape?: number }[]>([]);
+  const [variants, setVariants] = useState<{ id?: string; sku?: string; name: string; bomCost: number; cost: number; selling: number; bomPages?: number; bomCovers?: number; bomStaples?: number; bomTape?: number }[]>([]);
   const [productPaperCost, setProductPaperCost] = useState(0);
   const [productTonerCost, setProductTonerCost] = useState(0);
   const [productFinishCost, setProductFinishCost] = useState(0);
@@ -408,7 +445,7 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
   const [serviceReorder, setServiceReorder] = useState(0);
 
   // Stationery
-  const [statVariants, setStatVariants] = useState<{ name: string; qtyPack: number; packCost: number; sellItem: number }[]>([]);
+  const [statVariants, setStatVariants] = useState<{ id?: string; sku?: string; name: string; qtyPack: number; packCost: number; sellItem: number }[]>([]);
   const [statQtyPack, setStatQtyPack] = useState(0);
   const [statPackCost, setStatPackCost] = useState(0);
   const [statSP, setStatSP] = useState(0);
@@ -532,6 +569,8 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
       const loadedVariants = (item as any).variants;
       if (loadedVariants && loadedVariants.length > 0 && (item.type === 'Product' || (item as any).classification === 'product')) {
         setVariants(loadedVariants.map((v: any) => ({
+          id: v.id || undefined,
+          sku: v.sku || undefined,
           name: v.name || '',
           bomCost: v.bomCost ?? v.costPrice ?? 0,
           cost: v.costPrice ?? v.cost ?? 0,
@@ -547,6 +586,8 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
       const loadedStatVariants = (item as any).variants as any;
       if (loadedStatVariants && loadedStatVariants.length > 0 && (item.type === 'Stationery' || (item as any).classification === 'stationery')) {
         setStatVariants(loadedStatVariants.map((v: any) => ({
+          id: v.id || undefined,
+          sku: v.sku || undefined,
           name: v.name || '',
           qtyPack: v.unitsPerPack || v.qtyPack || 12,
           packCost: v.costPerPack || v.packCost || 0,
@@ -829,6 +870,34 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
     return { avgCost, avgSell, profit, margin };
   }, [statVariants, statQtyPack, statPackCost, statSP]);
 
+  // The parent SKU the variants will be generated from (same expression the
+  // save handler uses for the item's own sku).
+  const effectiveSku = sku || generateAutoSKU(category, name, undefined, allItems);
+
+  /**
+   * Global SKU uniqueness for a variant row, checked live against every other
+   * parent item SKU and every other variant SKU in the ERP. Returns '' when the
+   * value is acceptable (blank means "use the generated default", which is
+   * resolved and re-checked by the canonical service on save).
+   */
+  const variantSkuError = (rawSku: string): string => {
+    const candidate = rawSku.trim();
+    if (!candidate) return '';
+    const registry = buildSkuRegistry(
+      (allItems || []).filter((i: any) => i.id !== item?.id),
+    );
+    // Siblings inside this draft must not collide with each other either.
+    for (const sibling of [...variants, ...statVariants]) {
+      const siblingSku = (sibling.sku || '').trim();
+      if (siblingSku && siblingSku.toUpperCase() === candidate.toUpperCase()) {
+        return 'Already used by another variant in this item';
+      }
+    }
+    return describeSkuConflict(candidate, registry, { itemId: item?.id }) || '';
+  };
+
+  const statVariantSkuError = variantSkuError;
+
   const renderBrief = () => {
     if (category === 'raw') {
       return (
@@ -965,7 +1034,7 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
     const baseItem: any = {
       id: item?.id || '',
       name,
-      sku: sku || generateAutoSKU(category, name, undefined, allItems),
+      sku: effectiveSku,
       type: category === 'raw' ? 'Raw Material' : category === 'product' ? 'Product' : category === 'service' ? 'Service' : 'Stationery',
       description,
       status: active ? 'Active' : 'Inactive',
@@ -1011,6 +1080,11 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
         bomStaples: productBomStaples,
         bomTape: productBomTape,
         variants: variants.filter(v => v.name.trim() || v.bomCost > 0).map(v => ({
+          // Stable ids are preserved; new variants get one on save (canonical
+          // rule lives in variantSkuService, never here).
+          ...(v.id ? { id: v.id } : {}),
+          // Persisted variant SKU — never derived for display only.
+          ...(v.sku?.trim() ? { sku: v.sku.trim() } : {}),
           name: v.name.startsWith(name) ? v.name : `${name} - ${v.name}`,
           costPrice: v.cost || v.bomCost,
           sellingPrice: v.selling,
@@ -1060,6 +1134,8 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
       const savedVariants = statVariants.filter(v => v.name.trim());
       stationeryExtras = {
         variants: savedVariants.map(v => ({
+          ...(v.id ? { id: v.id } : {}),
+          ...(v.sku?.trim() ? { sku: v.sku.trim() } : {}),
           name: v.name.startsWith(name) ? v.name : `${name} - ${v.name}`,
           costPrice: v.qtyPack > 0 ? v.packCost / v.qtyPack : 0,
           sellingPrice: v.sellItem,
@@ -1088,6 +1164,29 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
 
     if (!name.trim()) { notify?.('Item name is required', 'error'); return; }
     if (skuError) { notify?.(skuError, 'error'); return; }
+    // Reject a duplicate variant SKU before any write. The store and the sync
+    // gateway enforce the same rule; this is immediate feedback only.
+    const draftVariantSkus = [...variants, ...statVariants]
+      .map(v => (v.sku || '').trim())
+      .filter(Boolean);
+    const seenVariantSkus = new Set<string>();
+    for (const entrySku of draftVariantSkus) {
+      const key = entrySku.toUpperCase();
+      if (key === effectiveSku.trim().toUpperCase()) {
+        notify?.(`Variant SKU "${entrySku}" cannot be the same as the item SKU`, 'error');
+        return;
+      }
+      if (seenVariantSkus.has(key)) {
+        notify?.(`Variant SKU "${entrySku}" is used by more than one variant`, 'error');
+        return;
+      }
+      seenVariantSkus.add(key);
+    }
+    const registry = buildSkuRegistry((allItems || []).filter((i: any) => i.id !== item?.id));
+    for (const entrySku of draftVariantSkus) {
+      const conflict = describeSkuConflict(entrySku, registry, { itemId: item?.id });
+      if (conflict) { notify?.(conflict, 'error'); return; }
+    }
     setSaving(true);
     try {
       if (onSave) {
@@ -1271,14 +1370,22 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
         <p style={s.sectionTitle}>Variants (optional)</p>
         {variants.length > 0 ? (
           <div style={s.variantList}>
-            <div style={{ ...s.variantRow, ...s.variantRowHead }}>
-              <span>Variant</span><span>BOM</span><span>Cost (CP)</span><span>Selling (SP)</span><span></span>
+            <div style={{ ...s.variantRow, ...s.variantRowHead, gridTemplateColumns: VARIANT_GRID }}>
+              <span>Variant</span><span>SKU</span><span>BOM</span><span>Cost (CP)</span><span>Selling (SP)</span><span></span>
             </div>
             {variants.map((v, i) => (
-              <div key={i} style={s.variantRow}>
+              <div key={i} style={{ ...s.variantRow, gridTemplateColumns: VARIANT_GRID }}>
                 <input type="text" style={s.variantInput} value={v.name} onChange={e => {
                   const next = [...variants]; next[i] = { ...next[i], name: e.target.value }; setVariants(next);
                 }} placeholder="e.g. 96 Page" />
+                <VariantSkuInput
+                  value={v.sku ?? ''}
+                  generated={buildVariantSkuBase(effectiveSku, item?.id, { name: v.name }, name)}
+                  error={variantSkuError(v.sku ?? '')}
+                  onChange={nextSku => {
+                    const next = [...variants]; next[i] = { ...next[i], sku: nextSku }; setVariants(next);
+                  }}
+                />
                 <button style={s.bomEditBtn} onClick={() => {
                   const defCovers = globalFinishingOptions.find(o => o.id === 'coverPages')?.quantity ?? 2;
                   const defStaples = globalFinishingOptions.find(o => o.id === 'stapling')?.quantity ?? 2;
@@ -1471,14 +1578,22 @@ export const ItemModal: React.FC<Props> = ({ open, item, onClose, onSave, allIte
           <p style={s.sectionTitle}>Variants (optional)</p>
           {statVariants.length > 0 ? (
             <div style={s.variantList}>
-              <div style={{ ...s.variantRow, ...s.variantRowHead, gridTemplateColumns: '1.2fr 0.75fr 0.9fr 0.9fr 0.9fr auto' }}>
-                <span>Variant</span><span>Qty/Pack</span><span>Pack Cost</span><span>Cost/Item</span><span>Sell/Item</span><span></span>
+              <div style={{ ...s.variantRow, ...s.variantRowHead, gridTemplateColumns: STAT_VARIANT_GRID }}>
+                <span>Variant</span><span>SKU</span><span>Qty/Pack</span><span>Pack Cost</span><span>Cost/Item</span><span>Sell/Item</span><span></span>
               </div>
               {statVariants.map((v, i) => (
-                <div key={i} style={{ ...s.variantRow, gridTemplateColumns: '1.2fr 0.75fr 0.9fr 0.9fr 0.9fr auto' }}>
+                <div key={i} style={{ ...s.variantRow, gridTemplateColumns: STAT_VARIANT_GRID }}>
                   <input type="text" style={s.variantInput} value={v.name} onChange={e => {
                     const next = [...statVariants]; next[i] = { ...next[i], name: e.target.value }; setStatVariants(next);
                   }} placeholder="e.g. Blue Ink Pen" />
+                  <VariantSkuInput
+                    value={v.sku ?? ''}
+                    generated={buildVariantSkuBase(effectiveSku, item?.id, { name: v.name }, name)}
+                    error={statVariantSkuError(v.sku ?? '')}
+                    onChange={nextSku => {
+                      const next = [...statVariants]; next[i] = { ...next[i], sku: nextSku }; setStatVariants(next);
+                    }}
+                  />
                   <input type="number" style={{ ...s.variantInput, ...s.mono }} value={v.qtyPack || ''} onChange={e => {
                     const next = [...statVariants]; next[i] = { ...next[i], qtyPack: Number(e.target.value) || 0 }; setStatVariants(next);
                   }} />

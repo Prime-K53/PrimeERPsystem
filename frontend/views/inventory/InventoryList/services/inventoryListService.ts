@@ -111,30 +111,62 @@ export function getItemMargin(item: Item): number {
 }
 
 export function exportItemsToCSV(items: Item[]): void {
-  const data = items.map(item => {
-    const variants = ((item as any).variants || []).filter((v: unknown) => v && typeof v === 'object' && Object.keys(v as object).length > 0);
-    const variantLabel = variants.length > 0 ? `${variants.length} variant${variants.length !== 1 ? 's' : ''}` : 'standard';
-    return {
-      Name: item.name,
-      SKU: item.sku || '',
-      Barcode: item.barcode || '',
+  // One row per inventory CONFIGURATION: a parent with no variants emits its
+  // own row; every variant emits its own row carrying the variant's stable id
+  // and its own SKU (never the parent's).
+  const data = items.flatMap(item => {
+    const variants = ((item as any).variants || [])
+      .filter((v: unknown) => v && typeof v === 'object' && Object.keys(v as object).length > 0);
+
+    const shared = {
       Type: item.type || '',
       Category: item.category || '',
       Brand: (item as Item & Record<string, unknown>).brand || '',
       Unit: item.unit || '',
-      Variants: variantLabel,
-      Stock: item.stock || 0,
-      Reserved: item.reserved || 0,
-      Available: (item.stock || 0) - (item.reserved || 0),
-      'Cost Price': resolveInventoryCostPerUnit(item),
-      'Selling Price': item.sellingPrice || item.price || 0,
-      'Inventory Value': (item.stock || 0) * resolveInventoryCostPerUnit(item),
       Status: item.status || 'Active',
       Supplier: item.preferredSupplierId || '',
       'Min Stock': item.minStockLevel || 0,
       'Reorder Point': item.reorderPoint || 0,
       Description: (item.description || '').replace(/,/g, ';'),
     };
+
+    if (variants.length === 0) {
+      return [{
+        Name: item.name,
+        SKU: item.sku || '',
+        'Variant ID': '',
+        'Parent ID': '',
+        'Parent SKU': '',
+        Barcode: item.barcode || '',
+        ...shared,
+        Stock: item.stock || 0,
+        Reserved: item.reserved || 0,
+        Available: (item.stock || 0) - (item.reserved || 0),
+        'Cost Price': resolveInventoryCostPerUnit(item),
+        'Selling Price': item.sellingPrice || item.price || 0,
+        'Inventory Value': (item.stock || 0) * resolveInventoryCostPerUnit(item),
+      }];
+    }
+
+    return variants.map((variant: any, index: number) => {
+      const costPrice = Number(variant.costPrice ?? variant.cost ?? item.costPrice ?? item.cost ?? 0);
+      const stock = Number(variant.stock ?? 0);
+      return {
+        Name: variant.name || item.name,
+        SKU: variant.sku || '',
+        'Variant ID': variant.id || `VAR-${item.id}-${index + 1}`,
+        'Parent ID': item.id,
+        'Parent SKU': item.sku || '',
+        Barcode: variant.barcode || item.barcode || '',
+        ...shared,
+        Stock: stock,
+        Reserved: Number(variant.reserved ?? 0),
+        Available: stock - Number(variant.reserved ?? 0),
+        'Cost Price': costPrice,
+        'Selling Price': Number(variant.sellingPrice ?? variant.price ?? item.sellingPrice ?? item.price ?? 0),
+        'Inventory Value': stock * costPrice,
+      };
+    });
   });
   exportToCSV(data, `inventory-export-${Date.now()}`);
 }

@@ -1,5 +1,6 @@
 import { logger } from '@/services/logger';
 import type { Item, ItemType, ProductVariant } from '../types';
+import { ensureItemVariantIdentities } from '../services/variantSkuService';
 
 type VolumePricingTierLike = {
   minQty: number;
@@ -194,10 +195,16 @@ export function normalizeInventoryItemPricing(item: Item): Item {
     return normalizedWithType;
   }
 
+  // Every variant must expose a stable id + a unique persisted SKU. Read-time
+  // normalisation backfills any gap so display/search/POS work even before the
+  // backfill migration has run; it never mutates the stored record and never
+  // regenerates a SKU that already exists.
+  const identified = ensureItemVariantIdentities(normalizedWithType, { allItems: [], onConflict: 'keep' });
+
   return {
-    ...normalizedWithType,
+    ...identified.item,
     isVariantParent: true,
-    variants: item.variants.map((variant) => normalizeStoredPricing(variant as ProductVariant))
+    variants: (identified.item.variants || []).map((variant) => normalizeStoredPricing(variant as ProductVariant))
   };
 }
 
