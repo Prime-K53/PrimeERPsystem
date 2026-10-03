@@ -211,6 +211,21 @@ function toCanonicalRendererType(type) {
 function normalizeRecordForRenderer(raw, type) {
   const record = { ...(raw || {}) };
 
+  // Fill one canonical key from the first stored alias that carries a value.
+  // Never overwrites an existing canonical key and never derives a new value,
+  // so this stays a pure naming bridge between the stored ERP record and the
+  // canonical document contract the renderer validates against.
+  const fillFrom = (target, sources) => {
+    if (record[target] !== undefined && record[target] !== null && record[target] !== '') return;
+    for (const source of sources) {
+      const value = record[source];
+      if (value !== undefined && value !== null && value !== '') {
+        record[target] = value;
+        return;
+      }
+    }
+  };
+
   // Authoritative invoice date: same precedence as mapToInvoiceData.
   // NOTE: `invoice_number_date` is intentionally NOT read (non-canonical;
   // it appears nowhere else in the ERP and previously shadowed `date`).
@@ -269,6 +284,36 @@ function normalizeRecordForRenderer(raw, type) {
   }
   if ((record.amountPaid === undefined || record.amountPaid === null || record.amountPaid === '') && paidSource !== undefined) {
     record.amountPaid = paidSource;
+  }
+
+  // ── Statement / receipt canonical aliases ─────────────────────────────
+  // The public verification registry (services/documentVerificationService.cjs)
+  // resolves the STORED ERP record — a statement_snapshots snapshot
+  // (periodStart / periodEnd / closingBalance) or a customer_payments receipt
+  // (id as the official number) — while the canonical renderer validates
+  // canonical field names (startDate / endDate / finalBalance, receiptNumber).
+  // Without this bridge the renderer rejects the record, the public download
+  // route maps that rejection to its generic 404, and a perfectly verified
+  // document reports "could not be verified". Pure aliasing only: identical
+  // field-selection rules as the invoice aliases above, no recalculation.
+  const isStatementType = type === 'ACCOUNT_STATEMENT' || type === 'ACCOUNT_STATEMENT_SUMMARY';
+  if (isStatementType) {
+    fillFrom('startDate', ['startDate', 'periodStart', 'period_start', 'from', 'openingDate']);
+    fillFrom('endDate', ['endDate', 'periodEnd', 'period_end', 'to']);
+    fillFrom('openingBalance', ['openingBalance', 'opening_balance', 'openingAmount']);
+    // `finalBalance` is the renderer's closing-balance field; the frozen
+    // snapshot persists the same total as closingBalance.
+    fillFrom('finalBalance', ['finalBalance', 'closingBalance', 'closing_balance', 'closingAmount', 'balance']);
+    fillFrom('customerName', ['customerName', 'customer_name', 'clientName', 'client_name', 'businessName', 'business_name']);
+    fillFrom('date', ['statementDate', 'statement_date', 'periodEnd', 'period_end']);
+  }
+  if (type === 'RECEIPT') {
+    // The ERP treats the customer_payments record id as the official receipt
+    // number (see frontend/services/receiptCalculationService.ts).
+    fillFrom('receiptNumber', ['receiptNumber', 'receipt_number', 'paymentNumber', 'id']);
+    fillFrom('customerName', ['customerName', 'customer_name', 'clientName', 'client_name', 'businessName', 'business_name']);
+    fillFrom('paymentMethod', ['paymentMethod', 'payment_method', 'method']);
+    fillFrom('amountReceived', ['amountReceived', 'amount_received', 'amount', 'totalAmount']);
   }
 
   // Line items: treat an empty array as missing (never let `items: []`
