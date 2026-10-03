@@ -152,7 +152,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
             { label: 'History', path: '/sales-flow/requests', icon: <History size={14} />, state: { tab: 'history' } },
           ]
         },
-        { label: 'Transport Expenses', path: '/procurement/transport-expenses', icon: <Truck size={18} /> },
       ]
     },
     {
@@ -268,7 +267,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           label: 'Revenue Analysis',
           path: '/revenue',
           icon: <Activity size={18} />,
-          hideSubMenu: true,
           subItems: [
             { label: 'Dashboard', path: '/revenue', icon: <Activity size={14} /> },
             { label: 'Sales Audit', path: '/revenue/sales-audit', icon: <FileText size={14} /> },
@@ -290,6 +288,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
             { label: 'Supplier Payments', path: '/procurement/payments', icon: <Wallet size={14} /> },
             { label: 'Subcontracting', path: '/procurement/subcontracting', icon: <Share2 size={14} /> },
             { label: 'Expense Log', path: '/procurement/expenses', icon: <TrendingUp size={14} /> },
+            { label: 'Transport Expenses', path: '/procurement/transport-expenses', icon: <Truck size={14} /> },
           ]
         },
       ]
