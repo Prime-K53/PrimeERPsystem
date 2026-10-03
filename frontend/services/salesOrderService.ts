@@ -1,5 +1,5 @@
 import { dbService } from './db.ts';
-import { generateNextId } from '../utils/helpers';
+import { generateLocalId } from '../utils/idGeneration';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import {
   SalesOrder,
@@ -13,7 +13,6 @@ import {
   legacyPaymentStatus,
   isCanonicalStatus,
   isTerminalStatus,
-  isProvisionalNumber,
   normalizeCreationSource,
   readCreationSource,
 } from '../types/salesOrder';
@@ -158,8 +157,14 @@ export const canonicalizeOrder = (raw: any): SalesOrder => {
     ...it,
   }));
   const normalized = normalizeTotals({ ...base, items, status, paymentStatus, invoiceStatus } as SalesOrder);
-  const serverNumber = base.order_number || undefined;
-  const orderNumber = serverNumber || base.orderNumber || base.id;
+  // Single ORD family, no provisional numbers. The canonical field wins
+  // verbatim; a legacy compat number is kept only when it is already an
+  // official ORD number; otherwise the row has no number yet (null) and the
+  // UI shows a neutral pending state. The row id is never a number.
+  const serverNumber = String(base.order_number || '').trim() || undefined;
+  const camelRaw = String(base.orderNumber || '').trim() || undefined;
+  const camelOfficial = camelRaw && isOfficialOrdNumber(camelRaw) ? camelRaw : undefined;
+  const orderNumber = serverNumber || camelOfficial || null;
   const explicitSource = readCreationSource(base);
   return {
     ...normalized,
@@ -169,9 +174,7 @@ export const canonicalizeOrder = (raw: any): SalesOrder => {
       ? { creation_source: explicitSource, creationSource: explicitSource }
       : {}),
     orderNumber,
-    orderNumberProvisional: base.orderNumberProvisional === true
-      ? !serverNumber
-      : isProvisionalNumber({ ...normalized, orderNumber }) && !serverNumber,
+    orderNumberProvisional: false,
     legacyStatus: legacyStatus && !isCanonicalStatus(legacyStatus) ? legacyStatus : base.legacyStatus,
     date: base.date || base.orderDate,
     orderDate: base.orderDate || base.date || new Date().toISOString(),
@@ -185,13 +188,22 @@ export const canonicalizeOrder = (raw: any): SalesOrder => {
   };
 };
 
-export const isOfficialNumber = (value?: string | null): boolean => {
-  return Boolean(value) && /^(ORD-|SO-|ORD\/|SO\/)/i.test(String(value));
-};
-
-/** Unified official shape: SO-{series}/NNN (conversion) or ORD-{series}/NNN (direct). */
+/**
+ * Unified official shape. ORD-{series}/NNN is the ONLY allocated family;
+ * the SO- alternative parses for reading historical numbers only and is
+ * never treated as official for numbering decisions.
+ */
 export const SALES_ORDER_OFFICIAL_PATTERN = /^(SO|ORD)-([A-Za-z0-9]+)\/(\d+)$/i;
 export const LEGACY_OFFICIAL_NUMBER_PATTERN = /^ORD-\d{4}-\d{6}$/;
+
+/** True only for official ORD numbers (unified or legacy). SO/TMP are never official. */
+export const isOfficialOrdNumber = (value?: string | null): boolean => {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  const parsed = parseOfficialSalesOrderNumber(text);
+  if (parsed) return parsed.origin === 'DIRECT';
+  return LEGACY_OFFICIAL_NUMBER_PATTERN.test(text);
+};
 
 export interface ParsedSalesOrderNumber {
   kind: 'sales_order';
@@ -226,16 +238,14 @@ export const isOfficialSalesOrderNumber = (value?: string | null, series?: strin
 };
 
 /**
- * Central canonical reader for the official Sales Order number
- * (getSalesOrderOfficialNumber semantics):
- *   1. `order_number` is authoritative — returned verbatim when non-empty.
- *   2. Legacy `orderNumber` is fallback compatibility ONLY, and only when it
- *      is an official-shaped number (unified official for the given series,
- *      or any series when `series` is omitted so history stays readable;
- *      legacy ORD-YYYY also accepted) that is not explicitly flagged
- *      provisional.
- *   3. Provisional values (flagged, or any SO-/ORDER-/bare shape) are NEVER
- *      returned here — they must never be mistaken for official numbers.
+ * Central canonical reader for the official Sales Order number.
+ * Single ORD family:
+ *   1. `order_number` is authoritative — an ORD unified number (any series
+ *      when `series` is omitted so history stays readable; legacy ORD-YYYY
+ *      also accepted) is returned verbatim. SO-/TMP-shaped values are NOT
+ *      official and are ignored here.
+ *   2. Legacy `orderNumber` is fallback compatibility ONLY, adopted when it
+ *      is already an official ORD number.
  * Returns undefined when the record has no official number yet.
  */
 export const getSalesOrderOfficialNumber = (order: {
@@ -244,13 +254,18 @@ export const getSalesOrderOfficialNumber = (order: {
   orderNumberProvisional?: unknown;
 } | null | undefined, series?: string | null): string | undefined => {
   if (!order || typeof order !== 'object') return undefined;
+  // Canonical field: authoritative verbatim when it holds an ORD official
+  // number (history stays readable across series changes).
   const snake = String((order as Record<string, unknown>).order_number ?? '').trim();
-  if (snake) return snake;
-  if ((order as Record<string, unknown>).orderNumberProvisional === true) return undefined;
+  if (snake && isOfficialOrdNumber(snake)) return snake;
+  // Compat field: adopted only when already an official ORD number, and for
+  // the requested series when a filter is given.
   const camel = String((order as Record<string, unknown>).orderNumber ?? '').trim();
-  if (!camel) return undefined;
-  if (isOfficialSalesOrderNumber(camel, series ?? undefined) || LEGACY_OFFICIAL_NUMBER_PATTERN.test(camel)) return camel;
-  return undefined;
+  if (!camel || !isOfficialOrdNumber(camel)) return undefined;
+  if (series == null || LEGACY_OFFICIAL_NUMBER_PATTERN.test(camel)) return camel;
+  return parseOfficialSalesOrderNumber(camel)?.series === String(series).trim().toUpperCase()
+    ? camel
+    : undefined;
 };
 
 export const applyOfficialNumber = (order: SalesOrder, officialId: string, officialNumber: string): SalesOrder => {
@@ -264,13 +279,9 @@ export const applyOfficialNumber = (order: SalesOrder, officialId: string, offic
 
 /**
  * Adopt the server-canonical official number into a local record landing
- * from sync (pull or realtime merge). The merge adopts `order_number` but
- * never reconciles the legacy `orderNumber` / `orderNumberProvisional`
- * compatibility fields — and the Sales Orders list/details render the raw
- * `orderNumber` — so without this the provisional TMP- number is displayed
- * forever even though the backend stamped ORD-. The row id is preserved
- * (the cloud row keeps the provisional id; only the number fields change).
- * No-op when the record carries no official number yet.
+ * from sync (pull or realtime merge). The row id is preserved (the cloud
+ * row keeps the local id; only the number fields change). No-op when the
+ * record carries no official ORD number yet.
  */
 export const adoptServerNumber = (order: any): any => {
   const official = getSalesOrderOfficialNumber(order);
@@ -283,16 +294,21 @@ export const adoptServerNumber = (order: any): any => {
   };
 };
 
+/** Neutral UI state while a Sales Order awaits its official server number. */
+export const PENDING_SALES_ORDER_NUMBER = 'Pending number';
+
 /**
- * Display number for a Sales Order row: the canonical official number when
- * the record has one (post-sync), otherwise the stored provisional/id
- * (pre-sync). Never renders undefined.
+ * Display number for a Sales Order row: the canonical `order_number`
+ * verbatim when present (including genuine historical numbers, which are
+ * never rewritten), else the official ORD number, else the neutral pending
+ * state. SO-/TMP-shaped compat values are treated as obsolete and are
+ * never displayed as the Sales Order number. The row id is never used as
+ * a number.
  */
 export const getSalesOrderDisplayNumber = (order: any): string => {
-  return (
-    getSalesOrderOfficialNumber(order) ??
-    String(order?.orderNumber ?? order?.order_number ?? order?.id ?? '')
-  );
+  const snake = String(order?.order_number ?? '').trim();
+  if (snake) return snake;
+  return getSalesOrderOfficialNumber(order) ?? PENDING_SALES_ORDER_NUMBER;
 };
 
 export const markInvoiced = (order: SalesOrder, invoiceId: string, invoiceNumber?: string | null): SalesOrder => ({
@@ -438,14 +454,14 @@ export const migrateLegacyOrders = async (): Promise<MigrationReport> => {
 };
 
 /**
- * Mint a neutral client-side provisional id. TMP- is intentionally NOT an
- * official prefix so it can never be mistaken for an SO/ORD number; the
- * backend stamps the official ORD-/SO- order_number on first sync.
- * Callers creating portal conversions may pass an explicitly ORD-shaped
- * provisional instead; never pass 'SO'.
+ * Internal row id for a not-yet-synced Sales Order. This is an opaque
+ * local identifier only — it is NEVER a Sales Order number (it cannot even
+ * be confused with the retired SO- prefix). The official ORD-{series}/NNN
+ * number is assigned by the server on first sync; until then the row has
+ * `orderNumber: null` and the UI shows a neutral pending state.
  */
-export const generateProvisionalOrderId = (existing: any[], prefix = 'TMP'): string => {
-  return generateNextId(prefix, existing);
+export const generateLocalSalesOrderId = (): string => {
+  return generateLocalId('local');
 };
 
 export const salesOrderService = {
@@ -531,19 +547,19 @@ export const salesOrderService = {
   validateOrder,
   normalizeTotals,
   canonicalizeOrder,
-  isOfficialNumber,
+  isOfficialOrdNumber,
   applyOfficialNumber,
   adoptServerNumber,
   getSalesOrderDisplayNumber,
+  PENDING_SALES_ORDER_NUMBER,
   markInvoiced,
   buildInvoiceFromOrder,
   assertTenantSafe,
   adoptQuotationRequestAsSalesOrder,
   migrateLegacyOrders,
-  generateProvisionalOrderId,
+  generateLocalSalesOrderId,
   legacyPaymentStatus,
   isTerminalStatus,
   isCanonicalStatus,
-  isProvisionalNumber,
   TERMINAL,
 };

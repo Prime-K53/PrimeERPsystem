@@ -147,9 +147,10 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         ? orders.find(o => o.id === options.reuseOrderId)
         : undefined;
       const replacing = !!reuseTarget;
+      const localId = salesOrderService.generateLocalSalesOrderId();
       const orderNumber = reuseTarget
         ? (reuseTarget.orderNumber || reuseTarget.id)
-        : salesOrderService.generateProvisionalOrderId(orders, 'TMP');
+        : null;
       const conversionDate = new Date().toLocaleDateString();
       const acceptedBy = quotation.customerName || 'Customer';
       const conversionDetails = {
@@ -198,12 +199,12 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // that record. Deriving the id from orderNumber instead would insert a
         // second row and leave the original order behind — the opposite of
         // "replace", and a silent duplicate.
-        id: reuseTarget ? reuseTarget.id : orderNumber,
+        id: reuseTarget ? reuseTarget.id : localId,
         idempotencyKey: crypto.randomUUID(),
         orderNumber,
-        // A replaced order has already been through numbering, so its
-        // provisional flag must survive the overwrite.
-        orderNumberProvisional: reuseTarget ? reuseTarget.orderNumberProvisional : true,
+        // No provisional concept: fresh rows carry orderNumber null until the
+        // server assigns ORD; replaced rows keep their existing number.
+        orderNumberProvisional: false,
         creation_source: 'PORTAL_CONVERSION',
         creationSource: 'PORTAL_CONVERSION',
         customerId: '', // Quotation might not have customerId directly, we might need to look it up by name
@@ -278,7 +279,8 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const handleCreateOrder = async (data: any) => {
     try {
-      const orderNumber = data.orderNumber || data.id || salesOrderService.generateProvisionalOrderId(orders, 'TMP');
+      const localId = salesOrderService.generateLocalSalesOrderId();
+      const orderNumber = data.orderNumber ?? data.id ?? null;
 
       const subtotal = toNum(data.subtotal) || data.items.reduce((sum: number, it: any) => sum + (toNum(it.subtotal || (toNum(it.quantity || it.qty) * toNum(it.unitPrice || it.price || it.cost)))), 0);
       const discount = toNum(data.discount);
@@ -297,10 +299,10 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const remainingBalance = data.remainingBalance !== undefined ? toNum(data.remainingBalance, totalAmount - paidAmount) : Math.max(0, totalAmount - paidAmount);
 
       const newOrder: Order = {
-        id: orderNumber,
+        id: (data as any).id || localId,
         idempotencyKey: crypto.randomUUID(),
         orderNumber,
-        orderNumberProvisional: (data as any).orderNumberProvisional ?? true,
+        orderNumberProvisional: false,
         creation_source: (data as any).creation_source || (data as any).creationSource
           || ((data as any).quotationId || (data as any).quotation_id ? 'PORTAL_CONVERSION' : 'DIRECT_ERP'),
         creationSource: (data as any).creationSource || (data as any).creation_source

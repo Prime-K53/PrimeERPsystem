@@ -27,18 +27,21 @@ describe('determineSalesOrderOrigin — persisted provenance, never prefixes', (
     expect(numbering.determineSalesOrderOrigin({ orderNumber: 'SO-P726/001' })).toBe('DIRECT_ERP');
   });
 
-  it('prefixForOrigin maps origins to SO/ORD', () => {
-    expect(numbering.prefixForOrigin('QUOTATION_REQUEST')).toBe('SO');
+  it('prefixForOrigin always returns ORD (single family, origin is provenance only)', () => {
+    expect(numbering.prefixForOrigin('QUOTATION_REQUEST')).toBe('ORD');
+    expect(numbering.prefixForOrigin('PORTAL_CONVERSION')).toBe('ORD');
+    expect(numbering.prefixForOrigin('INVOICE_DERIVED')).toBe('ORD');
     expect(numbering.prefixForOrigin('DIRECT_ERP')).toBe('ORD');
     expect(numbering.prefixForOrigin('anything-else')).toBe('ORD');
   });
 
-  it('prefixMatchesOrigin guards adoption of client-supplied numbers', () => {
-    expect(numbering.prefixMatchesOrigin('SO-P726/028', { source_request_id: 'r' })).toBe(true);
-    expect(numbering.prefixMatchesOrigin('so-p726/028', { source_request_id: 'r' })).toBe(true);
+  it('prefixMatchesOrigin adopts ORD only — SO is never adopted for new rows', () => {
+    expect(numbering.prefixMatchesOrigin('ORD-P726/028', { source_request_id: 'r' })).toBe(true);
+    expect(numbering.prefixMatchesOrigin('ord-p726/028', { source_request_id: 'r' })).toBe(true);
     expect(numbering.prefixMatchesOrigin('ORD-P726/028', {})).toBe(true);
+    expect(numbering.prefixMatchesOrigin('ORD-P726/028', { quotation_id: 'q' })).toBe(true);
+    expect(numbering.prefixMatchesOrigin('SO-P726/028', { source_request_id: 'r' })).toBe(false);
     expect(numbering.prefixMatchesOrigin('SO-P726/028', {})).toBe(false);
-    expect(numbering.prefixMatchesOrigin('ORD-P726/028', { quotation_id: 'q' })).toBe(false);
     expect(numbering.prefixMatchesOrigin('ORDER-P726/028', {})).toBe(false);
   });
 });
@@ -68,10 +71,11 @@ describe('branch extension + padding resolution (mirrors frontend shared rule)',
     expect(numbering.resolveSeriesPadding(null)).toBe(4);
   });
 
-  it('formats official numbers with prefix, extension and zero-padded sequence', () => {
+  it('formats official numbers with the ORD prefix, extension and zero-padded sequence', () => {
     expect(numbering.formatOfficialSalesOrderNumber('DIRECT_ERP', 'P726', 26, 3)).toBe('ORD-P726/026');
-    expect(numbering.formatOfficialSalesOrderNumber('QUOTATION_REQUEST', 'P726', 28, 3)).toBe('SO-P726/028');
-    expect(numbering.formatOfficialSalesOrderNumber('DIRECT_ERP', 'P726', 7)).toBe('ORD-P726/0007');
+    expect(numbering.formatOfficialSalesOrderNumber('QUOTATION_REQUEST', 'P726', 28, 3)).toBe('ORD-P726/028');
+    expect(numbering.formatOfficialSalesOrderNumber('PORTAL_CONVERSION', 'P726', 28, 3)).toBe('ORD-P726/028');
+    expect(numbering.formatOfficialSalesOrderNumber('INVOICE_DERIVED', 'P726', 7)).toBe('ORD-P726/0007');
   });
 });
 
@@ -91,13 +95,13 @@ describe('official vs provisional classification', () => {
     expect(numbering.isLegacyOfficialNumber('SO-P726/028')).toBe(false);
   });
 
-  it('needsOfficialNumber flags provisionals, legacy non-officials and missing numbers', () => {
-    expect(numbering.needsOfficialNumber({ orderNumberProvisional: true })).toBe(true);
+  it('needsOfficialNumber requires a mint for anything but official ORD numbers', () => {
     expect(numbering.needsOfficialNumber({})).toBe(true);
     expect(numbering.needsOfficialNumber({ order_number: '' })).toBe(true);
     expect(numbering.needsOfficialNumber({ order_number: 'ORDER-P726/034' })).toBe(true);
-    expect(numbering.needsOfficialNumber({ order_number: 'SO-P726/001', orderNumberProvisional: true })).toBe(true);
-    expect(numbering.needsOfficialNumber({ order_number: 'SO-P726/028' })).toBe(false);
+    // SO- shapes are never official for numbering decisions — always mint ORD.
+    expect(numbering.needsOfficialNumber({ order_number: 'SO-P726/028' })).toBe(true);
+    expect(numbering.needsOfficialNumber({ order_number: 'TMP-0001' })).toBe(true);
     expect(numbering.needsOfficialNumber({ order_number: 'ORD-P726/026' })).toBe(false);
     expect(numbering.needsOfficialNumber({ order_number: 'ORD-2026-000001' })).toBe(false);
   });
@@ -214,14 +218,26 @@ describe('mintOfficialSalesOrderNumber (injected config + transport)', () => {
     transactionSettings: { numbering: { shared: { extension: 'P726', padding: 3 } } },
   };
 
-  it('mints SO- for conversion linkage, ORD- for direct rows', async () => {
+  it('mints ORD- for every origin (single family)', async () => {
     const httpPost = jest.fn(async () => ({ data: [40] }));
     await expect(
       numbering.mintOfficialSalesOrderNumber(
         { source_request_id: 'req-1' },
         { getCompanyConfig: async () => config, httpPost }
       )
-    ).resolves.toBe('SO-P726/040');
+    ).resolves.toBe('ORD-P726/040');
+    await expect(
+      numbering.mintOfficialSalesOrderNumber(
+        { creation_source: 'PORTAL_CONVERSION' },
+        { getCompanyConfig: async () => config, httpPost }
+      )
+    ).resolves.toBe('ORD-P726/040');
+    await expect(
+      numbering.mintOfficialSalesOrderNumber(
+        { creation_source: 'INVOICE_DERIVED' },
+        { getCompanyConfig: async () => config, httpPost }
+      )
+    ).resolves.toBe('ORD-P726/040');
     await expect(
       numbering.mintOfficialSalesOrderNumber(
         { customer_id: 'c' },
@@ -230,14 +246,20 @@ describe('mintOfficialSalesOrderNumber (injected config + transport)', () => {
     ).resolves.toBe('ORD-P726/040');
   });
 
-  it('originOverride wins over payload linkage', async () => {
+  it('originOverride never changes the ORD prefix', async () => {
     const httpPost = jest.fn(async () => ({ data: [41] }));
     await expect(
       numbering.mintOfficialSalesOrderNumber(
         {},
         { getCompanyConfig: async () => config, httpPost, originOverride: 'QUOTATION_REQUEST' }
       )
-    ).resolves.toBe('SO-P726/041');
+    ).resolves.toBe('ORD-P726/041');
+    await expect(
+      numbering.mintOfficialSalesOrderNumber(
+        {},
+        { getCompanyConfig: async () => config, httpPost, originOverride: 'PORTAL_CONVERSION' }
+      )
+    ).resolves.toBe('ORD-P726/041');
   });
 
   it('fails closed without a configured branch extension', async () => {
@@ -254,7 +276,7 @@ describe('alternate series proof — P727 has an independent sequence', () => {
     transactionSettings: { numbering: { shared: { extension: 'P727', padding: 3 } } },
   };
 
-  it('P727 direct → ORD-P727/001; P727 conversion → SO-P727/002', async () => {
+  it('P727 direct → ORD-P727/001; P727 conversion → ORD-P727/002', async () => {
     const httpPost = jest.fn(async () => ({ data: [1] }));
     const deps = { getCompanyConfig: async () => configP727, httpPost };
     await expect(numbering.mintOfficialSalesOrderNumber({ customer_id: 'c' }, deps)).resolves.toBe(
@@ -263,7 +285,7 @@ describe('alternate series proof — P727 has an independent sequence', () => {
     httpPost.mockResolvedValueOnce({ data: [2] });
     await expect(
       numbering.mintOfficialSalesOrderNumber({ source_request_id: 'req-9' }, deps)
-    ).resolves.toBe('SO-P727/002');
+    ).resolves.toBe('ORD-P727/002');
   });
 
   it('independent counters: P726=27 and P727=4 advance separately, never one stream', async () => {
@@ -293,10 +315,10 @@ describe('alternate series proof — P727 has an independent sequence', () => {
     // Interleaved claims keep advancing their own series only.
     await expect(
       numbering.mintOfficialSalesOrderNumber({ source_request_id: 'r' }, depsFor(p727Config))
-    ).resolves.toBe('SO-P727/006');
+    ).resolves.toBe('ORD-P727/006');
     await expect(
       numbering.mintOfficialSalesOrderNumber({ source_request_id: 'r' }, depsFor(p726Config))
-    ).resolves.toBe('SO-P726/029');
+    ).resolves.toBe('ORD-P726/029');
   });
 
   it('returning to P726 continues from the existing P726 counter (no reset, no reuse)', async () => {
@@ -317,7 +339,7 @@ describe('alternate series proof — P727 has an independent sequence', () => {
     ).resolves.toBe('ORD-P726/030');
   });
 
-  it('historical P726 recognition does not depend on the current series', () => {
+  it('historical P726 shapes still parse (reading only — never minted or adopted)', () => {
     expect(numbering.isOfficialSalesOrderNumber('SO-P726/028')).toBe(true);
     expect(numbering.isOfficialSalesOrderNumber('ORD-P726/029')).toBe(true);
     expect(numbering.isOfficialSalesOrderNumber('SO-P726/028', 'P727')).toBe(false);
@@ -332,16 +354,16 @@ describe('alternate series proof — P727 has an independent sequence', () => {
     expect(numbering.parseOfficialSalesOrderNumber('ORD-2026-000001')).toBeNull();
   });
 
-  it('a provisional SO-P726/999 never becomes official by resemblance', async () => {
-    // Even with an official-shaped provisional, minting consumes the counter
-    // and formats from origin + configured series — never adopts the text.
+  it('an SO-shaped value never becomes official by resemblance', async () => {
+    // Even with an official-shaped SO value, minting consumes the counter
+    // and formats ORD from the configured series — never adopts the text.
     const httpPost = jest.fn(async () => ({ data: [999] }));
     const configP726 = {
       transactionSettings: { numbering: { shared: { extension: 'P726', padding: 3 } } },
     };
     await expect(
       numbering.mintOfficialSalesOrderNumber(
-        { orderNumber: 'SO-P726/999', orderNumberProvisional: true },
+        { orderNumber: 'SO-P726/999' },
         { getCompanyConfig: async () => configP726, httpPost }
       )
     ).resolves.toBe('ORD-P726/999');
@@ -360,7 +382,7 @@ describe('alternate series proof — P727 has an independent sequence', () => {
       { source_request_id: 'req-x' },
       { getCompanyConfig: async () => configP728, httpPost }
     );
-    expect(number).toBe('SO-P728/0012');
+    expect(number).toBe('ORD-P728/0012');
     expect(seen[0].body).toEqual({ p_series: 'P728' });
     expect(String(seen[0].url)).toContain('/rpc/claim_next_sales_order_number');
     expect(String(seen[0].url)).not.toContain('p726');

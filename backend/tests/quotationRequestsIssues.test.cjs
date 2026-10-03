@@ -2,9 +2,9 @@
  * Quotation Requests System — comprehensive tests for Issues 1-9.
  *
  * Covers:
- *   ISSUE 1 — Numbering: order requests get SO-YYYY request numbers;
- *   official orders get SO-P726 (conversion) / ORD-P726 (direct) from one
- *   shared sequence
+ *   ISSUE 1 — Numbering: order requests get SO-YYYY request numbers (separate
+ *   request sequence, untouched); official Sales Orders always get ORD-P726
+ *   regardless of origin, from one shared sequence
  *   ISSUE 6 — Date formatting safety (inline logic from formatters.ts)
  *   ISSUE 8 — Reference numbers: source_request_number stored on official orders
  */
@@ -13,6 +13,7 @@ const workflowEngine = require('../services/workflowEngine.cjs');
 const {
   determineSalesOrderOrigin,
   isOfficialSalesOrderNumber,
+  prefixForOrigin,
   prefixMatchesOrigin,
 } = require('../services/salesOrderNumbering.cjs');
 
@@ -48,27 +49,30 @@ describe('ISSUE 1 — Request number prefixes', () => {
   });
 });
 
-// ─── ISSUE 1: Official order number (unified P726, one shared sequence) ─────
+// ─── ISSUE 1: Official order number (ORD-only family, one shared sequence) ──
 
-describe('ISSUE 1 — Official order number (P726 unified)', () => {
-  it('conversion linkage yields the SO- prefix', () => {
+describe('ISSUE 1 — Official order number (ORD-only)', () => {
+  it('conversion linkage keeps portal provenance (numbering always ORD)', () => {
     expect(determineSalesOrderOrigin({ source_request_id: 'req-1' })).toBe('QUOTATION_REQUEST');
+    expect(prefixForOrigin('QUOTATION_REQUEST')).toBe('ORD');
   });
 
   it('direct rows yield the ORD- prefix', () => {
     expect(determineSalesOrderOrigin({ customer_id: 'c-1' })).toBe('DIRECT_ERP');
+    expect(prefixForOrigin('DIRECT_ERP')).toBe('ORD');
   });
 
-  it('unified official shapes validate; legacy ORDER- does not', () => {
+  it('unified shapes still parse for history; legacy ORDER- does not', () => {
     expect(isOfficialSalesOrderNumber('SO-P726/028')).toBe(true);
     expect(isOfficialSalesOrderNumber('ORD-P726/026')).toBe(true);
     expect(isOfficialSalesOrderNumber('ORDER-P726/026')).toBe(false);
   });
 
-  it('prefix must match persisted origin (SO- kept only for conversions)', () => {
-    expect(prefixMatchesOrigin('SO-P726/028', { source_request_id: 'req-1' })).toBe(true);
+  it('only ORD- is adoptable for new rows (SO- never kept)', () => {
+    expect(prefixMatchesOrigin('SO-P726/028', { source_request_id: 'req-1' })).toBe(false);
     expect(prefixMatchesOrigin('SO-P726/028', { customer_id: 'c-1' })).toBe(false);
     expect(prefixMatchesOrigin('ORD-P726/026', { customer_id: 'c-1' })).toBe(true);
+    expect(prefixMatchesOrigin('ORD-P726/026', { source_request_id: 'req-1' })).toBe(true);
   });
 });
 
@@ -150,10 +154,12 @@ describe('Summary — all issues covered', () => {
     expect(workflowEngine.requestNumberPrefix('order')).toBe('SO');
   });
 
-  it('ISSUE 1: official P726 numbers share one sequence across SO-/ORD- prefixes', () => {
+  it('ISSUE 1: official P726 numbers are one ORD family on one sequence', () => {
     expect(isOfficialSalesOrderNumber('SO-P726/028')).toBe(true);
     expect(isOfficialSalesOrderNumber('ORD-P726/026')).toBe(true);
     expect(isOfficialSalesOrderNumber('ORDER-P726/026')).toBe(false);
+    expect(prefixForOrigin('DIRECT_ERP')).toBe('ORD');
+    expect(prefixForOrigin('PORTAL_CONVERSION')).toBe('ORD');
   });
 
   it('ISSUE 6: no Invalid Date for any nullish input', () => {

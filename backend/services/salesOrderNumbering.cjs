@@ -10,21 +10,18 @@
  * hard-coded here: every pattern, counter identity and RPC call is
  * parameterized by the resolved series.
  *
- * Business rule (never infer origin from a prefix — origin comes from
- * the explicit persisted `creation_source`, with request/quotation linkage
- * as a backwards-compatible fallback):
- *   DIRECT_ERP origin (explicit creation_source, or no linkage)
- *     → ORD-{series}/NNN
- *   PORTAL_CONVERSION origin (explicit creation_source; legacy alias
- *     QUOTATION_REQUEST, or source_request_id/number or quotation_id set)
- *     → SO-{series}/NNN
- *   INVOICE_DERIVED origin (explicit creation_source for direct-invoice
- *     orders that preserve the Order → Invoice chain)
- *     → ORD-{series}/NNN (ERP family sequence, never portal SO)
- * Both prefixes consume ONE numeric sequence PER SERIES (migration 0027:
- * one counter row per series; different series never interfere).
- * Missing/invalid sources never default to portal/SO — the safe fallback
- * is DIRECT_ERP/ORD.
+ * Business rule — ONE official numbering family: ORD.
+ * Every Sales Order, regardless of creation source, receives
+ *   ORD-{series}/NNN
+ * `creation_source` (DIRECT_ERP / PORTAL_CONVERSION / INVOICE_DERIVED, with
+ * request/quotation linkage as a backwards-compatible fallback) is
+ * provenance/audit metadata only and MUST NOT affect the number. There is
+ * no SO prefix and no TMP identifier in Sales Order numbering.
+ * ONE numeric sequence PER SERIES (migration 0027: one counter row per
+ * series; different series never interfere). No separate SO/ORD counters.
+ * Historical official ORD numbers are never renumbered; historical SO
+ * shapes remain parseable for reading history only and are never minted
+ * or adopted for new rows.
  *
  * Atomicity: numbers are claimed with the single-statement-per-series
  * Postgres function `claim_next_sales_order_number(series)` (row lock +
@@ -57,8 +54,14 @@ function cloudConfig() {
   return { base, key, configured: Boolean(base && key && !base.includes('placeholder') && !key.includes('placeholder')) };
 }
 
-/** Official unified shape: SO-{series}/NNN (conversion) or ORD-{series}/NNN (direct). */
+/**
+ * Official unified shape. ORD-{series}/NNN is the ONLY allocated family.
+ * The SO- alternative is recognized here for reading historical numbers
+ * only (migration 0027 seeds, legacy rows) — it is never minted or adopted.
+ */
 const SALES_ORDER_OFFICIAL_PATTERN = /^(SO|ORD)-([A-Za-z0-9]+)\/(\d+)$/i;
+/** The only prefix ever allocated for Sales Orders. */
+const OFFICIAL_PREFIX = 'ORD';
 /** Legacy backend official numbers (kept, never minted anymore). */
 const LEGACY_ORD_YEAR_PATTERN = /^ORD-\d{4}-\d{6}$/;
 
@@ -104,15 +107,16 @@ function readCreationSource(domain) {
 }
 
 /**
- * Pure: decide origin from the explicit persisted creation source first,
- * with request/quotation linkage as a backwards-compatible fallback
- * (never from number prefixes).
+ * Pure: decide provenance origin from the explicit persisted creation
+ * source first, with request/quotation linkage as a backwards-compatible
+ * fallback (never from number prefixes). Provenance only — every origin
+ * resolves to the ORD numbering family.
  *
- *   creation_source DIRECT_ERP      → DIRECT_ERP (ORD)
- *   creation_source PORTAL_CONVERSION (+ legacy QUOTATION_REQUEST) → PORTAL (SO)
- *   creation_source INVOICE_DERIVED → INVOICE_DERIVED (ORD, ERP family)
- *   no explicit source + linkage   → QUOTATION_REQUEST (SO, legacy path)
- *   no explicit source, no linkage → DIRECT_ERP (ORD, safe fallback)
+ *   creation_source DIRECT_ERP      → DIRECT_ERP
+ *   creation_source PORTAL_CONVERSION (+ legacy QUOTATION_REQUEST) → PORTAL
+ *   creation_source INVOICE_DERIVED → INVOICE_DERIVED
+ *   no explicit source + linkage   → QUOTATION_REQUEST (portal fallback)
+ *   no explicit source, no linkage → DIRECT_ERP (safe fallback)
  */
 function determineSalesOrderOrigin(domain) {
   const d = domain && typeof domain === 'object' ? domain : {};
@@ -127,11 +131,15 @@ function determineSalesOrderOrigin(domain) {
   return linked ? ORIGIN_CONVERSION : ORIGIN_DIRECT;
 }
 
+/**
+ * Prefix for a Sales Order origin. Single-family model: ALWAYS 'ORD',
+ * regardless of origin. The parameter is retained so existing callers and
+ * the shared format helper keep working unchanged; creation source is
+ * provenance only and never affects numbering.
+ */
 function prefixForOrigin(origin) {
-  const normalized = normalizeCreationSource(origin) || origin;
-  if (normalized === ORIGIN_PORTAL || normalized === ORIGIN_CONVERSION) return 'SO';
-  // DIRECT_ERP, INVOICE_DERIVED and any unknown/safe fallback use ORD.
-  return 'ORD';
+  void origin;
+  return OFFICIAL_PREFIX;
 }
 
 /**
@@ -168,18 +176,18 @@ function isOfficialSalesOrderNumber(value, series) {
 }
 
 /**
- * Pure: does a candidate official number's prefix agree with the domain's
- * persisted origin? Guards adoption of client-supplied numbers (a direct-ERP
- * or invoice-derived row must never keep an SO- number, and a portal row
- * must never keep an ORD- number). Series-agnostic: only the origin prefix
- * is compared, never any particular series value.
+ * Pure: is a client-supplied number adoptable as an official Sales Order
+ * number? Single-family model: only ORD-{series}/NNN unifies official
+ * numbers are adoptable. SO-/TMP-shaped candidates are never adopted for
+ * new rows (a fresh ORD is minted instead); historical rows keep their
+ * stored numbers through the existing-row preservation path, never here.
+ * The domain parameter is retained for caller compatibility.
  */
 function prefixMatchesOrigin(candidate, domain) {
+  void domain;
   const parsed = parseOfficialSalesOrderNumber(candidate);
   if (!parsed) return false;
-  const expectedPrefix = prefixForOrigin(determineSalesOrderOrigin(domain));
-  const candidatePrefix = parsed.origin === 'CONVERSION' ? 'SO' : 'ORD';
-  return candidatePrefix === expectedPrefix;
+  return parsed.origin === 'DIRECT';
 }
 
 /**
@@ -231,16 +239,18 @@ function isLegacyOfficialNumber(value) {
 }
 
 /**
- * Pure: is this payload still provisional (must be officially numbered)?
- * Explicit flag wins; otherwise anything that is not already an official
- * unified number (any series) and not a legacy official number needs minting.
+ * Pure: does this payload still need an official number? There is no
+ * provisional-number concept: anything without an official ORD unified
+ * number (any series) or a legacy ORD official number in `order_number`
+ * needs minting. SO-/TMP-shaped values are never official and always
+ * need a fresh ORD mint.
  */
 function needsOfficialNumber(domain) {
   const d = domain && typeof domain === 'object' ? domain : {};
-  if (d.orderNumberProvisional === true) return true;
   const current = String(d.order_number || '').trim();
   if (!current) return true;
-  if (isOfficialSalesOrderNumber(current)) return false;
+  const parsed = parseOfficialSalesOrderNumber(current);
+  if (parsed && parsed.origin === 'DIRECT') return false;
   if (isLegacyOfficialNumber(current)) return false;
   return true;
 }
@@ -337,12 +347,11 @@ function isUniqueViolation(err) {
 
 /**
  * Full mint for one official order in the CURRENT configured series:
- * resolve series → claim (that series' counter) → format.
- * `originOverride` forces a prefix (portal conversion callers pass
- * ORIGIN_PORTAL/ORIGIN_CONVERSION explicitly for SO); otherwise origin is
- * derived from the explicit creation_source with linkage fallback.
- * `seriesOverride` pins the series (tests, tooling); otherwise the company
- * config decides.
+ * resolve series → claim (that series' counter) → format ORD.
+ * Origin (`originOverride` or the explicit creation_source with linkage
+ * fallback) is provenance only and never affects the prefix: every mint
+ * produces ORD-{series}/NNN. `seriesOverride` pins the series (tests,
+ * tooling); otherwise the company config decides.
  */
 async function mintOfficialSalesOrderNumber(domain, deps) {
   const getConfig = (deps && deps.getCompanyConfig) || null;

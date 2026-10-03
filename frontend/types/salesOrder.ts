@@ -119,8 +119,14 @@ export interface SalesOrderConversionDetails {
 }
 
 export interface SalesOrder {
+  /** Internal row id (offline-safe). Never a Sales Order number. */
   id: string;
-  orderNumber?: string;
+  /**
+   * Display/compat number. Null until the server assigns the canonical
+   * `order_number` (ORD-{series}/NNN). Never a fabricated SO-/TMP- value.
+   */
+  orderNumber?: string | null;
+  /** Legacy compatibility field. Always written as false; never read for numbering. */
   orderNumberProvisional?: boolean;
   status: SalesOrderStatus | string;
   paymentStatus?: SalesOrderPaymentStatus;
@@ -303,20 +309,11 @@ export function displayStatus(status?: string | null): string {
 }
 
 /**
- * True when the record carries a provisional (client-minted) order number.
- * Explicit flag wins. Otherwise official unified numbers
- * (SO|ORD-{series}/NNN) and legacy ORD-YYYY-NNNNNN are NOT provisional;
- * everything else (missing, TMP-, short SO-####/ORD-#### without a series
- * slash, ORDER-, bare ids) IS provisional and must never be presented as
- * the official Sales Order number.
+ * Single ORD numbering family: there is no provisional Sales Order number.
+ * New rows carry `orderNumber: null` until the server assigns the canonical
+ * `order_number` (ORD-{series}/NNN); the UI shows a neutral pending state
+ * meanwhile. The `orderNumberProvisional` field below is a legacy
+ * compatibility field only — it is always written as false and never read
+ * for numbering decisions. SO-/TMP-shaped values are never official and
+ * must never be presented as the Sales Order number.
  */
-const OFFICIAL_UNIFIED_PATTERN = /^(SO|ORD)-([A-Za-z0-9]+)\/(\d+)$/i;
-const LEGACY_ORD_YEAR_PATTERN = /^ORD-\d{4}-\d{6}$/;
-export function isProvisionalNumber(order: Pick<SalesOrder, 'orderNumber' | 'orderNumberProvisional'>): boolean {
-  if (order.orderNumberProvisional === true) return true;
-  const value = String((order as { orderNumber?: unknown }).orderNumber || '').trim();
-  if (!value) return true;
-  if (OFFICIAL_UNIFIED_PATTERN.test(value)) return false;
-  if (LEGACY_ORD_YEAR_PATTERN.test(value)) return false;
-  return true;
-}

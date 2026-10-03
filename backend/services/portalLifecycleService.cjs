@@ -1941,11 +1941,10 @@ const portalLifecycleService = {
     // list, the portal and the document chain all reference ONE order. Without
     // an erpOrderId a fresh canonical record is created as before.
     const orderId = erpOrderId || genId('so');
-    // Unified P726 official number, shared atomic sequence. Portal conversions
-    // always carry the SO- prefix (explicit creation_source PORTAL_CONVERSION);
-    // direct ERP orders get ORD- via the same counter in the sync gateway.
-    // Throws when the sequence store is unavailable — an official order must
-    // never be created unnumbered.
+    // Unified P726 official number, shared atomic sequence. Single ORD family
+    // for every origin (creation_source PORTAL_CONVERSION is provenance
+    // only). Throws when the sequence store is unavailable — an official
+    // order must never be created unnumbered.
     const orderNumber = await salesOrderNumbering.mintOfficialSalesOrderNumber(
       {
         creation_source: salesOrderNumbering.ORIGIN_PORTAL,
@@ -2370,7 +2369,7 @@ const portalLifecycleService = {
     }
 
     const orderId = genId('so');
-    // Unified P726 official number (explicit PORTAL_CONVERSION → SO- prefix),
+    // Unified P726 official number (single ORD family for every origin),
     // shared atomic sequence with direct ERP orders. See completeSalesOrder.
     const orderNumber = await salesOrderNumbering.mintOfficialSalesOrderNumber(
       { creation_source: salesOrderNumbering.ORIGIN_PORTAL, quotation_id: id },

@@ -82,7 +82,7 @@ describe('incident 18/09/2026: ORDER-P726/022, /023, /024 must list', () => {
     );
   });
 
-  it('previously-missing and surviving rows render identically in the list', () => {
+  it('rows stay listed while obsolete legacy numbers render as pending state, never as numbers', () => {
     const { ordered } = runListPipeline(incidentRows());
     render(
       <OrdersList
@@ -96,9 +96,16 @@ describe('incident 18/09/2026: ORDER-P726/022, /023, /024 must list', () => {
         onSearchClear={vi.fn()}
       />,
     );
-    for (const num of ['ORDER-P726/021', 'ORDER-P726/022', 'ORDER-P726/023', 'ORDER-P726/024', 'ORDER-P726/025', 'ORDER-P726/026', 'SO-P726/021']) {
-      expect(screen.getByText(num)).toBeInTheDocument();
+    // Every incident customer still lists (the original missing-rows regression).
+    for (const name of ['Luweya Primary School', 'Lengwe Primary School', 'Kanyenda Primary School', 'Liphuphwe Primary School', 'Mua RC School', 'Bondo RC Primary', 'Chipse Primary School']) {
+      expect(screen.getByText(name)).toBeInTheDocument();
     }
+    // Legacy ORDER-/SO- compat values are obsolete: never displayed as numbers.
+    for (const num of ['ORDER-P726/021', 'ORDER-P726/022', 'ORDER-P726/023', 'ORDER-P726/024', 'ORDER-P726/025', 'ORDER-P726/026', 'SO-P726/021']) {
+      expect(screen.queryByText(num)).toBeNull();
+    }
+    // ...instead the neutral pending state shows until ORD arrives.
+    expect(screen.getAllByText('Pending number').length).toBeGreaterThanOrEqual(7);
   });
 
   it('Processing orders are not excluded (all six ORDER rows)', () => {

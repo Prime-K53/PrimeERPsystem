@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../services/db', () => ({
   dbService: {
@@ -9,23 +9,20 @@ vi.mock('../../services/db', () => ({
   },
 }));
 
-vi.mock('../../utils/helpers', () => ({
-  generateNextId: vi.fn((prefix: string) => `${prefix}-NEXT`),
-}));
-
 import {
   normalizeCreationSource,
   readCreationSource,
-  isProvisionalNumber,
 } from '../../types/salesOrder';
 import {
   canonicalizeOrder,
-  generateProvisionalOrderId,
+  generateLocalSalesOrderId,
   getSalesOrderOfficialNumber,
+  getSalesOrderDisplayNumber,
+  PENDING_SALES_ORDER_NUMBER,
 } from '../../services/salesOrderService';
 
 const baseOrder = (overrides: Record<string, unknown> = {}) => ({
-  id: 'so_1',
+  id: 'so-local-1',
   customerName: 'Acme',
   orderDate: '2026-08-18T09:00:00.000Z',
   items: [
@@ -35,7 +32,7 @@ const baseOrder = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-describe('creation_source normalization (frontend mirror)', () => {
+describe('creation_source normalization (frontend mirror, provenance only)', () => {
   it('accepts the three canonical sources', () => {
     expect(normalizeCreationSource('DIRECT_ERP')).toBe('DIRECT_ERP');
     expect(normalizeCreationSource('PORTAL_CONVERSION')).toBe('PORTAL_CONVERSION');
@@ -61,13 +58,14 @@ describe('creation_source normalization (frontend mirror)', () => {
 });
 
 describe('canonicalizeOrder preserves explicit creation_source', () => {
-  it('keeps DIRECT_ERP on ERP manual orders', () => {
+  it('keeps DIRECT_ERP on ERP manual orders with null number', () => {
     const canonical = canonicalizeOrder(
-      baseOrder({ status: 'Draft', creation_source: 'DIRECT_ERP' }),
+      baseOrder({ status: 'Draft', creation_source: 'DIRECT_ERP', orderNumber: null }),
     );
     expect(canonical.creation_source).toBe('DIRECT_ERP');
     expect(canonical.creationSource).toBe('DIRECT_ERP');
     expect(canonical.status).toBe('Draft');
+    expect(canonical.orderNumber).toBeNull();
   });
 
   it('keeps INVOICE_DERIVED with invoice linkage and Confirmed status', () => {
@@ -98,41 +96,40 @@ describe('canonicalizeOrder preserves explicit creation_source', () => {
   });
 });
 
-describe('provisional numbers (TMP neutral, never SO)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('local ids and pending numbers (no SO/TMP numbering)', () => {
+  it('mints opaque local ids (never a Sales Order number)', () => {
+    const id = generateLocalSalesOrderId();
+    expect(id.startsWith('local-')).toBe(true);
+    expect(id).not.toMatch(/^ORD-/i);
+    expect(id).not.toMatch(/^SO-/i);
+    expect(id).not.toMatch(/^TMP-/i);
+    expect(id).not.toContain('/');
   });
 
-  it('mints TMP- provisionals by default', () => {
-    expect(generateProvisionalOrderId([])).toBe('TMP-NEXT');
+  it('drops SO-/TMP-shaped compat values instead of surfacing them', () => {
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'SO-P726/0001' })).orderNumber).toBeNull();
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'TMP-0001' })).orderNumber).toBeNull();
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'SO-2026-000001' })).orderNumber).toBeNull();
   });
 
-  it('recognizes neutral and short provisionals as provisional', () => {
-    expect(isProvisionalNumber({ orderNumber: 'TMP-0001' })).toBe(true);
-    expect(isProvisionalNumber({ orderNumber: 'SO-0001' })).toBe(true);
-    expect(isProvisionalNumber({ orderNumber: 'ORD-0001' })).toBe(true);
-    expect(isProvisionalNumber({ orderNumber: '' })).toBe(true);
-    expect(isProvisionalNumber({} as any)).toBe(true);
-  });
-
-  it('recognizes official unified and legacy numbers as non-provisional', () => {
-    expect(isProvisionalNumber({ orderNumber: 'SO-P726/0001' })).toBe(false);
-    expect(isProvisionalNumber({ orderNumber: 'ORD-P726/0001' })).toBe(false);
-    expect(isProvisionalNumber({ orderNumber: 'ORD-2026-000001' })).toBe(false);
-  });
-
-  it('explicit flag always wins', () => {
-    expect(
-      isProvisionalNumber({ orderNumber: 'ORD-P726/0001', orderNumberProvisional: true }),
-    ).toBe(true);
-  });
-
-  it('official reader never returns a provisional as official', () => {
+  it('official reader ignores SO/TMP values', () => {
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/0001' })).toBeUndefined();
     expect(getSalesOrderOfficialNumber({ orderNumber: 'TMP-0001' })).toBeUndefined();
-    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-0001' })).toBeUndefined();
-    expect(
-      getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/0001', orderNumberProvisional: true }),
-    ).toBeUndefined();
     expect(getSalesOrderOfficialNumber({ orderNumber: 'ORD-P726/0001' })).toBe('ORD-P726/0001');
+  });
+
+  it('display shows a pending state until the server assigns ORD', () => {
+    expect(getSalesOrderDisplayNumber(baseOrder({ orderNumber: null }))).toBe(
+      PENDING_SALES_ORDER_NUMBER
+    );
+    expect(getSalesOrderDisplayNumber(baseOrder({ orderNumber: 'TMP-0001' }))).toBe(
+      PENDING_SALES_ORDER_NUMBER
+    );
+    expect(getSalesOrderDisplayNumber(baseOrder({ orderNumber: 'SO-P726/0001' }))).toBe(
+      PENDING_SALES_ORDER_NUMBER
+    );
+    expect(getSalesOrderDisplayNumber(baseOrder({ order_number: 'ORD-P726/0021' }))).toBe(
+      'ORD-P726/0021'
+    );
   });
 });

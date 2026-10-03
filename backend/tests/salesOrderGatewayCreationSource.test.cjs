@@ -1,9 +1,10 @@
 /**
- * Sync-gateway creation_source contract (cloudSyncStore.ensureSalesOrderNumber).
+ * Sync-gateway creation_source contract (cloudSyncStore.ensureSalesOrderNumber)
+ * under single-family ORD numbering.
  *
  *   DIRECT_ERP       → mints ORD-P726/NNN
- *   PORTAL_CONVERSION→ mints SO-P726/NNN
- *   INVOICE_DERIVED  → mints ORD-P726/NNN (chain preserved, never portal SO)
+ *   PORTAL_CONVERSION→ mints ORD-P726/NNN
+ *   INVOICE_DERIVED  → mints ORD-P726/NNN (chain preserved)
  * Existing rows keep their official numbers untouched (history immutable).
  *
  * Hermetic: axios + companyConfigService are mocked; no network, no Supabase.
@@ -78,7 +79,7 @@ function stubClaimRpc(sequence) {
   stubs.post.push([(url) => isClaimRpc(url), () => ({ data: [sequence] })]);
 }
 
-describe('ensureSalesOrderNumber — creation_source routing', () => {
+describe('ensureSalesOrderNumber — every source mints ORD (single family)', () => {
   beforeEach(resetStubs);
 
   it('DIRECT_ERP genuine create mints ORD-', async () => {
@@ -86,54 +87,82 @@ describe('ensureSalesOrderNumber — creation_source routing', () => {
     stubTakenCheckEmpty();
     stubClaimRpc(11);
     const out = await cloudSyncStore.ensureSalesOrderNumber({
-      id: 'tmp-1',
-      orderNumber: 'TMP-0001',
-      orderNumberProvisional: true,
+      id: 'so-local-1',
+      orderNumber: null,
+      orderNumberProvisional: false,
       creation_source: 'DIRECT_ERP',
       customer_id: 'c-1',
     });
     expect(out).toBe('ORD-P726/011');
   });
 
-  it('PORTAL_CONVERSION genuine create mints SO-', async () => {
+  it('PORTAL_CONVERSION genuine create mints ORD- (no SO family)', async () => {
     stubGetRow({});
     stubTakenCheckEmpty();
     stubClaimRpc(12);
     const out = await cloudSyncStore.ensureSalesOrderNumber({
-      id: 'tmp-2',
-      orderNumber: 'TMP-0002',
-      orderNumberProvisional: true,
+      id: 'so-local-2',
+      orderNumber: null,
+      orderNumberProvisional: false,
       creation_source: 'PORTAL_CONVERSION',
       source_request_id: 'req-1',
     });
-    expect(out).toBe('SO-P726/012');
+    expect(out).toBe('ORD-P726/012');
   });
 
-  it('INVOICE_DERIVED genuine create mints ORD- (never portal SO)', async () => {
+  it('INVOICE_DERIVED genuine create mints ORD-', async () => {
     stubGetRow({});
     stubTakenCheckEmpty();
     stubClaimRpc(13);
     const out = await cloudSyncStore.ensureSalesOrderNumber({
-      id: 'tmp-3',
-      orderNumber: 'TMP-0003',
-      orderNumberProvisional: true,
+      id: 'so-local-3',
+      orderNumber: null,
+      orderNumberProvisional: false,
       creation_source: 'INVOICE_DERIVED',
       invoiceId: 'inv-1',
     });
     expect(out).toBe('ORD-P726/013');
   });
 
-  it('invoice-derived SO candidate is rejected and re-minted ORD-', async () => {
+  it('all three sources share one counter (no separate SO counter)', async () => {
+    stubGetRow({});
+    stubTakenCheckEmpty();
+    const state = new Map([['P726', 20]]);
+    stubs.post.push([
+      (url) => isClaimRpc(url),
+      (url, body) => {
+        const next = (state.get(body.p_series) || 0) + 1;
+        state.set(body.p_series, next);
+        return { data: next };
+      },
+    ]);
+    const base = { id: 'so-x', orderNumber: null, orderNumberProvisional: false };
+    expect(
+      await cloudSyncStore.ensureSalesOrderNumber({ ...base, id: 'so-a', creation_source: 'DIRECT_ERP' })
+    ).toBe('ORD-P726/021');
+    expect(
+      await cloudSyncStore.ensureSalesOrderNumber({
+        ...base,
+        id: 'so-b',
+        creation_source: 'PORTAL_CONVERSION',
+        source_request_id: 'req-1',
+      })
+    ).toBe('ORD-P726/022');
+    expect(
+      await cloudSyncStore.ensureSalesOrderNumber({ ...base, id: 'so-c', creation_source: 'INVOICE_DERIVED' })
+    ).toBe('ORD-P726/023');
+  });
+
+  it('SO candidate is rejected and re-minted ORD-', async () => {
     stubGetRow({});
     stubTakenCheckEmpty();
     stubClaimRpc(14);
     const out = await cloudSyncStore.ensureSalesOrderNumber({
-      id: 'tmp-4',
+      id: 'so-legacy',
       order_number: 'SO-P726/014',
       orderNumberProvisional: false,
-      creation_source: 'INVOICE_DERIVED',
+      creation_source: 'PORTAL_CONVERSION',
     });
-    // prefixMismatch → fresh mint by explicit source (ORD), not adoption.
     expect(out).toBe('ORD-P726/014');
   });
 
@@ -141,7 +170,7 @@ describe('ensureSalesOrderNumber — creation_source routing', () => {
     stubGetRow({
       'so-keep': {
         id: 'so-keep',
-        data: { id: 'so-keep', order_number: 'SO-P726/009', creation_source: 'PORTAL_CONVERSION' },
+        data: { id: 'so-keep', order_number: 'ORD-P726/009', creation_source: 'PORTAL_CONVERSION' },
         version: 2,
       },
     });
@@ -150,7 +179,7 @@ describe('ensureSalesOrderNumber — creation_source routing', () => {
       order_number: 'ORD-P726/099',
       creation_source: 'DIRECT_ERP',
     });
-    expect(out).toBe('SO-P726/009');
+    expect(out).toBe('ORD-P726/009');
     expect(axios.post).not.toHaveBeenCalledWith(
       expect.stringContaining('/rpc/claim_next_sales_order_number'),
       expect.anything(),

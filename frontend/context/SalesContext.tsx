@@ -1318,15 +1318,15 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             },
                 addSalesOrder: async (order: SalesOrder) => {
                     try {
-                        const provisionalId = order.id || salesOrderService.generateProvisionalOrderId(salesStore.salesOrders, 'TMP');
+                        const localId = order.id || salesOrderService.generateLocalSalesOrderId();
                         const hasLinkage = (order as any).quotationId || (order as any).quotation_id
                             || (order as any).sourceRequestId || (order as any).source_request_id
                             || (order as any).sourceRequestNumber || (order as any).source_request_number;
                         const orderToSave: SalesOrder = {
                             ...order,
-                            id: provisionalId,
-                            orderNumber: (order as any).orderNumber || provisionalId,
-                            orderNumberProvisional: (order as any).orderNumberProvisional ?? true,
+                            id: localId,
+                            orderNumber: (order as any).orderNumber ?? null,
+                            orderNumberProvisional: false,
                             creation_source: (order as any).creation_source || (order as any).creationSource
                                 || (hasLinkage ? 'PORTAL_CONVERSION' : 'DIRECT_ERP'),
                             creationSource: (order as any).creationSource || (order as any).creation_source

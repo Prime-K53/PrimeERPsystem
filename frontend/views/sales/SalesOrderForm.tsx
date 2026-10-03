@@ -4,7 +4,7 @@ import { useSalesOrderStore } from '../../stores/salesOrderStore';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import type { SalesOrderItem, SalesOrder } from '../../types';
-import { generateProvisionalOrderId } from '../../services/salesOrderService';
+import { generateLocalSalesOrderId } from '../../services/salesOrderService';
 import { Printer } from 'lucide-react';
 
 interface SalesOrderFormProps {
@@ -162,19 +162,18 @@ const SalesOrderForm: React.FC<SalesOrderFormProps> = ({ initial, onDone, onCrea
   };
 
   const save = async () => {
-    // Manual ERP creation mints a neutral TMP- provisional identity with an
-    // explicit DIRECT_ERP source; the backend stamps the official ORD number
-    // on first sync. Status stays Draft (never Done).
-    const provisionalId = !order.id
-      ? generateProvisionalOrderId(useSalesOrderStore.getState().salesOrders || [], 'TMP')
-      : null;
+    // Manual ERP creation uses an opaque local row id only (never a
+    // fabricated number) with an explicit DIRECT_ERP source; the backend
+    // assigns the official ORD number on first sync. Status stays Draft
+    // (never Done). Until then orderNumber is null (pending state).
+    const localId = !order.id ? generateLocalSalesOrderId() : null;
     const orderToSave = {
       ...order,
-      ...(provisionalId
+      ...(localId
         ? {
-          id: provisionalId,
-          orderNumber: provisionalId,
-          orderNumberProvisional: true,
+          id: localId,
+          orderNumber: null,
+          orderNumberProvisional: false,
           creation_source: 'DIRECT_ERP',
           creationSource: 'DIRECT_ERP',
         }

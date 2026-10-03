@@ -1939,7 +1939,7 @@ export const transactionService = {
             );
             if (dup) return null;
 
-            const orderId = salesOrderService.generateProvisionalOrderId(existing, 'TMP');
+            const orderId = salesOrderService.generateLocalSalesOrderId();
 
             const items: SalesOrderItem[] = (invoice.items || []).map((it: CartItem, idx: number) => {
                 const quantity = Number(it.quantity ?? it.qty ?? 1);
@@ -1962,10 +1962,11 @@ export const transactionService = {
             const total = Number(invoice.totalAmount ?? invoice.total ?? (subtotal - discounts));
             const tax = Number(invoice.tax ?? invoice.taxRate ?? 0);
 
-            const order: SalesOrder & { orderNumber?: string; customerName?: string; invoiceId?: string; invoiceNumber?: string; source?: string } = {
+            const order: SalesOrder & { orderNumber?: string | null; customerName?: string; invoiceId?: string; invoiceNumber?: string; source?: string } = {
                 id: orderId,
-                orderNumber: orderId,
-                orderNumberProvisional: true,
+                // No fabricated number: null until the server assigns ORD.
+                orderNumber: null,
+                orderNumberProvisional: false,
                 creation_source: 'INVOICE_DERIVED',
                 creationSource: 'INVOICE_DERIVED',
                 quotationId: null,

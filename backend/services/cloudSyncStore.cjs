@@ -179,18 +179,17 @@ async function listRows(table) {
 }
 
 // ─── Unified P726 official Sales Order numbering ────────────────────────────
-// One global numeric sequence shared by both official prefixes:
-//   DIRECT_ERP origin (explicit creation_source, or no linkage)     → ORD-P726/NNN
-//   PORTAL_CONVERSION origin (explicit creation_source; legacy
-//     QUOTATION_REQUEST alias or request/quotation linkage)          → SO-P726/NNN
-//   INVOICE_DERIVED origin (explicit creation_source, Order→Invoice)→ ORD-P726/NNN
+// ONE official numbering family: every Sales Order mints ORD-P726/NNN from
+// one global numeric sequence per series, regardless of creation source
+// (DIRECT_ERP / PORTAL_CONVERSION / INVOICE_DERIVED is provenance only).
+// Historical SO shapes are recognized for reading only — never minted.
 // Numbers are claimed atomically (counter row lock — see salesOrderNumbering
 // + migration 0027). Never SELECT MAX()+1, never an in-memory counter.
 //
 // History rule: rows that already exist server-side keep their numbers
 // untouched. Only genuine creates can receive a fresh official number.
-// Provisional rows (orderNumberProvisional or non-official shapes like
-// ORDER-P726/…) are minted, never adopted.
+// There is no provisional concept: only ORD unified numbers are adopted;
+// SO-/TMP-/ORDER- shapes are minted fresh, never adopted.
 const salesOrderNumbering = require('./salesOrderNumbering.cjs');
 
 /**
@@ -229,22 +228,22 @@ async function ensureSalesOrderNumber(payload) {
     return null;
   }
 
-  // Genuine create: adopt a client-supplied official number only when it is a
-  // well-formed P726 number, explicitly non-provisional, prefix-consistent
-  // with the persisted origin, and currently unused (conversion pre-claims
-  // and legitimate replays take this path with zero counter waste).
+  // Genuine create: adopt a client-supplied official number only when it is
+  // a well-formed ORD unified number and currently unused (legitimate
+  // replays take this path with zero counter waste). There is no
+  // provisional concept: SO-/TMP-shaped candidates are never adopted — a
+  // fresh ORD is minted instead.
   const candidate = String(data.order_number || '').trim();
   if (
     candidate &&
     salesOrderNumbering.isOfficialSalesOrderNumber(candidate) &&
-    data.orderNumberProvisional !== true &&
     salesOrderNumbering.prefixMatchesOrigin(candidate, data) &&
     !(await salesOrderNumbering.isOfficialNumberTaken(candidate, { excludeId: id }))
   ) {
     return candidate;
   }
 
-  // Otherwise mint fresh from the shared atomic counter by persisted origin.
+  // Otherwise mint fresh ORD from the shared atomic counter.
   // Throws when the sequence store/config is unavailable (caller fails open).
   return salesOrderNumbering.mintOfficialSalesOrderNumber(data);
 }

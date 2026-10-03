@@ -24,11 +24,12 @@ import {
   assertTenantSafe,
   adoptQuotationRequestAsSalesOrder,
   migrateLegacyOrders,
-  isOfficialNumber,
+  isOfficialOrdNumber,
   isOfficialSalesOrderNumber,
   parseOfficialSalesOrderNumber,
   getSalesOrderOfficialNumber,
-  generateProvisionalOrderId,
+  getSalesOrderDisplayNumber,
+  generateLocalSalesOrderId,
   salesOrderService,
 } from '../../services/salesOrderService';
 
@@ -55,28 +56,30 @@ describe('canonicalizeOrder', () => {
     expect(canonicalizeOrder(baseOrder({ status: 'Partially Paid' })).paymentStatus).toBe('Partially Paid');
   });
 
-  it('prefers the server-minted order_number over a provisional orderNumber', () => {
+  it('prefers the server-minted order_number over any compat value', () => {
     const canonical = canonicalizeOrder(
-      baseOrder({ orderNumber: 'SO-ORD-provisional', orderNumberProvisional: true, order_number: 'SO-2026-000042' }),
+      baseOrder({ orderNumber: 'ORD-P726/000042', order_number: 'ORD-P726/0042' }),
     );
-    expect(canonical.orderNumber).toBe('SO-2026-000042');
+    expect(canonical.orderNumber).toBe('ORD-P726/0042');
     expect(canonical.orderNumberProvisional).toBe(false);
   });
 
-  it('flags a missing/unofficial number as provisional', () => {
-    expect(canonicalizeOrder(baseOrder({ orderNumber: 'ORD-123' })).orderNumberProvisional).toBe(true);
-    expect(canonicalizeOrder(baseOrder({})).orderNumberProvisional).toBe(true);
+  it('leaves unnumbered rows with orderNumber null (never invents a number)', () => {
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'ORD-123' })).orderNumber).toBeNull();
+    expect(canonicalizeOrder(baseOrder({})).orderNumber).toBeNull();
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'SO-P726/000001' })).orderNumber).toBeNull();
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'TMP-0001' })).orderNumber).toBeNull();
   });
 
-  it('keeps an official orderNumber and does not flag it provisional', () => {
-    const canonical = canonicalizeOrder(baseOrder({ orderNumber: 'SO-P726/000001' }));
-    expect(canonical.orderNumber).toBe('SO-P726/000001');
+  it('keeps an official ORD orderNumber and never flags provisional', () => {
+    const canonical = canonicalizeOrder(baseOrder({ orderNumber: 'ORD-P726/000001' }));
+    expect(canonical.orderNumber).toBe('ORD-P726/000001');
     expect(canonical.orderNumberProvisional).toBe(false);
   });
 
-  it('flags short non-series numbers as provisional (never official SO)', () => {
-    expect(canonicalizeOrder(baseOrder({ orderNumber: 'SO-2026-000001' })).orderNumberProvisional).toBe(true);
-    expect(canonicalizeOrder(baseOrder({ orderNumber: 'TMP-0001' })).orderNumberProvisional).toBe(true);
+  it('drops SO-/TMP-shaped compat values as obsolete (never displayed as numbers)', () => {
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'SO-2026-000001' })).orderNumber).toBeNull();
+    expect(canonicalizeOrder(baseOrder({ orderNumber: 'TMP-0001' })).orderNumber).toBeNull();
   });
 
   it('normalizes totals (totalAmount alias, remainingBalance)', () => {
@@ -285,42 +288,66 @@ describe('salesOrderService CRUD', () => {
 });
 
 describe('number helpers', () => {
-  it('recognizes official and provisional numbers', () => {
-    expect(isOfficialNumber('SO-2026-000042')).toBe(true);
-    expect(isOfficialNumber('SO/2026/000042')).toBe(true);
-    expect(isOfficialNumber('ORD-123')).toBe(true);
-    expect(isOfficialNumber('DRAFT-123')).toBe(false);
-    expect(isOfficialNumber(null)).toBe(false);
+  it('recognizes official ORD numbers only (SO/TMP never official)', () => {
+    expect(isOfficialOrdNumber('ORD-P726/000042')).toBe(true);
+    expect(isOfficialOrdNumber('ORD-2026-000042')).toBe(true);
+    expect(isOfficialOrdNumber('SO-P726/000042')).toBe(false);
+    expect(isOfficialOrdNumber('SO-2026-000042')).toBe(false);
+    expect(isOfficialOrdNumber('TMP-0001')).toBe(false);
+    expect(isOfficialOrdNumber('ORD-123')).toBe(false);
+    expect(isOfficialOrdNumber('DRAFT-123')).toBe(false);
+    expect(isOfficialOrdNumber(null)).toBe(false);
   });
 
-  it('generateProvisionalOrderId delegates to the shared id generator with a neutral TMP prefix', () => {
-    expect(generateProvisionalOrderId([])).toBe('TMP-NEXT');
+  it('generateLocalSalesOrderId mints opaque local ids (never a number)', () => {
+    const id = generateLocalSalesOrderId();
+    expect(id.startsWith('local-')).toBe(true);
+    expect(id).not.toMatch(/^ORD-/i);
+    expect(id).not.toMatch(/^SO-/i);
+    expect(id).not.toMatch(/^TMP-/i);
+    expect(id).not.toContain('/');
+  });
+
+  it('shows a pending state until the server assigns the ORD number', () => {
+    expect(getSalesOrderDisplayNumber(baseOrder({}))).toBe('Pending number');
+    expect(getSalesOrderDisplayNumber(baseOrder({ orderNumber: 'TMP-0001' }))).toBe(
+      'Pending number'
+    );
+    expect(getSalesOrderDisplayNumber(baseOrder({ orderNumber: 'SO-P726/000001' }))).toBe(
+      'Pending number'
+    );
+    expect(getSalesOrderDisplayNumber(baseOrder({ order_number: 'ORD-P726/0021' }))).toBe(
+      'ORD-P726/0021'
+    );
   });
 });
 
-describe('unified P726 official numbers (getSalesOrderOfficialNumber)', () => {
-  it('prefers the authoritative order_number field verbatim', () => {
+describe('ORD-only official numbers (getSalesOrderOfficialNumber)', () => {
+  it('prefers the authoritative ORD order_number; SO- is never official', () => {
     expect(
       getSalesOrderOfficialNumber({ order_number: 'ORD-P726/026', orderNumber: 'SO-P726/001' })
     ).toBe('ORD-P726/026');
-    expect(getSalesOrderOfficialNumber({ order_number: 'SO-P726/028' })).toBe('SO-P726/028');
+    expect(getSalesOrderOfficialNumber({ order_number: 'SO-P726/028' })).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ order_number: 'TMP-0001' })).toBeUndefined();
   });
 
-  it('falls back to legacy orderNumber only for official shapes', () => {
+  it('falls back to legacy orderNumber only when already official ORD', () => {
     expect(getSalesOrderOfficialNumber({ orderNumber: 'ORD-2026-000001' })).toBe('ORD-2026-000001');
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORD-P726/001' })).toBe('ORD-P726/001');
     expect(getSalesOrderOfficialNumber({ orderNumber: 'ORDER-P726/034' })).toBeUndefined();
-    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/001' })).toBe('SO-P726/001');
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/001' })).toBeUndefined();
   });
 
-  it('never mistakes provisional values for official numbers', () => {
-    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/001', orderNumberProvisional: true })).toBeUndefined();
+  it('never mistakes SO/TMP values for official numbers', () => {
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/001' })).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'TMP-0001' })).toBeUndefined();
     expect(getSalesOrderOfficialNumber({ orderNumber: 'ORDER-P726/034' })).toBeUndefined();
     expect(getSalesOrderOfficialNumber({ orderNumber: '' })).toBeUndefined();
     expect(getSalesOrderOfficialNumber({})).toBeUndefined();
     expect(getSalesOrderOfficialNumber(null)).toBeUndefined();
   });
 
-  it('recognises unified official vs legacy shapes', () => {
+  it('recognises unified ORD vs legacy shapes (SO parses for history only)', () => {
     expect(isOfficialSalesOrderNumber('SO-P726/028')).toBe(true);
     expect(isOfficialSalesOrderNumber('ORD-P726/026')).toBe(true);
     expect(isOfficialSalesOrderNumber('ORDER-P726/026')).toBe(false);
@@ -363,21 +390,21 @@ describe('alternate series recognition (P727, no hard-coded P726)', () => {
     expect(isOfficialSalesOrderNumber('ORD-2026-000001')).toBe(false);
   });
 
-  it('reads historical P726 numbers even when the current series is P727', () => {
-    // Canonical snake field is verbatim for any series — history never gated.
+  it('reads historical ORD numbers even when the current series is P727', () => {
+    // Canonical ORD field is verbatim for any series — history never gated.
     expect(getSalesOrderOfficialNumber({ order_number: 'ORD-P726/028' }, 'P727')).toBe('ORD-P726/028');
-    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P727/002' }, 'P727')).toBe('SO-P727/002');
-    // Legacy camelCase fallback without a series filter also reads history.
-    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/028' })).toBe('SO-P726/028');
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORD-P727/002' }, 'P727')).toBe('ORD-P727/002');
+    // SO- compat values are obsolete even with a matching series.
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P727/002' }, 'P727')).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/028' })).toBeUndefined();
     // ...while an explicit series filter validates allocation for THAT series.
-    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P726/028' }, 'P727')).toBeUndefined();
-    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P727/002' }, 'P727')).toBe('SO-P727/002');
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORD-P726/028' }, 'P727')).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'ORD-P727/002' }, 'P727')).toBe('ORD-P727/002');
   });
 
-  it('still rejects provisional values under any series', () => {
-    expect(
-      getSalesOrderOfficialNumber({ orderNumber: 'SO-P727/999', orderNumberProvisional: true }, 'P727')
-    ).toBeUndefined();
+  it('still rejects non-ORD values under any series', () => {
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'SO-P727/999' }, 'P727')).toBeUndefined();
+    expect(getSalesOrderOfficialNumber({ orderNumber: 'TMP-0001' }, 'P727')).toBeUndefined();
     expect(getSalesOrderOfficialNumber({ orderNumber: 'ORDER-P727/001' }, 'P727')).toBeUndefined();
   });
 

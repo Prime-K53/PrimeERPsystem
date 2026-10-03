@@ -12,7 +12,7 @@ vi.mock('../../services/db', () => ({
 
 import { dbService } from '../../services/db';
 import { transactionService } from '../../services/transactionService';
-import { canonicalizeOrder } from '../../services/salesOrderService';
+import { canonicalizeOrder, getSalesOrderDisplayNumber } from '../../services/salesOrderService';
 import { getOrderDisplayStatus } from '../../views/sales/components/orderStatusUtils';
 
 const directInvoice = (overrides: Record<string, unknown> = {}) => ({
@@ -28,14 +28,14 @@ const directInvoice = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-describe('ensureOrderFromInvoice — chain preserved, never auto-Done', () => {
+describe('ensureOrderFromInvoice — chain preserved, never auto-Done, ORD on sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(dbService.getAll).mockResolvedValue([]);
     vi.mocked(dbService.put).mockResolvedValue(undefined as any);
   });
 
-  it('creates an INVOICE_DERIVED order linked to the invoice, stored Confirmed', async () => {
+  it('creates an INVOICE_DERIVED order linked to the invoice, stored Confirmed, unnumbered', async () => {
     const order: any = await transactionService.ensureOrderFromInvoice(directInvoice() as any);
 
     expect(order).not.toBeNull();
@@ -47,23 +47,26 @@ describe('ensureOrderFromInvoice — chain preserved, never auto-Done', () => {
     expect(order.invoiceNumber).toBe('INV-100');
     // Stored workflow status stays Confirmed (existing appropriate status).
     expect(order.status).toBe('Confirmed');
-    // Neutral provisional, explicitly flagged — never an SO official.
-    expect(order.orderNumberProvisional).toBe(true);
-    expect(String(order.orderNumber)).toMatch(/^TMP-/);
+    // No fabricated number: opaque local id, null number, flag false.
+    expect(String(order.id).startsWith('local-')).toBe(true);
+    expect(order.orderNumber).toBeNull();
+    expect(order.orderNumberProvisional).toBe(false);
     expect(dbService.put).toHaveBeenCalledWith('salesOrders', expect.objectContaining({ id: order.id }));
   });
 
-  it('created order displays as Processing, NOT Done, despite the invoice link', async () => {
+  it('created order shows pending state, NOT Done and never an SO/TMP number', async () => {
     const order: any = await transactionService.ensureOrderFromInvoice(directInvoice() as any);
     const canonical = canonicalizeOrder(order);
     expect(canonical.status).toBe('Confirmed');
+    expect(canonical.orderNumber).toBeNull();
+    expect(getSalesOrderDisplayNumber(canonical as any)).toBe('Pending number');
     expect(getOrderDisplayStatus(canonical as any)).toBe('Processing');
     expect(getOrderDisplayStatus(canonical as any)).not.toBe('Done');
   });
 
   it('skips invoices that already descend from an order (no duplicate chain)', async () => {
     const skipped: any = await transactionService.ensureOrderFromInvoice(
-      directInvoice({ sourceOrderId: 'SO-P726/0001' }) as any,
+      directInvoice({ sourceOrderId: 'ORD-P726/0001' }) as any,
     );
     expect(skipped).toBeNull();
     expect(dbService.put).not.toHaveBeenCalled();

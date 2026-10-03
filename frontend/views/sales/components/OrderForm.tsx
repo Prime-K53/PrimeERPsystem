@@ -963,20 +963,17 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                     key = 'REC';
                     collection = recurringInvoices;
                 } else if (type === 'Order') {
-                    // Unified P726 model: new orders NEVER receive ORDER- numbers.
-                    // Mint a neutral TMP- provisional identity; the backend stamps
-                    // the official ORD-P726/SO-P726 number (by explicit
-                    // creation_source) on first sync. The provisional is
-                    // display-only until then. Scanned against salesOrders (the
-                    // store this row will live in) plus legacy orders so the
-                    // provisional id is unique everywhere it can be displayed.
-                    const provisionalScope = [...(salesOrders || []), ...(orders || [])];
-                    const provisionalId = salesOrderService.generateProvisionalOrderId(provisionalScope, 'TMP');
+                    // Single ORD family: new orders get an opaque local row id
+                    // only — never a fabricated SO-/TMP- number. The backend
+                    // assigns the official ORD-{series}/NNN order_number on
+                    // first sync; until then orderNumber stays null and the UI
+                    // shows a neutral pending state.
+                    const localId = salesOrderService.generateLocalSalesOrderId();
                     setFormData((prev: any) => ({
                         ...prev,
-                        id: provisionalId,
-                        orderNumber: provisionalId,
-                        orderNumberProvisional: true,
+                        id: localId,
+                        orderNumber: null,
+                        orderNumberProvisional: false,
                         creation_source: 'DIRECT_ERP',
                         creationSource: 'DIRECT_ERP',
                     }));
@@ -1000,12 +997,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 ? [...initialData.scheduledDates].map((date: any) => String(date))
                 : [];
             const resolvedRecurringStatus = normalizeRecurringStatus(initialData.status);
-            // Unified P726 model: id-less Order drafts get a neutral TMP-
-            // provisional identity (never ORDER-, never SO-); official
-            // ORD-/SO- numbering happens on sync via creation_source.
+            // Single ORD family: id-less Order drafts get an opaque local row
+            // id only (never a fabricated number); the official ORD number
+            // arrives on sync.
             const fallbackId = initialData.id || (type === 'Order'
-                ? salesOrderService.generateProvisionalOrderId(
-                    [...(salesOrders || []), ...(orders || [])], 'TMP')
+                ? salesOrderService.generateLocalSalesOrderId()
                 : generateNextId(
                     type === 'Quotation' ? 'quotation' : type === 'Recurring' ? 'REC' : type === 'Purchase' ? 'purchase' : 'invoice',
                     type === 'Quotation' ? quotations : type === 'Recurring' ? recurringInvoices : invoices,
@@ -1017,14 +1013,14 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 : null;
             const editSegment = editCustomer?.segment || initialData.customerPricingSegment || '';
 
-            const mintedProvisional = !initialData.id && type === 'Order';
+            const mintedLocalId = !initialData.id && type === 'Order';
             setFormData((prev: any) => ({
                 ...prev,
                 ...initialData,
                 id: fallbackId,
-                ...(mintedProvisional && !initialData.orderNumber ? { orderNumber: fallbackId } : {}),
-                ...(mintedProvisional && initialData.orderNumberProvisional == null ? { orderNumberProvisional: true } : {}),
-                ...(mintedProvisional && !initialData.creation_source && !initialData.creationSource
+                ...(mintedLocalId && initialData.orderNumber == null ? { orderNumber: null } : {}),
+                ...(mintedLocalId ? { orderNumberProvisional: false } : {}),
+                ...(mintedLocalId && !initialData.creation_source && !initialData.creationSource
                     ? { creation_source: 'DIRECT_ERP', creationSource: 'DIRECT_ERP' }
                     : {}),
                 customerName: initialData.customerName || '',
@@ -1287,8 +1283,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
             const orderPayload = {
                 id: formData.id,
-                orderNumber: formData.id,
-                orderNumberProvisional: formData.orderNumberProvisional ?? true,
+                // No fabricated number: null until the server assigns ORD.
+                orderNumber: (formData as any).orderNumber ?? null,
+                orderNumberProvisional: false,
                 creation_source: (formData as any).creation_source || (formData as any).creationSource || 'DIRECT_ERP',
                 creationSource: (formData as any).creationSource || (formData as any).creation_source || 'DIRECT_ERP',
                 customerId: resolvedCustomerId,

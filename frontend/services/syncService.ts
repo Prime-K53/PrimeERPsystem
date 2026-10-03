@@ -509,10 +509,10 @@ export async function pullRemoteChanges(
                 }
                 merged._cloudSource = true;
                 // Sales orders: the merge adopts the server-stamped
-                // `order_number` (ORD-/SO-) but never reconciles the legacy
-                // `orderNumber` / `orderNumberProvisional` fields that the
-                // list/details render — adopt the canonical number here so a
-                // synced ERP order stops displaying its TMP- provisional.
+                // `order_number` (ORD-) but never reconciles the legacy
+                // `orderNumber` compat field that the list/details render —
+                // adopt the canonical number here so a synced order shows
+                // its official ORD number (never a stale local value).
                 await dbService.put(
                   storeName,
                   (storeName === 'salesOrders' ? adoptServerNumber(merged) : merged) as Record<string, unknown>,
@@ -670,8 +670,8 @@ async function subscribeToRemoteChanges() {
                   }
                   merged._cloudSource = true;
                   /* SYNC-FORENSIC suppressed: REALTIME MERGE */
-                  // Sales orders: adopt the server-canonical number so the
-                  // TMP- provisional is replaced (see pull path above).
+                  // Sales orders: adopt the server-canonical ORD number
+                  // (see pull path above).
                   await dbService.put(
                     storeName,
                     (storeName === 'salesOrders' ? adoptServerNumber(merged) : merged) as Record<string, unknown>,

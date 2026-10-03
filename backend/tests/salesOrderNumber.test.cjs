@@ -3,11 +3,11 @@
  *
  * Model under test (backend/services/cloudSyncStore.cjs :: ensureSalesOrderNumber,
  * backed by backend/services/salesOrderNumbering.cjs):
- *   DIRECT_ERP origin (no source_request_id/number, no quotation_id) → ORD-P726/NNN
- *   QUOTATION_REQUEST origin (request/quotation linkage persisted)   → SO-P726/NNN
- * One shared atomic sequence (RPC claim); existing rows keep numbers untouched;
- * provisionals and legacy shapes are minted, never adopted; mint failures fail
- * open (row saved unnumbered, retried later).
+ *   Every origin (DIRECT_ERP, PORTAL_CONVERSION, INVOICE_DERIVED, linkage
+ *   fallback) → ORD-P726/NNN. Single family, single shared atomic sequence
+ *   (RPC claim); existing rows keep numbers untouched; SO-/TMP-/ORDER-
+ *   shapes are never adopted (fresh ORD minted instead); mint failures fail
+ *   open (row saved unnumbered, retried later).
  *
  * Hermetic: axios + companyConfigService are mocked; no network, no Supabase.
  */
@@ -139,8 +139,8 @@ function stubClaimRpcSeries(counters) {
 
 const provisionalDirect = (overrides = {}) => ({
   id: 'local-1',
-  orderNumber: 'SO-P726/001',
-  orderNumberProvisional: true,
+  orderNumber: null,
+  orderNumberProvisional: false,
   customer_id: 'cust-1',
   total: 100,
   ...overrides,
@@ -167,58 +167,57 @@ describe('ensureSalesOrderNumber — unified P726 contract', () => {
     expect(axios.post).not.toHaveBeenCalledWith(expect.stringContaining('/rpc/claim_next_sales_order_number'), expect.anything(), expect.anything());
   });
 
-  it('genuine create, provisional direct payload → mints ORD-P726/NNN', async () => {
+  it('genuine create, unnumbered direct payload → mints ORD-P726/NNN', async () => {
     stubGetRow({});
     stubClaimRpc([26]);
     const out = await cloudSyncStore.ensureSalesOrderNumber(provisionalDirect());
     expect(out).toBe('ORD-P726/026');
   });
 
-  it('genuine create with conversion linkage → mints SO-P726/NNN', async () => {
+  it('genuine create with conversion linkage → mints ORD-P726/NNN (single family)', async () => {
     stubGetRow({});
     stubClaimRpc([28]);
     const out = await cloudSyncStore.ensureSalesOrderNumber(
       provisionalDirect({ source_request_id: 'req-1', source_request_number: 'SO-2026-000007' })
     );
-    expect(out).toBe('SO-P726/028');
+    expect(out).toBe('ORD-P726/028');
   });
 
-  it('genuine create with quotation linkage → mints SO-P726/NNN', async () => {
+  it('genuine create with quotation linkage → mints ORD-P726/NNN (single family)', async () => {
     stubGetRow({});
     stubClaimRpc([29]);
     const out = await cloudSyncStore.ensureSalesOrderNumber(
       provisionalDirect({ quotation_id: 'q-1' })
     );
-    expect(out).toBe('SO-P726/029');
+    expect(out).toBe('ORD-P726/029');
   });
 
-  it('keeps a valid pre-claimed conversion number with zero counter waste', async () => {
+  it('keeps a valid pre-claimed ORD number with zero counter waste', async () => {
     stubGetRow({});
     stubTakenCheck([]);
     const out = await cloudSyncStore.ensureSalesOrderNumber({
       id: 'so-x',
-      order_number: 'SO-P726/030',
+      order_number: 'ORD-P726/030',
       orderNumberProvisional: false,
       source_request_id: 'req-9',
       source_request_number: 'SO-2026-000009',
     });
-    expect(out).toBe('SO-P726/030');
+    expect(out).toBe('ORD-P726/030');
     expect(axios.post).not.toHaveBeenCalledWith(expect.stringContaining('/rpc/claim_next_sales_order_number'), expect.anything(), expect.anything());
   });
 
-  it('pre-claimed number taken elsewhere → mints fresh instead of adopting', async () => {
+  it('SO-shaped pre-claim is never adopted → mints ORD- fresh', async () => {
     stubGetRow({});
-    stubTakenCheck(['SO-P726/030']);
     stubClaimRpc([31]);
     const out = await cloudSyncStore.ensureSalesOrderNumber({
       id: 'so-y',
       order_number: 'SO-P726/030',
       source_request_id: 'req-9',
     });
-    expect(out).toBe('SO-P726/031');
+    expect(out).toBe('ORD-P726/031');
   });
 
-  it('pre-claimed number with mismatched prefix (SO- on direct row) → mints ORD- fresh', async () => {
+  it('SO- on a direct row → mints ORD- fresh (no SO adoption)', async () => {
     stubGetRow({});
     stubClaimRpc([32]);
     const out = await cloudSyncStore.ensureSalesOrderNumber({
@@ -229,17 +228,17 @@ describe('ensureSalesOrderNumber — unified P726 contract', () => {
     expect(out).toBe('ORD-P726/032');
   });
 
-  it('flagged provisional with official-shaped number is never adopted', async () => {
+  it('SO-shaped official value is never adopted, even when flagged non-provisional', async () => {
     stubGetRow({});
     stubClaimRpc([33]);
     const out = await cloudSyncStore.ensureSalesOrderNumber({
       id: 'so-w',
       order_number: 'SO-P726/033',
-      orderNumberProvisional: true,
+      orderNumberProvisional: false,
       source_request_id: 'req-3',
     });
-    expect(out).toBe('SO-P726/033');
-    // The value coincides textually, but it came from the counter (RPC called once).
+    expect(out).toBe('ORD-P726/033');
+    // A fresh ORD came from the counter (RPC called once) — the SO text died here.
     const rpcCalls = axios.post.mock.calls.filter(([url]) => String(url).includes('/rpc/claim_next_sales_order_number'));
     expect(rpcCalls).toHaveLength(1);
   });
@@ -296,13 +295,14 @@ describe('applyOp — P726 end-to-end over the gateway', () => {
       .map(([, body]) => body);
     expect(posted).toHaveLength(1);
     expect(posted[0].data.order_number).toBe('ORD-P726/026');
-    expect(posted[0].data.orderNumber).toBe('SO-P726/001');
+    expect(posted[0].data.orderNumber).toBeNull();
   });
 
-  it('kept pre-claim survives first write; 409 unique violation re-mints once and retries', async () => {
+  it('kept ORD pre-claim survives first write; 409 unique violation re-mints once and retries', async () => {
     stubInfrastructure();
     stubGetRow({});
     // Taken-check sees nothing (race happens at insert), then the insert 409s.
+    // Adoption consumes no claim; only the 409 retry mints once.
     stubTakenCheck([]);
     stubClaimRpc([27]);
     let posts = 0;
@@ -316,7 +316,7 @@ describe('applyOp — P726 end-to-end over the gateway', () => {
     ]);
     const payload = {
       id: 'so-race',
-      order_number: 'SO-P726/026',
+      order_number: 'ORD-P726/026',
       orderNumberProvisional: false,
       source_request_id: 'req-race',
       source_request_number: 'SO-2026-000001',
@@ -326,7 +326,7 @@ describe('applyOp — P726 end-to-end over the gateway', () => {
     const posted = axios.post.mock.calls
       .filter(([url]) => isSalesOrders(url))
       .map(([, body]) => body.data.order_number);
-    expect(posted).toEqual(['SO-P726/026', 'SO-P726/027']);
+    expect(posted).toEqual(['ORD-P726/026', 'ORD-P726/027']);
   });
 
   it('existing official row is preserved through the gateway (no restamp)', async () => {
@@ -393,7 +393,7 @@ describe('alternate series over the gateway — P727 configured', () => {
     expect(posted).toEqual(['ORD-P727/001']);
   });
 
-  it('conversion linkage mints SO-P727; historical P726 rows are preserved, never re-minted', async () => {
+  it('conversion linkage mints ORD-P727; historical P726 rows are preserved, never re-minted', async () => {
     stubInfrastructure();
     // Historical P726 row already committed: any push keeps it untouched.
     stubGetRow({
@@ -407,14 +407,15 @@ describe('alternate series over the gateway — P727 configured', () => {
       _version: 5,
     }));
     expect(kept.ok).toBe(true);
-    // New conversion under P727 config mints from the P727 counter.
+    // New conversion under P727 config mints ORD from the P727 counter.
     stubClaimRpcSeries({ P727: 1 });
     const fresh = await cloudSyncStore.ensureSalesOrderNumber({
       id: 'so-new',
-      orderNumberProvisional: true,
+      orderNumber: null,
+      orderNumberProvisional: false,
       source_request_id: 'req-p727',
     });
-    expect(fresh).toBe('SO-P727/002');
+    expect(fresh).toBe('ORD-P727/002');
     // No P726 RPC shape was ever used; historical row untouched.
     for (const [url] of axios.post.mock.calls) {
       expect(String(url)).not.toContain('p726');
@@ -436,7 +437,7 @@ describe('alternate series over the gateway — P727 configured', () => {
     const b = await cloudSyncStore.ensureSalesOrderNumber(
       provisionalDirect({ id: 'b1', source_request_id: 'req-b' })
     );
-    expect(b).toBe('SO-P727/005');
+    expect(b).toBe('ORD-P727/005');
     companyConfigService.getCompanyConfig.mockResolvedValue({
       transactionSettings: { numbering: { shared: { extension: 'P726', padding: 3 } } },
     });
@@ -495,12 +496,11 @@ describe('verified live census scenario — P726 seeded at 42', () => {
     expect(rpcCalls).toHaveLength(0);
   });
 
-  it('taken-check sees id-field hits (legacy rows use numbers as ids)', async () => {
+  it('SO-shaped candidate is never adopted, even when free (fresh ORD minted)', async () => {
     stubGetRow({});
-    // Census shape: SO-P726/025 lives in historical id/orderNumber fields.
-    // The taken-check OR covers id + both number fields, so any placement
-    // blocks adoption and the gateway mints fresh instead.
-    stubTakenCheck(['SO-P726/025']);
+    // The taken-check is never even consulted for SO shapes: the prefix
+    // gate rejects the candidate first and the gateway mints fresh ORD.
+    stubTakenCheck([]);
     stubClaimRpcSeries({ P726: 42 });
     const out = await cloudSyncStore.ensureSalesOrderNumber({
       id: 'so-fresh',
@@ -508,8 +508,7 @@ describe('verified live census scenario — P726 seeded at 42', () => {
       orderNumberProvisional: false,
       source_request_id: 'req-1',
     });
-    // SO-P726/025 is taken (census) → fresh mint instead of adopting.
-    expect(out).toBe('SO-P726/043');
+    expect(out).toBe('ORD-P726/043');
   });
 
   it('taken-check queries the id column as well as both number fields', async () => {
@@ -525,14 +524,14 @@ describe('verified live census scenario — P726 seeded at 42', () => {
     stubClaimRpcSeries({ P726: 42 });
     await cloudSyncStore.ensureSalesOrderNumber({
       id: 'so-fresh-2',
-      order_number: 'SO-P726/043',
+      order_number: 'ORD-P726/043',
       orderNumberProvisional: false,
       source_request_id: 'req-1',
     });
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toContain('data->>order_number.eq."SO-P726/043"');
-    expect(seen[0]).toContain('data->>orderNumber.eq."SO-P726/043"');
-    expect(seen[0]).toContain('id.eq."SO-P726/043"');
+    expect(seen[0]).toContain('data->>order_number.eq."ORD-P726/043"');
+    expect(seen[0]).toContain('data->>orderNumber.eq."ORD-P726/043"');
+    expect(seen[0]).toContain('id.eq."ORD-P726/043"');
   });
 
   it('legacy ORD-2026 numbers are never adopted as new official numbers', async () => {
@@ -548,10 +547,10 @@ describe('verified live census scenario — P726 seeded at 42', () => {
   });
 });
 
-describe('shared SO/ORD allocation from P726 → 42', () => {
+describe('shared ORD allocation from P726 → 42 (single family, single counter)', () => {
   beforeEach(resetStubs);
 
-  it('direct then conversion share one sequence: ORD-P726/043, SO-P726/044', async () => {
+  it('direct then conversion share one sequence: ORD-P726/043, ORD-P726/044', async () => {
     stubGetRow({});
     // Counter seeded at verified census max 42 (per-series counters).
     const state = new Map([['P726', 42]]);
@@ -568,10 +567,10 @@ describe('shared SO/ORD allocation from P726 → 42', () => {
     const converted = await cloudSyncStore.ensureSalesOrderNumber(
       provisionalDirect({ id: 'c1', source_request_id: 'req-1' })
     );
-    expect(converted).toBe('SO-P726/044');
+    expect(converted).toBe('ORD-P726/044');
   });
 
-  it('reversed order shares the same sequence: SO-P726/043, ORD-P726/044', async () => {
+  it('reversed order shares the same sequence: ORD-P726/043, ORD-P726/044', async () => {
     stubGetRow({});
     const state = new Map([['P726', 42]]);
     stubs.post.push([
@@ -585,7 +584,7 @@ describe('shared SO/ORD allocation from P726 → 42', () => {
     const converted = await cloudSyncStore.ensureSalesOrderNumber(
       provisionalDirect({ id: 'c2', source_request_id: 'req-2' })
     );
-    expect(converted).toBe('SO-P726/043');
+    expect(converted).toBe('ORD-P726/043');
     const direct = await cloudSyncStore.ensureSalesOrderNumber(provisionalDirect({ id: 'd2' }));
     expect(direct).toBe('ORD-P726/044');
   });
@@ -619,7 +618,7 @@ describe('alternate configured series — TEST history seeds TEST → 9', () => 
     const converted = await cloudSyncStore.ensureSalesOrderNumber(
       provisionalDirect({ id: 't2', source_request_id: 'req-t' })
     );
-    expect(converted).toBe('SO-TEST/011');
+    expect(converted).toBe('ORD-TEST/011');
   });
 
   it('P726 counter is untouched by TEST allocations (independent per-series rows)', async () => {
