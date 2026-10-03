@@ -159,7 +159,7 @@ const Reports: React.FC = () => {
       : 0;
 
     return (
-      <div style={{ marginTop: '24px' }}>
+      <div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
           <div style={{ background: '#FEFDFB', padding: '12px', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,.05)', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', display: 'flex', alignItems: 'center', gap: '16px', borderLeftWidth: '4px', borderLeftColor: '#1f8577', transition: 'all .15s ease', transitionDuration: '200ms' }}>
             <div style={{ padding: '10px', background: '#eef7f6', color: '#1f8577', borderRadius: '10px', flexShrink: 0 }}><TrendingUp size={20} /></div>
@@ -378,30 +378,27 @@ const Reports: React.FC = () => {
     );
   };
 
+  const showMarginControls = activeCategory === 'Margin Performance';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100%', fontFamily: 'Inter,"DM Sans",sans-serif', color: '#23282A', overflow: 'hidden' }}>
+      {showMarginControls && (
       <div style={{ background: '#FEFDFB', borderStyle: 'solid', borderColor: '#e4ddd1', flexShrink: 0, paddingLeft: '24px', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '24px', paddingBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2 style={{ fontWeight: 700, fontSize: '24px', color: '#23282A', letterSpacing: '-.025em' }}>Business Intelligence</h2>
-            <p style={{ color: '#5c6567', fontSize: '13px', fontWeight: 500 }}>Financial insights and performance metrics</p>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {activeCategory === 'Margin Performance' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#eef7f6', padding: '4px', borderRadius: '12px' }}>
-                {(['all', 'week', 'month', 'quarter', 'year'] as const).map((range) => (
-                  <button
-                    key={range}
-                    onClick={() => setSelectedDateRange(range)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      selectedDateRange === range ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    {range === 'all' ? 'All' : range.charAt(0).toUpperCase() + range.slice(1)}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#eef7f6', padding: '4px', borderRadius: '12px' }}>
+              {(['all', 'week', 'month', 'quarter', 'year'] as const).map((range) => (
+                <button
+                  key={range}
+                  onClick={() => setSelectedDateRange(range)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    selectedDateRange === range ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {range === 'all' ? 'All' : range.charAt(0).toUpperCase() + range.slice(1)}
+                </button>
+              ))}
+            </div>
 
             <div style={{ position: 'relative', marginRight: '16px' }}>
               <button
@@ -491,6 +488,7 @@ const Reports: React.FC = () => {
         </div>
 
       </div>
+      )}
 
       <div id="report-content" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px', background: '#eef7f6' }}>
         <div style={{ marginLeft: 'auto' }}>
