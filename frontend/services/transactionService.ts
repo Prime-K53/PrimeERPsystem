@@ -5904,7 +5904,7 @@ export const transactionService = {
      * Sold/moved inventory can never be silently restated.
      */
     async correctLandingConsumption(input: { purchaseOrderId: string; landingCostId: string; grnId: string; reason?: string; performedBy?: string }) {
-        return dbService.executeAtomicOperation(
+        const result = await dbService.executeAtomicOperation(
             ['goodsReceipts', 'purchases', 'purchaseInvoices', 'ledger', 'suppliers', 'inventory', 'inventoryTransactions', 'materialBatches', 'idempotencyKeys', 'accounts', 'vatTransactions'],
             async (tx) => {
                 const grnStore = tx.objectStore('goodsReceipts');
@@ -6193,36 +6193,60 @@ export const transactionService = {
                 }
                 // CORRECTION event releases remaining (negative amount); the
                 // original GRN event stays untouched for audit.
+                // (Phase 7G: captured for the post-commit Transport hook below;
+                // the persisted bytes are unchanged.)
+                const committedCorrectionEvent = {
+                    id: generateId('LCC'),
+                    landingCostId: lineId,
+                    kind: 'CORRECTION',
+                    billId: null,
+                    grnId: String(input.grnId),
+                    amount: -mirroredTotal,
+                    sourceAmount: Number(grnEvent.sourceAmount) || 0,
+                    method: (grnEvent as any).method || 'VALUE',
+                    providerId,
+                    accountSplits: [],
+                    journalIds: [...mirrorIds],
+                    at: now,
+                    correctsEventId: (grnEvent as any).id || null,
+                    taxTreatment: (grnEvent as any).taxTreatment || null,
+                    taxAmount: mirroredVat > 0 ? -mirroredVat : 0,
+                };
                 {
                     const existing = Array.isArray((purchase as any).landingConsumption)
                         ? (purchase as any).landingConsumption
                         : [];
                     (purchase as any).landingConsumption = [
                         ...existing,
-                        {
-                            id: generateId('LCC'),
-                            landingCostId: lineId,
-                            kind: 'CORRECTION',
-                            billId: null,
-                            grnId: String(input.grnId),
-                            amount: -mirroredTotal,
-                            sourceAmount: Number(grnEvent.sourceAmount) || 0,
-                            method: (grnEvent as any).method || 'VALUE',
-                            providerId,
-                            accountSplits: [],
-                            journalIds: [...mirrorIds],
-                            at: now,
-                            correctsEventId: (grnEvent as any).id || null,
-                            taxTreatment: (grnEvent as any).taxTreatment || null,
-                            taxAmount: mirroredVat > 0 ? -mirroredVat : 0,
-                        },
+                        committedCorrectionEvent,
                     ];
                     await purchaseStore.put(purchase);
                 }
 
-                return { success: true, mirrorIds };
+                return { success: true, mirrorIds, correctionEvent: committedCorrectionEvent };
             }
         );
+        // Phase 7G: post-commit correction producer (fire-and-forget, same
+        // pattern as the GRN inbound hook above). The Landing correction
+        // already committed: a transport failure never fails the correction
+        // and stays retryable through the deterministic economic key
+        // (CONSUMPTION_CORRECTION:{transportInboundId}).
+        import('./transportBudgetConsumptionCorrection').then(
+            ({
+                produceConsumptionCorrectionSafely,
+                defaultConsumptionCorrectionDeps,
+                fireConsumptionCorrectionHook,
+            }) =>
+                fireConsumptionCorrectionHook(
+                    produceConsumptionCorrectionSafely(defaultConsumptionCorrectionDeps, {
+                        correction: (result as any)?.correctionEvent || null,
+                    }),
+                    String((result as any)?.correctionEvent?.id || ''),
+                ),
+        ).catch(() => {
+            // Module load failure must not affect the committed correction.
+        });
+        return result;
     },
 
     async adjustStock(params: { itemId: string, qtyChange: number, reason: string, warehouseId: string, notes?: string, variantId?: string, accountingReason?: StockAdjustmentReason, operationId?: string, idempotencyKey?: string }) {

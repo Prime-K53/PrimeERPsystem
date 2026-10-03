@@ -527,11 +527,25 @@ export class TransportBudgetRepository {
         `Only INBOUND_CONSUMPTION events are correctible (target ${targetId} is ${target.kind}).`,
       );
     }
-    // Frozen snapshots: copies of the original consumption.
-    if (Number(event.sourceAmount) !== Math.abs(Number(target.amount))) {
+    // Frozen snapshots: the correction carries the original inbound source
+    // snapshot (Phase 7G-1). The correction amount cap below is a separate
+    // check against abs(original amount).
+    const parentSourceAmount = Number(target.sourceAmount);
+    if (
+      target.sourceAmount === null ||
+      target.sourceAmount === undefined ||
+      !Number.isFinite(parentSourceAmount) ||
+      !(parentSourceAmount > 0)
+    ) {
       throw new TransportBudgetCorrectionError(
         'SNAPSHOT_MISMATCH',
-        `CONSUMPTION_CORRECTION sourceAmount must equal abs(original consumption amount) for target ${targetId}.`,
+        `Correction target ${targetId} carries no source snapshot.`,
+      );
+    }
+    if (Number(event.sourceAmount) !== parentSourceAmount) {
+      throw new TransportBudgetCorrectionError(
+        'SNAPSHOT_MISMATCH',
+        `CONSUMPTION_CORRECTION sourceAmount must equal the original inbound sourceAmount (${parentSourceAmount}) for target ${targetId}.`,
       );
     }
     if (

@@ -94,7 +94,21 @@ const hexToRgb = (hex: string) => {
 // Disable hyphenation
 Font.registerHyphenationCallback(word => [word]);
 
-const renderQrImage = (qrCodeDataUrl?: string | null, size: number = 52, showCaption = true) => {
+/**
+ * Verification QR size, in PDF points, shared by every document that carries a
+ * scannable QR (invoice security footer, payment receipt, POS receipt).
+ *
+ * Single source of truth on purpose: the POS receipt previously used
+ * `100 * scale` (130pt at default settings) against the invoice's 72pt, so the
+ * two documents printed visibly different QR blocks for the identical payload.
+ * Sharing this constant keeps them aligned when either side is retuned.
+ *
+ * ~100-character verification URLs need ~41x41 modules, which will not decode
+ * below roughly this size on paper or screen.
+ */
+const VERIFICATION_QR_SIZE = 72;
+
+const renderQrImage = (qrCodeDataUrl?: string | null, size: number = VERIFICATION_QR_SIZE, showCaption = true) => {
   const resolvedQrCode = resolvePdfQrCodeSource(qrCodeDataUrl);
   if (!resolvedQrCode) return null;
 
@@ -266,9 +280,8 @@ const SecurityFooter = ({
   flowing?: boolean;
 }) => {
   // Verification QR is printed large enough to scan reliably from paper or
-  // screen: ~100-char verification URLs need ~41x41 modules, which are too
-  // small to decode at the old 50pt size.
-  const footerQrSize = 72;
+  // screen, and matches every other document's QR (see VERIFICATION_QR_SIZE).
+  const footerQrSize = VERIFICATION_QR_SIZE;
   const qrCodeDataUrl = resolvePdfQrCodeSource(String(data?.securityQrCodeDataUrl || '').trim());
 
   // Document Authentication & Verification block: digitally-generated line
@@ -2079,7 +2092,7 @@ if (type === 'POS_RECEIPT') {
                 invoice-style security footer — QR + caption only. */}
             {!!resolvePdfQrCodeSource(String((r as any).securityQrCodeDataUrl || '')) && (
               <View style={{ marginTop: 10 * scale, borderTopWidth: 1, borderTopColor: '#000', borderTopStyle: 'dashed', paddingTop: 10 * scale, alignItems: 'center' }}>
-                {renderQrImage(String((r as any).securityQrCodeDataUrl || ''), 100 * scale)}
+                {renderQrImage(String((r as any).securityQrCodeDataUrl || ''), VERIFICATION_QR_SIZE)}
               </View>
             )}
           </View>

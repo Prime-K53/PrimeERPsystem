@@ -637,7 +637,7 @@ export function validateTransportBudgetEvent(
         issues,
         'INVALID_SOURCE_AMOUNT',
         'sourceAmount',
-        'CONSUMPTION_CORRECTION requires sourceAmount (= abs(original consumption amount)).',
+        'CONSUMPTION_CORRECTION requires sourceAmount (= original inbound sourceAmount).',
       );
     } else if (!(sourceAmount > 0)) {
       issue(

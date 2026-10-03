@@ -660,3 +660,106 @@ describe('transportBudgetCorrection — business dates', () => {
     ).rejects.toMatchObject({ code: 'SNAPSHOT_MISMATCH' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 7G-1 — partial-scope source snapshot (locked amendment):
+// correction.sourceAmount copies the parent inbound sourceAmount
+// (capitalizable ceiling), NOT abs(parent amount).
+// ---------------------------------------------------------------------------
+
+describe('transportBudgetCorrection — partial-scope snapshot (7G-1)', () => {
+  const partialParent = (overrides: Record<string, unknown> = {}) =>
+    parentInput({
+      id: 'evt-in-P1',
+      idempotencyKey: 'INBOUND_CONSUMPTION:LC-P1:GRN-P1',
+      sourceEventId: 'LC-P1:GRN-P1',
+      sourceAmount: 100000,
+      amount: -30000,
+      ...overrides,
+    });
+
+  const partialCorrection = (overrides: Record<string, unknown> = {}) =>
+    correctionInput({
+      id: 'evt-corr-P1',
+      idempotencyKey: 'CONSUMPTION_CORRECTION:evt-in-P1',
+      sourceEventId: 'evt-in-P1',
+      sourceAmount: 100000,
+      amount: 30000,
+      correctsEventId: 'evt-in-P1',
+      ...overrides,
+    });
+
+  it('accepts a correction carrying the parent source snapshot (100000)', async () => {
+    const { repo } = setup();
+    await repo.appendTransportBudgetEvent(partialParent() as never);
+    const result = await repo.appendCorrection(partialCorrection() as never);
+    expect(result.deduplicated).toBe(false);
+    expect(result.event).toMatchObject({
+      kind: 'CONSUMPTION_CORRECTION',
+      amount: 30000,
+      sourceAmount: 100000,
+      sourceEventId: 'evt-in-P1',
+      correctsEventId: 'evt-in-P1',
+    });
+    // Net consumption is zero.
+    const events = await repo.listTransportBudgetEvents();
+    expect(events.reduce((sum, e) => sum + Number(e.amount), 0)).toBe(0);
+  });
+
+  it('rejects a correction carrying abs(amount) instead of the snapshot (30000)', async () => {
+    // Shape-only validator still passes (equality is contextual to the
+    // target); the repository rejects with the locked snapshot rule.
+    expect(
+      validateTransportBudgetEvent(
+        partialCorrection({ sourceAmount: 30000 }) as never,
+        NOW,
+      ).ok,
+    ).toBe(true);
+    const { repo } = setup();
+    await repo.appendTransportBudgetEvent(partialParent() as never);
+    await expect(
+      repo.appendCorrection(
+        partialCorrection({ sourceAmount: 30000 }) as never,
+      ),
+    ).rejects.toMatchObject({ code: 'SNAPSHOT_MISMATCH' });
+  });
+
+  it('retains the amount cap under the new snapshot rule (+30001 rejected)', async () => {
+    const { repo } = setup();
+    await repo.appendTransportBudgetEvent(partialParent() as never);
+    await expect(
+      repo.appendCorrection(
+        partialCorrection({ amount: 30001 }) as never,
+      ),
+    ).rejects.toMatchObject({ code: 'CORRECTION_CAP_EXCEEDED' });
+  });
+
+  it('cap arithmetic unchanged: correction snapshot does not inflate the ceiling', async () => {
+    const { repo } = setup();
+    await repo.appendTransportBudgetEvent(partialParent() as never);
+    await repo.appendCorrection(partialCorrection() as never);
+    // Net is zero against a 100000 ceiling; a further 80000 fits.
+    const second = await repo.appendTransportBudgetEvent(
+      partialParent({
+        id: 'evt-in-P2',
+        idempotencyKey: 'INBOUND_CONSUMPTION:LC-P1:GRN-P1:2',
+        amount: -80000,
+      }) as never,
+    );
+    expect(second.deduplicated).toBe(false);
+    // Net would be 110000 > 100000: rejected. The correction row's own
+    // sourceAmount (100000) contributed nothing to the ceiling — the cap
+    // reads INBOUND rows only.
+    await expect(
+      repo.appendTransportBudgetEvent(
+        partialParent({
+          id: 'evt-in-P3',
+          idempotencyKey: 'INBOUND_CONSUMPTION:LC-P1:GRN-P1:3',
+          amount: -30000,
+        }) as never,
+      ),
+    ).rejects.toMatchObject({ code: 'SOURCE_CAP_EXCEEDED' });
+    const events = await repo.listTransportBudgetEvents();
+    expect(events.reduce((sum, e) => sum + Number(e.amount), 0)).toBe(-80000);
+  });
+});

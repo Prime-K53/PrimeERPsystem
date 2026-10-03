@@ -24,6 +24,9 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const migrationSource = read(
   'supabase/migrations/0032_transport_budget_consumption_correction.sql',
 );
+const amendmentSource = read(
+  'supabase/migrations/0033_transport_budget_correction_source_snapshot.sql',
+);
 const hardeningSource = read(
   'supabase/migrations/0030_transport_budget_ledger_hardening.sql',
 );
@@ -135,6 +138,17 @@ describe('Phase 7E: backend correction validator parity', () => {
         correctsEventId: 'evt-same',
       }).ok,
     ).toBe(false);
+  });
+
+  test('partial-scope shape passes validation (equality is contextual)', () => {
+    // Shape-only layer: sourceAmount 100000 with amount 30000 is well-formed.
+    // The parent-snapshot equality is enforced at repository/DB append time.
+    const result = validateTransportBudgetEvent({
+      ...VALID_CORRECTION,
+      sourceAmount: 100000,
+      amount: 30000,
+    });
+    expect(result.ok).toBe(true);
   });
 
   test('sameEconomicPayload covers correctsEventId', () => {
@@ -266,6 +280,67 @@ describe('Phase 7E: migration 0032 static contract', () => {
   test('hardening chain intact: 0030 still denies authenticated appends', () => {
     expect(hardeningSource).toMatch(
       /DROP POLICY IF EXISTS "allow_insert_transport_budget_events"/,
+    );
+  });
+});
+
+describe('Phase 7G-1: migration 0033 source-snapshot amendment', () => {
+  // Static assertions target the trigger body only: the file's own
+  // verification block intentionally names both messages.
+  const triggerBody = amendmentSource.split('2. POST-MIGRATION VERIFICATION')[0];
+
+  test('amends only the correction snapshot equality predicate', () => {
+    expect(amendmentSource).toContain(
+      'must equal the original inbound sourceAmount',
+    );
+    expect(triggerBody).not.toContain(
+      'must equal abs(original consumption amount)',
+    );
+  });
+
+  test('preserves every unrelated invariant verbatim', () => {
+    for (const snippet of [
+      'only INBOUND_CONSUMPTION events are correctible',
+      'correction cannot reference itself',
+      'must not carry reversesEventId',
+      'CONSUMPTION_CORRECTION method must be LANDING_COST_FREIGHT',
+      'ALREADY_CORRECTED',
+      'would exceed original consumption',
+      'must not precede the original consumption businessDate',
+      'would exceed source cap',
+      'pg_advisory_xact_lock',
+      'FOR UPDATE',
+      'only SALES_ALLOCATION events are reversible',
+      'cumulative reversals (%) would exceed allocation',
+    ]) {
+      expect(amendmentSource).toContain(snippet);
+    }
+  });
+
+  test('guards snapshot-less targets fail-closed', () => {
+    expect(amendmentSource).toContain('carries no source snapshot');
+  });
+
+  test('migration is additive, single-table, tenant-free, RLS-neutral', () => {
+    expect(amendmentSource).not.toMatch(/DROP TABLE|DELETE FROM|TRUNCATE/i);
+    expect(amendmentSource).not.toMatch(/FOR INSERT TO authenticated/);
+    expect(amendmentSource).not.toMatch(/GRANT EXECUTE[\s\S]*TO authenticated/);
+    expect(amendmentSource).not.toMatch(/SECURITY DEFINER/);
+    const ddl = amendmentSource
+      .replace(/--[^\n]*/g, '')
+      .replace(/'[^']*'/g, "''");
+    expect(ddl).not.toContain('tenant_id');
+    expect(ddl).not.toContain('organization_id');
+    expect(ddl).not.toContain('company_id');
+    const touched = [...amendmentSource.matchAll(/ON public\.(\w+)/g)]
+      .map((m) => m[1])
+      .filter((name) => name !== 'transport_budget_events_validate_insert');
+    expect(new Set(touched)).toEqual(new Set(['transport_budget_events']));
+  });
+
+  test('0032 itself still carries the superseded predicate (history intact)', () => {
+    expect(migrationSource).toContain(
+      'must equal abs(original consumption amount %)',
     );
   });
 });
