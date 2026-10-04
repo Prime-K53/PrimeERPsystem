@@ -2,8 +2,8 @@ import React from 'react';
 import {
   LayoutDashboard, MessageSquare, FileText, Shield,
   BarChart3, TrendingUp, AlertTriangle, MessageSquareText,
-  Sparkles, Brain, Zap, Layers, Users, Package,
-  FileSearch, Calendar, Activity
+  Sparkles, Brain, Zap, Layers, Package,
+  FileSearch, Calendar
 } from 'lucide-react';
 import GenericHub from './GenericHub';
 
@@ -38,20 +38,6 @@ const AIWorkspace: React.FC = () => {
       color: 'bg-emerald-50 text-emerald-500'
     },
     {
-      label: 'Anomaly Detector',
-      description: 'Flag unusual transactions, pricing overrides, and security events.',
-      path: '/ai-workspace/anomalies',
-      icon: <AlertTriangle />,
-      color: 'bg-red-50 text-red-500'
-    },
-    {
-      label: 'Churn Predictor',
-      description: 'Identify at-risk customers from declining order patterns and engagement.',
-      path: '/ai-workspace/churn',
-      icon: <Users />,
-      color: 'bg-orange-50 text-orange-500'
-    },
-    {
       label: 'Reorder Optimizer',
       description: 'Smart inventory reorder points with EOQ, safety stock, and demand variability.',
       path: '/ai-workspace/reorder',
@@ -71,13 +57,6 @@ const AIWorkspace: React.FC = () => {
       path: '/ai-workspace/scheduler',
       icon: <Calendar />,
       color: 'bg-indigo-50 text-indigo-500'
-    },
-    {
-      label: 'Conversational Query',
-      description: 'Ask business questions in plain English — get instant answers.',
-      path: '/ai-workspace/query',
-      icon: <MessageSquareText />,
-      color: 'bg-purple-50 text-purple-500'
     },
     {
       label: 'Audit Investigator',

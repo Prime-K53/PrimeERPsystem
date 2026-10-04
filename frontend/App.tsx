@@ -160,6 +160,7 @@ const InventoryReports = lazyWithRetry('./views/inventory/InventoryReports', () 
 const IndustrialHub = lazyWithRetry('./views/IndustrialHub', () => import('./views/IndustrialHub'));
 const RevenueHub = lazyWithRetry('./views/RevenueHub', () => import('./views/RevenueHub'));
 const RevenueDashboard = lazyWithRetry('./views/reports/RevenueDashboard', () => import('./views/reports/RevenueDashboard'));
+const TransportBudgetDashboard = React.lazy(() => import('./views/reports/TransportBudgetDashboard'));
 const SalesFlowHub = lazyWithRetry('./views/SalesFlowHub', () => import('./views/SalesFlowHub'));
 const SalesExchanges = lazyWithRetry('./views/sales/SalesExchanges', () => import('./views/sales/SalesExchanges'));
 const LeadBoard = lazyWithRetry('./views/sales/LeadBoard', () => import('./views/sales/LeadBoard'));
@@ -203,12 +204,9 @@ const PromotionsAdmin = lazyWithRetry('./views/admin/PromotionsAdmin', () => imp
 const AnalyticsHub = lazyWithRetry('./views/ai/AnalyticsHub', () => import('./views/ai/AnalyticsHub'));
 const GangRunOptimizer = lazyWithRetry('./views/ai/GangRunOptimizer', () => import('./views/ai/GangRunOptimizer'));
 const CashFlowForecaster = lazyWithRetry('./views/ai/CashFlowForecaster', () => import('./views/ai/CashFlowForecaster'));
-const AnomalyDetectorComp = lazyWithRetry('./views/ai/AnomalyDetector', () => import('./views/ai/AnomalyDetector'));
-const ChurnPredictor = lazyWithRetry('./views/ai/ChurnPredictor', () => import('./views/ai/ChurnPredictor'));
 const ReorderOptimizer = lazyWithRetry('./views/ai/ReorderOptimizer', () => import('./views/ai/ReorderOptimizer'));
 const POMatcher = lazyWithRetry('./views/ai/POMatcher', () => import('./views/ai/POMatcher'));
 const SmartScheduler = lazyWithRetry('./views/ai/SmartScheduler', () => import('./views/ai/SmartScheduler'));
-const ConversationalQuery = lazyWithRetry('./views/ai/ConversationalQuery', () => import('./views/ai/ConversationalQuery'));
 const AuditInvestigator = lazyWithRetry('./views/ai/AuditInvestigator', () => import('./views/ai/AuditInvestigator'));
 const BOMGenerator = lazyWithRetry('./views/ai/BOMGenerator', () => import('./views/ai/BOMGenerator'));
 const ServiceJobsPage = lazyWithRetry('./views/service/ServiceJobsPage', () => import('./views/service/ServiceJobsPage'));
@@ -632,6 +630,22 @@ const AppLayout: React.FC = () => {
                   <Route path="/revenue/auditor" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                   <Route path="/revenue/intel" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                   <Route path="/revenue/health" element={<ProtectedRoute permission="reports.view"><BusinessHealthReport /></ProtectedRoute>} />
+                  <Route path="/revenue/transport-budget" element={
+          <ProtectedRoute permission="reports.view">
+            <React.Suspense fallback={
+              <div style={{ padding: '24px', textAlign: 'center', background: '#FEFDFB', borderRadius: 14, border: `1.4px solid #e4ddd1` }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 50, background: '#eef7f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-600"></div>
+                  </div>
+                  <p style={{ color: '#5c6567', fontSize: 14, margin: 0 }}>Loading Transport Budget Dashboard...</p>
+                </div>
+              </div>
+            }>
+              <TransportBudgetDashboard />
+            </React.Suspense>
+          </ProtectedRoute>
+        } />
                 </Route>
 
                 {/* Customers */}
@@ -770,12 +784,13 @@ const AppLayout: React.FC = () => {
                   <Route path="/ai-workspace/assistant" element={<AIWorkspaceChat />} />
                   <Route path="/ai-workspace/gang-run" element={<GangRunOptimizer />} />
                   <Route path="/ai-workspace/cash-flow" element={<CashFlowForecaster />} />
-                  <Route path="/ai-workspace/anomalies" element={<AnomalyDetectorComp />} />
-                  <Route path="/ai-workspace/churn" element={<ChurnPredictor />} />
+                  {/* Retired duplicates — superseded by the /smart-features implementations */}
+                  <Route path="/ai-workspace/anomalies" element={<Navigate to="/smart-features/anomaly-detection" replace />} />
+                  <Route path="/ai-workspace/churn" element={<Navigate to="/smart-features/customer-risk" replace />} />
                   <Route path="/ai-workspace/reorder" element={<ReorderOptimizer />} />
                   <Route path="/ai-workspace/po-match" element={<POMatcher />} />
                   <Route path="/ai-workspace/scheduler" element={<SmartScheduler />} />
-                  <Route path="/ai-workspace/query" element={<ConversationalQuery />} />
+                  <Route path="/ai-workspace/query" element={<Navigate to="/smart-features/natural-language-reporting" replace />} />
                   <Route path="/ai-workspace/audit" element={<AuditInvestigator />} />
                   <Route path="/ai-workspace/bom" element={<BOMGenerator />} />
                 </Route>

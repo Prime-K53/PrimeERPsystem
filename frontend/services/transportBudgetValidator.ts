@@ -599,6 +599,21 @@ export function validateTransportBudgetEvent(
   if (kind === 'CONSUMPTION_REVERSAL') {
     // Phase 8D null-snapshot hygiene (mirrors REVERSAL): economics derive
     // from the reversed OUTBOUND_CONSUMPTION target, verified at append.
+    // Key namespace: no random semantic identity — the canonical form is
+    // CONSUMPTION_REVERSAL:{originalOutboundConsumptionEventId}. A strict
+    // target binding is enforced at append (ALREADY_REVERSED/full-amount);
+    // validation requires the kind namespace only.
+    if (
+      idempotencyKey === null ||
+      !idempotencyKey.startsWith('CONSUMPTION_REVERSAL:')
+    ) {
+      issue(
+        issues,
+        'INVALID_IDEMPOTENCY_KEY',
+        'idempotencyKey',
+        'CONSUMPTION_REVERSAL idempotencyKey must start with CONSUMPTION_REVERSAL: (canonical form CONSUMPTION_REVERSAL:{originalOutboundConsumptionEventId}).',
+      );
+    }
     if (
       sourceEventId !== null ||
       sourceAmount !== null ||
@@ -787,6 +802,34 @@ export function sameEconomicPayload(
 ): boolean {
   return (
     a.id === b.id &&
+    a.kind === b.kind &&
+    a.idempotencyKey === b.idempotencyKey &&
+    (a.sourceEventId ?? null) === (b.sourceEventId ?? null) &&
+    (a.sourceAmount ?? null) === (b.sourceAmount ?? null) &&
+    (a.allocationRatePercent ?? null) === (b.allocationRatePercent ?? null) &&
+    a.amount === b.amount &&
+    (a.method ?? null) === (b.method ?? null) &&
+    (a.providerId ?? null) === (b.providerId ?? null) &&
+    (a.reversesEventId ?? null) === (b.reversesEventId ?? null) &&
+    (a.correctsEventId ?? null) === (b.correctsEventId ?? null) &&
+    a.businessDate === b.businessDate &&
+    a.occurredAt === b.occurredAt
+  );
+}
+
+/**
+ * Phase 8D: key-level economic equality. Same field list as
+ * sameEconomicPayload minus the physical id: used on an idempotency-key
+ * hit (different physical row, same key) to tell a true retry
+ * (same key, same economics -> deduplicate) from a conflicting reuse
+ * (same key, different economics -> reject). No new architecture — the
+ * existing comparator's field list is reused verbatim.
+ */
+export function sameKeyEconomicPayload(
+  a: TransportBudgetEvent,
+  b: TransportBudgetEvent,
+): boolean {
+  return (
     a.kind === b.kind &&
     a.idempotencyKey === b.idempotencyKey &&
     (a.sourceEventId ?? null) === (b.sourceEventId ?? null) &&

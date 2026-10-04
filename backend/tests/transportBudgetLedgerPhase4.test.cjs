@@ -293,14 +293,18 @@ describe('Phase 5 — sales allocation producer scope guard', () => {
     // (0033) and the Phase 8D consumption-reversal contract (0035) are the
     // approved exceptions: they extend the LEDGER contract
     // (CONSUMPTION_CORRECTION kind/linkage/caps/snapshots, CONSUMPTION_REVERSAL
-    // kind/linkage/cap) without adding any producer. Producer phases must
-    // still reuse the schema.
+    // kind/linkage/cap) without adding any producer. Phase 9B adds two more
+    // approved exceptions: the RPC same-key economic conflict (0037, RPC body
+    // only) and the transport_expenses RLS hardening (0038, policy only).
+    // Producer phases must still reuse the schema.
     expect(transportMigrations).toEqual([
       '0029_transport_budget_events.sql',
       '0030_transport_budget_ledger_hardening.sql',
       '0032_transport_budget_consumption_correction.sql',
       '0033_transport_budget_correction_source_snapshot.sql',
       '0035_transport_budget_consumption_reversal.sql',
+      '0037_transport_budget_rpc_key_economics.sql',
+      '0038_transport_expenses_rls_hardening.sql',
     ]);
   });
 });

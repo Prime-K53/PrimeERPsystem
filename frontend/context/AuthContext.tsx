@@ -768,6 +768,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             requestVoidRecoveryReconciliation().catch(() => {});
           },
         ).catch(() => {});
+        // Phase 9B — single startup trigger for Transport Budget
+        // missing-event reconciliation (all six families, deterministic
+        // re-fire of existing producers only). Same fire-and-forget,
+        // error-swallowed, single-flight shape as the void-recovery
+        // trigger above; safe to invoke repeatedly and offline.
+        import('../services/transportBudgetRecovery').then(
+          ({ requestTransportBudgetReconciliation }) => {
+            requestTransportBudgetReconciliation();
+          },
+        ).catch(() => {});
       }
 
       const lastBackup = localStorage.getItem('prime_erp_backup_date');

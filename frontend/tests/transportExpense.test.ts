@@ -147,6 +147,19 @@ const ledgerFor = (referenceId: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Production crypto.randomUUID is unique per call, but the shared jsdom
+  // setup stubs it to a constant. Producer-generated event ids (id: '')
+  // need production-like uniqueness, otherwise every producer append
+  // collides on one physical id. Scoped to this file only.
+  let uuidSeq = 0;
+  Object.defineProperty(globalThis, 'crypto', {
+    value: {
+      ...((globalThis as any).crypto ?? {}),
+      randomUUID: () => `mock-uuid-${String(++uuidSeq).padStart(4, '0')}`,
+    },
+    writable: true,
+    configurable: true,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -545,20 +558,20 @@ describe('transport expense — offline/sync boundary and negatives', () => {
     expect(memStores.tables.get('transportExpenses')?.size ?? 0).toBe(0);
   });
 
-  it('post emits exactly one OUTBOUND_CONSUMPTION; void adds no budget events', async () => {
+  it('post emits OUTBOUND_CONSUMPTION; void emits exactly one CONSUMPTION_REVERSAL', async () => {
     seed();
     const created = await createTransportExpense(draftInput({ id: 'TEXP-NB' }));
     await postTransportExpense(created.id);
-    await voidTransportExpense(created.id);
+    const { reversal } = await voidTransportExpense(created.id);
     // Phase 8E accepted behavior: the post-commit producer emits one
-    // OUTBOUND_CONSUMPTION observation per OUTBOUND_TRANSPORT line. The void
-    // path emits nothing in this phase (CONSUMPTION_REVERSAL is a later
-    // phase), so the full post+void cycle yields exactly one budget event.
+    // OUTBOUND_CONSUMPTION observation per OUTBOUND_TRANSPORT line, and the
+    // post-commit void hook emits exactly one CONSUMPTION_REVERSAL per
+    // original (+ABS, same businessDate, void timestamp). Net budget is 0.
     await new Promise((resolve) => setTimeout(resolve, 0));
     const events = [
       ...(memStores.tables.get('transportBudgetEvents') ?? new Map()).values(),
     ];
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({
       kind: 'OUTBOUND_CONSUMPTION',
       amount: -20000,
@@ -570,5 +583,23 @@ describe('transport expense — offline/sync boundary and negatives', () => {
     expect(String((events[0] as any).idempotencyKey)).toMatch(
       /^OUTBOUND_CONSUMPTION:TEXP-NB:/,
     );
+    const outboundId = String((events[0] as any).id);
+    expect(events[1]).toMatchObject({
+      kind: 'CONSUMPTION_REVERSAL',
+      amount: 20000,
+      reversesEventId: outboundId,
+      idempotencyKey: `CONSUMPTION_REVERSAL:${outboundId}`,
+      sourceEventId: null,
+      sourceAmount: null,
+      method: null,
+      providerId: null,
+      allocationRatePercent: null,
+      correctsEventId: null,
+      businessDate: '2026-10-02',
+      occurredAt: (reversal as any).occurredAt,
+    });
+    expect(
+      events.reduce((sum: number, e: any) => sum + Number(e.amount), 0),
+    ).toBe(0);
   });
 });

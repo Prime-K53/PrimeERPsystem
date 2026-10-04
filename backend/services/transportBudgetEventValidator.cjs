@@ -560,6 +560,21 @@ function validateTransportBudgetEvent(input, nowIso = new Date().toISOString()) 
   if (kind === 'CONSUMPTION_REVERSAL') {
     // Phase 8D null-snapshot hygiene (mirrors REVERSAL): economics derive
     // from the reversed OUTBOUND_CONSUMPTION target, verified at append.
+    // Key namespace: no random semantic identity — the canonical form is
+    // CONSUMPTION_REVERSAL:{originalOutboundConsumptionEventId}. A strict
+    // target binding is enforced at append (ALREADY_REVERSED/full-amount);
+    // validation requires the kind namespace only.
+    if (
+      idempotencyKey === null ||
+      !idempotencyKey.startsWith('CONSUMPTION_REVERSAL:')
+    ) {
+      issue(
+        issues,
+        'INVALID_IDEMPOTENCY_KEY',
+        'idempotencyKey',
+        'CONSUMPTION_REVERSAL idempotencyKey must start with CONSUMPTION_REVERSAL: (canonical form CONSUMPTION_REVERSAL:{originalOutboundConsumptionEventId}).',
+      );
+    }
     if (
       sourceEventId !== null ||
       sourceAmount !== null ||

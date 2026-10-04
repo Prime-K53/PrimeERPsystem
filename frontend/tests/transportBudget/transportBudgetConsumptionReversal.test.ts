@@ -14,11 +14,14 @@ import {
   TransportBudgetRepository,
   TransportBudgetConsumptionReversalError,
   TransportBudgetDuplicateIdError,
+  TransportBudgetIdempotencyConflictError,
+  consumptionReversalIdempotencyKey,
 } from '../../services/repositories/transportBudgetRepository';
 import {
   validateTransportBudgetEvent,
   assertValidTransportBudgetEvent,
   sameEconomicPayload,
+  sameKeyEconomicPayload,
 } from '../../services/transportBudgetValidator';
 import { TRANSPORT_BUDGET_TABLE_NAME } from '../../types/transportBudget';
 
@@ -493,6 +496,69 @@ describe('transportBudgetConsumptionReversal — overdraft and isolation', () =>
     expect(events.reduce((sum, e) => sum + Number(e.amount), 0)).toBe(-500000);
   });
 
+  it('canonical key helper derives the key from the immutable target', () => {
+    expect(consumptionReversalIdempotencyKey('evt-out-001')).toBe(
+      'CONSUMPTION_REVERSAL:evt-out-001',
+    );
+  });
+
+  it('same key + different economics is a conflict, not a silent dedupe', async () => {
+    const { store, repo } = await setupWithTarget();
+    await repo.appendConsumptionReversal(reversalInput() as never);
+    await expect(
+      repo.appendConsumptionReversal(
+        reversalInput({
+          id: 'evt-crev-conflict',
+          amount: 19999,
+        }) as never,
+      ),
+    ).rejects.toBeInstanceOf(TransportBudgetIdempotencyConflictError);
+    // Nothing merged, nothing overwritten: target + first reversal only.
+    expect(store.size()).toBe(2);
+    const total = await repo.getConsumptionReversalTotal('evt-out-001');
+    expect(total).toEqual({ total: 20000, count: 1 });
+  });
+
+  it('sameKeyEconomicPayload ignores physical id but not economics', () => {
+    const a = reversalInput() as never;
+    const b = reversalInput({ id: 'evt-crev-other' }) as never;
+    expect(sameKeyEconomicPayload(a, b)).toBe(true);
+    expect(
+      sameKeyEconomicPayload(a, reversalInput({ amount: 19999 }) as never),
+    ).toBe(false);
+    expect(
+      sameKeyEconomicPayload(
+        a,
+        reversalInput({ reversesEventId: 'evt-out-999' }) as never,
+      ),
+    ).toBe(false);
+    // Baseline comparator still requires identical ids.
+    expect(sameEconomicPayload(a, b)).toBe(false);
+  });
+
+  it('rejects a non-namespaced idempotency key', async () => {
+    const { repo } = await setupWithTarget();
+    const result = validateTransportBudgetEvent(
+      reversalInput({ idempotencyKey: 'REVERSAL:evt-out-001' }) as never,
+      NOW,
+    );
+    expect(result.ok).toBe(false);
+    expect(
+      result.issues.some((i) => i.code === 'INVALID_IDEMPOTENCY_KEY'),
+    ).toBe(true);
+  });
+
+  it('rejects zero and negative reversal amounts', async () => {
+    const { repo } = await setupWithTarget();
+    for (const amount of [0, -20000, -0.01]) {
+      await expect(
+        repo.appendConsumptionReversal(
+          reversalInput({ amount }) as never,
+        ),
+      ).rejects.toThrow();
+    }
+  });
+
   it('produced rows carry null accounting fields and queue to the budget table only', async () => {
     const { store, queue, repo } = await setupWithTarget();
     const result = await repo.appendConsumptionReversal(
@@ -512,5 +578,225 @@ describe('transportBudgetConsumptionReversal — overdraft and isolation', () =>
       queue.ops.every((op) => op.table === TRANSPORT_BUDGET_TABLE_NAME),
     ).toBe(true);
     expect(store.size()).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression anchors (§16 A–M: pre-existing semantics unchanged by Phase 8D)
+// Deep coverage lives in the dedicated suites (transportBudgetValidator,
+// transportBudgetRepository, transportBudgetCorrection, void*Reversal*);
+// these anchors pin the full sign matrix plus the kind-exclusivity rules
+// that Phase 8D must not weaken.
+// ---------------------------------------------------------------------------
+
+describe('transportBudgetConsumptionReversal — regression anchors', () => {
+  const base = {
+    idempotencyKey: 'REGRESSION-KEY',
+    sourceEventId: null,
+    sourceAmount: null,
+    allocationRatePercent: null,
+    method: null,
+    providerId: null,
+    reversesEventId: null,
+    correctsEventId: null,
+    businessDate: '2026-10-02',
+    occurredAt: '2026-10-02T10:00:00.000Z',
+  };
+
+  it('A/B: SALES_ALLOCATION stays positive, allocation REVERSAL stays negative', () => {
+    expect(
+      validateTransportBudgetEvent({
+        ...base,
+        id: 'reg-alloc',
+        kind: 'SALES_ALLOCATION',
+        sourceEventId: 'INV-R',
+        sourceAmount: 10000,
+        allocationRatePercent: 100,
+        amount: 15000,
+      } as never).ok,
+    ).toBe(true);
+    const negative = validateTransportBudgetEvent({
+      ...base,
+      id: 'reg-alloc-neg',
+      kind: 'SALES_ALLOCATION',
+      sourceEventId: 'INV-R',
+      sourceAmount: 10000,
+      allocationRatePercent: 100,
+      amount: -15000,
+    } as never);
+    expect(negative.ok).toBe(false);
+    expect(
+      negative.issues.some((i) => i.code === 'INVALID_SIGN'),
+    ).toBe(true);
+    const reversal = validateTransportBudgetEvent({
+      ...base,
+      id: 'reg-rev',
+      kind: 'REVERSAL',
+      amount: -5000,
+      reversesEventId: 'reg-alloc',
+    } as never);
+    expect(reversal.ok).toBe(true);
+    expect(
+      validateTransportBudgetEvent({
+        ...base,
+        id: 'reg-rev-pos',
+        kind: 'REVERSAL',
+        amount: 5000,
+        reversesEventId: 'reg-alloc',
+      } as never).ok,
+    ).toBe(false);
+  });
+
+  it('D/E/F: INBOUND stays negative, CORRECTION stays positive and self-linked', () => {
+    expect(
+      validateTransportBudgetEvent({
+        ...base,
+        id: 'reg-in',
+        kind: 'INBOUND_CONSUMPTION',
+        sourceEventId: 'GRN-R',
+        sourceAmount: 3000,
+        amount: -3000,
+        method: 'LANDING_COST_FREIGHT',
+        providerId: 'SUP-R',
+      } as never).ok,
+    ).toBe(true);
+    expect(
+      validateTransportBudgetEvent({
+        ...base,
+        id: 'reg-in-pos',
+        kind: 'INBOUND_CONSUMPTION',
+        amount: 3000,
+      } as never).ok,
+    ).toBe(false);
+    expect(
+      validateTransportBudgetEvent({
+        ...base,
+        id: 'reg-corr',
+        kind: 'CONSUMPTION_CORRECTION',
+        sourceEventId: 'reg-in',
+        sourceAmount: 3000,
+        correctsEventId: 'reg-in',
+        amount: 500,
+        method: 'LANDING_COST_FREIGHT',
+        providerId: 'SUP-R',
+      } as never).ok,
+    ).toBe(true);
+    expect(
+      validateTransportBudgetEvent({
+        ...base,
+        id: 'reg-corr-neg',
+        kind: 'CONSUMPTION_CORRECTION',
+        sourceEventId: 'reg-in',
+        sourceAmount: 3000,
+        correctsEventId: 'reg-in',
+        amount: -500,
+        method: 'LANDING_COST_FREIGHT',
+        providerId: 'SUP-R',
+      } as never).ok,
+    ).toBe(false);
+  });
+
+  it('G: OUTBOUND_CONSUMPTION stays negative', () => {
+    expect(
+      validateTransportBudgetEvent(outboundInput() as never, NOW).ok,
+    ).toBe(true);
+    expect(
+      validateTransportBudgetEvent(
+        outboundInput({ amount: 20000 }) as never,
+        NOW,
+      ).ok,
+    ).toBe(false);
+  });
+
+  it('C/F: REVERSAL still cannot link corrections; CORRECTION still cannot link reversals', () => {
+    expect(
+      validateTransportBudgetEvent(
+        reversalInput({ correctsEventId: 'evt-out-001' }) as never,
+        NOW,
+      ).ok,
+    ).toBe(false);
+    expect(
+      validateTransportBudgetEvent({
+        ...base,
+        id: 'reg-corr-rev',
+        kind: 'CONSUMPTION_CORRECTION',
+        sourceEventId: 'reg-in',
+        sourceAmount: 3000,
+        correctsEventId: 'reg-in',
+        reversesEventId: 'reg-alloc',
+        amount: 100,
+        method: 'LANDING_COST_FREIGHT',
+      } as never).ok,
+    ).toBe(false);
+  });
+
+  it('I/J: CORRECTION snapshot rule unchanged (sourceAmount must equal parent snapshot)', async () => {
+    const { repo } = setup();
+    await repo.appendTransportBudgetEvent({
+      ...base,
+      id: 'reg-in-snap',
+      kind: 'INBOUND_CONSUMPTION',
+      idempotencyKey: 'INBOUND_CONSUMPTION:REG-SNAPSHOT',
+      sourceEventId: 'GRN-SNAPSHOT',
+      sourceAmount: 3000,
+      amount: -3000,
+      method: 'LANDING_COST_FREIGHT',
+      providerId: 'SUP-R',
+    } as never);
+    // Validator shape passes (positive snapshot amount); the repository
+    // rejects the mismatched snapshot against the immutable parent.
+    expect(
+      validateTransportBudgetEvent({
+        ...base,
+        id: 'reg-corr-snap',
+        kind: 'CONSUMPTION_CORRECTION',
+        idempotencyKey: 'CONSUMPTION_CORRECTION:reg-in-snap',
+        sourceEventId: 'reg-in-snap',
+        sourceAmount: 9999,
+        correctsEventId: 'reg-in-snap',
+        amount: 100,
+        method: 'LANDING_COST_FREIGHT',
+        providerId: 'SUP-R',
+      } as never).ok,
+    ).toBe(true);
+    await expect(
+      repo.appendCorrection({
+        ...base,
+        id: 'reg-corr-snap',
+        kind: 'CONSUMPTION_CORRECTION',
+        idempotencyKey: 'CONSUMPTION_CORRECTION:reg-in-snap',
+        sourceEventId: 'reg-in-snap',
+        sourceAmount: 9999,
+        correctsEventId: 'reg-in-snap',
+        amount: 100,
+        method: 'LANDING_COST_FREIGHT',
+        providerId: 'SUP-R',
+      } as never),
+    ).rejects.toMatchObject({ code: 'SNAPSHOT_MISMATCH' });
+  });
+
+  it('K/L/M: allocation cap, void behavior, and overdraft posture untouched', async () => {
+    // Allocation reversal cap still enforced at the repo mirror.
+    const { repo } = setup();
+    await repo.appendTransportBudgetEvent({
+      ...base,
+      id: 'reg-cap-alloc',
+      kind: 'SALES_ALLOCATION',
+      idempotencyKey: 'SALES_ALLOCATION:REG-CAP',
+      sourceEventId: 'INV-CAP',
+      sourceAmount: 5000,
+      allocationRatePercent: 100,
+      amount: 5000,
+    } as never);
+    await expect(
+      repo.appendReversal({
+        ...base,
+        id: 'reg-cap-rev',
+        kind: 'REVERSAL',
+        idempotencyKey: 'REVERSAL:reg-cap-alloc:1',
+        amount: -6000,
+        reversesEventId: 'reg-cap-alloc',
+      } as never),
+    ).rejects.toMatchObject({ code: 'CAP_EXCEEDED' });
   });
 });

@@ -246,6 +246,39 @@ function isBlankSku(sku) {
   return String(sku == null ? '' : sku).trim() === '';
 }
 
+/**
+ * Printing-contract business-key guard. Contract numbers are minted on the
+ * device from the local cache only, so two devices can mint the same number
+ * (a fresh device before its first pull, or two concurrent creates). The
+ * partial unique index in migration 0039 is the atomic backstop; this
+ * pre-write probe turns the common case into a clean, non-retryable
+ * failure so the client dead-letters the op and the user renumbers, instead
+ * of retrying a deterministic 409 forever.
+ */
+async function validateAssessmentContractOp(op) {
+  if (op.operation === 'delete') return null;
+  const payload = op.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const contractNumber = String(payload.contract_number || '').trim();
+  if (!contractNumber) return null;
+  try {
+    const rows = await cloudSyncStore.findRowsByDataField('assessment_contracts', 'contract_number', contractNumber);
+    const clash = rows.find((row) => {
+      const data = row && row.data && typeof row.data === 'object' ? row.data : {};
+      if (data.deleted === true || data.deletedAt) return false; // tombstones no longer hold the number
+      return String(row.id) !== String(op.recordId || payload.id || '');
+    });
+    if (clash) {
+      return `contract_number ${contractNumber} is already used by another printing contract`;
+    }
+  } catch (err) {
+    // The unique index still enforces uniqueness atomically; a failed probe
+    // must never block the business write.
+    console.warn('[sync] assessment_contracts contract_number uniqueness probe failed:', err?.message || err);
+  }
+  return null;
+}
+
 router.post('/ops', async (req, res) => {
   try {
     // B5 + Admin-only ERP: the sync gateway is the single write path for ALL
@@ -344,6 +377,22 @@ router.post('/ops', async (req, res) => {
         if (productsError) {
           console.warn(`[sync] products validation rejected ${op?.operationId}`, { error: productsError });
           results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: productsError, retryable: false });
+          continue;
+        }
+      }
+
+      // Printing-contract numbering guard (see validateAssessmentContractOp).
+      if (table === 'assessment_contracts') {
+        let contractError = null;
+        try {
+          contractError = await validateAssessmentContractOp(op);
+        } catch (err) {
+          console.error('[sync] assessment_contracts validation error:', err?.message || err);
+          contractError = null;
+        }
+        if (contractError) {
+          console.warn(`[sync] assessment_contracts validation rejected ${op?.operationId}`, { error: contractError });
+          results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: contractError, retryable: false });
           continue;
         }
       }

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Activity, FileText, Users, PieChart, Sparkles, BarChart3, ShieldCheck, Wallet } from 'lucide-react';
+import { Activity, FileText, Users, PieChart, Sparkles, BarChart3, ShieldCheck, Wallet, PiggyBank } from 'lucide-react';
 import GenericHub from './GenericHub';
 
 const RevenueHub: React.FC = () => {
@@ -67,6 +67,13 @@ const RevenueHub: React.FC = () => {
       path: '/revenue/auditor',
       icon: <ShieldCheck />,
       color: 'bg-slate-50 text-slate-600'
+    },
+    {
+      label: 'Transport Budget',
+      description: 'Accumulated, used, and remaining internal transport budget from the event ledger.',
+      path: '/revenue/transport-budget',
+      icon: <PiggyBank />,
+      color: 'bg-teal-50 text-teal-600'
     }
 
   ];

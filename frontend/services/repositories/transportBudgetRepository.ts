@@ -38,6 +38,7 @@ import { newId } from '../../utils/ulid';
 import {
   assertValidTransportBudgetEvent,
   sameEconomicPayload,
+  sameKeyEconomicPayload,
 } from '../transportBudgetValidator';
 import type {
   NewTransportBudgetEventInput,
@@ -75,6 +76,34 @@ export class TransportBudgetDuplicateIdError extends Error {
     this.existing = existing;
   }
 }
+
+/**
+ * Phase 8D: same idempotency key reused with different economics.
+ * Mirrors TransportBudgetDuplicateIdError (same architecture, key-level):
+ * a true retry (same key, same economics) still deduplicates; a
+ * conflicting reuse is rejected instead of silently resolving.
+ */
+export class TransportBudgetIdempotencyConflictError extends Error {
+  readonly existing: TransportBudgetEvent;
+
+  constructor(existing: TransportBudgetEvent) {
+    super(
+      `Transport budget idempotency key ${existing.idempotencyKey} already exists with different economics (stored as ${existing.id}).`,
+    );
+    this.name = 'TransportBudgetIdempotencyConflictError';
+    this.existing = existing;
+  }
+}
+
+/**
+ * Phase 8D: canonical consumption-reversal idempotency key. No random
+ * semantic identity — callers derive the key from the immutable target:
+ * CONSUMPTION_REVERSAL:{originalOutboundConsumptionEventId}.
+ */
+export const consumptionReversalIdempotencyKey = (
+  originalOutboundConsumptionEventId: string,
+): string =>
+  `CONSUMPTION_REVERSAL:${String(originalOutboundConsumptionEventId ?? '').trim()}`;
 
 export class TransportBudgetReversalError extends Error {
   readonly code:
@@ -502,10 +531,16 @@ export class TransportBudgetRepository {
     }
 
     // 3. Economic idempotency: same idempotency key already stored?
+    // Same key + same economics -> deduplicate (true retry, possibly a
+    // different physical id). Same key + different economics -> conflict
+    // (never silently resolve to a different economic event).
     const byKey = await this.findTransportBudgetEventByIdempotencyKey(
       event.idempotencyKey,
     );
     if (byKey) {
+      if (!sameKeyEconomicPayload(byKey, event)) {
+        throw new TransportBudgetIdempotencyConflictError(freezeEvent(byKey));
+      }
       await this.ensureQueued(byKey);
       return { event: byKey, deduplicated: true };
     }

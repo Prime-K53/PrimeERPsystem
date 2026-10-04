@@ -10,7 +10,13 @@ const SalesOrderList: React.FC = () => {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     if (!q) return salesOrders || [];
-    return (salesOrders || []).filter((o: any) =>
+    
+    // Filter to only show sales orders with the correct ORD-P726/NNN format
+    const correctFormatOrders = (salesOrders || []).filter((o: any) => {
+      return /^ORD-P726\/\d+$/.test(String(o.id));
+    });
+    
+    return correctFormatOrders.filter((o: any) =>
       String(o.id).toLowerCase().includes(q) ||
       String(o.customerName || o.customerId).toLowerCase().includes(q) ||
       String(o.status).toLowerCase().includes(q)

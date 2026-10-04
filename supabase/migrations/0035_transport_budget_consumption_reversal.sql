@@ -616,6 +616,12 @@ BEGIN
         RAISE EXCEPTION
             '0035 verification failed: sign constraint missing positive-reversal branch';
     END IF;
+    -- OUTBOUND_CONSUMPTION remains negative: it falls under the explicit
+    -- negative ELSE branch (no generic positive rule was introduced).
+    IF v_sign_check_def NOT LIKE '%ELSE%numeric < 0%' THEN
+        RAISE EXCEPTION
+            '0035 verification failed: OUTBOUND_CONSUMPTION must remain negative (sign ELSE branch)';
+    END IF;
 
     -- Linkage CHECK carries reversesEventId for the new kind.
     SELECT pg_get_constraintdef(oid) INTO v_shape_check_def

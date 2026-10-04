@@ -178,6 +178,24 @@ async function listRows(table) {
   return out;
 }
 
+/**
+ * Find rows whose `data` JSONB carries a given value for `field`.
+ * Used by the gateway for business-key uniqueness checks (e.g. printing
+ * contract numbers) before the write, so a collision is reported as a
+ * clean, non-retryable failure instead of a 409 unique-violation retry
+ * loop. Tombstone rows are returned as-is; the caller decides whether
+ * they still hold the key.
+ */
+async function findRowsByDataField(table, field, value) {
+  const quoted = String(value).replace(/"/g, '\\"');
+  const res = await cloudHttp.get(`${SUPABASE_URL}/rest/v1/${table}`, {
+    headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
+    params: { select: 'id,data', [`data->>${field}`]: `eq."${quoted}"`, limit: 10 },
+    timeout: 15000,
+  });
+  return Array.isArray(res.data) ? res.data : [];
+}
+
 // ─── Unified P726 official Sales Order numbering ────────────────────────────
 // ONE official numbering family: every Sales Order mints ORD-P726/NNN from
 // one global numeric sequence per series, regardless of creation source
@@ -813,6 +831,7 @@ module.exports = {
   applyOp,
   getRow,
   listRows,
+  findRowsByDataField,
   upsertRow,
   softDeleteRow,
   checkIdempotency,

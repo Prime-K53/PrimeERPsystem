@@ -108,7 +108,8 @@ export type InboundConsumptionSkipReason =
   | 'non-positive-source'
   | 'missing-provider'
   | 'duplicate-scope'
-  | 'invalid-grn-date';
+  | 'invalid-grn-date'
+  | 'invalid-timestamp';
 
 export interface InboundConsumptionSkipped {
   scope: string;
@@ -284,11 +285,22 @@ export async function produceInboundConsumptionForGrn(
     seenScopes.add(sourceEventId);
     const amount = -roundMoney(authoritativeAmount);
     const sourceAmount = roundMoney(authoritativeSource);
+    // Phase 9B: the authoritative GRN timestamp is required. A missing or
+    // malformed `at` fails closed (skipped, retryable once the source is
+    // corrected) — wall-clock substitution would silently misdate an
+    // otherwise valid economic event.
     const occurredAtRaw = (source as { at?: unknown })?.at;
-    const occurredAt =
-      typeof occurredAtRaw === 'string' && isValidIsoDateTime(occurredAtRaw)
-        ? occurredAtRaw
-        : deps.nowIso();
+    if (
+      typeof occurredAtRaw !== 'string' ||
+      !isValidIsoDateTime(occurredAtRaw)
+    ) {
+      logger.error(
+        `[TransportBudget] inbound invalid timestamp (scope ${sourceEventId}); refusing wall-clock substitution.`,
+      );
+      skip('invalid-timestamp');
+      continue;
+    }
+    const occurredAt = occurredAtRaw;
     try {
       const result: TransportBudgetAppendResult =
         await deps.repository.appendTransportBudgetEvent({

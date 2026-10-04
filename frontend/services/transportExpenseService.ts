@@ -37,6 +37,11 @@ import {
   defaultOutboundConsumptionDeps,
 } from './transportBudgetOutboundConsumption';
 import {
+  fireOutboundReversalHook,
+  produceOutboundReversalsSafely,
+  defaultOutboundReversalDeps,
+} from './transportBudgetOutboundReversal';
+import {
   getCompanyConfig,
   getGLConfig,
   generateId,
@@ -570,7 +575,22 @@ export async function voidTransportExpense(
   reason?: string,
   performedBy?: string,
 ): Promise<{ voided: TransportExpense; reversal: TransportExpense }> {
-  return serializeTransportExpenseOp(() => voidTransportExpenseInner(id, reason, performedBy));
+  const result = await serializeTransportExpenseOp(() =>
+    voidTransportExpenseInner(id, reason, performedBy),
+  );
+  // Phase 8E: post-commit void observation. Runs AFTER the atomic void
+  // commit above, never inside it. Fire-and-forget: a budget failure must
+  // never roll back the already-committed void/reversal accounting. The
+  // reversal row's persisted occurredAt is the authoritative void
+  // timestamp for every derived CONSUMPTION_REVERSAL.
+  fireOutboundReversalHook(
+    produceOutboundReversalsSafely(defaultOutboundReversalDeps, {
+      voidedExpense: result.voided,
+      voidOccurredAt: result.reversal.occurredAt,
+    }),
+    result.voided.id,
+  );
+  return result;
 }
 
 async function voidTransportExpenseInner(

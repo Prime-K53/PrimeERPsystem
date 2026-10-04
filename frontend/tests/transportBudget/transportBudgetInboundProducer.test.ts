@@ -333,13 +333,34 @@ describe('inbound producer — amount and identity', () => {
     expect(INBOUND_CONSUMPTION_METHOD).toBe('LANDING_COST_FREIGHT');
   });
 
-  it('occurredAt falls back to nowIso when the landing timestamp is unusable', async () => {
+  it('Phase 9B: missing/invalid landing timestamp fails closed (no wall-clock substitution)', async () => {
+    for (const at of ['not-a-time', '', null, undefined]) {
+      const repo = fakeRepo();
+      const outcome = await produceInboundConsumptionForGrn(
+        depsFor(repo),
+        inputFor([freightEvent({ at: at as never })]),
+      );
+      expect(outcome.produced).toHaveLength(0);
+      expect(outcome.skipped).toEqual([
+        { scope: 'LC-101:GRN-456', reason: 'invalid-timestamp' },
+      ]);
+      expect(repo.calls).toHaveLength(0);
+    }
+  });
+
+  it('Phase 9B: retry after the source timestamp is corrected produces exactly one event', async () => {
     const repo = fakeRepo();
-    await produceInboundConsumptionForGrn(
+    const first = await produceInboundConsumptionForGrn(
       depsFor(repo),
-      inputFor([freightEvent({ at: 'not-a-time' })]),
+      inputFor([freightEvent({ at: null as never })]),
     );
-    expect(repo.calls[0].occurredAt).toBe(NOW);
+    expect(first.produced).toHaveLength(0);
+    const retry = await produceInboundConsumptionForGrn(
+      depsFor(repo),
+      inputFor([freightEvent({ at: '2026-09-15T10:00:00.000Z' })]),
+    );
+    expect(retry.produced).toHaveLength(1);
+    expect(retry.produced[0].occurredAt).toBe('2026-09-15T10:00:00.000Z');
   });
 
   it('24/25. one event per scope; second event for one scope is detected, never aggregated', async () => {

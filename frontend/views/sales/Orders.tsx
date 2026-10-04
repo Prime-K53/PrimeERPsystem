@@ -1481,7 +1481,7 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
         const others = data.filter(o => getOrderDisplayStatus(o) !== 'Processing');
         return [...processing, ...others];
     }, [orderSearchSort.processedData]);
-    const processedJobOrders = jobOrderSearchSort.processedData;
+    const processedJobOrders = jobOrderSearchSort.processedData.filter((o: any) => /^ORD-P726\/\d+$/.test(String(o.id)));
     const processedExchanges = exchangeSearchSort.processedData;
     const processedSubscriptions = subscriptionSearchSort.processedData;
     const handleSelectInvoice = (id: string) => { setSelectedInvoiceIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); };

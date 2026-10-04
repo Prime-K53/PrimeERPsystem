@@ -190,6 +190,14 @@ describe('Phase 6 — full void produces the deterministic REVERSAL', () => {
   });
 
   it('C. deterministic retry converges to ONE economic REVERSAL', async () => {
+    // Pin the wall clock: both invocations must mint the same occurredAt for
+    // the retry to be byte-identical. Without this, the two Date.now() calls
+    // can straddle a millisecond boundary and the (correct, fail-closed)
+    // same-key conflict triggers instead of dedupe — a pre-existing timing
+    // flake under parallel-worker load, not a second economic event.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-04T12:00:00.000Z'));
+    try {
     await seedAllocation();
     await seedInvoice();
 
@@ -207,6 +215,9 @@ describe('Phase 6 — full void produces the deterministic REVERSAL', () => {
     const all = await reversalEvents();
     expect(all).toHaveLength(1);
     expect(all[0].idempotencyKey).toBe('REVERSAL:INV-1000:VOID');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -294,6 +305,91 @@ describe('Phase 6 — ordering and failure handling', () => {
 
     expect(await findReversal()).toBeNull();
     expect(await reversalEvents()).toHaveLength(0);
+  });
+
+  it('I. voidSale reverses a non-mirror sale allocation exactly once', async () => {
+    await dbControl.dbService.put('sales', {
+      id: 'SALE-1000',
+      status: 'Paid',
+      items: [],
+      totalAmount: 500000,
+      date: '2026-09-30',
+      customerId: 'walk-in',
+    });
+    await transportBudgetRepository.appendTransportBudgetEvent({
+      id: 'evt-alloc-sale-1000',
+      kind: 'SALES_ALLOCATION',
+      idempotencyKey: salesAllocationIdempotencyKey('SALE-1000'),
+      sourceEventId: 'SALE-1000',
+      sourceAmount: 500000,
+      allocationRatePercent: 3,
+      amount: 15000,
+      method: null,
+      providerId: null,
+      reversesEventId: null,
+      businessDate: '2026-09-30',
+      occurredAt: '2026-09-30T10:00:00.000Z',
+    } as never);
+
+    await transactionService.voidSale('SALE-1000', 'test void');
+
+    const sale = (await dbControl.dbService.get('sales', 'SALE-1000')) as {
+      status?: string;
+    };
+    expect(sale?.status).toBe('Voided');
+    const reversal =
+      await transportBudgetRepository.findTransportBudgetEventByIdempotencyKey(
+        voidReversalIdempotencyKey('SALE-1000'),
+      );
+    expect(reversal).not.toBeNull();
+    expect(reversal).toMatchObject({
+      kind: 'REVERSAL',
+      amount: -15000,
+      reversesEventId: 'evt-alloc-sale-1000',
+      businessDate: '2026-09-30',
+    });
+
+    // A repeated void is rejected by the commercial guard and the
+    // reversal stays exactly one.
+    await expect(
+      transactionService.voidSale('SALE-1000', 'test void again'),
+    ).rejects.toThrow(/already voided/i);
+    expect(await reversalEvents()).toHaveLength(1);
+  });
+
+  it('J. voidSale on a mirror sale reverses nothing (invoice path owns it)', async () => {
+    await dbControl.dbService.put('sales', {
+      id: 'SALE-M1',
+      status: 'Paid',
+      items: [],
+      totalAmount: 200000,
+      date: '2026-09-30',
+      customerId: 'walk-in',
+    });
+    // Mirror economics live under the mirror invoice key only.
+    await transportBudgetRepository.appendTransportBudgetEvent({
+      id: 'evt-alloc-mirror-1',
+      kind: 'SALES_ALLOCATION',
+      idempotencyKey: salesAllocationIdempotencyKey('INV-MIRROR-1'),
+      sourceEventId: 'INV-MIRROR-1',
+      sourceAmount: 200000,
+      allocationRatePercent: 3,
+      amount: 6000,
+      method: null,
+      providerId: null,
+      reversesEventId: null,
+      businessDate: '2026-09-30',
+      occurredAt: '2026-09-30T10:00:00.000Z',
+    } as never);
+
+    await transactionService.voidSale('SALE-M1', 'test void');
+
+    const sale = (await dbControl.dbService.get('sales', 'SALE-M1')) as {
+      status?: string;
+    };
+    expect(sale?.status).toBe('Voided');
+    expect(await reversalEvents()).toHaveLength(0);
+    expect(logger.warn).toHaveBeenCalled();
   });
 
   it('H. append failure after commit keeps the void and retries on the same key', async () => {

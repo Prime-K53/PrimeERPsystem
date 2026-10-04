@@ -3812,7 +3812,7 @@ export const transactionService = {
     },
 
     async voidSale(id: string, reason: string) {
-        return dbService.executeAtomicOperation(
+        const result = await dbService.executeAtomicOperation(
             ['sales', 'inventory', 'ledger', 'customers', 'customerPayments', 'bankAccounts', 'bankTransactions', 'walletTransactions', 'inventoryTransactions', 'accounts'],
             async (tx) => {
                 const salesStore = tx.objectStore('sales');
@@ -4051,6 +4051,18 @@ export const transactionService = {
                 return { success: true };
             }
         );
+
+        // Phase 9B — isolated Transport Budget full-void REVERSAL, mirroring
+        // voidInvoice. Runs strictly AFTER the commercial commit above and
+        // never affects it (produceVoidReversalSafely logs/swallows).
+        // Exactly-once by construction: non-mirror sales carry their own
+        // SALES_ALLOCATION:{saleId} key and reverse here; mirror/converted
+        // sales resolve to missing-allocation (their economics live under
+        // the mirror/converted invoice key, reversed via the invoice path),
+        // so no second reversal can arise from this call.
+        await produceVoidReversalSafely({ id });
+
+        return result;
     },
 
     async syncInventoryValuation(accountId: string, physicalValue: number, currentLedgerBalance: number, inventoryItems?: any[]) {

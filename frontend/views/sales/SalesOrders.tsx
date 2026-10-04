@@ -367,7 +367,7 @@ const SalesOrders: React.FC = () => {
             </div>
           ) : isMobile ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
-              {salesOrders.map((o: any) => {
+              {salesOrders.filter((o: any) => /^ORD-P726\/\d+$/.test(String(o.id))).map((o: any) => {
                 const sc = statusBadgeColors[o.status] || { bg: paper, color: inkSoft, border: hairline };
                 return (
                   <div
@@ -437,7 +437,7 @@ const SalesOrders: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {salesOrders.map((o: any) => {
+                {salesOrders.filter((o: any) => /^ORD-P726\/\d+$/.test(String(o.id))).map((o: any) => {
                   const sc = statusBadgeColors[o.status] || { bg: paper, color: inkSoft, border: hairline };
                   return (
                     <tr key={o.id} style={{ borderBottom: `1px solid ${hairline}` }}>

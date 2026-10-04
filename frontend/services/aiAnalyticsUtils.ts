@@ -169,63 +169,6 @@ function calcSummary(projections: any[], invoices: any[], _expenses: any[], ar: 
   };
 }
 
-// ── Churn Predictor ──────────────────────────────────────────────
-export function predictChurn(sales: any[], customers: any[]) {
-  const now = new Date();
-  const predictions: any[] = [];
-
-  for (const cust of customers) {
-    const name = cust.customer_name || cust.name;
-    if (!name) continue;
-    const customerSales = sales.filter((s: any) => (s.customer_name || '').toLowerCase() === name.toLowerCase());
-    if (customerSales.length === 0) continue;
-
-    const dates = customerSales.map((s: any) => new Date(s.created_at || s.date)).filter((d: Date) => !isNaN(d.getTime()));
-    dates.sort((a: Date, b: Date) => b.getTime() - a.getTime());
-    const lastOrderDate = dates[0];
-    const firstOrderDate = dates[dates.length - 1];
-    const daysSinceLastOrder = lastOrderDate ? Math.round((now.getTime() - lastOrderDate.getTime()) / (1000 * 60 * 60 * 24)) : 999;
-    const customerLifetime = firstOrderDate ? Math.round((now.getTime() - firstOrderDate.getTime()) / (1000 * 60 * 60 * 24)) : 1;
-    const totalSpend = customerSales.reduce((s: number, sale: any) => s + safeNumber(sale.total_amount || sale.total), 0);
-    const avgOrderValue = totalSpend / customerSales.length;
-    const orderFrequency = customerLifetime > 0 ? customerSales.length / customerLifetime : 0;
-    const last3Months = customerSales.filter((s: any) => {
-      const d = new Date(s.created_at || s.date);
-      return !isNaN(d.getTime()) && (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24 * 30) <= 3;
-    }).length;
-
-    let riskScore = 0;
-    if (daysSinceLastOrder > 90) riskScore += 0.4; else if (daysSinceLastOrder > 60) riskScore += 0.25; else if (daysSinceLastOrder > 30) riskScore += 0.1;
-    if (last3Months === 0 && daysSinceLastOrder > 45) riskScore += 0.3; else if (last3Months <= 1 && customerSales.length > 5) riskScore += 0.15;
-    if (orderFrequency < 0.01 && customerLifetime > 180) riskScore += 0.2;
-    if (customerSales.length <= 2) riskScore += 0.1;
-    riskScore = Math.min(1, riskScore);
-
-    const riskLevel = riskScore >= 0.5 ? 'high' : riskScore >= 0.25 ? 'medium' : 'low';
-    const keyFactors: string[] = [];
-    if (daysSinceLastOrder > 90) keyFactors.push('No orders in 90+ days'); else if (daysSinceLastOrder > 60) keyFactors.push('No orders in 60+ days');
-    if (last3Months === 0) keyFactors.push('No activity in last quarter');
-    if (orderFrequency < 0.005) keyFactors.push('Very low order frequency');
-
-    predictions.push({
-      customerName: name, customerPhone: cust.customer_phone, customerEmail: cust.customer_email,
-      totalOrders: customerSales.length, totalSpend: Math.round(totalSpend * 100) / 100,
-      avgOrderValue: Math.round(avgOrderValue * 100) / 100,
-      orderFrequency: Math.round(orderFrequency * 1000) / 1000, daysSinceLastOrder, customerLifetime,
-      last3MonthsOrders: last3Months, riskScore: Math.round(riskScore * 100) / 100, riskLevel, keyFactors
-    });
-  }
-
-  predictions.sort((a, b) => b.riskScore - a.riskScore);
-  const high = predictions.filter(p => p.riskLevel === 'high');
-  return {
-    predictions, atRiskCount: high.length,
-    moderateRiskCount: predictions.filter(p => p.riskLevel === 'medium').length,
-    healthyCount: predictions.filter(p => p.riskLevel === 'low').length, totalCustomers: predictions.length,
-    summary: { totalAtRisk: high.length, highValueAtRisk: high.filter((p: any) => p.totalSpend > 10000).length, estimatedRevenueAtRisk: Math.round(high.reduce((s: number, p: any) => s + p.totalSpend, 0) * 0.6) }
-  };
-}
-
 // ── Reorder Optimizer ────────────────────────────────────────────
 export function optimizeReorder(inventory: any[], transactions: any[]) {
   const results: any[] = [];

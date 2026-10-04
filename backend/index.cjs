@@ -1158,24 +1158,37 @@ async function startServer() {
           console.error(`[BACKEND] Error updating sale #${id}:`, error.message);
           return res.status(500).json({ error: 'Failed to update sale' });
         }
-        // Phase 5C — allocate exactly once on the unrecognized -> recognized
-        // transition, using the POST-UPDATE persisted commercial values.
-        // recognized -> recognized and recognized -> unrecognized (reversal)
-        // are deliberately not handled here (the latter is Phase 6).
-        if (saleExists && !wasRecognized && becomesRecognized) {
-          try {
-            const { allocateForApiSale, fireAllocationHook } = require('./services/transportBudgetSalesAllocation.cjs');
-            const persistedSale = { id, date: effectiveDate, totalAmount, status: nextStatus };
-            fireAllocationHook(
-              allocateForApiSale(buildTransportBudgetAllocationDeps(), persistedSale),
-              'PUT /api/sales/:id',
-              id,
-            );
-          } catch (hookSetupErr) {
-            console.error(`[TransportBudget] sales allocation failed (endpoint=PUT /api/sales/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+          // Phase 5C — allocate exactly once on the unrecognized -> recognized
+          // transition, using the POST-UPDATE persisted commercial values.
+          // recognized -> recognized is a no-op. Phase 9B — recognized ->
+          // unrecognized is an economic reversal and produces exactly one
+          // REVERSAL (deterministic key; dedupes if the sale was already
+          // reversed through another void path).
+          if (saleExists && !wasRecognized && becomesRecognized) {
+            try {
+              const { allocateForApiSale, fireAllocationHook } = require('./services/transportBudgetSalesAllocation.cjs');
+              const persistedSale = { id, date: effectiveDate, totalAmount, status: nextStatus };
+              fireAllocationHook(
+                allocateForApiSale(buildTransportBudgetAllocationDeps(), persistedSale),
+                'PUT /api/sales/:id',
+                id,
+              );
+            } catch (hookSetupErr) {
+              console.error(`[TransportBudget] sales allocation failed (endpoint=PUT /api/sales/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+            }
+          } else if (saleExists && wasRecognized && !becomesRecognized) {
+            try {
+              const { produceVoidReversalForVoidedDoc, fireVoidReversalHook, buildVoidReversalDeps } = require('./services/transportBudgetVoidReversal.cjs');
+              fireVoidReversalHook(
+                produceVoidReversalForVoidedDoc(buildVoidReversalDeps(), { id }),
+                'PUT /api/sales/:id',
+                id,
+              );
+            } catch (hookSetupErr) {
+              console.error(`[TransportBudget] void reversal failed (endpoint=PUT /api/sales/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+            }
           }
-        }
-        res.json({ id, success: true });
+          res.json({ id, success: true });
       }
     );
   });
@@ -1193,8 +1206,25 @@ async function startServer() {
       const fySvc = new (require('./services/financialYearService.cjs'))();
       await fySvc.validateTransactionDate(row.date);
       const sale = await sq.getOne('SELECT * FROM sales WHERE id = ?', [id]);
+      // Phase 9B — a recognized sale voided here orphans its SALES_ALLOCATION
+      // unless reversed. Capture recognition BEFORE the status flip; the
+      // reversal fires post-commit below and never blocks this response.
+      const { isRecognizedSaleStatus: isRecognizedSaleStatusForVoid } = require('./services/revenueRecognition.cjs');
+      const saleWasRecognized = Boolean(sale) && isRecognizedSaleStatusForVoid(sale.status);
       if (sale) {
         await repo.upsert('sales', { ...sale, status: 'Voided' });
+      }
+      if (saleWasRecognized) {
+        try {
+          const { produceVoidReversalForVoidedDoc, fireVoidReversalHook, buildVoidReversalDeps } = require('./services/transportBudgetVoidReversal.cjs');
+          fireVoidReversalHook(
+            produceVoidReversalForVoidedDoc(buildVoidReversalDeps(), { id }),
+            'DELETE /api/sales/:id',
+            id,
+          );
+        } catch (hookSetupErr) {
+          console.error(`[TransportBudget] void reversal failed (endpoint=DELETE /api/sales/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+        }
       }
       res.json({ id, success: true, status: 'Voided' });
     } catch (err) {
@@ -2331,29 +2361,41 @@ async function startServer() {
          }
          portalLifecycleService.emitEntityChange('portal', { customerId: body.customer_id, docType: 'invoice', docId: id, status: body.status, invoiceNumber: body.invoice_number, updatedFields });
          portalLifecycleService.emitEntityChange('admin', { customerId: body.customer_id, docType: 'invoice', docId: id, status: body.status, invoiceNumber: body.invoice_number, updatedFields });
-         // Phase 5C — allocate exactly once when this update promotes an
-         // unrecognized invoice into a posted state. Uses the persisted
-         // invoice_date as the business date (never created_at / server time);
-         // recognized -> recognized and recognized -> unrecognized (reversal)
-         // are not handled here.
-         if (previous && !wasRecognized && becomesRecognized) {
-           try {
-             const { allocateForApiInvoice, fireAllocationHook } = require('./services/transportBudgetSalesAllocation.cjs');
-             const persistedInvoice = {
-               id,
-               status: nextStatus,
-               totalAmount: body.total_amount !== undefined ? Number(body.total_amount) : Number(previous.total_amount || 0),
-             };
-             fireAllocationHook(
-               allocateForApiInvoice(buildTransportBudgetAllocationDeps(), persistedInvoice, previous.invoice_date),
-               'PUT /api/invoices/:id',
-               id,
-             );
-           } catch (hookSetupErr) {
-             console.error(`[TransportBudget] sales allocation failed (endpoint=PUT /api/invoices/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
-           }
-         }
-         res.json({ success: true, id });
+          // Phase 5C — allocate exactly once when this update promotes an
+          // unrecognized invoice into a posted state. Uses the persisted
+          // invoice_date as the business date (never created_at / server time).
+          // recognized -> recognized is a no-op. Phase 9B — recognized ->
+          // unrecognized is an economic reversal (deterministic key; dedupes
+          // if already reversed through another void path).
+          if (previous && !wasRecognized && becomesRecognized) {
+            try {
+              const { allocateForApiInvoice, fireAllocationHook } = require('./services/transportBudgetSalesAllocation.cjs');
+              const persistedInvoice = {
+                id,
+                status: nextStatus,
+                totalAmount: body.total_amount !== undefined ? Number(body.total_amount) : Number(previous.total_amount || 0),
+              };
+              fireAllocationHook(
+                allocateForApiInvoice(buildTransportBudgetAllocationDeps(), persistedInvoice, previous.invoice_date),
+                'PUT /api/invoices/:id',
+                id,
+              );
+            } catch (hookSetupErr) {
+              console.error(`[TransportBudget] sales allocation failed (endpoint=PUT /api/invoices/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+            }
+          } else if (previous && wasRecognized && !becomesRecognized) {
+            try {
+              const { produceVoidReversalForVoidedDoc, fireVoidReversalHook, buildVoidReversalDeps } = require('./services/transportBudgetVoidReversal.cjs');
+              fireVoidReversalHook(
+                produceVoidReversalForVoidedDoc(buildVoidReversalDeps(), { id }),
+                'PUT /api/invoices/:id',
+                id,
+              );
+            } catch (hookSetupErr) {
+              console.error(`[TransportBudget] void reversal failed (endpoint=PUT /api/invoices/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+            }
+          }
+          res.json({ success: true, id });
        });
     } catch (err) {
       console.error('[Invoices] PUT error:', err?.message || err);
@@ -2368,17 +2410,34 @@ async function startServer() {
         if (err) { console.error('[Invoices] DELETE error:', err); return res.status(500).json({ error: 'Failed to void invoice' }); }
         if (!row) return res.status(404).json({ error: 'Invoice not found' });
 sq.run('UPDATE invoices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['Voided', id], (err) => {
-           if (err) { console.error('[Invoices] DELETE error:', err); return res.status(500).json({ error: 'Failed to void invoice' }); }
-           portalLifecycleService.emitEntityChange('portal', { customerId: row.customer_id, docType: 'invoice', docId: id, status: 'Voided', invoiceNumber: row.invoice_number });
-           portalLifecycleService.emitEntityChange('admin', { customerId: row.customer_id, docType: 'invoice', docId: id, status: 'Voided', invoiceNumber: row.invoice_number });
-           // Reverse ledger entries if present
-           try {
-             finance.reverseLedgerEntriesByReference('invoice', id);
-           } catch (reversalErr) {
-             console.warn('[Invoices] Ledger reversal skipped:', reversalErr?.message);
-           }
-           res.json({ success: true, status: 'Voided' });
-         });
+            if (err) { console.error('[Invoices] DELETE error:', err); return res.status(500).json({ error: 'Failed to void invoice' }); }
+            portalLifecycleService.emitEntityChange('portal', { customerId: row.customer_id, docType: 'invoice', docId: id, status: 'Voided', invoiceNumber: row.invoice_number });
+            portalLifecycleService.emitEntityChange('admin', { customerId: row.customer_id, docType: 'invoice', docId: id, status: 'Voided', invoiceNumber: row.invoice_number });
+            // Reverse ledger entries if present
+            try {
+              finance.reverseLedgerEntriesByReference('invoice', id);
+            } catch (reversalErr) {
+              console.warn('[Invoices] Ledger reversal skipped:', reversalErr?.message);
+            }
+            // Phase 9B — a previously posted invoice voided here orphans its
+            // SALES_ALLOCATION unless reversed. Recognition is decided from
+            // the PRE-update status; the reversal fires post-commit and never
+            // blocks this response.
+            try {
+              const { isPostedInvoiceStatus } = require('./services/revenueRecognition.cjs');
+              if (isPostedInvoiceStatus(row.status)) {
+                const { produceVoidReversalForVoidedDoc, fireVoidReversalHook, buildVoidReversalDeps } = require('./services/transportBudgetVoidReversal.cjs');
+                fireVoidReversalHook(
+                  produceVoidReversalForVoidedDoc(buildVoidReversalDeps(), { id }),
+                  'DELETE /api/invoices/:id',
+                  id,
+                );
+              }
+            } catch (hookSetupErr) {
+              console.error(`[TransportBudget] void reversal failed (endpoint=DELETE /api/invoices/:id, document=${id}, stage=HOOK_SETUP, error=${hookSetupErr.message})`);
+            }
+            res.json({ success: true, status: 'Voided' });
+          });
       });
     } catch (err) {
       console.error('[Invoices] DELETE error:', err?.message || err);

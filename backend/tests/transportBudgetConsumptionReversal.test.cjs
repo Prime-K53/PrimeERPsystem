@@ -84,6 +84,33 @@ describe('Phase 8D: backend consumption-reversal validator parity', () => {
     ).toBe(false);
   });
 
+  test('enforces the CONSUMPTION_REVERSAL key namespace', () => {
+    const namespaced = validateTransportBudgetEvent(VALID_REVERSAL);
+    expect(namespaced.ok).toBe(true);
+    for (const key of [
+      'REVERSAL:evt-out-001',
+      'OUTBOUND_CONSUMPTION:EXP-7:DLV-7',
+      'RANDOM-KEY-1',
+    ]) {
+      const result = validateTransportBudgetEvent({
+        ...VALID_REVERSAL,
+        idempotencyKey: key,
+      });
+      expect(result.ok).toBe(false);
+      expect(
+        result.issues.some((i) => i.code === 'INVALID_IDEMPOTENCY_KEY'),
+      ).toBe(true);
+    }
+    // Suffixed operational keys stay in-namespace (binding is enforced at
+    // append by ALREADY_REVERSED/full-amount, not by the validator).
+    expect(
+      validateTransportBudgetEvent({
+        ...VALID_REVERSAL,
+        idempotencyKey: 'CONSUMPTION_REVERSAL:evt-out-001:2',
+      }).ok,
+    ).toBe(true);
+  });
+
   test('rejects snapshot fields on reversals (null hygiene)', () => {
     for (const patch of [
       { sourceEventId: 'evt-out-001' },
@@ -150,9 +177,14 @@ describe('Phase 8D: migration 0035 static contract', () => {
     expect(migrationSource).toMatch(
       /WHEN 'CONSUMPTION_REVERSAL' THEN \(data->>'amount'\)::numeric > 0/,
     );
-    // No generic positive rule: the ELSE branch stays negative.
+    // No generic positive rule: the ELSE branch stays negative, keeping
+    // OUTBOUND_CONSUMPTION (and REVERSAL/INBOUND_CONSUMPTION) negative.
     expect(migrationSource).toMatch(
       /ELSE \(data->>'amount'\)::numeric < 0/,
+    );
+    // The 0035 verification block pins the negative ELSE explicitly.
+    expect(migrationSource).toMatch(
+      /OUTBOUND_CONSUMPTION must remain negative/,
     );
   });
 
