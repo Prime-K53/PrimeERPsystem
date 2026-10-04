@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  Plus, Trash2, Calculator, 
+import {
+  Plus, Trash2,
   ShieldCheck, AlertCircle, Info, Landmark,
   TrendingUp, Scaling, FileCheck,
-  PieChart, Activity, Truck, 
+  PieChart, Activity, Truck,
   RotateCcw, Save, Loader2, Printer
 } from 'lucide-react';
 import { Purchase, LandingCostItem } from '../../../types';
@@ -180,96 +180,108 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
     };
 
     return (
-        <div className="flex flex-col gap-8 animate-in fade-in duration-300">
-            
+        <div className="app-modal" style={{
+            display: 'flex', flexDirection: 'column', gap: 16,
+            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            fontSize: 13.5, lineHeight: 1.5, color: '#1e293b',
+        }}>
             {/* Analytics Header */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><PieChart size={16}/></div>
-                        <span className="text-label">Burden Ratio</span>
+            <div className="grid grid-cols-1 md:grid-cols-4" style={{ gap: 12 }}>
+                <div style={{ background: '#fcfcfd', padding: '12px 14px', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ display: 'inline-flex', padding: 6, background: '#eff6ff', color: '#2563eb', borderRadius: 8 }}><PieChart size={14}/></span>
+                        <span className="modal-label">Burden Ratio</span>
                     </div>
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-title">{(burdenRatio || 0).toFixed(1)}%</span>
-                        <span className="text-[10px] font-bold text-slate-400 tracking-tight uppercase">of Goods Value</span>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <span style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }}>{(burdenRatio || 0).toFixed(1)}%</span>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>of goods value</span>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><Activity size={16}/></div>
-                        <span className="text-label">Total Surcharges</span>
+                <div style={{ background: '#fcfcfd', padding: '12px 14px', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ display: 'inline-flex', padding: 6, background: '#ecfdf5', color: '#059669', borderRadius: 8 }}><Activity size={14}/></span>
+                        <span className="modal-label">Total Surcharges</span>
                     </div>
-                    <div className="text-title finance-nums">{currency}{(totalLandingCost || 0).toLocaleString()}</div>
+                    <div className="finance-nums" style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.4 }}>{currency}{(totalLandingCost || 0).toLocaleString()}</div>
                 </div>
-                <div className="col-span-2 flex gap-2">
-                    <button 
+                <div className="col-span-2 flex" style={{ gap: 12 }}>
+                    <button
                         onClick={() => handleQuickAdd('Freight', 1500)}
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left hover:bg-slate-100 transition-all group"
+                        className="modal-btn-secondary"
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '8px 12px', textAlign: 'left', cursor: 'pointer', fontSize: 13, lineHeight: 1.45 }}
                     >
-                        <Truck size={18} className="text-slate-400 group-hover:text-blue-600 mb-2"/>
-                        <span className="block text-label mb-1">Quick Estimate</span>
-                        <span className="block text-[13px] font-semibold text-slate-800">Domestic Freight</span>
+                        <Truck size={16} style={{ color: '#64748b', flexShrink: 0 }}/>
+                        <span>
+                            <span className="modal-label-small" style={{ display: 'block' }}>Quick estimate</span>
+                            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Domestic Freight</span>
+                        </span>
                     </button>
-                    <button 
+                    <button
                         onClick={() => handleQuickAdd('Customs', 500)}
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left hover:bg-slate-100 transition-all group"
+                        className="modal-btn-secondary"
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '8px 12px', textAlign: 'left', cursor: 'pointer', fontSize: 13, lineHeight: 1.45 }}
                     >
-                        <Landmark size={18} className="text-slate-400 group-hover:text-indigo-600 mb-2"/>
-                        <span className="block text-label mb-1">Quick Estimate</span>
-                        <span className="block text-[13px] font-semibold text-slate-800">Clearance & Duty</span>
+                        <Landmark size={16} style={{ color: '#64748b', flexShrink: 0 }}/>
+                        <span>
+                            <span className="modal-label-small" style={{ display: 'block' }}>Quick estimate</span>
+                            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Clearance &amp; Duty</span>
+                        </span>
                     </button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                
+            <div className="grid grid-cols-1 lg:grid-cols-2" style={{ gap: 16 }}>
+
                 {/* Left: Input Ledger */}
-                <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div style={{ background: '#fcfcfd', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
                         <div>
-                            <h3 className="text-title flex items-center gap-2">
-                                <Landmark size={16} className="text-blue-600"/> Shipment Expense Ledger
+                            <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                                <Landmark size={15} style={{ color: '#2563eb' }}/> Shipment Expense Ledger
                             </h3>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tight">Secondary Vendor Invoices</p>
+                            <p className="modal-sub" style={{ margin: '2px 0 0' }}>Secondary vendor invoices</p>
                             {consumedLandingIds.size > 0 && (
-                                <p className="text-[10px] text-amber-700 font-bold uppercase mt-1 tracking-tight">Locked lines have posted bills/capitalization and cannot be edited</p>
+                                <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 500, color: '#b45309' }}>Locked lines have posted bills/capitalization and cannot be edited</p>
                             )}
                         </div>
-                        <div className="flex gap-2">
-                            <button 
+                        <div className="flex" style={{ gap: 8 }}>
+                            <button
                                 onClick={handleClearAll}
                                 title="Clear All Costs"
-                                className="bg-slate-100 text-slate-400 p-2 rounded-xl hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                                className="modal-close"
+                                style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', display: 'inline-flex' }}
                             >
-                                <RotateCcw size={18}/>
+                                <RotateCcw size={14}/>
                             </button>
-                            <button 
+                            <button
                                 onClick={handleAddCost}
-                                className="bg-blue-600 text-white p-2 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95"
+                                title="Add Cost"
+                                className="modal-btn-primary"
+                                style={{ background: '#2563eb', color: '#f8fafc', border: 'none', cursor: 'pointer', display: 'inline-flex' }}
                             >
-                                <Plus size={18}/>
+                                <Plus size={14}/>
                             </button>
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar min-h-[350px]">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 280 }}>
                         {(costs || []).length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-40 italic py-20">
-                                <AlertCircle size={40} className="mb-2"/>
-                                <p className="text-[13px] font-bold uppercase tracking-tight">No surcharges logged</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', padding: '40px 0' }}>
+                                <AlertCircle size={28} style={{ marginBottom: 8 }}/>
+                                <p style={{ fontSize: 13, fontWeight: 500 }}>No surcharges logged</p>
                             </div>
                         ) : (
                             costs.map(cost => (
-                                <div key={cost.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 group relative">
-                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                <div key={cost.id} className="group" style={{ position: 'relative', padding: 12, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                                    <div className="grid grid-cols-2" style={{ gap: 10, marginBottom: 10 }}>
                                         <div>
-                                            <label className="text-label mb-1.5 block">Cost Category</label>
-                                            <select 
-                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] font-semibold outline-none focus:border-blue-500 disabled:opacity-50"
+                                            <label className="modal-label" style={{ display: 'block', marginBottom: 4 }}>Cost category</label>
+                                            <select
                                                 value={cost.category}
                                                 disabled={isLineLocked(cost.id)}
                                                 title={isLineLocked(cost.id) ? 'Locked: this line has posted financial activity' : undefined}
                                                 onChange={e => updateCost(cost.id, 'category', e.target.value)}
+                                                style={{ width: '100%', padding: '6px 10px', background: '#fcfcfd', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, fontWeight: 500, outline: 'none', color: '#1e293b', fontFamily: 'inherit', lineHeight: 1.45 }}
                                             >
                                                 <option>Freight</option>
                                                 <option>Customs</option>
@@ -279,15 +291,16 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="text-label mb-1.5 block">Amount ({currency})</label>
-                                            <input 
-                                                type="number" 
-                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] font-bold outline-none focus:border-blue-500 text-right finance-nums disabled:opacity-50"
+                                            <label className="modal-label" style={{ display: 'block', marginBottom: 4 }}>Amount ({currency})</label>
+                                            <input
+                                                type="number"
+                                                className="finance-nums"
                                                 value={cost.amount || ''}
                                                 disabled={isLineLocked(cost.id)}
                                                 title={isLineLocked(cost.id) ? 'Locked: this line has posted financial activity' : undefined}
                                                 onChange={e => updateCost(cost.id, 'amount', parseFloat(e.target.value))}
                                                 placeholder="0.00"
+                                                style={{ width: '100%', padding: '6px 10px', background: '#fcfcfd', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, fontWeight: 500, outline: 'none', textAlign: 'right', color: '#1e293b', fontFamily: 'inherit', lineHeight: 1.45 }}
                                             />
                                             {(() => {
                                                 const st = getLandingLineState(purchase as any, cost.id);
@@ -295,7 +308,7 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                                                     return null;
                                                 }
                                                 return (
-                                                    <p className="text-[10px] text-slate-500 font-semibold mt-1">
+                                                    <p className="finance-nums" style={{ fontSize: 12, color: '#475569', margin: '4px 0 0' }}>
                                                         Consumed {currency}{st.consumed.toLocaleString()} · Remaining {currency}{st.remaining.toLocaleString()}
                                                         {st.billed ? ` · Billed (${st.billIds.join(', ') || 'bill posted'})` : ''}
                                                     </p>
@@ -303,36 +316,38 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                                             })()}
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="col-span-1">
-                                            <label className="text-label mb-1.5 block">Remit To (Carrier)</label>
-                                            <select 
-                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] outline-none font-semibold disabled:opacity-50"
+                                    <div className="grid grid-cols-2" style={{ gap: 10 }}>
+                                        <div>
+                                            <label className="modal-label" style={{ display: 'block', marginBottom: 4 }}>Remit to (carrier)</label>
+                                            <select
                                                 value={cost.providerId}
                                                 disabled={isLineLocked(cost.id)}
                                                 title={isLineLocked(cost.id) ? 'Locked: this line has posted financial activity' : undefined}
                                                 onChange={e => updateCost(cost.id, 'providerId', e.target.value)}
+                                                style={{ width: '100%', padding: '6px 10px', background: '#fcfcfd', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, fontWeight: 500, outline: 'none', color: '#1e293b', fontFamily: 'inherit', lineHeight: 1.45 }}
                                             >
                                                 <option value="">-- Manual Provider --</option>
                                                 {supplierNames.map(name => <option key={name} value={name}>{name}</option>)}
                                             </select>
                                         </div>
-                                        <div className="col-span-1 flex items-end">
-                                            <button 
+                                        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                                            <button
                                                 onClick={() => handlePostAsBill(cost)}
                                                 disabled={!cost.amount || !cost.providerId || isLineLocked(cost.id)}
                                                 title={isLineLocked(cost.id) ? 'Already settled: this line has posted financial activity' : undefined}
-                                                className="w-full py-2 bg-white border border-slate-200 rounded-lg text-[13px] font-bold uppercase tracking-tight text-slate-600 hover:text-blue-600 hover:border-blue-200 disabled:opacity-30 transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                className="modal-btn-secondary"
+                                                style={{ width: '100%', background: '#fcfcfd', border: '1px solid #cbd5e1', color: '#475569', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                                             >
                                                 <FileCheck size={12}/> Post as Bill
                                             </button>
                                         </div>
                                     </div>
-                                    <button 
+                                    <button
                                         onClick={() => removeCost(cost.id)}
                                         disabled={isLineLocked(cost.id)}
                                         title={isLineLocked(cost.id) ? 'Locked: this line has posted financial activity' : undefined}
-                                        className="absolute -top-2 -right-2 bg-white border border-rose-100 text-rose-500 p-1.5 rounded-full shadow-md hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
+                                        className="modal-close"
+                                        style={{ position: 'absolute', top: -8, right: -8, background: '#fcfcfd', border: '1px solid #fecdd3', color: '#e11d48', borderRadius: 999, cursor: 'pointer', display: 'inline-flex' }}
                                     >
                                         <Trash2 size={12}/>
                                     </button>
@@ -340,89 +355,86 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
                             ))
                         )}
                     </div>
-                    
-                    <div className="p-6 bg-slate-900 text-white shrink-0">
-                        <div className="flex justify-between items-center">
-                            <span className="text-label text-blue-400">Total Landed Load</span>
-                            <span className="text-[24px] font-bold finance-nums">{currency}{(totalLandingCost || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+
+                    <div style={{ padding: '12px 14px', background: '#1e293b', color: '#e2e8f0', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 500, color: '#93c5fd' }}>Total landed load</span>
+                            <span className="finance-nums" style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.4 }}>{currency}{(totalLandingCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                         </div>
                     </div>
                 </div>
 
                 {/* Right: Allocation Logic */}
-                <div className="space-y-6">
-                    <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-8 opacity-5 rotate-12 group-hover:rotate-0 transition-transform duration-1000"><Calculator size={120}/></div>
-                        <h3 className="text-title mb-6 flex items-center gap-2">
-                            <Scaling size={16} className="text-purple-600"/> Capitalization Logic
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ background: '#fcfcfd', padding: 14, borderRadius: 12, border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden' }}>
+                        <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 12px' }}>
+                            <Scaling size={15} style={{ color: '#7c3aed' }}/> Capitalization Logic
                         </h3>
-                        <div className="flex gap-4 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 mb-8">
-                            <button 
+                        <div style={{ display: 'flex', gap: 6, padding: 4, background: '#f1f5f9', borderRadius: 10, border: '1px solid #e2e8f0', marginBottom: 12 }}>
+                            <button
                                 onClick={() => { setAllocationMethod('Value'); onUpdate(costs, 'VALUE'); }}
                                 disabled={isMethodLocked}
                                 title={isMethodLocked ? 'Locked: landing activity already posted under a method' : undefined}
-                                className={`flex-1 py-3 rounded-xl text-[12.5px] font-bold uppercase tracking-widest transition-all ${allocationMethod === 'Value' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                                style={{ flex: 1, padding: '7px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.45, background: allocationMethod === 'Value' ? '#fcfcfd' : 'transparent', color: allocationMethod === 'Value' ? '#2563eb' : '#64748b', boxShadow: allocationMethod === 'Value' ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}
                             >
-                                Value-Proportional
+                                Value-proportional
                             </button>
-                            <button 
+                            <button
                                 onClick={() => { setAllocationMethod('Quantity'); onUpdate(costs, 'QUANTITY'); }}
                                 disabled={isMethodLocked}
                                 title={isMethodLocked ? 'Locked: landing activity already posted under a method' : undefined}
-                                className={`flex-1 py-3 rounded-xl text-[12.5px] font-bold uppercase tracking-widest transition-all ${allocationMethod === 'Quantity' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                                style={{ flex: 1, padding: '7px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.45, background: allocationMethod === 'Quantity' ? '#fcfcfd' : 'transparent', color: allocationMethod === 'Quantity' ? '#2563eb' : '#64748b', boxShadow: allocationMethod === 'Quantity' ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}
                             >
-                                Unit-Proportional
+                                Unit-proportional
                             </button>
                         </div>
-                        
-                        <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex items-start gap-4">
-                            <Info size={18} className="text-blue-600 shrink-0 mt-0.5"/>
-                            <p className="text-[13px] text-blue-800 leading-relaxed font-medium uppercase tracking-tight">
-                                {allocationMethod === 'Value' 
-                                    ? "Costs are distributed based on the monetary weight of each line. Expensive items absorb a higher percentage of the landing cost."
-                                    : "Costs are split evenly per physical unit. Best used for shipments where weight or size is the primary cost driver."
+
+                        <div style={{ background: '#eff6ff', padding: '10px 12px', borderRadius: 10, border: '1px solid #bfdbfe', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                            <Info size={15} style={{ color: '#2563eb', flexShrink: 0, marginTop: 2 }}/>
+                            <p style={{ fontSize: 13, color: '#1e40af', lineHeight: 1.5, fontWeight: 400, margin: 0 }}>
+                                {allocationMethod === 'Value'
+                                    ? 'Costs are distributed based on the monetary weight of each line. Expensive items absorb a higher percentage of the landing cost.'
+                                    : 'Costs are split evenly per physical unit. Best used for shipments where weight or size is the primary cost driver.'
                                 }
                             </p>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <TrendingUp size={16} className="text-emerald-600"/>
-                                <h3 className="text-title">Valuation Bridge</h3>
+                    <div style={{ background: '#fcfcfd', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <TrendingUp size={15} style={{ color: '#059669' }}/>
+                                <h3 className="modal-title">Valuation Bridge</h3>
                             </div>
-                    <div className="flex gap-4">
-                        <button 
-                            onClick={() => window.print()}
-                            className="bg-white text-slate-600 px-3 py-1 rounded-xl text-[13px] font-bold uppercase tracking-tight hover:bg-slate-50 border border-slate-200 flex items-center gap-2"
-                        >
-                            <Printer size={12}/>
-                            Print Report
-                        </button>
-                    </div>
-                </div>
-                <div id="valuation-bridge" className="p-0 bg-white">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="sticky top-0 z-10">
-                                    <tr className="bg-slate-50/50">
-                                        <th className="table-header px-4 py-2">Item SKU</th>
-                                        <th className="table-header px-4 py-2 text-right">Factory</th>
-                                        <th className="table-header px-4 py-2 text-center">Burden</th>
-                                        <th className="table-header px-4 py-2 text-right">Landed</th>
+                            <button
+                                onClick={() => window.print()}
+                                className="modal-btn-secondary"
+                                style={{ background: '#fcfcfd', color: '#475569', border: '1px solid #cbd5e1', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                            >
+                                <Printer size={12}/>
+                                Print Report
+                            </button>
+                        </div>
+                        <div id="valuation-bridge" style={{ padding: 0, background: '#fcfcfd' }}>
+                            <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: 13, lineHeight: 1.5 }}>
+                                <thead style={{ position: 'sticky', top: 0 }}>
+                                    <tr style={{ background: '#f1f5f9' }}>
+                                        <th className="table-header" style={{ textAlign: 'left' }}>Item SKU</th>
+                                        <th className="table-header numeric-cell">Factory</th>
+                                        <th className="table-header numeric-cell">Burden</th>
+                                        <th className="table-header numeric-cell">Landed</th>
                                     </tr>
                                 </thead>
-
-                                <tbody className="divide-y divide-slate-100">
+                                <tbody>
                                     {allocatedItems.map((ai, i) => (
-                                        <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                                            <td className="table-body-cell px-4 py-2">
-                                                <div className="font-semibold text-slate-800 text-[13px] truncate max-w-[150px]">{ai.name}</div>
-                                                <div className="text-[10px] text-slate-400 font-mono">{ai.sku}</div>
+                                        <tr key={i} style={{ borderTop: i === 0 ? 'none' : '1px solid #f1f5f9' }}>
+                                            <td className="table-body-cell">
+                                                <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{ai.name}</div>
+                                                <div className="finance-nums" style={{ fontSize: 12, color: '#64748b' }}>{ai.sku}</div>
                                             </td>
-                                            <td className="table-body-cell px-4 py-2 text-right finance-nums">{currency}{(ai.cost || 0).toFixed(2)}</td>
-                                            <td className="table-body-cell px-4 py-2 text-center text-blue-600 font-bold finance-nums">+{currency}{(ai.share / (ai.quantity || 1)).toFixed(2)}</td>
-                                            <td className="table-body-cell px-4 py-2 text-right font-black text-emerald-600 finance-nums">{currency}{(ai.landedUnitCost || 0).toFixed(2)}</td>
+                                            <td className="table-body-cell numeric-cell finance-nums">{currency}{(ai.cost || 0).toFixed(2)}</td>
+                                            <td className="table-body-cell numeric-cell finance-nums" style={{ color: '#2563eb', fontWeight: 600 }}>+{currency}{(ai.share / (ai.quantity || 1)).toFixed(2)}</td>
+                                            <td className="table-body-cell numeric-cell finance-nums" style={{ color: '#059669', fontWeight: 600 }}>{currency}{(ai.landedUnitCost || 0).toFixed(2)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -434,24 +446,24 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
             </div>
 
             {/* Bottom Finalize Control */}
-            <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-white/5 flex flex-col md:flex-row items-center gap-6 shadow-2xl relative overflow-hidden">
-                <div className="absolute inset-0 bg-blue-600 opacity-5 pointer-events-none"></div>
-                <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg border border-white/10 shrink-0">
-                    <ShieldCheck size={32} className="text-white"/>
+            <div style={{ background: '#1e293b', padding: '12px 14px', borderRadius: 12, border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: 12, position: 'relative', overflow: 'hidden' }}>
+                <div style={{ width: 36, height: 36, background: '#2563eb', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <ShieldCheck size={20} style={{ color: '#f8fafc' }}/>
                 </div>
-                <div className="flex-1">
-                    <h4 className="font-black text-white uppercase text-sm tracking-tighter">Inventory Valuation Integrity</h4>
-                    <p className="text-slate-400 text-xs mt-1 leading-relaxed max-w-2xl font-medium">
-                        Finalizing will save these shipment expenses to the Purchase Order. When goods are received, the system will automatically capitalization these surcharges into the <b>weighted average unit cost</b> of your items.
+                <div style={{ flex: 1 }}>
+                    <h4 style={{ fontWeight: 600, color: '#f1f5f9', fontSize: 13.5, lineHeight: 1.4, margin: 0 }}>Inventory valuation integrity</h4>
+                    <p style={{ color: '#94a3b8', fontSize: 12.5, margin: '2px 0 0', lineHeight: 1.5, fontWeight: 400 }}>
+                        Finalizing saves these shipment expenses to the purchase order. On receipt, surcharges capitalize into the <b>weighted average unit cost</b> of your items.
                     </p>
                 </div>
-                <div className="shrink-0">
-                    <button 
+                <div style={{ flexShrink: 0 }}>
+                    <button
                         onClick={handleFinalize}
                         disabled={isSaving}
-                        className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black uppercase text-[11px] tracking-widest hover:bg-slate-100 transition-all flex items-center gap-3 shadow-xl active:scale-95 disabled:opacity-50"
+                        className="modal-btn-primary"
+                        style={{ background: '#f8fafc', color: '#1e293b', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
                     >
-                        {isSaving ? <Loader2 size={18} className="animate-spin text-blue-600"/> : <Save size={18} className="text-blue-600"/>}
+                        {isSaving ? <Loader2 size={14} className="animate-spin" style={{ color: '#2563eb' }}/> : <Save size={14} style={{ color: '#2563eb' }}/>}
                         Commit to Order
                     </button>
                 </div>

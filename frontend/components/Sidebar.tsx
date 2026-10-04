@@ -267,23 +267,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           label: 'Revenue Analysis',
           path: '/revenue',
           icon: <Activity size={18} />,
+          hideSubMenu: true,
           subItems: [
-            { label: 'Dashboard', path: '/revenue', icon: <Activity size={14} /> },
+            { label: 'Dashboard', path: '/revenue/dashboard', icon: <Activity size={14} /> },
             { label: 'Sales Audit', path: '/revenue/sales-audit', icon: <FileText size={14} /> },
             { label: 'Markup Performance', path: '/revenue/margin-performance', icon: <BarChart3 size={14} /> },
             { label: 'Rounding Analytics', path: '/revenue/rounding-analytics', icon: <Activity size={14} /> },
-            { label: 'Client Ledger', path: '/revenue/contacts?type=customer-statement', icon: <Users size={14} /> },
+            { label: 'Client Ledger', path: '/revenue/contacts', icon: <Users size={14} /> },
             { label: 'Wallet Statement', path: '/revenue/wallet-statement', icon: <Wallet size={14} /> },
             { label: 'Business Intel', path: '/revenue/intel', icon: <PieChart size={14} /> },
             { label: 'Health Diagnostic', path: '/revenue/health', icon: <Sparkles size={14} /> },
+            { label: 'Internal Auditor', path: '/revenue/auditor', icon: <Shield size={14} /> },
           ]
         },
         {
           label: 'Procurement',
           path: '/procurement',
           icon: <CreditCard size={18} />,
+          hideSubMenu: true,
           subItems: [
-            { label: 'Bill History', path: '/procurement', icon: <FileText size={14} /> },
             { label: 'Vendor Bills', path: '/procurement/bills', icon: <FileText size={14} /> },
             { label: 'Supplier Payments', path: '/procurement/payments', icon: <Wallet size={14} /> },
             { label: 'Subcontracting', path: '/procurement/subcontracting', icon: <Share2 size={14} /> },
@@ -297,16 +299,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
       group: "Capital",
       visible: companyConfig?.enabledModules?.accounting,
       items: [
-            { label: 'Banking & Finance', path: '/accounts/banking', icon: <Bank size={18} /> },
-        { label: 'Account Transfers', path: '/accounts/transfers', icon: <ArrowRightLeft size={18} /> },
-        { label: 'VAT Module', path: '/vat', icon: <FileText size={18} /> },
-        { label: 'Finance Hub', path: '/finance', icon: <LayoutDashboard size={18} /> },
-        { label: 'Chart of Accounts', path: '/accounts/chart-of-accounts', icon: <Landmark size={18} /> },
-        { label: 'Payroll Engine', path: '/accounts/payroll', icon: <Users size={18} />, visible: companyConfig?.enabledModules?.payroll },
-        { label: 'Fixed Assets', path: '/accounts/fixed-assets', icon: <Building2 size={18} /> },
-        { label: 'Loans & Borrowings', path: '/accounts/loans', icon: <Landmark size={18} /> },
-        { label: 'Owner Equity', path: '/accounts/owner-equity', icon: <UserCog size={18} /> },
-        { label: 'Year-End Closing', path: '/accounts/year-end-closing', icon: <CalendarCheck size={18} /> },
+        {
+          label: 'Finance Hub',
+          path: '/finance',
+          icon: <LayoutDashboard size={18} />,
+          hideSubMenu: true,
+          subItems: [
+            { label: 'Banking', path: '/accounts/banking', icon: <Bank size={14} /> },
+            { label: 'Account Transfers', path: '/accounts/transfers', icon: <ArrowRightLeft size={14} /> },
+            { label: 'VAT Module', path: '/vat', icon: <FileText size={14} /> },
+            { label: 'Chart of Accounts', path: '/accounts/chart-of-accounts', icon: <Landmark size={14} /> },
+            { label: 'Payroll Engine', path: '/accounts/payroll', icon: <Users size={14} /> },
+            { label: 'Fixed Assets', path: '/accounts/fixed-assets', icon: <Building2 size={14} /> },
+            { label: 'Loans & Borrowings', path: '/accounts/loans', icon: <Landmark size={14} /> },
+            { label: 'Owner Equity', path: '/accounts/owner-equity', icon: <UserCog size={14} /> },
+            { label: 'Year-End Closing', path: '/accounts/year-end-closing', icon: <CalendarCheck size={14} /> },
+          ]
+        },
         {
           label: 'Fiscal Reports',
           path: '/fiscal-reports',
@@ -355,7 +364,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
   const filteredGroups = useMemo(() => {
     // Role gate — bulletproof: hide sensitive modules from non-admin, but never block navigation via URL (server enforces)
     const isPrivileged = !!(user?.isSuperAdmin || String(user?.role || '').toLowerCase().includes('admin'));
-    const adminOnlyItems = new Set(['AI Workspace','Fiscal Reports','Payroll Engine','Year-End Closing','Smart Operations']);
+    const adminOnlyItems = new Set(['AI Workspace','Fiscal Reports','Smart Operations']);
     const groups = menuGroups.map(g => ({
       ...g,
       items: g.items.filter(item => {

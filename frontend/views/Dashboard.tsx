@@ -1586,51 +1586,6 @@ const DashboardContent: React.FC = () => {
         </div>
       </div>
 
-      {widgets.find(w => w.id === 'requests')?.visible !== false && requestAnalytics && (
-        <div style={{
-          background: '#FEFDFB', border: '1px solid #e4ddd1', borderRadius: 14,
-          boxShadow: '0 1px 2px rgba(11,62,57,.04)', padding: isMobile ? '18px' : '22px 24px',
-          marginBottom: isMobile ? 16 : 24, overflow: 'hidden',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-            <div>
-              <h3 style={{ fontSize: isMobile ? 16 : 18, fontWeight: 800, color: '#0b3e39', margin: 0, letterSpacing: '-0.01em' }}>Sales Request Pipeline</h3>
-              <div style={{ fontSize: 12.5, color: '#5c6567', fontWeight: 500, marginTop: 2 }}>
-                Customer requests → official quotations → sales orders
-              </div>
-            </div>
-            <button onClick={() => navigate('/sales-flow/requests')} style={{
-              background: 'linear-gradient(160deg, #3fa294, #0f544c)', color: '#fff', padding: '8px 16px', borderRadius: 999, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 1px 2px rgba(11,62,57,.15)', transition: 'all .2s ease', whiteSpace: 'nowrap',
-            }} onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(11,62,57,.25)'; e.currentTarget.style.transform = 'translateY(-1px)'; }} onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.15)'; e.currentTarget.style.transform = 'translateY(0)'; }}>
-              Open Requests <ArrowRight size={13} />
-            </button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fit, minmax(130px, 1fr))' : 'repeat(5, 1fr)', gap: 14 }}>
-            {[
-              { label: 'Total Requests', value: requestAnalytics.totalRequests || 0, sub: 'all time', accent: '#0f544c', icon: FileText, iconBg: '#eef7f6' },
-              { label: 'Pending Review', value: (requestAnalytics.requests?.submitted || 0) + (requestAnalytics.requests?.assigned || 0) + (requestAnalytics.requests?.under_review || 0) + (requestAnalytics.requests?.waiting_for_customer || 0) + (requestAnalytics.requests?.ready_for_conversion || 0), sub: 'in inbox', accent: '#b45309', icon: Clock, iconBg: '#fbead0' },
-              { label: 'Quotations Issued', value: requestAnalytics.totalQuotations || 0, sub: `${requestAnalytics.acceptedQuotations || 0} accepted`, accent: '#2563EB', icon: FileText, iconBg: '#eff6ff' },
-              { label: 'Converted to Orders', value: requestAnalytics.convertedQuotations || 0, sub: `${requestAnalytics.conversionRate || 0}% conversion`, accent: '#059669', icon: Check, iconBg: '#ecfdf5' },
-              { label: 'Downloads', value: requestAnalytics.totalDownloads || 0, sub: `${requestAnalytics.uniqueDownloads || 0} unique docs`, accent: '#7c3aed', icon: Download, iconBg: '#f5f3ff' },
-            ].map((item) => (
-              <div key={item.label} style={{ background: '#FEFDFB', border: '1.4px solid #e4ddd1', borderLeft: `4px solid ${item.accent}`, boxShadow: '0 1px 3px rgba(0,0,0,.04)', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: 14, minWidth: 0 }}>
-                <div style={{ padding: 10, borderRadius: 10, background: item.iconBg, color: item.accent, display: 'inline-flex', flexShrink: 0 }}><item.icon size={18} /></div>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: 0.08, margin: '0 0 6px' }}>{item.label}</p>
-                  <p style={{ fontSize: 18, fontWeight: 700, color: item.accent, margin: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: -0.2 }}>{item.value}</p>
-                  <p style={{ fontSize: 10.5, fontWeight: 600, color: '#5c6567', marginTop: 4 }}>{item.sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          {requestAnalytics.avgReviewMinutes > 0 && (
-            <div style={{ fontSize: 11.5, color: '#5c6567', marginTop: 12, fontWeight: 600 }}>
-              Average review time: <b style={{ color: '#0b3e39' }}>{requestAnalytics.avgReviewMinutes} min</b>
-            </div>
-          )}
-        </div>
-      )}
-
       <WhatsAppMarketingModal open={isWhatsAppModalOpen} onOpenChange={setIsWhatsAppModalOpen} companyName={companyConfig?.companyName || 'Prime ERP'} />
       <ConfirmDialog open={confirmState.open} onOpenChange={(open) => !open && setConfirmState(c => ({ ...c, open: false }))} onConfirm={() => { confirmState.onConfirm?.(); setConfirmState(c => ({ ...c, open: false })); }} onCancel={() => setConfirmState(c => ({ ...c, open: false }))} title={confirmState.title} message={confirmState.message} confirmText={confirmState.confirmText} type={confirmState.type || 'question'} />
     </div>

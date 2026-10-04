@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { CreditCard, FileText, Share2, TrendingUp, Users, Wallet } from 'lucide-react';
+import { FileText, Share2, TrendingUp, Truck, Wallet } from 'lucide-react';
 import GenericHub from './GenericHub';
 
 const ProcurementHub: React.FC = () => {
@@ -32,6 +32,13 @@ const ProcurementHub: React.FC = () => {
       path: '/procurement/expenses',
       icon: <TrendingUp />,
       color: 'bg-rose-50 text-rose-500'
+    },
+    {
+      label: 'Transport Expenses',
+      description: 'Log courier costs, outbound consumption, and delivery expense ledger.',
+      path: '/procurement/transport-expenses',
+      icon: <Truck />,
+      color: 'bg-amber-50 text-amber-600'
     }
   ];
 

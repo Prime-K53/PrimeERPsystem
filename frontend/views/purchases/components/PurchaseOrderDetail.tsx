@@ -29,16 +29,16 @@ const paper = '#FEFDFB';
 const ink = '#23282A';
 const inkSoft = '#5c6567';
 
-const getStatusColor = (status: string): string => {
+const getStatusColor = (status: string): React.CSSProperties => {
     switch (status) {
-        case 'Received': return `background:${teal[50]};color:${teal[700]};border:1px solid ${teal[200]}`;
-        case 'Partially Received': return 'background:#fef3cd;color:#92620a;border:1px solid #eec27a';
-        case 'Ordered': return `background:${teal[100]};color:${teal[800]};border:1px solid ${teal[200]}`;
-        case 'Pending Approval': return 'background:#fbead0;color:#b97e2b;border:1px solid #eec27a';
-        case 'Draft': return 'background:#f5f4f0;color:#5c6567;border:1px solid #e4ddd1';
-        case 'Closed': return 'background:#f5f4f0;color:#5c6567;border:1px solid #e4ddd1';
-        case 'Cancelled': return 'background:#f5f4f0;color:#5c6567;border:1px solid #e4ddd1';
-        default: return 'background:#f5f4f0;color:#5c6567';
+        case 'Received': return { background: teal[50], color: teal[700], border: `1px solid ${teal[200]}` };
+        case 'Partially Received': return { background: '#fef3cd', color: '#92620a', border: '1px solid #eec27a' };
+        case 'Ordered': return { background: teal[100], color: teal[800], border: `1px solid ${teal[200]}` };
+        case 'Pending Approval': return { background: '#fbead0', color: '#b97e2b', border: '1px solid #eec27a' };
+        case 'Draft': return { background: '#f5f4f0', color: '#5c6567', border: '1px solid #e4ddd1' };
+        case 'Closed': return { background: '#f5f4f0', color: '#5c6567', border: '1px solid #e4ddd1' };
+        case 'Cancelled': return { background: '#f5f4f0', color: '#5c6567', border: '1px solid #e4ddd1' };
+        default: return { background: '#f5f4f0', color: '#5c6567' };
     }
 };
 
@@ -301,7 +301,7 @@ const PurchaseOrderDetail: React.FC<PurchaseOrderDetailProps> = ({ purchase, sup
                                                 </td>
                                                 <td style={{padding:'14px 20px',textAlign:'center',fontWeight:700,color:teal[700],fontFamily:"'JetBrains Mono',monospace",fontSize:13}}>{item.quantity||0}</td>
                                                 <td style={{padding:'14px 20px',textAlign:'center'}}>
-                                                    <span style={{display:'inline-block',padding:'4px 12px',borderRadius:999,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',...(item.receivedQty===item.quantity?`background:${teal[50]};color:${teal[700]};border:1px solid ${teal[200]}`:'background:#f5f4f0;color:#5c6567;border:1px solid #e4ddd1')}}>{item.receivedQty?`Recvd: ${item.receivedQty}`:'Pending'}</span>
+                                                    <span style={{display:'inline-block',padding:'4px 12px',borderRadius:999,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',...(item.receivedQty===item.quantity?{background:teal[50],color:teal[700],border:`1px solid ${teal[200]}`}:{background:'#f5f4f0',color:'#5c6567',border:'1px solid #e4ddd1'})}}>{item.receivedQty?`Recvd: ${item.receivedQty}`:'Pending'}</span>
                                                 </td>
                                                 <td style={{padding:'14px 20px',textAlign:'right',fontWeight:600,color:inkSoft,fontFamily:"'JetBrains Mono',monospace",fontSize:13}}>{currency}{lineUnitCost.toFixed(2)}</td>
                                                 <td style={{padding:'14px 20px',textAlign:'right',fontWeight:700,color:teal[800],fontFamily:"'JetBrains Mono',monospace",fontSize:13}}>{currency}{(lineUnitCost*(item.quantity||0)).toFixed(2)}</td>

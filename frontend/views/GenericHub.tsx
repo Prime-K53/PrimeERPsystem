@@ -35,7 +35,6 @@ interface GenericHubProps {
   options: HubOption[];
   accentColor?: string;
   theme?: Partial<HubTheme>;
-  extraContent?: React.ReactNode;
 }
 
 const defaultTheme = {
@@ -56,7 +55,6 @@ const GenericHub: React.FC<GenericHubProps> = ({
   options,
   accentColor = '#2eb12e',
   theme: customTheme,
-  extraContent
 }) => {
   const navigate = useNavigate();
   const t = { ...defaultTheme, ...customTheme };
@@ -252,18 +250,6 @@ const GenericHub: React.FC<GenericHubProps> = ({
               </button>
             ))}
           </div>
-
-          {/* Extra content */}
-          {extraContent && (
-            <div style={{
-              marginTop: 28,
-              width: '100%',
-              maxWidth: 960,
-              animation: 'fadeInUp 0.5s ease-out 0.3s both',
-            }}>
-              {extraContent}
-            </div>
-          )}
         </div>
       </div>
 

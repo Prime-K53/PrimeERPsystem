@@ -27,7 +27,6 @@ const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: 'unpaid', label: 'Unpaid Invoices', visible: true, order: 3 },
   { id: 'chart', label: 'Financial Performance Chart', visible: true, order: 4 },
   { id: 'recent-activity', label: 'Recent Activity', visible: true, order: 5 },
-  { id: 'requests', label: 'Sales Request Pipeline', visible: true, order: 6 },
 ];
 
 function persist(widgets: DashboardWidget[]) {

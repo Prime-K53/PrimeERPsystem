@@ -233793,7 +233793,8 @@ var InvoiceInfoPanel = ({
   ] });
 };
 Font.registerHyphenationCallback((word) => [word]);
-var renderQrImage = (qrCodeDataUrl, size = 52, showCaption = true) => {
+var VERIFICATION_QR_SIZE = 72;
+var renderQrImage = (qrCodeDataUrl, size = VERIFICATION_QR_SIZE, showCaption = true) => {
   const resolvedQrCode = resolvePdfQrCodeSource(qrCodeDataUrl);
   if (!resolvedQrCode) return null;
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center" }, children: [
@@ -233898,7 +233899,7 @@ var SecurityFooter = ({
   // Default false preserves the exact legacy behavior for all other docs.
   flowing = false
 }) => {
-  const footerQrSize = 72;
+  const footerQrSize = VERIFICATION_QR_SIZE;
   const qrCodeDataUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
   const displayCompany = String(companyName || "").trim() || "Prime Printing";
   const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, "").trim() || displayCompany;
@@ -235434,7 +235435,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", textAlign: "center", fontSize: mediumFontSize }, children: "Thank you for your business!" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { textAlign: "center", fontSize: smallFontSize, marginTop: 6 * scale2, color: "#999", textTransform: "uppercase", letterSpacing: 0.6 * scale2 }, children: "Powered by Prime ERP" })
         ] }),
-        !!resolvePdfQrCodeSource(String(r4.securityQrCodeDataUrl || "")) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 10 * scale2, borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 10 * scale2, alignItems: "center" }, children: renderQrImage(String(r4.securityQrCodeDataUrl || ""), 100 * scale2) })
+        !!resolvePdfQrCodeSource(String(r4.securityQrCodeDataUrl || "")) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 10 * scale2, borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 10 * scale2, alignItems: "center" }, children: renderQrImage(String(r4.securityQrCodeDataUrl || ""), VERIFICATION_QR_SIZE) })
       ] })
     ] }) });
   }
