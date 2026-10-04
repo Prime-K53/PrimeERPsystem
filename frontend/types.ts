@@ -396,7 +396,6 @@ export {
   isTerminalStatus,
   isCancelableStatus,
   displayStatus,
-  isProvisionalNumber,
 } from './types/salesOrder';
 export type {
   SalesOrderItem,
