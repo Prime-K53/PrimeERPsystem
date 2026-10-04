@@ -265,7 +265,7 @@ export function buildLedgerFromRecords({
       date: firstNonEmpty(pay.date, pay.createdAt, pay.created_at),
       createdAt: firstNonEmpty(pay.createdAt, pay.created_at),
       reference: String(number),
-      description: firstNonEmpty(pay.reference, pay.notes) || 'Payment received',
+      description: String(firstNonEmpty(pay.reference, pay.notes) || 'Payment received'),
       status: String(pay.status || ''),
       debit: 0,
       credit: paymentCredit(pay),

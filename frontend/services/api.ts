@@ -21,6 +21,7 @@ import { generateNextId } from '../utils/helpers';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
 import { generateNextSalesInvoiceNumber } from './documentNumberService';
+import { sumPostedExpenseDebits } from '../utils/glReconciliation';
 import { normalizeInventoryItemPricing } from '../utils/pricing';
 import { examinationJobService } from './examinationJobService.ts';
 
@@ -1037,22 +1038,28 @@ export const api = {
     }, 'Stats.GetMonthlyData'),
 
     getDashboardStats: () => handle(async () => {
-      const [sales, inventory, expenses, customers] = await Promise.all([
+      const [sales, inventory, expenses, customers, ledger, accounts] = await Promise.all([
         dbService.getAll<Sale>('sales'),
         dbService.getAll<Item>('inventory'),
         dbService.getAll<Expense>('expenses'),
-        dbService.getAll<Customer>('customers')
+        dbService.getAll<Customer>('customers'),
+        dbService.getAll<LedgerEntry>('ledger'),
+        dbService.getAll<Account>('accounts')
       ]);
 
       const totalSales = sales.reduce((sum, s) => sum + s.totalAmount, 0);
       const totalInventoryValue = inventory.reduce((sum, i) => sum + (i.stock * i.cost), 0);
-      const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+      // Authoritative financial total: posted GL expense debits (includes
+      // automatically posted COGS that never creates an `expenses` row).
+      // The manual `expenses` rows are still counted separately below.
+      const totalExpenses = sumPostedExpenseDebits(ledger, accounts).glExpenses;
 
       return {
         totalSales,
         inventoryCount: inventory.length,
         totalInventoryValue,
         totalExpenses,
+        manualExpenseRecords: expenses.length,
         customerCount: customers.length,
         salesCount: sales.length
       };

@@ -23,6 +23,41 @@ export interface GlExpenseSummary {
   transactionCount: number;
 }
 
+export interface GlExpenseSplit {
+  /** Signed total of all posted expense debits (COGS + operating). */
+  total: number;
+  /** Posted debits to Cost of Goods Sold (account group COST_OF_SALES / 51200). */
+  cogs: number;
+  /** Posted debits to all other expense accounts. */
+  operating: number;
+  entryCount: number;
+  transactionCount: number;
+}
+
+/** Canonical Cost of Goods Sold account code. */
+export const COGS_ACCOUNT_CODE = '51200';
+
+/**
+ * True when the resolved account is the Cost of Goods Sold account.
+ * Prefers the chart-of-accounts grouping (`account_group: COST_OF_SALES`);
+ * falls back to the canonical 51200 code (including id-style refs such as
+ * `ACC-51200`) when the account registry is unavailable.
+ */
+export const isCogsAccount = (
+  account: Partial<Account> | null | undefined,
+  ref: string,
+): boolean => {
+  if (account) {
+    const group = String((account as any).account_group || '').trim().toUpperCase();
+    if (group === 'COST_OF_SALES') return true;
+    for (const key of [account.id, (account as any).code, (account as any).account_number]) {
+      if (String(key || '').trim() === COGS_ACCOUNT_CODE) return true;
+    }
+    return false;
+  }
+  return String(ref || '').replace(/\D/g, '') === COGS_ACCOUNT_CODE;
+};
+
 const toNumber = (value: unknown): number => {
   const n = Number(value || 0);
   return Number.isFinite(n) ? n : 0;
@@ -113,13 +148,123 @@ export const sumPostedExpenseDebits = (
   accounts: Array<Partial<Account>> = [],
   isInRange?: (date: unknown) => boolean
 ): GlExpenseSummary => {
-  const byAccountId = indexAccounts(accounts);
-  const summary = sumPostedSide('debitAccountId', ledger, byAccountId, isInRange);
+  const split = splitPostedExpenseDebits(ledger, accounts, isInRange);
   return {
-    glExpenses: summary.total,
-    entryCount: summary.entryCount,
-    transactionCount: summary.transactionCount,
+    glExpenses: split.total,
+    entryCount: split.entryCount,
+    transactionCount: split.transactionCount,
   };
+};
+
+/**
+ * Posted expense debits split into Cost of Goods Sold vs operating expenses.
+ *
+ * Same authoritative population as `sumPostedExpenseDebits` (posted ledger
+ * rows only, expense accounts only): COGS is the 51200 / COST_OF_SALES leg
+ * posted automatically by sales, invoices, work orders and inventory
+ * consumption — legitimate expense-side GL activity that never creates an
+ * `expenses` document row. Everything else debited to an expense account is
+ * reported as operating expenses. An empty manual-expense table therefore
+ * never implies zero expenses.
+ */
+export const splitPostedExpenseDebits = (
+  ledger: Array<Partial<LedgerEntry>> = [],
+  accounts: Array<Partial<Account>> = [],
+  isInRange?: (date: unknown) => boolean
+): GlExpenseSplit => {
+  const byAccountId = indexAccounts(accounts);
+  let total = 0;
+  let cogs = 0;
+  let operating = 0;
+  let entryCount = 0;
+  const transactions = new Set<string>();
+
+  for (const entry of ledger || []) {
+    if (!isPostedLedgerEntry(entry)) continue;
+    if (isInRange && !isInRange((entry as any).date)) continue;
+
+    const ref = String((entry as any).debitAccountId || '').trim();
+    if (!ref) continue;
+
+    const account = byAccountId.get(ref);
+    if (account) {
+      if (!isExpenseAccount(account)) continue;
+    } else if (!ref.startsWith('5')) {
+      continue;
+    }
+
+    const amount = toNumber((entry as any).amount);
+    total += amount;
+    if (isCogsAccount(account || null, ref)) cogs += amount;
+    else operating += amount;
+    entryCount += 1;
+    transactions.add(String((entry as any).referenceId || (entry as any).id || entryCount));
+  }
+
+  return {
+    total: roundMoney(total),
+    cogs: roundMoney(cogs),
+    operating: roundMoney(operating),
+    entryCount,
+    transactionCount: transactions.size,
+  };
+};
+
+export interface PostedExpenseRecord {
+  amount: number;
+  /** Ledger entry date (mirrors LedgerEntry.date). */
+  date: string;
+  category: string;
+  accountCode: string;
+  referenceId: string;
+  description: string;
+}
+
+/**
+ * Posted expense legs mapped to plain expense-like records for consumers
+ * that summarize expense rows (category breakdowns, recent-activity lists).
+ * Amounts, dates and categories come from posted GL debits — never from the
+ * manual `expenses` document table. Sorted newest-first.
+ */
+export const mapPostedExpenseLegs = (
+  ledger: Array<Partial<LedgerEntry>> = [],
+  accounts: Array<Partial<Account>> = [],
+  isInRange?: (date: unknown) => boolean
+): PostedExpenseRecord[] => {
+  const byAccountId = indexAccounts(accounts);
+  const records: PostedExpenseRecord[] = [];
+
+  for (const entry of ledger || []) {
+    if (!isPostedLedgerEntry(entry)) continue;
+    if (isInRange && !isInRange((entry as any).date)) continue;
+
+    const ref = String((entry as any).debitAccountId || '').trim();
+    if (!ref) continue;
+
+    const account = byAccountId.get(ref);
+    if (account) {
+      if (!isExpenseAccount(account)) continue;
+    } else if (!ref.startsWith('5')) {
+      continue;
+    }
+
+    const name =
+      String((account as any)?.name || '').trim() ||
+      String((account as any)?.code || (account as any)?.account_number || ref).trim() ||
+      'Expense';
+    records.push({
+      amount: toNumber((entry as any).amount),
+      date: String((entry as any).date ?? ''),
+      category: name,
+      accountCode:
+        String((account as any)?.code || (account as any)?.account_number || ref).trim(),
+      referenceId: String((entry as any).referenceId || (entry as any).id || ''),
+      description: String((entry as any).description || ''),
+    });
+  }
+
+  records.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  return records;
 };
 
 export interface RevenueGlReconciliation {

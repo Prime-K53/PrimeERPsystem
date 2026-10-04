@@ -11,6 +11,7 @@ import { useSales } from '../../context/SalesContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
 import { generateExecutiveSummary } from '../../services/reportSummaryService';
+import { mapPostedExpenseLegs, sumPostedExpenseDebits } from '../../utils/glReconciliation';
 import { detectFraudIndicators } from '../../services/anomalyDetectionService';
 import { calculateCustomerRiskScore } from '../../services/customerRiskService';
 
@@ -325,7 +326,7 @@ const styles: Record<string, React.CSSProperties> = {
 const AIWorkspaceChat: React.FC = () => {
   const navigate = useNavigate();
   const { sales, customers } = useSales();
-  const { invoices, expenses } = useFinance();
+  const { invoices, expenses, ledger, accounts } = useFinance();
   const { companyConfig } = useAuth();
   const currency = companyConfig?.currencySymbol || 'MK';
 
@@ -356,9 +357,16 @@ const AIWorkspaceChat: React.FC = () => {
     );
   }, [invoices]);
 
+  // Authoritative financial total: posted GL expense debits (includes
+  // automatically posted COGS). Manual `expenses` rows are records, not the
+  // accounting total.
+  const glExpenseRecords = useMemo(() => {
+    return mapPostedExpenseLegs(ledger || [], accounts || []);
+  }, [ledger, accounts]);
+
   const totalExpenses = useMemo(() => {
-    return (expenses || []).reduce((s, e) => s + (e.amount || 0), 0);
-  }, [expenses]);
+    return sumPostedExpenseDebits(ledger || [], accounts || []).glExpenses;
+  }, [ledger, accounts]);
 
   const profit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? ((profit / totalRevenue) * 100) : 0;
@@ -397,7 +405,9 @@ const AIWorkspaceChat: React.FC = () => {
         const summary = generateExecutiveSummary({
           sales: sales || [],
           invoices: invoices || [],
-          expenses: expenses || [],
+          // Financial summary basis: posted GL expense legs (account-named
+          // categories), never the manual expense-document rows.
+          expenses: glExpenseRecords,
           inventory: [],
           dateRange,
         });

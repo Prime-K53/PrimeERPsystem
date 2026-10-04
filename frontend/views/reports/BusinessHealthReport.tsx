@@ -22,7 +22,7 @@ const card: React.CSSProperties = { background: paper, borderRadius: 14, border:
 const BusinessHealthReport: React.FC = () => {
     const { notify, companyConfig } = useAuth();
     const { sales, customers } = useSales();
-    const { invoices, expenses, income, accounts } = useFinance();
+    const { invoices, expenses, income, accounts, ledger } = useFinance();
     const { inventory } = useInventory();
     const [report, setReport] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -31,7 +31,7 @@ const BusinessHealthReport: React.FC = () => {
         setIsLoading(true);
         try {
             const result = await generateBusinessHealthReport(
-                { invoices, expenses, income, accounts },
+                { invoices, expenses, income, accounts, ledger },
                 { sales, customers },
                 { inventory }
             );

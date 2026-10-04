@@ -4,6 +4,7 @@ import { localProvider, parseJSON } from './providers/local';
 import { openrouterProvider } from './providers/openrouter';
 import * as P from './prompts';
 import { patchStoredCompanyConfig } from '@/utils/companyConfigSync';
+import { mapPostedExpenseLegs, splitPostedExpenseDebits } from '@/utils/glReconciliation';
 
 function getProvider(name: ProviderName): AIProvider {
   switch (name) {
@@ -61,6 +62,97 @@ function buildMultiImageMessages(images: string[], prompt: string): ChatMessage[
   const parts: any[] = [{ type: 'text', text: prompt }];
   for (const img of images) parts.push({ type: 'image_url', image_url: { url: img } });
   return [{ role: 'user', content: parts }];
+}
+
+export interface BusinessHealthExpenseSummary {
+  /** Authoritative monetary total: posted GL expense debits (COGS + operating). */
+  totalExpensesAmount: number;
+  /** Posted debits to Cost of Goods Sold (51200 / COST_OF_SALES). */
+  totalCOGS: number;
+  /** Posted debits to all other expense accounts. */
+  totalOperatingExpenses: number;
+  /** Count of manually entered expense-document rows. NOT a monetary total. */
+  manualExpenseRecords: number;
+  /** Count of posted GL expense legs behind the monetary total. */
+  postedExpenseLegs: number;
+}
+
+export interface BusinessHealthSnapshot {
+  summary: {
+    totalInvoices: number;
+    totalCustomers: number;
+    inventoryItems: number;
+    manualExpenseRecords: number;
+    totalExpensesAmount: number;
+    totalCOGS: number;
+    totalOperatingExpenses: number;
+  };
+  recentPerformance: {
+    last10Invoices: Array<{ date: unknown; amount: unknown; status: unknown }>;
+    last10PostedExpenses: Array<{
+      date: unknown;
+      amount: number;
+      account: string;
+      reference: string;
+    }>;
+  };
+  inventoryStatus: Array<{ name: unknown; stock: unknown }>;
+}
+
+/**
+ * Pure snapshot builder for the business-health report (exported for tests).
+ *
+ * Financial expense figures ALWAYS come from posted GL expense debits
+ * (authoritative accounting source, including automatically posted COGS that
+ * never creates an `expenses` document row). The manual `expenses` document
+ * table contributes only an explicitly labeled record COUNT — an empty
+ * manual-expense table must never read as "zero expenses".
+ */
+export function buildBusinessHealthSnapshot(
+  financeData: any,
+  salesData: any,
+  inventoryData: any,
+): BusinessHealthSnapshot {
+  const invoices = financeData?.invoices || [];
+  const manualExpenses = financeData?.expenses || [];
+  const customers = salesData?.customers || [];
+  const inventory = inventoryData?.inventory || [];
+  const split = splitPostedExpenseDebits(
+    financeData?.ledger || [],
+    financeData?.accounts || [],
+  );
+  const postedLegs = mapPostedExpenseLegs(
+    financeData?.ledger || [],
+    financeData?.accounts || [],
+  );
+  return {
+    summary: {
+      totalInvoices: invoices.length,
+      totalCustomers: customers.length,
+      inventoryItems: inventory.length,
+      manualExpenseRecords: manualExpenses.length,
+      totalExpensesAmount: split.total,
+      totalCOGS: split.cogs,
+      totalOperatingExpenses: split.operating,
+    },
+    recentPerformance: {
+      last10Invoices: invoices.slice(0, 10).map((i: any) => ({
+        date: i.date,
+        amount: i.totalAmount,
+        status: i.status,
+      })),
+      last10PostedExpenses: postedLegs.slice(0, 10).map((leg) => ({
+        date: leg.date,
+        amount: leg.amount,
+        account: leg.category,
+        reference: leg.referenceId,
+      })),
+    },
+    inventoryStatus: inventory
+      .filter((i: any) => i.stock <= i.minStockLevel)
+      .slice(0, 10)
+      .map((i: any) => ({ name: i.name, stock: i.stock })),
+  };
 }
 
 class AIService {
@@ -357,11 +449,7 @@ class AIService {
 
   async generateBusinessHealthReport(financeData: any, salesData: any, inventoryData: any): Promise<string> {
     try {
-      const snapshot = {
-        summary: { totalInvoices: financeData.invoices.length, totalExpenses: financeData.expenses.length, totalCustomers: salesData.customers.length, inventoryItems: inventoryData.inventory.length },
-        recentPerformance: { last10Invoices: financeData.invoices.slice(0, 10).map((i: any) => ({ date: i.date, amount: i.totalAmount, status: i.status })), last10Expenses: financeData.expenses.slice(0, 10).map((e: any) => ({ date: e.date, amount: e.amount, category: e.category })) },
-        inventoryStatus: inventoryData.inventory.filter((i: any) => i.stock <= i.minStockLevel).slice(0, 10).map((i: any) => ({ name: i.name, stock: i.stock })),
-      };
+      const snapshot = buildBusinessHealthSnapshot(financeData, salesData, inventoryData);
       return await this.provider.generateChat([
         { role: 'system', content: P.BUSINESS_HEALTH_SYSTEM_INSTRUCTION },
         { role: 'user', content: P.buildBusinessHealthPrompt(snapshot) },

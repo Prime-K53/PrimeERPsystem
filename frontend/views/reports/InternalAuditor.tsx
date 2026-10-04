@@ -36,8 +36,9 @@ const InternalAuditor: React.FC = () => {
         return `${currency}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
 
-    const filterByDateRange = (dateStr: string): boolean => {
+    const filterByDateRange = (dateStr: string | undefined | null): boolean => {
         if (dateRange === 'all') return true;
+        if (!dateStr) return false;
         const date = parseISO(dateStr);
         const now = new Date();
 
@@ -110,6 +111,7 @@ const InternalAuditor: React.FC = () => {
         const physicalInventoryValue = inventory.reduce((sum: number, item: any) => sum + ((item.stock || 0) * (item.cost || 0)), 0);
          const inventoryAccountId = gl.defaultInventoryAccount || '11400';
          const ledgerInventoryValue = ledger
+             .filter((e: any) => filterByDateRange(e.date))
              .filter((e: any) => e.debitAccountId === inventoryAccountId || e.debitAccountId === '11400' ||
                               e.creditAccountId === inventoryAccountId || e.creditAccountId === '11400')
              .reduce((sum: number, e: any) => {
@@ -126,6 +128,7 @@ const InternalAuditor: React.FC = () => {
             .reduce((sum: number, i: any) => sum + ((i.totalAmount || 0) - (i.paidAmount || 0)), 0);
          const arAccountId = gl.accountsReceivable || '11310';
          const ledgerARBalance = ledger
+             .filter((e: any) => filterByDateRange(e.date))
              .reduce((sum: number, e: any) => {
                  if (e.debitAccountId === arAccountId || e.debitAccountId === '11310') return sum + (e.amount || 0);
                  if (e.creditAccountId === arAccountId || e.creditAccountId === '11310') return sum - (e.amount || 0);
@@ -140,6 +143,7 @@ const InternalAuditor: React.FC = () => {
             .reduce((sum: number, p: any) => sum + ((p.total || p.totalAmount || 0) - (p.paidAmount || 0)), 0);
          const apAccountId = gl.accountsPayable || '21110';
          const ledgerAPBalance = ledger
+             .filter((e: any) => filterByDateRange(e.date))
              .reduce((sum: number, e: any) => {
                  if (e.creditAccountId === apAccountId || e.creditAccountId === '21110') return sum + (e.amount || 0);
                  if (e.debitAccountId === apAccountId || e.debitAccountId === '21110') return sum - (e.amount || 0);

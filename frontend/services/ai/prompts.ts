@@ -86,9 +86,30 @@ export const buildBusinessHealthPrompt = (snapshot: any) =>
   `Analyze the current state of this business based on the following data snapshot:
 ${JSON.stringify(snapshot, null, 2)}
 
+Data dictionary (expense figures — read carefully):
+- summary.totalExpensesAmount is the AUTHORITATIVE monetary expense total,
+  summed from posted general-ledger expense debits. Trust it as the expense
+  truth, including automatically posted Cost of Goods Sold that never creates
+  a manual expense document.
+- summary.totalCOGS is the posted Cost of Goods Sold portion (account 51200);
+  summary.totalOperatingExpenses is everything else posted to expense accounts.
+- summary.manualExpenseRecords is only a COUNT of manually entered expense
+  documents. It is not money and must never be presented as the expense total.
+- recentPerformance.last10PostedExpenses lists recent posted GL expense
+  activity (date, amount, account, reference), not manual documents.
+
+Evidence rules (binding):
+- Only state that the business has no recorded expenses when
+  summary.totalExpensesAmount is 0. A manualExpenseRecords count of 0 with a
+  positive totalExpensesAmount means no manual operating-expense records are
+  present — say exactly that, never "complete absence of recorded expenses".
+- Never claim zero expenses, missing books, or critical data gaps from an
+  empty manual-expense table while GL expense activity exists.
+
 Please provide:
 1. **Executive Summary**: Overall health status (Excellent/Good/Warning/Critical).
 2. **Financial Analysis**: Revenue vs Expense trends and cash flow health.
+   Distinguish Cost of Goods Sold from operating expenses where material.
 3. **Inventory Efficiency**: Stock turnover risks and critical replenishment needs.
 4. **Strategic Recommendations**: 3-5 actionable steps to improve profitability or efficiency.
 5. **Risk Assessment**: Potential threats identified from the data.

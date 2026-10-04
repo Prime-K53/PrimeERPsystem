@@ -62,9 +62,9 @@ const SalesAudit: React.FC = () => {
         return `${currency}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
 
-    const filterByDateRange = (dateStr: string): boolean => {
+    const filterByDateRange = (dateStr: unknown): boolean => {
         if (dateRange === 'all') return true;
-        if (!dateStr) return false;
+        if (!dateStr || typeof dateStr !== 'string') return false;
         const date = parseISO(dateStr);
         if (isNaN(date.getTime())) return false;
         const now = new Date();
@@ -111,7 +111,7 @@ const SalesAudit: React.FC = () => {
         filteredSales.forEach(sale => { const c = sale.cashierId || 'Unknown'; if (!byCashier[c]) byCashier[c] = { count: 0, amount: 0 }; byCashier[c].count++; byCashier[c].amount += (sale.totalAmount || sale.total || 0); });
         [...pureInvoices, ...examInvoices].forEach((inv: any) => { const c = inv.createdBy || 'System'; if (!byCashier[c]) byCashier[c] = { count: 0, amount: 0 }; byCashier[c].count++; byCashier[c].amount += (inv.totalAmount || 0); });
         const dailyMap = new Map<string, { sales: number; count: number; byMethod: Record<string, number> }>();
-        filteredSales.forEach(sale => { const dk = sale.date.split('T')[0]; const ex = dailyMap.get(dk) || { sales: 0, count: 0, byMethod: {} }; const t = sale.totalAmount || sale.total || 0; ex.sales += t; ex.count++; if (sale.paymentMethod === 'Split' && sale.payments && sale.payments.length > 0) { sale.payments.forEach(p => { const m = p.method || 'Cash'; ex.byMethod[m] = (ex.byMethod[m] || 0) + (p.amount || 0); }); } else { const m = sale.paymentMethod || 'Cash'; ex.byMethod[m] = (ex.byMethod[m] || 0) + t; } dailyMap.set(dk, ex); });
+        filteredSales.forEach(sale => { const dk = String(sale.date || '').split('T')[0]; if (!dk) return; const ex = dailyMap.get(dk) || { sales: 0, count: 0, byMethod: {} }; const t = sale.totalAmount || sale.total || 0; ex.sales += t; ex.count++; if (sale.paymentMethod === 'Split' && sale.payments && sale.payments.length > 0) { sale.payments.forEach(p => { const m = p.method || 'Cash'; ex.byMethod[m] = (ex.byMethod[m] || 0) + (p.amount || 0); }); } else { const m = sale.paymentMethod || 'Cash'; ex.byMethod[m] = (ex.byMethod[m] || 0) + t; } dailyMap.set(dk, ex); });
         [...pureInvoices, ...examInvoices].forEach((inv: any) => { const dk = String(inv.date || '').split('T')[0]; if (!dk) return; const ex = dailyMap.get(dk) || { sales: 0, count: 0, byMethod: {} }; const t = inv.totalAmount || 0; ex.sales += t; ex.count++; const m = inv.paymentMethod || 'Invoice'; ex.byMethod[m] = (ex.byMethod[m] || 0) + t; dailyMap.set(dk, ex); });
         const dailyBreakdown = Array.from(dailyMap.entries()).map(([date, data]) => ({ date, ...data })).sort((a, b) => b.date.localeCompare(a.date));
         const voidedAmount = filteredSales.filter(s => s.status === 'Cancelled' || s.status === 'Refunded').reduce((sum, s) => sum + (s.totalAmount || s.total || 0), 0);

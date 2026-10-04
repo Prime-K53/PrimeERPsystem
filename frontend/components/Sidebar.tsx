@@ -266,14 +266,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           icon: <Activity size={18} />,
           hideSubMenu: true,
           subItems: [
-            { label: 'Dashboard', path: '/revenue/dashboard', icon: <Activity size={14} /> },
             { label: 'Sales Audit', path: '/revenue/sales-audit', icon: <FileText size={14} /> },
             { label: 'Markup Performance', path: '/revenue/margin-performance', icon: <BarChart3 size={14} /> },
             { label: 'Rounding Analytics', path: '/revenue/rounding-analytics', icon: <Activity size={14} /> },
             { label: 'Client Ledger', path: '/revenue/contacts', icon: <Users size={14} /> },
             { label: 'Wallet Statement', path: '/revenue/wallet-statement', icon: <Wallet size={14} /> },
-            { label: 'Business Intel', path: '/revenue/intel', icon: <PieChart size={14} /> },
-            { label: 'Health Diagnostic', path: '/revenue/health', icon: <Sparkles size={14} /> },
             { label: 'Internal Auditor', path: '/revenue/auditor', icon: <Shield size={14} /> },
           ]
         },

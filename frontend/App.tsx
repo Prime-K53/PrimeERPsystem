@@ -159,7 +159,6 @@ const WarehousePage = lazyWithRetry('./views/warehouse/WarehousePage', () => imp
 const InventoryReports = lazyWithRetry('./views/inventory/InventoryReports', () => import('./views/inventory/InventoryReports'));
 const IndustrialHub = lazyWithRetry('./views/IndustrialHub', () => import('./views/IndustrialHub'));
 const RevenueHub = lazyWithRetry('./views/RevenueHub', () => import('./views/RevenueHub'));
-const RevenueDashboard = lazyWithRetry('./views/reports/RevenueDashboard', () => import('./views/reports/RevenueDashboard'));
 const TransportBudgetDashboard = React.lazy(() => import('./views/reports/TransportBudgetDashboard'));
 const SalesFlowHub = lazyWithRetry('./views/SalesFlowHub', () => import('./views/SalesFlowHub'));
 const SalesExchanges = lazyWithRetry('./views/sales/SalesExchanges', () => import('./views/sales/SalesExchanges'));
@@ -221,7 +220,6 @@ const AnomalyDetectionView = lazyWithRetry('./views/AnomalyDetection', () => imp
 const ReportSummaryView = lazyWithRetry('./views/ReportSummary', () => import('./views/ReportSummary'));
 const AdvancedDataTableView = lazyWithRetry('./views/AdvancedDataTable', () => import('./views/AdvancedDataTable'));
 
-const BusinessHealthReport = lazyWithRetry('./views/reports/BusinessHealthReport', () => import('./views/reports/BusinessHealthReport'));
 const AIWorkspace = lazyWithRetry('./views/AIWorkspace', () => import('./views/AIWorkspace'));
 const AIWorkspaceDashboard = lazyWithRetry('./views/ai/AIWorkspaceDashboard', () => import('./views/ai/AIWorkspaceDashboard'));
 const AIWorkspaceChat = lazyWithRetry('./views/ai/AIWorkspaceChat', () => import('./views/ai/AIWorkspaceChat'));
@@ -621,15 +619,12 @@ const AppLayout: React.FC = () => {
                 {/* Revenue */}
                 <Route element={<ErrorBoundary name="Revenue"><Outlet /></ErrorBoundary>}>
                   <Route path="/revenue" element={<RevenueHub />} />
-                  <Route path="/revenue/dashboard" element={<ProtectedRoute permission="reports.view"><RevenueDashboard /></ProtectedRoute>} />
                   <Route path="/revenue/sales-audit" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                   <Route path="/revenue/margin-performance" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                   <Route path="/revenue/rounding-analytics" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                   <Route path="/revenue/contacts" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                   <Route path="/revenue/wallet-statement" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                   <Route path="/revenue/auditor" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
-                  <Route path="/revenue/intel" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
-                  <Route path="/revenue/health" element={<ProtectedRoute permission="reports.view"><BusinessHealthReport /></ProtectedRoute>} />
                   <Route path="/revenue/transport-budget" element={
           <ProtectedRoute permission="reports.view">
             <React.Suspense fallback={

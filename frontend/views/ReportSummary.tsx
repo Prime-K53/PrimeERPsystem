@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   TrendingUp, TrendingDown, FileText, Activity, BarChart3, DollarSign,
   Sparkles, Award, AlertTriangle, Package, ArrowUp, ArrowDown,
@@ -12,6 +12,7 @@ import {
   generateExecutiveSummary, generateFinancialHealthScore, generateSalesReportSummary,
   generateExpenseReportSummary, generateInventoryReportSummary, formatCurrency, formatPercent
 } from '../services/reportSummaryService';
+import { mapPostedExpenseLegs } from '../utils/glReconciliation';
 
 const teal = {
   50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7',
@@ -69,13 +70,24 @@ const ReportSummary: React.FC = () => {
   }, []);
 
   const { sales } = useSales();
-  const { invoices, expenses } = useFinance();
+  const { invoices, expenses, ledger, accounts } = useFinance();
   const { inventory } = useInventory();
 
   const dateRange = getDateRange(period);
 
+  // Financial summary basis: posted GL expense legs (account-named
+  // categories), never the manual expense-document rows.
+  const glExpenseRecords = useMemo(
+    () => mapPostedExpenseLegs(ledger || [], accounts || []),
+    [ledger, accounts],
+  );
+
   const execSummary = generateExecutiveSummary({
-    sales: sales || [], invoices: invoices || [], expenses: expenses || [], inventory: inventory || [], dateRange,
+    sales: sales || [],
+    invoices: invoices || [],
+    expenses: glExpenseRecords,
+    inventory: inventory || [],
+    dateRange,
   });
 
   const totalRevenue = execSummary.metrics.find((m: any) => m.label === 'Total Revenue');

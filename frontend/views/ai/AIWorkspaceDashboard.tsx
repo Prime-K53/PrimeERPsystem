@@ -7,6 +7,7 @@ import {
 import { useSales } from '../../context/SalesContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
+import { mapPostedExpenseLegs, sumPostedExpenseDebits } from '../../utils/glReconciliation';
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -222,7 +223,7 @@ const styles: Record<string, React.CSSProperties> = {
 
 const AIWorkspaceDashboard: React.FC = () => {
   const { sales, customers } = useSales();
-  const { invoices, expenses } = useFinance();
+  const { invoices, expenses, ledger, accounts } = useFinance();
   const { companyConfig } = useAuth();
   const currency = companyConfig?.currencySymbol || 'MK';
 
@@ -244,9 +245,18 @@ const AIWorkspaceDashboard: React.FC = () => {
     );
   }, [invoices]);
 
+  // Authoritative financial basis: posted GL expense debits (includes
+  // automatically posted COGS). The manual `expenses` rows cannot represent
+  // total accounting expenses, so every financial figure below reads the
+  // posted legs; the Recent Activity list stays an explicit manual-record
+  // listing.
+  const postedExpenseLegs = useMemo(() => {
+    return mapPostedExpenseLegs(ledger || [], accounts || []);
+  }, [ledger, accounts]);
+
   const totalExpenses = useMemo(() => {
-    return (expenses || []).reduce((s, e) => s + (e.amount || 0), 0);
-  }, [expenses]);
+    return sumPostedExpenseDebits(ledger || [], accounts || []).glExpenses;
+  }, [ledger, accounts]);
 
   const profit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? ((profit / totalRevenue) * 100) : 0;
@@ -277,13 +287,13 @@ const AIWorkspaceDashboard: React.FC = () => {
   }, [sales, paidInvoices]);
 
   const expenseTrend = useMemo(() => {
-    if (!expenses || expenses.length < 2) return null;
-    const mid = Math.floor(expenses.length / 2);
-    const first = expenses.slice(0, mid).reduce((s, e) => s + (e.amount || 0), 0);
-    const second = expenses.slice(mid).reduce((s, e) => s + (e.amount || 0), 0);
+    if (!postedExpenseLegs || postedExpenseLegs.length < 2) return null;
+    const mid = Math.floor(postedExpenseLegs.length / 2);
+    const first = postedExpenseLegs.slice(0, mid).reduce((s, e) => s + (e.amount || 0), 0);
+    const second = postedExpenseLegs.slice(mid).reduce((s, e) => s + (e.amount || 0), 0);
     if (first === 0) return null;
     return ((second - first) / first) * 100;
-  }, [expenses]);
+  }, [postedExpenseLegs]);
 
   const aiInsightsCount = useMemo(() => {
     let count = 0;
@@ -475,8 +485,8 @@ const AIWorkspaceDashboard: React.FC = () => {
                     const monthsAgo = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
                     if (monthsAgo >= 0 && monthsAgo < periods) monthlyRevenue[periods - 1 - monthsAgo] += (t.totalAmount || 0);
                   });
-                  (expenses || []).forEach(e => {
-                    const d = new Date(e.date || e.createdAt);
+                  postedExpenseLegs.forEach(e => {
+                    const d = new Date(e.date);
                     const monthsAgo = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
                     if (monthsAgo >= 0 && monthsAgo < periods) monthlyExpenses[periods - 1 - monthsAgo] += (e.amount || 0);
                   });
