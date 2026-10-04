@@ -173,7 +173,7 @@ const Reports: React.FC = () => {
           <div style={{ background: '#FEFDFB', padding: '12px', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,.05)', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', display: 'flex', alignItems: 'center', gap: '16px', borderLeftWidth: '4px', borderLeftColor: '#1f8577', transition: 'all .15s ease', transitionDuration: '200ms' }}>
             <div style={{ padding: '10px', background: '#eef7f6', color: '#1f8577', borderRadius: '10px', flexShrink: 0 }}><BarChart3 size={20} /></div>
             <div style={{ minWidth: 0 }}>
-              <p style={{ fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: '-.025em', lineHeight: 1, marginBottom: '6px' }}>Profit Markup</p>
+              <p style={{ fontWeight: 700, color: '#5c6567', textTransform: 'uppercase', letterSpacing: '-.025em', lineHeight: 1, marginBottom: '6px' }}>Gross Profit</p>
               <p style={{ fontSize: '16px', fontWeight: 600, color: '#1f8577' }}>{formatCurrency(marginReport.totals.profitMargin)}</p>
               <p style={{ color: '#5c6567', marginTop: '2px' }}>{marginReport.totals.transactionCount} transactions</p>
             </div>
@@ -233,7 +233,7 @@ const Reports: React.FC = () => {
                     formatter={(value: number) => [formatCurrency(value), '']}
                     contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
                   />
-                  <Area type="monotone" dataKey="profitMargin" name="Profit Markup" stroke="#10b981" strokeWidth={2} fill="url(#marginProfitFill)" />
+                  <Area type="monotone" dataKey="profitMargin" name="Gross Profit" stroke="#10b981" strokeWidth={2} fill="url(#marginProfitFill)" />
                   <Area type="monotone" dataKey="adjustmentTotal" name="Adjustments" stroke="#6366f1" strokeWidth={2} fill="url(#marginAdjustmentFill)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -265,7 +265,7 @@ const Reports: React.FC = () => {
                     formatter={(value: number) => [formatCurrency(value), '']}
                     contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
                   />
-                  <Bar dataKey="profitMargin" name="Profit Markup" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="profitMargin" name="Gross Profit" fill="#10b981" radius={[6, 6, 0, 0]} />
                   <Bar dataKey="adjustmentTotal" name="Adjustments" fill="#6366f1" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -287,7 +287,7 @@ const Reports: React.FC = () => {
                   <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Revenue</th>
                   <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Material Cost</th>
                   <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Adjustments</th>
-                  <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Profit Markup</th>
+                  <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Gross Profit</th>
                   <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Rounding</th>
                 </tr>
               </thead>
@@ -325,7 +325,7 @@ const Reports: React.FC = () => {
                     <th style={{ paddingLeft: '16px', paddingTop: '12px', paddingRight: '16px', paddingBottom: '12px' }}>Source</th>
                     <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Revenue</th>
                     <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Adjustments</th>
-                    <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Profit Markup</th>
+                    <th style={{ paddingLeft: '16px', paddingTop: '12px', textAlign: 'right', paddingRight: '16px', paddingBottom: '12px' }}>Gross Profit</th>
                   </tr>
                 </thead>
                 <tbody style={{ borderColor: '#e4ddd1' }}>

@@ -1862,3 +1862,63 @@ td {
   50% { transform: scale(1.4); opacity: 0; }
 }
 
+
+/* ── POS modal interactive layer ──────────────────────────────────────────
+   Hover / focus / selection used to be wired per element with onMouseEnter,
+   onMouseLeave and onFocus handlers mutating inline styles. It lives here so
+   every POS dialog behaves identically, and so keyboard focus is never
+   invisible (WCAG 2.4.7). The ring needs `!important` because the inputs set
+   `outline: none` inline. */
+.pos-modal-root :focus-visible {
+  outline: 2px solid var(--brand-600, #1f8577) !important;
+  outline-offset: 2px;
+}
+
+/* Close button — replaces the JS hover swap that used to live in PosModal. */
+.pos-modal-root .pos-modal-close {
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+.pos-modal-root .pos-modal-close:hover:not(:disabled) {
+  background: #eef7f6;
+  border-color: #a6d9d3;
+  color: #0f544c;
+}
+
+/* List rows (customers, parked orders, variants). The keyboard-highlighted row
+   is an attribute, not an inline background, so CSS hover can still win. */
+.pos-modal-root .pos-row {
+  transition: background-color .12s ease;
+}
+.pos-modal-root .pos-row:hover {
+  background: #f2faf8;
+}
+.pos-modal-root .pos-row[data-active='true'] {
+  background: #eef7f6;
+}
+.pos-modal-root .pos-row[data-active='true']:hover {
+  background: #e4f2ef;
+}
+.pos-modal-root .pos-row:hover .pos-avatar,
+.pos-modal-root .pos-row[data-active='true'] .pos-avatar {
+  background: #146b60;
+  border-color: #146b60;
+  color: #fff;
+}
+
+/* Two-pane pricing split: stacks below 720px instead of squeezing both columns
+   into ~160px. The inline `gridTemplateColumns` is beaten with !important —
+   inline styles win over plain rules. */
+@media (max-width: 720px) {
+  .pos-modal-root .pos-split {
+    grid-template-columns: 1fr !important;
+    overflow-y: auto;
+  }
+  .pos-modal-root .pos-split > .pos-split-pane {
+    max-height: none !important;
+  }
+  .pos-modal-root .pos-split > .pos-split-divider {
+    height: 1px;
+    width: 100%;
+  }
+}
+

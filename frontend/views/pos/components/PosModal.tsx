@@ -7,12 +7,15 @@ import {
     CARD_SHADOW,
     OVERLAY_BG,
     UI_FONT,
+    amber,
     hairline,
     ink,
     inkSoft,
     radius,
     teal,
+    type,
     modalWidth,
+    paper,
 } from '../theme';
 
 export type PosModalSize = keyof typeof modalWidth;
@@ -23,6 +26,8 @@ type PosModalProps = {
     /** Accessible name. Always supply it — it is the dialog's only name. */
     title: string;
     subtitle?: React.ReactNode;
+    /** Small uppercase line rendered ABOVE the title (e.g. a category eyebrow). */
+    eyebrow?: React.ReactNode;
     /** Decorative glyph rendered in the brand chip. Hidden from the a11y tree. */
     icon?: React.ReactNode;
     size?: PosModalSize;
@@ -68,6 +73,7 @@ export const PosModal: React.FC<PosModalProps> = ({
     onClose,
     title,
     subtitle,
+    eyebrow,
     icon,
     size = 'md',
     dismissible = true,
@@ -93,6 +99,7 @@ export const PosModal: React.FC<PosModalProps> = ({
             aria-modal="true"
             aria-labelledby={titleId}
             tabIndex={-1}
+            className="pos-modal-root"
             onClick={e => {
                 if (closeOnBackdrop && e.target === e.currentTarget) handleClose();
             }}
@@ -120,7 +127,7 @@ export const PosModal: React.FC<PosModalProps> = ({
                     maxHeight: '100%',
                     display: 'flex',
                     flexDirection: 'column',
-                    background: '#FEFDFB',
+                    background: paper,
                     borderRadius: radius.xl,
                     boxShadow: CARD_SHADOW,
                     overflow: 'hidden',
@@ -153,15 +160,25 @@ export const PosModal: React.FC<PosModalProps> = ({
                             </div>
                         ) : null}
                         <div style={{ minWidth: 0 }}>
+                            {eyebrow ? (
+                                <div
+                                    style={{
+                                        fontSize: 9.5,
+                                        letterSpacing: '0.12em',
+                                        textTransform: 'uppercase',
+                                        color: amber[500],
+                                        marginBottom: 5,
+                                    }}
+                                >
+                                    {eyebrow}
+                                </div>
+                            ) : null}
                             <h1
                                 id={titleId}
                                 style={{
-                                    fontFamily: UI_FONT,
-                                    fontWeight: 400,
-                                    fontSize: 20,
+                                    ...type.title,
                                     margin: 0,
                                     color: teal[800],
-                                    letterSpacing: 0.2,
                                     lineHeight: 1.2,
                                 }}
                             >
@@ -190,24 +207,12 @@ export const PosModal: React.FC<PosModalProps> = ({
                         onClick={handleClose}
                         disabled={!dismissible}
                         aria-label={dismissible ? `Close ${title}` : undefined}
+                        className="pos-modal-close"
                         style={{
                             ...closeBtn,
                             cursor: dismissible ? 'pointer' : 'not-allowed',
                             opacity: dismissible ? 1 : 0.4,
                         }}
-                        onMouseEnter={e => {
-                            if (!dismissible) return;
-                            e.currentTarget.style.background = teal[50];
-                            e.currentTarget.style.color = teal[700];
-                            e.currentTarget.style.borderColor = teal[200];
-                        }}
-                        onMouseLeave={e => {
-                            e.currentTarget.style.background = 'transparent';
-                            e.currentTarget.style.color = inkSoft;
-                            e.currentTarget.style.borderColor = hairline;
-                        }}
-                        onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 2px #FEFDFB, 0 0 0 4px ${teal[500]}`; }}
-                        onBlur={e => { e.currentTarget.style.boxShadow = 'none'; }}
                     >
                         <X size={15} />
                     </button>

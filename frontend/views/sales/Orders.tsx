@@ -30,7 +30,7 @@ import { OfflineImage } from '../../components/OfflineImage';
 import { ProfitAnalysisModal } from './components/ProfitAnalysisModal';
 import { extractInvoiceData, generateAIResponse } from '../../services/geminiService';
 import { QuotationList, InvoiceList, SalesOrderList, SalesExchangeList, SalesSkeletonLoader, OrdersList } from './components/SalesLists';
-import { getOrderDisplayStatus } from './components/orderStatusUtils';
+import { canTransitionOrderStatus, getOrderCanonicalStatus, getOrderDisplayStatus } from './components/orderStatusUtils';
 import { useSearchSort } from '../../hooks/useSearchSort';
 import SearchSortToolbar from '../../components/SearchSortToolbar';
 import { ExchangeRequestModal } from './components/ExchangeRequestModal';
@@ -862,6 +862,21 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                         ? ensureFutureSubscriptionRunDate(item.nextRunDate, item.frequency)
                         : item.nextRunDate
                 });
+            } else if (activeView === 'Orders') {
+                // Orders previously fell through this branch untouched and still
+                // reported success, so the status change looked applied while the
+                // record never moved.
+                if (!canTransitionOrderStatus(item.canonicalStatus ?? item.status, newStatus)) {
+                    notify(`Cannot change this order from ${getOrderCanonicalStatus(item)} to ${newStatus}`, "error");
+                    return;
+                }
+                try {
+                    await updateOrderStatus(item.id, newStatus);
+                    notify(`Order #${item.orderNumber || item.id} is now ${newStatus}`, "success");
+                } catch (error: any) {
+                    notify(`Failed to update status: ${error.message}`, "error");
+                }
+                return;
             }
             notify(`Status updated to ${newStatus}`, "success");
             return;

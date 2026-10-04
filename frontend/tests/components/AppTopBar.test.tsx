@@ -52,23 +52,31 @@ vi.mock('../../context/SalesContext', () => ({
 vi.mock('../../context/InventoryContext', () => ({
   useInventory: (...args: unknown[]) => mockUseInventory(...args),
 }));
-vi.mock('../../components/ui', () => ({
-  NotificationCenter: (props: Record<string, unknown>) => {
-    mockNC(props);
-    if (!props.isOpen) return null;
-    const notifs = (props.notifications as Array<{ id: string; title: string }>) || [];
-    return (
-      <div data-testid="nc-stub">
-        {notifs.map((n) => (
-          <div key={n.id} data-testid={`nc-${n.id}`}>
-            {n.title}
-          </div>
-        ))}
-        <button onClick={() => (props.onMarkAllRead as () => void)()}>nc-mark-all</button>
-      </div>
-    );
-  },
-}));
+// Mirrors the real NotificationCenter: it portals to document.body and
+// forwards its ref, so the AppTopBar click-outside guard is exercised
+// against the same DOM shape it sees in production.
+vi.mock('../../components/ui', async () => {
+  const { createPortal } = await import('react-dom');
+  const { forwardRef } = await import('react');
+  return {
+    NotificationCenter: forwardRef<HTMLDivElement, Record<string, unknown>>((props, ref) => {
+      mockNC(props);
+      if (!props.isOpen) return null;
+      const notifs = (props.notifications as Array<{ id: string; title: string }>) || [];
+      return createPortal(
+        <div ref={ref} data-testid="nc-stub">
+          {notifs.map((n) => (
+            <div key={n.id} data-testid={`nc-${n.id}`}>
+              {n.title}
+            </div>
+          ))}
+          <button onClick={() => (props.onMarkAllRead as () => void)()}>nc-mark-all</button>
+        </div>,
+        document.body
+      );
+    }),
+  };
+});
 
 import AppTopBar from '../../components/AppTopBar';
 
@@ -206,6 +214,22 @@ describe('AppTopBar', () => {
     expect(pill).toBeInTheDocument();
     fireEvent.click(pill);
     await waitFor(() => expect(adminAuth.connectDbSync).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps the notification panel open when clicking inside it, closes on outside click', () => {
+    renderBar();
+    fireEvent.click(screen.getByRole('button', { name: /unread notifications/i }));
+    const panel = screen.getByTestId('nc-stub');
+
+    // The panel is portaled to document.body, so it is not a descendant of
+    // the bell button. Clicking inside it must NOT be treated as an outside
+    // click (regression: every click inside the panel closed it).
+    fireEvent.mouseDown(within(panel).getByTestId('nc-n2'));
+    expect(screen.getByTestId('nc-stub')).toBeInTheDocument();
+
+    // A genuine outside click still closes it.
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId('nc-stub')).not.toBeInTheDocument();
   });
 
   it('sorts notifications severity-first before handing to the center', () => {

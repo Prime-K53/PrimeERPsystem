@@ -17,8 +17,9 @@ import { resolveTransactionPricingSummary } from '../../../utils/pricingBreakdow
 import { formatDate } from '../../../utils/formatters';
 import { Edit2, Trash2, Star, List, LayoutGrid, CheckCircle, Check, Clock, User, Calendar, Box, Eye, Send, Copy, Plus, Phone, ChevronRight, FileText, FileCheck, Briefcase, Mail, MessageCircle, Repeat, XCircle, Archive, History as HistoryIcon, Users, RefreshCw, ArrowUp, ArrowDown, Link as LinkIcon, Paperclip, CalendarClock, AlertTriangle, Download, Truck, MoreVertical, Play, Pause, Package, DollarSign, TrendingUp, Zap, Target, PlayCircle, Coins, Wallet, ShoppingBag, Printer, Search, X, ArrowUpRight, MessageSquare } from 'lucide-react';
 import { TableEmptyState } from '../../../components/EmptyState';
-import { getOrderDisplayStatus, getOrderStatusClass } from
+import { getOrderCanonicalStatus, getOrderDisplayStatus, getOrderStatusClass } from
 './orderStatusUtils';
+import OrderStatusModal from './OrderStatusModal';
 import { getSalesOrderDisplayNumber } from '../../../services/salesOrderService';
 
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1';
@@ -368,6 +369,18 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
     const location = useLocation();
     useHighlight();
 
+    const [statusOrder, setStatusOrder] = useState<Order | null>(null);
+
+    const openStatusModal = (order: Order) => {
+        setOpenMenuId(null);
+        setStatusOrder(order);
+    };
+
+    const handleStatusConfirm = async (status: string) => {
+        if (!statusOrder) return;
+        props.onAction && props.onAction(statusOrder, `status_${status}`);
+    };
+
     const { currentItems, currentPage, maxPage, totalItems, next, prev, first, last, setItemsPerPage, itemsPerPage } = usePagination(props.data, props.viewMode === 'Card' ? 12 : 10);
 
     const currentOrder = (props.data || []).find((d: any) => d.id === openMenuId);
@@ -400,6 +413,14 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                 <div className="px-4 py-2 border-b border-[#e4ddd1] text-[10px] font-bold text-[#5c6567] uppercase tracking-tight bg-[#eef7f6] rounded-t-xl">ORDER ACTIONS</div>
                 <button onClick={() => { setOpenMenuId(null); props.onView(order); }} className="w-full text-left px-4 py-2 text-xs font-medium text-[#23282A] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"><ChevronRight size={14} /> View Detail</button>
                 <button onClick={() => { setOpenMenuId(null); handlePreview('ORDER', order); }} className="w-full text-left px-4 py-2 text-xs font-medium text-[#1f8577] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"><Eye size={14} /> Preview Order Confirmation</button>
+                <button
+                    onClick={() => openStatusModal(order)}
+                    title={`Currently ${getOrderCanonicalStatus(order)}`}
+                    className="w-full text-left px-4 py-2 text-xs font-bold text-[#1f8577] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"
+                >
+                    <RefreshCw size={14} /> Change Status
+                    <span className="ml-auto text-[10px] font-medium text-[#5c6567]">{getOrderCanonicalStatus(order)}</span>
+                </button>
                 <button onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(order, 'record_payment'); }} className="w-full text-left px-4 py-2 text-xs font-medium text-[#1f8577] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"><DollarSign size={14} /> Record Payment</button>
                 <button onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(order, 'convert_to_invoice'); }} className="w-full text-left px-4 py-2 text-xs font-medium text-[#0f544c] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"><FileCheck size={14} /> Convert to Invoice</button>
                 <button onClick={() => { setOpenMenuId(null); props.onAction && props.onAction(order, 'convert_to_job_ticket'); }} className="w-full text-left px-4 py-2 text-xs font-medium text-[#0b3e39] hover:bg-[#eef7f6] flex items-center gap-3 transition-colors"><Package size={14} /> Convert to Job Ticket</button>
@@ -413,9 +434,16 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
     );
 };
 
-    return (
+return (
         <div className="flex flex-col h-full">
             {openMenuId && menuPos && currentOrder && renderMenu(currentOrder)}
+            {statusOrder && (
+                <OrderStatusModal
+                    order={statusOrder}
+                    onConfirm={handleStatusConfirm}
+                    onClose={() => setStatusOrder(null)}
+                />
+            )}
 
             {(props.searchTerm !== undefined || props.onSearchChange) && (
                 <div className="p-3 border-b border-[#e4ddd1]/60 flex justify-between items-center bg-[#eef7f6]/30 shrink-0">
@@ -449,13 +477,7 @@ export const OrdersList: React.FC<ListProps<Order>> = (props) => {
                                         <p className="text-[10px] font-bold text-[#1f8577] uppercase tracking-wider">{getSalesOrderDisplayNumber(item)}</p>
                                         <h4 className="font-bold text-[#23282A] truncate max-w-[150px]">{item.customerName}</h4>
                                     </div>
-                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${item.status === 'Completed' ? 'bg-[#d3ece9] text-[#0f544c] border-[#a6d9d3]' :
-                                        item.status === 'Paid' ? 'bg-[#d3ece9] text-[#0f544c] border-[#a6d9d3]' :
-                                            item.status === 'Partially Paid' ? 'bg-[#fbead0] text-[#b97e2b] border-[#eec27a]' :
-                                                item.status === 'Pending' ? 'bg-[#eef7f6] text-[#1f8577] border-[#a6d9d3]' :
-                                                    item.status === 'Cancelled' ? 'bg-[#f5f2ed] text-[#5c6567] border-[#e4ddd1]' :
-                                                        'bg-[#f5f2ed] text-[#5c6567] border-[#e4ddd1]'
-                                    }`}>{item.status}</span>
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${getOrderStatusClass(getOrderDisplayStatus(item))}`}>{getOrderDisplayStatus(item)}</span>
                                 </div>
                                 <div className="space-y-2 mb-4">
                                     <div className="flex justify-between text-xs">

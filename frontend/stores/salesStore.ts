@@ -109,17 +109,23 @@ export const useSalesStore = create<SalesState>((set, get) => ({
     if (!silent) set({ isLoading: true, loadingMap: { sales: true, quotations: true, jobOrders: true, customers: true } });
     try {
       await useSalesOrderStore.getState().fetchSalesOrders(true);
+      // NOTE: sales MUST NOT be capped. `dbService.getAll` returns IndexedDB rows in
+      // ascending key order and sale ids are zero-padded sequential (SALE-0001…), so any
+      // slice() keeps the OLDEST rows and silently drops every newer sale. That made
+      // Revenue Analysis report only invoice-derived revenue while the (uncapped) ledger
+      // still carried POS revenue, producing a permanent GL reconciliation gap once the
+      // shop passed 1000 sales. Other collections keep their caps: they are not revenue-bearing.
+      const asArray = <T,>(value: any): T[] => (Array.isArray(value) ? (value as T[]) : []);
       const [sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs] = await Promise.all([
-        api.sales.getAllSales().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
-        api.sales.getQuotations().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
-        api.sales.getJobOrders().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
-        api.sales.getCustomerPayments().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
-        api.sales.getShipments().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
-        api.customers.getAll().then(list => (list as Array<Record<string, unknown>>).filter(c => !c.deletedAt).slice(0,2000)),
-        api.sales.getSalesExchanges().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
-        api.sales.getReprintJobs().then((r:any) => Array.isArray(r) ? r.slice(0,1000) : r),
+        api.sales.getAllSales().then((r: any) => asArray<Sale>(r)),
+        api.sales.getQuotations().then((r: any) => asArray<Quotation>(r).slice(0, 1000)),
+        api.sales.getJobOrders().then((r: any) => asArray<JobOrder>(r).slice(0, 1000)),
+        api.sales.getCustomerPayments().then((r: any) => asArray<CustomerPayment>(r).slice(0, 1000)),
+        api.sales.getShipments().then((r: any) => asArray<Shipment>(r).slice(0, 1000)),
+        api.customers.getAll().then((list: any) => asArray<Customer>(list).filter((c: any) => !c.deletedAt).slice(0, 2000)),
+        api.sales.getSalesExchanges().then((r: any) => asArray<SalesExchange>(r).slice(0, 1000)),
+        api.sales.getReprintJobs().then((r: any) => asArray<ReprintJob>(r).slice(0, 1000)),
       ]);
-      if ((sales as any[]).length >= 1000) logger.warn('Sales truncated at 1000 — pagination required (Phase 2)');
       set({ sales, quotations, jobOrders, customerPayments, shipments, customers, salesExchanges, reprintJobs, salesOrders: useSalesOrderStore.getState().salesOrders, loadingMap: {} });
     } catch (error) {
       logger.error("Failed to load sales data", error);

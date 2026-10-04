@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { logger } from '@/services/logger';
 // PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
-import { X, CheckCircle, Printer, Usb, Wallet, UserPlus, Save, ArrowRight, Plus, Search, Clock, Info, AlertTriangle, Users } from 'lucide-react';
-import { HeldOrder, Sale, Invoice, Item, ProductVariant, BillOfMaterial, WorkOrder, BOMTemplate } from '../../../types';
+import { X, Printer, UserPlus, Save, ArrowRight, Search, Clock, Info, AlertTriangle, Users, Loader2 } from 'lucide-react';
+import { HeldOrder, Item, ProductVariant, BillOfMaterial, BOMTemplate } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useInventory } from '../../../context/InventoryContext';
 import { useSales } from '../../../context/SalesContext';
-import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
-import { useModalA11y } from '../../../utils/useModalA11y';
-import { hardwareService } from '../../../services/hardwareService';
-import { generateAccountNumber, roundFinancial, formatNumber, roundToCurrency } from '../../../utils/helpers';
+import { roundFinancial, formatNumber, roundToCurrency } from '../../../utils/helpers';
 import { bomService } from '../../../services/bomService';
 import { pricingService, DynamicServicePricingResult } from '../../../services/pricingService';
 import { dbService } from '../../../services/db';
@@ -18,69 +15,33 @@ import { calculateServicePrice } from '../../../utils/pricing/pricingEngine';
 import { isMarketAdjustmentActive } from '../../../utils/marketAdjustmentSemantics';
 import { normalizeStoredPricing, resolveStoredSellingPrice } from '../../../utils/pricing';
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
-import { getPlaceholder } from '../../../constants/placeholders';
 import { getCustomerOptionLabel } from '../../../utils/customerDisplay';
+import { PosModal } from './PosModal';
+import { Button, Money } from './Button';
+// POS palette comes from the shared theme; the modal chrome now comes from
+// PosModal. This file used to re-declare both, drifting onto a second ink
+// (#23282A) and a second danger (#b5493f) outside the contrast contract.
+import {
+    NUMERIC_FONT,
+    amber,
+    borderDanger,
+    borderSuccess,
+    borderWarning,
+    danger,
+    hairline,
+    ink,
+    inkSoft,
+    paper,
+    success,
+    surfaceDanger,
+    surfaceSuccess,
+    surfaceWarning,
+    teal,
+    textWarning,
+} from '../theme';
 
-const teal: Record<string, string> = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
-const amber: Record<string, string> = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f', 600: '#b97e2b' };
-const paper = '#FEFDFB';
-const ink = '#23282A';
-const inkSoft = '#5c6567';
-const hairline = '#e4ddd1';
-const danger = '#b5493f';
-
-const modalOverlay: React.CSSProperties = {
-  position: 'fixed', inset: 0, zIndex: 9999,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  background: 'rgba(15, 23, 42, 0.6)',
-  padding: '40px 20px', fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, color: ink,
-};
-
-const modalCard: React.CSSProperties = {
-  maxWidth: '100%', background: paper, borderRadius: 14,
-  boxShadow: '0 30px 70px -20px rgba(0,0,0,.55), 0 8px 24px -8px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.04)',
-  display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative',
-};
-
-const accentBar: React.CSSProperties = {
-  position: 'absolute', top: 0, left: 0, right: 0, height: 4,
-  background: `linear-gradient(90deg, ${teal[600]}, ${teal[400]} 40%, ${amber[500]} 100%)`
-};
-
-const closeBtn: React.CSSProperties = {
-  width: 32, height: 32, borderRadius: 8,
-  border: `1px solid ${hairline}`, background: paper, color: inkSoft,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  cursor: 'pointer', transition: 'all .15s ease', flexShrink: 0,
-};
-
-const iconBox: React.CSSProperties = {
-  width: 40, height: 40, borderRadius: 10,
-  background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  boxShadow: `0 4px 10px -3px rgba(15,84,76,.6)`, flexShrink: 0,
-};
-
-const ghostBtn: React.CSSProperties = {
-  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
-  padding: '9px 18px', borderRadius: 9, cursor: 'pointer',
-  background: paper, border: `1.4px solid ${hairline}`, color: inkSoft,
-};
-
-const tealBtn: React.CSSProperties = {
-  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
-  padding: '9px 18px', borderRadius: 9, cursor: 'pointer', border: '1.4px solid transparent',
-  background: `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`,
-  color: '#fff', display: 'flex', alignItems: 'center', gap: 6,
-  boxShadow: `0 6px 16px -6px rgba(15,84,76,.55)`,
-  transition: 'all .15s ease',
-};
-
-const dangerBtn: React.CSSProperties = {
-    ...tealBtn,
-    background: `linear-gradient(155deg, #dc2626, #b91c1c)`,
-    boxShadow: `0 6px 16px -6px rgba(185,28,28,.55)`,
-};
+/** Customer search field id — the keyboard list handler is scoped to it. */
+const CUSTOMER_SEARCH_ID = 'pos-customer-search';
 
 const BOM_OPTION_IDS = new Set(['binding', 'coverPages', 'stapling']);
 const OPTION_META: Record<string, { bomSource?: 'tape' | 'cover' | 'staple' }> = {
@@ -116,7 +77,7 @@ export const PrintingVariantModal: React.FC<{
     onSelect: (variant: any) => void;
     onClose: () => void;
 }> = ({ product, bom, materials, onSelect, onClose }) => {
-    const { companyConfig, notify } = useAuth(); const { inventory, marketAdjustments } = useInventory();
+    const { companyConfig } = useAuth(); const { inventory, marketAdjustments } = useInventory();
     const currency = companyConfig.currencySymbol;
     const [bomTemplates, setBomTemplates] = useState<BOMTemplate[]>([]);
     const [attributes, setAttributes] = useState<Record<string, any>>({
@@ -133,7 +94,6 @@ export const PrintingVariantModal: React.FC<{
         adjustmentSnapshots: [] as Array<{ name: string; type: string; value: number; calculatedAmount: number }>
     });
     const [quantity, setQuantity] = useState(1);
-    const a11yRef = useModalA11y(true, onClose, 'Configure Variant');
 
     useEffect(() => {
         let mounted = true;
@@ -228,39 +188,34 @@ export const PrintingVariantModal: React.FC<{
     };
 
     return (
-        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Configure Variant" style={modalOverlay} onClick={onClose}>
-            <div style={{ ...modalCard, width: 520 }} onClick={(e) => e.stopPropagation()}>
-                <div style={accentBar} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <div style={iconBox}><Printer size={19} color="#fff" /></div>
-                        <div>
-                            <h1 style={{
-                                fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400,
-                                fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
-                            }}>Configure {product.name}</h1>
-                            <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>Printing Variant</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} aria-label="Close" style={closeBtn}
-                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
-                    ><X size={15} /></button>
-                </div>
-                <div style={{ padding: '20px 24px', overflowY: 'auto', maxHeight: '60vh' }}>
+        <PosModal
+            open
+            onClose={onClose}
+            title={`Configure ${product.name}`}
+            subtitle="Printing Variant"
+            icon={<Printer size={19} color="#fff" />}
+            size="md"
+            footer={(
+                <>
+                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                    <Button variant="primary" onClick={handleConfirm} icon={<ArrowRight size={14} />}>Add to Order</Button>
+                </>
+            )}
+        >
+            <div style={{ padding: '20px 24px', overflowY: 'auto', maxHeight: '60vh' }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 10 }}>Attributes</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 18 }}>
                         <div>
-                            <label style={{ fontSize: 10, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 4, display: 'block' }}>Number of Pages</label>
-                            <input type="number"
+                            <label htmlFor="pv-pages" style={{ fontSize: 10, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 4, display: 'block' }}>Number of Pages</label>
+                            <input id="pv-pages" type="number" inputMode="numeric"
                                 style={{ width: '100%', padding: '8px 10px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
                                 placeholder="e.g. 5"
                                 onChange={e => { const n = parseInt(e.target.value, 10); handleAttributeChange('number_of_pages', Number.isFinite(n) && n >= 1 ? n : 1); }}
                             />
                         </div>
                         <div>
-                            <label style={{ fontSize: 10, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 4, display: 'block' }}>Paper Type</label>
-                            <select style={{ width: '100%', padding: '8px 10px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
+                            <label htmlFor="pv-paper" style={{ fontSize: 10, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 4, display: 'block' }}>Paper Type</label>
+                            <select id="pv-paper" style={{ width: '100%', padding: '8px 10px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
                                 value={attributes.paper_type ?? ''}
                                 onChange={e => handleAttributeChange('paper_type', e.target.value)}>
                                 <option value="">Select...</option>
@@ -270,8 +225,8 @@ export const PrintingVariantModal: React.FC<{
                             </select>
                         </div>
                         <div>
-                            <label style={{ fontSize: 10, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 4, display: 'block' }}>Quantity</label>
-                            <input type="number"
+                            <label htmlFor="pv-qty" style={{ fontSize: 10, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, marginBottom: 4, display: 'block' }}>Quantity</label>
+                            <input id="pv-qty" type="number" inputMode="numeric"
                                 style={{ width: '100%', padding: '8px 10px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, fontWeight: 700, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
                                 value={quantity}
                                 onChange={e => { const raw = e.target.value; const q = raw === '' ? 1 : parseInt(raw, 10); setQuantity(Number.isFinite(q) && q >= 1 ? Math.floor(q) : 1); }}
@@ -281,21 +236,16 @@ export const PrintingVariantModal: React.FC<{
                     <div style={{ background: teal[50], padding: 16, borderRadius: 10, border: `1px solid ${teal[100]}`, marginBottom: 18 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                             <span style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Unit Price</span>
-                            <span style={{ fontSize: 15, fontWeight: 700, color: ink }}>{currency}{(pricingState.sellingPrice || 0).toLocaleString()}</span>
+                            <span style={{ fontSize: 15, fontWeight: 700, color: ink, fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums' }}>{currency}{formatNumber(pricingState.sellingPrice || 0)}</span>
                         </div>
                         <div style={{ height: 1, background: teal[100], marginBottom: 8 }} />
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: 11, fontWeight: 700, color: ink, textTransform: 'uppercase', letterSpacing: 0.05 }}>Total Amount</span>
-                            <span style={{ fontSize: 20, fontWeight: 700, color: teal[600] }}>{currency}{((pricingState.sellingPrice || 0) * quantity).toLocaleString()}</span>
+                            <span style={{ fontSize: 20, fontWeight: 700, color: teal[600], fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums' }}>{currency}{formatNumber((pricingState.sellingPrice || 0) * quantity)}</span>
                         </div>
                     </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '14px 24px 18px', borderTop: `1px solid ${hairline}` }}>
-                    <button onClick={onClose} style={ghostBtn}>Cancel</button>
-                    <button onClick={handleConfirm} style={tealBtn}><ArrowRight size={14} /> Add to Order</button>
-                </div>
             </div>
-        </div>
+        </PosModal>
     );
 };
 
@@ -318,7 +268,6 @@ export const ServiceCalculatorModal: React.FC<{
     const [sellingPrice, setSellingPrice] = useState<number>(0);
     const [priceManuallySet, setPriceManuallySet] = useState(false);
     const [bomTemplate, setBomTemplate] = useState<any>(null);
-    const a11yRef = useModalA11y(true, onClose, 'Printing Service');
 
     const sp = service.smartPricing || service.pricingConfig;
     const hasSmartPricing = !!sp;
@@ -343,7 +292,10 @@ export const ServiceCalculatorModal: React.FC<{
         }
     }, [sp?.bomTemplateId]);
 
-    const paper = useMemo(() => sp && sp.paperItemId ? inventory.find((i: any) => i.id === sp.paperItemId) : null, [sp, inventory]);
+    // Named paperItem, not `paper`: a local `paper` used to shadow the theme's
+    // paper colour token, so `background: paper` inside this component silently
+    // rendered an inventory item instead of the colour (pre-existing defect).
+    const paperItem = useMemo(() => sp && sp.paperItemId ? inventory.find((i: any) => i.id === sp.paperItemId) : null, [sp, inventory]);
     const toner = useMemo(() => sp && sp.tonerItemId ? inventory.find((i: any) => i.id === sp.tonerItemId) : null, [sp, inventory]);
 
     const normalizedAdjustments = useMemo(() => (marketAdjustments || []).filter((adj: any) => isMarketAdjustmentActive(adj) && (!adj.applyToCategories?.length || adj.applyToCategories.includes(service.category))).map((adj: any) => ({ name: adj.name, type: adj.type, value: adj.value, percentage: adj.percentage ?? adj.value, calculatedAmount: adj.value, adjustmentId: adj.id, isActive: true })), [marketAdjustments, service.category]);
@@ -381,9 +333,9 @@ export const ServiceCalculatorModal: React.FC<{
             totalSheets = sheetsPerCopy * copies;
             const finishingMultiplier = sp.pricingMethod === 'per_job' ? 1 : copies;
 
-            if (paper) {
-                const rs = Number(paper.conversionRate || paper.conversion_rate || 500);
-                costPerSheet = rs > 0 ? Number(paper.cost_price || paper.cost_per_unit || paper.cost || 0) / rs : 0;
+            if (paperItem) {
+                const rs = Number(paperItem.conversionRate || paperItem.conversion_rate || 500);
+                costPerSheet = rs > 0 ? Number(paperItem.cost_price || paperItem.cost_per_unit || paperItem.cost || 0) / rs : 0;
                 paperCost = Number((totalSheets * costPerSheet).toFixed(2));
             } else if (Number(sp.paperCost) > 0) {
                 costPerSheet = Number(sp.paperCost);
@@ -463,30 +415,23 @@ export const ServiceCalculatorModal: React.FC<{
     const ap = enginePricing;
     if (!ap) {
         return (
-        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Printing Service" style={modalOverlay} onClick={onClose}>
-                <div style={{ ...modalCard, width: 640, maxHeight: '92vh' }} onClick={(e) => e.stopPropagation()}>
-                    <div style={accentBar} />
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                            <div style={iconBox}><Printer size={19} color="#fff" /></div>
-                            <div>
-                                <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: amber[500], marginBottom: 5 }}>Printing Service</div>
-                                <h1 style={{ fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400, fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2, lineHeight: 1.1 }}>{service.name}</h1>
-                            </div>
-                        </div>
-                        <button onClick={onClose} aria-label="Close" style={closeBtn}
-                            onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
-                        ><X size={15} /></button>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: inkSoft }}>
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Calculating pricing…</div>
-                            <div style={{ fontSize: 12 }}>This may take a moment for complex services.</div>
-                        </div>
-                    </div>
+            <PosModal
+                open
+                onClose={onClose}
+                title={service.name}
+                eyebrow="Printing Service"
+                icon={<Printer size={19} color="#fff" />}
+                size="lg"
+            >
+                <div
+                    aria-busy="true"
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '80px 20px', color: inkSoft }}
+                >
+                    <Loader2 size={22} className="animate-spin" style={{ color: teal[500] }} />
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>Calculating pricing…</div>
+                    <div style={{ fontSize: 12 }}>This may take a moment for complex services.</div>
                 </div>
-            </div>
+            </PosModal>
         );
     }
     const fc = (v: number) => `${currencySymbol}${formatNumber(v)}`;
@@ -498,27 +443,31 @@ export const ServiceCalculatorModal: React.FC<{
     const handleConfirm = () => onConfirm({ ...ap, totalPrice: sellingPrice, unitPricePerCopy: copies > 0 ? roundToCurrency(sellingPrice / copies) : 0, calculatedTotalPrice: ap.totalPrice, marginAmount: profit, priceLocked: true, lockedTotalPrice: sellingPrice, lockedUnitPricePerCopy: copies > 0 ? roundToCurrency(sellingPrice / copies) : 0, lockedUnitCostPerCopy: copies > 0 ? roundToCurrency(ap.totalCost / copies) : 0 });
 
     return (
-        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Printing Service" style={modalOverlay} onClick={onClose}>
-            <div style={{ ...modalCard, width: 640, maxHeight: '92vh' }} onClick={(e) => e.stopPropagation()}>
-                <div style={accentBar} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <div style={iconBox}><Printer size={19} color="#fff" /></div>
-                        <div>
-                            <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: amber[500], marginBottom: 5 }}>Printing Service</div>
-                            <h1 style={{
-                                fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400,
-                                fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2, lineHeight: 1.1
-                            }}>{service.name}</h1>
+        <PosModal
+            open
+            onClose={onClose}
+            title={service.name}
+            eyebrow="Printing Service"
+            icon={<Printer size={19} color="#fff" />}
+            size="lg"
+            footer={(
+                <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                    <div>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08 }}>Total Due</div>
+                        <div style={{ color: ink, lineHeight: 1.15 }}>
+                            <Money value={sellingPrice} symbol={currencySymbol} size={23} />
                         </div>
+                        <div style={{ fontSize: 10, color: inkSoft }}>{pages * copies} page{pages * copies !== 1 ? 's' : ''} &middot; {Math.ceil(pages / 2) * copies} sheet{Math.ceil(pages / 2) * copies !== 1 ? 's' : ''} &middot; {fc(copies > 0 ? roundToCurrency(sellingPrice / copies) : 0)}/copy</div>
                     </div>
-                    <button onClick={onClose} aria-label="Close" style={closeBtn}
-                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
-                    ><X size={15} /></button>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                        <Button variant="primary" onClick={handleConfirm} icon={<ArrowRight size={14} />}>Add to Order</Button>
+                    </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', flex: 1, minHeight: 0 }}>
-                    <div style={{ padding: '16px 20px', maxHeight: '60vh', overflowY: 'auto' }}>
+            )}
+        >
+            <div className="pos-split" style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', flex: 1, minHeight: 0 }}>
+                    <div className="pos-split-pane" style={{ padding: '16px 20px', maxHeight: '60vh', overflowY: 'auto' }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 9 }}>Quantities</div>
                         <div style={{ display: 'flex', border: `1.4px solid ${hairline}`, borderRadius: 10, overflow: 'hidden', marginBottom: 14 }}>
                             <div style={{ flex: 1, padding: '8px 10px', borderRight: `1.4px solid ${hairline}` }}>
@@ -559,8 +508,8 @@ export const ServiceCalculatorModal: React.FC<{
                             </>
                         )}
                     </div>
-                    <div style={{ background: hairline }}></div>
-                    <div style={{ padding: '16px 20px', maxHeight: '60vh', overflowY: 'auto' }}>
+                    <div className="pos-split-divider" style={{ background: hairline }} />
+                    <div className="pos-split-pane" style={{ padding: '16px 20px', maxHeight: '60vh', overflowY: 'auto' }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 9 }}>Cost Breakdown</div>
                         {hasSmartPricing ? (
                             <>
@@ -585,29 +534,27 @@ export const ServiceCalculatorModal: React.FC<{
                                     <span style={{ color: inkSoft }}>Selling Price</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                         <span style={{ fontSize: 11, color: inkSoft }}>{currencySymbol}</span>
-                                        <input type="number" step="0.01" min={0} value={sellingPrice} onChange={e => { setSellingPrice(Math.max(0, parseFloat(e.target.value || '0'))); setPriceManuallySet(true); }}
-                                            style={{ width: 80, textAlign: 'right', border: `1.4px solid ${hairline}`, borderRadius: 6, padding: '3px 7px', fontSize: 12.5, fontWeight: 700, color: ink, outline: 'none', fontFamily: 'inherit' }}
-                                            onFocus={e => e.currentTarget.style.borderColor = amber[500]}
-                                            onBlur={e => e.currentTarget.style.borderColor = hairline} />
+                                        <input type="number" step="0.01" min={0} value={sellingPrice} onChange={e => { const n = parseFloat(e.target.value); setSellingPrice(Number.isFinite(n) ? Math.max(0, n) : 0); setPriceManuallySet(true); }}
+                                            style={{ width: 80, textAlign: 'right', border: `1.4px solid ${hairline}`, borderRadius: 6, padding: '3px 7px', fontSize: 12.5, fontWeight: 700, color: ink, outline: 'none', fontFamily: 'inherit' }} />
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', fontSize: 12.5 }}>
                                     <span style={{ color: inkSoft }}>Calculated</span>
                                     <span style={{ fontSize: 13.5, fontWeight: 700, color: amber[600] }}>{fc(ap.totalPrice)}</span>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ecfdf5', borderRadius: 8, padding: '9px 12px', marginTop: 12 }}>
-                                    <div style={{ fontSize: 11.5, color: '#059669', fontWeight: 700 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: surfaceSuccess, border: `1px solid ${borderSuccess}`, borderRadius: 8, padding: '9px 12px', marginTop: 12 }}>
+                                    <div style={{ fontSize: 11.5, color: success, fontWeight: 700 }}>
                                         Profit {isLoss ? '-' : '+'}{fc(Math.abs(profit))}
                                     </div>
-                                    <div style={{ fontSize: 11, fontWeight: 700, color: '#059669', background: paper, padding: '3px 9px', borderRadius: 999 }}>{profitMarginPct}% margin</div>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: success, background: paper, padding: '3px 9px', borderRadius: 999 }}>{profitMarginPct}% margin</div>
                                 </div>
                                 {isLoss && (
-                                    <div style={{ marginTop: 8, padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 11, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ marginTop: 8, padding: '6px 10px', background: surfaceDanger, border: `1px solid ${borderDanger}`, borderRadius: 8, fontSize: 11, color: danger, display: 'flex', alignItems: 'center', gap: 6 }}>
                                         <AlertTriangle size={12} /> Below cost — loss of {fc(Math.abs(profit))}
                                     </div>
                                 )}
                                 {!isLoss && profit > 0 && profitMarginPct < 10 && (
-                                    <div style={{ marginTop: 8, padding: '6px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11, color: '#d97706', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ marginTop: 8, padding: '6px 10px', background: surfaceWarning, border: `1px solid ${borderWarning}`, borderRadius: 8, fontSize: 11, color: textWarning, display: 'flex', alignItems: 'center', gap: 6 }}>
                                         <Info size={12} /> Low margin ({profitMarginPct}%) — increase price
                                     </div>
                                 )}
@@ -622,29 +569,16 @@ export const ServiceCalculatorModal: React.FC<{
                                     <span style={{ color: inkSoft }}>Selling Price</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                         <span style={{ fontSize: 11, color: inkSoft }}>{currencySymbol}</span>
-                                        <input type="number" step="0.01" min={0} value={sellingPrice} onChange={e => { setSellingPrice(Math.max(0, parseFloat(e.target.value || '0'))); setPriceManuallySet(true); }}
+                                        <input type="number" step="0.01" min={0} value={sellingPrice} onChange={e => { const n = parseFloat(e.target.value); setSellingPrice(Number.isFinite(n) ? Math.max(0, n) : 0); setPriceManuallySet(true); }}
                                             style={{ width: 80, textAlign: 'right', border: `1.4px solid ${hairline}`, borderRadius: 6, padding: '3px 7px', fontSize: 12.5, fontWeight: 700, color: ink, outline: 'none', fontFamily: 'inherit' }}
-                                            onFocus={e => e.currentTarget.style.borderColor = amber[500]}
-                                            onBlur={e => e.currentTarget.style.borderColor = hairline} />
+                                            />
                                     </div>
                                 </div>
                             </>
                         )}
                     </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '14px 24px 18px', borderTop: `1px solid ${hairline}` }}>
-                    <div>
-                        <div style={{ fontSize: 9, fontWeight: 600, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08 }}>Total Due</div>
-                        <div style={{ fontSize: 23, color: ink, lineHeight: 1.15, fontWeight: 700 }}>{fc(sellingPrice)}</div>
-                        <div style={{ fontSize: 10, color: inkSoft }}>{pages * copies} page{pages * copies !== 1 ? 's' : ''} &middot; {Math.ceil(pages / 2) * copies} sheet{Math.ceil(pages / 2) * copies !== 1 ? 's' : ''} &middot; {fc(copies > 0 ? roundToCurrency(sellingPrice / copies) : 0)}/copy</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                        <button onClick={onClose} style={ghostBtn}>Cancel</button>
-                        <button onClick={handleConfirm} style={tealBtn}><ArrowRight size={14} /> Add to Order</button>
-                    </div>
-                </div>
             </div>
-        </div>
+        </PosModal>
     );
 };
 
@@ -659,7 +593,6 @@ export const CustomerModal: React.FC<{
     const [newCustomerContact, setNewCustomerContact] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [activeIndex, setActiveIndex] = useState(0);
-    const a11yRef = useModalA11y(true, onClose, 'Select Customer');
 
     const customerNames = useMemo(() => {
         const names = new Set<string>();
@@ -684,13 +617,38 @@ export const CustomerModal: React.FC<{
     // Escape is owned by useModalA11y (registered in the capture phase). This
     // handler used to also fire onClose, so a single Escape press invoked the
     // dismiss handler twice.
+    //
+    // Scope: only the search field drives the list from the keyboard. The old
+    // window handler also swallowed Enter/arrows meant for the quick-add form
+    // (its submit never fired — the highlighted customer was selected instead)
+    // and Enter on focused buttons (the close button added a customer, and a
+    // tabbed-to row selected `activeIndex`, not the row under the cursor).
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') return;
             if (filteredCustomerNames.length === 0) return;
-            if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, filteredCustomerNames.length - 1)); }
-            if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, 0)); }
-            if (e.key === 'Enter') { e.preventDefault(); const name = filteredCustomerNames[activeIndex]; if (name) onSelect(name); }
+            const target = e.target as HTMLElement | null;
+            const inSearch = !!target && target.id === CUSTOMER_SEARCH_ID;
+            const inTextField = !!target && (
+                target.tagName === 'TEXTAREA' || target.isContentEditable ||
+                (target.tagName === 'INPUT' && !inSearch)
+            );
+            const inButton = !!target && target.tagName === 'BUTTON';
+
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                if (inTextField) return; // let the caret move
+                const down = e.key === 'ArrowDown';
+                e.preventDefault();
+                setActiveIndex(i => down
+                    ? Math.min(i + 1, filteredCustomerNames.length - 1)
+                    : Math.max(i - 1, 0));
+                return;
+            }
+            if (e.key === 'Enter') {
+                if (inTextField || inButton) return; // native submit / click wins
+                const name = filteredCustomerNames[activeIndex];
+                if (name) { e.preventDefault(); onSelect(name); }
+            }
         };
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
@@ -705,36 +663,32 @@ export const CustomerModal: React.FC<{
     };
 
 return (
-        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Parked Orders" style={modalOverlay} onClick={onClose}>
-            <div style={{ ...modalCard, width: 520, maxHeight: '82vh' }} onClick={(e) => e.stopPropagation()}>
-                <div style={accentBar} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <div style={iconBox}><Users size={19} color="#fff" /></div>
-                        <div>
-                            <h1 style={{
-                                fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400,
-                                fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
-                            }}>Select Customer</h1>
-                            <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>
-                                {filteredCustomerNames.length} account{filteredCustomerNames.length !== 1 ? 's' : ''}
-                            </p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} aria-label="Close" style={closeBtn}
-                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
-                    ><X size={15} /></button>
+        <PosModal
+            open
+            onClose={onClose}
+            title="Select Customer"
+            subtitle={`${filteredCustomerNames.length} account${filteredCustomerNames.length !== 1 ? 's' : ''}`}
+            icon={<Users size={19} color="#fff" />}
+            size="md"
+            footerTone="quiet"
+            footer={(
+                <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 10, color: inkSoft }}>↑↓ navigate &middot; ↵ select &middot; esc close</span>
+                    <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 4,
+                        fontSize: 10, fontWeight: 700, border: `1px solid rgba(15,84,76,0.2)`,
+                        background: 'rgba(15,84,76,0.08)', color: teal[600]
+                    }}>POS Mode</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            )}
+        >
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                     <div style={{ padding: '10px 20px', borderBottom: `1px solid ${hairline}` }}>
                         <div style={{ position: 'relative' }}>
                             <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: inkSoft }} size={14} />
-                            <input type="text" placeholder="Search customers…" value={searchTerm}
+                            <input type="text" id={CUSTOMER_SEARCH_ID} placeholder="Search customers…" value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
-                                style={{ width: '100%', padding: '8px 10px 8px 34px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: "'JetBrains Mono', monospace" }}
-                                onFocus={e => { e.currentTarget.style.borderColor = teal[400]; e.currentTarget.style.background = teal[50]; }}
-                                onBlur={e => { e.currentTarget.style.borderColor = hairline; e.currentTarget.style.background = paper; }} />
+                                style={{ width: '100%', padding: '8px 10px 8px 34px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }} />
                             {searchTerm && (
                                 <button onClick={() => setSearchTerm('')}
                                     style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 20, height: 20, borderRadius: '50%', border: 'none', background: teal[50], color: inkSoft, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -745,18 +699,14 @@ return (
                     </div>
                     <div style={{ padding: '8px 20px', borderBottom: `1px solid ${hairline}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.08, textTransform: 'uppercase', color: inkSoft }}>Actions</span>
-                        <button onClick={() => setShowQuickAdd(!showQuickAdd)}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-                                fontFamily: 'inherit', cursor: 'pointer',
-                                background: showQuickAdd ? teal[50] : `linear-gradient(155deg, ${teal[500]}, ${teal[700]})`,
-                                color: showQuickAdd ? inkSoft : '#fff',
-                                border: showQuickAdd ? `1.4px solid ${hairline}` : '1.4px solid transparent',
-                                transition: 'all .12s'
-                            }}>
-                            {showQuickAdd ? <X size={13} /> : <UserPlus size={13} />}
+                        <Button
+                            variant={showQuickAdd ? 'secondary' : 'primary'}
+                            size="sm"
+                            icon={showQuickAdd ? <X size={13} /> : <UserPlus size={13} />}
+                            onClick={() => setShowQuickAdd(!showQuickAdd)}
+                        >
                             {showQuickAdd ? 'Cancel' : 'New Customer'}
-                        </button>
+                        </Button>
                     </div>
                     {showQuickAdd && (
                         <form onSubmit={handleQuickAdd} style={{ padding: '12px 20px', background: teal[50], borderBottom: `1px solid ${hairline}` }}>
@@ -767,26 +717,18 @@ return (
                                     </label>
                                     <input placeholder="e.g. Acme Printing" value={newCustomerName}
                                         onChange={e => setNewCustomerName(e.target.value)}
-                                        style={{ width: '100%', padding: '7px 10px', border: `1.4px solid ${hairline}`, borderRadius: 7, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
-                                        onFocus={e => { e.currentTarget.style.borderColor = teal[400]; e.currentTarget.style.background = teal[50]; }}
-                                        onBlur={e => { e.currentTarget.style.borderColor = hairline; e.currentTarget.style.background = paper; }} />
+                                        style={{ width: '100%', padding: '7px 10px', border: `1.4px solid ${hairline}`, borderRadius: 7, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }} />
                                 </div>
                                 <div>
                                     <label style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.06, textTransform: 'uppercase', color: inkSoft, marginBottom: 5, display: 'block' }}>Contact Info</label>
                                     <input placeholder="Phone or Email" value={newCustomerContact}
                                         onChange={e => setNewCustomerContact(e.target.value)}
-                                        style={{ width: '100%', padding: '7px 10px', border: `1.4px solid ${hairline}`, borderRadius: 7, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }}
-                                        onFocus={e => { e.currentTarget.style.borderColor = teal[400]; e.currentTarget.style.background = teal[50]; }}
-                                        onBlur={e => { e.currentTarget.style.borderColor = hairline; e.currentTarget.style.background = paper; }} />
+                                        style={{ width: '100%', padding: '7px 10px', border: `1.4px solid ${hairline}`, borderRadius: 7, fontSize: 13, color: ink, background: paper, outline: 'none', fontFamily: 'inherit' }} />
                                 </div>
                             </div>
-                            <button type="submit" disabled={!newCustomerName}
-                                style={{
-                                    ...tealBtn, width: '100%', justifyContent: 'center', opacity: newCustomerName ? 1 : 0.4,
-                                    cursor: newCustomerName ? 'pointer' : 'not-allowed'
-                                }}>
-                                <Save size={13} /> Save and Select
-                            </button>
+                            <Button type="submit" variant="primary" block disabled={!newCustomerName} icon={<Save size={13} />}>
+                                Save and Select
+                            </Button>
                         </form>
                     )}
                     <div style={{ flex: 1, overflowY: 'auto', background: paper }}>
@@ -812,18 +754,16 @@ return (
 
                                     return (
                                         <button key={name} onClick={() => onSelect(name)}
-                                            style={{ width: '100%', textAlign: 'left', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: 'none', cursor: 'pointer', background: isActive ? teal[50] : 'transparent', borderBottom: `1px solid ${teal[50]}`, transition: 'all .12s', fontFamily: 'inherit', fontSize: 13.5, color: ink }}
-                                            onMouseEnter={e => e.currentTarget.style.background = teal[50]}
-                                            onMouseLeave={e => e.currentTarget.style.background = isActive ? teal[50] : 'transparent'}>
+                                            className="pos-row"
+                                            data-active={isActive ? 'true' : undefined}
+                                            style={{ width: '100%', textAlign: 'left', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: 'none', borderBottom: `1px solid ${hairline}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, color: ink }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-                                                <div style={{
+                                                <div className="pos-avatar" style={{
                                                     width: 36, height: 36, borderRadius: 8, background: teal[50], color: inkSoft,
                                                     border: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                     fontSize: 14, fontWeight: 700, flexShrink: 0,
                                                     transition: 'all .12s'
-                                                }}
-                                                    onMouseEnter={e => { e.currentTarget.style.background = teal[600]; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = teal[600]; }}
-                                                    onMouseLeave={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
+                                                }}>
                                                     {initials}
                                                 </div>
                                                 <div style={{ minWidth: 0 }}>
@@ -832,13 +772,12 @@ return (
                                             </div>
                                             <div style={{ flexShrink: 0, textAlign: 'right' }}>
                                                 <div style={{
-                                                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-                                                    borderRadius: 5, fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
-                                                    border: `1px solid ${custDebt > 0 ? 'rgba(220,38,38,0.18)' : 'rgba(22,163,74,0.18)'}`,
-                                                    background: custDebt > 0 ? 'rgba(220,38,38,0.07)' : 'rgba(22,163,74,0.07)',
-                                                    color: custDebt > 0 ? '#dc2626' : '#16a34a'
+                                                    display: 'inline-flex', alignItems: 'center', padding: '2px 8px',
+                                                    borderRadius: 5,
+                                                    border: `1px solid ${custDebt > 0 ? borderDanger : borderSuccess}`,
+                                                    background: custDebt > 0 ? surfaceDanger : surfaceSuccess
                                                 }}>
-                                                    {companyConfig.currencySymbol}{custDebt.toLocaleString()}
+                                                    <Money value={custDebt} symbol={companyConfig.currencySymbol} size={11} color={custDebt > 0 ? danger : success} />
                                                 </div>
                                                 <div style={{ fontSize: 10, color: inkSoft, fontWeight: 700, letterSpacing: 0.06, textTransform: 'uppercase', marginTop: 2 }}>
                                                     {custDebt > 0 ? 'Outstanding' : 'Settled'}
@@ -850,17 +789,8 @@ return (
                             </div>
                         )}
                     </div>
-                    <div style={{ padding: '8px 20px', background: teal[50], borderTop: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: 10, color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>↑↓ navigate &middot; ↵ select &middot; esc close</span>
-                        <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 4,
-                            fontSize: 10, fontWeight: 700, border: `1px solid rgba(15,84,76,0.2)`,
-                            background: 'rgba(15,84,76,0.08)', color: teal[600]
-                        }}>POS Mode</span>
-                    </div>
-                </div>
             </div>
-        </div>
+        </PosModal>
     );
 };
 
@@ -870,27 +800,8 @@ export const HeldOrdersModal: React.FC<{
     onRetrieve: (o: HeldOrder) => void;
     onClose: () => void;
 }> = ({ orders, onRetrieve, onClose }) => {
-    const a11yRef = useModalA11y(true, onClose, 'Parked Orders');
     return (
-        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Select Variant" style={modalOverlay} onClick={onClose}>
-            <div style={{ ...modalCard, width: 520, maxHeight: '82vh' }} onClick={(e) => e.stopPropagation()}>
-                <div style={accentBar} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={iconBox}><Clock size={19} color="#fff" /></div>
-                    <div>
-                        <h1 style={{
-                            fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400,
-                            fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
-                        }}>Parked Orders</h1>
-                        <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>Retrieve a parked order</p>
-                    </div>
-                </div>
-                <button onClick={onClose} aria-label="Close" style={closeBtn}
-                    onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
-                ><X size={15} /></button>
-            </div>
+        <PosModal open onClose={onClose} title="Parked Orders" subtitle="Retrieve a parked order" icon={<Clock size={19} color="#fff" />} size="md">
             <div style={{ overflowY: 'auto', flex: 1 }}>
                 {orders.length === 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: inkSoft }}>
@@ -901,9 +812,8 @@ export const HeldOrdersModal: React.FC<{
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                         {orders.map(order => (
                             <div key={order.id}
-                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: `1px solid ${teal[50]}`, transition: 'all .12s' }}
-                                onMouseEnter={e => { e.currentTarget.style.background = teal[50]; }}
-                                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                                className="pos-row"
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: `1px solid ${hairline}` }}>
                                 <div>
                                     <div style={{ fontWeight: 700, color: ink }}>{order.customerName}</div>
                                     <div style={{ fontSize: 12, color: inkSoft, display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
@@ -913,24 +823,15 @@ export const HeldOrdersModal: React.FC<{
                                     </div>
                                     {order.note && <div style={{ fontSize: 12, color: inkSoft, fontStyle: 'italic', marginTop: 2 }}>Note: {order.note}</div>}
                                 </div>
-                                <button onClick={() => onRetrieve(order)}
-                                    style={{
-                                        fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600,
-                                        padding: '7px 20px', borderRadius: 999, cursor: 'pointer',
-                                        background: paper, border: `1.4px solid ${hairline}`, color: ink,
-                                        transition: 'all .15s'
-                                    }}
-                                    onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.borderColor = teal[200]; e.currentTarget.style.color = teal[700]; }}
-                                    onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.borderColor = hairline; e.currentTarget.style.color = ink; }}>
+                                <Button variant="secondary" size="sm" onClick={() => onRetrieve(order)}>
                                     Retrieve
-                                </button>
+                                </Button>
                             </div>
                         ))}
                     </div>
                 )}
             </div>
-            </div>
-        </div>
+        </PosModal>
     );
 };
 
@@ -944,54 +845,36 @@ export const VariantSelectorModal: React.FC<{
     const currency = companyConfig.currencySymbol;
     const [quantity, setQuantity] = useState(1);
 
-    const isStationery = product.type === 'Stationery' || product.type === 'Product';
-    const shouldSkipConfigure = isStationery || (product.variants && product.variants.length > 0);
-    const a11yRef = useModalA11y(true, onClose, 'Select Variant');
-
     const handleVariantClick = (v: ProductVariant) => {
         onSelect({ ...normalizeStoredPricing(v as unknown as Record<string, unknown>), quantity } as unknown as ProductVariant);
     };
 
     return (
-        <div ref={a11yRef} role="dialog" aria-modal="true" aria-label="Select Variant" style={modalOverlay} onClick={onClose}>
-            <div style={{ ...modalCard, width: 520, maxHeight: '82vh' }} onClick={(e) => e.stopPropagation()}>
-                <div style={accentBar} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 28px 18px', borderBottom: `1px solid ${hairline}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <div style={iconBox}><Printer size={19} color="#fff" /></div>
-                        <div>
-                            <h1 style={{
-                                fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400,
-                                fontSize: 22, margin: 0, color: teal[800], letterSpacing: 0.2
-                            }}>Select Variant</h1>
-                            <p style={{ margin: '2px 0 0', fontSize: 11.5, color: inkSoft, letterSpacing: 0.02 }}>{product.name}</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} aria-label="Close" style={closeBtn}
-                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
-                    ><X size={15} /></button>
-                </div>
+        <PosModal open onClose={onClose} title="Select Variant" subtitle={product.name} icon={<Printer size={19} color="#fff" />} size="md">
                 <div style={{ padding: '12px 24px', borderBottom: `1px solid ${hairline}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <label style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06 }}>Quantity to Add</label>
-                    <input type="number" min="1"
-                        style={{ width: 120, padding: '7px 10px', border: `1.4px solid ${hairline}`, borderRadius: 7, fontSize: 13, fontWeight: 700, color: ink, background: paper, outline: 'none', textAlign: 'right', fontFamily: 'inherit' }}
+                    <input type="number" min="1" inputMode="numeric"
+                        style={{ width: 120, padding: '7px 10px', border: `1.4px solid ${hairline}`, borderRadius: 7, fontSize: 13, fontWeight: 700, color: ink, background: paper, outline: 'none', textAlign: 'right', fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums' }}
                         value={quantity}
-                        onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                        onFocus={e => e.currentTarget.style.borderColor = teal[400]}
-                        onBlur={e => e.currentTarget.style.borderColor = hairline} />
+                        onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw === '') return; // let the user clear without snapping to 1
+                            const n = parseInt(raw, 10);
+                            if (Number.isFinite(n) && n >= 1) setQuantity(Math.floor(n));
+                        }}
+                        onBlur={() => setQuantity(q => (Number.isFinite(q) && q >= 1 ? Math.floor(q) : 1))}
+                        />
                 </div>
                 <div style={{ overflowY: 'auto', flex: 1 }}>
                     {product.variants?.map((v, vi) => (
                         <button key={v.id || vi} onClick={() => handleVariantClick(v)}
-                            style={{ width: '100%', textAlign: 'left', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none', cursor: 'pointer', background: 'transparent', borderBottom: `1px solid ${teal[50]}`, transition: 'all .12s', fontFamily: 'inherit' }}
-                            onMouseEnter={e => e.currentTarget.style.background = teal[50]}
-                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            className="pos-row"
+                            style={{ width: '100%', textAlign: 'left', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none', cursor: 'pointer', borderBottom: `1px solid ${hairline}`, fontFamily: 'inherit' }}>
                             <div style={{ flex: 1 }}>
                                 <div style={{ fontWeight: 700, color: ink, fontSize: 13 }}>{v.name}</div>
                                 {/* The variant's OWN persisted SKU. */}
                                 {v.sku && (
-                                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: inkSoft, marginTop: 2 }}>
+                                    <div style={{ fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', fontSize: 10, color: inkSoft, marginTop: 2 }}>
                                         {v.sku}
                                     </div>
                                 )}
@@ -1013,7 +896,6 @@ export const VariantSelectorModal: React.FC<{
                         </button>
                     ))}
                 </div>
-            </div>
-        </div>
+        </PosModal>
     );
 };

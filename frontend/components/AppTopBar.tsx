@@ -139,6 +139,7 @@ const AppTopBar: React.FC<AppTopBarProps> = ({
   const fyMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const bellButtonRef = useRef<HTMLButtonElement>(null);
+  const bellPanelRef = useRef<HTMLDivElement>(null);
   const searchTriggerRef = useRef<HTMLButtonElement>(null);
   const lastTriggerRef = useRef<HTMLElement | null>(null);
 
@@ -186,12 +187,15 @@ const AppTopBar: React.FC<AppTopBarProps> = ({
   useEffect(() => {
     if (!openMenu && !bellOpen && !searchOpen) return;
     const onPointerDown = (e: MouseEvent) => {
-      const target = e.target as Node;
+      const target = e.target as Node;      // The notification panel is portaled to document.body (the header's
+      // backdrop-filter would otherwise break its fixed positioning), so it is
+      // NOT inside bellButtonRef. Without this check every click on the panel
+      // looked like an outside click and closed it.
       const inside =
         (fyMenuRef.current?.contains(target) ||
           userMenuRef.current?.contains(target) ||
-          bellButtonRef.current?.contains(target)) ??
-        false;
+          bellButtonRef.current?.contains(target) ||
+          bellPanelRef.current?.contains(target)) ?? false;
       if (!inside && !searchOpen) {
         setOpenMenu(null);
         setBellOpen(false);
@@ -545,6 +549,7 @@ const AppTopBar: React.FC<AppTopBarProps> = ({
             )}
           </button>
           <NotificationCenter
+            ref={bellPanelRef}
             isOpen={bellOpen}
             onClose={() => setBellOpen(false)}
             notifications={notificationItems}

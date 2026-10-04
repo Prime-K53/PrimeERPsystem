@@ -90,13 +90,38 @@ export interface RevenueSourceSummary {
   reconciliationDelta: number;
 }
 
+export interface RevenueCoverage {
+  /** Documents handed to the builder (sales + invoices + orders). */
+  documentsScanned: number;
+  /** Documents that passed the recognition gate (draft/cancelled/void/voided excluded). */
+  documentsRecognized: number;
+  /** Documents dropped by the recognition gate. */
+  documentsExcludedByStatus: number;
+  /** Recognized documents that restate an already-loaded POS sale. */
+  documentsExcludedAsDuplicate: number;
+  /** Recognized documents whose lines carry no parseable date. */
+  undatedDocuments: number;
+  /** Revenue attributable to undated documents (never shown inside a date window). */
+  undatedRevenue: number;
+}
+
 export interface RevenueAnalysisDataset {
   lines: RevenueAnalysisLine[];
   transactions: RevenueAnalysisTransaction[];
   sourceSummaries: RevenueSourceSummary[];
   adjustmentLedger: RevenueAdjustmentLedgerRow[];
   itemPerformance: RevenueItemPerformanceRow[];
+  coverage: RevenueCoverage;
 }
+
+export const emptyRevenueCoverage = (): RevenueCoverage => ({
+  documentsScanned: 0,
+  documentsRecognized: 0,
+  documentsExcludedByStatus: 0,
+  documentsExcludedAsDuplicate: 0,
+  undatedDocuments: 0,
+  undatedRevenue: 0,
+});
 
 const toNumber = (value: unknown, fallback = 0): number => {
   const parsed = Number(value);
@@ -111,9 +136,9 @@ const toQuantity = (value: unknown): number => {
 
 const toDateKey = (value: unknown): string => {
   const raw = String(value || '').trim();
-  if (!raw) return new Date().toISOString();
+  if (!raw) return '';
   const parsed = new Date(raw);
-  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : raw;
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
 };
 
 const sourceLabel = (source: RevenueSource | 'ALL') => {
@@ -151,6 +176,23 @@ const isPosMirrorInvoice = (invoice: any, recognizedSaleIds: Set<string>) => {
     || noteText.includes('pos sale')
     || noteText.includes('source: pos')
     || (reference.length > 0 && recognizedSaleIds.has(reference))
+    || (invoiceId.length > 0 && recognizedSaleIds.has(invoiceId));
+};
+
+/**
+ * True when this invoice is a POS mirror of a sale that is ALREADY in the dataset.
+ *
+ * The sale row is the authoritative POS document; its mirror invoice restates the same
+ * money. Counting both double-counts POS revenue (and its cost/margin), which is why
+ * docs could exceed the GL. Only invoices that explicitly point at a loaded sale are
+ * suppressed — an invoice merely *labelled* POS with no loaded sale counterpart is kept,
+ * so no revenue is lost.
+ */
+const isDuplicateOfLoadedSale = (invoice: any, recognizedSaleIds: Set<string>) => {
+  if (recognizedSaleIds.size === 0) return false;
+  const reference = String(invoice?.reference || '').trim();
+  const invoiceId = String(invoice?.id || '').trim();
+  return (reference.length > 0 && recognizedSaleIds.has(reference))
     || (invoiceId.length > 0 && recognizedSaleIds.has(invoiceId));
 };
 
@@ -662,14 +704,24 @@ export const buildRevenueAnalysisDataset = ({
   batches?: any[];
 }): RevenueAnalysisDataset => {
   const orderKeysCoveredByInvoices = new Set<string>();
-  const recognizedSales = (Array.isArray(sales) ? sales : []).filter(isRecognizedSale);
+  const coverage = emptyRevenueCoverage();
+
+  const allSales = Array.isArray(sales) ? sales : [];
+  const allInvoices = Array.isArray(invoices) ? invoices : [];
+  const allOrders = Array.isArray(orders) ? orders : [];
+
+  const recognizedSales = allSales.filter(isRecognizedSale);
   const recognizedSaleIds = new Set<string>(
     recognizedSales
       .map((sale: any) => String(sale?.id || '').trim())
       .filter(Boolean)
   );
 
-  (Array.isArray(invoices) ? invoices : []).forEach((invoice: any) => {
+  coverage.documentsScanned = allSales.length + allInvoices.length + allOrders.length;
+  coverage.documentsExcludedByStatus = (allSales.length - recognizedSales.length)
+    + allInvoices.filter((invoice: any) => !isRecognizedInvoiceStatus(invoice?.status)).length;
+
+  allInvoices.forEach((invoice: any) => {
     // Canonical Phase 4 gate: excludes draft|cancelled|void|voided (any case).
     // Credit notes pass the gate but carry negative revenue (see sign below).
     if (!isRecognizedInvoiceStatus(invoice?.status)) return;
@@ -678,31 +730,50 @@ export const buildRevenueAnalysisDataset = ({
   });
 
   const lines: RevenueAnalysisLine[] = [];
+  const seenTransactions = new Set<string>();
+
+  // Fall back to the document number so a record missing its id still lands in the
+  // dataset and in the recognised count instead of vanishing from the totals.
+  const documentKey = (transaction: any, source: RevenueSource) =>
+    `${source}:${String(transaction?.id || getTransactionNumber(transaction) || '').trim()}`;
+
+  const pushDocument = (transaction: any, source: RevenueSource, transactionType: string, sign: 1 | -1 = 1) => {
+    seenTransactions.add(documentKey(transaction, source));
+    lines.push(...normalizeGenericTransaction(transaction, source, transactionType, sign));
+  };
 
   recognizedSales.forEach((sale: any) => {
-      lines.push(...normalizeGenericTransaction(sale, 'POS', 'Sale'));
-    });
+    pushDocument(sale, 'POS', 'Sale');
+  });
 
-  (Array.isArray(invoices) ? invoices : []).forEach((invoice: any) => {
+  allInvoices.forEach((invoice: any) => {
     if (!isRecognizedInvoiceStatus(invoice?.status)) return;
+
+    // The loaded POS sale already carries this money — suppress the mirror invoice
+    // instead of counting the same transaction twice.
+    if (isDuplicateOfLoadedSale(invoice, recognizedSaleIds)) {
+      coverage.documentsExcludedAsDuplicate += 1;
+      return;
+    }
+
     const sign = invoiceRevenueSign(invoice);
 
     if (isExaminationInvoice(invoice)) {
       const batch = findMatchingExaminationBatch(invoice, Array.isArray(batches) ? batches : []);
+      seenTransactions.add(documentKey(invoice, 'EXAMINATION'));
       lines.push(...buildExaminationLines(invoice, batch));
       return;
     }
 
     if (isPosMirrorInvoice(invoice, recognizedSaleIds)) {
-      // Treat POS mirror invoices as POS source for revenue analysis
-      lines.push(...normalizeGenericTransaction(invoice, 'POS', 'POS Invoice', sign));
+      pushDocument(invoice, 'POS', 'POS Invoice', sign);
       return;
     }
 
-    lines.push(...normalizeGenericTransaction(invoice, 'ORDER_FORM', 'Invoice', sign));
+    pushDocument(invoice, 'ORDER_FORM', 'Invoice', sign);
   });
 
-  (Array.isArray(orders) ? orders : []).forEach((order: any) => {
+  allOrders.forEach((order: any) => {
     const status = String(order?.status || '').trim().toLowerCase();
     const orderKeys = [
       String(order?.orderNumber || '').trim().toLowerCase(),
@@ -711,13 +782,27 @@ export const buildRevenueAnalysisDataset = ({
     const alreadyCovered = orderKeys.some((key) => orderKeysCoveredByInvoices.has(key));
 
     if (status !== 'completed' || alreadyCovered) return;
-    lines.push(...normalizeGenericTransaction({
+    pushDocument({
       ...order,
       date: order?.orderDate || order?.date
-    }, 'ORDER_FORM', 'Order'));
+    }, 'ORDER_FORM', 'Order');
   });
 
-  return buildRevenueAnalysisDatasetFromLines(lines);
+  coverage.documentsRecognized = seenTransactions.size;
+  coverage.undatedDocuments = new Set(
+    lines.filter((line) => !line.date).map((line) => `${line.source}:${line.transactionId}`)
+  ).size;
+  coverage.undatedRevenue = roundMoney(
+    lines.filter((line) => !line.date).reduce((sum, line) => sum + line.revenue, 0)
+  );
+
+  return { ...buildRevenueAnalysisDatasetFromLines(lines), coverage };
+};
+
+/** Undated documents have no place on a timeline — park them at the end. */
+const lineTime = (value: string): number => {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
 };
 
 export const buildRevenueAnalysisDatasetFromLines = (
@@ -731,12 +816,28 @@ export const buildRevenueAnalysisDatasetFromLines = (
       || Math.abs(line.roundingTotal) > 0.0001;
   });
 
+  const sortedLines = cleanedLines.sort((a, b) => lineTime(b.date) - lineTime(a.date));
+  const transactions = aggregateTransactions(cleanedLines);
+  const undatedKeys = new Set(
+    cleanedLines.filter((line) => !line.date).map((line) => `${line.source}:${line.transactionId}`)
+  );
+
   return {
-    lines: cleanedLines.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-    transactions: aggregateTransactions(cleanedLines),
+    lines: sortedLines,
+    transactions,
     sourceSummaries: buildSourceSummaries(cleanedLines),
     adjustmentLedger: buildAdjustmentLedger(cleanedLines),
-    itemPerformance: buildItemPerformance(cleanedLines)
+    itemPerformance: buildItemPerformance(cleanedLines),
+    coverage: {
+      documentsScanned: cleanedLines.length,
+      documentsRecognized: transactions.length,
+      documentsExcludedByStatus: 0,
+      documentsExcludedAsDuplicate: 0,
+      undatedDocuments: undatedKeys.size,
+      undatedRevenue: roundMoney(
+        cleanedLines.filter((line) => !line.date).reduce((sum, line) => sum + line.revenue, 0)
+      ),
+    },
   };
 };
 

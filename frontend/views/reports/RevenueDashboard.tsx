@@ -7,17 +7,17 @@ import { useOrders } from '../../context/OrdersContext';
 import { useExamination } from '../../context/ExaminationContext';
 import { useModuleRefresh } from '../../hooks/useModuleRefresh';
 import {
-  Activity, Coins, DollarSign, Layers3, Receipt, TrendingDown, TrendingUp, Users, Wallet, } from 'lucide-react';
+  Activity, AlertTriangle, Coins, DollarSign, Layers3, Receipt, TrendingDown, TrendingUp, Users, Wallet, } from 'lucide-react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis} from 'recharts';
 import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 
 import { getRevenueSourceLabel } from '../../services/revenueAnalysisService';
 import {
-  buildRevenueReportingSnapshot, matchesRevenueDateRange,
+  buildRevenueReportingSnapshot, resolveRevenueWindow,
   type RevenueDateRange,
 } from '../../services/revenueReportingService';
-import { reconcileRevenueToGl, sumPostedIncomeCredits } from '../../utils/glReconciliation';
-import { isRecognizedInvoiceStatus } from '../../utils/revenueRecognition';
+import { reconcileRevenueToGl, sumPostedExpenseDebits, sumPostedIncomeCredits } from '../../utils/glReconciliation';
+import { invoiceRevenueSign, isRecognizedInvoiceStatus } from '../../utils/revenueRecognition';
 import { currencyService } from '../../services/currencyService';
 
 const teal = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
@@ -27,6 +27,10 @@ const hairline = '#e4ddd1';
 
 const cardBase: React.CSSProperties = { background: '#FEFDFB', borderRadius: 14, border: `1.4px solid ${hairline}`, boxShadow: '0 1px 3px rgba(0,0,0,.04)' };
 const cardPad: React.CSSProperties = { ...cardBase, padding: 24 };
+
+const TREND_TITLES: Record<string, string> = {
+  day: 'Daily', week: 'Weekly', month: 'Monthly',
+};
 
 const RevenueDashboard: React.FC = () => {
   const { companyConfig } = useAuth();
@@ -55,31 +59,154 @@ const RevenueDashboard: React.FC = () => {
     buildRevenueReportingSnapshot({ sales, invoices, orders, batches: examinationBatches, dateRange, trendDays: 7 }),
     [sales, invoices, orders, examinationBatches, dateRange]);
 
-  const operatingExpenses = useMemo(() =>
-    (expenses || []).filter((expense: any) => matchesRevenueDateRange(expense?.date, dateRange)).reduce((sum: number, expense: any) => sum + Number(expense?.amount || 0), 0),
-    [expenses, dateRange]);
+  const inWindow = useMemo(
+    () => (date: unknown) => {
+      const { start, end } = resolveRevenueWindow(dateRange);
+      if (!start) return true;
+      const parsed = new Date(String(date || ''));
+      if (!Number.isFinite(parsed.getTime())) return false;
+      return parsed >= start && parsed <= end;
+    },
+    [dateRange]
+  );
 
-  const outstandingReceivables = useMemo(() =>
-    (invoices || []).filter((invoice: any) => matchesRevenueDateRange(invoice?.date, dateRange)).filter((invoice: any) => isRecognizedInvoiceStatus(invoice?.status)).reduce((sum: number, invoice: any) => { const t = Number(invoice?.totalAmount || invoice?.total || 0); const p = Number(invoice?.paidAmount || 0); return sum + Math.max(0, t - p); }, 0),
-    [invoices, dateRange]);
+  /**
+   * Operating expenses come from the POSTED LEDGER, not the `expenses` table.
+   * The table both misses everything posted by other paths (payroll, wages,
+   * supplier payments) and includes rows still awaiting approval that never
+   * reached the GL — which is how "Operating Expenses K0.00" sat under a real
+   * ledger while "Net Contribution" quietly reported gross profit.
+   */
+  const ledgerExpenses = useMemo(() =>
+    sumPostedExpenseDebits(ledger as any[], accounts as any[], inWindow),
+    [ledger, accounts, inWindow]);
+
+  const unpostedExpenseDocs = useMemo(() =>
+    (expenses || []).filter((expense: any) => inWindow(expense?.date)).length,
+    [expenses, inWindow]);
+
+  /**
+   * AR is a point-in-time balance, not a period flow: an invoice raised six
+   * months ago and still unpaid is exposure today. Filtering it by the selected
+   * window hid most of the book and made "Outstanding AR" look reconciled when
+   * it was not. Credit notes are excluded — they reduce AR and would otherwise
+   * be counted as new receivables.
+   */
+  const outstandingReceivables = useMemo(() => {
+    let amount = 0;
+    let count = 0;
+    (invoices || []).forEach((invoice: any) => {
+      if (!isRecognizedInvoiceStatus(invoice?.status)) return;
+      if (invoiceRevenueSign(invoice) !== 1) return;
+      const total = Number(invoice?.totalAmount ?? invoice?.total ?? 0);
+      const paid = Number(invoice?.paidAmount ?? 0);
+      const open = Math.max(0, total - paid);
+      if (open <= 0.0001) return;
+      amount += open;
+      count += 1;
+    });
+    return { amount, count };
+  }, [invoices]);
 
   // Phase 5 / C1: GL reconciliation — posted income credits vs recognized
   // document revenue (same PL-01 identity as run_reporting_reconciliation).
   const glReconciliation = useMemo(() => {
-    const gl = sumPostedIncomeCredits(ledger as any[], accounts as any[], (date) => matchesRevenueDateRange(date, dateRange));
+    const gl = sumPostedIncomeCredits(ledger as any[], accounts as any[], inWindow);
     return { ...reconcileRevenueToGl(report.totals.revenue, gl.glRevenue), ...gl };
-  }, [ledger, accounts, report.totals.revenue, dateRange]);
+  }, [ledger, accounts, report.totals.revenue, inWindow]);
 
-  const netContribution = report.totals.profitMargin - operatingExpenses;
+  const operatingExpenses = ledgerExpenses.glExpenses;
+  const grossProfit = report.totals.profitMargin;
+  const netContribution = grossProfit - operatingExpenses;
+
+  const coverage = report.coverage;
+  const windowLabel = report.windowStart ? `${report.windowStart} → ${report.windowEnd}` : `All time → ${report.windowEnd}`;
+
+  /**
+   * Only MATERIAL omissions belong in the alert banner. Draft/cancelled/void
+   * exclusions are correct accounting, not a defect — putting them here taught
+   * the reader to ignore the banner that actually matters.
+   */
+  const coverageWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    if (coverage.documentsExcludedAsDuplicate > 0) {
+      warnings.push(`${coverage.documentsExcludedAsDuplicate} POS mirror invoice(s) suppressed — the POS sale already carries that revenue.`);
+    }
+    if (coverage.undatedDocuments > 0 && dateRange !== 'all') {
+      warnings.push(`${coverage.undatedDocuments} document(s) worth ${formatCurrency(coverage.undatedRevenue)} have no usable date and sit outside this window — fix their dates in Sales.`);
+    }
+    if (!glReconciliation.withinTolerance) {
+      warnings.push(`The ledger holds ${formatCurrency(glReconciliation.glRevenue)} of income against ${formatCurrency(report.totals.revenue)} of documents. That ${formatCurrency(glReconciliation.delta)} gap is revenue the ledger recorded and this view did not — reconcile it before trusting any figure below.`);
+    }
+    if (operatingExpenses === 0 && unpostedExpenseDocs > 0) {
+      warnings.push(`${unpostedExpenseDocs} expense record(s) in this window were never posted to the ledger, so they are excluded here.`);
+    }
+    return warnings;
+  }, [coverage, dateRange, glReconciliation, operatingExpenses, unpostedExpenseDocs, report.totals.revenue]);
 
   const kpis = [
-    { label: 'Recognized Revenue', value: formatCurrency(report.totals.revenue), subtext: `${report.totals.transactionCount} posted transactions`, icon: TrendingUp, border: teal[500], iconBg: teal[50], iconColor: teal[500], textColor: teal[700] },
-    { label: 'Material Cost', value: formatCurrency(report.totals.materialCost), subtext: 'Recovered from sales and examination', icon: Layers3, border: inkSoft, iconBg: teal[50], iconColor: inkSoft, textColor: ink },
-    { label: 'Market Adjustments', value: formatCurrency(report.totals.adjustmentTotal), subtext: `${report.topAdjustments.length} tracked adjustment type(s)`, icon: Coins, border: teal[500], iconBg: teal[50], iconColor: teal[500], textColor: teal[700] },
-    { label: 'Profit Markup', value: formatCurrency(report.totals.profitMargin), subtext: report.totals.revenue > 0 ? `${((report.totals.profitMargin / report.totals.revenue) * 100).toFixed(1)}% of revenue` : 'No revenue in range', icon: DollarSign, border: report.totals.profitMargin >= 0 ? teal[600] : '#b5493f', iconBg: teal[50], iconColor: teal[600], textColor: teal[700] },
-    { label: 'Round Up / Down', value: `${report.totals.roundingTotal >= 0 ? '+' : ''}${formatCurrency(report.totals.roundingTotal)}`, subtext: 'Net rounding effect', icon: Activity, border: teal[600], iconBg: teal[50], iconColor: teal[600], textColor: teal[700] },
-    { label: 'Outstanding AR', value: formatCurrency(outstandingReceivables), subtext: 'Open invoice exposure', icon: Wallet, border: '#d99a3f', iconBg: '#fbead0', iconColor: '#d99a3f', textColor: '#d99a3f' },
-    { label: 'GL Reconciliation', value: `${glReconciliation.delta >= 0 ? '+' : ''}${formatCurrency(glReconciliation.delta)}`, subtext: glReconciliation.withinTolerance ? `GL agrees (${glReconciliation.entryCount} income credits)` : `Review: docs ${formatCurrency(glReconciliation.documentRevenue)} vs GL ${formatCurrency(glReconciliation.glRevenue)}`, icon: Receipt, border: glReconciliation.withinTolerance ? teal[600] : '#b5493f', iconBg: glReconciliation.withinTolerance ? teal[50] : '#fef0ee', iconColor: glReconciliation.withinTolerance ? teal[600] : '#b5493f', textColor: glReconciliation.withinTolerance ? teal[700] : '#b5493f' },
+    {
+      label: 'Recognized Revenue',
+      value: formatCurrency(report.totals.revenue),
+      subtext: `${report.totals.transactionCount} document(s) · ${windowLabel} · ${coverage.documentsExcludedByStatus} draft/void excluded`,
+      icon: TrendingUp, border: teal[500], iconBg: teal[50], iconColor: teal[500], textColor: teal[700],
+    },
+    {
+      label: 'Material Cost',
+      value: formatCurrency(report.totals.materialCost),
+      subtext: report.totals.revenue > 0
+        ? `${((report.totals.materialCost / report.totals.revenue) * 100).toFixed(1)}% of revenue`
+        : 'No revenue in range',
+      icon: Layers3, border: inkSoft, iconBg: teal[50], iconColor: inkSoft, textColor: ink,
+    },
+    {
+      label: 'Gross Profit',
+      value: formatCurrency(grossProfit),
+      subtext: report.totals.revenue > 0
+        ? `${((grossProfit / report.totals.revenue) * 100).toFixed(1)}% gross margin — revenue less material cost`
+        : 'No revenue in range',
+      icon: DollarSign,
+      border: grossProfit >= 0 ? teal[600] : '#b5493f',
+      iconBg: teal[50], iconColor: teal[600], textColor: teal[700],
+    },
+    {
+      label: 'Outstanding AR',
+      value: formatCurrency(outstandingReceivables.amount),
+      subtext: `${outstandingReceivables.count} open invoice(s) — all time, not this window`,
+      icon: Wallet, border: '#d99a3f', iconBg: '#fbead0', iconColor: '#d99a3f', textColor: '#d99a3f',
+    },
+    {
+      label: 'GL Reconciliation',
+      value: `${glReconciliation.delta >= 0 ? '+' : ''}${formatCurrency(glReconciliation.delta)}`,
+      subtext: glReconciliation.withinTolerance
+        ? `GL agrees within ${formatCurrency(glReconciliation.tolerance)} (${glReconciliation.entryCount} income credits)`
+        : `Ledger ${formatCurrency(glReconciliation.glRevenue)} vs documents ${formatCurrency(glReconciliation.documentRevenue)} — tolerance ${formatCurrency(glReconciliation.tolerance)}`,
+      icon: Receipt,
+      border: glReconciliation.withinTolerance ? teal[600] : '#b5493f',
+      iconBg: glReconciliation.withinTolerance ? teal[50] : '#fef0ee',
+      iconColor: glReconciliation.withinTolerance ? teal[600] : '#b5493f',
+      textColor: glReconciliation.withinTolerance ? teal[700] : '#b5493f',
+    },
+  ];
+
+  /**
+   * Adjustment and rounding tiles carried no information at K0.00 — two of nine
+   * KPI slots spent restating "nothing happened". They now only appear when there
+   * is something to say.
+   */
+  const conditionalKpis = [
+    ...(report.totals.adjustmentTotal !== 0 ? [{
+      label: 'Market Adjustments',
+      value: formatCurrency(report.totals.adjustmentTotal),
+      subtext: `${report.topAdjustments.length} adjustment type(s) applied`,
+      icon: Coins, border: teal[500], iconBg: teal[50], iconColor: teal[500], textColor: teal[700],
+    }] : []),
+    ...(report.totals.roundingTotal !== 0 ? [{
+      label: 'Round Up / Down',
+      value: `${report.totals.roundingTotal >= 0 ? '+' : ''}${formatCurrency(report.totals.roundingTotal)}`,
+      subtext: 'Net rounding effect',
+      icon: Activity, border: teal[600], iconBg: teal[50], iconColor: teal[600], textColor: teal[700],
+    }] : []),
   ];
 
   return (
@@ -100,7 +227,7 @@ const RevenueDashboard: React.FC = () => {
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          {kpis.map((kpi) => {
+          {[...kpis, ...conditionalKpis].map((kpi) => {
             const Icon = kpi.icon;
             return (
               <div key={kpi.label} style={{ background: '#FEFDFB', padding: '12px 16px', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: `1.4px solid ${hairline}`, borderLeft: `4px solid ${kpi.border}`, display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -116,6 +243,22 @@ const RevenueDashboard: React.FC = () => {
             );
           })}
         </div>
+
+        {(isLoading || isRefreshing || coverageWarnings.length > 0) && (
+          <div style={{ background: '#FEFDFB', border: `1.4px solid ${hairline}`, borderLeft: `4px solid ${coverageWarnings.length > 0 ? '#d99a3f' : teal[500]}`, borderRadius: 12, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            {coverageWarnings.length > 0 && (
+              <div style={{ color: '#d99a3f', flexShrink: 0, marginTop: 1 }}><AlertTriangle size={18} /></div>
+            )}
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: ink, margin: '0 0 4px' }}>
+                {coverageWarnings.length > 0 ? 'These figures are incomplete — read before acting on them' : 'Loading revenue records…'}
+              </p>
+              {coverageWarnings.map((warning) => (
+                <p key={warning} style={{ fontSize: 11.5, color: inkSoft, margin: '2px 0 0' }}>• {warning}</p>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -124,7 +267,9 @@ const RevenueDashboard: React.FC = () => {
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, color: teal[100], letterSpacing: 0.06, textTransform: 'uppercase', margin: 0 }}>Operating Expenses</p>
               <h3 style={{ fontSize: 24, fontWeight: 900, margin: '4px 0 0' }}>{formatCurrency(operatingExpenses)}</h3>
-              <p style={{ fontSize: 11, color: teal[100], fontWeight: 500, margin: '4px 0 0' }}>Operating expenses inside the selected window</p>
+              <p style={{ fontSize: 11, color: teal[100], fontWeight: 500, margin: '4px 0 0' }}>
+                Posted to the ledger in this window · {ledgerExpenses.entryCount} entr{(ledgerExpenses.entryCount === 1 ? 'y' : 'ies')}
+              </p>
             </div>
             <div style={{ padding: 12, background: 'rgba(255,255,255,.1)', borderRadius: 12 }}>
               <TrendingDown size={22} />
@@ -136,7 +281,9 @@ const RevenueDashboard: React.FC = () => {
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, color: teal[100], letterSpacing: 0.06, textTransform: 'uppercase', margin: 0 }}>Net Contribution</p>
               <h3 style={{ fontSize: 24, fontWeight: 900, margin: '4px 0 0' }}>{formatCurrency(netContribution)}</h3>
-              <p style={{ fontSize: 11, color: teal[100], fontWeight: 500, margin: '4px 0 0' }}>Profit markup less operating expenses</p>
+              <p style={{ fontSize: 11, color: teal[100], fontWeight: 500, margin: '4px 0 0' }}>
+                {formatCurrency(grossProfit)} gross profit less {formatCurrency(operatingExpenses)} posted operating expenses
+              </p>
             </div>
             <div style={{ padding: 12, background: 'rgba(255,255,255,.15)', borderRadius: 12 }}>
               <Receipt size={22} />
@@ -148,7 +295,7 @@ const RevenueDashboard: React.FC = () => {
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24 }}>
         <div style={cardPad}>
           <h3 style={{ fontWeight: 700, color: ink, fontSize: 13, margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <TrendingUp size={18} style={{ color: teal[500] }} /> 7-Day Revenue vs Markup Trend
+            <TrendingUp size={18} style={{ color: teal[500] }} /> {TREND_TITLES[report.trendBucket]} Revenue vs Gross Profit ({windowLabel})
           </h3>
           <div style={{ width: '100%', height: 280, minHeight: 180 }}>
             <ResponsiveContainer width="100%" height="100%" minHeight={180} minWidth={0}>
@@ -166,7 +313,7 @@ const RevenueDashboard: React.FC = () => {
                 <YAxis tick={{ fontSize: 11, fill: inkSoft }} axisLine={false} tickLine={false} tickFormatter={(value) => `${currency}${value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}`} />
                 <Tooltip formatter={(value: number) => [formatCurrency(value), '']} contentStyle={{ borderRadius: 12, border: `1.4px solid ${hairline}`, fontSize: 12 }} />
                 <Area type="monotone" dataKey="revenue" name="Revenue" stroke={teal[500]} strokeWidth={2} fill="url(#trendRevenue)" />
-                <Area type="monotone" dataKey="profitMargin" name="Profit Markup" stroke={teal[200]} strokeWidth={2} fill="url(#trendMargin)" />
+                <Area type="monotone" dataKey="profitMargin" name="Gross Profit" stroke={teal[200]} strokeWidth={2} fill="url(#trendMargin)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -184,7 +331,7 @@ const RevenueDashboard: React.FC = () => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <p style={{ fontWeight: 700, color: ink, margin: 0, fontSize: 13 }}>{formatCurrency(customer.revenue)}</p>
-                  <p style={{ fontSize: 11, color: teal[600], fontWeight: 500, margin: 0 }}>{formatCurrency(customer.profitMargin)} markup</p>
+                  <p style={{ fontSize: 11, color: teal[600], fontWeight: 500, margin: 0 }}>{formatCurrency(customer.profitMargin)} gross profit</p>
                 </div>
               </div>
             ))}
@@ -206,7 +353,7 @@ const RevenueDashboard: React.FC = () => {
                 <YAxis tick={{ fontSize: 11, fill: inkSoft }} axisLine={false} tickLine={false} tickFormatter={(value) => `${currency}${value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}`} />
                 <Tooltip formatter={(value: number) => [formatCurrency(value), '']} contentStyle={{ borderRadius: 12, border: `1.4px solid ${hairline}`, fontSize: 12 }} />
                 <Bar dataKey="revenue" name="Revenue" fill={teal[500]} radius={[6, 6, 0, 0]} />
-                <Bar dataKey="profitMargin" name="Profit Markup" fill={teal[200]} radius={[6, 6, 0, 0]} />
+                <Bar dataKey="profitMargin" name="Gross Profit" fill={teal[200]} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -246,7 +393,7 @@ const RevenueDashboard: React.FC = () => {
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Transactions</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Revenue</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Adjustments</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right' }}>Profit Markup</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'right' }}>Gross Profit</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Manual Override</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Rounding</th>
                 </tr>
@@ -289,7 +436,7 @@ const RevenueDashboard: React.FC = () => {
                   <th style={{ padding: '12px 16px' }}>Customer</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Revenue</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Adjustments</th>
-                  <th style={{ padding: '12px 16px', textAlign: 'right' }}>Profit Markup</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'right' }}>Gross Profit</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Manual Override</th>
                   <th style={{ padding: '12px 16px', textAlign: 'right' }}>Rounding</th>
                 </tr>

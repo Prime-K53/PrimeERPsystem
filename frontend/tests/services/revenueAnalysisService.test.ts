@@ -3,26 +3,26 @@ import { buildRevenueAnalysisDataset } from '../../services/revenueAnalysisServi
 import { buildRevenueReportingSnapshot } from '../../services/revenueReportingService';
 
 describe('revenueAnalysisService', () => {
-  it('skips mirrored POS invoices and excludes profit margin snapshots from the adjustment ledger', () => {
-    const saleItems = [
-      {
-        id: 'ITEM-1',
-        productId: 'ITEM-1',
-        productName: 'Flyers',
-        quantity: 1,
-        price: 120,
-        subtotal: 120,
-        cost: 60,
-        adjustmentSnapshots: [
-          { name: 'Paper uplift', type: 'FIXED', value: 10, calculatedAmount: 10 },
-          { name: 'Profit Margin', type: 'FIXED', value: 50, calculatedAmount: 50 },
-        ],
-        adjustmentTotal: 10,
-        profitMarginAmount: 50,
-        roundingDifference: 0,
-      },
-    ];
+  const saleItems = [
+    {
+      id: 'ITEM-1',
+      productId: 'ITEM-1',
+      productName: 'Flyers',
+      quantity: 1,
+      price: 120,
+      subtotal: 120,
+      cost: 60,
+      adjustmentSnapshots: [
+        { name: 'Paper uplift', type: 'FIXED', value: 10, calculatedAmount: 10 },
+        { name: 'Profit Margin', type: 'FIXED', value: 50, calculatedAmount: 50 },
+      ],
+      adjustmentTotal: 10,
+      profitMarginAmount: 50,
+      roundingDifference: 0,
+    },
+  ];
 
+  it('suppresses a POS mirror invoice instead of counting the sale twice', () => {
     const dataset = buildRevenueAnalysisDataset({
       sales: [
         {
@@ -46,11 +46,99 @@ describe('revenueAnalysisService', () => {
       ],
     });
 
-    expect(dataset.transactions).toHaveLength(2);
+    // The sale is the authoritative POS document. Counting its mirror invoice as
+    // well reported the same money twice.
+    expect(dataset.transactions).toHaveLength(1);
     expect(dataset.transactions[0].source).toBe('POS');
+    expect(dataset.sourceSummaries.find((s) => s.source === 'ALL')?.revenue).toBe(120);
+    expect(dataset.coverage.documentsExcludedAsDuplicate).toBe(1);
     expect(dataset.adjustmentLedger).toHaveLength(1);
     expect(dataset.adjustmentLedger[0].adjustmentName).toBe('Paper uplift');
-    expect(dataset.adjustmentLedger[0].totalAmount).toBe(20);
+  });
+
+  it('keeps a POS-labelled invoice when no sale row backs it', () => {
+    const dataset = buildRevenueAnalysisDataset({
+      sales: [],
+      invoices: [
+        {
+          id: 'INV-ORPHAN',
+          date: '2026-04-20T10:00:00.000Z',
+          status: 'Paid',
+          customerName: 'Walk-in',
+          notes: 'POS Sale - Source: POS',
+          items: saleItems,
+        },
+      ],
+    });
+
+    expect(dataset.transactions).toHaveLength(1);
+    expect(dataset.sourceSummaries.find((s) => s.source === 'ALL')?.revenue).toBe(120);
+    expect(dataset.coverage.documentsExcludedAsDuplicate).toBe(0);
+  });
+
+  it('reports every revenue document it refused to recognise', () => {
+    const dataset = buildRevenueAnalysisDataset({
+      sales: [
+        { id: 'POS-OK', date: '2026-04-20T10:00:00.000Z', status: 'Paid', items: saleItems },
+        { id: 'POS-DRAFT', date: '2026-04-20T10:00:00.000Z', status: 'Draft', items: saleItems },
+      ],
+      invoices: [
+        { id: 'INV-VOID', date: '2026-04-20T10:00:00.000Z', status: 'Voided', items: saleItems },
+      ],
+    });
+
+    expect(dataset.coverage.documentsScanned).toBe(3);
+    expect(dataset.coverage.documentsRecognized).toBe(1);
+    expect(dataset.coverage.documentsExcludedByStatus).toBe(2);
+    expect(dataset.coverage.undatedDocuments).toBe(0);
+  });
+
+  it('never books an undated document as today and keeps it out of date windows', () => {
+    const undated = {
+      id: 'INV-NODATE',
+      status: 'Paid',
+      customerName: 'Acme',
+      items: saleItems,
+    };
+
+    const all = buildRevenueReportingSnapshot({ invoices: [undated], dateRange: 'all' });
+    expect(all.totals.revenue).toBe(120);
+    expect(all.coverage.undatedDocuments).toBe(1);
+    expect(all.coverage.undatedRevenue).toBe(120);
+
+    const month = buildRevenueReportingSnapshot({
+      invoices: [undated],
+      dateRange: 'month',
+      referenceDate: new Date('2026-04-30T12:00:00.000Z'),
+    });
+    expect(month.totals.revenue).toBe(0);
+    expect(month.coverage.undatedRevenue).toBe(120);
+  });
+
+  it('scales the trend to the selected window instead of always plotting 7 days', () => {
+    const week = buildRevenueReportingSnapshot({ dateRange: 'week', referenceDate: new Date('2026-04-30T12:00:00.000Z') });
+    expect(week.trendBucket).toBe('day');
+    expect(week.trend).toHaveLength(7);
+
+    const month = buildRevenueReportingSnapshot({ dateRange: 'month', referenceDate: new Date('2026-04-30T12:00:00.000Z') });
+    expect(month.trend).toHaveLength(31);
+
+    const quarter = buildRevenueReportingSnapshot({ dateRange: 'quarter', referenceDate: new Date('2026-04-30T12:00:00.000Z') });
+    expect(quarter.trendBucket).toBe('week');
+    expect(quarter.trend).toHaveLength(14);
+
+    const year = buildRevenueReportingSnapshot({ dateRange: 'year', referenceDate: new Date('2026-04-30T12:00:00.000Z') });
+    expect(year.trendBucket).toBe('month');
+    expect(year.trend).toHaveLength(12);
+  });
+
+  it('reports the window bounds behind the headline number', () => {
+    const month = buildRevenueReportingSnapshot({ dateRange: 'month', referenceDate: new Date('2026-04-30T12:00:00.000Z') });
+    expect(month.windowStart).toBe('2026-04-01');
+    expect(month.windowEnd).toBe('2026-04-30');
+
+    const all = buildRevenueReportingSnapshot({ dateRange: 'all', referenceDate: new Date('2026-04-30T12:00:00.000Z') });
+    expect(all.windowStart).toBeNull();
   });
 
   it('captures examination adjustments, rounding, margin, and sub-account tagging from batches', () => {

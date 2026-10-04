@@ -15,6 +15,8 @@ import { generateNextId } from '../../../utils/helpers';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../../../utils/pricing';
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
+import { formatAmount } from '../../../utils/posMoney';
+import { registerType, stock as stockTokens, stockState, hairline, inkSoft, NUMERIC_FONT, UI_FONT } from '../theme';
 
 const B = '#1E3A5F';
 const B7 = '#2563EB';
@@ -42,6 +44,60 @@ interface ProductGridProps {
 }
 
 type ViewMode = 'Large' | 'Small' | 'List';
+
+/**
+ * Whether an item is out of stock, i.e. exactly the case StockChip states in
+ * words. One predicate for both: a dimmed tile next to a healthy chip (or the
+ * reverse) reads as a bug to the cashier.
+ *
+ * Non-inventory-bearing items (Product, Service) are never out of stock —
+ * they have no on-hand quantity to run out.
+ */
+const isOutOfStock = (item: Item): boolean =>
+    isInventoryBearingItem(item) &&
+    stockState(Number(item.stock ?? 0), Number(item.minStockLevel ?? 0)) === 'out';
+
+/**
+ * Stock as a dot + number, never a bare colour and never the old S/P letter
+ * badge (which conveyed "Service/Product" — already obvious from the tile).
+ *
+ * Out-of-stock is stated in words because the tile is also disabled: a
+ * cashier who cannot click a tile still needs to know *why*.
+ */
+const StockChip: React.FC<{ item: Item; compact?: boolean }> = ({ item, compact }) => {
+    if (!isInventoryBearingItem(item)) {
+        return (
+            <span style={{ ...registerType.meta, color: inkSoft, whiteSpace: 'nowrap' }}>
+                {item.type === 'Service' ? 'Service' : (item.type || 'Item')}
+            </span>
+        );
+    }
+
+    const state = stockState(Number(item.stock ?? 0), Number(item.minStockLevel ?? 0));
+    const dot = state === 'ok' ? stockTokens.dotOk : state === 'low' ? stockTokens.dotLow : stockTokens.dotOut;
+    const tint = state === 'ok' ? stockTokens.ok : state === 'low' ? stockTokens.low : stockTokens.out;
+
+    return (
+        <span
+            style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                ...registerType.meta, color: tint, whiteSpace: 'nowrap',
+            }}
+            title={state === 'out' ? 'Out of stock' : state === 'low' ? 'Low stock' : 'In stock'}
+        >
+            <span
+                aria-hidden="true"
+                style={{
+                    width: compact ? 6 : 7, height: compact ? 6 : 7, borderRadius: 9999,
+                    background: dot, flexShrink: 0,
+                }}
+            />
+            {state === 'out'
+                ? 'Out of stock'
+                : <>{formatAmount(Number(item.stock ?? 0))}{!compact && item.unit ? ` ${item.unit}` : ''}</>}
+        </span>
+    );
+};
 
 export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, onConfigureService, onRecall, heldCount, onZReport }) => {
     const { companyConfig, user } = useAuth(); const { boms } = useProduction();
@@ -341,10 +397,10 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                     }
                 }}
             >
-                {companyConfig.transactionSettings?.pos?.showItemImages && (
+                {companyConfig.transactionSettings?.pos?.showItemImages && item.image && (
                     <div style={{
                         width: '100%',
-                        aspectRatio: '1',
+                        aspectRatio: '16 / 10',
                         background: B50,
                         marginBottom: 8,
                         overflow: 'hidden',
@@ -354,49 +410,41 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                         borderRadius: 8,
                         border: `1px solid ${LINE}`
                     }}>
-                        {item.image ? (
-                            <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                            <Box size={viewMode === 'Small' ? 18 : 24} style={{ color: SOFT }} />
-                        )}
+                        <img src={item.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
-                    <div style={{ padding: '4px 5px', borderRadius: 6, background: B50, color: SOFT, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {getCategoryIcon(item.category)}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: viewMode === 'Small' ? 11 : 12.5, fontWeight: 600, color: INK, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                            {item.name}
-                        </div>
-                        {viewMode !== 'Small' && (
-                            <div style={{ fontSize: 9.5, color: SOFT, fontFamily: "'JetBrains Mono',monospace", marginTop: 2 }}>{item.sku}</div>
-                        )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                        ...registerType.body,
+                        fontWeight: 600,
+                        color: isOutOfStock(item) ? SOFT : INK,
+                        overflow: 'hidden',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                    }}>
+                        {item.name}
                     </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 6, borderTop: `1px solid ${LINE}` }}>
-                    <div>
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, marginTop: 'auto', paddingTop: 8 }}>
+                    <div style={{ minWidth: 0 }}>
                         {item.isVariantParent ? (
-                            <span style={{ fontSize: viewMode === 'Small' ? 11 : 13, fontWeight: 700, color: INK }}>
-                                From&nbsp;{currency}{formatNumber(lowestVariantPrice(item))} <span style={{ fontSize: 9, color: SOFT }}>▼</span>
+                            <span style={{ ...registerType.price, color: isOutOfStock(item) ? SOFT : INK, whiteSpace: 'nowrap' }}>
+                                From&nbsp;{currency}{formatAmount(lowestVariantPrice(item))}
                             </span>
                         ) : (
-                            <span style={{ fontSize: viewMode === 'Small' ? 11 : 13, fontWeight: 700, color: INK }}>
-                                {currency}{formatNumber(price(item))}
-                                {(item.type === 'Service' || item.category === 'Service') && item.pages ? <span style={{ fontSize: 9, fontWeight: 400, color: SOFT, marginLeft: 1 }}>/pg</span> : ''}
+                            <span style={{ ...registerType.price, fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', color: isOutOfStock(item) ? SOFT : INK, whiteSpace: 'nowrap' }}>
+                                {currency}{formatAmount(price(item))}
+                                {(item.type === 'Service' || item.category === 'Service') && item.pages ? <span style={{ ...registerType.meta, fontWeight: 400, color: SOFT, marginLeft: 2 }}>/pg</span> : ''}
                             </span>
                         )}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {isInventoryBearingItem(item) && (
-                            <span style={{ fontSize: 9.5, fontWeight: 500, color: item.stock <= item.minStockLevel ? RED : SOFT }}>
-                                {item.stock} {item.unit}
-                            </span>
+                        {item.isVariantParent && (
+                            <div style={{ ...registerType.meta, color: SOFT, marginTop: 2 }}>
+                                {item.variants?.length ?? 0} option{(item.variants?.length ?? 0) === 1 ? '' : 's'}
+                            </div>
                         )}
-                        <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 4, textTransform: 'uppercase', background: item.type === 'Service' ? B100 : B50, color: item.type === 'Service' ? B7 : SOFT }}>
-                            {(item.type || '?').charAt(0)}
-                        </span>
                     </div>
+                    <StockChip item={item} compact={viewMode === 'Small'} />
                 </div>
             </button>
         ));

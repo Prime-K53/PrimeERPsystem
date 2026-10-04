@@ -53,10 +53,83 @@ export const success = '#0F6E43';
 /** Semantic backgrounds for banners and states. */
 export const surfaceDanger = '#fef2f2';
 export const borderDanger = '#fecaca';
+/** Border for positive/settled chips. Pairs with `surfaceSuccess`. */
+export const borderSuccess = '#a7e3c8';
 export const surfaceSuccess = '#ecfdf5';
 export const surfaceWarning = '#fffbeb';
 export const borderWarning = '#fde68a';
 export const textWarning = '#b45309';
+
+/* ------------------------------------------------------------------ */
+/* Register stock states                                               */
+/* ------------------------------------------------------------------ */
+/**
+ * Stock is never communicated by colour alone — every state ships a dot AND
+ * a number, and `out` additionally disables the tile and shows a text label.
+ * A red/green pair alone fails for ~8% of male cashier users.
+ *
+ * Contrast measured against `surface` (#FFFFFF):
+ *   stockOk    6.4:1  AA
+ *   stockLow   5.0:1  AA
+ *   stockOut   6.4:1  AA
+ */
+export const stock = {
+  ok: '#0F6E43',
+  low: '#B45309',
+  out: '#A8382F',
+  /** Dot fills. Always paired with the matching text token above. */
+  dotOk: '#158F55',
+  dotLow: '#D97706',
+  dotOut: '#B3402F',
+} as const;
+
+/**
+ * A single stock level is the boundary between "healthy" and "low". Kept here
+ * rather than inlined so the product tile and the cart cannot disagree.
+ */
+export const LOW_STOCK_AT = 5;
+
+/**
+ * Classify an item's on-hand quantity.
+ *
+ * Services are never stock-bounded, so they always report `ok` and render
+ * without a dot — showing "0 in stock" on a photocopy service is a lie.
+ */
+export function stockState(
+  stockQty: number | null | undefined,
+  minLevel: number | null | undefined,
+): 'ok' | 'low' | 'out' {
+  if (stockQty == null) return 'ok';
+  const lowAt = minLevel == null ? LOW_STOCK_AT : minLevel;
+  if (stockQty <= 0) return 'out';
+  return stockQty <= lowAt ? 'low' : 'ok';
+}
+
+/* ------------------------------------------------------------------ */
+/* Register type scale                                                 */
+/* ------------------------------------------------------------------ */
+/**
+ * One scale for the whole register (see the register redesign spec):
+ *   12  meta      — stock, SKU, secondary labels
+ *   14  body      — item names, cart lines
+ *   16  price     — tile price, line total
+ *   28  total     — the single largest number on screen
+ */
+export const registerType = {
+  meta: { fontSize: 12, lineHeight: 1.35 },
+  body: { fontSize: 14, lineHeight: 1.4 },
+  price: { fontSize: 16, fontWeight: 700, lineHeight: 1.2 },
+  total: { fontSize: 28, fontWeight: 700, lineHeight: 1.1, letterSpacing: -0.4 },
+} as const;
+
+/** The one accent. Primary action and selection only — never decoration. */
+export const ACCENT = teal[600];
+export const ACCENT_HOVER = teal[700];
+export const ACCENT_SOFT = teal[50];
+export const ACCENT_BORDER = teal[200];
+
+/** Minimum interactive target. Cashiers use this on a touchscreen all day. */
+export const TAP_MIN = 44;
 
 /** One shared focus indicator. WCAG 2.4.7 — never remove without replacing. */
 export const FOCUS_RING = `0 0 0 2px ${paper}, 0 0 0 4px ${teal[500]}`;

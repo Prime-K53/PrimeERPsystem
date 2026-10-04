@@ -1,5 +1,5 @@
 import { isPostedLedgerEntry } from '../services/accountingEngine';
-import { isIncomeAccount } from './accountType';
+import { isExpenseAccount, isIncomeAccount } from './accountType';
 import type { Account, LedgerEntry } from '../types';
 
 /**
@@ -17,16 +17,21 @@ export interface GlRevenueSummary {
   transactionCount: number;
 }
 
+export interface GlExpenseSummary {
+  glExpenses: number;
+  entryCount: number;
+  transactionCount: number;
+}
+
 const toNumber = (value: unknown): number => {
   const n = Number(value || 0);
   return Number.isFinite(n) ? n : 0;
 };
 
-export const sumPostedIncomeCredits = (
-  ledger: Array<Partial<LedgerEntry>> = [],
-  accounts: Array<Partial<Account>> = [],
-  isInRange?: (date: unknown) => boolean
-): GlRevenueSummary => {
+const roundMoney = (value: number): number =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+
+const indexAccounts = (accounts: Array<Partial<Account>> = []) => {
   const byId = new Map<string, Partial<Account>>();
   for (const account of accounts || []) {
     if (!account) continue;
@@ -35,30 +40,85 @@ export const sumPostedIncomeCredits = (
       if (k) byId.set(k, account);
     }
   }
-  const isIncomeCredit = (entry: Partial<LedgerEntry>): boolean => {
-    const ref = String(entry.creditAccountId || '').trim();
-    if (!ref) return false;
-    const account = byId.get(ref);
-    if (account) return isIncomeAccount(account);
-    // Fallback for ledgers whose account registry is unavailable.
-    return ref.startsWith('4');
-  };
+  return byId;
+};
 
-  let glRevenue = 0;
+/**
+ * Sum one side of every posted ledger row, restricted to accounts of a given
+ * kind. Shared by revenue (income credits) and expenses (expense debits) so
+ * both KPIs are read from exactly the same population of rows.
+ */
+const sumPostedSide = (
+  side: 'creditAccountId' | 'debitAccountId',
+  ledger: Array<Partial<LedgerEntry>> = [],
+  byAccountId: Map<string, Partial<Account>> = new Map(),
+  isInRange?: (date: unknown) => boolean
+) => {
+  const isRevenueSide = side === 'creditAccountId';
+  let total = 0;
   let entryCount = 0;
   const transactions = new Set<string>();
+
   for (const entry of ledger || []) {
     if (!isPostedLedgerEntry(entry)) continue;
     if (isInRange && !isInRange((entry as any).date)) continue;
-    if (!isIncomeCredit(entry)) continue;
-    glRevenue += toNumber((entry as any).amount);
+
+    const ref = String((entry as any)[side] || '').trim();
+    if (!ref) continue;
+
+    const account = byAccountId.get(ref);
+    let qualifies: boolean;
+    if (account) {
+      qualifies = isRevenueSide ? isIncomeAccount(account) : isExpenseAccount(account);
+    } else {
+      // Fallback for ledgers whose account registry is unavailable: income is the
+      // 4xxx range, expenses the 5xxx range.
+      qualifies = isRevenueSide ? ref.startsWith('4') : ref.startsWith('5');
+    }
+    if (!qualifies) continue;
+
+    total += toNumber((entry as any).amount);
     entryCount += 1;
     transactions.add(String((entry as any).referenceId || (entry as any).id || entryCount));
   }
+
+  return { total: roundMoney(total), entryCount, transactionCount: transactions.size };
+};
+
+export const sumPostedIncomeCredits = (
+  ledger: Array<Partial<LedgerEntry>> = [],
+  accounts: Array<Partial<Account>> = [],
+  isInRange?: (date: unknown) => boolean
+): GlRevenueSummary => {
+  const byAccountId = indexAccounts(accounts);
+  const summary = sumPostedSide('creditAccountId', ledger, byAccountId, isInRange);
   return {
-    glRevenue: Math.round((glRevenue + Number.EPSILON) * 100) / 100,
-    entryCount,
-    transactionCount: transactions.size,
+    glRevenue: summary.total,
+    entryCount: summary.entryCount,
+    transactionCount: summary.transactionCount,
+  };
+};
+
+/**
+ * Posted operating expenses — debits to expense accounts.
+ *
+ * Operating expenses must come from the ledger, not from the `expenses` document
+ * table: the table misses everything posted through other paths (payroll runs,
+ * wages, supplier payments) and includes rows still awaiting approval that never
+ * reached the GL. Reading the ledger keeps "Net Contribution" on the same basis as
+ * the GL Reconciliation tile.
+ */
+export const sumPostedExpenseDebits = (
+  ledger: Array<Partial<LedgerEntry>> = [],
+  accounts: Array<Partial<Account>> = [],
+  isInRange?: (date: unknown) => boolean
+): GlExpenseSummary => {
+  const byAccountId = indexAccounts(accounts);
+  const summary = sumPostedSide('debitAccountId', ledger, byAccountId, isInRange);
+  return {
+    glExpenses: summary.total,
+    entryCount: summary.entryCount,
+    transactionCount: summary.transactionCount,
   };
 };
 
@@ -74,13 +134,17 @@ export const reconcileRevenueToGl = (
   documentRevenue: number,
   glRevenue: number
 ): RevenueGlReconciliation => {
-  const tolerance = Math.max(1, Math.abs(documentRevenue) * 0.005);
-  const delta = Math.round(((glRevenue - documentRevenue + Number.EPSILON)) * 100) / 100;
+  // The tolerance must be sized against the LARGER side. Deriving it from the
+  // document figure meant that whenever documents were wrong (truncated, missing,
+  // mis-dated) the tolerance collapsed with them and the check could never pass —
+  // the exact failure mode it exists to catch.
+  const tolerance = Math.max(1, Math.abs(Math.max(documentRevenue, glRevenue)) * 0.005);
+  const delta = roundMoney(glRevenue - documentRevenue);
   return {
     documentRevenue,
     glRevenue,
     delta,
-    tolerance: Math.round((tolerance + Number.EPSILON) * 100) / 100,
+    tolerance: roundMoney(tolerance),
     withinTolerance: Math.abs(delta) <= tolerance,
   };
 };

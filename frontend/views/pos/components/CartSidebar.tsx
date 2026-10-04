@@ -1,33 +1,44 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { ShoppingCart, User, Plus, Minus, ShoppingBag, UserPlus, ChevronRight, X } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { User, Plus, Minus, ShoppingBag, UserPlus, ChevronRight, X, ReceiptText, Trash2, Tag, Banknote } from 'lucide-react';
 import { CartItem, Sale } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { PrintJobCartCard } from '../../../components/printing/PrintJobCartCard';
 
 import { formatNumber, generateNextId } from '../../../utils/helpers';
-import { roundToNearest, roundUpToStep } from '../../../utils/roundingUtils';
 import { displayPrice } from '../../../services/pricingDisplayService';
-import { calculateLineProfit, calculateSaleProfit } from '../../../utils/saleProfit';
+import { calculateSaleProfit } from '../../../utils/saleProfit';
 import { resolveItemAdjustmentSnapshots, getMarketAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
-import { getCustomerDisplayName } from '../../../utils/customerDisplay';
 import {
   getQuickPhotocopyLineDisplay,
   getQuickPhotocopyTotals,
   isQuickPhotocopyItem,
 } from '../../../services/quickPhotocopyService';
-
-const B7 = '#2563EB';
-const B6 = '#1D4ED8';
-const B100 = '#DBEAFE';
-const B50 = '#EFF6FF';
-const PAPER = '#faf9f6';
-const INK = '#16211f';
-const SOFT = '#5c6b68';
-const LINE = '#e1e5e2';
-const AMBER = '#b8863f';
-const RED = '#b3402f';
-const GREEN = '#1f7a52';
+import { Button } from './Button';
+import {
+  ACCENT,
+  ACCENT_BORDER,
+  ACCENT_SOFT,
+  NUMERIC_FONT,
+  UI_FONT,
+  TAP_MIN,
+  blurVisible,
+  borderWarning,
+  controlBase,
+  danger,
+  focusVisible,
+  hairline,
+  hairlineStrong,
+  ink,
+  inkSoft,
+  paper,
+  radius,
+  registerType,
+  surface,
+  surfaceWarning,
+  textWarning,
+  type as posType,
+} from '../theme';
 
 interface CartSidebarProps {
     cart: CartItem[];
@@ -69,48 +80,82 @@ interface CartSidebarProps {
     onManualDiscountChange?: (value: number) => void;
 }
 
+/** Percentages read as typed: `5`, never `5.00`. */
+const pctLabel = (value: number) => String(Number(Number(value).toFixed(2)));
+
+/** One label/value row of the totals block. */
+const SummaryRow: React.FC<{ label: string; value: string; valueColor?: string }> = ({ label, value, valueColor }) => (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '3px 0' }}>
+        <span style={{ fontSize: 12.5, color: inkSoft, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+        <span style={{ fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', fontSize: 13, fontWeight: 600, color: valueColor || ink, whiteSpace: 'nowrap' }}>
+            {value}
+        </span>
+    </div>
+);
+
+/**
+ * Quantity stepper. The tap area is the full TAP_MIN square while the painted
+ * chip stays small, so a dense cart still clears the minimum touch target.
+ */
+const StepperButton: React.FC<{ label: string; onClick: () => void; children: React.ReactNode }> = ({ label, onClick, children }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        title={label}
+        onFocus={focusVisible}
+        onBlur={blurVisible}
+        style={{ width: TAP_MIN, height: TAP_MIN, display: 'grid', placeItems: 'center', padding: 0, border: 'none', background: 'transparent', borderRadius: radius.md, cursor: 'pointer' }}
+    >
+        <span
+            aria-hidden="true"
+            style={{ width: 30, height: 30, borderRadius: radius.sm, background: ACCENT_SOFT, border: `1px solid ${ACCENT_BORDER}`, color: ACCENT, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}
+        >
+            {children}
+        </span>
+    </button>
+);
+
 export const CartSidebar: React.FC<CartSidebarProps> = ({
-    cart, sales, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, updatePrice, resetPriceOverride, removeFromCart, clearCart, onPark, onReturn, onPay, isBusy = false, totals, adjustmentSummary, pricingSummary, rounding, manualDiscountPercent = 0, onManualDiscountChange
+    cart, sales, selectedCustomerName, onSelectCustomer, updateQuantity, updatePrice, removeFromCart, clearCart, onPay, isBusy = false, totals, adjustmentSummary, manualDiscountPercent = 0, onManualDiscountChange
 }) => {
     const { companyConfig } = useAuth();
     const { invoices } = useFinance();
     const currency = companyConfig.currencySymbol;
 
-    const [roundingEnabled, setRoundingEnabled] = useState(false);
     const [showDiscountInput, setShowDiscountInput] = useState(false);
     const nextOrderNumber = useMemo(() => generateNextId('POS', sales, companyConfig), [sales, companyConfig]);
-    const [roundingMethod, setRoundingMethod] = useState('Nearest');
-    const roundingStep = 50;
 
-    const grandTotal = totals.total;
-    const discountPercent = manualDiscountPercent;
-    const discountAmount = grandTotal * (discountPercent / 100);
-    const effectiveTotal = grandTotal - discountAmount;
-    const profitMarginTotal = Number(pricingSummary?.profitMarginTotal || 0);
-    const hasPricingBreakdown = Boolean(Math.abs(profitMarginTotal) > 0.0001);
+    /**
+     * Money in this column always goes through formatNumber, which pins en-US
+     * grouping. A browser locale must never be able to render the cart lines
+     * and the totals with different separators — they read as one ledger.
+     */
+    const money = (value: number) => `${currency}${formatNumber(value)}`;
 
-    const roundedTotal = useMemo(() => {
-        if (!roundingEnabled) return effectiveTotal;
-        if (roundingMethod === 'Up') return roundUpToStep(effectiveTotal, roundingStep);
-        return roundToNearest(effectiveTotal, roundingStep);
-    }, [effectiveTotal, roundingEnabled, roundingMethod, roundingStep]);
-
-    const roundingDifference = roundToNearest(roundedTotal - effectiveTotal, 0.01);
+    // `subtotal` is the sum of the line amounts already on screen, i.e. the
+    // amount BEFORE the manual discount. It is the only honest "Subtotal" —
+    // the previous figure printed cost under this label.
+    const subtotal = Number(totals.subtotal) || 0;
+    const discountPercent = Number(manualDiscountPercent) || 0;
+    const discountAmount = subtotal * (discountPercent / 100);
+    const totalDue = subtotal - discountAmount;
 
     const totalQuantity = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart]);
-    const totalCost = useMemo(() => cart.reduce((s, i) => s + Number(i.cost || 0) * i.quantity, 0), [cart]);
+
     const adjustmentTotal = useMemo(() => {
         if (!adjustmentSummary || adjustmentSummary.length === 0) return 0;
-        return adjustmentSummary.reduce((sum, adj) => sum + (adj.totalAmount || 0), 0);
+        return adjustmentSummary.reduce((sum, adj) => sum + (Number(adj.totalAmount) || 0), 0);
     }, [adjustmentSummary]);
-    const baseTotal = grandTotal - adjustmentTotal;
-    // Authoritative actual-profit path (shared with Order Form + View Details):
-    // sum of per-line (SP - CP) x qty, less the order-level discount.
+
+    // Profit and margin are internal figures. They are a footnote under the
+    // total, never an addend in it — presented as a line item they read as a
+    // charge the customer is being asked for.
     const totalProfit = useMemo(
         () => calculateSaleProfit(cart, discountAmount),
         [cart, discountAmount]
     );
-    const profitMarginPct = effectiveTotal > 0 ? (totalProfit / effectiveTotal) * 100 : 0;
+    const profitMarginPct = totalDue > 0 ? (totalProfit / totalDue) * 100 : 0;
 
     const customerOutstanding = useMemo(() => {
         if (!selectedCustomerName) return 0;
@@ -119,46 +164,85 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
             .reduce((acc: number, inv: any) => acc + ((inv.totalAmount || 0) - (inv.paidAmount || 0)), 0);
     }, [selectedCustomerName, invoices]);
 
+    const applyDiscount = (raw: string) => {
+        const n = Number(raw);
+        onManualDiscountChange?.(Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0);
+    };
+
     return (
-        <div className="flex flex-col h-full overflow-hidden" style={{ background: '#fff', fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 13.5, lineHeight: 1.45, color: INK }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: `1px solid ${LINE}`, background: B50 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 30, height: 30, borderRadius: 8, background: B7, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>
-                        <ShoppingCart size={14} />
-                    </div>
-                    <div>
-                        <h3 style={{ margin: 0, fontSize: 17, fontFamily: "'Inter','DM Sans',sans-serif", fontWeight: 400, color: INK }}>Current Order</h3>
-                        <span style={{ fontSize: 12, color: SOFT }}>{cart.length} item{cart.length !== 1 ? 's' : ''} &middot; {totalQuantity} unit{totalQuantity !== 1 ? 's' : ''}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: paper, color: ink, fontFamily: UI_FONT, fontSize: 13 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: `1px solid ${hairline}`, background: surface, flexShrink: 0 }}>
+                <span style={{ width: 34, height: 34, borderRadius: radius.md, background: ACCENT_SOFT, border: `1px solid ${ACCENT_BORDER}`, color: ACCENT, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <ReceiptText size={16} />
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ ...posType.title, fontSize: 17, color: ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Current Order</div>
+                    <div style={{ fontSize: 11.5, color: inkSoft, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {cart.length} item{cart.length !== 1 ? 's' : ''} &middot; {totalQuantity} unit{totalQuantity !== 1 ? 's' : ''}
                     </div>
                 </div>
-                <button onClick={clearCart} disabled={cart.length === 0} style={{ fontSize: 12, color: RED, fontWeight: 600, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
-                    Clear all
-                </button>
+                <Button
+                    variant="quiet"
+                    size="sm"
+                    icon={<Trash2 size={13} />}
+                    onClick={clearCart}
+                    disabled={cart.length === 0}
+                    style={{ color: danger, flexShrink: 0 }}
+                >
+                    Clear
+                </Button>
             </div>
 
-            <div onClick={onSelectCustomer} style={{ margin: '10px 16px 0', padding: '8px 12px', border: `1.5px dashed ${B100}`, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', color: B7, fontWeight: 600, fontSize: 13 }}>
-                <div style={{ width: 24, height: 24, borderRadius: '50%', background: B50, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: B7 }}>
-                    {selectedCustomerName ? <User size={12} /> : <UserPlus size={12} />}
-                </div>
-                <span>{selectedCustomerName || 'Add customer'}</span>
+            <button
+                type="button"
+                onClick={onSelectCustomer}
+                onFocus={focusVisible}
+                onBlur={blurVisible}
+                aria-label={selectedCustomerName ? `Customer: ${selectedCustomerName}. Change customer` : 'Add customer'}
+                style={{
+                    margin: '10px 16px 0',
+                    minHeight: TAP_MIN,
+                    padding: '8px 10px',
+                    border: `1.4px dashed ${ACCENT_BORDER}`,
+                    borderRadius: radius.lg,
+                    background: ACCENT_SOFT,
+                    color: ACCENT,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    fontFamily: UI_FONT,
+                    flexShrink: 0,
+                }}
+            >
+                <span style={{ width: 28, height: 28, borderRadius: '50%', background: surface, border: `1px solid ${ACCENT_BORDER}`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    {selectedCustomerName ? <User size={13} /> : <UserPlus size={13} />}
+                </span>
+                <span style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {selectedCustomerName || 'Add customer'}
+                </span>
                 {selectedCustomerName && customerOutstanding > 0 && (
-                    <span style={{ fontSize: 11, color: AMBER, fontWeight: 500, marginLeft: 4 }}>({currency} {formatNumber(customerOutstanding)})</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: textWarning, background: surfaceWarning, border: `1px solid ${borderWarning}`, borderRadius: radius.pill, padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        Owes {money(customerOutstanding)}
+                    </span>
                 )}
-                <span style={{ marginLeft: 'auto', color: SOFT, fontSize: 11 }}>›</span>
-            </div>
+                <ChevronRight size={14} style={{ flexShrink: 0 }} />
+            </button>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ padding: '10px 16px 6px' }}>
+            <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ padding: '4px 0 12px' }}>
                 {cart.length === 0 ? (
-                    <div style={{ padding: '40px 22px', textAlign: 'center', color: SOFT, fontSize: 13 }}>
-                        <ShoppingBag size={36} style={{ opacity: 0.25, margin: '0 auto 12px', display: 'block' }} />
-                        No items yet — tap a product to add it to the order.
+                    <div style={{ padding: '44px 22px', textAlign: 'center', color: inkSoft }}>
+                        <ShoppingBag size={36} style={{ opacity: 0.3, margin: '0 auto 12px', display: 'block' }} />
+                        <div style={{ fontSize: 13 }}>No items yet</div>
+                        <div style={{ fontSize: 12, marginTop: 4 }}>Tap a product or scan a barcode to start this order.</div>
                     </div>
                 ) : (
                     <div>
                         {cart.map(item => {
                             if (item.isPrintingJob && item.printingSpec) {
                                 return (
-                                    <div key={item.id} style={{ padding: '12px 0', borderBottom: `1px dotted ${LINE}` }}>
+                                    <div key={item.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${hairline}`, background: surface }}>
                                         <PrintJobCartCard
                                             spec={item.printingSpec}
                                             currency={currency}
@@ -182,133 +266,103 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                 )}
             </div>
 
-            <div style={{ background: '#fff', borderRadius: 6, boxShadow: '0 1px 2px rgba(10,46,40,.06), 0 8px 24px rgba(10,46,40,.08)', overflow: 'hidden' }}>
-                <div style={{ background: '#1E3A5F', color: '#fff', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#a9c9c1', fontWeight: 500 }}>
-                        Order {nextOrderNumber}
-                    </span>
-                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13.5, fontWeight: 500 }}>
-                        {totalQuantity} item{totalQuantity !== 1 ? 's' : ''}
-                    </span>
-                </div>
-
-                <div style={{ padding: '10px 16px 2px', fontSize: 13 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0', lineHeight: 1.3 }}>
-                        <span style={{ color: '#5c6d68', fontWeight: 400 }}>Subtotal</span>
-                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: 'tabular-nums', color: '#12201d', fontWeight: 500 }}>
-                            {currency}{formatNumber(totalCost)}
+            <div style={{ borderTop: `1px solid ${hairline}`, background: surface, boxShadow: '0 -8px 24px -18px rgba(10,46,40,.35)', flexShrink: 0 }}>
+                <div style={{ padding: '12px 16px 0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, ...posType.sectionLabel, color: inkSoft, marginBottom: 8 }}>
+                        <span>Order {nextOrderNumber}</span>
+                        <span style={{ fontFamily: NUMERIC_FONT, fontSize: 11, letterSpacing: 0, textTransform: 'none' }}>
+                            {totalQuantity} unit{totalQuantity !== 1 ? 's' : ''}
                         </span>
                     </div>
+
+                    <SummaryRow label="Subtotal" value={money(subtotal)} />
                     {discountPercent > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0', lineHeight: 1.3 }}>
-                            <span style={{ color: '#a03c3c', opacity: 0.85, fontWeight: 400 }}>Discount ({discountPercent}%)</span>
-                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: 'tabular-nums', color: '#a03c3c', fontWeight: 500 }}>
-                                &minus;{currency}{formatNumber(discountAmount)}
-                            </span>
-                        </div>
+                        <SummaryRow
+                            label={`Discount ${pctLabel(discountPercent)}%`}
+                            value={`−${money(discountAmount)}`}
+                            valueColor={danger}
+                        />
                     )}
-                    {adjustmentTotal > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0', lineHeight: 1.3 }}>
-                            <span style={{ color: '#5c6d68', fontWeight: 400 }}>Adjustments</span>
-                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: 'tabular-nums', color: '#0f4f42', fontWeight: 500 }}>
-                                +{currency}{formatNumber(adjustmentTotal)}
-                            </span>
-                        </div>
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0', lineHeight: 1.3 }}>
-                        <span style={{ color: totalProfit >= 0 ? '#0f4f42' : '#a03c3c', fontWeight: 400 }}>Total Profit</span>
-                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: 'tabular-nums', color: totalProfit >= 0 ? '#0f4f42' : '#a03c3c', fontWeight: 500 }}>
-                            {totalProfit >= 0 ? '+' : '-'}{currency}{formatNumber(Math.abs(totalProfit))}
-                        </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0', lineHeight: 1.3 }}>
-                        <span style={{ color: totalProfit >= 0 ? '#0f4f42' : '#a03c3c', fontWeight: 400 }}>Margin</span>
-                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: 'tabular-nums', color: totalProfit >= 0 ? '#0f4f42' : '#a03c3c', fontWeight: 500 }}>
-                            {profitMarginPct.toFixed(1)}%
+
+                    <div style={{ height: 1, background: hairlineStrong, margin: '8px 0 6px' }} />
+
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                        <span style={{ fontSize: 15, fontWeight: 600, color: ink }}>Total</span>
+                        <span style={{ ...registerType.total, fontFamily: NUMERIC_FONT, color: ink }}>
+                            {money(displayPrice(totalDue, undefined, 'pos'))}
                         </span>
                     </div>
 
-                    <div style={{ height: 0, borderTop: '1.5px dashed #d7e2df', margin: '5px 0' }} />
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0 8px', lineHeight: 1.3 }}>
-                        <span style={{ fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 15, color: '#12201d', fontWeight: 400 }}>Total</span>
-                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontVariantNumeric: 'tabular-nums', fontSize: 19, fontWeight: 600, color: '#0f4f42' }}>
-                            {currency}{formatNumber(displayPrice(roundedTotal, undefined, 'pos'))}
-                        </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingTop: 7, fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', fontSize: 11, color: inkSoft }}>
+                        <span>Profit {totalProfit >= 0 ? '+' : '−'}{money(Math.abs(totalProfit))}</span>
+                        <span aria-hidden="true">&middot;</span>
+                        <span>{profitMarginPct.toFixed(1)}% margin</span>
                     </div>
+
+                    {adjustmentTotal !== 0 && (
+                        <div style={{ textAlign: 'right', fontSize: 11, color: inkSoft, paddingTop: 2 }}>
+                            Includes adjustments {money(adjustmentTotal)}
+                        </div>
+                    )}
                 </div>
 
-                <div style={{ display: 'flex', gap: 8, padding: '6px 16px 12px' }}>
-                    <div style={{ flex: 1, position: 'relative' }}>
-                        {showDiscountInput ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <input type="number" value={discountPercent} min={0} max={100} onChange={e => { const n = Number(e.target.value); onManualDiscountChange?.(Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0); }}
-                                    style={{ flex: 1, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 12.5, fontWeight: 600, padding: '7px 6px', borderRadius: 4, border: '1px solid #a03c3c', textAlign: 'center', background: '#fff', color: '#a03c3c', outline: 'none', width: 0 }} />
-                                <span style={{ fontSize: 11, color: '#a03c3c', fontWeight: 600, whiteSpace: 'nowrap' }}>%</span>
-                                <button onClick={() => { setShowDiscountInput(false); }}
-                                    style={{ fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 11, fontWeight: 600, padding: '7px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', background: '#a03c3c', color: '#fff' }}>
-                                    OK
-                                </button>
-                            </div>
-                        ) : (
-                            <button onClick={() => setShowDiscountInput(true)}
-                                style={{ width: '100%', fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 12.5, fontWeight: 600, padding: '7px 0', borderRadius: 4, border: '1px solid #a03c3c', cursor: 'pointer', textAlign: 'center', background: '#fff', color: '#a03c3c' }}>
-                                Discount
-                            </button>
-                        )}
+                {showDiscountInput && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 0' }}>
+                        <label htmlFor="pos-order-discount" style={{ ...posType.fieldLabel, color: inkSoft, flexShrink: 0 }}>Discount %</label>
+                        <input
+                            id="pos-order-discount"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={discountPercent}
+                            onChange={e => applyDiscount(e.target.value)}
+                            onFocus={focusVisible}
+                            onBlur={blurVisible}
+                            style={{ ...controlBase, fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', fontWeight: 600, textAlign: 'right', padding: '6px 8px', width: 68, color: danger }}
+                        />
+                        <Button variant="quiet" size="sm" onClick={() => { applyDiscount('0'); setShowDiscountInput(false); }} style={{ color: inkSoft }}>
+                            Remove
+                        </Button>
                     </div>
-                    <button onClick={onPay} disabled={cart.length === 0 || isBusy}
-                        style={{ flex: 1, fontFamily: "'Inter','DM Sans',sans-serif", fontSize: 12.5, fontWeight: 600, padding: '7px 0', borderRadius: 4, border: 'none', cursor: (cart.length === 0 || isBusy) ? 'not-allowed' : 'pointer', textAlign: 'center', background: '#2563EB', color: '#fff', opacity: (cart.length === 0 || isBusy) ? 0.5 : 1 }}>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, padding: '12px 16px 16px' }}>
+                    <Button
+                        variant="secondary"
+                        size="lg"
+                        icon={<Tag size={14} />}
+                        onClick={() => setShowDiscountInput(v => !v)}
+                        aria-expanded={showDiscountInput}
+                        aria-controls="pos-order-discount"
+                        style={{ flex: '0 0 auto', minWidth: 104 }}
+                    >
+                        {discountPercent > 0 ? `${pctLabel(discountPercent)}% off` : 'Discount'}
+                    </Button>
+                    <Button
+                        variant="primary"
+                        size="lg"
+                        block
+                        onClick={onPay}
+                        disabled={cart.length === 0 || isBusy}
+                        icon={isBusy ? undefined : <Banknote size={16} />}
+                        style={{ flex: 1, minHeight: 48, fontSize: 15 }}
+                    >
                         {isBusy ? 'Calculating…' : 'Proceed'}
-                    </button>
+                    </Button>
                 </div>
             </div>
         </div>
     );
 };
 
-export const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta: number, isAbsolute?: boolean) => void, updatePrice: (id: string, newPrice: number) => void, removeFromCart: (id: string) => void }> = ({ item, updateQuantity, updatePrice, removeFromCart }) => {
+export const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta: number, isAbsolute?: boolean) => void, updatePrice: (id: string, newPrice: number) => void, removeFromCart: (id: string) => void }> = ({ item, updateQuantity, removeFromCart }) => {
     const { companyConfig } = useAuth();
     const currency = companyConfig.currencySymbol;
     const serviceDetails = item.serviceDetails;
 
-    const [isEditingPrice, setIsEditingPrice] = useState(false);
-    const [localPrice, setLocalPrice] = useState(item.price.toString());
-
-    useEffect(() => {
-        setLocalPrice(item.price.toString());
-    }, [item.price]);
-
-    const handlePriceKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            const val = parseFloat(localPrice);
-            if (!isNaN(val) && val >= 0) {
-                updatePrice(item.id, val);
-                setIsEditingPrice(false);
-            } else {
-                setLocalPrice(item.price.toString());
-                setIsEditingPrice(false);
-            }
-        } else if (e.key === 'Escape') {
-            setLocalPrice(item.price.toString());
-            setIsEditingPrice(false);
-        }
-    };
-
-    const handlePriceBlur = () => {
-        const val = parseFloat(localPrice);
-        if (!isNaN(val) && val >= 0) {
-            updatePrice(item.id, val);
-        } else {
-            setLocalPrice(item.price.toString());
-        }
-        setIsEditingPrice(false);
-    };
-
     const adjSnapshots = useMemo(() => getMarketAdjustmentSnapshots(resolveItemAdjustmentSnapshots(item)), [item]);
     const adjAmount = useMemo(() => adjSnapshots.reduce((s: number, a: any) => s + (a.calculatedAmount || 0), 0), [adjSnapshots]);
     const hasAdj = adjAmount !== 0;
-    const lineProfit = useMemo(() => calculateLineProfit(item), [item]);
 
     const isPrintType = serviceDetails && (item.pages || serviceDetails.pages);
     const isQuickPhotocopy = isQuickPhotocopyItem(item);
@@ -331,50 +385,62 @@ export const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string
     // ("13 pgs"), rate appears exactly once ("K 150.00/sht").
     const qpDisplay = isQuickPhotocopy ? getQuickPhotocopyLineDisplay(item, currency) : null;
 
+    const lineName = qpDisplay ? qpDisplay.name : (isPrintType ? `${totalPages} pages ${item.name}` : item.name);
+    const rateText = qpDisplay
+        ? `${qpDisplay.qty} @ ${qpDisplay.rate}`
+        : (isPrintType
+            ? `@${currency}${formatNumber(perUnit)}/${isPhotocopy ? 'sheet' : 'page'}`
+            : `@${currency}${formatNumber(displayPrice(item.price, undefined, 'pos'))}`);
+
+    // Keeps the rate of a plain item aligned with the Quick Photocopy form and
+    // holds the columns steady as qty digits grow.
+    const quantityWellWidth = TAP_MIN * 2 + 26 + 4;
+
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: `1px dotted ${LINE}` }}>
+        <div
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderBottom: `1px solid ${hairline}`, background: surface, transition: 'background .12s' }}
+            onMouseOver={e => { e.currentTarget.style.background = ACCENT_SOFT; }}
+            onMouseOut={e => { e.currentTarget.style.background = surface; }}
+        >
             {isPrintType ? (
-                <div style={{ width: 28, flexShrink: 0 }} />
+                <span style={{ width: quantityWellWidth, flexShrink: 0 }} />
             ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 0, border: `1px solid ${LINE}`, borderRadius: 8, overflow: 'hidden', height: 26, flexShrink: 0 }}>
-                    <button onClick={() => updateQuantity(item.id, -1)} style={{ width: 22, border: 'none', background: B50, color: B7, fontWeight: 600, cursor: 'pointer', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }} title="Decrease quantity" aria-label="Decrease quantity"><Minus size={9} /></button>
-                    <span style={{ width: 22, textAlign: 'center', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: INK }}>{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, 1)} style={{ width: 22, border: 'none', background: B50, color: B7, fontWeight: 600, cursor: 'pointer', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }} title="Increase quantity" aria-label="Increase quantity"><Plus size={9} /></button>
-                </div>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, width: quantityWellWidth, flexShrink: 0 }}>
+                    <StepperButton label="Decrease quantity" onClick={() => updateQuantity(item.id, -1)}><Minus size={12} /></StepperButton>
+                    <span style={{ minWidth: 26, textAlign: 'center', fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 700, color: ink }}>
+                        {item.quantity}
+                    </span>
+                    <StepperButton label="Increase quantity" onClick={() => updateQuantity(item.id, 1)}><Plus size={12} /></StepperButton>
+                </span>
             )}
 
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600, color: INK }}>
-                <span className="truncate">
-                    {qpDisplay ? qpDisplay.name : (isPrintType ? `${totalPages} pages ${item.name}` : item.name)}
-                </span>
-                {qpDisplay ? (
-                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 400, color: SOFT, fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                        {qpDisplay.qty} @ {qpDisplay.rate}
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    <span className="truncate" title={lineName} style={{ ...registerType.body, fontWeight: 600, color: ink }}>
+                        {lineName}
                     </span>
-                ) : isPrintType ? (
-                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 400, color: SOFT, fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                        @{currency}{formatNumber(perUnit)}/{isPhotocopy ? 'sheet' : 'page'}
-                    </span>
-                ) : (
-                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 400, color: SOFT, fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                        @{currency}{formatNumber(displayPrice(item.price, undefined, 'pos'))}
-                    </span>
-                )}
-                {item.manual_override && <span style={{ fontSize: 9, fontWeight: 600, color: '#2f5fa8', background: '#eaf1fb', padding: '1px 4px', borderRadius: 4, flexShrink: 0 }}>OVR</span>}
-                {hasAdj && <span style={{ fontSize: 9, fontWeight: 600, color: AMBER, background: '#fbf1e2', padding: '1px 4px', borderRadius: 4, flexShrink: 0 }}>ADJ</span>}
+                    {item.manual_override && <span style={{ fontSize: 9, fontWeight: 700, color: '#2f5fa8', background: '#eaf1fb', padding: '1px 5px', borderRadius: radius.sm, flexShrink: 0 }}>OVR</span>}
+                    {hasAdj && <span style={{ fontSize: 9, fontWeight: 700, color: textWarning, background: surfaceWarning, border: `1px solid ${borderWarning}`, padding: '1px 5px', borderRadius: radius.sm, flexShrink: 0 }}>ADJ</span>}
+                </div>
+                <div style={{ ...registerType.meta, fontFamily: NUMERIC_FONT, color: inkSoft, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {rateText}
+                </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, color: INK }}>
-                    {currency}{formatNumber(displayPrice(item.price * item.quantity, undefined, 'pos'))}
-                </span>
-                <span title="Profit" style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 500, fontSize: 10.5, color: lineProfit >= 0 ? '#0f4f42' : '#a03c3c' }}>
-                    {lineProfit >= 0 ? '+' : '-'}{currency}{formatNumber(Math.abs(lineProfit))}
-                </span>
-            </div>
+            <span style={{ ...registerType.price, fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', color: ink, flexShrink: 0 }}>
+                {currency}{formatNumber(displayPrice(item.price * item.quantity, undefined, 'pos'))}
+            </span>
 
-            <button onClick={() => removeFromCart(item.id)} style={{ border: 'none', background: 'none', color: SOFT, cursor: 'pointer', fontSize: 12, padding: '2px 4px', opacity: 0.6, transition: '.15s', flexShrink: 0, display: 'flex', alignItems: 'center' }} title="Remove item" aria-label="Remove item from cart">
-                <X size={11} />
+            <button
+                type="button"
+                onClick={() => removeFromCart(item.id)}
+                title="Remove item"
+                aria-label={`Remove ${lineName} from order`}
+                onFocus={focusVisible}
+                onBlur={blurVisible}
+                style={{ width: 32, height: 32, display: 'grid', placeItems: 'center', padding: 0, border: 'none', background: 'transparent', color: inkSoft, borderRadius: radius.sm, cursor: 'pointer', flexShrink: 0 }}
+            >
+                <X size={14} />
             </button>
         </div>
     );
