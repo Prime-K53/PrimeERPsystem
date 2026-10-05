@@ -137,6 +137,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     financeStore.fetchFinanceData().catch(err => {
       notify("Financial database busy or unavailable.", "info");
     });
+    // Heal tokenless legacy examination invoices (single-company, shared
+    // invoices table, idempotent): rows predating token minting can never
+    // pass public verification (number + token match). The reconciler mints
+    // missing tokens via the normal dbService.put path, so healed rows
+    // re-enter the shared durable-sync queue and converge to Supabase —
+    // fixing both Device-B visibility of the updated row and its QR
+    // verification. Fire-and-forget; never blocks finance load.
+    void (async () => {
+      try {
+        const { reconcileLegacyExaminationInvoices } = await import(
+          '../services/examinationInvoiceSyncService'
+        );
+        await reconcileLegacyExaminationInvoices().catch(() => {});
+      } catch {
+        // Non-blocking: next load retries; ordinary invoices untouched
+        // (the reconciler only touches tokenless EXM/originModule rows).
+      }
+    })();
   }, [isInitialized]);
 
   // Warn-once guard: a missing opening row on a non-empty ledger must never
