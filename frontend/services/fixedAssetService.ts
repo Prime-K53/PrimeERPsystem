@@ -14,8 +14,8 @@
  */
 
 import { dbService } from './db';
-import { FixedAsset, DepreciationEntry, AssetDisposal, DepreciationMethod, FixedAssetStatus, AssetLifecycleStatus, AssetCondition, DisposalType, FixedAssetTransfer, FixedAssetRevaluation, FixedAssetImpairment, FixedAssetMaintenance, FixedAssetWarranty, FixedAssetInsurance, FixedAssetVerification } from '../types';
-import { getGLConfig, generateId, resolveAccountForPosting } from './transactions/_internal';
+import { FixedAsset, DepreciationEntry, AssetDisposal, DepreciationMethod, FixedAssetStatus, AssetLifecycleStatus, AssetCondition, DisposalType, FixedAssetTransfer, FixedAssetRevaluation, FixedAssetImpairment, FixedAssetMaintenance, FixedAssetWarranty, FixedAssetInsurance, FixedAssetVerification, LedgerEntry } from '../types';
+import { getGLConfig, generateId, resolveAccountForPosting, loadAccountsFromStore } from './transactions/_internal';
 import { ledgerService } from './ledgerService';
 import { logger } from './logger';
 import { validateDateInFY } from '../utils/financialYearUtils';
@@ -104,21 +104,69 @@ export const fixedAssetService = {
             throw new Error('Cannot delete asset that is not active or fully depreciated');
         }
         // Reverse the acquisition journal so the bank/cash account balance
-        // is restored (Cr → Dr on the same amount) before the asset row is gone.
-        if (accounts.length > 0) {
-            await this.reverseAcquisitionJournal(asset, accounts);
+        // is restored (Cr → Dr on the same amount) before the asset row is
+        // gone. The reversal is driven by the original FA_ACQUISITION entry
+        // itself, so it must run even when the caller supplies no accounts —
+        // skipping it is exactly what orphaned bank-side credits.
+        let resolvedAccounts = accounts;
+        if (resolvedAccounts.length === 0) {
+            try { resolvedAccounts = await loadAccountsFromStore(); } catch { /* non-blocking */ }
         }
+        const originalEntry = await this.findAcquisitionEntry(asset.asset_code);
+        await this.reverseAcquisitionJournal(asset, resolvedAccounts, originalEntry || undefined);
         await dbService.delete(STORE_NAME, id);
         return true;
     },
 
-    async reverseAcquisitionJournal(asset: FixedAsset, accounts: any[]): Promise<string | null> {
+    /**
+     * Find the original FA_ACQUISITION ledger entry for an asset code.
+     * The acquisition reference is `FA-ACQ-<asset_code>`.
+     */
+    async findAcquisitionEntry(assetCode: string): Promise<LedgerEntry | null> {
+        try {
+            const all = await dbService.getAll<LedgerEntry>('ledger');
+            return all.find((e: any) =>
+                e.entryType === 'FA_ACQUISITION' &&
+                String(e.referenceId || '').startsWith(`FA-ACQ-${assetCode}`)
+            ) || null;
+        } catch (error) {
+            logger.error(`Failed to find acquisition entry for ${assetCode}`, error);
+            return null;
+        }
+    },
+
+    async reverseAcquisitionJournal(asset: FixedAsset, accounts: any[], originalEntry?: LedgerEntry | null): Promise<string | null> {
         const config = getConfig();
-        const cashOrBankAccount = resolveAccountForPosting(config.bankAccount, accounts);
+        // Prefer the original acquisition entry's own legs and amount so the
+        // reversal exactly undoes the original posting — even when the caller
+        // supplied no accounts. Falls back to config/asset resolution.
+        const cashOrBankAccount = originalEntry?.creditAccountId
+            || resolveAccountForPosting(config.bankAccount, accounts);
+        const fixedAssetAccount = originalEntry?.debitAccountId
+            || asset.fixed_asset_account_id;
+        const reversalAmount = originalEntry && Number.isFinite(Number(originalEntry.amount))
+            ? Number(originalEntry.amount)
+            : asset.acquisition_cost;
         if (!cashOrBankAccount) {
             logger.warn('Could not resolve cash/bank account for fixed asset acquisition reversal');
             return null;
         }
+
+        // Idempotency: skip if a reversal for this asset already exists.
+        try {
+            const allLedger = await dbService.getAll<LedgerEntry>('ledger');
+            const alreadyReversed = (allLedger as any[]).some((e: any) =>
+                (e.entryType === 'FA_ACQUISITION_REVERSAL' || e.entryType === 'Reversal') &&
+                String(e.referenceId || '').startsWith(`FA-ACQ-REV-${asset.asset_code}`)
+            );
+            if (alreadyReversed) {
+                logger.info(`Acquisition reversal for ${asset.asset_code} already exists — skipping.`);
+                return null;
+            }
+        } catch (e) {
+            logger.warn('Could not check for existing reversal — proceeding anyway.', e);
+        }
+
         const description = `Fixed Asset Acquisition Reversal: ${asset.name} (${asset.asset_code})`;
         try {
             const entry = await ledgerService.createJournalEntry({
@@ -128,8 +176,8 @@ export const fixedAssetService = {
                 lines: [
                     {
                         debitAccountId: cashOrBankAccount,
-                        creditAccountId: asset.fixed_asset_account_id,
-                        amount: asset.acquisition_cost,
+                        creditAccountId: fixedAssetAccount,
+                        amount: reversalAmount,
                         description: `Asset reversal: ${asset.name}`,
                     }
                 ],
