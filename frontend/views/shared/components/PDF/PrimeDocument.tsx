@@ -119,7 +119,7 @@ const renderQrImage = (qrCodeDataUrl?: string | null, size: number = VERIFICATIO
     <View style={{ alignItems: 'center' }}>
       <Image src={resolvedQrCode} style={{ width: size, height: size }} />
       {showCaption ? (
-        <Text style={{ fontSize: Math.max(6, size * 0.13), color: '#475569', marginTop: 2, letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
+        <Text style={{ fontSize: Math.max(6, size * 0.13), color: '#000', marginTop: 2, letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
       ) : null}
     </View>
   );
@@ -293,7 +293,7 @@ const SecurityFooter = ({
   // identically everywhere. Bullet (•) is WinAnsi-safe.
   const displayCompany = String(companyName || '').trim() || 'Prime Printing';
   const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, '').trim() || displayCompany;
-  const titleColor = '#1e3a8a';
+  const titleColor = '#000';
 
   const subRow = (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
@@ -1993,23 +1993,23 @@ if (type === 'POS_RECEIPT') {
         {isCancelled && <CancelledWatermark />}
         <View style={[s.posA4Wrapper, { width: 250 * scale, paddingVertical: 24 * scale, paddingHorizontal: 8 * scale }]}>
             <View style={{ alignItems: 'center', marginBottom: 12 * scale }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 14 * scale, textAlign: 'center', marginBottom: 3 * scale }}>{companyName}</Text>
-              <Text style={{ fontSize: baseFontSize, textAlign: 'center', marginBottom: 2 * scale }}>{companyAddress}</Text>
-              <Text style={{ fontSize: baseFontSize, textAlign: 'center' }}>{companyContact}</Text>
+              <Text style={{ fontWeight: 'bold', fontSize: 14 * scale, textAlign: 'center', marginBottom: 3 * scale, color: '#000' }}>{companyName}</Text>
+              <Text style={{ fontSize: baseFontSize, textAlign: 'center', marginBottom: 2 * scale, color: '#000' }}>{companyAddress}</Text>
+              <Text style={{ fontSize: baseFontSize, textAlign: 'center', color: '#000' }}>{companyContact}</Text>
             </View>
 
             <View style={{ marginBottom: 12 * scale, borderBottomWidth: 1, borderBottomColor: '#000', borderBottomStyle: 'dashed', paddingBottom: 8 * scale }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 * scale }}>
-                <Text style={{ fontSize: baseFontSize, color: '#666' }}>Date:</Text>
-                <Text style={{ fontSize: baseFontSize }}>{r.date}</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Date:</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>{r.date}</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 * scale }}>
-                <Text style={{ fontSize: baseFontSize, color: '#666' }}>Receipt #:</Text>
-                <Text style={{ fontWeight: 'bold', fontSize: baseFontSize }}>{r.receiptNumber}</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Receipt #:</Text>
+                <Text style={{ fontWeight: 'bold', fontSize: baseFontSize, color: '#000' }}>{r.receiptNumber}</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 * scale }}>
-                <Text style={{ fontSize: baseFontSize, color: '#666' }}>Cashier:</Text>
-                <Text style={{ fontSize: baseFontSize }}>{(() => {
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Cashier:</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>{(() => {
                   const cashier = String(r.cashierName || '').trim();
                   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cashier);
                   return cashier && !isUuid ? cashier : 'System User';
@@ -2017,21 +2017,21 @@ if (type === 'POS_RECEIPT') {
               </View>
               {!!r.customerName && (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: baseFontSize, color: '#666' }}>Customer:</Text>
-                  <Text style={{ fontSize: baseFontSize }}>{r.customerName}</Text>
+                  <Text style={{ fontSize: baseFontSize, color: '#000' }}>Customer:</Text>
+                  <Text style={{ fontSize: baseFontSize, color: '#000' }}>{r.customerName}</Text>
                 </View>
               )}
               <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 6 * scale }}>
-                <View style={{ paddingVertical: 3 * scale, paddingHorizontal: 8 * scale, borderRadius: 3 * scale, borderWidth: 1, borderColor: getStatusTone('paid').border, backgroundColor: getStatusTone('paid').border + '15' }}>
-                  <Text style={{ fontSize: baseFontSize, color: getStatusTone('paid').text, fontWeight: 'bold', letterSpacing: 1 * scale }}>PAID</Text>
+                <View style={{ paddingVertical: 3 * scale, paddingHorizontal: 8 * scale, borderRadius: 3 * scale, borderWidth: 1, borderColor: '#000', backgroundColor: '#fff' }}>
+                  <Text style={{ fontSize: baseFontSize, color: '#000', fontWeight: 'bold', letterSpacing: 1 * scale }}>PAID</Text>
                 </View>
               </View>
             </View>
 
             <View style={{ marginBottom: 15 * scale }}>
-              <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#ccc', paddingBottom: 3 * scale, marginBottom: 5 * scale }}>
-                <Text style={{ flex: 3, fontWeight: 'bold', fontSize: baseFontSize }}>Description</Text>
-                <Text style={{ flex: 1, fontWeight: 'bold', fontSize: baseFontSize, textAlign: 'right' }}>Total</Text>
+              <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#000', paddingBottom: 3 * scale, marginBottom: 5 * scale }}>
+                <Text style={{ flex: 3, fontWeight: 'bold', fontSize: baseFontSize, color: '#000' }}>Description</Text>
+                <Text style={{ flex: 1, fontWeight: 'bold', fontSize: baseFontSize, textAlign: 'right', color: '#000' }}>Total</Text>
               </View>
               {r.items.map((item: any, i: number) => {
                 // Quick Photocopy: name stays plain; qty shows entered pages
@@ -2040,10 +2040,10 @@ if (type === 'POS_RECEIPT') {
                 const receiptQP = isQuickPhotocopyItem(item) ? getQuickPhotocopyLineDisplay(item, currency) : null;
                 return (
                   <View key={i} style={{ marginBottom: 6 * scale }}>
-                    <Text style={{ fontSize: mediumFontSize, fontWeight: 'normal' }}>{receiptQP ? receiptQP.name : item.desc}</Text>
+                    <Text style={{ fontSize: mediumFontSize, fontWeight: 'normal', color: '#000' }}>{receiptQP ? receiptQP.name : item.desc}</Text>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 * scale }}>
-                      <Text style={{ fontSize: baseFontSize, color: '#444' }}>{receiptQP ? `${receiptQP.qty} x ${receiptQP.rate}` : `${item.qty} x ${formatAmount(item.price)}`}</Text>
-                      <Text style={{ fontSize: mediumFontSize }}>{formatAmount(item.total)}</Text>
+                      <Text style={{ fontSize: baseFontSize, color: '#000' }}>{receiptQP ? `${receiptQP.qty} x ${receiptQP.rate}` : `${item.qty} x ${formatAmount(item.price)}`}</Text>
+                      <Text style={{ fontSize: mediumFontSize, color: '#000' }}>{formatAmount(item.total)}</Text>
                     </View>
                   </View>
                 );
@@ -2052,39 +2052,39 @@ if (type === 'POS_RECEIPT') {
 
             <View style={{ borderTopWidth: 1, borderTopColor: '#000', borderTopStyle: 'dashed', paddingTop: 8 * scale, gap: 3 * scale }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: mediumFontSize }}>Subtotal</Text>
-                <Text style={{ fontSize: mediumFontSize }}>{formatAmount(r.subtotal)}</Text>
+                <Text style={{ fontSize: mediumFontSize, color: '#000' }}>Subtotal</Text>
+                <Text style={{ fontSize: mediumFontSize, color: '#000' }}>{formatAmount(r.subtotal)}</Text>
               </View>
               {r.discount > 0 && (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: mediumFontSize }}>Discount</Text>
-                  <Text style={{ fontSize: mediumFontSize }}>-{formatAmount(r.discount)}</Text>
+                  <Text style={{ fontSize: mediumFontSize, color: '#000' }}>Discount</Text>
+                  <Text style={{ fontSize: mediumFontSize, color: '#000' }}>-{formatAmount(r.discount)}</Text>
                 </View>
               )}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 * scale, paddingTop: 4 * scale, borderTopWidth: 0.5, borderTopColor: '#eee' }}>
-                <Text style={{ fontWeight: 'bold', fontSize: largeFontSize }}>TOTAL</Text>
-                <Text style={{ fontWeight: 'bold', fontSize: largeFontSize }}>{currency} {formatAmount(r.totalAmount)}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 * scale, paddingTop: 4 * scale, borderTopWidth: 0.5, borderTopColor: '#000' }}>
+                <Text style={{ fontWeight: 'bold', fontSize: largeFontSize, color: '#000' }}>TOTAL</Text>
+                <Text style={{ fontWeight: 'bold', fontSize: largeFontSize, color: '#000' }}>{currency} {formatAmount(r.totalAmount)}</Text>
               </View>
             </View>
 
             <View style={{ marginTop: 12 * scale, borderTopWidth: 1, borderTopColor: '#000', borderTopStyle: 'dashed', paddingTop: 8 * scale, gap: 3 * scale }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: baseFontSize, color: '#666' }}>Method</Text>
-                <Text style={{ fontSize: baseFontSize }}>{r.paymentMethod}</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Method</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>{r.paymentMethod}</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: baseFontSize, color: '#666' }}>Cash Tendered</Text>
-                <Text style={{ fontSize: baseFontSize }}>{formatAmount(r.amountTendered)}</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Cash Tendered</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>{formatAmount(r.amountTendered)}</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: baseFontSize, color: '#666' }}>Change Given</Text>
-                <Text style={{ fontWeight: 'bold', fontSize: baseFontSize }}>{formatAmount(r.changeGiven)}</Text>
+                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Change Given</Text>
+                <Text style={{ fontWeight: 'bold', fontSize: baseFontSize, color: '#000' }}>{formatAmount(r.changeGiven)}</Text>
               </View>
             </View>
 
             <View style={{ marginTop: 18 * scale, alignItems: 'center' }}>
-              <Text style={{ fontWeight: 'bold', textAlign: 'center', fontSize: mediumFontSize }}>Thank you for your business!</Text>
-              <Text style={{ textAlign: 'center', fontSize: smallFontSize, marginTop: 6 * scale, color: '#999', textTransform: 'uppercase', letterSpacing: 0.6 * scale }}>Powered by Prime ERP</Text>
+              <Text style={{ fontWeight: 'bold', textAlign: 'center', fontSize: mediumFontSize, color: '#000' }}>Thank you for your business!</Text>
+              <Text style={{ textAlign: 'center', fontSize: smallFontSize, marginTop: 6 * scale, color: '#000', textTransform: 'uppercase', letterSpacing: 0.6 * scale }}>Powered by Prime ERP</Text>
             </View>
 
             {/* Compact verification QR only (thermal-printer friendly): the QR
