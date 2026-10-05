@@ -17,6 +17,8 @@
  */
 import React from 'react';
 import { Text } from '@react-pdf/renderer';
+import type { PrimeColorMode } from './pdfPrintMode';
+import { monoText } from './pdfPrintMode';
 
 /**
  * Customer-facing PDF types sharing the global pagination behavior.
@@ -160,7 +162,7 @@ export function paginationIdentity(
 }
 
 /** Fixed-element geometry shared by every paginated document. */
-export const paginationFurnitureStyles = {
+export const paginationFurnitureStyles = (mode: PrimeColorMode = 'brand') => ({
   continuation: {
     position: 'absolute' as const,
     top: 24,
@@ -168,7 +170,7 @@ export const paginationFurnitureStyles = {
     right: 40,
     textAlign: 'center' as const,
     fontSize: 8,
-    color: '#64748b',
+    color: monoText(mode, '#64748b'),
   },
   intermediate: {
     position: 'absolute' as const,
@@ -177,7 +179,7 @@ export const paginationFurnitureStyles = {
     right: 40,
     textAlign: 'center' as const,
     fontSize: 8,
-    color: '#64748b',
+    color: monoText(mode, '#64748b'),
   },
   pageNumber: {
     position: 'absolute' as const,
@@ -186,9 +188,9 @@ export const paginationFurnitureStyles = {
     right: 40,
     textAlign: 'right' as const,
     fontSize: 8,
-    color: '#64748b',
+    color: monoText(mode, '#64748b'),
   },
-};
+});
 
 /**
  * The three fixed furniture elements. Page info comes from React-PDF's
@@ -198,15 +200,18 @@ export const paginationFurnitureStyles = {
 export function PaginationFurniture({
   identity,
   companyName,
+  colorMode = 'brand',
 }: {
   identity: PaginationIdentity;
   companyName: string;
+  colorMode?: PrimeColorMode;
 }) {
+  const furnitureStyles = paginationFurnitureStyles(colorMode);
   return (
     <>
       <Text
         fixed
-        style={paginationFurnitureStyles.continuation}
+        style={furnitureStyles.continuation}
         render={({ pageNumber }: { pageNumber: number }) =>
           pageNumber > 1
             ? `${identity.title} ${identity.number} · ${identity.customer} — continued`
@@ -215,7 +220,7 @@ export function PaginationFurniture({
       />
       <Text
         fixed
-        style={paginationFurnitureStyles.intermediate}
+        style={furnitureStyles.intermediate}
         render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
           pageNumber < totalPages
             ? `${companyName} · ${identity.title} ${identity.number} · Computer-generated document. Verify authenticity using the QR code on the final page.`
@@ -224,7 +229,7 @@ export function PaginationFurniture({
       />
       <Text
         fixed
-        style={paginationFurnitureStyles.pageNumber}
+        style={furnitureStyles.pageNumber}
         render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
           `Page ${pageNumber} of ${totalPages}`
         }
@@ -234,13 +239,13 @@ export function PaginationFurniture({
 }
 
 /** Styling for the DOCUMENT VERIFICATION label heading the flowing footer. */
-export const verificationLabelStyle = {
+export const verificationLabelStyle = (mode: PrimeColorMode = 'brand') => ({
   fontSize: 9,
   fontWeight: 'bold' as const,
-  color: '#334155',
+  color: monoText(mode, '#334155'),
   letterSpacing: 1.5,
   marginBottom: 4,
-};
+});
 
 /**
  * Deprecated: the verification footer is rendered inside the shared

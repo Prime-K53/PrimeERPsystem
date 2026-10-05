@@ -114,7 +114,10 @@ export const useDocumentPreview = () => {
           type: effectiveType,
           data: securedData as PrimeDocData,
           configOverride: companyConfig ?? null,
-          customers: customers as any
+          customers: customers as any,
+          // Print renders the black-and-white copy (all text pure black,
+          // logo/QR untouched); preview/download keep brand colors.
+          colorMode: 'mono',
         }) as any).toBlob();
 
         const duration = performance.now() - startTime;

@@ -2,6 +2,7 @@ import React from 'react';
 import { pdf } from '@react-pdf/renderer';
 import type { DocType } from '../../../../stores/documentStore';
 import { PrimeDocument } from './PrimeDocument';
+import type { PrimeColorMode } from './pdfPrintMode';
 import type { PrimeDocData } from './schemas';
 import type { CompanyConfig } from '../../../../types';
 import { initializePrimePdfFonts } from './templateSettings';
@@ -61,6 +62,9 @@ export const generatePrimeDocumentBlob = async (
   data: PrimeDocData,
   config?: CompanyConfig | null,
   timeoutMs = DEFAULT_PDF_TIMEOUT_MS,
+  // 'brand' keeps full colors (preview/download); 'mono' renders every text
+  // in pure black with white fills for the printer (logo/QR untouched).
+  colorMode: PrimeColorMode = 'brand',
 ): Promise<Blob> => {
   const d = data as { items?: unknown[] };
   const itemCount = Array.isArray(d.items) ? d.items.length : 0;
@@ -73,7 +77,7 @@ export const generatePrimeDocumentBlob = async (
     await yieldToUi();
   }
 
-  const doc = <PrimeDocument type={type} data={data} configOverride={config ?? null} />;
+  const doc = <PrimeDocument type={type} data={data} configOverride={config ?? null} colorMode={colorMode} />;
 
   await yieldToUi();
 

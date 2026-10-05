@@ -328,11 +328,12 @@ export const PreviewModal = ({
       .catch((e) => { setError(getPdfErrorMessage(e)); toast('Download failed', 'error'); });
   }, [pdfSource, previewTitle, toast]);
 
-  const handlePrint = useCallback(() => {
-    if (!blobUrl) return;
+  const [printing, setPrinting] = useState(false);
+
+  const printBlobUrl = useCallback((url: string) => {
     if (isAndroid) {
       // On Android open in a new tab so the user can use the browser print
-      window.open(blobUrl, '_blank');
+      window.open(url, '_blank');
       toast('Opened in browser – use browser Print', 'info');
       return;
     }
@@ -345,7 +346,7 @@ export const PreviewModal = ({
     iframe.style.width = '0';
     iframe.style.height = '0';
     iframe.style.border = '0';
-    iframe.src = blobUrl;
+    iframe.src = url;
     document.body.appendChild(iframe);
 
     let removed = false;
@@ -360,7 +361,7 @@ export const PreviewModal = ({
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
       } catch {
-        window.open(blobUrl, '_blank');
+        window.open(url, '_blank');
       } finally {
         setTimeout(cleanupPrint, 60_000);
       }
@@ -368,7 +369,40 @@ export const PreviewModal = ({
 
     setTimeout(cleanupPrint, 60_000);
     toast('Print dialog opened', 'success');
-  }, [blobUrl, isAndroid, toast]);
+  }, [isAndroid, toast]);
+
+  const handlePrint = useCallback(() => {
+    // No re-renderable document (attached file / custom content): print the
+    // preview bytes as-is.
+    if (!data || !type) {
+      if (!blobUrl) return;
+      printBlobUrl(blobUrl);
+      return;
+    }
+    // Print renders a fresh black-and-white copy (all text pure black,
+    // logo/QR untouched). Preview/download keep the brand-color PDF.
+    if (printing) return;
+    setPrinting(true);
+    toast('Preparing black & white print…', 'info');
+    (async () => {
+      try {
+        const check = validateDocumentData(type, data);
+        if (!check.valid) throw new Error(check.error || 'Document validation failed');
+        const config = await hydrateCompanyPdfAssets(getStoredCompanyConfig());
+        await initializePrimePdfFonts();
+        const secured = await attachDocumentSecurity(data);
+        const { generatePrimeDocumentBlob } = await import('./generatePrimeDocumentBlob');
+        const monoBlob = await generatePrimeDocumentBlob(type, secured as PrimeDocData, config, undefined, 'mono');
+        const url = URL.createObjectURL(monoBlob);
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        printBlobUrl(url);
+      } catch (e: any) {
+        toast(e?.message || 'Print preparation failed', 'error');
+      } finally {
+        setPrinting(false);
+      }
+    })();
+  }, [blobUrl, data, type, printing, printBlobUrl, toast]);
 
   const handleShare = useCallback(async () => {
     if (!pdfSource) return;
@@ -556,12 +590,13 @@ export const PreviewModal = ({
               {/* Print */}
               <button
                 onClick={handlePrint}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all active:scale-95"
+                disabled={printing}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all active:scale-95 disabled:opacity-50"
                 style={{ background: 'rgba(255,255,255,0.07)', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.1)' }}
-                title="Print  (Ctrl+P)"
+                title="Print black & white  (Ctrl+P)"
               >
                 <Printer className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Print</span>
+                <span className="hidden sm:inline">{printing ? 'Preparing…' : 'Print'}</span>
               </button>
 
               {/* Share – shown when Web Share API is available OR on touch */}

@@ -1,6 +1,15 @@
 import { StyleSheet } from '@react-pdf/renderer';
+import type { PrimeColorMode } from './pdfPrintMode';
+import { monoText, monoFill, monoLine } from './pdfPrintMode';
 
-export const docStyles = StyleSheet.create({
+/**
+ * Brand (screen/download) vs mono (print) style sets.
+ * In mono mode every text prints pure black, fills print white and
+ * dividers print black; images (logo, QR) are untouched by design.
+ */
+const createDocStyles = (mono: boolean) => {
+const mode: PrimeColorMode = mono ? 'mono' : 'brand';
+return StyleSheet.create({
   page: {
     padding: 40,
     // Reserve clearance above the absolutely-positioned legal/security
@@ -57,10 +66,10 @@ export const docStyles = StyleSheet.create({
     fontWeight: 'bold',
   },
   recipientDetail: {
-    color: '#333333',
+    color: monoText(mode, '#333333'),
   },
   recipientPhone: {
-    color: '#333333',
+    color: monoText(mode, '#333333'),
     marginTop: 2, // Explicit gap visually matching metadata
   },
   narrativeContainer: {
@@ -89,7 +98,7 @@ export const docStyles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     borderBottomWidth: 0.5,
-    borderColor: '#eee',
+    borderColor: monoLine(mode, '#eee'),
     paddingVertical: 6,
     alignItems: 'center'
   },
@@ -115,7 +124,7 @@ export const docStyles = StyleSheet.create({
   summaryBox: { width: 180 },
   statusBox: {
     padding: 6,
-    backgroundColor: '#f8fafc',
+    backgroundColor: monoFill(mode, '#f8fafc'),
     borderRadius: 4,
     borderLeftWidth: 3,
     marginTop: 0,
@@ -123,7 +132,7 @@ export const docStyles = StyleSheet.create({
   statusLabel: {
     fontSize: 9,
     fontWeight: 'bold',
-    color: '#64748b',
+    color: monoText(mode, '#64748b'),
     textTransform: 'uppercase',
   },
   statusValue: {
@@ -136,7 +145,7 @@ export const docStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 3,
     borderBottomWidth: 0.5,
-    borderColor: '#eee',
+    borderColor: monoLine(mode, '#eee'),
   },
   totalRow: {
     flexDirection: 'row',
@@ -162,7 +171,7 @@ export const docStyles = StyleSheet.create({
   },
   footerLine: {
     borderTopWidth: 0.5,
-    borderColor: '#ccc',
+    borderColor: monoLine(mode, '#ccc'),
     width: '100%',
     marginBottom: 15,
   },
@@ -190,9 +199,9 @@ export const docStyles = StyleSheet.create({
     right: 40,
     textAlign: 'left',
     fontSize: 8,
-    color: '#666',
+    color: monoText(mode, '#666'),
     borderTopWidth: 0.5,
-    borderColor: '#eee',
+    borderColor: monoLine(mode, '#eee'),
     paddingTop: 10,
     lineHeight: 1.2,
   },
@@ -202,7 +211,7 @@ export const docStyles = StyleSheet.create({
     left: 40,
     right: 40,
     borderTopWidth: 0.5,
-    borderColor: '#e2e8f0',
+    borderColor: monoLine(mode, '#e2e8f0'),
     paddingTop: 6,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -216,7 +225,7 @@ export const docStyles = StyleSheet.create({
   },
   securityFooterLine: {
     fontSize: 8,
-    color: '#666',
+    color: monoText(mode, '#666'),
     lineHeight: 1.2,
     textAlign: 'left',
   },
@@ -236,12 +245,12 @@ export const docStyles = StyleSheet.create({
     fontSize: 7,
     fontWeight: 'bold',
     textTransform: 'uppercase',
-    color: '#0f172a',
+    color: monoText(mode, '#0f172a'),
     marginBottom: 1,
   },
   securityQrMeta: {
     fontSize: 5.8,
-    color: '#475569',
+    color: monoText(mode, '#475569'),
     textAlign: 'center',
     lineHeight: 1.15,
   },
@@ -261,9 +270,9 @@ export const docStyles = StyleSheet.create({
   watermarkText: {
     fontSize: 70,
     fontWeight: 'bold',
-    color: '#dc2626',
+    color: monoText(mode, '#dc2626'),
     borderWidth: 6,
-    borderColor: '#dc2626',
+    borderColor: monoLine(mode, '#dc2626'),
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
@@ -284,7 +293,7 @@ export const docStyles = StyleSheet.create({
   convertedWatermarkText: {
     fontSize: 80,
     fontWeight: 'bold',
-    color: '#64748b',
+    color: monoText(mode, '#64748b'),
     textTransform: 'uppercase',
   },
   // --- Portal Copy Watermark (rendered natively, repeated on every page) ---
@@ -304,7 +313,7 @@ export const docStyles = StyleSheet.create({
   portalWatermarkText: {
     fontSize: 52,
     fontWeight: 'bold',
-    color: '#334155',
+    color: monoText(mode, '#334155'),
     paddingHorizontal: 20,
     paddingVertical: 8,
     textTransform: 'uppercase',
@@ -357,7 +366,7 @@ export const docStyles = StyleSheet.create({
   },
   metaLabel: {
     width: 100,
-    color: '#666',
+    color: monoText(mode, '#666'),
   },
   metaValue: {
     width: 120,
@@ -368,7 +377,7 @@ export const docStyles = StyleSheet.create({
     marginBottom: 40,
     borderTopWidth: 0.5,
     borderBottomWidth: 0.5,
-    borderColor: '#eee',
+    borderColor: monoLine(mode, '#eee'),
     paddingVertical: 10,
     lineHeight: 1.4,
   },
@@ -381,7 +390,7 @@ export const docStyles = StyleSheet.create({
   issuerLabel: {
     width: 100,
     fontWeight: 'bold',
-    color: '#666',
+    color: monoText(mode, '#666'),
   },
   issuerValue: {
     flex: 1,
@@ -406,15 +415,15 @@ export const docStyles = StyleSheet.create({
     marginBottom: 20,
   },
   amountHighlight: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: monoFill(mode, '#f1f5f9'),
     paddingHorizontal: 4,
     fontWeight: 'bold',
     borderRadius: 2,
   },
   overpaymentNotice: {
-    backgroundColor: '#f0fdf4',
+    backgroundColor: monoFill(mode, '#f0fdf4'),
     borderLeftWidth: 4,
-    borderLeftColor: '#22c55e',
+    borderLeftColor: monoLine(mode, '#22c55e'),
     padding: 12,
     marginBottom: 20,
     borderRadius: 4,
@@ -422,32 +431,32 @@ export const docStyles = StyleSheet.create({
   overpaymentTitle: {
     fontSize: 9,
     fontWeight: 'bold',
-    color: '#15803d',
+    color: monoText(mode, '#15803d'),
     textTransform: 'uppercase',
     marginBottom: 4,
     letterSpacing: 1,
   },
   overpaymentText: {
     fontSize: 10,
-    color: '#166534',
+    color: monoText(mode, '#166534'),
     fontStyle: 'italic',
   },
   paymentTable: {
     marginTop: 20,
     borderTopWidth: 0.5,
-    borderColor: '#eee',
+    borderColor: monoLine(mode, '#eee'),
   },
   paymentRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 4,
     borderBottomWidth: 0.5,
-    borderColor: '#eee',
+    borderColor: monoLine(mode, '#eee'),
     fontSize: 12,
   },
   totalSettledBox: {
     marginTop: 15,
-    backgroundColor: '#f8fafc',
+    backgroundColor: monoFill(mode, '#f8fafc'),
     padding: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -457,13 +466,13 @@ export const docStyles = StyleSheet.create({
   totalSettledLabel: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#1e293b',
+    color: monoText(mode, '#1e293b'),
     textTransform: 'uppercase',
   },
   totalSettledValue: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#2563eb',
+    color: monoText(mode, '#2563eb'),
   },
 
   // Narrative and Ledger spacing
@@ -482,14 +491,14 @@ export const docStyles = StyleSheet.create({
   overpaymentBox: {
     marginTop: 15,
     padding: 10,
-    backgroundColor: '#f0fdf4',
+    backgroundColor: monoFill(mode, '#f0fdf4'),
     borderLeftWidth: 3,
-    borderLeftColor: '#16a34a',
+    borderLeftColor: monoLine(mode, '#16a34a'),
     lineHeight: 1.125,
   },
   disclaimerText: {
     fontSize: 10,
-    color: '#666',
+    color: monoText(mode, '#666'),
     marginTop: 10,
     textAlign: 'center',
     lineHeight: 1.125,
@@ -519,7 +528,7 @@ export const docStyles = StyleSheet.create({
     width: 180,
     height: 72,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: monoLine(mode, '#cbd5e1'),
     borderRadius: 4,
     padding: 4,
     justifyContent: 'center',
@@ -558,7 +567,7 @@ export const docStyles = StyleSheet.create({
   timestamp: {
     marginTop: 30,
     fontSize: 9,
-    color: '#666',
+    color: monoText(mode, '#666'),
     fontStyle: 'italic',
   },
   // POS A4 Layout
@@ -567,10 +576,14 @@ export const docStyles = StyleSheet.create({
     paddingVertical: 30,
     paddingHorizontal: 10,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: monoLine(mode, '#eee'),
     borderStyle: 'dashed',
     alignSelf: 'center',
     backgroundColor: '#fff',
   },
 
 });
+};
+
+export const docStyles = createDocStyles(false);
+export const docStylesMono = createDocStyles(true);

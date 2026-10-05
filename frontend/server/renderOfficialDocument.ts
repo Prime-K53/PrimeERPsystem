@@ -38,6 +38,12 @@ export interface RenderOfficialDocumentInput {
    *                PORTAL COPY watermark rendered into the PDF itself.
    */
   channel?: 'erp' | 'portal';
+  /**
+   * Print color mode. 'brand' (default) keeps full colors for preview and
+   * download; 'mono' renders every text in pure black with white fills
+   * for the printer (logo/QR images untouched).
+   */
+  colorMode?: 'brand' | 'mono';
 }
 
 export async function renderOfficialDocumentPdf(
@@ -74,6 +80,7 @@ export async function renderOfficialDocumentPdf(
       configOverride: (input.companyConfig as any) || null,
       customers: (input.customers || []) as any,
       channel: input.channel || 'erp',
+      colorMode: input.colorMode || 'brand',
     }) as any
   ).toBlob();
 

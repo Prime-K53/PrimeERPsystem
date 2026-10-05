@@ -1,6 +1,8 @@
 import React from 'react';
 import { Document, Page, View, Text, Font, Image } from '@react-pdf/renderer';
-import { docStyles as s } from './styles.ts';
+import { docStyles, docStylesMono } from './styles.ts';
+import type { PrimeColorMode } from './pdfPrintMode.ts';
+import { monoText, monoFill, monoLine, monoInk } from './pdfPrintMode.ts';
 import {
   PrimeDocData,
   SalesExchangeDoc,
@@ -55,6 +57,7 @@ const InvoiceInfoPanel = ({
   config,
   fontScale,
   customers = [],
+  colorMode = 'brand',
 }: {
   type: 'payment_terms' | 'account_summary';
   settings: PrimeTemplateSettings;
@@ -62,13 +65,15 @@ const InvoiceInfoPanel = ({
   config: CompanyConfig | null;
   fontScale: number;
   customers?: any[];
+  colorMode?: PrimeColorMode;
 }) => {
+  const mode: PrimeColorMode = colorMode ?? 'brand';
   if (type === 'account_summary') {
     const summary = generateAccountSummary(data, config, customers);
     return (
       <View style={{ marginBottom: 15 }}>
-        <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>ACCOUNT SUMMARY</Text>
-        <Text style={{ fontSize: 10 * fontScale, color: '#475569', lineHeight: 1.4 }}>{summary.statement}</Text>
+        <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>ACCOUNT SUMMARY</Text>
+        <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#475569'), lineHeight: 1.4 }}>{summary.statement}</Text>
       </View>
     );
   }
@@ -76,8 +81,8 @@ const InvoiceInfoPanel = ({
   const paymentTermsLabel = String(data?.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
   return (
     <View style={{ marginBottom: 15 }}>
-      <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Payment Terms</Text>
-      <Text style={{ fontSize: 10 * fontScale, color: '#475569', lineHeight: 1.4 }}>{paymentTermsLabel}</Text>
+      <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Payment Terms</Text>
+      <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#475569'), lineHeight: 1.4 }}>{paymentTermsLabel}</Text>
     </View>
   );
 };
@@ -158,22 +163,23 @@ const formatDateOnly = (value?: string) => {
   return beforeComma || normalized;
 };
 
-const getStatusTone = (status?: string) => {
+const getStatusTone = (status?: string, colorMode: PrimeColorMode = 'brand') => {
   const normalized = String(status || '').trim().toLowerCase();
+  const mono = colorMode === 'mono';
 
   if (normalized === 'paid' || normalized === 'active') {
-    return { border: '#10b981', text: '#059669' };
+    return { border: mono ? '#000' : '#10b981', text: mono ? '#000' : '#059669' };
   }
 
   if (normalized === 'partial' || normalized === 'partially paid' || normalized === 'partially_paid' || normalized === 'paused' || normalized === 'processing') {
-    return { border: '#f59e0b', text: '#d97706' };
+    return { border: mono ? '#000' : '#f59e0b', text: mono ? '#000' : '#d97706' };
   }
 
   if (normalized === 'overdue') {
-    return { border: '#dc2626', text: '#b91c1c' };
+    return { border: mono ? '#000' : '#dc2626', text: mono ? '#000' : '#b91c1c' };
   }
 
-  return { border: '#ef4444', text: '#dc2626' };
+  return { border: mono ? '#000' : '#ef4444', text: mono ? '#000' : '#dc2626' };
 };
 
 const formatSecurityTimestamp = (value?: string) => {
@@ -240,11 +246,14 @@ const isCancelledStatus = (status?: string | boolean, data?: any): boolean => {
   return str === 'cancelled' || str === 'canceled' || str === 'void' || str === 'voided';
 };
 
-const CancelledWatermark = () => (
-  <View style={s.watermarkContainer} fixed>
-    <Text style={s.watermarkText}>CANCELLED</Text>
-  </View>
-);
+const CancelledWatermark = ({ colorMode = 'brand' }: { colorMode?: PrimeColorMode } = {}) => {
+  const s = colorMode === 'mono' ? docStylesMono : docStyles;
+  return (
+    <View style={s.watermarkContainer} fixed>
+      <Text style={s.watermarkText}>CANCELLED</Text>
+    </View>
+  );
+};
 
 import { StatementSummaryTemplate } from './StatementSummaryTemplate.tsx';
 import { PortalCopyWatermark } from './PortalCopyWatermark.tsx';
@@ -259,6 +268,12 @@ interface DocProps {
    * Established server-side by the backend — never inferred from the browser.
    */
   channel?: 'erp' | 'portal';
+  /**
+   * Print color mode. 'brand' (default) keeps full brand colors for
+   * on-screen preview and downloads; 'mono' renders every text in pure
+   * black with white fills for the printer (logo/QR images untouched).
+   */
+  colorMode?: PrimeColorMode;
 }
 
 const SecurityFooter = ({
@@ -271,6 +286,7 @@ const SecurityFooter = ({
   // once, after the final block) instead of repeating on every page.
   // Default false preserves the exact legacy behavior for all other docs.
   flowing = false,
+  colorMode = 'brand',
 }: {
   data: Record<string, unknown>;
   companyName: string;
@@ -278,7 +294,9 @@ const SecurityFooter = ({
   legalFooterLine2: string;
   fontScale?: number;
   flowing?: boolean;
+  colorMode?: PrimeColorMode;
 }) => {
+  const mode: PrimeColorMode = colorMode ?? 'brand';
   // Verification QR is printed large enough to scan reliably from paper or
   // screen, and matches every other document's QR (see VERIFICATION_QR_SIZE).
   const footerQrSize = VERIFICATION_QR_SIZE;
@@ -302,7 +320,7 @@ const SecurityFooter = ({
           width: 12,
           height: 12,
           borderRadius: 6,
-          backgroundColor: '#10b981',
+          backgroundColor: monoInk(mode, '#10b981'),
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -319,11 +337,11 @@ const SecurityFooter = ({
           }}
         />
       </View>
-      <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: '#2563eb' }}>
+      <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: monoText(mode, '#2563eb') }}>
         Digitally generated
       </Text>
-      <Text style={{ fontSize: 8.5 * fontScale, color: '#64748b' }}>•</Text>
-      <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: '#059669' }}>
+      <Text style={{ fontSize: 8.5 * fontScale, color: monoText(mode, '#64748b') }}>•</Text>
+      <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: monoText(mode, '#059669') }}>
         Verification available online
       </Text>
     </View>
@@ -343,7 +361,7 @@ const SecurityFooter = ({
         {!!qrCodeDataUrl ? (
           <Image src={qrCodeDataUrl} style={{ width: footerQrSize, height: footerQrSize }} />
         ) : (
-          <View style={{ width: footerQrSize, height: footerQrSize, backgroundColor: '#f1f5f9' }} />
+          <View style={{ width: footerQrSize, height: footerQrSize, backgroundColor: monoFill(mode, '#f1f5f9') }} />
         )}
       </View>
     </View>
@@ -355,13 +373,13 @@ const SecurityFooter = ({
         {subRow}
         {bodyCopy}
       </View>
-      <View style={{ width: 1, backgroundColor: '#cbd5e1', alignSelf: 'stretch' }} />
+      <View style={{ width: 1, backgroundColor: monoFill(mode, '#cbd5e1'), alignSelf: 'stretch' }} />
       {qrColumn}
     </View>
   );
 
   const bottomRule = (
-    <View style={{ marginTop: 8, height: 1, backgroundColor: '#dbeafe', width: '100%' }} />
+    <View style={{ marginTop: 8, height: 1, backgroundColor: monoFill(mode, '#dbeafe'), width: '100%' }} />
   );
 
   // Flowing mode must not reuse the absolute-positioned shared style:
@@ -370,7 +388,7 @@ const SecurityFooter = ({
     flexDirection: 'column' as const,
     gap: 0,
     borderTopWidth: 0.5,
-    borderColor: '#e2e8f0',
+    borderColor: monoLine(mode, '#e2e8f0'),
     paddingTop: 8,
     width: '100%' as const,
   };
@@ -382,7 +400,7 @@ const SecurityFooter = ({
     right: 40,
     flexDirection: 'column' as const,
     borderTopWidth: 0.5,
-    borderColor: '#e2e8f0',
+    borderColor: monoLine(mode, '#e2e8f0'),
     paddingTop: 8,
   };
 
@@ -399,13 +417,15 @@ const CleanInvoiceTemplate = ({
   data,
   config,
   templateSettings,
-  channel
+  channel,
+  mode = 'brand',
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
   channel?: 'erp' | 'portal';
+  mode?: PrimeColorMode;
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -493,12 +513,12 @@ const CleanInvoiceTemplate = ({
     }
 
     return (
-      <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e0e0e0', minHeight: 24, alignItems: 'center', paddingVertical: 4 }}>
-        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#334155', textAlign: 'center' }}>{i + 1}</Text>
-        <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155' }}>{formattedDesc}</Text>
-        <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{qty}</Text>
-        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toFixed(2)}`}</Text>
-        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: '#334155', textAlign: 'right' }}>{currency} {total.toFixed(2)}</Text>
+      <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: monoLine(mode, '#e0e0e0'), minHeight: 24, alignItems: 'center', paddingVertical: 4 }}>
+        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#334155'), textAlign: 'center' }}>{i + 1}</Text>
+        <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, '#334155') }}>{formattedDesc}</Text>
+        <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, '#334155'), textAlign: 'right' }}>{qty}</Text>
+        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, '#334155'), textAlign: 'right' }}>{isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toFixed(2)}`}</Text>
+        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, '#334155'), textAlign: 'right' }}>{currency} {total.toFixed(2)}</Text>
       </View>
     );
   };
@@ -508,50 +528,50 @@ const CleanInvoiceTemplate = ({
   return (
     <Document title={docTitleForMeta} author={companyName}>
       <Page size="A4" style={{ padding: 40, paddingBottom: 100, fontFamily: templateSettings.fontFamily }}>
-        {channel === 'portal' && <PortalCopyWatermark />}
-        {isCancelled && <CancelledWatermark />}
+        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+        {isCancelled && <CancelledWatermark colorMode={mode} />}
         {/* Header */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
            <View style={{ flex: 1 }}>
               {!!logo ? (
                 <Image src={logo} style={{ width: templateSettings.logoWidth, marginBottom: 10 }} />
               ) : (
-                <Text style={{ fontSize: templateSettings.companyNameFontSize, fontWeight: 'bold', color: accentColor, marginBottom: 8 }}>{companyName}</Text>
+                <Text style={{ fontSize: templateSettings.companyNameFontSize, fontWeight: 'bold', color: monoText(mode, accentColor), marginBottom: 8 }}>{companyName}</Text>
               )}
-              {!!companyAddress && <Text style={{ fontSize: 9 * fontScale, color: '#64748b', lineHeight: 1.4 }}>{companyAddress}</Text>}
-              {!!companyPhone && <Text style={{ fontSize: 9 * fontScale, color: '#64748b', marginTop: 2 }}>{companyPhone}</Text>}
-              {!!companyEmail && <Text style={{ fontSize: 9 * fontScale, color: '#64748b', marginTop: 2 }}>{companyEmail}</Text>}
+              {!!companyAddress && <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#64748b'), lineHeight: 1.4 }}>{companyAddress}</Text>}
+              {!!companyPhone && <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#64748b'), marginTop: 2 }}>{companyPhone}</Text>}
+              {!!companyEmail && <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#64748b'), marginTop: 2 }}>{companyEmail}</Text>}
            </View>
            <View style={{ flex: 1, alignItems: 'flex-end', textAlign: 'right' }}>
-              <Text style={{ fontSize: 26 * fontScale, fontWeight: '300', color: '#1e293b', letterSpacing: 1.5 }}>{docTitle}</Text>
-              <Text style={{ fontSize: 11 * fontScale, color: '#475569', marginTop: 8, fontWeight: 'bold' }}>{invoiceNumber}</Text>
+              <Text style={{ fontSize: 26 * fontScale, fontWeight: '300', color: monoText(mode, '#1e293b'), letterSpacing: 1.5 }}>{docTitle}</Text>
+              <Text style={{ fontSize: 11 * fontScale, color: monoText(mode, '#475569'), marginTop: 8, fontWeight: 'bold' }}>{invoiceNumber}</Text>
            </View>
         </View>
 
         {/* Company and Client Info */}
         <View style={{ flexDirection: 'row', marginBottom: 30, gap: 30 }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 6, letterSpacing: 1 }}>Bill To</Text>
-            <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: '#1e293b', marginBottom: 4 }}>{resolvedRecipientName || 'N/A'}</Text>
-            {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: '#334155', marginBottom: 3, lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
-            {!!resolvedRecipientPhone && <Text style={{ fontSize: 10 * fontScale, color: '#334155' }}>{resolvedRecipientPhone}</Text>}
+            <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 6, letterSpacing: 1 }}>Bill To</Text>
+            <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e293b'), marginBottom: 4 }}>{resolvedRecipientName || 'N/A'}</Text>
+            {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#334155'), marginBottom: 3, lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
+            {!!resolvedRecipientPhone && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#334155') }}>{resolvedRecipientPhone}</Text>}
           </View>
           <View style={{ flex: 1, alignItems: 'flex-start' }}>
             <View style={{ marginBottom: 12 }}>
-              <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: 1 }}>Date</Text>
-              <Text style={{ fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold' }}>{invoiceDate}</Text>
+              <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 3, letterSpacing: 1 }}>Date</Text>
+              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold' }}>{invoiceDate}</Text>
             </View>
             {Boolean(templateSettings.showDueDate) && !!dueDate && (
               <View style={{ marginBottom: 12 }}>
-                <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3, letterSpacing: 1 }}>Due Date</Text>
-                <Text style={{ fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold' }}>{dueDate}</Text>
+                <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 3, letterSpacing: 1 }}>Due Date</Text>
+                <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold' }}>{dueDate}</Text>
               </View>
             )}
           </View>
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             {!!dataAny.status && (
-              <View style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 4, borderWidth: 1, borderColor: getStatusTone(String(dataAny.status)).border, backgroundColor: getStatusTone(String(dataAny.status)).border + '15' }}>
-                <Text style={{ fontSize: 12 * fontScale, color: getStatusTone(String(dataAny.status)).text, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>{String(dataAny.status).toUpperCase()}</Text>
+              <View style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 4, borderWidth: 1, borderColor: monoLine(mode, getStatusTone(String(dataAny.status), mode).border), backgroundColor: monoFill(mode, getStatusTone(String(dataAny.status), mode).border + '15') }}>
+                <Text style={{ fontSize: 12 * fontScale, color: monoText(mode, getStatusTone(String(dataAny.status), mode).text), fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>{String(dataAny.status).toUpperCase()}</Text>
               </View>
             )}
           </View>
@@ -559,12 +579,12 @@ const CleanInvoiceTemplate = ({
 
         {/* Table representation */}
         <View style={{ marginBottom: 20 }}>
-          <View style={{ flexDirection: 'row', backgroundColor: accentColor, borderRadius: 4, minHeight: 28, alignItems: 'center' }}>
-            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'center' }}>SN</Text>
-            <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Description</Text>
-            <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Qty</Text>
-            <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Price</Text>
-            <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Amount</Text>
+          <View style={{ flexDirection: 'row', backgroundColor: monoFill(mode, accentColor), borderRadius: 4, minHeight: 28, alignItems: 'center' }}>
+            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'center' }}>SN</Text>
+            <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff') }}>Description</Text>
+            <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Qty</Text>
+            <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Price</Text>
+            <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Amount</Text>
           </View>
           {items.map(renderRow)}
         </View>
@@ -574,37 +594,37 @@ const CleanInvoiceTemplate = ({
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15 }}>
             <View style={{ minWidth: 220 }}>
               <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>Subtotal</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Subtotal</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
               {discount > 0 && (
                 <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>{discountLabel}</Text>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{discountAmountText}</Text>
+                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>{discountLabel}</Text>
+                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{discountAmountText}</Text>
                 </View>
               )}
               {tax > 0 && (
                 <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>Tax</Text>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Tax</Text>
+                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
                 </View>
               )}
               {dataAny.roundingDifference ? (
                 <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
+                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
                 </View>
               ) : null}
               {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-                <View style={{ flexDirection: 'row', paddingVertical: 4, marginTop: 4, borderTopWidth: 1, borderColor: '#e2e8f0', paddingTop: 8 }}>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>Amount Paid</Text>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <View style={{ flexDirection: 'row', paddingVertical: 4, marginTop: 4, borderTopWidth: 1, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
+                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Amount Paid</Text>
+                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
                 </View>
               )}
               {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-                <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: accentColor + '15', marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
-                  <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: accentColor }}>Balance Due</Text>
-                  <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: accentColor, textAlign: 'right' }}>
+                <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + '15'), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
+                  <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor) }}>Balance Due</Text>
+                  <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor), textAlign: 'right' }}>
                     {currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}
                   </Text>
                 </View>
@@ -617,64 +637,64 @@ const CleanInvoiceTemplate = ({
              {/* Notes region */}
               {!!dataAny.notes && (
                  <View>
-                    <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Notes</Text>
-                    <Text style={{ fontSize: 10 * fontScale, color: '#475569', lineHeight: 1.4 }}>{String(dataAny.notes)}</Text>
+                    <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Notes</Text>
+                    <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#475569'), lineHeight: 1.4 }}>{String(dataAny.notes)}</Text>
                  </View>
               )}
           </View>
 
           <View style={{ flex: 1, minWidth: 220 }}>
             <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-              <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>Subtotal</Text>
-              <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Subtotal</Text>
+              <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
             </View>
             {discount > 0 && (
               <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>{discountLabel}</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{discountAmountText}</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>{discountLabel}</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{discountAmountText}</Text>
               </View>
             )}
             {tax > 0 && (
               <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>Tax</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Tax</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
             )}
             {dataAny.roundingDifference ? (
               <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
             ) : null}
             
             {type !== 'INVOICE' && type !== 'ORDER' && type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-              <View style={{ alignSelf: 'flex-end', width: 220, flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderColor: '#e2e8f0', marginTop: 4 }}>
-                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: '#1e293b' }}>Total Amount</Text>
-                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: '#1e293b', textAlign: 'right' }}>{currency} {(totalAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <View style={{ alignSelf: 'flex-end', width: 220, flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderColor: monoLine(mode, '#e2e8f0'), marginTop: 4 }}>
+                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e293b') }}>Total Amount</Text>
+                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e293b'), textAlign: 'right' }}>{currency} {(totalAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
             )}
             
             {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-              <View style={{ flexDirection: 'row', paddingVertical: 4, marginTop: (type === 'INVOICE' || type === 'ORDER') ? 4 : 0, borderTopWidth: (type === 'INVOICE' || type === 'ORDER') ? 1 : 0, borderColor: '#e2e8f0', paddingTop: (type === 'INVOICE' || type === 'ORDER') ? 8 : 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#475569' }}>Amount Paid</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: '#1e293b', fontWeight: 'bold', textAlign: 'right' }}>{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <View style={{ flexDirection: 'row', paddingVertical: 4, marginTop: (type === 'INVOICE' || type === 'ORDER') ? 4 : 0, borderTopWidth: (type === 'INVOICE' || type === 'ORDER') ? 1 : 0, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: (type === 'INVOICE' || type === 'ORDER') ? 8 : 4 }}>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Amount Paid</Text>
+                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
             )}
             
             
             {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-              <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: accentColor + '15', marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
-                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: accentColor }}>Balance Due</Text>
-                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: accentColor, textAlign: 'right' }}>
+              <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + '15'), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
+                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor) }}>Balance Due</Text>
+                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor), textAlign: 'right' }}>
                     {currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}
                 </Text>
               </View>
             )}
             
             {type === 'SUBSCRIPTION' && (
-              <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: accentColor + '15', marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
-                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: accentColor }}>Recurring Total</Text>
-                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: accentColor, textAlign: 'right' }}>
+              <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + '15'), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
+                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor) }}>Recurring Total</Text>
+                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor), textAlign: 'right' }}>
                     {currency} {totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}
                 </Text>
               </View>
@@ -689,8 +709,8 @@ const CleanInvoiceTemplate = ({
           const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
           const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
           return (
-            <View style={{ marginTop: 15, padding: 8, backgroundColor: '#f0f9ff', borderRadius: 4, borderLeftWidth: 3, borderLeftColor: '#0ea5e9' }} wrap={false}>
-              <Text style={{ fontSize: 10 * fontScale, color: '#0369a1', lineHeight: 1.4 }}>
+            <View style={{ marginTop: 15, padding: 8, backgroundColor: monoFill(mode, '#f0f9ff'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#0ea5e9') }} wrap={false}>
+              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#0369a1'), lineHeight: 1.4 }}>
                 {'Your overall outstanding balance is '}
                 <Text style={{ fontWeight: 'bold' }}>{currency} {totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
                 {` as of ${todayStr}`}
@@ -702,7 +722,7 @@ const CleanInvoiceTemplate = ({
         {/* Footer info (Notes etc) */}
         <View wrap={false} style={{ marginTop: 15, flex: 1 }}>
           {showAccountSummary ? (
-            <InvoiceInfoPanel
+            <InvoiceInfoPanel colorMode={mode}
               type="account_summary"
               settings={templateSettings}
               data={dataAny}
@@ -710,7 +730,7 @@ const CleanInvoiceTemplate = ({
               fontScale={fontScale}
             />
           ) : templateSettings.showPaymentTerms ? (
-            <InvoiceInfoPanel
+            <InvoiceInfoPanel colorMode={mode}
               type="payment_terms"
               settings={templateSettings}
               data={dataAny}
@@ -721,7 +741,7 @@ const CleanInvoiceTemplate = ({
         </View>
 
         {/* Use the standard Security Footer at bottom */}
-        <SecurityFooter
+        <SecurityFooter colorMode={mode}
           data={dataAny}
           companyName={companyName}
           legalFooterLine1={legalFooterLine1}
@@ -738,13 +758,15 @@ const ModernInvoiceTemplate = ({
   data,
   config,
   templateSettings,
-  channel
+  channel,
+  mode = 'brand',
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
   channel?: 'erp' | 'portal';
+  mode?: PrimeColorMode;
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -837,17 +859,17 @@ const ModernInvoiceTemplate = ({
       }
     }
 
-    const bgColor = i % 2 !== 0 ? '#F5F5F5' : 'transparent';
+    const bgColor = mode === 'mono' ? '#fff' : (i % 2 !== 0 ? '#F5F5F5' : 'transparent');
 
     return (
       <View key={i} style={{ flexDirection: 'row', backgroundColor: bgColor, minHeight: 28, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 }}>
-        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
-        <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
-        <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
-        <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>
+        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'center' }}>{i + 1}</Text>
+        <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333') }}>{formattedDesc}</Text>
+        <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>{qty}</Text>
+        <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>
             {isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
         </Text>
-        <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>
+        <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>
             {currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}
         </Text>
       </View>
@@ -859,32 +881,32 @@ const ModernInvoiceTemplate = ({
   return (
     <Document title={docTitleForMeta} author={companyName}>
       <Page size="A4" style={{ paddingVertical: 45, paddingHorizontal: 40, fontFamily: templateSettings.fontFamily, backgroundColor: '#FFFFFF' }}>
-        {channel === 'portal' && <PortalCopyWatermark />}
-        {isCancelled && <CancelledWatermark />}
+        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+        {isCancelled && <CancelledWatermark colorMode={mode} />}
         
 {/* Centered Logo & Company Header */}
         <View style={{ alignItems: 'center', marginBottom: 1.5 }}>
           {!!logo ? (
              <Image src={logo} style={{ width: templateSettings.logoWidth }} />
            ) : (
-             <Text style={{ color: '#222222', fontSize: templateSettings.logoWidth * 0.4, fontWeight: 'bold' }}>{companyName.charAt(0)}</Text>
+             <Text style={{ color: monoText(mode, '#222222'), fontSize: templateSettings.logoWidth * 0.4, fontWeight: 'bold' }}>{companyName.charAt(0)}</Text>
            )}
         </View>
 
         {/* Invoice Huge Title */}
         <View style={{ alignItems: 'center', marginBottom: 2 }}>
-          <Text style={{ fontSize: 48 * fontScale, color: '#111111' }}>
+          <Text style={{ fontSize: 48 * fontScale, color: monoText(mode, '#111111') }}>
             <Text style={{ fontWeight: 'heavy' }}>{titleFirst}</Text>
-            {!!titleRest && <Text style={{ fontStyle: 'italic', fontWeight: 'normal', color: '#333333' }}> {titleRest}</Text>}
+            {!!titleRest && <Text style={{ fontStyle: 'italic', fontWeight: 'normal', color: monoText(mode, '#333333') }}> {titleRest}</Text>}
           </Text>
         </View>
 
         {/* Info Row: Number / Date */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 30, marginBottom: 20 }}>
-          <Text style={{ fontSize: 12 * fontScale, color: '#222222' }}>
+          <Text style={{ fontSize: 12 * fontScale, color: monoText(mode, '#222222') }}>
             <Text style={{ fontWeight: 'bold' }}>{type === 'INVOICE' ? 'Invoice Number:' : 'Reference Number:'}</Text> {invoiceNumber}
           </Text>
-          <Text style={{ fontSize: 12 * fontScale, color: '#222222' }}>
+          <Text style={{ fontSize: 12 * fontScale, color: monoText(mode, '#222222') }}>
             <Text style={{ fontWeight: 'bold' }}>{type === 'INVOICE' ? 'Invoice Date:' : 'Date:'}</Text> {invoiceDate}
           </Text>
         </View>
@@ -892,43 +914,43 @@ const ModernInvoiceTemplate = ({
         {/* Columns: Payment Info vs Bill To */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 }}>
           <View style={{ flex: 1, paddingRight: 20 }}>
-            <View style={{ backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 12, minWidth: 150 }}>
-              <Text style={{ color: '#ffffff', fontSize: 10 * fontScale, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>COMPANY INFO</Text>
+            <View style={{ backgroundColor: monoFill(mode, accentColor), paddingVertical: 6, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 12, minWidth: 150 }}>
+              <Text style={{ color: monoText(mode, '#ffffff'), fontSize: 10 * fontScale, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>COMPANY INFO</Text>
             </View>
-            {!!companyPhone && <Text style={{ fontSize: 11 * fontScale, color: '#333333', marginBottom: 3 }}>{companyPhone}</Text>}
-            {!!companyEmail && <Text style={{ fontSize: 11 * fontScale, color: '#333333', marginBottom: 3 }}>{companyEmail}</Text>}
+            {!!companyPhone && <Text style={{ fontSize: 11 * fontScale, color: monoText(mode, '#333333'), marginBottom: 3 }}>{companyPhone}</Text>}
+            {!!companyEmail && <Text style={{ fontSize: 11 * fontScale, color: monoText(mode, '#333333'), marginBottom: 3 }}>{companyEmail}</Text>}
           </View>
           
           <View style={{ flex: 1 }}>
-            <View style={{ backgroundColor: accentColor, paddingVertical: 6, paddingHorizontal: 12, alignSelf: 'flex-end', marginBottom: 12, minWidth: 150 }}>
-              <Text style={{ color: '#ffffff', fontSize: 10 * fontScale, fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase', letterSpacing: 1 }}>BILL TO</Text>
+            <View style={{ backgroundColor: monoFill(mode, accentColor), paddingVertical: 6, paddingHorizontal: 12, alignSelf: 'flex-end', marginBottom: 12, minWidth: 150 }}>
+              <Text style={{ color: monoText(mode, '#ffffff'), fontSize: 10 * fontScale, fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase', letterSpacing: 1 }}>BILL TO</Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={{ fontSize: 12 * fontScale, fontWeight: 'bold', color: '#111111', marginBottom: 4 }}>{resolvedRecipientName}</Text>
-              {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: '#333333', textAlign: 'right', lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
-              {!!resolvedRecipientPhone && <Text style={{ fontSize: 10 * fontScale, color: '#333333', textAlign: 'right', marginTop: 2 }}>{resolvedRecipientPhone}</Text>}
+              <Text style={{ fontSize: 12 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 4 }}>{resolvedRecipientName}</Text>
+              {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right', lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
+              {!!resolvedRecipientPhone && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right', marginTop: 2 }}>{resolvedRecipientPhone}</Text>}
             </View>
           </View>
         </View>
 
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
-          <View style={{ flexDirection: 'row', backgroundColor: accentColor, paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center' }}>
-            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'center' }}>SN</Text>
-            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff' }}>Description</Text>
-            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Qty</Text>
-            <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Price</Text>
-            <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' }}>Amount</Text>
+          <View style={{ flexDirection: 'row', backgroundColor: monoFill(mode, accentColor), paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center' }}>
+            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'center' }}>SN</Text>
+            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff') }}>Description</Text>
+            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Qty</Text>
+            <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Price</Text>
+            <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Amount</Text>
           </View>
           {items.map(renderRow)}
           
           {/* Total Payment Gray Row */}
-          <View style={{ flexDirection: 'row', backgroundColor: '#D9DEDE', paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', marginTop: 4 }}>
-            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'center' }}>-</Text>
-            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#111111' }}>Total Payment</Text>
-            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'right' }}>-</Text>
-            <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: '#111111', textAlign: 'right' }}>-</Text>
-            <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: '#111111', textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+          <View style={{ flexDirection: 'row', backgroundColor: monoFill(mode, '#D9DEDE'), paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', marginTop: 4 }}>
+            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, '#111111'), textAlign: 'center' }}>-</Text>
+            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111') }}>Total Payment</Text>
+            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, '#111111'), textAlign: 'right' }}>-</Text>
+            <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, '#111111'), textAlign: 'right' }}>-</Text>
+            <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
           </View>
         </View>
 
@@ -937,9 +959,9 @@ const ModernInvoiceTemplate = ({
           <View style={{ width: 200 }}>
               {!!dataAny.notes && (
                  <View style={{ marginTop: 10 }}>
-                    <Text style={{ fontSize: 12 * fontScale, fontWeight: 'bold', color: '#111111', marginBottom: 6 }}>Notes:</Text>
-                    <Text style={{ fontSize: 10 * fontScale, color: '#333333', lineHeight: 1.5 }}>{String(dataAny.notes)}</Text>
-                    <View style={{ width: '100%', height: 1, backgroundColor: '#111111', marginTop: 15 }} />
+                    <Text style={{ fontSize: 12 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Notes:</Text>
+                    <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333'), lineHeight: 1.5 }}>{String(dataAny.notes)}</Text>
+                    <View style={{ width: '100%', height: 1, backgroundColor: monoFill(mode, '#111111'), marginTop: 15 }} />
                  </View>
               )}
           </View>
@@ -948,33 +970,33 @@ const ModernInvoiceTemplate = ({
           <View style={{ width: 220 }}>
             {tax > 0 && (
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingRight: 4 }}>
-                <Text style={{ color: '#333333', fontSize: 11 * fontScale }}>Tax</Text>
-                <Text style={{ color: '#333333', fontSize: 11 * fontScale }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>Tax</Text>
+                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
             )}
             {discount > 0 && (
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingRight: 4 }}>
-                <Text style={{ color: '#333333', fontSize: 11 * fontScale }}>{discountLabel}</Text>
-                <Text style={{ color: '#333333', fontSize: 11 * fontScale }}>-{currency} {discount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>{discountLabel}</Text>
+                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>-{currency} {discount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
             )}
             {dataAny.roundingDifference ? (
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingRight: 4 }}>
-                <Text style={{ color: '#333333', fontSize: 11 * fontScale }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
-                <Text style={{ color: '#333333', fontSize: 11 * fontScale }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
+                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
             ) : null}
             {amountPaid > 0 && (
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingRight: 4 }}>
-                <Text style={{ color: '#333333', fontSize: 11 * fontScale }}>Amount Paid</Text>
-                <Text style={{ color: '#333333', fontSize: 11 * fontScale }}>-{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>Amount Paid</Text>
+                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>-{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
               </View>
             )}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#Dce1e1', paddingVertical: 8, paddingHorizontal: 6, marginTop: 4 }}>
-              <Text style={{ color: '#111111', fontWeight: 'bold', fontSize: 12 * fontScale }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: monoFill(mode, '#Dce1e1'), paddingVertical: 8, paddingHorizontal: 6, marginTop: 4 }}>
+              <Text style={{ color: monoText(mode, '#111111'), fontWeight: 'bold', fontSize: 12 * fontScale }}>
                 Balance Due
               </Text>
-              <Text style={{ color: '#111111', fontWeight: 'bold', fontSize: 12 * fontScale }}>
+              <Text style={{ color: monoText(mode, '#111111'), fontWeight: 'bold', fontSize: 12 * fontScale }}>
                 {currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}
               </Text>
             </View>
@@ -987,8 +1009,8 @@ const ModernInvoiceTemplate = ({
           const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
           const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
           return (
-            <View style={{ marginTop: 15, padding: 8, backgroundColor: '#f0f9ff', borderRadius: 4, borderLeftWidth: 3, borderLeftColor: '#0ea5e9' }} wrap={false}>
-              <Text style={{ fontSize: 10 * fontScale, color: '#0369a1', lineHeight: 1.4 }}>
+            <View style={{ marginTop: 15, padding: 8, backgroundColor: monoFill(mode, '#f0f9ff'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#0ea5e9') }} wrap={false}>
+              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#0369a1'), lineHeight: 1.4 }}>
                 {'Your overall outstanding balance is '}
                 <Text style={{ fontWeight: 'bold' }}>{currency} {totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
                 {` as of ${todayStr}`}
@@ -1001,7 +1023,7 @@ const ModernInvoiceTemplate = ({
         <View wrap={false} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 15, flex: 1, gap: 20 }}>
           <View style={{ flexDirection: 'column', flex: 1 }}>
             {showAccountSummary ? (
-              <InvoiceInfoPanel
+              <InvoiceInfoPanel colorMode={mode}
                 type="account_summary"
                 settings={templateSettings}
                 data={dataAny}
@@ -1009,7 +1031,7 @@ const ModernInvoiceTemplate = ({
                 fontScale={fontScale}
               />
             ) : templateSettings.showPaymentTerms ? (
-              <InvoiceInfoPanel
+              <InvoiceInfoPanel colorMode={mode}
                 type="payment_terms"
                 settings={templateSettings}
                 data={dataAny}
@@ -1020,24 +1042,24 @@ const ModernInvoiceTemplate = ({
             
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginTop: 10, gap: 12 }}>
               <View>
-                {renderQrImage(qrCodeDataUrl, 56, false) || <View style={{ width: 56, height: 56, backgroundColor: '#eeeeee' }} />}
+                {renderQrImage(qrCodeDataUrl, 56, false) || <View style={{ width: 56, height: 56, backgroundColor: monoFill(mode, '#eeeeee') }} />}
               </View>
               <View style={{ justifyContent: 'center', flex: 1 }}>
-                <Text style={{ fontWeight: 'bold', fontSize: 11 * fontScale, color: '#111111', marginBottom: 4 }}>More Info:</Text>
-                {!!companyPhone && <Text style={{ fontSize: 10 * fontScale, color: '#333333', marginBottom: 2 }}>{companyPhone}</Text>}
-                {!!companyEmail && <Text style={{ fontSize: 10 * fontScale, color: '#333333' }}>{companyEmail}</Text>}
+                <Text style={{ fontWeight: 'bold', fontSize: 11 * fontScale, color: monoText(mode, '#111111'), marginBottom: 4 }}>More Info:</Text>
+                {!!companyPhone && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333'), marginBottom: 2 }}>{companyPhone}</Text>}
+                {!!companyEmail && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333') }}>{companyEmail}</Text>}
               </View>
             </View>
           </View>
 
           <View style={{ alignItems: 'center', minWidth: 160 }}>
-            <Text style={{ fontSize: 11 * fontScale, color: '#222222', marginBottom: 8 }}>{showDueDate && dueDate ? `Due Date: ${formatDateOnly(dueDate)}` : `Date: ${invoiceDate}`}</Text>
+            <Text style={{ fontSize: 11 * fontScale, color: monoText(mode, '#222222'), marginBottom: 8 }}>{showDueDate && dueDate ? `Due Date: ${formatDateOnly(dueDate)}` : `Date: ${invoiceDate}`}</Text>
             <View style={{ width: '100%', height: 30, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{fontFamily: templateSettings.fontFamily, fontStyle: 'italic', fontSize: 22, color: '#111111'}}>{companyName.split(' ')[0]}</Text>
+              <Text style={{fontFamily: templateSettings.fontFamily, fontStyle: 'italic', fontSize: 22, color: monoText(mode, '#111111')}}>{companyName.split(' ')[0]}</Text>
             </View>
-            <View style={{ width: '100%', height: 1.5, backgroundColor: '#444444', marginTop: 8, marginBottom: 4 }} />
+            <View style={{ width: '100%', height: 1.5, backgroundColor: monoFill(mode, '#444444'), marginTop: 8, marginBottom: 4 }} />
             {dataAny.createdAtIso || dataAny.createdAt ? (
-              <Text style={{ fontSize: 8 * fontScale, color: '#666666' }}>
+              <Text style={{ fontSize: 8 * fontScale, color: monoText(mode, '#666666') }}>
                 Ref: {String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || 'N/A')}
               </Text>
             ) : null}
@@ -1054,13 +1076,15 @@ const ProfessionalInvoiceTemplate = ({
   data,
   config,
   templateSettings,
-  channel
+  channel,
+  mode = 'brand',
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
   channel?: 'erp' | 'portal';
+  mode?: PrimeColorMode;
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -1140,12 +1164,12 @@ const ProfessionalInvoiceTemplate = ({
     }
 
     return (
-      <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#eeeeee', minHeight: 24, alignItems: 'center', paddingVertical: 5 }}>
-        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'center' }}>{i + 1}</Text>
-        <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333' }}>{formattedDesc}</Text>
-        <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{qty}</Text>
-        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}</Text>
-        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: '#333333', textAlign: 'right' }}>{currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+      <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: monoLine(mode, '#eeeeee'), minHeight: 24, alignItems: 'center', paddingVertical: 5 }}>
+        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'center' }}>{i + 1}</Text>
+        <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333') }}>{formattedDesc}</Text>
+        <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>{qty}</Text>
+        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>{isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}</Text>
+        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>{currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
       </View>
     );
   };
@@ -1155,63 +1179,63 @@ const ProfessionalInvoiceTemplate = ({
   return (
     <Document title={docTitleForMeta} author={companyName}>
       <Page size="A4" style={{ padding: 40, fontFamily: templateSettings.fontFamily, backgroundColor: '#ffffff' }}>
-        {channel === 'portal' && <PortalCopyWatermark />}
-        {isCancelled && <CancelledWatermark />}
+        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+        {isCancelled && <CancelledWatermark colorMode={mode} />}
         {/* Top Row */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
           <View style={{ alignItems: 'center', justifyContent: 'center' }}>
             {!!logo ? (
               <Image src={logo} style={{ width: templateSettings.logoWidth }} />
             ) : (
-              <Text style={{ color: '#222222', fontSize: templateSettings.logoWidth * 0.4, fontWeight: 'bold' }}>{companyName.charAt(0)}</Text>
+              <Text style={{ color: monoText(mode, '#222222'), fontSize: templateSettings.logoWidth * 0.4, fontWeight: 'bold' }}>{companyName.charAt(0)}</Text>
             )}
           </View>
           <View style={{ textAlign: 'right', alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 13 * fontScale, fontWeight: 'bold', color: '#111111', marginBottom: 2 }}>{companyName}</Text>
-            {!!companyAddress && <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyAddress}</Text>}
-            {!!companyPhone && <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyPhone}</Text>}
-            {!!companyEmail && <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{companyEmail}</Text>}
+            <Text style={{ fontSize: 13 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 2 }}>{companyName}</Text>
+            {!!companyAddress && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{companyAddress}</Text>}
+            {!!companyPhone && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{companyPhone}</Text>}
+            {!!companyEmail && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{companyEmail}</Text>}
           </View>
         </View>
 
         {/* Main Row / Client Info */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 25 }}>
           <View>
-            <Text style={{ fontSize: 9 * fontScale, color: '#999999', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>Client</Text>
-            <Text style={{ fontSize: 14 * fontScale, fontWeight: 'bold', color: '#111111', marginBottom: 2 }}>{resolvedRecipientName}</Text>
-            {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
+            <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#999999'), letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>Client</Text>
+            <Text style={{ fontSize: 14 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 2 }}>{resolvedRecipientName}</Text>
+            {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
           </View>
           <View>
-            <Text style={{ fontSize: 32 * fontScale, fontWeight: 'bold', color: '#cccccc', letterSpacing: 2 }}>{docTitle}</Text>
+            <Text style={{ fontSize: 32 * fontScale, fontWeight: 'bold', color: monoText(mode, '#cccccc'), letterSpacing: 2 }}>{docTitle}</Text>
           </View>
         </View>
 
         {/* Due Row */}
         <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: 25 }}>
-          <View style={{ backgroundColor: accentColor, paddingVertical: 12, paddingHorizontal: 16, flex: 1, justifyContent: 'center' }}>
+          <View style={{ backgroundColor: monoFill(mode, accentColor), paddingVertical: 12, paddingHorizontal: 16, flex: 1, justifyContent: 'center' }}>
             {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' ? (
-              <Text style={{ fontSize: 16 * fontScale, fontWeight: 'bold', color: '#ffffff', letterSpacing: 1 }}>
+              <Text style={{ fontSize: 16 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), letterSpacing: 1 }}>
                 {type === 'INVOICE' && showInvoiceBalances ? 'OUTSTANDING' : 'DUE'} — {currency} {outstandingDisplay.toLocaleString('en-US', {minimumFractionDigits: 2})}
               </Text>
             ) : (
-              <Text style={{ fontSize: 16 * fontScale, fontWeight: 'bold', color: '#ffffff', letterSpacing: 1 }}>
+              <Text style={{ fontSize: 16 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), letterSpacing: 1 }}>
                 TOTAL — {currency} {totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}
               </Text>
             )}
           </View>
-          <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: accentColor, paddingVertical: 10, paddingHorizontal: 14, minWidth: 160, justifyContent: 'center' }}>
+          <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: monoLine(mode, accentColor), paddingVertical: 10, paddingHorizontal: 14, minWidth: 160, justifyContent: 'center' }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ color: '#999999', fontSize: 10 * fontScale }}>Date</Text>
-              <Text style={{ fontSize: 10 * fontScale, color: '#444444' }}>{invoiceDate}</Text>
+              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Date</Text>
+              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444') }}>{invoiceDate}</Text>
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ color: '#999999', fontSize: 10 * fontScale }}>Ref #</Text>
-              <Text style={{ fontSize: 10 * fontScale, color: '#444444' }}>{invoiceNumber}</Text>
+              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Ref #</Text>
+              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444') }}>{invoiceNumber}</Text>
             </View>
             {Boolean(showDueDate) && !!dueDate && (
                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-                 <Text style={{ color: '#999999', fontSize: 10 * fontScale }}>Due</Text>
-                 <Text style={{ fontSize: 10 * fontScale, color: '#444444' }}>{formatDateOnly(dueDate)}</Text>
+                 <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Due</Text>
+                 <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444') }}>{formatDateOnly(dueDate)}</Text>
                </View>
             )}
           </View>
@@ -1219,12 +1243,12 @@ const ProfessionalInvoiceTemplate = ({
 
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
-          <View style={{ flexDirection: 'row', borderBottomWidth: 1.5, borderBottomColor: '#222222', paddingBottom: 6 }}>
-            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>SN</Text>
-            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase' }}>Description</Text>
-            <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Qty</Text>
-            <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Price</Text>
-            <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: '#666666', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Amount</Text>
+          <View style={{ flexDirection: 'row', borderBottomWidth: 1.5, borderBottomColor: monoLine(mode, '#222222'), paddingBottom: 6 }}>
+            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>SN</Text>
+            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase' }}>Description</Text>
+            <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Qty</Text>
+            <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Price</Text>
+            <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Amount</Text>
           </View>
           {items.map(renderRow)}
         </View>
@@ -1232,76 +1256,76 @@ const ProfessionalInvoiceTemplate = ({
         {/* Totals Section */}
         <View style={{ alignSelf: 'flex-end', width: 220, marginBottom: 25 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-            <Text style={{ color: '#999999', fontSize: 10 * fontScale }}>Sub Total —</Text>
-            <Text style={{ color: '#555555', fontSize: 10 * fontScale }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+            <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Sub Total —</Text>
+            <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
           </View>
           {tax > 0 && (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-              <Text style={{ color: '#999999', fontSize: 10 * fontScale }}>Tax —</Text>
-              <Text style={{ color: '#555555', fontSize: 10 * fontScale }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Tax —</Text>
+              <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
             </View>
           )}
           {discount > 0 && (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-              <Text style={{ color: '#999999', fontSize: 10 * fontScale }}>{discountLabel} —</Text>
-              <Text style={{ color: '#555555', fontSize: 10 * fontScale }}>-{currency} {discount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>{discountLabel} —</Text>
+              <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>-{currency} {discount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
             </View>
           )}
           {dataAny.roundingDifference ? (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-              <Text style={{ color: '#999999', fontSize: 10 * fontScale }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''} —</Text>
-              <Text style={{ color: '#555555', fontSize: 10 * fontScale }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''} —</Text>
+              <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
             </View>
           ) : null}
           {amountPaid > 0 && (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-              <Text style={{ color: '#999999', fontSize: 10 * fontScale }}>Amount Paid —</Text>
-              <Text style={{ color: '#555555', fontSize: 10 * fontScale }}>-{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Amount Paid —</Text>
+              <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>-{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
             </View>
           )}
           {(type === 'INVOICE' || type === 'ORDER' || (type as string) === 'SALES_ORDER') ? (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: '#dddddd' }}>
-              <Text style={{ color: accentColor, fontWeight: 'bold', fontSize: 12 * fontScale }}>Due Balance —</Text>
-              <Text style={{ color: accentColor, fontWeight: 'bold', fontSize: 12 * fontScale }}>{currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: monoLine(mode, '#dddddd') }}>
+              <Text style={{ color: monoText(mode, accentColor), fontWeight: 'bold', fontSize: 12 * fontScale }}>Due Balance —</Text>
+              <Text style={{ color: monoText(mode, accentColor), fontWeight: 'bold', fontSize: 12 * fontScale }}>{currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
             </View>
           ) : (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: '#dddddd' }}>
-              <Text style={{ color: accentColor, fontWeight: 'bold', fontSize: 12 * fontScale }}>Total Grand —</Text>
-              <Text style={{ color: accentColor, fontWeight: 'bold', fontSize: 12 * fontScale }}>{currency} {totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: monoLine(mode, '#dddddd') }}>
+              <Text style={{ color: monoText(mode, accentColor), fontWeight: 'bold', fontSize: 12 * fontScale }}>Total Grand —</Text>
+              <Text style={{ color: monoText(mode, accentColor), fontWeight: 'bold', fontSize: 12 * fontScale }}>{currency} {totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
             </View>
           )}
         </View>
 
         {/* Bottom Row */}
-        <View wrap={false} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 10, paddingTop: 15, borderTopWidth: 0.5, borderTopColor: '#eeeeee', flex: 1, gap: 20 }}>
+        <View wrap={false} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 10, paddingTop: 15, borderTopWidth: 0.5, borderTopColor: monoLine(mode, '#eeeeee'), flex: 1, gap: 20 }}>
           <View style={{ flex: 1 }}>
             {!!dataAny.notes && (
               <View wrap={false} style={{ marginBottom: 15 }}>
-                <Text style={{ fontSize: 9 * fontScale, fontWeight: 'bold', color: '#999999', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Notes</Text>
-                <Text style={{ fontSize: 10 * fontScale, color: '#444444', lineHeight: 1.4 }}>{String(dataAny.notes)}</Text>
+                <Text style={{ fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#999999'), textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Notes</Text>
+                <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{String(dataAny.notes)}</Text>
               </View>
             )}
 
             <View style={{ marginTop: 10 }}>
-              <Text style={{ fontStyle: 'italic', fontSize: 15 * fontScale, color: '#555555', marginBottom: 4, fontFamily: templateSettings.fontFamily }}>{companyName}</Text>
-              <Text style={{ fontWeight: 'bold', fontSize: 10 * fontScale, color: '#111111' }}>{companyName}</Text>
-              <Text style={{ fontSize: 9 * fontScale, color: accentColor, letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Authorized Signatory</Text>
+              <Text style={{ fontStyle: 'italic', fontSize: 15 * fontScale, color: monoText(mode, '#555555'), marginBottom: 4, fontFamily: templateSettings.fontFamily }}>{companyName}</Text>
+              <Text style={{ fontWeight: 'bold', fontSize: 10 * fontScale, color: monoText(mode, '#111111') }}>{companyName}</Text>
+              <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, accentColor), letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Authorized Signatory</Text>
             </View>
           </View>
 
            <View style={{ flex: 1, alignItems: 'flex-end', textAlign: 'right' }}>
               {templateSettings.showPaymentTerms && config?.transactionSettings?.defaultPaymentTermsDays !== undefined && (
                 <View wrap={false} style={{ marginBottom: 10 }}>
-                  <Text style={{ fontSize: 9 * fontScale, fontWeight: 'bold', color: '#999999', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Payment Method / Terms</Text>
-                  <Text style={{ fontSize: 9 * fontScale, color: '#666666', lineHeight: 1.6 }}>{getDefaultPaymentTermsLabel(config)}</Text>
+                  <Text style={{ fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#999999'), letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Payment Method / Terms</Text>
+                  <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#666666'), lineHeight: 1.6 }}>{getDefaultPaymentTermsLabel(config)}</Text>
                 </View>
               )}
               
               <View style={{ alignItems: 'flex-start', width: '100%' }}>
-               <Text style={{ fontSize: 8 * fontScale, color: '#aaaaaa', lineHeight: 1.4, textAlign: 'left', marginTop: 4 }}>
+               <Text style={{ fontSize: 8 * fontScale, color: monoText(mode, '#aaaaaa'), lineHeight: 1.4, textAlign: 'left', marginTop: 4 }}>
                    {resolveFooterText(config, getDefaultPaymentTermsLabel(config), templateSettings.showPaymentTerms)}
                  </Text>
-                 <Text style={{ fontSize: 8 * fontScale, color: '#aaaaaa', lineHeight: 1.4, textAlign: 'left', marginTop: 1 }}>
+                 <Text style={{ fontSize: 8 * fontScale, color: monoText(mode, '#aaaaaa'), lineHeight: 1.4, textAlign: 'left', marginTop: 1 }}>
                    {buildFooterContactLine(config)}
                 </Text>
              </View>
@@ -1312,7 +1336,12 @@ const ProfessionalInvoiceTemplate = ({
   );
 };
 
-export const PrimeDocument = ({ type, data, configOverride = null, customers = [], channel = 'erp' }: DocProps & { customers?: any[] }) => {
+export const PrimeDocument = ({ type, data, configOverride = null, customers = [], channel = 'erp', colorMode = 'brand' }: DocProps & { customers?: any[] }) => {
+  const mode: PrimeColorMode = colorMode ?? 'brand';
+  // Brand vs black-and-white print style set. Preview/download use brand;
+  // the Print action re-renders with colorMode 'mono' (all text pure black,
+  // fills white, rules black — logo/QR images are never recolored).
+  const s = mode === 'mono' ? docStylesMono : docStyles;
   const isFinancial = type === 'INVOICE' || type === 'PO' || type === 'QUOTATION' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'SUBSCRIPTION';
   const dataAny = data as Record<string, unknown>;
   const pod = dataAny.proofOfDelivery as Record<string, unknown> | undefined;
@@ -1320,15 +1349,15 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   const templateSettings = resolvePrimeTemplateSettings(config);
 
   if (isFinancial && templateSettings.engine === 'Clean') {
-    return <CleanInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} />;
+    return <CleanInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} mode={mode} />;
   }
 
   if (isFinancial && templateSettings.engine === 'Professional') {
-    return <ProfessionalInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} />;
+    return <ProfessionalInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} mode={mode} />;
   }
 
   if (isFinancial && templateSettings.engine === 'Modern') {
-    return <ModernInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} />;
+    return <ModernInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} mode={mode} />;
   }
 
   const fontScale = templateSettings.bodyFontSize / 12;
@@ -1466,9 +1495,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     return (
       <Document title={`Sales Exchange - ${String(d.exchangeNumber)}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark />}
-          {isCancelled && <CancelledWatermark />}
-          <PaginationFurniture
+          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {isCancelled && <CancelledWatermark colorMode={mode} />}
+          <PaginationFurniture colorMode={mode}
             identity={paginationIdentity(type, d, resolvedRecipientName || '')}
             companyName={companyName}
           />
@@ -1496,13 +1525,13 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View style={[s.billingSection, { marginTop: 10 }]}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Customer</Text>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Customer</Text>
               <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{String(d.customerName)}</Text>
-              <Text style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>{resolvedRecipientAddress || 'N/A'}</Text>
-              <Text style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>{resolvedRecipientPhone || 'N/A'}</Text>
+              <Text style={{ fontSize: 10, color: monoText(mode, '#475569'), marginTop: 4 }}>{resolvedRecipientAddress || 'N/A'}</Text>
+              <Text style={{ fontSize: 10, color: monoText(mode, '#475569'), marginTop: 2 }}>{resolvedRecipientPhone || 'N/A'}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Reason for Exchange</Text>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Reason for Exchange</Text>
               <Text style={{ fontSize: 11 }}>{String(d.reason)}</Text>
             </View>
           </View>
@@ -1528,9 +1557,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           </View>
 
           {!!d.remarks && (
-            <View style={{ marginTop: 20, padding: 12, backgroundColor: '#f8fafc', borderRadius: 6, borderLeftWidth: 3, borderLeftColor: '#3b82f6' }}>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5, textTransform: 'uppercase', color: '#475569' }}>Remarks / Special Instructions:</Text>
-              <Text style={{ fontSize: 10, color: '#1e293b', lineHeight: 1.5 }}>{String(d.remarks)}</Text>
+            <View style={{ marginTop: 20, padding: 12, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#3b82f6') }}>
+              <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5, textTransform: 'uppercase', color: monoText(mode, '#475569') }}>Remarks / Special Instructions:</Text>
+              <Text style={{ fontSize: 10, color: monoText(mode, '#1e293b'), lineHeight: 1.5 }}>{String(d.remarks)}</Text>
             </View>
           )}
 
@@ -1539,19 +1568,19 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               <View style={{ width: 180, alignItems: 'center' }}>
                 <View style={{ width: '100%', borderTopWidth: 1, borderColor: '#000', marginBottom: 5 }} />
                 <Text style={{ fontSize: 10 }}>Customer Signature</Text>
-                <Text style={{ fontSize: 8, color: '#666' }}>I accept the replacement items</Text>
+                <Text style={{ fontSize: 8, color: monoText(mode, '#666') }}>I accept the replacement items</Text>
               </View>
               <View style={{ width: 180, alignItems: 'center' }}>
                 <View style={{ width: '100%', borderTopWidth: 1, borderColor: '#000', marginBottom: 5 }} />
                 <Text style={{ fontSize: 10 }}>Authorized Officer</Text>
-                <Text style={{ fontSize: 8, color: '#666' }}>Exchange approved & processed</Text>
+                <Text style={{ fontSize: 8, color: monoText(mode, '#666') }}>Exchange approved & processed</Text>
               </View>
             </View>
           </View>
 
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter
+            <SecurityFooter colorMode={mode}
               data={d}
               companyName={companyName}
               legalFooterLine1="This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
@@ -1586,9 +1615,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     return (
       <Document title={`Payment Receipt - ${rc.receiptNumber}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark />}
-          {isCancelled && <CancelledWatermark />}
-          <PaginationFurniture
+          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {isCancelled && <CancelledWatermark colorMode={mode} />}
+          <PaginationFurniture colorMode={mode}
             identity={paginationIdentity(type, rc as unknown as Record<string, unknown>, resolvedRecipientName || '')}
             companyName={companyName}
           />
@@ -1608,9 +1637,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           </View>
 
           {isOverpaid && (
-            <View style={{ backgroundColor: '#fef2f2', padding: 10, borderRadius: 4, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: '#ef4444' }}>
-              <Text style={{ color: '#991b1b', fontSize: 12, fontWeight: 'bold', lineHeight: 1.4 }}>OVERPAYMENT NOTICE</Text>
-              <Text style={{ color: '#b91c1c', fontSize: 12, lineHeight: 1.4 }}>
+            <View style={{ backgroundColor: monoFill(mode, '#fef2f2'), padding: 10, borderRadius: 4, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: monoLine(mode, '#ef4444') }}>
+              <Text style={{ color: monoText(mode, '#991b1b'), fontSize: 12, fontWeight: 'bold', lineHeight: 1.4 }}>OVERPAYMENT NOTICE</Text>
+              <Text style={{ color: monoText(mode, '#b91c1c'), fontSize: 12, lineHeight: 1.4 }}>
                 This payment exceeds the invoice total. The excess has been credited to your wallet.
               </Text>
             </View>
@@ -1618,7 +1647,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View style={[s.billingSection, { marginTop: 0, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Received From</Text>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Received From</Text>
               <View style={s.recipientInfoText}>
                 <Text style={s.recipientName}>{rc.customerName || 'N/A'}</Text>
                 {resolvedRecipientAddress ? (
@@ -1629,15 +1658,15 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
                 ) : null}
               </View>
             </View>
-            <View style={[s.statusBox, { borderLeftColor: receiptBadge.borderColor }]}>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: receiptBadge.color }}>
+<View style={[s.statusBox, { borderLeftColor: monoLine(mode, receiptBadge.borderColor) }]}>
+<Text style={{ fontSize: 16, fontWeight: 'bold', color: monoText(mode, receiptBadge.color) }}>
                 {receiptBadge.label}
               </Text>
             </View>
           </View>
 
-          <View style={{ marginTop: 8, padding: 10, backgroundColor: '#f8fafc', borderRadius: 8 }}>
-            <Text style={{ fontSize: 12, lineHeight: 1.6, color: '#334155' }}>
+          <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+            <Text style={{ fontSize: 12, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
               {rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount(rc.amountReceived)} received from ${rc.customerName}.`}
             </Text>
           </View>
@@ -1667,15 +1696,15 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
               {isPartial && (
                 <View style={[s.totalRow]}>
-                  <Text style={{ flex: 1, color: '#ef4444' }}>Outstanding Balance</Text>
-                  <Text style={{ color: '#ef4444', fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
+                  <Text style={{ flex: 1, color: monoText(mode, '#ef4444') }}>Outstanding Balance</Text>
+                  <Text style={{ color: monoText(mode, '#ef4444'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
                 </View>
               )}
 
               {isOverpaid && overpaymentAmount > 0 && (
                 <View style={[s.totalRow]}>
-                  <Text style={{ flex: 1, color: '#10b981', fontWeight: 'bold' }}>Wallet Credit</Text>
-                  <Text style={{ color: '#10b981', fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(overpaymentAmount)}</Text>
+                  <Text style={{ flex: 1, color: monoText(mode, '#10b981'), fontWeight: 'bold' }}>Wallet Credit</Text>
+                  <Text style={{ color: monoText(mode, '#10b981'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(overpaymentAmount)}</Text>
                 </View>
               )}
             </View>
@@ -1686,14 +1715,14 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
                 omitted from the payment receipt (the QR verification block
                 below remains the contact point). Spacing matches the invoice. */}
             <View wrap={false} style={{ marginTop: 10, alignItems: 'center' }}>
-              <Text style={{ fontSize: scaledFont(12), color: '#334155' }}>
+              <Text style={{ fontSize: scaledFont(12), color: monoText(mode, '#334155') }}>
                 Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
               </Text>
             </View>
 
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter
+            <SecurityFooter colorMode={mode}
               data={rc}
               companyName={companyName}
               legalFooterLine1={resolveFooterText(config, '', false)}
@@ -1726,16 +1755,16 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
       const img = block ? renderableSignature(block.signatureDataUrl) : null;
       return (
         <View style={{ flex: 1 }}>
-          <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>{label}</Text>
+          <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>{label}</Text>
           <View style={{ height: 70, borderBottomWidth: 1, borderColor: '#000', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 5 }}>
             {img ? (
               <Image src={img} style={{ width: 120, height: 48, objectFit: 'contain', marginBottom: 2 }} />
             ) : (
-              <Text style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginBottom: 6 }}>Not signed</Text>
+              <Text style={{ fontSize: 10, color: monoText(mode, '#94a3b8'), fontStyle: 'italic', marginBottom: 6 }}>Not signed</Text>
             )}
           </View>
           <Text style={{ fontSize: 11, fontWeight: 'bold' }}>{block?.name || '____________________'}</Text>
-          <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>
+          <Text style={{ fontSize: 9, color: monoText(mode, '#475569'), marginTop: 2 }}>
             {block ? `${block.role || 'Signatory'} · signed ${formatDateOnly(block.signedAt)}` : 'Signature + date'}
           </Text>
         </View>
@@ -1745,9 +1774,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     return (
       <Document title={`Printing Contract - ${pc.contractNumber}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark />}
-          {cancelled && <CancelledWatermark />}
-          <PaginationFurniture
+          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {cancelled && <CancelledWatermark colorMode={mode} />}
+          <PaginationFurniture colorMode={mode}
             identity={{ title: 'Contract', number: String(pc.contractNumber || ''), customer: String(pc.customerName || '') }}
             companyName={companyName}
           />
@@ -1768,7 +1797,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View style={[s.billingSection, { marginTop: 0, marginBottom: 12 }]}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Company</Text>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Company</Text>
               <View style={s.recipientInfoText}>
                 <Text style={s.recipientName}>{companyName}</Text>
                 {companyAddress ? <Text style={s.recipientDetail}>{companyAddress}</Text> : null}
@@ -1776,7 +1805,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               </View>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Client</Text>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Client</Text>
               <View style={s.recipientInfoText}>
                 <Text style={s.recipientName}>{pc.customerName || 'N/A'}</Text>
                 {pc.schoolName ? <Text style={s.recipientDetail}>{pc.schoolName}</Text> : null}
@@ -1819,13 +1848,13 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           </View>
 
-          <View style={{ marginTop: 8, padding: 10, backgroundColor: '#f8fafc', borderRadius: 8 }}>
-            <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Terms &amp; Conditions</Text>
-            <Text style={{ fontSize: 11, lineHeight: 1.6, color: '#334155' }}>
+          <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+            <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Terms &amp; Conditions</Text>
+            <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
               {pc.terms || 'No specific terms recorded on this contract.'}
             </Text>
             {pc.notes ? (
-              <Text style={{ fontSize: 11, lineHeight: 1.6, color: '#334155', marginTop: 6 }}>
+              <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155'), marginTop: 6 }}>
                 Notes: {pc.notes}
               </Text>
             ) : null}
@@ -1836,16 +1865,16 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             {signatureCell('Customer', pc.signatures?.customer)}
           </View>
 
-          <View wrap={false} style={{ marginTop: 16, borderTopWidth: 0.5, borderColor: '#e2e8f0', paddingTop: 8 }}>
+          <View wrap={false} style={{ marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 10.5, fontWeight: 'bold', color: '#1e3a8a', letterSpacing: 0.4 }}>
+              <Text style={{ fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
                 DOCUMENT INTEGRITY
               </Text>
             </View>
-            <Text style={{ marginTop: 6, fontSize: 9, color: '#1e3a8a', lineHeight: 1.45 }}>
+            <Text style={{ marginTop: 6, fontSize: 9, color: monoText(mode, '#1e3a8a'), lineHeight: 1.45 }}>
               Content hash: {pc.contentHash}
             </Text>
-            <Text style={{ marginTop: 4, fontSize: 9, color: '#475569', lineHeight: 1.45 }}>
+            <Text style={{ marginTop: 4, fontSize: 9, color: monoText(mode, '#475569'), lineHeight: 1.45 }}>
               This hash covers the agreed parties, commercial lines, totals, terms and both
               signatures. Any alteration changes the hash. Quote the contract number and hash
               to verify with {companyName}.
@@ -1854,7 +1883,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter
+            <SecurityFooter colorMode={mode}
               data={pc}
               companyName={companyName}
               legalFooterLine1={resolveFooterText(config, '', false)}
@@ -1883,9 +1912,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     return (
       <Document title={`Supplier Payment Receipt - ${spNumber}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark />}
-          {isCancelled && <CancelledWatermark />}
-          <PaginationFurniture
+          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {isCancelled && <CancelledWatermark colorMode={mode} />}
+          <PaginationFurniture colorMode={mode}
             identity={paginationIdentity(type, sp as unknown as Record<string, unknown>, resolvedRecipientName || '')}
             companyName={companyName}
           />
@@ -1908,13 +1937,13 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View style={[s.billingSection, { marginTop: 0, marginBottom: 0 }]}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: '#64748b' }}>Paid To</Text>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Paid To</Text>
               <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{sp.supplierName}</Text>
             </View>
           </View>
 
-          <View style={{ marginTop: 5, padding: 15, backgroundColor: '#f8fafc', borderRadius: 8 }}>
-            <Text style={{ fontSize: 12, lineHeight: 1.6, color: '#334155' }}>
+          <View style={{ marginTop: 5, padding: 15, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+            <Text style={{ fontSize: 12, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
               {sp.narrative || `This voucher confirms payment of ${currency} ${formatAmount(sp.amountPaid)} to ${sp.supplierName}.`}
             </Text>
           </View>
@@ -1960,7 +1989,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter
+            <SecurityFooter colorMode={mode}
               data={sp}
               companyName={companyName}
               legalFooterLine1="This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
@@ -1988,9 +2017,9 @@ if (type === 'POS_RECEIPT') {
 
   return (
     <Document title={`Receipt - ${r.receiptNumber}`} author={companyName}>
-      <Page size="A4" style={[s.page, pageStyle, { padding: 0, backgroundColor: '#f9fafb', fontFamily: templateSettings.fontFamily }]}>
-        {channel === 'portal' && <PortalCopyWatermark />}
-        {isCancelled && <CancelledWatermark />}
+      <Page size="A4" style={[s.page, pageStyle, { padding: 0, backgroundColor: monoFill(mode, '#f9fafb'), fontFamily: templateSettings.fontFamily }]}>
+        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+        {isCancelled && <CancelledWatermark colorMode={mode} />}
         <View style={[s.posA4Wrapper, { width: 250 * scale, paddingVertical: 24 * scale, paddingHorizontal: 8 * scale }]}>
             <View style={{ alignItems: 'center', marginBottom: 12 * scale }}>
               <Text style={{ fontWeight: 'bold', fontSize: 14 * scale, textAlign: 'center', marginBottom: 3 * scale, color: '#000' }}>{companyName}</Text>
@@ -2102,7 +2131,7 @@ if (type === 'POS_RECEIPT') {
   }
 
   if ((type === 'ACCOUNT_STATEMENT_SUMMARY' || type === 'ACCOUNT_STATEMENT') && 'finalBalance' in data) {
-    return <StatementSummaryTemplate data={data as StatementDoc} configOverride={config} channel={channel} />;
+    return <StatementSummaryTemplate data={data as StatementDoc} configOverride={config} channel={channel} colorMode={mode} />;
   }
 
   const isConverted = 'isConverted' in data && data.isConverted;
@@ -2159,12 +2188,12 @@ if (type === 'POS_RECEIPT') {
       keywords={`${type}, ERP, Business Document`}
     >
       <Page size="A4" style={[s.page, pageStyle, type === 'INVOICE' ? { paddingBottom: 64 } : null]}>
-        {channel === 'portal' && <PortalCopyWatermark />}
-        {isCancelled && <CancelledWatermark />}
+        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+        {isCancelled && <CancelledWatermark colorMode={mode} />}
         {/* Pagination furniture (presentation only — dynamic page info
             comes from React-PDF's render prop, never hard-coded). */}
         {paginated && paginationId && (
-          <PaginationFurniture identity={paginationId} companyName={companyName} />
+          <PaginationFurniture colorMode={mode} identity={paginationId} companyName={companyName} />
         )}
         <View style={[s.headerSection, { marginBottom: 10 }]}>
           {isRightAligned ? (
@@ -2177,14 +2206,14 @@ if (type === 'POS_RECEIPT') {
                       <Text>Invoice No. {String(('invoiceNumber' in data && dataAny.invoiceNumber) || ('number' in data ? dataAny.number : 'INV'))}</Text>
                       <Text>Invoice Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
                       {Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Due Date: {formatDateOnly(String(data.dueDate))}</Text>}
-                      {showConversionHistory && isFromQuotation && <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Order Ref: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
-                      {showConversionHistory && isFromOrder && <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Original Order: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
+                      {showConversionHistory && isFromQuotation && <Text style={{ fontSize: 8, color: monoText(mode, '#64748b'), marginTop: 2 }}>Order Ref: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
+                      {showConversionHistory && isFromOrder && <Text style={{ fontSize: 8, color: monoText(mode, '#64748b'), marginTop: 2 }}>Original Order: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
                     </>
                   ) : type === 'ORDER' ? (
                     <>
                       <Text>Order No. {String(('orderNumber' in data && dataAny.orderNumber) || ('number' in data ? dataAny.number : 'ORD'))}</Text>
                       <Text>Order Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                      <Text style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>Order Ref: {String(showConversionHistory && isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : (('orderNumber' in data && dataAny.orderNumber) || 'N/A'))}</Text>
+                      <Text style={{ fontSize: 8, color: monoText(mode, '#64748b'), marginTop: 2 }}>Order Ref: {String(showConversionHistory && isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : (('orderNumber' in data && dataAny.orderNumber) || 'N/A'))}</Text>
                       {Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Due Date: {formatDateOnly(String(data.dueDate))}</Text>}
                     </>
                   ) : (type as string) === 'SALES_ORDER' ? (
@@ -2360,8 +2389,8 @@ if (type === 'POS_RECEIPT') {
                   {(type === 'INVOICE' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'SUBSCRIPTION') && 'status' in data && !!data.status && (
                     <View style={s.summaryLeft}>
                       {/* INVOICE STATUS TITLE REMOVED */}
-                      <View style={[s.statusBox, { borderLeftColor: getStatusTone(data.status).border }]}>
-                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: getStatusTone(data.status).text }}>{data.status.toUpperCase()}</Text>
+                      <View style={[s.statusBox, { borderLeftColor: monoLine(mode, getStatusTone(data.status, mode).border) }]}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: monoText(mode, getStatusTone(data.status, mode).text) }}>{data.status.toUpperCase()}</Text>
                       </View>
                     </View>
                   )}
@@ -2440,8 +2469,8 @@ if (type === 'POS_RECEIPT') {
                   const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
                   const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
                   return (
-                    <View style={{ marginTop: type === 'INVOICE' ? 10 : 15, padding: 8, backgroundColor: '#f0f9ff', borderRadius: 4, borderLeftWidth: 3, borderLeftColor: '#0ea5e9' }} wrap={false}>
-                      <Text style={{ fontSize: scaledFont(10), color: '#0369a1', lineHeight: 1.4 }}>
+                    <View style={{ marginTop: type === 'INVOICE' ? 10 : 15, padding: 8, backgroundColor: monoFill(mode, '#f0f9ff'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#0ea5e9') }} wrap={false}>
+                      <Text style={{ fontSize: scaledFont(10), color: monoText(mode, '#0369a1'), lineHeight: 1.4 }}>
                         {'Your overall outstanding balance is '}
                         <Text style={{ fontWeight: 'bold' }}>{currency} {totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
                         {` as of ${todayStr}`}
@@ -2452,15 +2481,15 @@ if (type === 'POS_RECEIPT') {
 
                   {/* Thank You Note */}
                   <View wrap={false} style={{ marginTop: type === 'INVOICE' ? 10 : 15, alignItems: 'center' }}>
-                    <Text style={{ fontSize: scaledFont(12), color: '#334155' }}>
+                    <Text style={{ fontSize: scaledFont(12), color: monoText(mode, '#334155') }}>
                       Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
                     </Text>
                   </View>
 
                 {/* Quotation Note */}
                 {type === 'QUOTATION' && (
-                  <View wrap={false} style={{ marginTop: 15, padding: 8, backgroundColor: '#f0f9ff', borderRadius: 4, borderLeftWidth: 3, borderLeftColor: '#0ea5e9' }}>
-                    <Text style={{ fontSize: scaledFont(9), color: '#0369a1', lineHeight: 1.4 }}>
+                  <View wrap={false} style={{ marginTop: 15, padding: 8, backgroundColor: monoFill(mode, '#f0f9ff'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#0ea5e9') }}>
+                    <Text style={{ fontSize: scaledFont(9), color: monoText(mode, '#0369a1'), lineHeight: 1.4 }}>
                       Note: Acceptance of this quotation converts it into a formal Sales Order subject to our standard terms and conditions.
                     </Text>
                   </View>
@@ -2472,16 +2501,16 @@ if (type === 'POS_RECEIPT') {
                     style={{
                       marginTop: 14,
                       padding: 10,
-                      backgroundColor: '#f8fafc',
+                      backgroundColor: monoFill(mode, '#f8fafc'),
                       borderRadius: 6,
                       borderLeftWidth: 3,
-                      borderLeftColor: templateSettings.accentColor,
+                      borderLeftColor: monoLine(mode, templateSettings.accentColor),
                     }}
                   >
-                    <Text style={{ fontSize: scaledFont(9), fontWeight: 'bold', color: '#475569', textTransform: 'uppercase' }}>
+                    <Text style={{ fontSize: scaledFont(9), fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase' }}>
                       Payment Terms
                     </Text>
-                    <Text style={{ fontSize: scaledFont(10), color: '#334155', marginTop: 4, lineHeight: 1.45 }}>
+                    <Text style={{ fontSize: scaledFont(10), color: monoText(mode, '#334155'), marginTop: 4, lineHeight: 1.45 }}>
                       {paymentTermsLabel}
                       {showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ''}
                     </Text>
@@ -2517,14 +2546,14 @@ if (type === 'POS_RECEIPT') {
         {type === 'WORK_ORDER' && (
           <View style={{ marginTop: 20 }}>
             {/* Job Header Info */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, padding: 10, backgroundColor: '#f8fafc', borderRadius: 4, borderLeftWidth: 3, borderLeftColor: dataAny.priority === 'Critical' ? '#e11d48' : dataAny.priority === 'High' ? '#f59e0b' : '#3b82f6' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, dataAny.priority === 'Critical' ? '#e11d48' : dataAny.priority === 'High' ? '#f59e0b' : '#3b82f6') }}>
               <View>
-                <Text style={{ fontSize: 10, color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Priority Level</Text>
-                <Text style={{ fontSize: 14, fontWeight: 'bold', color: dataAny.priority === 'Critical' ? '#e11d48' : '#0f172a' }}>{String(dataAny.priority || 'Normal')}</Text>
+                <Text style={{ fontSize: 10, color: monoText(mode, '#64748b'), fontWeight: 'bold', textTransform: 'uppercase' }}>Priority Level</Text>
+                <Text style={{ fontSize: 14, fontWeight: 'bold', color: monoText(mode, dataAny.priority === 'Critical' ? '#e11d48' : '#0f172a') }}>{String(dataAny.priority || 'Normal')}</Text>
               </View>
               {('technician' in data) && !!data.technician && (
                 <View style={{ textAlign: 'right' }}>
-                  <Text style={{ fontSize: 10, color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Technician</Text>
+                  <Text style={{ fontSize: 10, color: monoText(mode, '#64748b'), fontWeight: 'bold', textTransform: 'uppercase' }}>Technician</Text>
                   <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{String(data.technician)}</Text>
                 </View>
               )}
@@ -2533,12 +2562,12 @@ if (type === 'POS_RECEIPT') {
             {/* Technical Specifications Grid */}
             {('technicalSpecs' in data) && !!data.technicalSpecs && Object.keys(data.technicalSpecs).length > 0 && (
               <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: '#475569', textTransform: 'uppercase', letterSpacing: 1 }}>Technical Specifications</Text>
+                <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 1 }}>Technical Specifications</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                   {Object.entries(data.technicalSpecs).map(([key, value], i) => (
-                    <View key={i} style={{ width: '30%', padding: 8, backgroundColor: '#fff', borderWidth: 0.5, borderColor: '#e2e8f0', borderRadius: 4 }}>
-                      <Text style={{ fontSize: 8, color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 2 }}>{key}</Text>
-                      <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#1e293b' }}>{String(value)}</Text>
+                    <View key={i} style={{ width: '30%', padding: 8, backgroundColor: '#fff', borderWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), borderRadius: 4 }}>
+                      <Text style={{ fontSize: 8, color: monoText(mode, '#94a3b8'), fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 2 }}>{key}</Text>
+                      <Text style={{ fontSize: 10, fontWeight: 'bold', color: monoText(mode, '#1e293b') }}>{String(value)}</Text>
                     </View>
                   ))}
                 </View>
@@ -2546,20 +2575,20 @@ if (type === 'POS_RECEIPT') {
             )}
 
             {/* Production Instructions */}
-            <View style={{ backgroundColor: '#f1f5f9', padding: 12, marginBottom: 20, borderRadius: 4 }}>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5, color: '#475569', textTransform: 'uppercase' }}>Manufacturing Instructions:</Text>
-              <Text style={{ fontSize: 11, color: '#334155', lineHeight: 1.4 }}>{('instructions' in data ? data.instructions : null) || "Standard operating procedure required. Ensure quality check before release."}</Text>
+            <View style={{ backgroundColor: monoFill(mode, '#f1f5f9'), padding: 12, marginBottom: 20, borderRadius: 4 }}>
+              <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5, color: monoText(mode, '#475569'), textTransform: 'uppercase' }}>Manufacturing Instructions:</Text>
+              <Text style={{ fontSize: 11, color: monoText(mode, '#334155'), lineHeight: 1.4 }}>{('instructions' in data ? data.instructions : null) || "Standard operating procedure required. Ensure quality check before release."}</Text>
             </View>
 
             {/* Materials Checklist */}
             {('materialChecklist' in data) && Array.isArray(data.materialChecklist) && data.materialChecklist.length > 0 && (
               <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: '#475569', textTransform: 'uppercase', letterSpacing: 1 }}>Materials Checklist</Text>
-                <View style={{ borderTopWidth: 1, borderColor: '#e2e8f0' }}>
+                <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 1 }}>Materials Checklist</Text>
+                <View style={{ borderTopWidth: 1, borderColor: monoLine(mode, '#e2e8f0') }}>
                   {data.materialChecklist.map((m, i) => (
-                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 0.5, borderColor: '#f1f5f9' }}>
-                      <View style={{ width: 12, height: 12, borderWidth: 1, borderColor: '#cbd5e1', marginRight: 10, borderRadius: 2 }} />
-                      <Text style={{ fontSize: 10, color: '#334155' }}>{m}</Text>
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 0.5, borderColor: monoLine(mode, '#f1f5f9') }}>
+                      <View style={{ width: 12, height: 12, borderWidth: 1, borderColor: monoLine(mode, '#cbd5e1'), marginRight: 10, borderRadius: 2 }} />
+                      <Text style={{ fontSize: 10, color: monoText(mode, '#334155') }}>{m}</Text>
                     </View>
                   ))}
                 </View>
@@ -2567,7 +2596,7 @@ if (type === 'POS_RECEIPT') {
             )}
 
             {/* Service Tasks */}
-            <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: '#475569', textTransform: 'uppercase', letterSpacing: 1 }}>Production Checklist</Text>
+            <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 1 }}>Production Checklist</Text>
             <View style={s.tableHeader}>
               <Text style={s.colSn}>SN</Text>
               <Text style={s.colDesc}>Service / Process Details</Text>
@@ -2616,7 +2645,7 @@ if (type === 'POS_RECEIPT') {
             {/* Receiver's Remarks Box */}
             <View style={s.remarksBox}>
               <Text style={s.remarksTitle}>Receiver's Remarks</Text>
-              <Text style={{ fontSize: 9, color: '#666' }}>
+              <Text style={{ fontSize: 9, color: monoText(mode, '#666') }}>
                 {String(dataAny.notes || pod?.remarks || pod?.notes || 'Please note any discrepancies or comments regarding the delivery here...')}
               </Text>
             </View>
@@ -2630,103 +2659,103 @@ if (type === 'POS_RECEIPT') {
           <View style={{ marginTop: 16 }}>
             {/* Statement Title */}
             <View style={{ alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a', letterSpacing: 1, textTransform: 'uppercase' }}>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: monoText(mode, '#0f172a'), letterSpacing: 1, textTransform: 'uppercase' }}>
                 Customer Statement
               </Text>
               {data.statementNumber && (
-                <Text style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>Statement No. {data.statementNumber}</Text>
+                <Text style={{ fontSize: 9, color: monoText(mode, '#64748b'), marginTop: 2 }}>Statement No. {data.statementNumber}</Text>
               )}
             </View>
 
             {/* Company & Customer Info Grid */}
             <View style={{ flexDirection: 'row', marginBottom: 16, gap: 12 }}>
-              <View style={{ flex: 1, padding: 10, backgroundColor: '#f8fafc', borderRadius: 6, borderLeftWidth: 3, borderLeftColor: '#1f8577' }}>
-                <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Statement To</Text>
-                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#0f172a' }}>{data.customerName}</Text>
-                {data.customerCode && <Text style={{ fontSize: 9, color: '#64748b', marginTop: 1 }}>Code: {data.customerCode}</Text>}
-                {data.address && <Text style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{data.address}</Text>}
-                {data.phone && <Text style={{ fontSize: 9, color: '#475569', marginTop: 1 }}>Tel: {data.phone}</Text>}
-                {data.email && <Text style={{ fontSize: 9, color: '#475569', marginTop: 1 }}>Email: {data.email}</Text>}
+              <View style={{ flex: 1, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#1f8577') }}>
+                <Text style={{ fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#64748b'), textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Statement To</Text>
+                <Text style={{ fontSize: 11, fontWeight: 'bold', color: monoText(mode, '#0f172a') }}>{data.customerName}</Text>
+                {data.customerCode && <Text style={{ fontSize: 9, color: monoText(mode, '#64748b'), marginTop: 1 }}>Code: {data.customerCode}</Text>}
+                {data.address && <Text style={{ fontSize: 9, color: monoText(mode, '#475569'), marginTop: 2 }}>{data.address}</Text>}
+                {data.phone && <Text style={{ fontSize: 9, color: monoText(mode, '#475569'), marginTop: 1 }}>Tel: {data.phone}</Text>}
+                {data.email && <Text style={{ fontSize: 9, color: monoText(mode, '#475569'), marginTop: 1 }}>Email: {data.email}</Text>}
               </View>
-              <View style={{ flex: 1, padding: 10, backgroundColor: '#f8fafc', borderRadius: 6, borderLeftWidth: 3, borderLeftColor: '#64748b' }}>
-                <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Statement Details</Text>
+              <View style={{ flex: 1, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#64748b') }}>
+                <Text style={{ fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#64748b'), textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Statement Details</Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 9, color: '#64748b' }}>Statement Date:</Text>
-                  <Text style={{ fontSize: 9, fontWeight: '600', color: '#0f172a' }}>{data.date}</Text>
+                  <Text style={{ fontSize: 9, color: monoText(mode, '#64748b') }}>Statement Date:</Text>
+                  <Text style={{ fontSize: 9, fontWeight: '600', color: monoText(mode, '#0f172a') }}>{data.date}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 9, color: '#64748b' }}>Period:</Text>
-                  <Text style={{ fontSize: 9, fontWeight: '600', color: '#0f172a' }}>{data.startDate} to {data.endDate}</Text>
+                  <Text style={{ fontSize: 9, color: monoText(mode, '#64748b') }}>Period:</Text>
+                  <Text style={{ fontSize: 9, fontWeight: '600', color: monoText(mode, '#0f172a') }}>{data.startDate} to {data.endDate}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 9, color: '#64748b' }}>Opening Balance:</Text>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#0f172a' }}>{currency}{formatAmount(data.openingBalance)}</Text>
+                  <Text style={{ fontSize: 9, color: monoText(mode, '#64748b') }}>Opening Balance:</Text>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#0f172a') }}>{currency}{formatAmount(data.openingBalance)}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 9, color: '#64748b' }}>Currency:</Text>
-                  <Text style={{ fontSize: 9, fontWeight: '600', color: '#0f172a' }}>{currency}</Text>
+                  <Text style={{ fontSize: 9, color: monoText(mode, '#64748b') }}>Currency:</Text>
+                  <Text style={{ fontSize: 9, fontWeight: '600', color: monoText(mode, '#0f172a') }}>{currency}</Text>
                 </View>
               </View>
             </View>
 
             {/* Ledger Table */}
-            <View style={{ borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 6, overflow: 'hidden' }}>
+            <View style={{ borderWidth: 1, borderColor: monoLine(mode, '#e2e8f0'), borderRadius: 6, overflow: 'hidden' }}>
               {/* Header */}
-              <View style={{ flexDirection: 'row', backgroundColor: '#0f172a', paddingVertical: 8, paddingHorizontal: 10 }}>
-                <Text style={{ flex: 1.2, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Date</Text>
-                <Text style={{ flex: 2.5, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Particulars</Text>
-                <Text style={{ flex: 1.2, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Voucher No.</Text>
-                <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Ref No.</Text>
-                <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Type</Text>
-                <Text style={{ flex: 1.1, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Debit</Text>
-                <Text style={{ flex: 1.1, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Credit</Text>
-                <Text style={{ flex: 1.3, fontSize: 8, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Balance</Text>
+              <View style={{ flexDirection: 'row', backgroundColor: monoFill(mode, '#0f172a'), paddingVertical: 8, paddingHorizontal: 10 }}>
+                <Text style={{ flex: 1.2, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Date</Text>
+                <Text style={{ flex: 2.5, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Particulars</Text>
+                <Text style={{ flex: 1.2, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Voucher No.</Text>
+                <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Ref No.</Text>
+                <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Type</Text>
+                <Text style={{ flex: 1.1, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Debit</Text>
+                <Text style={{ flex: 1.1, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Credit</Text>
+                <Text style={{ flex: 1.3, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Balance</Text>
               </View>
 
               {/* Opening Balance Row */}
-              <View style={{ flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 10, backgroundColor: '#f1f5f9', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
-                <Text style={{ flex: 1.2, fontSize: 9, fontWeight: '600', color: '#475569' }}>{data.startDate}</Text>
-                <Text style={{ flex: 2.5, fontSize: 9, fontWeight: 'bold', color: '#1e293b' }}>Opening Balance</Text>
-                <Text style={{ flex: 1.2, fontSize: 9, color: '#94a3b8' }}>—</Text>
-                <Text style={{ flex: 1, fontSize: 9, color: '#94a3b8' }}>—</Text>
-                <Text style={{ flex: 1, fontSize: 9, color: '#94a3b8' }}>—</Text>
-                <Text style={{ flex: 1.1, fontSize: 9, color: '#94a3b8', textAlign: 'right' }}>—</Text>
-                <Text style={{ flex: 1.1, fontSize: 9, color: '#94a3b8', textAlign: 'right' }}>—</Text>
-                <Text style={{ flex: 1.3, fontSize: 9, fontWeight: 'bold', color: '#1e293b', textAlign: 'right' }}>{currency}{formatAmount(data.openingBalance)}</Text>
+              <View style={{ flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 10, backgroundColor: monoFill(mode, '#f1f5f9'), borderBottomWidth: 1, borderBottomColor: monoLine(mode, '#e2e8f0') }}>
+                <Text style={{ flex: 1.2, fontSize: 9, fontWeight: '600', color: monoText(mode, '#475569') }}>{data.startDate}</Text>
+                <Text style={{ flex: 2.5, fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#1e293b') }}>Opening Balance</Text>
+                <Text style={{ flex: 1.2, fontSize: 9, color: monoText(mode, '#94a3b8') }}>—</Text>
+                <Text style={{ flex: 1, fontSize: 9, color: monoText(mode, '#94a3b8') }}>—</Text>
+                <Text style={{ flex: 1, fontSize: 9, color: monoText(mode, '#94a3b8') }}>—</Text>
+                <Text style={{ flex: 1.1, fontSize: 9, color: monoText(mode, '#94a3b8'), textAlign: 'right' }}>—</Text>
+                <Text style={{ flex: 1.1, fontSize: 9, color: monoText(mode, '#94a3b8'), textAlign: 'right' }}>—</Text>
+                <Text style={{ flex: 1.3, fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#1e293b'), textAlign: 'right' }}>{currency}{formatAmount(data.openingBalance)}</Text>
               </View>
 
               {/* Transaction Rows */}
               {data.transactions.map((txn, i) => (
-                <View key={i} style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 10, borderBottomWidth: i < data.transactions.length - 1 ? 1 : 0, borderBottomColor: '#f1f5f9', backgroundColor: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-                  <Text style={{ flex: 1.2, fontSize: 9, color: '#334155' }}>{txn.date}</Text>
-                  <Text style={{ flex: 2.5, fontSize: 9, color: '#1e293b' }}>{txn.memo || txn.reference || '—'}</Text>
-                  <Text style={{ flex: 1.2, fontSize: 8, fontFamily: 'Courier', color: '#334155' }}>{txn.reference || '—'}</Text>
-                  <Text style={{ flex: 1, fontSize: 8, fontFamily: 'Courier', color: '#94a3b8' }}>{'—'}</Text>
-                  <Text style={{ flex: 1, fontSize: 8, color: '#64748b' }}>{'—'}</Text>
-                  <Text style={{ flex: 1.1, fontSize: 9, color: '#dc2626', textAlign: 'right', fontWeight: '600' }}>{txn.debit > 0 ? currency + formatAmount(txn.debit) : '—'}</Text>
-                  <Text style={{ flex: 1.1, fontSize: 9, color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>{txn.credit > 0 ? currency + formatAmount(txn.credit) : '—'}</Text>
-                  <Text style={{ flex: 1.3, fontSize: 9, fontWeight: 'bold', color: '#0f172a', textAlign: 'right' }}>{currency}{formatAmount(txn.runningBalance)}</Text>
+                <View key={i} style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 10, borderBottomWidth: i < data.transactions.length - 1 ? 1 : 0, borderBottomColor: monoLine(mode, '#f1f5f9'),                     backgroundColor: monoFill(mode, i % 2 === 0 ? '#fff' : '#fafafa') }}>
+                  <Text style={{ flex: 1.2, fontSize: 9, color: monoText(mode, '#334155') }}>{txn.date}</Text>
+                  <Text style={{ flex: 2.5, fontSize: 9, color: monoText(mode, '#1e293b') }}>{txn.memo || txn.reference || '—'}</Text>
+                  <Text style={{ flex: 1.2, fontSize: 8, fontFamily: 'Courier', color: monoText(mode, '#334155') }}>{txn.reference || '—'}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, fontFamily: 'Courier', color: monoText(mode, '#94a3b8') }}>{'—'}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, color: monoText(mode, '#64748b') }}>{'—'}</Text>
+                  <Text style={{ flex: 1.1, fontSize: 9, color: monoText(mode, '#dc2626'), textAlign: 'right', fontWeight: '600' }}>{txn.debit > 0 ? currency + formatAmount(txn.debit) : '—'}</Text>
+                  <Text style={{ flex: 1.1, fontSize: 9, color: monoText(mode, '#16a34a'), textAlign: 'right', fontWeight: '600' }}>{txn.credit > 0 ? currency + formatAmount(txn.credit) : '—'}</Text>
+                  <Text style={{ flex: 1.3, fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#0f172a'), textAlign: 'right' }}>{currency}{formatAmount(txn.runningBalance)}</Text>
                 </View>
               ))}
 
               {/* Totals Row */}
-              <View style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 10, backgroundColor: '#0f172a', borderTopWidth: 2, borderTopColor: '#334155' }}>
+              <View style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 10, backgroundColor: monoFill(mode, '#0f172a'), borderTopWidth: 2, borderTopColor: monoLine(mode, '#334155') }}>
                 <View style={{ flex: 5.7, flexDirection: 'row', justifyContent: 'space-between', paddingRight: 8 }}>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>Totals</Text>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#f87171' }}>DR: {currency}{formatAmount(Number('totalInvoiced' in data ? dataAny.totalInvoiced : 0))}</Text>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#4ade80' }}>CR: {currency}{formatAmount(Number('totalReceived' in data ? dataAny.totalReceived : 0))}</Text>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Totals</Text>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#f87171') }}>DR: {currency}{formatAmount(Number('totalInvoiced' in data ? dataAny.totalInvoiced : 0))}</Text>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#4ade80') }}>CR: {currency}{formatAmount(Number('totalReceived' in data ? dataAny.totalReceived : 0))}</Text>
                 </View>
                 <View style={{ flex: 1.3, alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 10, fontWeight: 'black', color: Number('finalBalance' in data ? data.finalBalance : 0) > 0 ? '#f87171' : '#4ade80' }}>
+                  <Text style={{ fontSize: 10, fontWeight: 'black', color: monoText(mode, Number('finalBalance' in data ? data.finalBalance : 0) > 0 ? '#f87171' : '#4ade80') }}>
                     {currency}{formatAmount(Number('finalBalance' in data ? data.finalBalance : 0))}
                   </Text>
                 </View>
               </View>
 
               {/* Closing Balance Row */}
-              <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: '#fef08a', borderTopWidth: 2, borderTopColor: '#ca8a04' }}>
-                <Text style={{ flex: 7.7, fontSize: 10, fontWeight: 'black', color: '#1e293b', textTransform: 'uppercase', letterSpacing: 0.5 }}>Closing Balance</Text>
-                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: 'black', color: '#1e293b', textAlign: 'right' }}>
+              <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: monoFill(mode, '#fef08a'), borderTopWidth: 2, borderTopColor: monoLine(mode, '#ca8a04') }}>
+                <Text style={{ flex: 7.7, fontSize: 10, fontWeight: 'black', color: monoText(mode, '#1e293b'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Closing Balance</Text>
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: 'black', color: monoText(mode, '#1e293b'), textAlign: 'right' }}>
                   {currency}{formatAmount(Number('finalBalance' in data ? data.finalBalance : 0))}
                 </Text>
               </View>
@@ -2734,7 +2763,7 @@ if (type === 'POS_RECEIPT') {
 
             {/* Footer Note */}
             <View style={{ marginTop: 12, alignItems: 'center' }}>
-              <Text style={{ fontSize: 8, color: '#94a3b8' }}>Generated by Prime ERP — {companyName}</Text>
+              <Text style={{ fontSize: 8, color: monoText(mode, '#94a3b8') }}>Generated by Prime ERP — {companyName}</Text>
             </View>
           </View>
         )}
@@ -2743,14 +2772,14 @@ if (type === 'POS_RECEIPT') {
         {type === 'FISCAL_REPORT' && 'sections' in data && (
           <View>
             {/* Report Title (right-aligned to differentiate from page header) */}
-            <View style={{ marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
+            <View style={{ marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: monoLine(mode, '#e2e8f0') }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <View>
-                  <Text style={{ fontSize: 7, color: '#64748b', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 'bold' }}>Report Period</Text>
-                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#0f172a', marginTop: 2 }}>{data.period}</Text>
+                  <Text style={{ fontSize: 7, color: monoText(mode, '#64748b'), textTransform: 'uppercase', letterSpacing: 2, fontWeight: 'bold' }}>Report Period</Text>
+                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: monoText(mode, '#0f172a'), marginTop: 2 }}>{data.period}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 7, color: '#64748b' }}>Currency: {data.currency}</Text>
+                  <Text style={{ fontSize: 7, color: monoText(mode, '#64748b') }}>Currency: {data.currency}</Text>
                 </View>
               </View>
             </View>
@@ -2759,19 +2788,19 @@ if (type === 'POS_RECEIPT') {
             {data.sections.map((section, idx) => (
               <View key={idx} style={{ marginBottom: 16 }}>
                 {/* Section Header */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#0f172a', paddingVertical: 6, paddingHorizontal: 10 }}>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#ffffff', textTransform: 'uppercase', letterSpacing: 1.2, flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: monoFill(mode, '#0f172a'), paddingVertical: 6, paddingHorizontal: 10 }}>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textTransform: 'uppercase', letterSpacing: 1.2, flex: 1 }}>
                     {section.title}
                   </Text>
                 </View>
 
                 {/* Column Header Row */}
-                <View style={{ flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 10, backgroundColor: '#e2e8f0', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }}>
-                  <Text style={{ flex: 1, fontSize: 7, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Account / Description</Text>
+                <View style={{ flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 10, backgroundColor: monoFill(mode, '#e2e8f0'), borderBottomWidth: 1, borderBottomColor: monoLine(mode, '#cbd5e1') }}>
+                  <Text style={{ flex: 1, fontSize: 7, fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Account / Description</Text>
                   {data.sections.some(s => s.rows.some(r => r.prevAmount !== undefined)) && (
-                    <Text style={{ width: 70, fontSize: 7, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Prior Period</Text>
+                    <Text style={{ width: 70, fontSize: 7, fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Prior Period</Text>
                   )}
-                  <Text style={{ width: 80, fontSize: 7, fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Amount ({data.currency})</Text>
+                  <Text style={{ width: 80, fontSize: 7, fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Amount ({data.currency})</Text>
                 </View>
 
                 {/* Section Rows */}
@@ -2781,9 +2810,9 @@ if (type === 'POS_RECEIPT') {
                     alignItems: 'center',
                     paddingVertical: row.isTotal ? 6 : 4,
                     paddingHorizontal: 10,
-                    backgroundColor: row.isTotal ? '#f1f5f9' : (rowIdx % 2 === 0 ? '#ffffff' : '#fafbfc'),
+                    backgroundColor: monoFill(mode, row.isTotal ? '#f1f5f9' : (rowIdx % 2 === 0 ? '#ffffff' : '#fafbfc')),
                     borderBottomWidth: row.isTotal ? 2 : 1,
-                    borderColor: row.isTotal ? '#0f172a' : '#f1f5f9',
+                    borderColor: monoLine(mode, row.isTotal ? '#0f172a' : '#f1f5f9'),
                     borderTopWidth: row.isTotal ? 2 : 0,
                     marginTop: row.isTotal ? 3 : 0
                   }} wrap={false}>
@@ -2791,12 +2820,12 @@ if (type === 'POS_RECEIPT') {
                       <Text style={{
                         fontSize: row.isTotal ? 9 : 8.5,
                         fontWeight: row.isTotal ? 'bold' : 'normal',
-                        color: row.isTotal ? '#0f172a' : '#334155'
+                        color: monoText(mode, row.isTotal ? '#0f172a' : '#334155')
                       }}>{row.label}</Text>
-                      {!!row.subText && <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1 }}>{row.subText}</Text>}
+                      {!!row.subText && <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8'), marginTop: 1 }}>{row.subText}</Text>}
                     </View>
                     {data.sections.some(s => s.rows.some(r => r.prevAmount !== undefined)) && (
-                      <Text style={{ width: 70, fontSize: row.isTotal ? 9 : 8, color: row.isTotal ? '#475569' : '#94a3b8', textAlign: 'right' }}>
+                      <Text style={{ width: 70, fontSize: row.isTotal ? 9 : 8, color: monoText(mode, row.isTotal ? '#475569' : '#94a3b8'), textAlign: 'right' }}>
                         {row.prevAmount !== undefined ? `${formatAmount(row.prevAmount)}` : '—'}
                       </Text>
                     )}
@@ -2804,7 +2833,7 @@ if (type === 'POS_RECEIPT') {
                       width: 80,
                       fontSize: row.isTotal ? 9 : 8.5,
                       fontWeight: row.isTotal ? 'bold' : 'normal',
-                      color: row.isTotal ? '#0f172a' : '#1e293b',
+                      color: monoText(mode, row.isTotal ? '#0f172a' : '#1e293b'),
                       textAlign: 'right'
                     }}>
                       {row.amount < 0 ? `(${formatAmount(Math.abs(row.amount))})` : `${formatAmount(row.amount)}`}
@@ -2816,20 +2845,20 @@ if (type === 'POS_RECEIPT') {
 
             {/* Net Performance / Key Metric Banner */}
             {!!data.netPerformance && (
-              <View style={{ marginTop: 20, padding: 12, backgroundColor: '#0f172a', borderTopWidth: 3, borderTopColor: '#2563eb' }}>
+              <View style={{ marginTop: 20, padding: 12, backgroundColor: monoFill(mode, '#0f172a'), borderTopWidth: 3, borderTopColor: monoLine(mode, '#2563eb') }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View>
-                    <Text style={{ color: '#94a3b8', fontSize: 7, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 'bold' }}>Key Performance Indicator</Text>
-                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold', marginTop: 3 }}>{data.netPerformance.label}</Text>
+                    <Text style={{ color: monoText(mode, '#94a3b8'), fontSize: 7, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 'bold' }}>Key Performance Indicator</Text>
+                    <Text style={{ color: monoText(mode, '#ffffff'), fontSize: 11, fontWeight: 'bold', marginTop: 3 }}>{data.netPerformance.label}</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     {data.netPerformance.prevAmount !== undefined && (
-                      <Text style={{ color: '#94a3b8', fontSize: 8, marginBottom: 3 }}>
+                      <Text style={{ color: monoText(mode, '#94a3b8'), fontSize: 8, marginBottom: 3 }}>
                         Prior: {formatAmount(data.netPerformance.prevAmount)}
                       </Text>
                     )}
                     <Text style={{
-                      color: data.netPerformance.amount >= 0 ? '#4ade80' : '#f87171',
+                      color: monoText(mode, data.netPerformance.amount >= 0 ? '#4ade80' : '#f87171'),
                       fontSize: 14,
                       fontWeight: 'bold',
                       textAlign: 'right'
@@ -2842,15 +2871,15 @@ if (type === 'POS_RECEIPT') {
             )}
 
             {/* Report Footer */}
-            <View style={{ marginTop: 20, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+            <View style={{ marginTop: 20, paddingTop: 8, borderTopWidth: 1, borderTopColor: monoLine(mode, '#e2e8f0') }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <View>
-                  <Text style={{ fontSize: 7, color: '#94a3b8' }}>Generated: {new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</Text>
-                  <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1 }}>Prime ERP — Financial Reporting Module</Text>
+                  <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8') }}>Generated: {new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</Text>
+                  <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8'), marginTop: 1 }}>Prime ERP — Financial Reporting Module</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 7, color: '#94a3b8' }}>{data.reportName}</Text>
-                  <Text style={{ fontSize: 7, color: '#94a3b8', marginTop: 1, fontStyle: 'italic' }}>All amounts in {data.currency}</Text>
+                  <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8') }}>{data.reportName}</Text>
+                  <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8'), marginTop: 1, fontStyle: 'italic' }}>All amounts in {data.currency}</Text>
                 </View>
               </View>
             </View>
@@ -2884,8 +2913,8 @@ if (type === 'POS_RECEIPT') {
               {'status' in data && !!data.status && (
                 <View style={s.summaryLeft}>
                   {/* INVOICE STATUS TITLE REMOVED */}
-                  <View style={[s.statusBox, { borderLeftColor: getStatusTone(data.status).border }]}>
-                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: getStatusTone(data.status).text }}>
+                  <View style={[s.statusBox, { borderLeftColor: monoLine(mode, getStatusTone(data.status, mode).border) }]}>
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: monoText(mode, getStatusTone(data.status, mode).text) }}>
                       {data.status.toUpperCase()}
                     </Text>
                   </View>
@@ -2906,7 +2935,7 @@ if (type === 'POS_RECEIPT') {
                     </View>
                   ) : null}
 
-                  <View style={[s.summaryRow, { borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 4, marginTop: 4 }]}>
+                  <View style={[s.summaryRow, { borderTopWidth: 1, borderTopColor: monoLine(mode, '#e2e8f0'), paddingTop: 4, marginTop: 4 }]}>
                     <Text style={{ fontWeight: 'bold' }}>Grand Total</Text>
                     <Text>{currency} {formatAmount(Number('totalAmount' in data ? dataAny.totalAmount : 0))}</Text>
                   </View>
@@ -2925,7 +2954,7 @@ if (type === 'POS_RECEIPT') {
             </View>
 
               <View wrap={false} style={{ marginTop: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: scaledFont(12), color: '#334155' }}>
+                <Text style={{ fontSize: scaledFont(12), color: monoText(mode, '#334155') }}>
                   Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
                 </Text>
               </View>
@@ -2936,16 +2965,16 @@ if (type === 'POS_RECEIPT') {
                 style={{
                   marginTop: type === 'INVOICE' ? 10 : 14,
                   padding: 10,
-                  backgroundColor: '#f8fafc',
+                  backgroundColor: monoFill(mode, '#f8fafc'),
                   borderRadius: 6,
                   borderLeftWidth: 3,
-                  borderLeftColor: templateSettings.accentColor,
+                  borderLeftColor: monoLine(mode, templateSettings.accentColor),
                 }}
               >
-                <Text style={{ fontSize: scaledFont(9), fontWeight: 'bold', color: '#475569', textTransform: 'uppercase' }}>
+                <Text style={{ fontSize: scaledFont(9), fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase' }}>
                   Payment Terms
                 </Text>
-                <Text style={{ fontSize: scaledFont(10), color: '#334155', marginTop: 4, lineHeight: 1.45 }}>
+                <Text style={{ fontSize: scaledFont(10), color: monoText(mode, '#334155'), marginTop: 4, lineHeight: 1.45 }}>
                   {paymentTermsLabel}
                   {showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ''}
                 </Text>
@@ -2981,7 +3010,7 @@ if (type === 'POS_RECEIPT') {
                 const lng = Number(locStamp?.lng);
                 if (lat || lng) {
                   return (
-                    <Text style={{ fontSize: 7, color: '#666', marginTop: 5 }}>
+                    <Text style={{ fontSize: 7, color: monoText(mode, '#666'), marginTop: 5 }}>
                       GPS: {lat.toFixed(4)}, {lng.toFixed(4)}
                     </Text>
                   );
@@ -3017,7 +3046,7 @@ if (type === 'POS_RECEIPT') {
                 })()}
               </View>
               <Text style={{ fontSize: 9 }}>Received By: {String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || '____________________')}</Text>
-              <Text style={{ fontSize: 7, color: '#666' }}>Stamp & Signature</Text>
+              <Text style={{ fontSize: 7, color: monoText(mode, '#666') }}>Stamp & Signature</Text>
             </View>
           </View>
         )}
@@ -3040,7 +3069,7 @@ if (type === 'POS_RECEIPT') {
         {paginated ? (
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter
+            <SecurityFooter colorMode={mode}
               data={dataAny}
               companyName={companyName}
               legalFooterLine1={legalFooterLine1}
@@ -3050,7 +3079,7 @@ if (type === 'POS_RECEIPT') {
             />
           </View>
         ) : (
-          <SecurityFooter
+          <SecurityFooter colorMode={mode}
             data={dataAny}
             companyName={companyName}
             legalFooterLine1={legalFooterLine1}

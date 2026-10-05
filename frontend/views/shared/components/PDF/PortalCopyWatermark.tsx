@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text } from '@react-pdf/renderer';
-import { docStyles as s } from './styles.ts';
+import { docStyles, docStylesMono } from './styles.ts';
+import type { PrimeColorMode } from './pdfPrintMode.ts';
 
 /**
  * PortalCopyWatermark
@@ -19,10 +20,13 @@ import { docStyles as s } from './styles.ts';
  * a multi-page document (same mechanism as the SecurityFooter / CANCELLED
  * watermark). It must be placed as a direct child of <Page>.
  */
-export const PortalCopyWatermark = () => (
-  <View style={s.portalWatermarkContainer} fixed>
-    <Text style={s.portalWatermarkText}>PORTAL COPY</Text>
-  </View>
-);
+export const PortalCopyWatermark = ({ colorMode = 'brand' }: { colorMode?: PrimeColorMode } = {}) => {
+  const s = colorMode === 'mono' ? docStylesMono : docStyles;
+  return (
+    <View style={s.portalWatermarkContainer} fixed>
+      <Text style={s.portalWatermarkText}>PORTAL COPY</Text>
+    </View>
+  );
+};
 
 export default PortalCopyWatermark;

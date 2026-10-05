@@ -1,7 +1,9 @@
 import React from 'react';
 import { Document, Page, Text, View, Image } from '@react-pdf/renderer';
 import { StatementDoc } from './schemas.ts';
-import { docStyles as s } from './styles.ts';
+import { docStyles, docStylesMono } from './styles.ts';
+import type { PrimeColorMode } from './pdfPrintMode.ts';
+import { monoText, monoFill, monoLine, monoInk } from './pdfPrintMode.ts';
 import { CompanyConfig } from '../../../../types.ts';
 import { resolvePdfLogoSource } from '../../../../utils/companyAssetUtils.ts';
 import {
@@ -54,7 +56,9 @@ const buildFooterLine2 = (config?: CompanyConfig | null) => {
   return 'Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,';
 };
 
-export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOverride?: CompanyConfig | null; channel?: 'erp' | 'portal' }> = ({ data, configOverride = null, channel = 'erp' }) => {
+export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOverride?: CompanyConfig | null; channel?: 'erp' | 'portal'; colorMode?: PrimeColorMode }> = ({ data, configOverride = null, channel = 'erp', colorMode = 'brand' }) => {
+  const mode: PrimeColorMode = colorMode ?? 'brand';
+  const s = mode === 'mono' ? docStylesMono : docStyles;
   const currency = data.currency || 'MWK';
   const config = configOverride || getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config);
@@ -80,9 +84,9 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
       creator="Prime ERP System"
     >
       <Page size="A4" style={[s.page, pageStyle]}>
-        {channel === 'portal' && <PortalCopyWatermark />}
+        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
         {/* Global pagination framing (shared capability; presentation only). */}
-        <PaginationFurniture
+        <PaginationFurniture colorMode={mode}
           identity={paginationIdentity('ACCOUNT_STATEMENT', data as unknown as Record<string, unknown>, data.customerName || '')}
           companyName={companyName}
         />
@@ -106,54 +110,54 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
             {logo ? (
               <Image src={logo} style={{ marginBottom: 6, marginLeft: 0, paddingLeft: 0, width: templateSettings.logoWidth, alignSelf: 'flex-start' }} />
             ) : null}
-            <Text style={{ fontSize: 8, color: '#64748b', fontStyle: 'italic', marginTop: 2 }}>Generated on: {new Date().toLocaleString('en-GB')}</Text>
+            <Text style={{ fontSize: 8, color: monoText(mode, '#64748b'), fontStyle: 'italic', marginTop: 2 }}>Generated on: {new Date().toLocaleString('en-GB')}</Text>
           </View>
 
           {/* Right: Statement Title and Balance Summary Table */}
           <View style={s.statementSide}>
             <Text style={[s.title, { fontSize: 24, marginBottom: 2 }]}>Account Statement</Text>
             {Boolean((data as any).statementNumber || (data as any).number) && (
-              <Text style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>
+              <Text style={{ fontSize: 10, color: monoText(mode, '#64748b'), marginBottom: 2 }}>
                 Statement Number: {String((data as any).statementNumber || (data as any).number)}
               </Text>
             )}
-            <Text style={{ fontSize: 10, color: '#64748b', marginBottom: 5 }}>{data.startDate} — {data.endDate}</Text>
+            <Text style={{ fontSize: 10, color: monoText(mode, '#64748b'), marginBottom: 5 }}>{data.startDate} — {data.endDate}</Text>
 
             <View style={s.summaryTable}>
               <View style={s.summaryRow}>
-                <Text style={{ fontWeight: 'bold', color: '#475569' }}>Opening Balance</Text>
+                <Text style={{ fontWeight: 'bold', color: monoText(mode, '#475569') }}>Opening Balance</Text>
                 <Text style={{ fontWeight: 'bold' }}>{currency} {formatAmount(data.openingBalance)}</Text>
               </View>
               <View style={s.summaryRow}>
-                <Text style={{ color: '#475569' }}>Invoiced Amount</Text>
+                <Text style={{ color: monoText(mode, '#475569') }}>Invoiced Amount</Text>
                 <Text>{currency} {formatAmount(data.totalInvoiced)}</Text>
               </View>
               <View style={s.summaryRow}>
-                <Text style={{ color: '#475569' }}>Amount Received</Text>
+                <Text style={{ color: monoText(mode, '#475569') }}>Amount Received</Text>
                 <Text>{currency} {formatAmount(data.totalReceived)}</Text>
               </View>
-              <View style={[s.summaryRow, { borderBottomWidth: 0, marginTop: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#e2e8f0' }]}>
-                <Text style={{ fontWeight: 'bold', color: '#1e293b' }}>Balance Due</Text>
-                <Text style={{ fontWeight: 'bold', fontSize: 13, color: '#2563eb' }}>{currency} {formatAmount(data.finalBalance)}</Text>
+              <View style={[s.summaryRow, { borderBottomWidth: 0, marginTop: 4, paddingTop: 6, borderTopWidth: 1, borderTopColor: monoLine(mode, '#e2e8f0') }]}>
+                <Text style={{ fontWeight: 'bold', color: monoText(mode, '#1e293b') }}>Balance Due</Text>
+                <Text style={{ fontWeight: 'bold', fontSize: 13, color: monoText(mode, '#2563eb') }}>{currency} {formatAmount(data.finalBalance)}</Text>
               </View>
             </View>
           </View>
         </View>
 
         {/* Customer "To" Section */}
-        <View style={{ marginTop: 1.5, paddingLeft: 5, borderLeftWidth: 3, borderLeftColor: '#2563eb', paddingVertical: 2 }}>
-          <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>Statement For</Text>
-          <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#1e293b' }}>{data.customerName}</Text>
+        <View style={{ marginTop: 1.5, paddingLeft: 5, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#2563eb'), paddingVertical: 2 }}>
+          <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#64748b'), textTransform: 'uppercase', marginBottom: 4 }}>Statement For</Text>
+          <Text style={{ fontSize: 14, fontWeight: 'bold', color: monoText(mode, '#1e293b') }}>{data.customerName}</Text>
           {'address' in data && !!(data as any).address && (
-            <Text style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>{(data as any).address}</Text>
+            <Text style={{ fontSize: 10, color: monoText(mode, '#475569'), marginTop: 4 }}>{(data as any).address}</Text>
           )}
         </View>
 
         {/* Transactions Section Title */}
-        <Text style={{ fontSize: 12, fontWeight: 'bold', marginTop: 15, marginBottom: 8, color: '#1e293b', textTransform: 'uppercase', letterSpacing: 1 }}>Transaction History</Text>
+        <Text style={{ fontSize: 12, fontWeight: 'bold', marginTop: 15, marginBottom: 8, color: monoText(mode, '#1e293b'), textTransform: 'uppercase', letterSpacing: 1 }}>Transaction History</Text>
 
         {/* Transactions Table */}
-        <View style={[s.tableHeader, { backgroundColor: '#f8fafc', paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }]}>
+        <View style={[s.tableHeader, { backgroundColor: monoFill(mode, '#f8fafc'), paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: monoLine(mode, '#cbd5e1') }]}>
           <Text style={{ flex: 1.2, fontSize: 10, fontWeight: 'bold' }}>Date</Text>
           <Text style={{ flex: 1.5, fontSize: 10, fontWeight: 'bold' }}>Reference</Text>
           <Text style={{ flex: 2.5, fontSize: 10, fontWeight: 'bold' }}>Description</Text>
@@ -175,34 +179,34 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           const txnStatus = String((txn as any).status ?? '').trim();
           return (
           <React.Fragment key={i}>
-          <View style={[s.row, { paddingHorizontal: 8, borderBottomColor: '#f1f5f9' }]} wrap={false}>
+          <View style={[s.row, { paddingHorizontal: 8, borderBottomColor: monoLine(mode, '#f1f5f9') }]} wrap={false}>
             <Text style={{ flex: 1.2, fontSize: 9 }}>{txn.date}</Text>
             <Text style={{ flex: 1.5, fontSize: 9, fontWeight: 'bold' }}>{txn.reference}</Text>
-            <Text style={{ flex: 2.5, fontSize: 9, color: '#475569' }}>{txn.memo || '-'}</Text>
-            <Text style={{ flex: 1, fontSize: 9, textAlign: 'right', color: txn.debit > 0 ? '#e11d48' : '#64748b' }}>{txn.debit > 0 ? formatAmount(txn.debit) : '-'}</Text>
-            <Text style={{ flex: 1, fontSize: 9, textAlign: 'right', color: txn.credit > 0 ? '#059669' : '#64748b' }}>{txn.credit > 0 ? formatAmount(txn.credit) : '-'}</Text>
+            <Text style={{ flex: 2.5, fontSize: 9, color: monoText(mode, '#475569') }}>{txn.memo || '-'}</Text>
+            <Text style={{ flex: 1, fontSize: 9, textAlign: 'right', color: monoText(mode, txn.debit > 0 ? '#e11d48' : '#64748b') }}>{txn.debit > 0 ? formatAmount(txn.debit) : '-'}</Text>
+            <Text style={{ flex: 1, fontSize: 9, textAlign: 'right', color: monoText(mode, txn.credit > 0 ? '#059669' : '#64748b') }}>{txn.credit > 0 ? formatAmount(txn.credit) : '-'}</Text>
             <Text style={{ flex: 1.3, fontSize: 9, textAlign: 'right', fontWeight: 'bold' }}>{formatAmount(txn.runningBalance)}</Text>
           </View>
           {txnOriginalDate && (
-            <View key={`${i}-meta`} style={{ paddingHorizontal: 8, paddingTop: 2, flexDirection: 'row', backgroundColor: '#f8fafc' }}>
-              <Text style={{ flex: 1, fontSize: 8, color: '#64748b', fontStyle: 'italic' }}>Original date: {formatStatementDate(txnOriginalDate)}</Text>
-              <Text style={{ flex: 1, fontSize: 8, color: '#64748b', fontStyle: 'italic' }}>Status: {txnStatus || '—'}</Text>
+            <View key={`${i}-meta`} style={{ paddingHorizontal: 8, paddingTop: 2, flexDirection: 'row', backgroundColor: monoFill(mode, '#f8fafc') }}>
+              <Text style={{ flex: 1, fontSize: 8, color: monoText(mode, '#64748b'), fontStyle: 'italic' }}>Original date: {formatStatementDate(txnOriginalDate)}</Text>
+              <Text style={{ flex: 1, fontSize: 8, color: monoText(mode, '#64748b'), fontStyle: 'italic' }}>Status: {txnStatus || '—'}</Text>
             </View>
           )}
           {txnItems.length > 0 && (
-            <View key={`${i}-items`} style={{ paddingHorizontal: 8, paddingTop: 2, paddingBottom: 4, backgroundColor: '#f8fafc' }}>
+            <View key={`${i}-items`} style={{ paddingHorizontal: 8, paddingTop: 2, paddingBottom: 4, backgroundColor: monoFill(mode, '#f8fafc') }}>
               <View style={{ flexDirection: 'row', paddingVertical: 2 }}>
-                <Text style={{ flex: 3.5, fontSize: 7.5, fontWeight: 'bold', color: '#64748b' }}>Description</Text>
-                <Text style={{ flex: 1, fontSize: 7.5, fontWeight: 'bold', color: '#64748b', textAlign: 'right' }}>Qty</Text>
-                <Text style={{ flex: 1.4, fontSize: 7.5, fontWeight: 'bold', color: '#64748b', textAlign: 'right' }}>Price</Text>
-                <Text style={{ flex: 1.4, fontSize: 7.5, fontWeight: 'bold', color: '#64748b', textAlign: 'right' }}>Total</Text>
+                <Text style={{ flex: 3.5, fontSize: 7.5, fontWeight: 'bold', color: monoText(mode, '#64748b') }}>Description</Text>
+                <Text style={{ flex: 1, fontSize: 7.5, fontWeight: 'bold', color: monoText(mode, '#64748b'), textAlign: 'right' }}>Qty</Text>
+                <Text style={{ flex: 1.4, fontSize: 7.5, fontWeight: 'bold', color: monoText(mode, '#64748b'), textAlign: 'right' }}>Price</Text>
+                <Text style={{ flex: 1.4, fontSize: 7.5, fontWeight: 'bold', color: monoText(mode, '#64748b'), textAlign: 'right' }}>Total</Text>
               </View>
               {txnItems.map((line: any, li: number) => (
                 <View key={li} style={{ flexDirection: 'row', paddingVertical: 1.5 }}>
-                  <Text style={{ flex: 3.5, fontSize: 8, color: '#475569' }}>{String(line?.description ?? '—')}</Text>
-                  <Text style={{ flex: 1, fontSize: 8, color: '#475569', textAlign: 'right' }}>{line?.qty ?? '—'}</Text>
-                  <Text style={{ flex: 1.4, fontSize: 8, color: '#475569', textAlign: 'right' }}>{line?.price != null ? `${currency} ${formatAmount(Number(line.price))}` : '—'}</Text>
-                  <Text style={{ flex: 1.4, fontSize: 8, color: '#475569', textAlign: 'right' }}>{line?.total != null ? `${currency} ${formatAmount(Number(line.total))}` : '—'}</Text>
+                  <Text style={{ flex: 3.5, fontSize: 8, color: monoText(mode, '#475569') }}>{String(line?.description ?? '—')}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, color: monoText(mode, '#475569'), textAlign: 'right' }}>{line?.qty ?? '—'}</Text>
+                  <Text style={{ flex: 1.4, fontSize: 8, color: monoText(mode, '#475569'), textAlign: 'right' }}>{line?.price != null ? `${currency} ${formatAmount(Number(line.price))}` : '—'}</Text>
+                  <Text style={{ flex: 1.4, fontSize: 8, color: monoText(mode, '#475569'), textAlign: 'right' }}>{line?.total != null ? `${currency} ${formatAmount(Number(line.total))}` : '—'}</Text>
                 </View>
               ))}
             </View>
@@ -214,7 +218,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
           {/* Thank-you line: identical wording/placement to invoice, receipt
               and quotation so every document closes consistently. */}
           <View wrap={false} style={{ marginTop: 10, alignItems: 'center' }}>
-            <Text style={{ fontSize: Number((12 * fontScale).toFixed(2)), color: '#334155' }}>
+            <Text style={{ fontSize: Number((12 * fontScale).toFixed(2)), color: monoText(mode, '#334155') }}>
               Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
             </Text>
           </View>
@@ -223,7 +227,7 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
               official body copy, QR, bottom rule. The title/shield block and
               SCAN TO VERIFY pill were removed per product direction. Flows
               once after the final content. */}
-          <View wrap={false} style={{ marginTop: 10, borderTopWidth: 0.5, borderColor: '#e2e8f0', paddingTop: 8, width: '100%' }}>
+          <View wrap={false} style={{ marginTop: 10, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8, width: '100%' }}>
             <VerificationLabel fontScale={fontScale} />
             {(() => {
               const qrUrl = resolvePdfQrCodeSource(String((data as any)?.securityQrCodeDataUrl || '').trim());
@@ -235,12 +239,12 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
-                        <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#10b981', alignItems: 'center', justifyContent: 'center' }}>
+                        <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: monoInk(mode, '#10b981'), alignItems: 'center', justifyContent: 'center' }}>
                           <View style={{ width: 6, height: 3.5, borderLeftWidth: 1.2, borderBottomWidth: 1.2, borderColor: '#ffffff', transform: 'rotate(-45deg)', marginTop: -1 }} />
                         </View>
-                        <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: '#2563eb' }}>Digitally generated</Text>
-                        <Text style={{ fontSize: 8.5 * fontScale, color: '#64748b' }}>•</Text>
-                        <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: '#059669' }}>Verification available online</Text>
+                        <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: monoText(mode, '#2563eb') }}>Digitally generated</Text>
+                        <Text style={{ fontSize: 8.5 * fontScale, color: monoText(mode, '#64748b') }}>•</Text>
+                        <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: monoText(mode, '#059669') }}>Verification available online</Text>
                       </View>
                       <Text style={{ marginTop: 6, fontSize: 9 * fontScale, color: '#000', lineHeight: 1.45 }}>
                         This is an official {shortCompany} document. It was electronically generated and is valid
@@ -248,18 +252,18 @@ export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOver
                         and confirm its current record. or contact us on +265 992 528 222
                       </Text>
                     </View>
-                    <View style={{ width: 1, backgroundColor: '#cbd5e1', alignSelf: 'stretch' }} />
+                    <View style={{ width: 1, backgroundColor: monoFill(mode, '#cbd5e1'), alignSelf: 'stretch' }} />
                     <View style={{ width: footerQrSize + 18, alignItems: 'center' }}>
                       <View style={{ alignItems: 'center' }}>
                         {qrUrl ? (
                           <Image src={qrUrl} style={{ width: footerQrSize, height: footerQrSize }} />
                         ) : (
-                          <View style={{ width: footerQrSize, height: footerQrSize, backgroundColor: '#f1f5f9' }} />
+                          <View style={{ width: footerQrSize, height: footerQrSize, backgroundColor: monoFill(mode, '#f1f5f9') }} />
                         )}
                       </View>
                     </View>
                   </View>
-                  <View style={{ marginTop: 8, height: 1, backgroundColor: '#dbeafe', width: '100%' }} />
+                  <View style={{ marginTop: 8, height: 1, backgroundColor: monoFill(mode, '#dbeafe'), width: '100%' }} />
                 </View>
               );
             })()}
