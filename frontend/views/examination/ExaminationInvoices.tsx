@@ -1,9 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, Eye, ShieldCheck, ExternalLink, FileText, DollarSign, Clock } from 'lucide-react';
+import { Search, RefreshCw, Eye, ShieldCheck, ExternalLink, FileText, DollarSign, Clock, MoreHorizontal, Download, History, Ban, Trash2, X } from 'lucide-react';
 import { useFinance } from '../../context/FinanceContext';
 import { useExamination } from '../../context/ExaminationContext';
+import { useAuth } from '../../context/AuthContext';
+import { useSales } from '../../context/SalesContext';
 import { durableSyncQueue } from '../../services/durableSyncQueue';
+import { dbService } from '../../services/db';
+import { downloadBlob } from '../../utils/helpers';
+import { mapToInvoiceData } from '../../utils/pdfMapper';
+import { attachDocumentSecurity } from '../../utils/documentSecurity';
+import { enrichDocumentCustomerData } from '../../utils/documentCustomerData';
+import { generatePrimeDocumentBlob } from '../shared/components/PDF/generatePrimeDocumentBlob';
+import type { PrimeDocData } from '../shared/components/PDF/schemas';
+import { hydrateCompanyPdfAssets, getStoredCompanyConfig } from '../../utils/companyAssetUtils';
+import { initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
+import { PreviewModal } from '../shared/components/PDF/PreviewModal';
 import {
   isExaminationInvoiceRecord,
   getExaminationBatchLinkage,
@@ -189,19 +201,67 @@ export const resolveExamInvoiceBatch = (
   );
 };
 
+/**
+ * Examination invoice action menu (unit-tested). Mirrors the general
+ * invoice menu minus the paths that would fork exam financials outside
+ * the batch workflow (edit/duplicate/credit/DN/exchange/email/analytics
+ * stay on the canonical detail view or are intentionally unavailable —
+ * exam invoices are priced only by calculation snapshots). Void and
+ * permanent delete are first-class here with the same semantics as the
+ * general list: void reverses ledger effects; permanent delete is offered
+ * only for already-voided invoices.
+ */
+export type ExamInvoiceMenuKey =
+  | 'view'
+  | 'preview'
+  | 'download'
+  | 'payment'
+  | 'ledger'
+  | 'void'
+  | 'purge';
+
+export const examInvoiceMenuItems = (
+  row: Pick<ExamInvoiceRow, 'status' | 'paidAmount' | 'totalAmount'>
+): ExamInvoiceMenuKey[] => {
+  const status = String(row?.status || '').toLowerCase();
+  const isTerminal = status === 'voided' || status === 'void' || status === 'cancelled';
+  const paid = status === 'paid' || (Number(row?.paidAmount || 0) > 0 && Number(row?.paidAmount || 0) >= Number(row?.totalAmount || 0));
+  const items: ExamInvoiceMenuKey[] = ['view', 'preview', 'download'];
+  if (!paid) items.push('payment');
+  items.push('ledger');
+  // Mirrors the general list: void only while unpaid (paid/partial go
+  // through payment-aware flows), permanent delete only once voided.
+  if (!isTerminal && !paid) items.push('void');
+  if (isTerminal) items.push('purge');
+  return items;
+};
+
 const ExaminationInvoices: React.FC = () => {
   const navigate = useNavigate();
-  const { invoices, fetchFinanceData } = useFinance() as unknown as {
+  const { invoices, fetchFinanceData, cancelInvoice, getInvoiceVerificationToken } = useFinance() as unknown as {
     invoices: Array<Record<string, any>>;
     fetchFinanceData: () => Promise<unknown>;
+    cancelInvoice: (id: string, reason: string) => Promise<unknown>;
+    getInvoiceVerificationToken?: (id: string) => Promise<string | null>;
   };
   const { batches } = useExamination() as unknown as {
     batches: Array<Record<string, any>>;
   };
+  const { companyConfig, notify, addAuditLog } = useAuth() as unknown as {
+    companyConfig: Record<string, any> | null;
+    notify: (message: string, kind?: string) => void;
+    addAuditLog: (entry: Record<string, any>) => void;
+  };
+  const { customers } = useSales() as unknown as { customers: Array<Record<string, any>> };
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [pendingIds, setPendingIds] = useState<ReadonlyArray<string>>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [previewInvoice, setPreviewInvoice] = useState<Record<string, any> | null>(null);
+  const [busyInvoiceId, setBusyInvoiceId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetchFinanceData?.().catch(() => {});
@@ -265,6 +325,101 @@ const ExaminationInvoices: React.FC = () => {
     const url = buildInvoiceVerificationUrl({ invoiceNumber: row.invoiceNumber, verificationToken: row.verificationToken });
     if (url) window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  const findRecord = (row: ExamInvoiceRow): Record<string, any> | undefined =>
+    (invoices || []).find((invoice) => String(invoice?.id || '') === String(row.id || ''));
+
+  const handlePreview = (row: ExamInvoiceRow) => {
+    const record = findRecord(row);
+    if (record) setPreviewInvoice(record);
+    setOpenMenuId(null);
+  };
+
+  const handleDownload = async (row: ExamInvoiceRow) => {
+    setOpenMenuId(null);
+    const record = findRecord(row);
+    if (!record || busyInvoiceId) return;
+    setBusyInvoiceId(row.id);
+    try {
+      // Same hardened pipeline as the general list: token backfill, enrich,
+      // map as EXAMINATION_INVOICE, secure, render, download. No new logic.
+      let source = record;
+      if (record?.id && !record.verificationToken && getInvoiceVerificationToken) {
+        try {
+          const token = await getInvoiceVerificationToken(String(record.id));
+          if (token) source = { ...record, verificationToken: token };
+        } catch { /* offline-safe: legacy payload until synced */ }
+      }
+      const config = await hydrateCompanyPdfAssets(getStoredCompanyConfig());
+      const enriched = enrichDocumentCustomerData(source, customers as any);
+      const mapped = mapToInvoiceData(enriched, config, 'EXAMINATION_INVOICE' as any);
+      await initializePrimePdfFonts();
+      const secured = await attachDocumentSecurity(mapped, (config as any)?.companyName);
+      const blob = await generatePrimeDocumentBlob('EXAMINATION_INVOICE' as any, secured as PrimeDocData, config);
+      downloadBlob(blob, `Exam Invoice - ${row.invoiceNumber || row.id}.pdf`);
+      notify(`Exam invoice ${row.invoiceNumber || row.id} downloaded`, 'success');
+    } catch {
+      notify('Failed to generate invoice PDF', 'error');
+    } finally {
+      setBusyInvoiceId(null);
+    }
+  };
+
+  const handlePayment = (row: ExamInvoiceRow) => {
+    setOpenMenuId(null);
+    navigate('/sales-flow/payments', { state: { action: 'create', customer: row.customerName, invoiceId: row.id } });
+  };
+
+  const handleLedger = (row: ExamInvoiceRow) => {
+    setOpenMenuId(null);
+    navigate(`/fiscal-reports/ledgers?query=${encodeURIComponent(row.id)}`);
+  };
+
+  const handleVoid = async (row: ExamInvoiceRow) => {
+    setOpenMenuId(null);
+    if (!window.confirm(`VOID INVOICE ${row.invoiceNumber || row.id}: this reverses all ledger entries. Continue?`)) return;
+    try {
+      await cancelInvoice(row.id, 'Voided from Examination Invoices');
+      await fetchFinanceData?.();
+    } catch {
+      // cancelInvoice already notifies; list refresh keeps the row truthful.
+      await fetchFinanceData?.().catch(() => {});
+    }
+  };
+
+  const handlePurge = async (row: ExamInvoiceRow) => {
+    setOpenMenuId(null);
+    // Permanent delete is offered only for already-voided invoices (gated by
+    // examInvoiceMenuItems), mirroring the general list: void first reverses
+    // the ledger, then the row itself can be removed completely.
+    if (!window.confirm(`DELETE PERMANENTLY: Invoice #${row.invoiceNumber || row.id} is already voided. Delete it completely from the system? This cannot be undone.`)) return;
+    try {
+      await dbService.delete('invoices', row.id);
+      await fetchFinanceData?.();
+      addAuditLog({ action: 'DELETE', entityType: 'Invoice', entityId: row.id, details: `Exam invoice ${row.invoiceNumber || row.id} permanently deleted.` });
+      notify(`Invoice #${row.invoiceNumber || row.id} deleted completely`, 'success');
+    } catch (err: any) {
+      notify(`Delete failed: ${err?.message || 'unknown error'}`, 'error');
+    }
+  };
+
+  const openMenu = (event: React.MouseEvent, row: ExamInvoiceRow) => {
+    event.stopPropagation();
+    const menuWidth = 256;
+    const menuHeight = 320;
+    setOpenMenuId(row.id || row.invoiceNumber);
+    setMenuPos({
+      x: Math.max(0, Math.min(event.clientX, window.innerWidth - menuWidth)),
+      y: Math.max(0, Math.min(event.clientY, window.innerHeight - menuHeight)),
+    });
+  };
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    const close = () => setOpenMenuId(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [openMenuId]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -445,6 +600,11 @@ const ExaminationInvoices: React.FC = () => {
                           onMouseEnter={e => { if (readiness === 'verifiable') { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; } }}
                           onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
                           <ShieldCheck size={15} />
+                        </button>{' '}
+                        <button title="Invoice actions" onClick={(event) => openMenu(event, row)} style={iconButtonStyle}
+                          onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; e.currentTarget.style.borderColor = teal[200]; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}>
+                          <MoreHorizontal size={15} />
                         </button>
                       </td>
                     </tr>
@@ -468,6 +628,86 @@ const ExaminationInvoices: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {openMenuId && menuPos && (() => {
+        const activeRow = rows.find((row) => (row.id || row.invoiceNumber) === openMenuId);
+        if (!activeRow) return null;
+        const items = examInvoiceMenuItems(activeRow);
+        const menuItem = (
+          label: string,
+          icon: React.ReactNode,
+          onSelect: () => void,
+          tone: 'ink' | 'teal' | 'amber' | 'danger' = 'ink',
+          disabled = false
+        ) => {
+          const tones = {
+            ink: { color: ink, hoverBg: '#f5f2ed' },
+            teal: { color: teal[600], hoverBg: teal[50] },
+            amber: { color: amber[600], hoverBg: amber[100] },
+            danger: { color: danger, hoverBg: `${danger}15` },
+          }[tone];
+          return (
+            <button
+              onClick={onSelect}
+              disabled={disabled}
+              style={{
+                width: '100%', padding: '8px 16px', fontSize: 12, fontWeight: 600,
+                color: tones.color, background: 'transparent', border: 'none',
+                display: 'flex', alignItems: 'center', gap: 12, cursor: disabled ? 'not-allowed' : 'pointer',
+                textAlign: 'left', opacity: disabled ? 0.45 : 1, transition: 'background .1s'
+              }}
+              onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = tones.hoverBg; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              {icon}
+              {label}
+              {busyInvoiceId === activeRow.id && (label === 'Download PDF Invoice') && (
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: inkSoft }}>…</span>
+              )}
+            </button>
+          );
+        };
+        const has = (key: ExamInvoiceMenuKey) => items.includes(key);
+        return (
+          <div
+            ref={menuRef}
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              position: 'fixed', top: menuPos.y, left: menuPos.x, width: 256, zIndex: 70,
+              background: 'rgba(254,253,251,.95)', borderRadius: 12,
+              boxShadow: '0 30px 70px -20px rgba(0,0,0,.35)',
+              border: `1px solid ${hairline}`, overflow: 'hidden'
+            }}
+          >
+            <div style={{
+              padding: '8px 16px', borderBottom: `1px solid ${hairline}`,
+              fontSize: 10, fontWeight: 700, color: inkSoft,
+              textTransform: 'uppercase', letterSpacing: 0.08, background: teal[50]
+            }}>
+              Invoice actions
+            </div>
+            <div style={{ padding: '4px 0' }}>
+              {has('view') && menuItem('View full detail', <FileText size={14} />, () => openInvoice(activeRow), 'ink')}
+              {has('preview') && menuItem('Preview PDF Invoice', <Eye size={14} />, () => handlePreview(activeRow), 'teal')}
+              {has('download') && menuItem('Download PDF Invoice', <Download size={14} />, () => handleDownload(activeRow), 'teal')}
+              <div style={{ margin: '4px 0', borderTop: `1px solid ${hairline}` }} />
+              {has('payment') && menuItem('Receive Payment', <DollarSign size={14} />, () => handlePayment(activeRow), 'teal')}
+              {has('ledger') && menuItem('Audit Ledger Entries', <History size={14} />, () => handleLedger(activeRow), 'ink')}
+              {has('void') && menuItem('Void Invoice', <Ban size={14} />, () => handleVoid(activeRow), 'amber')}
+              {has('purge') && menuItem('Delete Permanently', <Trash2 size={14} />, () => handlePurge(activeRow), 'danger')}
+            </div>
+          </div>
+        );
+      })()}
+
+      {previewInvoice && (
+        <PreviewModal
+          isOpen={!!previewInvoice}
+          onClose={() => setPreviewInvoice(null)}
+          type="EXAMINATION_INVOICE"
+          data={previewInvoice as never}
+        />
+      )}
     </div>
   );
 };

@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   selectExaminationInvoices,
   resolveExamInvoiceBatch,
+  examInvoiceMenuItems,
 } from '../../views/examination/ExaminationInvoices';
 import { isExaminationInvoiceRecord, applyGeneralInvoiceScope } from '../../utils/invoiceIdentity';
 
@@ -73,13 +74,27 @@ describe('Examination invoices tab selection', () => {
     expect(isExaminationInvoiceRecord({ id: 'INV-2', notes: 'examination of goods' } as any)).toBe(false);
   });
 
-  it('general list keeps ordinary invoices and bypasses exact id searches', () => {
-    const all = [ORDINARY, EXAM_BATCH, LEGACY_JOB] as any[];
+  it('general list keeps ordinary invoices and bypasses exact id searches', () => {    const all = [ORDINARY, EXAM_BATCH, LEGACY_JOB] as any[];
     expect(applyGeneralInvoiceScope(all).map((invoice) => invoice.id)).toEqual(['INV-001']);
     // Exact id/number search surfaces the record alongside ordinary rows.
     expect(applyGeneralInvoiceScope(all, 'EXM-100').map((invoice) => invoice.id)).toEqual(['INV-001', 'EXM-100']);
     expect(applyGeneralInvoiceScope(all, 'exm-100').map((invoice) => invoice.id)).toEqual(['INV-001', 'EXM-100']);
     expect(applyGeneralInvoiceScope(all, 'partial-match').map((invoice) => invoice.id)).toEqual(['INV-001']);
     expect(applyGeneralInvoiceScope(null)).toEqual([]);
+  });
+
+  it('menu offers full actions with void/purge gated by status', () => {
+    expect(examInvoiceMenuItems({ status: 'Unpaid', paidAmount: 0, totalAmount: 8000 })).toEqual(
+      ['view', 'preview', 'download', 'payment', 'ledger', 'void']
+    );
+    expect(examInvoiceMenuItems({ status: 'Paid', paidAmount: 8000, totalAmount: 8000 })).toEqual(
+      ['view', 'preview', 'download', 'ledger']
+    );
+    expect(examInvoiceMenuItems({ status: 'Voided', paidAmount: 0, totalAmount: 8000 })).toEqual(
+      ['view', 'preview', 'download', 'payment', 'ledger', 'purge']
+    );
+    expect(examInvoiceMenuItems({ status: 'Cancelled', paidAmount: 0, totalAmount: 8000 })).toEqual(
+      ['view', 'preview', 'download', 'payment', 'ledger', 'purge']
+    );
   });
 });
