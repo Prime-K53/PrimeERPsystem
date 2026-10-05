@@ -45,7 +45,8 @@ export type VerifiableDocumentType =
   | 'delivery_note'
   | 'supplier_payment'
   | 'statement'
-  | 'printing_contract';
+  | 'printing_contract'
+  | 'work_order';
 
 export const SUPPORTED_DOCUMENT_TYPES: VerifiableDocumentType[] = [
   'invoice',
@@ -57,6 +58,7 @@ export const SUPPORTED_DOCUMENT_TYPES: VerifiableDocumentType[] = [
   'supplier_payment',
   'statement',
   'printing_contract',
+  'work_order',
 ];
 
 /** URL slug per type (matches the frontend verify routes). */
@@ -70,6 +72,7 @@ const TYPE_SLUGS: Record<VerifiableDocumentType, string> = {
   supplier_payment: 'supplier-payment',
   statement: 'statement',
   printing_contract: 'printing-contract',
+  work_order: 'work-order',
 };
 
 const SLUG_TO_TYPE: Record<string, VerifiableDocumentType> = Object.fromEntries(
@@ -245,7 +248,7 @@ export function resolveVerifiableDocumentNumber(data: any, type: VerifiableDocum
     case 'quotation':
       return String(data?.quotationNumber ?? data?.quotationId ?? data?.number ?? data?.id ?? '').trim();
     case 'sales_order':
-      // Canonical official field first (order_number), legacy camelCase second.
+    case 'work_order':
       return String(data?.order_number ?? data?.orderNumber ?? data?.number ?? data?.id ?? '').trim();
     case 'purchase_order':
       return String(data?.order_number ?? data?.orderNumber ?? data?.number ?? data?.id ?? '').trim();

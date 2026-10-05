@@ -13,6 +13,7 @@ import {
 import { JobOrder, Attachment, InvoiceAllocation, InkCoverage } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useSales } from '../../../context/SalesContext';
+import { useFinance } from '../../../context/FinanceContext';
 import ReactMarkdown from 'react-markdown';
 import { generateAIResponse } from '../../../services/geminiService';
 import InkDensityAnalyzer from '../../production/components/InkDensityAnalyzer';
@@ -38,6 +39,7 @@ const danger = '#b5493f';
 export const JobOrderDetails: React.FC<JobOrderDetailsProps> = ({ jobOrder, onClose, onEdit, onAction }) => {
     const { companyConfig, notify, isOnline } = useAuth();
     const { customers = [], updateJobOrder, convertJobOrderToInvoice } = useSales();
+    const { getDocumentVerificationToken } = useFinance();
     const currency = companyConfig.currencySymbol;
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'Overview' | 'Financials' | 'Pre-Press' | 'Quality Control'>('Overview');
@@ -50,6 +52,7 @@ export const JobOrderDetails: React.FC<JobOrderDetailsProps> = ({ jobOrder, onCl
             const pdfData: PrimeDocData = {
                 number: jobOrder.id,
                 date: new Date(jobOrder.date).toLocaleDateString(),
+                documentType: 'work_order',
                 clientName: enrichedJobOrder.customerName || jobOrder.customerName,
                 address: enrichedJobOrder.address || enrichedJobOrder.customerAddress || enrichedJobOrder.billingAddress || enrichedJobOrder.shippingAddress || '',
                 phone: enrichedJobOrder.phone || enrichedJobOrder.customerPhone || enrichedJobOrder.schoolPhone || '',
@@ -59,6 +62,13 @@ export const JobOrderDetails: React.FC<JobOrderDetailsProps> = ({ jobOrder, onCl
                 }],
                 notes: jobOrder.jobDescription || ''
             };
+
+            if (!(jobOrder as any)?.verificationToken && jobOrder.id && getDocumentVerificationToken) {
+                try {
+                    const token = await getDocumentVerificationToken('jobOrders', String(jobOrder.id));
+                    if (token) (pdfData as any).verificationToken = token;
+                } catch { /* offline-safe: QR keeps legacy payload until synced */ }
+            }
             const securedPdfData = await attachDocumentSecurity(pdfData, companyConfig?.companyName);
             await initializePrimePdfFonts();
             const blob = await pdf(<PrimeDocument type="WORK_ORDER" data={securedPdfData as PrimeDocData} />).toBlob();

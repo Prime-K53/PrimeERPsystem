@@ -39,7 +39,7 @@ import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { generateVerificationToken } from '../../utils/documentVerification';
 import { dbService } from '../../services/db';
 import { generateNextId } from '../../utils/helpers';
-import { getCustomerOptionLabel } from '../../utils/customerDisplay';
+import { getCustomerOptionLabel, getCustomerDisplayName } from '../../utils/customerDisplay';
 import { currencyService } from '../../services/currencyService';
 import { ConfirmDialog, ConfirmDialogType } from '../ConfirmDialog';
 import {
@@ -301,8 +301,17 @@ const PrintingContractsView: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const customerNameOf = (id?: string) =>
-    customers.find((c: Customer) => String(c.id) === String(id))?.name || id || '—';
+  const customerNameOf = (id?: string) => {
+    const customer = customers.find((c: Customer) => String(c.id) === String(id));
+    if (!customer) return id || '—';
+    const displayName = getCustomerDisplayName({
+      businessName: customer.businessName ?? null,
+      companyName: customer.companyName ?? null,
+      legacyCustomerName: customer.name ?? null,
+    });
+    if (!displayName) return id || '—';
+    return `${displayName} (${id})`;
+  };
   const schoolNameOf = (id?: string) =>
     schools.find(s => String(s.id) === String(id))?.name
     || customers.find((c: Customer) => String(c.id) === String(id))?.name
@@ -1305,7 +1314,17 @@ const PrintingContractsView: React.FC = () => {
                       <p style={{ fontSize: 10, color: contractInkSoft, textTransform: 'capitalize', margin: '2px 0 0' }}>{(c.assessment_type || '').replace(/_/g, ' ')}</p>
                     </td>
                     <td style={{ padding: '10px 16px' }}>
-                      <p style={{ fontWeight: 600, color: contractInk, margin: 0 }}>{customerNameOf(c.customer_id)}</p>
+                      <p style={{ fontWeight: 600, color: contractInk, margin: 0 }}>
+                        {(() => {
+                          const stored = c.customerName;
+                          const id = c.customer_id;
+                          if (stored && stored !== id) return stored;
+                          const cust = customers.find((cust: Customer) => String(cust.id) === String(id));
+                          const label = cust ? getCustomerOptionLabel(cust) : undefined;
+                          const displayName = (label && label !== String(cust!.id || '').trim()) ? label : undefined;
+                          return displayName || stored || id || '—';
+                        })()}
+                      </p>
                       <p style={{ color: contractInkSoft, fontSize: 11, margin: '2px 0 0' }}>{schoolNameOf(c.school_id)}</p>
                     </td>
                     <td style={{ padding: '10px 16px', color: contractInkSoft, whiteSpace: 'nowrap' }}>

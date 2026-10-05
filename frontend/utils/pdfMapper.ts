@@ -22,6 +22,8 @@ const verifiableTypeForDocType = (docType: string): string | undefined => {
         case 'SALES_ORDER':
         case 'ORDER':
             return 'sales_order';
+        case 'WORK_ORDER':
+            return 'work_order';
         case 'PO':
             return 'purchase_order';
         case 'DELIVERY_NOTE':
