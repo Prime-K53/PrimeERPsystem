@@ -330,7 +330,7 @@ const SecurityFooter = ({
   );
 
   const bodyCopy = (
-    <Text style={{ marginTop: 6, fontSize: 9 * fontScale, color: titleColor, lineHeight: 1.45 }}>
+    <Text style={{ marginTop: 6, fontSize: 9 * fontScale, color: '#000', lineHeight: 1.45 }}>
       This is an official {shortCompany} document. It was electronically generated and is valid
       without a handwritten signature. Scan the QR code to verify the document&apos;s authenticity
       and confirm its current record. or contact us on +265 992 528 222
