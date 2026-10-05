@@ -301,7 +301,7 @@ export const FixedAssetsModule: React.FC = () => {
                             >
                               <Edit2 size={15} />
                             </button>
-                            <button onClick={() => setConfirm({ title: 'Delete Asset', message: `Delete "${a.name}" (${a.asset_code})? This cannot be undone.`, type: 'danger', onConfirm: async () => { try { await fixedAssetService.delete(a.id); await audit('fixed_asset.delete', a.id, { name: a.name }); await load(); } catch (e) { setConfirm({ title: 'Delete Failed', message: (e as Error).message, type: 'danger' }); } } })} title="Delete"
+                            <button onClick={() => setConfirm({ open: true, title: 'Delete Asset', message: `Delete "${a.name}" (${a.asset_code})? This cannot be undone.`, type: 'danger', onConfirm: async () => { try { await fixedAssetService.delete(a.id); await audit('fixed_asset.delete', a.id, { name: a.name }); await load(); } catch (e) { setConfirm({ open: true, title: 'Delete Failed', message: (e as Error).message, type: 'danger' }); } } })} title="Delete"
                               style={{ padding: 6, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: danger }}
                               onMouseEnter={e => { e.currentTarget.style.background = dangerBg; e.currentTarget.style.color = danger; }}
                               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = danger; }}
