@@ -125,7 +125,25 @@ Validation rules:
 - Profile may already be expired by end date.
 - Update or recreate profile with a valid end date window.
 
-## 8. Related Docs
+## 8. Canonical Pricing & Invoice Contract (EXAM-2026.1)
+
+- One formula: frontend `src/domain/examination/pricingEngine.ts` and
+  backend `services/examinationPricingEngine.cjs` implement the same
+  contract (duplex sheets, 20,000 pages/kg toner yield, flat FIXED,
+  additive percentages, margin, fee rounding). Golden vectors:
+  `tests/fixtures/examination-pricing-vectors.json`.
+- Every recalculation bumps `calculation_version` and writes an immutable
+  `pricing_snapshot` (engine version, inputs, per-class result).
+- Approval pins `approved_calculation_version`. Approved/Invoiced/Completed
+  batches are never repriced, recalculated, edited, or deleted in place.
+- Invoice generation consumes the approved snapshot; batches without one
+  fail closed (legacy batches get a marked reconstruction, never a silent
+  recalc). Regeneration voids the old invoice first, then reissues the
+  same totals under a new number. One batch → at most one active invoice.
+- Backend `POST /batches/:id/invoice|regenerate-invoice` stays quarantined
+  (403); the canonical path is the frontend offline-first flow.
+
+## 9. Related Docs
 
 - `docs/examination-batch-cost-engine-technical-design.md`
 - `docs/examination-batch-cost-workflow.md`

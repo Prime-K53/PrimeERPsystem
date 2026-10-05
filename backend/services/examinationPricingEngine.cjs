@@ -1,8 +1,33 @@
-const { roundToCurrency, roundUpToStep } = require('../utils/mathUtils.cjs');
+const { roundToCurrency, roundUpToStep, roundToNearest } = require('../utils/mathUtils.cjs');
+
+/**
+ * Canonical examination pricing contract (EXAM-2026.1).
+ *
+ * Frontend (src/domain/examination/pricingEngine.ts) and backend implement
+ * this exact contract. The physical implementations stay separate (browser
+ * vs Node runtimes) but MUST remain mathematically identical — see the
+ * shared golden vectors in tests/fixtures/examination-pricing-vectors.json.
+ *
+ * Canonical rules:
+ *  - Duplex sheets: ceil(pages/2) * (learners + extra_copies).
+ *  - Toner yield: 20,000 pages per kg of HP Universal Toner (measured spec
+ *    used by the seeded consumables and every frontend path). An earlier
+ *    backend revision derived 50,000 from a 20mg/sheet assumption, which
+ *    understated toner cost — corrected here.
+ *  - FIXED adjustments are flat per-class amounts (never * pages).
+ *  - PERCENTAGE adjustments are additive on the original BOM base.
+ *  - Profit margin applies once: rawTotal = adjusted * (1 + margin).
+ *  - Fee rounding defaults to ALWAYS_UP to `step` (default 50).
+ */
+const EXAM_PRICING_ENGINE_VERSION = 'EXAM-2026.1';
 
 const PAGES_PER_SHEET = 2;
-const TONER_MG_PER_SHEET = 20;  // Must match index.cjs
-const TONER_PAGES_PER_KG = Math.floor(1000000 / TONER_MG_PER_SHEET);  // 1kg = 1,000,000mg → 50,000 pages
+// Canonical toner yield (pages per kg). Matches the seeded HP Universal
+// Toner spec (~20,000 pages/kg), the frontend hidden-BOM constant
+// (EXAM_TONER_PAGES_PER_KG) and every frontend pricing default.
+const TONER_PAGES_PER_UNIT = 20000;
+// Legacy alias (pre-canonical derivation, kept for import compatibility).
+const TONER_PAGES_PER_KG = TONER_PAGES_PER_UNIT;
 const SHEETS_PER_REAM = 500;
 
 const DEFAULT_FALLBACK_ADJUSTMENTS = [];
@@ -84,7 +109,7 @@ const calculateClassMaterialCost = ({
   const safeTonerUnitCost = Math.max(0, toNumber(tonerUnitCost, 0));
 
   const reamsRequired = safeSheets / SHEETS_PER_REAM;
-  const tonerRequired = safePages / TONER_PAGES_PER_KG;
+  const tonerRequired = safePages / TONER_PAGES_PER_UNIT;
   const paperCost = clampNonNegative(reamsRequired * safePaperUnitCost);
   const tonerCost = clampNonNegative(tonerRequired * safeTonerUnitCost);
   const materialCost = clampNonNegative(paperCost + tonerCost);
@@ -295,6 +320,169 @@ const resolveClassPricing = ({
 const roundUpToNearest = (value, nearest) => roundUpToStep(value, nearest);
 
 /**
+ * Canonical rounding-method normalization. Single implementation shared by
+ * the pure engine and (via delegation) examinationService.
+ * NOTE: NEAREST_10/50/100 normalize to ALWAYS_UP_* (historical backend
+ * semantics); only NEAREST_500 is a true nearest. Preserved deliberately.
+ */
+const normalizeRoundingMethod = (method, fallback = 'ALWAYS_UP_50') => {
+  const normalized = String(method || '').trim().toUpperCase();
+  if (!normalized) return fallback;
+  if (normalized === 'NEAREST_10') return 'ALWAYS_UP_10';
+  if (normalized === 'NEAREST_50') return 'ALWAYS_UP_50';
+  if (normalized === 'NEAREST_100') return 'ALWAYS_UP_100';
+  if (normalized === 'ALWAYS_UP_10') return 'ALWAYS_UP_10';
+  if (normalized === 'ALWAYS_UP_50') return 'ALWAYS_UP_50';
+  if (normalized === 'ALWAYS_UP_100') return 'ALWAYS_UP_100';
+  if (normalized === 'ALWAYS_UP_500') return 'ALWAYS_UP_500';
+  if (normalized === 'ALWAYS_UP_CUSTOM') return 'ALWAYS_UP_CUSTOM';
+  if (normalized === 'PSYCHOLOGICAL') return 'PSYCHOLOGICAL';
+  if (normalized === 'NEAREST_500') return 'NEAREST_500';
+  if (normalized === 'CUSTOM') return 'ALWAYS_UP_CUSTOM';
+  return fallback;
+};
+
+const normalizeRoundingStep = (value, fallback = 50) => {
+  const num = toNumber(value, NaN);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.max(1, Math.round(num));
+};
+
+const applyPsychologicalRounding = (price) => {
+  if (price <= 0) {
+    return Math.ceil(price / 10) * 10;
+  }
+
+  let magnitude = 10;
+  if (price >= 100) magnitude = 100;
+  if (price >= 1000) magnitude = 1000;
+
+  let candidate = Math.floor(price / magnitude) * magnitude + (magnitude - 1);
+  if (candidate < price) candidate += magnitude;
+  return candidate;
+};
+
+/**
+ * Canonical fee rounding. Mirrors examinationService.applyBatchRounding
+ * exactly; the service delegates here so only one implementation exists.
+ */
+const applyRounding = (value, method, step) => {
+  const safeValue = roundCurrency(value);
+  const norm = normalizeRoundingMethod(method, 'ALWAYS_UP_50');
+  const s = normalizeRoundingStep(step, 50);
+
+  switch (norm) {
+    case 'NEAREST_500':
+      return roundCurrency(Math.round(safeValue / s) * s);
+    case 'PSYCHOLOGICAL':
+      return roundCurrency(applyPsychologicalRounding(safeValue));
+    case 'ALWAYS_UP_10':
+    case 'ALWAYS_UP_50':
+    case 'ALWAYS_UP_100':
+    case 'ALWAYS_UP_500':
+    case 'ALWAYS_UP_CUSTOM':
+    default: {
+      let suffixStep = s;
+      if (norm.endsWith('_10')) suffixStep = 10;
+      else if (norm.endsWith('_50')) suffixStep = 50;
+      else if (norm.endsWith('_100')) suffixStep = 100;
+      else if (norm.endsWith('_500')) suffixStep = 500;
+      return roundCurrency(roundUpToStep(safeValue, suffixStep));
+    }
+  }
+};
+
+/**
+ * ONE canonical class-pricing computation (pure, no I/O).
+ *
+ * Contract (mirrors frontend calculateExaminationBatchPricing per class):
+ *  1. consumption: ceil(pages/2) * (learners + extra) sheets (duplex).
+ *  2. BOM: paper = sheets/conversionRate * paperUnitCost (rounded),
+ *     toner = pages/tonerPagesPerUnit * tonerUnitCost (rounded).
+ *  3. adjustments: additive on the ORIGINAL BOM base; FIXED is a flat
+ *     per-class amount, PERCENTAGE is base * pct/100.
+ *  4. margin: rawTotal = (BOM + adjustments) * (1 + profitMargin).
+ *  5. fee: rawFee = round(rawTotal/learners); roundedFee = canonical
+ *     rounding(method, step); the rounded fee is applied only when it does
+ *     not go below raw (fees never round down).
+ *  6. totals: expectedTotal = round(roundedFee * learners);
+ *     roundingAdjustment = expectedTotal - BOM - adjustments (floored at 0
+ *     for reporting; the fee rule above already prevents going below raw).
+ *  7. manual override (optional): final = manual fee, liveTotal = final*l.
+ */
+const calculateCanonicalClassPricing = (input = {}) => {
+  const subjects = Array.isArray(input.subjects) ? input.subjects : [];
+  const learners = Math.max(1, Math.floor(toNumber(input.learners, 0)));
+  // Input normalization mirrors the frontend canonical engine exactly
+  // (falsy 0/NaN fall back to defaults; negatives clamp via Math.max).
+  const crRaw = toNumber(input.conversionRate, NaN);
+  const conversionRate = Math.max(1, (!Number.isFinite(crRaw) || crRaw === 0) ? 500 : crRaw);
+  const tpuRaw = toNumber(input.tonerPagesPerUnit, NaN);
+  const tonerPagesPerUnit = Math.max(1, (!Number.isFinite(tpuRaw) || tpuRaw === 0) ? TONER_PAGES_PER_UNIT : tpuRaw);
+  const paperUnitCost = Math.max(0, toNumber(input.paperUnitCost, NaN) || 0);
+  const tonerUnitCost = Math.max(0, toNumber(input.tonerUnitCost, NaN) || 0);
+  const profitMargin = Number(input.profitMargin ?? 0);
+
+  let totalSheets = 0;
+  let totalPages = 0;
+  for (const sub of subjects) {
+    const c = calculateSubjectConsumption(sub, learners);
+    totalSheets += c.totalSheets;
+    totalPages += c.totalPages;
+  }
+
+  const paperCost = roundCurrency((totalSheets / conversionRate) * paperUnitCost);
+  const tonerCost = roundCurrency((totalPages / tonerPagesPerUnit) * tonerUnitCost);
+  const materialCost = roundCurrency(paperCost + tonerCost);
+
+  const breakdown = buildAdjustmentBreakdown(materialCost, input.adjustments || []);
+  const adjustmentTotal = breakdown.adjustmentTotal;
+  // NOTE: no intermediate rounding before margin — mirrors the frontend
+  // canonical engine (adjustedCost is exact until the fee rounding).
+  const rawTotal = (materialCost + adjustmentTotal) * (1 + profitMargin);
+  const rawFeePerLearner = learners > 0 ? roundCurrency(rawTotal / learners) : 0;
+  const roundedCandidate = applyRounding(
+    rawFeePerLearner,
+    input.roundingMethod || 'ALWAYS_UP_50',
+    input.roundingStep || 50
+  );
+  // Fees never round down: a below-raw candidate is discarded.
+  const roundedFeePerLearner = roundedCandidate >= rawFeePerLearner
+    ? roundedCandidate
+    : rawFeePerLearner;
+  const expectedTotal = roundCurrency(roundedFeePerLearner * learners);
+  const marketAdjustmentTotal = adjustmentTotal;
+  const roundingAdjustment = Math.max(0, roundCurrency(expectedTotal - materialCost - adjustmentTotal));
+  const totalAdjustments = roundCurrency(expectedTotal - materialCost);
+
+  const manualFee = toNumber(input.manualCostPerLearner, NaN);
+  const hasManualOverride = Boolean(input.isManualOverride) && Number.isFinite(manualFee) && manualFee > 0;
+  const finalFeePerLearner = hasManualOverride ? manualFee : roundedFeePerLearner;
+  const liveTotal = roundCurrency(finalFeePerLearner * learners);
+
+  return {
+    learners,
+    totalSheets,
+    totalPages,
+    paperCost,
+    tonerCost,
+    materialCost,
+    adjustmentRows: breakdown.rows,
+    adjustmentTotal,
+    marketAdjustmentTotal,
+    roundingAdjustment,
+    totalAdjustments,
+    preRoundingTotal: roundCurrency(materialCost + adjustmentTotal),
+    rawFeePerLearner,
+    roundedFeePerLearner,
+    expectedTotal,
+    hasManualOverride,
+    finalFeePerLearner,
+    liveTotal
+  };
+};
+
+/**
  * Calculates a "Rounding Adjustment" to reach the rounded-up target.
  * Returns the adjustment amount needed to add to the base value to reach the target.
  */
@@ -305,7 +493,9 @@ const calculateRoundingAdjustment = (baseValue, targetValue) => {
 };
 
 module.exports = {
+  EXAM_PRICING_ENGINE_VERSION,
   PAGES_PER_SHEET,
+  TONER_PAGES_PER_UNIT,
   TONER_PAGES_PER_KG,
   SHEETS_PER_REAM,
   DEFAULT_FALLBACK_ADJUSTMENTS,
@@ -314,6 +504,11 @@ module.exports = {
   roundUpToNearest,
   calculateRoundingAdjustment,
   normalizeAdjustmentType,
+  normalizeRoundingMethod,
+  normalizeRoundingStep,
+  applyPsychologicalRounding,
+  applyRounding,
+  calculateCanonicalClassPricing,
   resolvePreferredUnitCost,
   calculateSubjectConsumption,
   calculateClassMaterialCost,

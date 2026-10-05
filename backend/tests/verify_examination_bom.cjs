@@ -107,19 +107,20 @@ const verifyPricing = async () => {
     console.log('Computed adjustment_total_cost:', calculatedClass.adjustment_total_cost);
     console.log('Computed suggested_cost_per_learner:', calculatedClass.suggested_cost_per_learner);
 
-    // Expected values for this fixture:
-    // sheets = 900, pages = 1800, paper_cost = 9000, toner_cost = 13500 => BOM = 22500
-    // percentage (10%) = 2250, fixed (2/page) = 3600 => base adjustments = 5850
-    // base expected per learner = (22500 + 5850) / 100 = 283.5
-    // active-adjustment rounding applies to nearest 50 => 300 per learner,
-    // rounding delta = 16.5 * 100 = 1650, final adjustments = 7500
+    // Expected values for this fixture (canonical EXAM-2026.1 contract):
+    // sheets = 900, pages = 1800, paper_cost = 9000,
+    // toner_cost = 1800 / 20000 * 150000 = 13500 => BOM = 22500
+    // percentage (10%) = 2250, FIXED is flat per class = 2 => adjustments = 2252
+    // raw fee = (22500 + 2252) / 100 = 247.52
+    // ALWAYS_UP_50 => 250 per learner, expected total 25000,
+    // rounding delta = 248, final adjustments = 2500
     if (Math.abs(Number(calculatedClass.material_total_cost || 0) - 22500) > 0.01) {
       throw new Error('material_total_cost formula mismatch');
     }
-    if (Math.abs(Number(calculatedClass.adjustment_total_cost || 0) - 7500) > 0.01) {
+    if (Math.abs(Number(calculatedClass.adjustment_total_cost || 0) - 2500) > 0.01) {
       throw new Error('adjustment_total_cost formula mismatch');
     }
-    if (Math.abs(Number(calculatedClass.suggested_cost_per_learner || 0) - 300) > 0.01) {
+    if (Math.abs(Number(calculatedClass.suggested_cost_per_learner || 0) - 250) > 0.01) {
       throw new Error('suggested_cost_per_learner formula mismatch');
     }
 

@@ -25,6 +25,14 @@ export interface ExaminationProductionJob {
   createdAt: string;
   updatedAt: string;
   dueDate: string;
+  /**
+   * Approved calculation version this job was released for. A recalculation
+   * mints a new version; releases are idempotent per (batchId, version) so
+   * the same calculation can never create duplicate production work.
+   */
+  calculationVersion?: number;
+  /** Set when a newer calculation version supersedes this release. */
+  superseded?: boolean;
   attributes: {
     pages: number;
     candidates: number;
@@ -40,6 +48,8 @@ export interface BatchToProductionPayload {
   batchId: string;
   batchName: string;
   schoolName: string;
+  /** Approved calculation version being released (0 = unknown/legacy). */
+  calculationVersion?: number;
   subjects: Array<{
     subject: string;
     className: string;
@@ -122,11 +132,35 @@ class ExaminationProductionService {
     try {
       await this.initialize();
 
+      const releaseVersion = Math.max(0, Math.floor(Number(payload.calculationVersion) || 0));
+      const existing = Array.from(this.jobs.values()).filter(job => job.batchId === payload.batchId);
+      // Idempotency: the same calculation version is released at most once.
+      // A newer version supersedes (but never deletes) earlier releases so
+      // stale production work stays distinguishable from current work.
+      if (releaseVersion > 0 && existing.some(job => Number(job.calculationVersion) === releaseVersion)) {
+        logger.info('Batch production release already exists for calculation version — skipping duplicates', {
+          batchId: payload.batchId,
+          calculationVersion: releaseVersion,
+        });
+        return existing.filter(job => Number(job.calculationVersion) === releaseVersion);
+      }
+      if (releaseVersion > 0) {
+        let marked = false;
+        for (const job of existing) {
+          if (Number(job.calculationVersion || 0) < releaseVersion && !job.superseded) {
+            job.superseded = true;
+            job.updatedAt = new Date().toISOString();
+            marked = true;
+          }
+        }
+        if (marked) await this.saveJobs();
+      }
+
       const createdJobs: ExaminationProductionJob[] = [];
       const records = createWorkOrdersFromBatch(payload);
 
       for (const record of records) {
-        const job: ExaminationProductionJob = { ...record.job };
+        const job: ExaminationProductionJob = { ...record.job, calculationVersion: releaseVersion };
         this.jobs.set(job.id, job);
         createdJobs.push(job);
 

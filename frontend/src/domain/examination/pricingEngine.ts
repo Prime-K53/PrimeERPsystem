@@ -8,6 +8,22 @@ export interface PricingAdjustmentInput {
   sort_order?: number;
 }
 
+export interface PricingRoundingInput {
+  method?: string;
+  step?: number;
+}
+
+/**
+ * Canonical examination pricing engine version. Bumped ONLY when the
+ * mathematical contract changes. Stamped onto every calculation snapshot
+ * (frontend + backend) so historical batches stay tied to the engine that
+ * priced them — never silently repriced with today's constants.
+ */
+export const EXAM_PRICING_ENGINE_VERSION = 'EXAM-2026.1';
+
+/** Canonical toner yield: 20,000 pages per kg (HP Universal Toner spec). */
+export const EXAM_TONER_PAGES_PER_UNIT = 20000;
+
 export interface PricingSettingsInput {
   paper_unit_cost?: number;
   toner_unit_cost?: number;
@@ -18,6 +34,7 @@ export interface PricingSettingsInput {
     toner_pages_per_unit?: number;
   };
   active_adjustments?: PricingAdjustmentInput[];
+  rounding?: PricingRoundingInput;
 }
 
 export interface PricingSubjectInput {
@@ -46,6 +63,8 @@ export interface ClassPricingResult {
   totalPages: number;
   totalBomCost: number;
   totalAdjustments: number;
+  marketAdjustmentTotal: number;
+  roundingAdjustment: number;
   totalCost: number;
   expectedFeePerLearner: number;
   finalFeePerLearner: number;
@@ -58,7 +77,55 @@ export interface BatchPricingResult {
 
 import { roundMoney, roundUpToStep } from '../../../utils/roundingUtils';
 
-const roundUpTo50 = (value: number): number => roundUpToStep(value, 50);
+/**
+ * Canonical rounding-method normalization. Byte-identical semantics to the
+ * backend engine (normalizeRoundingMethod): NEAREST_10/50/100 behave as
+ * ALWAYS_UP_*, only NEAREST_500 is a true nearest.
+ */
+export const normalizeRoundingMethod = (method?: string, fallback = 'ALWAYS_UP_50'): string => {
+  const normalized = String(method || '').trim().toUpperCase();
+  if (!normalized) return fallback;
+  if (normalized === 'NEAREST_10') return 'ALWAYS_UP_10';
+  if (normalized === 'NEAREST_50') return 'ALWAYS_UP_50';
+  if (normalized === 'NEAREST_100') return 'ALWAYS_UP_100';
+  if (normalized === 'ALWAYS_UP_10') return 'ALWAYS_UP_10';
+  if (normalized === 'ALWAYS_UP_50') return 'ALWAYS_UP_50';
+  if (normalized === 'ALWAYS_UP_100') return 'ALWAYS_UP_100';
+  if (normalized === 'ALWAYS_UP_500') return 'ALWAYS_UP_500';
+  if (normalized === 'ALWAYS_UP_CUSTOM') return 'ALWAYS_UP_CUSTOM';
+  if (normalized === 'PSYCHOLOGICAL') return 'PSYCHOLOGICAL';
+  if (normalized === 'NEAREST_500') return 'NEAREST_500';
+  if (normalized === 'CUSTOM') return 'ALWAYS_UP_CUSTOM';
+  return fallback;
+};
+
+const applyPsychologicalRounding = (price: number): number => {
+  if (price <= 0) {
+    return Math.ceil(price / 10) * 10;
+  }
+  let magnitude = 10;
+  if (price >= 100) magnitude = 100;
+  if (price >= 1000) magnitude = 1000;
+  let candidate = Math.floor(price / magnitude) * magnitude + (magnitude - 1);
+  if (candidate < price) candidate += magnitude;
+  return candidate;
+};
+
+/** Canonical fee rounding — same contract as backend applyRounding. */
+export const applyRounding = (value: number, method?: string, step?: number): number => {
+  const safeValue = roundMoney(value);
+  const norm = normalizeRoundingMethod(method, 'ALWAYS_UP_50');
+  const rawStep = Number(step);
+  const s = (!Number.isFinite(rawStep) || rawStep <= 0) ? 50 : Math.max(1, Math.round(rawStep));
+  if (norm === 'NEAREST_500') return roundMoney(Math.round(safeValue / s) * s);
+  if (norm === 'PSYCHOLOGICAL') return roundMoney(applyPsychologicalRounding(safeValue));
+  let suffixStep = s;
+  if (norm.endsWith('_10')) suffixStep = 10;
+  else if (norm.endsWith('_50')) suffixStep = 50;
+  else if (norm.endsWith('_100')) suffixStep = 100;
+  else if (norm.endsWith('_500')) suffixStep = 500;
+  return roundMoney(roundUpToStep(safeValue, suffixStep));
+};
 
 const normalizeAdjustmentType = (value: string | undefined) => {
   const type = String(value || '').toUpperCase();
@@ -139,24 +206,30 @@ export const calculateExaminationBatchPricing = (
     );
     const { totalSheets, totalPages, totalBomCost } = bom;
 
-    // 1. Compute adjustedCost = BOM + (BOM * adjustmentRate)
+    // 1. Compute adjustedCost = BOM + additive adjustments on the ORIGINAL
+    // BOM base. Canonical contract: per-row rounded amounts (matches the
+    // backend breakdown rows that are persisted/audited). FIXED is a flat
+    // per-class amount (never * totalPages). A legacy explicit
+    // settings.adjustment_rate (decimal) is folded in as a synthetic
+    // PERCENTAGE row so exactly one formula exists.
     const explicitAdjustmentRate = Number(settings.adjustment_rate ?? 0);
-    const sumOfAdjustments = (effectiveAdjustments || []).reduce((sum, adj) => {
-      const val = Number(adj.percentage ?? adj.value ?? 0);
-      return sum + (normalizeAdjustmentType(adj.type) === 'PERCENTAGE' ? val / 100 : 0);
-    }, 0);
-    
-    const totalFixedAdjustments = (effectiveAdjustments || []).reduce((sum, adj) => {
+    const rateRow: PricingAdjustmentInput[] = explicitAdjustmentRate > 0
+      ? [{ id: 'explicit-adjustment-rate', name: 'Adjustment rate', type: 'PERCENTAGE', percentage: explicitAdjustmentRate * 100 }]
+      : [];
+    const allAdjustments = [...rateRow, ...(effectiveAdjustments || [])];
+    let percentTotal = 0;
+    let fixedTotal = 0;
+    for (const adj of allAdjustments) {
       if (normalizeAdjustmentType(adj.type) === 'FIXED') {
-        // Canonical Phase 3: FIXED is flat per class (never * totalPages).
-        const val = Number(adj.value) || 0;
-        return sum + roundMoney(val);
+        fixedTotal += roundMoney(Number(adj.value) || 0);
+      } else {
+        percentTotal += roundMoney(totalBomCost * ((Number(adj.percentage ?? adj.value ?? 0)) / 100));
       }
-      return sum;
-    }, 0);
-
-    const effectiveAdjustmentRate = explicitAdjustmentRate || sumOfAdjustments;
-    const adjustedCost = totalBomCost + (totalBomCost * effectiveAdjustmentRate) + totalFixedAdjustments;
+    }
+    const totalFixedAdjustments = roundMoney(fixedTotal);
+    const totalPercentAdjustments = roundMoney(percentTotal);
+    const marketAdjustmentTotal = roundMoney(totalPercentAdjustments + totalFixedAdjustments);
+    const adjustedCost = totalBomCost + totalPercentAdjustments + totalFixedAdjustments;
 
     // 2. Compute rawTotal = adjustedCost * (1 + profitMargin)
     // Profit margin must be applied after adjustments, not directly on BOM.
@@ -167,12 +240,19 @@ export const calculateExaminationBatchPricing = (
     // Ensure floating point precision up to 2 decimal places before rounding.
     const rawFeePerLearner = learners > 0 ? roundMoney(rawTotal / learners) : 0;
 
-    // 4. Apply the standard examination round-up rule.
-    const roundedFeePerLearner = roundUpTo50(rawFeePerLearner);
+    // 4. Apply the canonical rounding rule (default ALWAYS_UP_50).
+    // Fees never round down: a below-raw candidate is discarded.
+    const roundingMethod = settings.rounding?.method || 'ALWAYS_UP_50';
+    const roundingStep = settings.rounding?.step || 50;
+    const roundedCandidate = applyRounding(rawFeePerLearner, roundingMethod, roundingStep);
+    const roundedFeePerLearner = roundedCandidate >= rawFeePerLearner
+      ? roundedCandidate
+      : rawFeePerLearner;
 
     const expectedFeePerLearner = roundedFeePerLearner;
     const roundedExpectedTotal = roundMoney(expectedFeePerLearner * learners);
     const totalCost = roundedExpectedTotal;
+    const roundingAdjustment = Math.max(0, roundMoney(totalCost - totalBomCost - marketAdjustmentTotal));
     const totalAdjustments = roundMoney(totalCost - totalBomCost);
 
     const hasManualOverride = Boolean(Number(cls.is_manual_override || 0)) && cls.manual_cost_per_learner != null;
@@ -189,6 +269,8 @@ export const calculateExaminationBatchPricing = (
       totalPages,
       totalBomCost,
       totalAdjustments,
+      marketAdjustmentTotal,
+      roundingAdjustment,
       totalCost,
       expectedFeePerLearner,
       finalFeePerLearner,

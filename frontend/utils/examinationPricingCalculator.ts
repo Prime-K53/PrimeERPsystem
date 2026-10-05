@@ -15,6 +15,10 @@ export interface PricingSettings {
   constants?: {
     toner_pages_per_unit?: number;
   };
+  rounding?: {
+    method?: string;
+    step?: number;
+  };
   active_adjustments: Array<{
     id: string;
     name: string;

@@ -29,11 +29,12 @@ export const calculateLocalClassPreviewBase = (
   );
   const { totalSheets, totalPages, paperCost, tonerCost, totalBomCost } = bom;
 
+  // Canonical contract: FIXED is a flat per-class amount (never * pages).
   const marketAdjustmentTotal = roundCurrency((adjustments || []).reduce((sum, adjustment) => {
     const type = String(adjustment?.type || '').toUpperCase();
     const rawValue = Number(adjustment?.value ?? adjustment?.percentage ?? 0) || 0;
     const amount = type === 'FIXED'
-      ? roundCurrency(rawValue * totalPages)
+      ? roundCurrency(rawValue)
       : roundCurrency(totalBomCost * (rawValue / 100));
     return sum + amount;
   }, 0));

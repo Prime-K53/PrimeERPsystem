@@ -2,6 +2,7 @@ import { ExaminationBatch, ExaminationClass, ExaminationPricingSettings, Examina
 import { dbService } from './db';
 import { generateNextExaminationBatchNumber } from './documentNumberService';
 import { calculateBatchPricing, PricingSettings } from '../utils/examinationPricingCalculator';
+import { EXAM_PRICING_ENGINE_VERSION } from '../src/domain/examination/pricingEngine';
 import { isExaminationDebugLoggingEnabled } from '../utils/debugFlags';
 import { isMarketAdjustmentActive } from '../utils/marketAdjustmentSemantics';
 import { broadcastMarketAdjustmentsChanged } from '../utils/marketAdjustmentUtils';
@@ -93,6 +94,195 @@ const generateLocalId = () => {
 const toIso = () => new Date().toISOString();
 const isLocalBatchId = (id: string) => String(id || '').startsWith('local-');
 const isUuidFormat = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+/** Statuses whose pricing snapshot is immutable (never repriced in place). */
+const LOCKED_BATCH_STATUSES = new Set(['approved', 'invoiced', 'completed', 'paid']);
+
+const batchStatusKey = (batch: Partial<ExaminationBatch> & Record<string, any>): string =>
+  String(batch?.status || '').trim().toLowerCase();
+
+const isBatchPricingLocked = (batch: Partial<ExaminationBatch> & Record<string, any>): boolean =>
+  LOCKED_BATCH_STATUSES.has(batchStatusKey(batch));
+
+const assertBatchMutable = (
+  batch: Partial<ExaminationBatch> & Record<string, any>,
+  action: string
+): void => {
+  if (isBatchPricingLocked(batch)) {
+    throw new Error(
+      `Cannot ${action}: batch ${String(batch?.batch_number || batch?.id || '')} is ${String(batch?.status || '')} — approved pricing is immutable`
+    );
+  }
+};
+
+const readSnapshot = (batch: Partial<ExaminationBatch> & Record<string, any>): Record<string, any> | null => {
+  const raw = (batch as any)?.pricing_snapshot;
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return raw as Record<string, any>;
+};
+
+/**
+ * Canonical immutable pricing snapshot. Captures everything needed to
+ * reconstruct WHY an amount was calculated: engine version, all material
+ * inputs, adjustments, margin, rounding, and the per-class result.
+ */
+const buildPricingSnapshot = (args: {
+  batch: Partial<ExaminationBatch> & Record<string, any>;
+  settings: Partial<PricingSettings> & Record<string, any>;
+  activeAdjustments: MarketAdjustment[];
+  pricing: { classes: Array<Record<string, any>> };
+  calculationVersion: number;
+  trigger: string;
+}): Record<string, any> => {
+  const { batch, settings, activeAdjustments, pricing, calculationVersion, trigger } = args;
+  const constants = (settings as any)?.constants || {};
+  const rounding = (settings as any)?.rounding || {};
+  return {
+    engineVersion: EXAM_PRICING_ENGINE_VERSION,
+    calculationVersion,
+    calculatedAt: toIso(),
+    trigger,
+    provenance: 'calculated',
+    inputs: {
+      paperItemId: (settings as any)?.paper_item_id ?? null,
+      paperUnitCost: Number((settings as any)?.paper_unit_cost ?? 0) || 0,
+      tonerItemId: (settings as any)?.toner_item_id ?? null,
+      tonerUnitCost: Number((settings as any)?.toner_unit_cost ?? 0) || 0,
+      conversionRate: Number((settings as any)?.conversion_rate ?? 500) || 500,
+      tonerPagesPerUnit: Number(constants?.toner_pages_per_unit ?? 20000) || 20000,
+      profitMargin: Number((settings as any)?.profit_margin ?? 0) || 0,
+      roundingMethod: rounding?.method || 'ALWAYS_UP_50',
+      roundingStep: Number(rounding?.step ?? 50) || 50,
+      adjustments: (activeAdjustments || []).map((adj: any) => ({
+        id: String(adj?.id ?? ''),
+        name: String(adj?.display_name || adj?.name || ''),
+        type: String(adj?.type || '').toUpperCase(),
+        value: Number(adj?.value ?? 0) || 0,
+        percentage: Number(adj?.percentage ?? adj?.value ?? 0) || 0,
+      })),
+      classes: (Array.isArray(batch.classes) ? batch.classes : []).map((cls: any) => ({
+        classId: String(cls?.id || ''),
+        learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
+        subjects: (Array.isArray(cls?.subjects) ? cls.subjects : []).map((sub: any) => ({
+          pages: Math.max(1, Math.floor(Number(sub?.pages) || 0)),
+          extraCopies: Math.max(0, Math.floor(Number(sub?.extra_copies) || 0)),
+        })),
+        manualOverride: Boolean(Number(cls?.is_manual_override || 0)),
+        manualFee: Number(cls?.manual_cost_per_learner ?? 0) || 0,
+      })),
+    },
+    result: {
+      totalAmount: Number(pricing.classes.reduce((sum: number, row: any) => sum + (Number(row?.liveTotalPreview) || 0), 0).toFixed(2)),
+      materialTotal: Number(pricing.classes.reduce((sum: number, row: any) => sum + (Number(row?.totalBomCost) || 0), 0).toFixed(2)),
+      adjustmentTotal: Number(pricing.classes.reduce((sum: number, row: any) => sum + (Number(row?.totalAdjustments) || 0), 0).toFixed(2)),
+      totalLearners: pricing.classes.reduce((sum: number, row: any) => sum + (Number(row?.learners) || 0), 0),
+      classes: pricing.classes.map((row: any) => ({
+        classId: String(row?.classId || ''),
+        learners: Number(row?.learners) || 0,
+        totalSheets: Number(row?.totalSheets) || 0,
+        totalPages: Number(row?.totalPages) || 0,
+        bomCost: Number(row?.totalBomCost) || 0,
+        marketAdjustments: Number((row as any)?.marketAdjustmentTotal ?? row?.totalAdjustments ?? 0) || 0,
+        roundingAdjustment: Number((row as any)?.roundingAdjustment ?? 0) || 0,
+        expectedFee: Number(row?.expectedFeePerLearner) || 0,
+        finalFee: Number(row?.finalFeePerLearner) || 0,
+        liveTotal: Number(row?.liveTotalPreview) || 0,
+      })),
+    },
+  };
+};
+
+/**
+ * Backfill for batches calculated before snapshots existed: reconstructs a
+ * snapshot from the STORED financial state (never reprices). Marked
+ * provenance so it is distinguishable from a fresh calculation.
+ */
+const reconstructPricingSnapshot = (
+  batch: Partial<ExaminationBatch> & Record<string, any>
+): Record<string, any> => {
+  const classes = Array.isArray(batch.classes) ? batch.classes : [];
+  return {
+    engineVersion: String((batch as any)?.pricing_engine_version || 'pre-EXAM-2026.1'),
+    calculationVersion: Number((batch as any)?.calculation_version) || 1,
+    calculatedAt: String((batch as any)?.last_calculated_at || (batch as any)?.updated_at || toIso()),
+    trigger: 'BACKFILL_RECONSTRUCTED',
+    provenance: 'reconstructed-from-stored-financials',
+    inputs: {
+      note: 'inputs unknown — reconstructed from stored financial state, not recalculated',
+      roundingMethod: String((batch as any)?.rounding_method || 'ALWAYS_UP_50'),
+      roundingStep: Number((batch as any)?.rounding_value ?? 50) || 50,
+      classes: classes.map((cls: any) => ({
+        classId: String(cls?.id || ''),
+        learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
+        subjects: (Array.isArray(cls?.subjects) ? cls.subjects : []).map((sub: any) => ({
+          pages: Math.max(1, Math.floor(Number(sub?.pages) || 0)),
+          extraCopies: Math.max(0, Math.floor(Number(sub?.extra_copies) || 0)),
+        })),
+        manualOverride: Boolean(Number(cls?.is_manual_override || 0)),
+        manualFee: Number(cls?.manual_cost_per_learner ?? 0) || 0,
+      })),
+    },
+    result: {
+      totalAmount: Number((batch as any)?.total_amount ?? 0) || 0,
+      materialTotal: Number((batch as any)?.material_total ?? (batch as any)?.calculated_material_total ?? 0) || 0,
+      adjustmentTotal: Number((batch as any)?.adjustment_total ?? (batch as any)?.calculated_adjustment_total ?? 0) || 0,
+      totalLearners: Number((batch as any)?.total_students ?? (batch as any)?.expected_candidature ?? 0) || 0,
+      classes: classes.map((cls: any) => ({
+        classId: String(cls?.id || ''),
+        learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
+        totalSheets: Number(cls?.total_sheets ?? 0) || 0,
+        totalPages: Number(cls?.total_pages ?? 0) || 0,
+        bomCost: Number(cls?.material_total_cost ?? 0) || 0,
+        marketAdjustments: Number(cls?.market_adjustment_total ?? cls?.adjustment_total_cost ?? 0) || 0,
+        roundingAdjustment: Number(cls?.rounding_adjustment ?? 0) || 0,
+        expectedFee: Number(cls?.expected_fee_per_learner ?? cls?.suggested_cost_per_learner ?? 0) || 0,
+        finalFee: Number(cls?.final_fee_per_learner ?? cls?.price_per_learner ?? 0) || 0,
+        liveTotal: Number(cls?.live_total_preview ?? cls?.total_price ?? 0) || 0,
+      })),
+    },
+  };
+};
+
+/**
+ * Returns the approved calculation snapshot for invoicing. Existing valid
+ * snapshots pass through; legacy locked batches without one get a
+ * reconstructed snapshot persisted for stability. Throws fail-closed when
+ * the batch has no calculable financial state at all.
+ */
+const ensureApprovedSnapshot = async (
+  batchId: string
+): Promise<{ batch: Record<string, any>; snapshot: Record<string, any>; calculationVersion: number }> => {
+  const batch = (await findLocalBatch(batchId)) as Record<string, any>;
+  if (!batch) throw new Error(`Batch not found in local storage: ${batchId}`);
+  const existing = readSnapshot(batch);
+  const version = Number((batch as any)?.calculation_version) || 0;
+  if (existing && version > 0) {
+    return { batch, snapshot: existing, calculationVersion: version };
+  }
+  const classes = Array.isArray(batch.classes) ? batch.classes : [];
+  const hasState = classes.length > 0 && classes.some((cls: any) => Number(cls?.live_total_preview ?? cls?.total_price ?? 0) > 0);
+  if (!hasState) {
+    throw new Error(
+      `Cannot invoice batch ${String(batch?.batch_number || batchId)}: no approved calculation snapshot exists and no priced state to reconstruct — calculate the batch first`
+    );
+  }
+  const snapshot = reconstructPricingSnapshot({ ...batch, calculation_version: version > 0 ? version : 1 });
+  const stamped = await updateLocalBatch(String(batch.id), (current: any) => ({
+    ...current,
+    calculation_version: Number(snapshot.calculationVersion) || 1,
+    pricing_engine_version: String(snapshot.engineVersion),
+    pricing_snapshot: snapshot,
+    last_calculated_at: String((current as any)?.last_calculated_at || toIso()),
+  }));
+  return { batch: stamped as Record<string, any>, snapshot, calculationVersion: Number(snapshot.calculationVersion) || 1 };
+};
 
 const resolveBatchId = async (id: string): Promise<string> => {
   if (isLocalBatchId(id)) return id;
@@ -324,10 +514,31 @@ const calculateLocalBatchState = async (
 ) => {
   const inventory = await getLocalInventory();
   const storedSettings = await getLocalPricingSettings();
+  // Explicit overrides must never wipe stored values with undefined:
+  // calculateBatch passes override-shaped objects whose absent costs are
+  // undefined, and spreading those over stored settings used to zero out
+  // material costs (silent mispricing). Only defined values override.
+  const definedExplicit: Record<string, any> = {};
+  for (const [key, value] of Object.entries(explicitSettings || {})) {
+    if (value !== undefined) definedExplicit[key] = value;
+  }
   const settings = enrichPricingSettingsWithInventory(
-    { ...storedSettings, ...(explicitSettings || {}) },
+    { ...storedSettings, ...definedExplicit },
     inventory
   );
+  // Canonical rounding: explicit call options win, then the batch's stored
+  // rounding config, then ALWAYS_UP_50. Mirrors backend
+  // resolveBatchRoundingConfig (same normalization + suffix steps).
+  const batchRounding = batch as Partial<ExaminationBatch> & {
+    rounding_method?: string; rounding_value?: number;
+  };
+  const explicitRounding = (explicitSettings as Partial<PricingSettings> & {
+    roundingMethod?: string; roundingValue?: number;
+  }) || {};
+  settings.rounding = {
+    method: explicitRounding.roundingMethod || batchRounding.rounding_method || 'ALWAYS_UP_50',
+    step: Number(explicitRounding.roundingValue ?? batchRounding.rounding_value ?? 50) || 50,
+  };
   const adjustments = explicitAdjustments || await getLocalAdjustments();
   const activeAdjustments = adjustments.filter(isMarketAdjustmentActive);
   const pricing = calculateBatchPricing(batch as ExaminationBatch, settings, activeAdjustments);
@@ -336,8 +547,9 @@ const calculateLocalBatchState = async (
 
 const applyCalculatedBatchState = async (
   batch: Partial<ExaminationBatch> & Record<string, any>,
-  explicitSettings?: Partial<PricingSettings>,
-  explicitAdjustments?: MarketAdjustment[]
+  explicitSettings?: Partial<PricingSettings> & { roundingMethod?: string; roundingValue?: number },
+  explicitAdjustments?: MarketAdjustment[],
+  opts?: { trigger?: string }
 ) => {
   const { settings, activeAdjustments, pricing } = await calculateLocalBatchState(batch, explicitSettings, explicitAdjustments);
   const pricingByClassId = new Map(pricing.classes.map((row) => [String(row.classId), row]));
@@ -378,6 +590,19 @@ const applyCalculatedBatchState = async (
   const materialTotal = Number(classes.reduce((sum: number, row: any) => sum + (Number(row?.material_total_cost) || 0), 0).toFixed(2));
   const adjustmentTotal = Number(classes.reduce((sum: number, row: any) => sum + (Number(row?.adjustment_total_cost) || 0), 0).toFixed(2));
   const totalLearners = classes.reduce((sum: number, row: any) => sum + Math.max(0, Math.floor(Number(row?.number_of_learners) || 0)), 0);
+  // Every successful recalculation mints a new calculation version with an
+  // immutable snapshot of WHY this amount was calculated. Approval pins the
+  // version; invoicing consumes the snapshot and never reprices.
+  const calculationVersion = (Number((batch as any)?.calculation_version) || 0) + 1;
+  const trigger = String(opts?.trigger || (batch as any)?.calculation_trigger || 'RECALCULATION');
+  const snapshot = buildPricingSnapshot({
+    batch,
+    settings: settings as Partial<PricingSettings> & Record<string, any>,
+    activeAdjustments,
+    pricing: pricing as { classes: Array<Record<string, any>> },
+    calculationVersion,
+    trigger,
+  });
 
   return normalizeBatchForStorage({
     ...batch,
@@ -389,7 +614,12 @@ const applyCalculatedBatchState = async (
     total_students: totalLearners,
     expected_candidature: totalLearners,
     pricing_settings_snapshot: settings,
-    active_adjustments_snapshot: activeAdjustments
+    active_adjustments_snapshot: activeAdjustments,
+    calculation_version: calculationVersion,
+    calculation_trigger: trigger,
+    last_calculated_at: toIso(),
+    pricing_engine_version: EXAM_PRICING_ENGINE_VERSION,
+    pricing_snapshot: snapshot
   });
 };
 
@@ -637,6 +867,8 @@ export const examinationBatchService = {
   },
 
   async deleteBatch(id: string): Promise<void> {
+    const existing = await findLocalBatch(id);
+    if (existing) assertBatchMutable(existing as any, 'delete a batch');
     await removeLocalBatch(id);
     await enqueueOutbox('examinationBatch:delete', String(id), { id });
   },
@@ -689,13 +921,16 @@ export const examinationBatchService = {
     }
   ): Promise<ExaminationBatch> {
     const localBatch = await this.getBatch(id);
+    assertBatchMutable(localBatch as any, 'recalculate a batch');
     const recalculated = await applyCalculatedBatchState(localBatch as any, {
       paper_item_id: options?.paperId || null,
       toner_item_id: options?.tonerId || null,
       paper_unit_cost: options?.paperUnitCost,
       toner_unit_cost: options?.tonerUnitCost,
-      conversion_rate: options?.paperConversionRate
-    }, options?.adjustments);
+      conversion_rate: options?.paperConversionRate,
+      roundingMethod: options?.roundingMethod,
+      roundingValue: options?.roundingValue,
+    }, options?.adjustments, { trigger: options?.trigger || 'MANUAL' });
     return updateLocalBatch(String((localBatch as any).id || id), () => ({
       ...recalculated,
       status: 'Calculated'
@@ -703,9 +938,21 @@ export const examinationBatchService = {
   },
 
   async approveBatch(id: string): Promise<{ batch: ExaminationBatch; warnings?: Array<{ item_id: string; item_name: string; available: number; required: number; message: string }> }> {
+    const current = await this.getBatch(id);
+    const status = batchStatusKey(current as any);
+    if (status === 'approved' || status === 'completed') {
+      return { batch: current, warnings: [] };
+    }
+    // Approval pins the calculation version being approved. Legacy batches
+    // without a snapshot get one reconstructed from stored financials.
+    const { snapshot, calculationVersion } = await ensureApprovedSnapshot(String((current as any).id || id));
     const batch = await updateLocalBatch(id, (b: any) => ({
       ...b,
-      status: 'Approved'
+      status: 'Approved',
+      approved_calculation_version: calculationVersion,
+      calculation_version: calculationVersion,
+      pricing_snapshot: snapshot,
+      pricing_engine_version: String((snapshot as any)?.engineVersion || (b as any)?.pricing_engine_version || EXAM_PRICING_ENGINE_VERSION)
     })) as unknown as ExaminationBatch;
     return { batch, warnings: [] };
   },
@@ -879,13 +1126,17 @@ export const examinationBatchService = {
     errors: Array<{ batch_id: string; status: string; error: string }>;
   }> {
     const batches = await getLocalBatches();
-    const includeApproved = Boolean(payload?.includeApproved);
+    // Approved/invoiced/completed/paid batches are immutable — their pricing
+    // snapshot must never be recalculated in place. The legacy
+    // includeApproved bypass is retired (kept in the signature for
+    // compatibility but no longer honored).
+    void payload?.includeApproved;
     const limit = Math.max(1, Number(payload?.limit || batches.length));
     const targets = batches
       .filter((batch: any) => {
         const status = String(batch?.status || '').toLowerCase();
         if (status === 'invoiced' || status === 'paid') return false;
-        if (!includeApproved && status === 'approved') return false;
+        if (status === 'approved' || status === 'completed') return false;
         return true;
       })
       .slice(0, limit);
@@ -932,19 +1183,35 @@ export const examinationBatchService = {
     idempotent?: boolean;
     invoice?: ExaminationGeneratedInvoicePayload;
   }> {
+    // Canonical rule: invoice generation NEVER reprices. It consumes the
+    // approved calculation snapshot. Only Approved batches — or an
+    // Invoiced/Completed batch with no invoice_id (interrupted first attempt)
+    // — may proceed. Anything else fails closed.
     const localBatch = await this.getBatch(id);
-    const recalculated = await applyCalculatedBatchState(localBatch as any);
-    const updatedBatch = await updateLocalBatch(String((localBatch as any).id || id), () => ({
-      ...recalculated,
-      status: 'Invoiced'
+    const status = batchStatusKey(localBatch as any);
+    const hasInvoiceId = Boolean(String((localBatch as any)?.invoice_id || '').trim());
+    if (status !== 'approved' && !(hasInvoiceId === false && (status === 'invoiced' || status === 'completed'))) {
+      throw new Error(
+        `Only an approved batch can be invoiced (batch is ${String((localBatch as any)?.status || 'unknown')})`
+      );
+    }
+    const { snapshot, calculationVersion } = await ensureApprovedSnapshot(String((localBatch as any).id || id));
+    void snapshot;
+    const updatedBatch = await updateLocalBatch(String((localBatch as any).id || id), (current: any) => ({
+      ...current,
+      status: 'Invoiced',
+      approved_calculation_version: calculationVersion,
+      invoiced_calculation_version: calculationVersion
     }));
     const invoicePayload = await buildLocalInvoicePayload(updatedBatch as any, payload);
+    (invoicePayload as Record<string, any>).calculationVersion = calculationVersion;
     await traceExamInvoice('generate', {
       id: invoicePayload.id,
       invoiceNumber: invoicePayload.invoiceNumber,
       originModule: (invoicePayload as any)?.origin_module,
     }, { batchId: String((updatedBatch as any)?.id || id || '') || null });
-    await updateLocalBatch(String((localBatch as any).id || id), () => ({
+    await updateLocalBatch(String((localBatch as any).id || id), (current: any) => ({
+      ...current,
       invoice_id: invoicePayload.invoiceNumber
     }));
     return {
@@ -974,10 +1241,14 @@ export const examinationBatchService = {
       throw new Error('Only an approved or already-invoiced batch can have its invoice regenerated');
     }
     const previousInvoiceId = String((localBatch as any)?.invoice_id || '').trim() || null;
-    const recalculated = await applyCalculatedBatchState(localBatch as any);
-    const updatedBatch = await updateLocalBatch(String((localBatch as any).id || id), () => ({
-      ...recalculated,
-      status: 'Invoiced'
+    // Regeneration reissues the SAME approved calculation — never reprices.
+    const { snapshot, calculationVersion } = await ensureApprovedSnapshot(String((localBatch as any).id || id));
+    void snapshot;
+    const updatedBatch = await updateLocalBatch(String((localBatch as any).id || id), (current: any) => ({
+      ...current,
+      status: 'Invoiced',
+      approved_calculation_version: calculationVersion,
+      invoiced_calculation_version: calculationVersion
     }));
     const invoicePayload = await buildLocalInvoicePayload(updatedBatch as any, {
       idempotencyKey: payload?.idempotencyKey || `EXAM-BATCH-${String((localBatch as any).id || id)}-REGEN-${Date.now()}`,
@@ -985,12 +1256,14 @@ export const examinationBatchService = {
     });
     invoicePayload.notes = `${invoicePayload.notes || ''} (regenerated${payload?.reason ? `: ${payload.reason}` : ''})`.trim();
     invoicePayload.reference = payload?.idempotencyKey || invoicePayload.reference;
+    (invoicePayload as Record<string, any>).calculationVersion = calculationVersion;
     await traceExamInvoice('regenerate', {
       id: invoicePayload.id,
       invoiceNumber: invoicePayload.invoiceNumber,
       originModule: (invoicePayload as any)?.origin_module,
-    }, { batchId: String((localBatch as any)?.id || id || '') || null });
-    await updateLocalBatch(String((localBatch as any).id || id), () => ({
+    }, { batchId: String((localBatch as any).id || id || '') || null });
+    await updateLocalBatch(String((localBatch as any).id || id), (current: any) => ({
+      ...current,
       invoice_id: invoicePayload.invoiceNumber
     }));
     return {
@@ -1028,6 +1301,9 @@ export const examinationBatchService = {
     if (Number(payload.number_of_learners) <= 0) {
       throw new Error('Number of learners must be greater than 0');
     }
+    const parentBatch = await findLocalBatch(batchId);
+    if (!parentBatch) throw new Error(`Batch not found in local storage: ${batchId}`);
+    assertBatchMutable(parentBatch as any, 'add a class');
 
     const createdClass = {
       ...payload,
@@ -1057,6 +1333,7 @@ export const examinationBatchService = {
   async updateClass(classId: string, payload: Partial<ExaminationClass>): Promise<ExaminationClass> {
     const owner = await findLocalClassOwner(classId);
     if (!owner) throw new Error(`Class not found in local storage: ${classId}`);
+    assertBatchMutable(owner.batch as any, 'update a class');
     const updatedBatch = await updateLocalBatch(String(owner.batch.id), (batch) => {
       const classes = Array.isArray(batch.classes) ? [...batch.classes] : [];
       classes[owner.classIndex] = {
@@ -1079,6 +1356,11 @@ export const examinationBatchService = {
   ): Promise<ExaminationBatch> {
     const owner = await findLocalClassOwner(classId);
     if (!owner) throw new Error(`Class not found in local storage: ${classId}`);
+    assertBatchMutable(owner.batch as any, 'override class pricing');
+    const wantsOverride = Boolean(payload.is_manual_override ?? true) && Number(payload.cost_per_learner ?? 0) > 0;
+    if (wantsOverride && !canOverrideSuggestedCost) {
+      throw new Error('You do not have permission to override suggested costs');
+    }
     const updatedBatch = await updateLocalBatch(String(owner.batch.id), (batch) => {
       const classes = Array.isArray(batch.classes) ? [...batch.classes] : [];
       const existing = classes[owner.classIndex] || {};
@@ -1106,6 +1388,7 @@ export const examinationBatchService = {
   async deleteClass(classId: string): Promise<void> {
     const owner = await findLocalClassOwner(classId);
     if (!owner) return;
+    assertBatchMutable(owner.batch as any, 'delete a class');
     const updatedBatch = await updateLocalBatch(String(owner.batch.id), (batch) => ({
       ...batch,
       classes: (Array.isArray(batch.classes) ? batch.classes : []).filter((row: any) => String(row?.id) !== String(classId))
@@ -1118,6 +1401,7 @@ export const examinationBatchService = {
   async addSubject(classId: string, payload: Partial<ExaminationSubject>): Promise<ExaminationSubject> {
     const owner = await findLocalClassOwner(classId);
     if (!owner) throw new Error(`Class not found in local storage: ${classId}`);
+    assertBatchMutable(owner.batch as any, 'add a subject');
     const createdSubject = {
       ...payload,
       id: generateLocalId(),
@@ -1144,6 +1428,7 @@ export const examinationBatchService = {
   async updateSubject(subjectId: string, payload: Partial<ExaminationSubject>): Promise<ExaminationSubject> {
     const owner = await findLocalSubjectOwner(subjectId);
     if (!owner) throw new Error(`Subject not found in local storage: ${subjectId}`);
+    assertBatchMutable(owner.batch as any, 'update a subject');
     const updatedBatch = await updateLocalBatch(String(owner.batch.id), (batch) => {
       const classes = Array.isArray(batch.classes) ? [...batch.classes] : [];
       const currentClass = { ...classes[owner.classIndex] };
@@ -1167,6 +1452,7 @@ export const examinationBatchService = {
   async deleteSubject(subjectId: string): Promise<void> {
     const owner = await findLocalSubjectOwner(subjectId);
     if (!owner) return;
+    assertBatchMutable(owner.batch as any, 'delete a subject');
     const updatedBatch = await updateLocalBatch(String(owner.batch.id), (batch) => {
       const classes = Array.isArray(batch.classes) ? [...batch.classes] : [];
       const currentClass = { ...classes[owner.classIndex] };
@@ -1334,6 +1620,7 @@ export const examinationBatchService = {
   ): Promise<ExaminationClass> {
     const owner = await findLocalClassOwner(classId);
     if (!owner) throw new Error(`Class not found in local storage: ${classId}`);
+    assertBatchMutable(owner.batch as any, 'update class financial metrics');
     const updatedBatch = await updateLocalBatch(String(owner.batch.id), (batch) => {
       const classes = Array.isArray(batch.classes) ? [...batch.classes] : [];
       classes[owner.classIndex] = {
@@ -1361,7 +1648,8 @@ export const examinationBatchService = {
   }> {
     const updatedSettings = await saveLocalPricingSettings(payload.settings || {});
     const localBatch = await this.getBatch(batchId);
-    const recalculated = await applyCalculatedBatchState(localBatch as any, updatedSettings, payload.adjustments);
+    assertBatchMutable(localBatch as any, 'sync pricing to a batch');
+    const recalculated = await applyCalculatedBatchState(localBatch as any, updatedSettings, payload.adjustments, { trigger: payload.triggerSource || 'PRICING_SETTINGS_SYNC' });
     const storedBatch = await updateLocalBatch(String((localBatch as any).id || batchId), () => ({
       ...recalculated,
       pricing_settings_snapshot: updatedSettings

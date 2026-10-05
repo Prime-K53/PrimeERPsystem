@@ -25,8 +25,6 @@ const bootstrap = require('./bootstrap.cjs');
 const portalLifecycleService = require('./services/portalLifecycleService.cjs');
 console.log('Imports done.');
 
-const TONER_MG_PER_SHEET = 20; 
-
 // Safe formula evaluator - replaces eval/new Function with controlled AST evaluation
 const app = express();
 let PORT = process.env.PORT || 3000;

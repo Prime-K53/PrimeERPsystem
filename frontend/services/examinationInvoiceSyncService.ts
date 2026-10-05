@@ -364,6 +364,38 @@ export const persistExaminationInvoiceToFinance = async (
     }
   }
 
+  // ONE BATCH → AT MOST ONE ACTIVE INVOICE. The occupant check above
+  // handles same-id races; this handles same-batch/different-id races
+  // (stale second device, retried mint after a partial failure). A
+  // different active invoice for this batch fails closed here — an operator
+  // resolves it (regeneration voids first, so its own persist never trips).
+  const batchLinked = await findFinanceInvoicesForBatch([
+    batchId,
+    String(payload?.batchId || ''),
+    String((payload as any)?.origin_batch_id || ''),
+  ]).catch(() => []);
+  const rival = (batchLinked || []).find((row) => {
+    if (String(row?.id || '') === String((invoice as any)?.id || '')) return false;
+    if ((row as any)?.deleted) return false;
+    const status = String(row?.status || '').trim().toLowerCase();
+    return status !== 'cancelled' && status !== 'voided' && status !== 'void';
+  });
+  if (rival) {
+    await traceExamInvoice('persist-rival-reject', {
+      id: (invoice as any)?.id,
+      invoiceNumber: (invoice as any)?.invoiceNumber,
+      originModule: (invoice as any)?.originModule ?? (invoice as any)?.origin_module,
+    }, { rivalId: String((rival as any)?.id || '') });
+    return {
+      synced: false,
+      fallbackUsed: false,
+      invoiceId: null,
+      message:
+        `Refused: batch already has active invoice ${String((rival as any)?.id || '')} ` +
+        `(${(rival as any)?.status}). Regenerate (voids the old one first) instead of creating a second invoice.`,
+    };
+  }
+
   try {
     await api.finance.saveInvoice(invoice);
     await traceExamInvoice('persist-result', {

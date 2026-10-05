@@ -1,0 +1,235 @@
+{
+  "_doc": "Canonical examination pricing golden vectors (EXAM-2026.1). Frontend (vitest) and backend (jest) assert byte-identical financial outputs for identical inputs. Hand-verified: V1 mirrors a worked example; V2 pins always-round; V4 pins flat-FIXED (per-page bug would yield 1,992,000); V7 pins the 20,000 pages/kg toner yield (50,000-yield bug would yield toner 170000 / BOM 171000).",
+  "engineVersion": "EXAM-2026.1",
+  "tonerPagesPerUnit": 20000,
+  "vectors": [
+    {
+      "id": "V1-basic-percent-plus-fixed",
+      "input": {
+        "subjects": [{ "pages": 12, "extra_copies": 3 }],
+        "learners": 80,
+        "paperUnitCost": 10,
+        "tonerUnitCost": 85000,
+        "conversionRate": 500,
+        "tonerPagesPerUnit": 20000,
+        "adjustments": [
+          { "id": "a1", "name": "Test 10pct", "type": "PERCENTAGE", "percentage": 10 },
+          { "id": "a2", "name": "Flat", "type": "FIXED", "value": 500 }
+        ],
+        "profitMargin": 0,
+        "roundingMethod": "ALWAYS_UP_50",
+        "roundingStep": 50
+      },
+      "expected": {
+        "learners": 80,
+        "totalSheets": 498,
+        "totalPages": 996,
+        "totalBomCost": 4242.96,
+        "adjustmentAmounts": [424.3, 500],
+        "adjustmentTotal": 924.3,
+        "marketAdjustmentTotal": 924.3,
+        "rawFeePerLearner": 64.59,
+        "roundedFeePerLearner": 100,
+        "expectedTotal": 8000,
+        "roundingAdjustment": 2832.74,
+        "totalAdjustments": 3757.04,
+        "finalFeePerLearner": 100,
+        "liveTotal": 8000
+      }
+    },
+    {
+      "id": "V2-zero-adjustments-still-rounds",
+      "input": {
+        "subjects": [{ "pages": 12, "extra_copies": 3 }],
+        "learners": 80,
+        "paperUnitCost": 10,
+        "tonerUnitCost": 85000,
+        "conversionRate": 500,
+        "tonerPagesPerUnit": 20000,
+        "adjustments": [],
+        "profitMargin": 0,
+        "roundingMethod": "ALWAYS_UP_50",
+        "roundingStep": 50
+      },
+      "expected": {
+        "learners": 80,
+        "totalSheets": 498,
+        "totalPages": 996,
+        "totalBomCost": 4242.96,
+        "adjustmentAmounts": [],
+        "adjustmentTotal": 0,
+        "marketAdjustmentTotal": 0,
+        "rawFeePerLearner": 53.04,
+        "roundedFeePerLearner": 100,
+        "expectedTotal": 8000,
+        "roundingAdjustment": 3757.04,
+        "totalAdjustments": 3757.04,
+        "finalFeePerLearner": 100,
+        "liveTotal": 8000
+      }
+    },
+    {
+      "id": "V3-margin-nearest500-never-rounds-down",
+      "input": {
+        "subjects": [{ "pages": 12, "extra_copies": 3 }],
+        "learners": 80,
+        "paperUnitCost": 10,
+        "tonerUnitCost": 85000,
+        "conversionRate": 500,
+        "tonerPagesPerUnit": 20000,
+        "adjustments": [],
+        "profitMargin": 0.1,
+        "roundingMethod": "NEAREST_500",
+        "roundingStep": 500
+      },
+      "expected": {
+        "learners": 80,
+        "totalSheets": 498,
+        "totalPages": 996,
+        "totalBomCost": 4242.96,
+        "adjustmentAmounts": [],
+        "adjustmentTotal": 0,
+        "marketAdjustmentTotal": 0,
+        "rawFeePerLearner": 58.34,
+        "roundedFeePerLearner": 58.34,
+        "expectedTotal": 4667.2,
+        "roundingAdjustment": 424.24,
+        "totalAdjustments": 424.24,
+        "finalFeePerLearner": 58.34,
+        "liveTotal": 4667.2
+      }
+    },
+    {
+      "id": "V4-fixed-only-flat",
+      "input": {
+        "subjects": [{ "pages": 12, "extra_copies": 3 }],
+        "learners": 80,
+        "paperUnitCost": 10,
+        "tonerUnitCost": 85000,
+        "conversionRate": 500,
+        "tonerPagesPerUnit": 20000,
+        "adjustments": [{ "id": "a2", "name": "Flat", "type": "FIXED", "value": 2000 }],
+        "profitMargin": 0,
+        "roundingMethod": "ALWAYS_UP_50",
+        "roundingStep": 50
+      },
+      "expected": {
+        "learners": 80,
+        "totalSheets": 498,
+        "totalPages": 996,
+        "totalBomCost": 4242.96,
+        "adjustmentAmounts": [2000],
+        "adjustmentTotal": 2000,
+        "marketAdjustmentTotal": 2000,
+        "rawFeePerLearner": 78.04,
+        "roundedFeePerLearner": 100,
+        "expectedTotal": 8000,
+        "roundingAdjustment": 1757.04,
+        "totalAdjustments": 3757.04,
+        "finalFeePerLearner": 100,
+        "liveTotal": 8000
+      }
+    },
+    {
+      "id": "V5-psychological-rounding",
+      "input": {
+        "subjects": [{ "pages": 12, "extra_copies": 3 }],
+        "learners": 80,
+        "paperUnitCost": 10,
+        "tonerUnitCost": 85000,
+        "conversionRate": 500,
+        "tonerPagesPerUnit": 20000,
+        "adjustments": [
+          { "id": "a1", "name": "Test 10pct", "type": "PERCENTAGE", "percentage": 10 },
+          { "id": "a2", "name": "Flat", "type": "FIXED", "value": 500 }
+        ],
+        "profitMargin": 0,
+        "roundingMethod": "PSYCHOLOGICAL",
+        "roundingStep": 50
+      },
+      "expected": {
+        "learners": 80,
+        "totalSheets": 498,
+        "totalPages": 996,
+        "totalBomCost": 4242.96,
+        "adjustmentAmounts": [424.3, 500],
+        "adjustmentTotal": 924.3,
+        "marketAdjustmentTotal": 924.3,
+        "rawFeePerLearner": 64.59,
+        "roundedFeePerLearner": 69,
+        "expectedTotal": 5520,
+        "roundingAdjustment": 352.74,
+        "totalAdjustments": 1277.04,
+        "finalFeePerLearner": 69,
+        "liveTotal": 5520
+      }
+    },
+    {
+      "id": "V6-manual-override",
+      "input": {
+        "subjects": [{ "pages": 12, "extra_copies": 3 }],
+        "learners": 80,
+        "paperUnitCost": 10,
+        "tonerUnitCost": 85000,
+        "conversionRate": 500,
+        "tonerPagesPerUnit": 20000,
+        "adjustments": [
+          { "id": "a1", "name": "Test 10pct", "type": "PERCENTAGE", "percentage": 10 },
+          { "id": "a2", "name": "Flat", "type": "FIXED", "value": 500 }
+        ],
+        "profitMargin": 0,
+        "roundingMethod": "ALWAYS_UP_50",
+        "roundingStep": 50,
+        "isManualOverride": true,
+        "manualCostPerLearner": 120
+      },
+      "expected": {
+        "learners": 80,
+        "totalSheets": 498,
+        "totalPages": 996,
+        "totalBomCost": 4242.96,
+        "adjustmentAmounts": [424.3, 500],
+        "adjustmentTotal": 924.3,
+        "marketAdjustmentTotal": 924.3,
+        "rawFeePerLearner": 64.59,
+        "roundedFeePerLearner": 100,
+        "expectedTotal": 8000,
+        "roundingAdjustment": 2832.74,
+        "totalAdjustments": 3757.04,
+        "finalFeePerLearner": 120,
+        "liveTotal": 9600
+      }
+    },
+    {
+      "id": "V7-toner-yield-canonical",
+      "input": {
+        "subjects": [{ "pages": 1000, "extra_copies": 0 }],
+        "learners": 100,
+        "paperUnitCost": 10,
+        "tonerUnitCost": 85000,
+        "conversionRate": 500,
+        "tonerPagesPerUnit": 20000,
+        "adjustments": [],
+        "profitMargin": 0,
+        "roundingMethod": "ALWAYS_UP_50",
+        "roundingStep": 50
+      },
+      "expected": {
+        "learners": 100,
+        "totalSheets": 50000,
+        "totalPages": 100000,
+        "totalBomCost": 426000,
+        "adjustmentAmounts": [],
+        "adjustmentTotal": 0,
+        "marketAdjustmentTotal": 0,
+        "rawFeePerLearner": 4260,
+        "roundedFeePerLearner": 4300,
+        "expectedTotal": 430000,
+        "roundingAdjustment": 4000,
+        "totalAdjustments": 4000,
+        "finalFeePerLearner": 4300,
+        "liveTotal": 430000
+      }
+    }
+  ]
+}

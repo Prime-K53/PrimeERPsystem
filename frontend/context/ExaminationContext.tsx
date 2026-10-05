@@ -417,7 +417,10 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         return;
       }
 
-      // Create work orders using the production context
+      // Create work orders using the production context.
+      // The approved calculation version travels with the release so
+      // production work is idempotent per (batchId, calculationVersion):
+      // a recalculation never duplicates work for the same version.
       const payload: BatchToProductionPayload = {
         batchId: batch.id,
         batchName: batch.name,
@@ -425,6 +428,7 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         subjects,
         priority: 'Medium',
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
+        calculationVersion: Number((batch as ExaminationBatch & { calculation_version?: number })?.calculation_version) || 0,
       };
 
       // Use the examination production service to create work orders

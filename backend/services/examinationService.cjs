@@ -1050,52 +1050,10 @@ const resolveMaterialOverridesFromOptions = async (options = {}, defaults = {}) 
   };
 };
 
-const buildClassAdjustmentBreakdown = (baseBomCost, totalPages, activeAdjustments = []) => {
-  const safeBaseCost = pricingEngine.roundCurrency(toNumericValue(baseBomCost) ?? 0);
-  // NOTE (canonical units, Phase 3): `totalPages` is kept for call compatibility
-  // but no longer scales FIXED adjustments. FIXED is a flat per-class amount
-  // (previously value * totalPages, which diverged from every other engine
-  // and from the "Fixed Amount" UI label). Per-page/per-learner scalings must
-  // live explicitly at their call sites.
-  void totalPages;
-  const sortedAdjustments = sortAdjustmentsForPricing(activeAdjustments);
-
-  const rows = sortedAdjustments.map((adjustment, index) => {
-    const adjustmentType = normalizeAdjustmentTypeForSync(adjustment?.type);
-    const rawValue = adjustmentType === 'FIXED'
-      ? (toNumericValue(adjustment?.value) ?? 0)
-      : (toNumericValue(adjustment?.percentage ?? adjustment?.value) ?? 0);
-    const amount = adjustmentType === 'FIXED'
-      ? pricingEngine.roundCurrency(rawValue)
-      : pricingEngine.roundCurrency(safeBaseCost * (rawValue / 100));
-
-    return {
-      adjustmentId: String(adjustment?.id || `adjustment-${index + 1}`),
-      adjustmentName: String(adjustment?.display_name || adjustment?.name || `Adjustment ${index + 1}`),
-      adjustmentType,
-      adjustmentValue: rawValue,
-      baseAmount: safeBaseCost,
-      originalAmount: amount,
-      redistributedAmount: amount,
-      allocationRatio: 0,
-      sequenceNo: index + 1
-    };
-  });
-
-  const totalAdjustmentCost = pricingEngine.roundCurrency(
-    rows.reduce((sum, row) => sum + (toNumericValue(row.originalAmount) ?? 0), 0)
-  );
-
-  return {
-    rows: rows.map((row) => ({
-      ...row,
-      allocationRatio: totalAdjustmentCost > 0
-        ? (toNumericValue(row.originalAmount) ?? 0) / totalAdjustmentCost
-        : 0
-    })),
-    totalAdjustmentCost
-  };
-};
+// NOTE: per-class adjustment math previously lived in
+// buildClassAdjustmentBreakdown (removed). All calculation paths now use
+// pricingEngine.calculateCanonicalClassPricing + buildAdjustmentBreakdown —
+// a single formula, flat FIXED, additive percentages.
 
 const normalizePositiveRoundingStep = (value, fallback = 50) => {
   const num = toNumericValue(value);
@@ -1103,21 +1061,173 @@ const normalizePositiveRoundingStep = (value, fallback = 50) => {
   return Math.max(1, Math.round(num));
 };
 
-const normalizeBatchRoundingMethod = (method, fallback = 'ALWAYS_UP_50') => {
-  const normalized = String(method || '').trim().toUpperCase();
-  if (!normalized) return fallback;
-  if (normalized === 'NEAREST_10') return 'ALWAYS_UP_10';
-  if (normalized === 'NEAREST_50') return 'ALWAYS_UP_50';
-  if (normalized === 'NEAREST_100') return 'ALWAYS_UP_100';
-  if (normalized === 'ALWAYS_UP_10') return 'ALWAYS_UP_10';
-  if (normalized === 'ALWAYS_UP_50') return 'ALWAYS_UP_50';
-  if (normalized === 'ALWAYS_UP_100') return 'ALWAYS_UP_100';
-  if (normalized === 'ALWAYS_UP_500') return 'ALWAYS_UP_500';
-  if (normalized === 'ALWAYS_UP_CUSTOM') return 'ALWAYS_UP_CUSTOM';
-  if (normalized === 'PSYCHOLOGICAL') return 'PSYCHOLOGICAL';
-  if (normalized === 'NEAREST_500') return 'NEAREST_500';
-  if (normalized === 'CUSTOM') return 'ALWAYS_UP_CUSTOM';
-  return fallback;
+const normalizeBatchRoundingMethod = (method, fallback = 'ALWAYS_UP_50') =>
+  pricingEngine.normalizeRoundingMethod(method, fallback);
+
+/**
+ * Canonical immutable pricing snapshot (mirrors the frontend
+ * buildPricingSnapshot shape). Captures engine version, all material
+ * inputs, adjustments, margin, rounding and the per-class result so any
+ * historical amount can be explained without repricing.
+ */
+const buildBackendPricingSnapshot = ({
+  batch,
+  materialConfig,
+  adjustments,
+  classResults,
+  calculationVersion,
+  trigger
+}) => {
+  const normalizedAdjustments = (adjustments || []).map((adj) => ({
+    id: String(adj?.id || ''),
+    name: String(adj?.display_name || adj?.name || ''),
+    type: String(adj?.type || '').toUpperCase(),
+    value: Number(adj?.value ?? 0) || 0,
+    percentage: Number(adj?.percentage ?? adj?.value ?? 0) || 0
+  }));
+  return {
+    engineVersion: pricingEngine.EXAM_PRICING_ENGINE_VERSION,
+    calculationVersion,
+    calculatedAt: new Date().toISOString(),
+    trigger: String(trigger || 'RECALCULATION'),
+    provenance: 'calculated',
+    inputs: {
+      paperItemId: materialConfig?.paperItemId ?? null,
+      paperUnitCost: Number(materialConfig?.paperUnitCost ?? 0) || 0,
+      tonerItemId: materialConfig?.tonerItemId ?? null,
+      tonerUnitCost: Number(materialConfig?.tonerUnitCost ?? 0) || 0,
+      conversionRate: Number(materialConfig?.conversionRate ?? 500) || 500,
+      tonerPagesPerUnit: Number(materialConfig?.tonerPagesPerUnit ?? pricingEngine.TONER_PAGES_PER_UNIT) || pricingEngine.TONER_PAGES_PER_UNIT,
+      profitMargin: Number(materialConfig?.profitMargin ?? 0) || 0,
+      roundingMethod: String(materialConfig?.roundingMethod || 'ALWAYS_UP_50'),
+      roundingStep: Number(materialConfig?.roundingStep ?? 50) || 50,
+      adjustments: normalizedAdjustments,
+      classes: (Array.isArray(batch?.classes) ? batch.classes : []).map((cls) => ({
+        classId: String(cls?.id || ''),
+        learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
+        subjects: (Array.isArray(cls?.subjects) ? cls.subjects : []).map((sub) => ({
+          pages: Math.max(1, Math.floor(Number(sub?.pages) || 0)),
+          extraCopies: Math.max(0, Math.floor(Number(sub?.extra_copies) || 0))
+        })),
+        manualOverride: Number(cls?.is_manual_override || 0) === 1,
+        manualFee: Number(cls?.manual_cost_per_learner ?? 0) || 0
+      }))
+    },
+    result: {
+      totalAmount: pricingEngine.roundCurrency(
+        classResults.reduce((sum, row) => sum + (Number(row?.liveTotal ?? row?.finalClassTotal) || 0), 0)
+      ),
+      materialTotal: pricingEngine.roundCurrency(
+        classResults.reduce((sum, row) => sum + (Number(row?.materialCost ?? row?.totalBomCost) || 0), 0)
+      ),
+      adjustmentTotal: pricingEngine.roundCurrency(
+        classResults.reduce((sum, row) => sum + (Number(row?.totalAdjustments ?? row?.adjustmentTotal) || 0), 0)
+      ),
+      totalLearners: classResults.reduce((sum, row) => sum + (Number(row?.learners) || 0), 0),
+      classes: classResults.map((row) => ({
+        classId: String(row?.classId || row?.id || ''),
+        learners: Number(row?.learners) || 0,
+        totalSheets: Number(row?.totalSheets) || 0,
+        totalPages: Number(row?.totalPages) || 0,
+        bomCost: Number(row?.materialCost ?? row?.totalBomCost) || 0,
+        marketAdjustments: Number(row?.marketAdjustmentTotal ?? 0) || 0,
+        roundingAdjustment: Number(row?.roundingAdjustment ?? 0) || 0,
+        expectedFee: Number(row?.roundedFeePerLearner ?? row?.expectedFeePerLearner) || 0,
+        finalFee: Number(row?.finalFeePerLearner ?? row?.finalCostPerLearner) || 0,
+        liveTotal: Number(row?.liveTotal ?? row?.finalClassTotal) || 0
+      }))
+    }
+  };
+};
+
+const readBackendSnapshot = (batch) => {
+  const raw = batch?.pricing_snapshot_json;
+  if (!raw) return null;
+  try {
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Backfill for batches calculated before snapshots existed: reconstructs
+ * from STORED financial state (never reprices), clearly marked.
+ */
+const reconstructBackendSnapshot = (batch) => {
+  const classes = Array.isArray(batch?.classes) ? batch.classes : [];
+  return {
+    engineVersion: String(batch?.pricing_engine_version || 'pre-EXAM-2026.1'),
+    calculationVersion: Number(batch?.calculation_version) || 1,
+    calculatedAt: String(batch?.last_calculated_at || batch?.updated_at || new Date().toISOString()),
+    trigger: 'BACKFILL_RECONSTRUCTED',
+    provenance: 'reconstructed-from-stored-financials',
+    inputs: {
+      note: 'inputs unknown — reconstructed from stored financial state, not recalculated',
+      roundingMethod: String(batch?.rounding_method || 'ALWAYS_UP_50'),
+      roundingStep: Number(batch?.rounding_value ?? 50) || 50,
+      classes: classes.map((cls) => ({
+        classId: String(cls?.id || ''),
+        learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
+        subjects: (Array.isArray(cls?.subjects) ? cls.subjects : []).map((sub) => ({
+          pages: Math.max(1, Math.floor(Number(sub?.pages) || 0)),
+          extraCopies: Math.max(0, Math.floor(Number(sub?.extra_copies) || 0))
+        })),
+        manualOverride: Number(cls?.is_manual_override || 0) === 1,
+        manualFee: Number(cls?.manual_cost_per_learner ?? 0) || 0
+      }))
+    },
+    result: {
+      totalAmount: Number(batch?.total_amount ?? 0) || 0,
+      materialTotal: Number(batch?.calculated_material_total ?? 0) || 0,
+      adjustmentTotal: Number(batch?.calculated_adjustment_total ?? 0) || 0,
+      totalLearners: Number(batch?.expected_candidature ?? 0) || 0,
+      classes: classes.map((cls) => ({
+        classId: String(cls?.id || ''),
+        learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
+        totalSheets: 0,
+        totalPages: 0,
+        bomCost: Number(cls?.material_total_cost ?? 0) || 0,
+        marketAdjustments: Number(cls?.market_adjustment_total ?? cls?.adjustment_total_cost ?? 0) || 0,
+        roundingAdjustment: Number(cls?.rounding_adjustment ?? 0) || 0,
+        expectedFee: Number(cls?.expected_fee_per_learner ?? cls?.suggested_cost_per_learner ?? 0) || 0,
+        finalFee: Number(cls?.final_fee_per_learner ?? cls?.price_per_learner ?? 0) || 0,
+        liveTotal: Number(cls?.live_total_preview ?? cls?.total_price ?? 0) || 0
+      }))
+    }
+  };
+};
+
+/**
+ * Ensures an approved calculation snapshot exists for invoicing. Returns the
+ * snapshot + version, persisting a reconstructed backfill when a legacy
+ * locked batch has none. Throws fail-closed when no priced state exists.
+ */
+const ensureBackendApprovedSnapshot = async (batchId) => {
+  const batch = await examinationService.getBatchById(batchId);
+  if (!batch) throw new Error('Batch not found');
+  const existing = readBackendSnapshot(batch);
+  const version = Number(batch?.calculation_version) || 0;
+  if (existing && version > 0) return { batch, snapshot: existing, calculationVersion: version };
+  const classes = Array.isArray(batch.classes) ? batch.classes : [];
+  const hasState = classes.length > 0 && classes.some((cls) =>
+    Number(cls?.live_total_preview ?? cls?.total_price ?? 0) > 0
+  );
+  if (!hasState) {
+    throw new Error(
+      `Cannot invoice batch ${batch?.batch_number || batchId}: no approved calculation snapshot exists and no priced state to reconstruct — calculate the batch first`
+    );
+  }
+  const snapshot = reconstructBackendSnapshot({ ...batch, calculation_version: version > 0 ? version : 1 });
+  await runRun(
+    `UPDATE examination_batches SET calculation_version = ?, pricing_engine_version = ?, pricing_snapshot_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [Number(snapshot.calculationVersion) || 1, String(snapshot.engineVersion), JSON.stringify(snapshot), batchId]
+  );
+  return {
+    batch: await examinationService.getBatchById(batchId),
+    snapshot,
+    calculationVersion: Number(snapshot.calculationVersion) || 1
+  };
 };
 
 const resolveBatchRoundingConfig = (batch, options = {}) => {
@@ -1140,42 +1250,13 @@ const resolveBatchRoundingConfig = (batch, options = {}) => {
   };
 };
 
-const applyPsychologicalRounding = (price) => {
-  if (price <= 0) {
-    return Math.ceil(price / 10) * 10;
-  }
+const applyPsychologicalRounding = (price) => pricingEngine.applyPsychologicalRounding(price);
 
-  let magnitude = 10;
-  if (price >= 100) magnitude = 100;
-  if (price >= 1000) magnitude = 1000;
-
-  let candidate = Math.floor(price / magnitude) * magnitude + (magnitude - 1);
-  if (candidate < price) candidate += magnitude;
-  return candidate;
-};
-
-const applyBatchRounding = (value, roundingConfig) => {
-  const safeValue = pricingEngine.roundCurrency(toNumericValue(value) ?? 0);
-  const method = normalizeBatchRoundingMethod(roundingConfig?.method, 'ALWAYS_UP_50');
-  const step = normalizePositiveRoundingStep(roundingConfig?.step, 50);
-
-  switch (method) {
-    case 'NEAREST_10':
-    case 'NEAREST_50':
-    case 'NEAREST_100':
-    case 'NEAREST_500':
-      return pricingEngine.roundCurrency(Math.round(safeValue / step) * step);
-    case 'PSYCHOLOGICAL':
-      return pricingEngine.roundCurrency(applyPsychologicalRounding(safeValue));
-    case 'ALWAYS_UP_10':
-    case 'ALWAYS_UP_50':
-    case 'ALWAYS_UP_100':
-    case 'ALWAYS_UP_500':
-    case 'ALWAYS_UP_CUSTOM':
-    default:
-      return pricingEngine.roundCurrency(pricingEngine.roundUpToNearest(safeValue, step));
-  }
-};
+const applyBatchRounding = (value, roundingConfig) => pricingEngine.applyRounding(
+  value,
+  roundingConfig?.method,
+  roundingConfig?.step
+);
 
 const distributeAmountAcrossWeights = (totalAmount, weights = []) => {
   const safeTotal = pricingEngine.roundCurrency(toNumericValue(totalAmount) ?? 0);
@@ -1796,6 +1877,12 @@ const ensureExaminationPricingSchema = async () => {
     await ensureColumnIfMissing('examination_batches', 'parent_batch_id', 'TEXT');
     await ensureColumnIfMissing('examination_batches', 'sub_account_name', 'TEXT');
     await ensureColumnIfMissing('examination_batches', 'currency', "TEXT DEFAULT 'MWK'");
+    // EXAM-2026.1 calculation versioning + immutable pricing snapshots.
+    await ensureColumnIfMissing('examination_batches', 'calculation_version', 'INTEGER DEFAULT 0');
+    await ensureColumnIfMissing('examination_batches', 'pricing_engine_version', 'TEXT');
+    await ensureColumnIfMissing('examination_batches', 'pricing_snapshot_json', 'TEXT');
+    await ensureColumnIfMissing('examination_batches', 'approved_calculation_version', 'INTEGER');
+    await ensureColumnIfMissing('examination_batches', 'invoiced_calculation_version', 'INTEGER');
     await ensureColumnIfMissing('inventory', 'conversion_rate', `REAL DEFAULT ${DEFAULT_PAPER_CONVERSION_RATE}`);
 
     await ensureColumnIfMissing('examination_classes', 'suggested_cost_per_learner', 'REAL DEFAULT 0');
@@ -2877,18 +2964,18 @@ const examinationService = {
   recalculateNonInvoicedBatches: async (options = {}) => {
     const trigger = String(options?.trigger || 'BACKFILL_NON_INVOICED').trim() || 'BACKFILL_NON_INVOICED';
     const userId = options?.userId || 'System';
-    const includeApproved = toBoolean(options?.includeApproved);
+    // Locked batches (Approved/Invoiced/Completed/Paid) are never recalculated
+    // in place — their snapshots are immutable. The legacy includeApproved
+    // bypass is retired (accepted for compatibility, no longer honored).
+    void options?.includeApproved;
     const signal = options?.signal;
     const limit = toNumericValue(options?.limit);
     const params = [];
-    let query = `
+    const query = `
       SELECT id, status
       FROM examination_batches
-      WHERE COALESCE(status, 'Draft') <> 'Completed'
+      WHERE COALESCE(status, 'Draft') NOT IN ('Completed', 'Approved', 'Invoiced', 'Paid')
     `;
-        if (!includeApproved) {
-      query += ` AND COALESCE(status, 'Draft') <> 'Approved'`;
-    }
     query += ' ORDER BY datetime(updated_at) ASC, datetime(created_at) ASC';
     if (limit !== null && Number.isFinite(limit) && limit > 0) {
       query += ' LIMIT ?';
@@ -3202,6 +3289,10 @@ const examinationService = {
     if (!existingBatch) {
       return { success: true };
     }
+    // Locked batches carry posted financial history (invoices, ledger
+    // effects, deducted stock) — they are never deleted, only voided
+    // through the invoice lifecycle.
+    batchWorkflow.assertBatchMutableForPricing(existingBatch.status, 'delete batch');
 
     const relatedBatchTables = [
       'examination_batch_notifications',
@@ -3632,6 +3723,9 @@ const examinationService = {
 
     const batch = await examinationService.getBatchById(batchId);
     if (!batch) throw new Error('Batch not found');
+    // Immutable history: approved/completed batches are never recalculated
+    // in place. Regeneration consumes the approved snapshot instead.
+    batchWorkflow.assertBatchMutableForPricing(batch.status, 'recalculate batch');
     const defaultMaterialConfig = await resolveExamMaterialConfiguration();
     const {
       paperItem,
@@ -3675,6 +3769,11 @@ const examinationService = {
     let batchRoundingAdjustmentTotal = 0;
     let batchLearnerCount = 0;
     let calculationDuration = 0;
+    // Per-class canonical results captured for the immutable snapshot.
+    const snapshotClassResults = [];
+    const effectiveProfitMargin = Number(options?.profit_margin ?? options?.profitMargin ?? 0) || 0;
+    // Every successful recalculation mints a new calculation version.
+    const nextCalculationVersion = (Number(batch?.calculation_version) || 0) + 1;
 
     await runRun('BEGIN TRANSACTION');
     try {
@@ -3706,41 +3805,43 @@ const examinationService = {
           );
         }
 
+        const canonical = pricingEngine.calculateCanonicalClassPricing({
+          subjects: cls.subjects || [],
+          learners,
+          paperUnitCost: effectivePaperUnitCost,
+          tonerUnitCost: effectiveTonerUnitCost,
+          conversionRate: effectivePaperConversionRate,
+          tonerPagesPerUnit: effectiveTonerPagesPerUnit,
+          adjustments: effectiveAdjustments,
+          profitMargin: effectiveProfitMargin,
+          roundingMethod: roundingConfig.method,
+          roundingStep: roundingConfig.step
+        });
+        // classTotalSheets/Pages were accumulated (+persisted per subject) above;
+        // canonical.totalSheets/totalPages agree by construction.
         const paperQuantity = classTotalSheets / effectivePaperConversionRate;
         const tonerQuantity = classTotalPages / effectiveTonerPagesPerUnit;
-        const paperCost = pricingEngine.roundCurrency(paperQuantity * effectivePaperUnitCost);
-        const tonerCost = pricingEngine.roundCurrency(tonerQuantity * effectiveTonerUnitCost);
-        const totalBomCost = pricingEngine.roundCurrency(paperCost + tonerCost);
-        const classAdjustmentBreakdown = buildClassAdjustmentBreakdown(totalBomCost, classTotalPages, effectiveAdjustments);
+        const totalBomCost = canonical.materialCost;
+        const classAdjustmentBreakdown = {
+          rows: canonical.adjustmentRows,
+          totalAdjustmentCost: canonical.adjustmentTotal
+        };
         let roundingAdjustmentRow = null;
 
-        const marketAdjustmentCost = pricingEngine.roundCurrency(classAdjustmentBreakdown.totalAdjustmentCost);
-        let totalAdjustments = marketAdjustmentCost;
-        let expectedTotal = pricingEngine.roundCurrency(totalBomCost + totalAdjustments);
-        
-        // Track separate market adjustment and rounding amounts for proper data separation
-        const marketAdjustmentTotal = marketAdjustmentCost;
-        let roundingAdjustmentTotal = 0;
-        let expectedFeePerLearner = learners > 0
-          ? pricingEngine.roundCurrency(expectedTotal / learners)
-          : 0;
-        let roundingTotalForClass = 0;
+        // Canonical contract: the fee rounding ALWAYS applies (fees never
+        // round down — the canonical engine already discards below-raw
+        // candidates). The historical gate that skipped rounding when no
+        // market adjustments existed diverged from the frontend engine.
+        const marketAdjustmentTotal = canonical.adjustmentTotal;
+        const roundingTotalForClass = canonical.roundingAdjustment;
+        const totalAdjustments = pricingEngine.roundCurrency(marketAdjustmentCost + roundingTotalForClass);
+        const expectedTotal = canonical.expectedTotal;
+        const expectedFeePerLearner = canonical.roundedFeePerLearner;
+        const roundingAdjustmentTotal = roundingTotalForClass;
 
-        // Apply rounding only when there are active market adjustments.
-        // This prevents showing non-zero adjustment totals caused solely by rounding.
-        const shouldApplyRoundingAdjustment = classAdjustmentBreakdown.totalAdjustmentCost > 0;
-        if (shouldApplyRoundingAdjustment) {
-          const roundedFeePerLearner = applyBatchRounding(expectedFeePerLearner, roundingConfig);
-          const roundingDiffPerLearner = pricingEngine.roundCurrency(roundedFeePerLearner - expectedFeePerLearner);
-          if (roundingDiffPerLearner > 0) {
-            roundingTotalForClass = pricingEngine.roundCurrency(roundingDiffPerLearner * learners);
-            batchRoundingAdjustmentTotal += roundingTotalForClass;
-            totalAdjustments = pricingEngine.roundCurrency(totalAdjustments + roundingTotalForClass);
-            expectedTotal = pricingEngine.roundCurrency(totalBomCost + totalAdjustments);
-            expectedFeePerLearner = roundedFeePerLearner;
-            // Update the rounding adjustment total for this class
-            roundingAdjustmentTotal = roundingTotalForClass;
-            roundingAdjustmentRow = {
+        if (roundingTotalForClass > 0) {
+          batchRoundingAdjustmentTotal += roundingTotalForClass;
+          roundingAdjustmentRow = {
               adjustmentId: 'auto-rounding',
               adjustmentName: 'Rounding Adjustment',
               adjustmentType: 'FIXED',
@@ -3768,12 +3869,11 @@ const examinationService = {
                 expectedTotal,
                 roundingTotalForClass,
                 learners,
-                learners > 0 ? roundingDiffPerLearner : 0,
+                learners > 0 ? pricingEngine.roundCurrency(roundingTotalForClass / learners) : 0,
                 'Active',
                 `Examination batch ${batchId}, class ${cls.class_name}, trigger ${trigger}`
               ]
             );
-          }
         }
 
         const previousCostPerLearner = toNumericValue(cls.price_per_learner) ?? 0;
@@ -3935,14 +4035,31 @@ const examinationService = {
         batchMaterialTotal += totalBomCost;
         batchAdjustmentTotal += totalAdjustments;
         batchLearnerCount += learners;
-        
+
         // Track separate market adjustment and rounding totals at batch level
         batchMarketAdjustmentTotal += marketAdjustmentTotal;
         batchRoundingAdjustmentTotal += roundingAdjustmentTotal;
+
+        // Per-class canonical result for the immutable pricing snapshot.
+        snapshotClassResults.push({
+          classId: String(cls.id || ''),
+          learners,
+          totalSheets: classTotalSheets,
+          totalPages: classTotalPages,
+          materialCost: totalBomCost,
+          marketAdjustmentTotal,
+          roundingAdjustment: roundingAdjustmentTotal,
+          totalAdjustments,
+          roundedFeePerLearner: expectedFeePerLearner,
+          expectedTotal,
+          finalFeePerLearner: finalFeePerLearner,
+          finalCostPerLearner: finalCostPerLearner,
+          finalClassTotal,
+          liveTotal: liveTotalPreview
+        });
       }
 
-      calculationDuration = Date.now() - startedAt;
-      const overallSuggestedCostPerLearner = batchLearnerCount > 0
+      calculationDuration = Date.now() - startedAt;      const overallSuggestedCostPerLearner = batchLearnerCount > 0
         ? pricingEngine.roundCurrency(batchTotalAmount / batchLearnerCount)
         : 0;
       const roundedBatchTotalAmount = pricingEngine.roundCurrency(batchTotalAmount);
@@ -3972,6 +4089,28 @@ const examinationService = {
         Math.max(0, roundedBatchTotalAmount - persistedRoundingAdjustmentTotal)
       );
 
+      // Immutable pricing snapshot: everything needed to reconstruct WHY this
+      // amount was calculated. Approval pins the version; invoicing consumes
+      // the snapshot and never reprices.
+      const pricingSnapshot = buildBackendPricingSnapshot({
+        batch,
+        materialConfig: {
+          paperItemId: paperItem?.id ?? null,
+          paperUnitCost: effectivePaperUnitCost,
+          tonerItemId: tonerItem?.id ?? null,
+          tonerUnitCost: effectiveTonerUnitCost,
+          conversionRate: effectivePaperConversionRate,
+          tonerPagesPerUnit: effectiveTonerPagesPerUnit,
+          profitMargin: effectiveProfitMargin,
+          roundingMethod: roundingConfig.persistedMethod,
+          roundingStep: roundingConfig.persistedValue
+        },
+        adjustments: effectiveAdjustments,
+        classResults: snapshotClassResults,
+        calculationVersion: nextCalculationVersion,
+        trigger
+      });
+
       await runRun(
         `UPDATE examination_batches
          SET total_amount = ?,
@@ -3988,10 +4127,13 @@ const examinationService = {
              status = ?,
              calculation_trigger = ?,
              calculation_duration_ms = ?,
+             calculation_version = ?,
+             pricing_engine_version = ?,
+             pricing_snapshot_json = ?,
              last_calculated_at = CURRENT_TIMESTAMP,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
-        [roundedBatchTotalAmount, roundedBatchMaterialTotal, roundedBatchAdjustmentTotal, pricingEngine.roundCurrency(batchMarketAdjustmentTotal), serializeBatchAdjustmentSnapshots(normalizedAdjustmentSnapshots), persistedRoundingAdjustmentTotal, preRoundingTotalAmount, roundingConfig.persistedMethod, roundingConfig.persistedValue, batchLearnerCount, overallSuggestedCostPerLearner, batchWorkflow.resolveStatusAfterCalculation(batch.classes?.length || 0), trigger, calculationDuration, batchId]
+        [roundedBatchTotalAmount, roundedBatchMaterialTotal, roundedBatchAdjustmentTotal, pricingEngine.roundCurrency(batchMarketAdjustmentTotal), serializeBatchAdjustmentSnapshots(normalizedAdjustmentSnapshots), persistedRoundingAdjustmentTotal, preRoundingTotalAmount, roundingConfig.persistedMethod, roundingConfig.persistedValue, batchLearnerCount, overallSuggestedCostPerLearner, batchWorkflow.resolveStatusAfterCalculation(batch.classes?.length || 0), trigger, calculationDuration, nextCalculationVersion, pricingEngine.EXAM_PRICING_ENGINE_VERSION, JSON.stringify(pricingSnapshot), batchId]
       );
 
       await runRun('COMMIT');
@@ -4057,34 +4199,41 @@ const examinationService = {
       classTotalPages += subjectConsumption.totalPages;
     }
 
+    const canonical = pricingEngine.calculateCanonicalClassPricing({
+      subjects: cls.subjects || [],
+      learners,
+      paperUnitCost: effectivePaperUnitCost,
+      tonerUnitCost: effectiveTonerUnitCost,
+      conversionRate: effectiveConversionRate,
+      tonerPagesPerUnit: effectiveTonerPagesPerUnit,
+      adjustments: activeAdjustments,
+      profitMargin: Number(options?.profit_margin ?? options?.profitMargin ?? 0) || 0,
+      roundingMethod: roundingConfig.method,
+      roundingStep: roundingConfig.step
+    });
     const paperQuantity = classTotalSheets / effectiveConversionRate;
     const tonerQuantity = classTotalPages / effectiveTonerPagesPerUnit;
-    const paperCost = pricingEngine.roundCurrency(paperQuantity * effectivePaperUnitCost);
-    const tonerCost = pricingEngine.roundCurrency(tonerQuantity * effectiveTonerUnitCost);
-    const totalBomCost = pricingEngine.roundCurrency(paperCost + tonerCost);
+    const paperCost = canonical.paperCost;
+    const tonerCost = canonical.tonerCost;
+    const totalBomCost = canonical.materialCost;
+    const classAdjustmentBreakdown = {
+      rows: canonical.adjustmentRows,
+      totalAdjustmentCost: canonical.adjustmentTotal
+    };
 
-    const classAdjustmentBreakdown = buildClassAdjustmentBreakdown(totalBomCost, classTotalPages, activeAdjustments);
-
-    let totalAdjustments = pricingEngine.roundCurrency(classAdjustmentBreakdown.totalAdjustmentCost);
-    let expectedTotal = pricingEngine.roundCurrency(totalBomCost + totalAdjustments);
-    let expectedFeePerLearner = learners > 0
-      ? pricingEngine.roundCurrency(expectedTotal / learners)
-      : 0;
+    let totalAdjustments = canonical.adjustmentTotal;
+    let expectedTotal = canonical.expectedTotal;
+    let expectedFeePerLearner = canonical.roundedFeePerLearner;
 
     const applyRoundingRaw = options?.applyRounding ?? options?.apply_rounding;
     const applyPreviewRounding = applyRoundingRaw === undefined ? true : toBoolean(applyRoundingRaw);
 
-    // Apply rounding only when explicitly enabled for preview and there are active adjustments.
-    const shouldApplyPreviewRounding = applyPreviewRounding && classAdjustmentBreakdown.totalAdjustmentCost > 0;
-    if (shouldApplyPreviewRounding) {
-      const roundedFeePerLearner = applyBatchRounding(expectedFeePerLearner, roundingConfig);
-      const roundingDiffPerLearner = pricingEngine.roundCurrency(roundedFeePerLearner - expectedFeePerLearner);
-      if (roundingDiffPerLearner > 0) {
-        const roundingTotalForClass = pricingEngine.roundCurrency(roundingDiffPerLearner * learners);
-        totalAdjustments = pricingEngine.roundCurrency(totalAdjustments + roundingTotalForClass);
-        expectedTotal = pricingEngine.roundCurrency(totalBomCost + totalAdjustments);
-        expectedFeePerLearner = roundedFeePerLearner;
-      }
+    // Preview-only opt-out: show the unrounded fee. Never persisted; the
+    // canonical persisted path always rounds.
+    if (!applyPreviewRounding) {
+      expectedFeePerLearner = canonical.rawFeePerLearner;
+      expectedTotal = pricingEngine.roundCurrency(expectedFeePerLearner * learners);
+      totalAdjustments = pricingEngine.roundCurrency(expectedTotal - canonical.materialCost);
     }
 
     return {
@@ -4201,6 +4350,25 @@ const examinationService = {
         ['Approved', batchId]
       );
 
+      // Pin the approved calculation version. Legacy batches calculated
+      // before versioning get a reconstructed snapshot so invoicing can
+      // consume a stable, auditable record instead of repricing.
+      try {
+        const ensured = await ensureBackendApprovedSnapshot(batchId);
+        await runRun(
+          `UPDATE examination_batches SET approved_calculation_version = ?, calculation_version = ?, pricing_engine_version = ?, pricing_snapshot_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [
+            ensured.calculationVersion,
+            ensured.calculationVersion,
+            String(ensured.snapshot.engineVersion || pricingEngine.EXAM_PRICING_ENGINE_VERSION),
+            JSON.stringify(ensured.snapshot),
+            batchId
+          ]
+        );
+      } catch (snapshotError) {
+        console.warn('[Examination] Approval snapshot backfill skipped:', snapshotError?.message || snapshotError);
+      }
+
       await writeAuditLog({
         userId,
         action: 'APPROVE',
@@ -4234,6 +4402,14 @@ const examinationService = {
     const batch = await examinationService.getBatchById(batchId);
     if (!batch) throw new Error('Batch not found');
     batchWorkflow.assertCanGenerateInvoice(batch.status);
+    // Invoices consume the approved calculation snapshot — never reprice.
+    // Legacy batches get a reconstructed snapshot; batches with no priced
+    // state fail closed here.
+    const approved = await ensureBackendApprovedSnapshot(batchId);
+    await runRun(
+      `UPDATE examination_batches SET approved_calculation_version = ?, invoiced_calculation_version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [approved.calculationVersion, approved.calculationVersion, batchId]
+    );
     const invoiceDraft = examinationInvoiceAdapter.createInvoiceFromBatch({
       batchData: batch,
       idempotencyKey: options?.idempotencyKey || options?.idempotency_key
@@ -4483,6 +4659,12 @@ const examinationService = {
     const batch = await examinationService.getBatchById(batchId);
     if (!batch) throw new Error('Batch not found');
     batchWorkflow.assertCanRegenerateInvoice(batch.status);
+    // Regeneration reissues the SAME approved calculation — never reprices.
+    const approved = await ensureBackendApprovedSnapshot(batchId);
+    await runRun(
+      `UPDATE examination_batches SET approved_calculation_version = ?, invoiced_calculation_version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [approved.calculationVersion, approved.calculationVersion, batchId]
+    );
 
     const invoiceDraft = examinationInvoiceAdapter.createInvoiceFromBatch({
       batchData: batch,
@@ -4822,65 +5004,27 @@ const examinationService = {
 
     for (const cls of batch.classes) {
       try {
-        // Get pricing for this class from calculator (simplified version)
+        // Canonical pricing: one formula for every path (flat FIXED,
+        // always-round). See examinationPricingEngine.
         const learners = Math.max(1, Math.floor(Number(cls.number_of_learners) || 0));
-
-        // Calculate expected fee using the same logic as the calculator
-        let totalSheets = 0;
-        let totalPages = 0;
-
-        for (const subject of cls.subjects || []) {
-          const pages = Math.max(1, Math.floor(Number(subject.pages) || 0));
-          const extraCopies = Math.max(0, Math.floor(Number(subject.extra_copies) || 0));
-          const copies = learners + extraCopies;
-          totalSheets += Math.ceil(pages / 2) * copies;
-          totalPages += pages * copies;
-        }
-
-        const conversionRate = Math.max(1, Number(settings.conversion_rate) || 500);
-        const tonerPagesPerUnit = Math.max(1, Number(settings.constants?.toner_pages_per_unit) || 20000);
-
-        const paperQty = totalSheets / conversionRate;
-        const tonerQty = totalPages / tonerPagesPerUnit;
-        const paperCost = Math.round((paperQty * (Number(settings.paper_unit_cost) || 0)) * 100) / 100;
-        const tonerCost = Math.round((tonerQty * (Number(settings.toner_unit_cost) || 0)) * 100) / 100;
-        const totalBomCost = Math.round((paperCost + tonerCost) * 100) / 100;
-
-        // Calculate adjustments
-        const effectiveAdjustments = adjustments.length > 0
-          ? adjustments
-          : (settings.active_adjustments || []);
-
-        let totalAdjustments = (effectiveAdjustments || []).reduce((sum, adjustment) => {
-          const adjType = String(adjustment.type || '').toUpperCase();
-          const numericValue = adjType === 'FIXED'
-            ? (Number(adjustment.value) || 0)
-            : (Number(adjustment.percentage ?? adjustment.value) || 0);
-
-          const amount = adjType === 'FIXED'
-            ? Math.round(numericValue * totalPages * 100) / 100
-            : Math.round(totalBomCost * (numericValue / 100) * 100) / 100;
-
-          return sum + amount;
-        }, 0);
-
-        let totalCost = Math.round((totalBomCost + totalAdjustments) * 100) / 100;
-        let expectedFeePerLearner = learners > 0
-          ? Math.round((totalCost / learners) * 100) / 100
-          : 0;
-
-        // Apply rounding only when there are active market adjustments.
-        if (totalAdjustments > 0) {
-          const roundedFeePerLearner = applyBatchRounding(expectedFeePerLearner, roundingConfig);
-          const roundingDiffPerLearner = Math.round((roundedFeePerLearner - expectedFeePerLearner) * 100) / 100;
-
-          if (roundingDiffPerLearner > 0) {
-            // Update the expected fee to the rounded value
-            expectedFeePerLearner = roundedFeePerLearner;
-            // Calculate totalCost FROM the fee to ensure consistency (forward calculation)
-            totalCost = Math.round(expectedFeePerLearner * learners * 100) / 100;
-          }
-        }
+        const canonical = pricingEngine.calculateCanonicalClassPricing({
+          subjects: cls.subjects || [],
+          learners,
+          paperUnitCost: Number(settings.paper_unit_cost) || 0,
+          tonerUnitCost: Number(settings.toner_unit_cost) || 0,
+          conversionRate: Number(settings.conversion_rate) || 500,
+          tonerPagesPerUnit: Number(settings.constants?.toner_pages_per_unit) || 20000,
+          adjustments: adjustments.length > 0 ? adjustments : (settings.active_adjustments || []),
+          profitMargin: Number(settings.profit_margin ?? 0) || 0,
+          roundingMethod: roundingConfig.method,
+          roundingStep: roundingConfig.step
+        });
+        const totalSheets = canonical.totalSheets;
+        const totalPages = canonical.totalPages;
+        const totalBomCost = canonical.materialCost;
+        const totalAdjustments = canonical.adjustmentTotal + canonical.roundingAdjustment;
+        const totalCost = canonical.expectedTotal;
+        const expectedFeePerLearner = canonical.roundedFeePerLearner;
 
         // Determine final fee: preserve override if present
         const hasManualOverride = Boolean(Number(cls.is_manual_override || 0)) && cls.manual_cost_per_learner != null;
@@ -4888,10 +5032,7 @@ const examinationService = {
           ? Number(cls.manual_cost_per_learner)
           : expectedFeePerLearner;
 
-        // CRITICAL FIX: Calculate liveTotalPreview FROM fee to ensure fee × learners = total
-        // This prevents floating-point precision mismatch where total (calculated as fee × learners)
-        // differs from the sum of BOM + adjustments due to rounding at intermediate steps.
-        const liveTotalPreview = Math.round(finalFeePerLearner * learners * 100) / 100;
+        const liveTotalPreview = pricingEngine.roundCurrency(finalFeePerLearner * learners);
 
         // Update the class
         await runRun(

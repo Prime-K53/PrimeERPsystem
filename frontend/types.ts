@@ -1497,6 +1497,17 @@ export interface ExaminationBatch {
   calculation_trigger?: string;
   calculation_duration_ms?: number;
   last_calculated_at?: string;
+  /**
+   * Canonical pricing provenance (EXAM-2026.1+). Every successful
+   * recalculation bumps calculation_version and writes a fresh immutable
+   * pricing_snapshot. Approval pins approved_calculation_version; invoice
+   * generation consumes that snapshot and never reprices.
+   */
+  calculation_version?: number;
+  pricing_engine_version?: string;
+  pricing_snapshot?: Record<string, any> | string | null;
+  approved_calculation_version?: number;
+  invoiced_calculation_version?: number;
   currency?: string;
   invoice_id?: string;
   pricing_lock_enabled?: boolean;
