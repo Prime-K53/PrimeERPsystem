@@ -13,8 +13,8 @@ import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { enrichDocumentCustomerData } from '../../utils/documentCustomerData';
 import { generatePrimeDocumentBlob } from '../shared/components/PDF/generatePrimeDocumentBlob';
 import type { PrimeDocData } from '../shared/components/PDF/schemas';
-import { hydrateCompanyPdfAssets, getStoredCompanyConfig } from '../../utils/companyAssetUtils';
-import { initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
+import { hydrateCompanyPdfAssets } from '../../utils/companyAssetUtils';
+import { getStoredCompanyConfig, initializePrimePdfFonts } from '../shared/components/PDF/templateSettings';
 import { PreviewModal } from '../shared/components/PDF/PreviewModal';
 import {
   isExaminationInvoiceRecord,
