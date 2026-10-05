@@ -1393,7 +1393,10 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
     // Search and sort hooks for each tab
     const invoiceSearchSort = useSearchSort({
         data: invoices || [],
-        searchFields: ['customerName', 'id', 'invoiceNumber', 'status', 'notes', 'reference'],
+        // Batch linkage fields (batchId / origin_batch_id variants) must stay
+        // searchable: examination invoices are looked up by batch number
+        // (e.g. BTC-P726/023), which lives only in those fields + notes.
+        searchFields: ['customerName', 'id', 'invoiceNumber', 'status', 'notes', 'reference', 'batchId', 'origin_batch_id', 'originBatchId', 'origin_batchId'],
         defaultSortField: 'date',
         defaultSortDirection: 'desc',
         storageKey: 'orders_invoice_sort',

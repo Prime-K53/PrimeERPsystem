@@ -579,6 +579,19 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         sync = await persistExaminationInvoiceToFinance(normalizedInvoicePayload, {
           companyConfig: companyConfig ?? null,
         });
+        // General invoice list reads financeStore.invoices (IndexedDB snapshot).
+        // dbService.put() emits primeerp:data-changed with our own tab as source,
+        // which DataContext deliberately ignores, so the originating tab would
+        // stay stale until manual refresh/poll. Refresh explicitly (best-effort)
+        // so BTC-P726/023-style invoices appear immediately in Sales → Invoices.
+        if (sync?.synced && sync?.invoiceId) {
+          try {
+            const { useFinanceStore } = await import('../stores/financeStore');
+            await useFinanceStore.getState().fetchFinanceData().catch(() => {});
+          } catch {
+            // Non-blocking: list still converges on next poll/refresh.
+          }
+        }
         // Temporary diagnostic trace (EXM-P726/021 only, read-only).
         await traceExamInvoice('context-persist-result', {
           id: normalizedInvoicePayload.invoiceNumber,
@@ -669,6 +682,16 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
           reason,
           companyConfig: companyConfig ?? null,
         });
+        // Same immediate-visibility refresh as generateInvoice: the general
+        // invoice list snapshot would otherwise stay stale on this tab.
+        if (sync?.synced && sync?.invoiceId) {
+          try {
+            const { useFinanceStore } = await import('../stores/financeStore');
+            await useFinanceStore.getState().fetchFinanceData().catch(() => {});
+          } catch {
+            // Non-blocking.
+          }
+        }
         if (sync && !sync.synced) {
           throw new Error(sync.message || 'Failed to regenerate invoice: previous invoice could not be replaced.');
         }

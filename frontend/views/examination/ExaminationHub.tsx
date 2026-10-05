@@ -444,11 +444,27 @@ const ExaminationHub: React.FC = () => {
     setActionLoading(batchId);
     try {
       const result = await generateInvoice(batchId);
-      if (result.success) {
+      // The canonical persist can fail independently of batch invoicing
+      // (guard reject, collision without fresh id, ledger failure). Surfacing
+      // it here prevents silent loss: previously a Hub-generated invoice
+      // could be missing from Sales → Invoices while still toasting success.
+      const syncFailed = Boolean(result?.invoice) && Boolean(result?.sync) && !(result?.sync as { synced?: boolean } | undefined)?.synced;
+      if (result.success && !syncFailed) {
+        // Belt-and-suspenders: ExaminationContext already refreshes finance,
+        // but Hub previously only reloaded batches, leaving the general
+        // invoice list stale on this tab. Refresh finance explicitly so the
+        // new EXM invoice is visible without manual reload.
+        try {
+          const { useFinanceStore } = await import('../../stores/financeStore');
+          await useFinanceStore.getState().fetchFinanceData().catch(() => {});
+        } catch {
+          // Non-blocking.
+        }
         toast.success('Invoice generated successfully');
         loadAllData();
       } else {
-        toast.error('Failed to generate invoice');
+        toast.error((result?.sync as { message?: string } | undefined)?.message || 'Failed to generate invoice');
+        logger.error('Invoice finance-sync failed:', (result?.sync as { message?: string } | undefined)?.message);
       }
     } catch (error) {
       toast.error('Failed to generate invoice');
@@ -474,6 +490,12 @@ const ExaminationHub: React.FC = () => {
     try {
       const result = await regenerateInvoice(batch.id, 'Regenerated from batch list');
       if (result.success) {
+        try {
+          const { useFinanceStore } = await import('../../stores/financeStore');
+          await useFinanceStore.getState().fetchFinanceData().catch(() => {});
+        } catch {
+          // Non-blocking.
+        }
         const voided = (result?.sync as { voidedInvoiceIds?: string[] } | undefined)?.voidedInvoiceIds;
         toast.success(
           voided && voided.length > 0

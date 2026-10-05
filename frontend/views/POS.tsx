@@ -1431,12 +1431,12 @@ const handleQuickPrintConfirm = (
           <div className="px-6 py-1 flex items-center justify-between z-30 bg-[#FEFDFB] border-b border-[#e4ddd1]">
            <div className="flex items-center gap-4">
              <div className="hidden lg:flex gap-2">
-<button onClick={handleQuickPhotocopy} className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#23282A] hover:bg-[#eef7f6] hover:border-[#a6d9d3] hover:text-[#0b3e39] transition-all flex items-center gap-1.5 shadow-sm">
-                  <Copy size={14} /> Photocopy
-                </button>
-                 <button onClick={handleQuickTypePrinting} className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#23282A] hover:bg-[#eef7f6] hover:border-[#a6d9d3] hover:text-[#0b3e39] transition-all flex items-center gap-1.5 shadow-sm">
-                  <FileText size={14} /> Type & Print
-                </button>
+<button onClick={handleQuickPhotocopy} className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#23282A] hover:bg-[#eef7f6] hover:border-[#a6d9d3] hover:text-[#0b3e39] transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap">
+                   <Copy size={14} /> Photocopy
+                 </button>
+                 <button onClick={handleQuickTypePrinting} className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#23282A] hover:bg-[#eef7f6] hover:border-[#a6d9d3] hover:text-[#0b3e39] transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap">
+                   <FileText size={14} /> Type & Print
+                 </button>
 <select value={selectedSalesAccountId} onChange={e => setSelectedSalesAccountId(e.target.value)}
                    className="px-3 py-1.5 bg-[#FEFDFB] border border-[#e4ddd1] rounded-lg text-[12px] font-bold text-[#23282A] hover:border-[#a6d9d3] transition-all shadow-sm outline-none cursor-pointer">
                   {(accounts || []).filter((a: any) => isIncomeAccount(a)).map(acc => (

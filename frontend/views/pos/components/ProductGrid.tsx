@@ -16,7 +16,7 @@ import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPr
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
 import { getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
 import { formatAmount } from '../../../utils/posMoney';
-import { registerType, stock as stockTokens, stockState, hairline, inkSoft, NUMERIC_FONT, UI_FONT } from '../theme';
+import { registerType, stock as stockTokens, stockState, hairline, hairlineStrong, inkSoft, teal, amber, NUMERIC_FONT, UI_FONT } from '../theme';
 
 const B = '#1E3A5F';
 const B7 = '#2563EB';
@@ -106,7 +106,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
     const currency = companyConfig.currencySymbol;
     const [searchTerm, setSearchTerm] = useState('');
     const [activeCategory, setActiveCategory] = useState<string>('All');
-    const [viewMode, setViewMode] = useState<ViewMode>('Large');
+    const [viewMode, setViewMode] = useState<ViewMode>('List');
     const [selectedProductForVariants, setSelectedProductForVariants] = useState<Item | null>(null);
     const [showCreateItemModal, setShowCreateItemModal] = useState(false);
     const lastKeyTimeRef = useRef(0);
@@ -303,7 +303,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
         if (viewMode === 'List') {
             return (
                 <div style={{ width: '100%' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '28px 1fr 80px 70px 44px', gap: 8, padding: '6px 10px', fontSize: 10, fontWeight: 600, color: SOFT, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${LINE}`, background: B50 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '28px 1fr 110px 100px 70px', gap: 24, padding: '10px 16px', fontSize: 10, fontWeight: 700, color: teal[600], textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: `1px solid ${hairlineStrong}`, background: '#fff' }}>
                         <span></span>
                         <span>Item</span>
                         <span style={{ textAlign: 'right' }}>Price</span>
@@ -318,41 +318,43 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                             style={{
                                 width: '100%',
                                 display: 'grid',
-                                gridTemplateColumns: '28px 1fr 80px 70px 44px',
-                                gap: 8,
+                                gridTemplateColumns: '28px 1fr 110px 100px 70px',
+                                gap: 24,
                                 alignItems: 'center',
-                                padding: '7px 10px',
+                                padding: '12px 16px',
                                 textAlign: 'left',
                                 border: 'none',
-                                borderBottom: `1px solid ${LINE}`,
-                                background: activeIndex === idx ? B100 : 'transparent',
+                                borderBottom: `1px solid ${hairline}`,
+                                background: activeIndex === idx ? teal[50] : 'transparent',
                                 cursor: 'pointer',
                                 opacity: 1,
                                 fontFamily: "'Inter','DM Sans',sans-serif",
-                                transition: '.1s'
+                                transition: 'all .15s cubic-bezier(.4,0,.2,1)',
+                                position: 'relative'
                             }}
-                            onMouseOver={e => { if (activeIndex !== idx) e.currentTarget.style.background = B50; }}
+                            onMouseOver={e => { if (activeIndex !== idx) e.currentTarget.style.background = '#faf9f6'; }}
                             onMouseOut={e => { if (activeIndex !== idx) e.currentTarget.style.background = 'transparent'; }}
                         >
-                            <div style={{ padding: 4, borderRadius: 6, background: B50, color: SOFT, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {activeIndex === idx && <div style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, background: `linear-gradient(180deg, ${teal[500]}, ${teal[400]})`, borderRadius: '0 3px 3px 0' }} />}
+                            <div style={{ padding: 6, borderRadius: 8, background: activeIndex === idx ? '#fff' : teal[50], color: teal[600], display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: activeIndex === idx ? `0 0 0 1px ${teal[200]}` : 'none', transition: 'all .15s' }}>
                                 {getCategoryIcon(item.category)}
                             </div>
                             <div style={{ minWidth: 0 }}>
-                                <div style={{ fontSize: 12.5, fontWeight: 600, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                                <div style={{ fontSize: 9.5, color: SOFT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.sku}</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: -0.01 }}>{item.name}</div>
+                                <div style={{ fontSize: 10, color: inkSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2, fontFamily: NUMERIC_FONT }}>{item.sku}</div>
                             </div>
-                            <div style={{ textAlign: 'right', fontSize: 12, fontWeight: 600, color: INK, fontFamily: "'JetBrains Mono',monospace" }}>
+                            <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: INK, fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', letterSpacing: -0.02 }}>
                                 {item.isVariantParent ? (
-                                    <>From&nbsp;{currency}{formatNumber(lowestVariantPrice(item))} <span style={{ fontSize: 9, color: SOFT }}>▼</span></>
+                                    <>From&nbsp;{currency}{formatNumber(lowestVariantPrice(item))} <span style={{ fontSize: 9, color: teal[500], marginLeft: 2 }}>▼</span></>
                                 ) : (
                                     `${currency}${formatNumber(price(item))}`
                                 )}
                             </div>
-                            <div style={{ textAlign: 'right', fontSize: 11, color: SOFT, fontFamily: "'JetBrains Mono',monospace" }}>
+                            <div style={{ textAlign: 'right', fontSize: 12, color: inkSoft, fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums' }}>
                                 {isInventoryBearingItem(item) ? `${item.stock}${item.unit ? ' ' + item.unit : ''}` : '—'}
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 4, textTransform: 'uppercase', background: item.type === 'Service' ? B100 : B50, color: item.type === 'Service' ? B7 : SOFT }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 6, textTransform: 'uppercase', background: item.type === 'Service' ? teal[100] : '#fff', color: item.type === 'Service' ? teal[700] : inkSoft, border: `1px solid ${item.type === 'Service' ? teal[200] : hairline}`, letterSpacing: 0.04, boxShadow: '0 1px 2px rgba(0,0,0,.03)' }}>
                                     {(item.type || '?').charAt(0)}
                                 </span>
                             </div>
@@ -369,10 +371,10 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                 onClick={() => handleItemClick(item)}
                 style={{
                     position: 'relative',
-                    background: activeIndex === idx ? B100 : '#fff',
-                    border: `1px solid ${activeIndex === idx ? B6 : LINE}`,
-                    borderRadius: 10,
-                    padding: viewMode === 'Small' ? 8 : 10,
+                    background: activeIndex === idx ? '#fff' : '#fefdfb',
+                    border: `1px solid ${activeIndex === idx ? teal[300] : '#e4ddd1'}`,
+                    borderRadius: 12,
+                    padding: viewMode === 'Small' ? 10 : 12,
                     textAlign: 'left',
                     cursor: 'pointer',
                     opacity: 1,
@@ -380,66 +382,73 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                     display: 'flex',
                     flexDirection: 'column',
                     height: '100%',
-                    transition: '.12s',
-                    filter: activeIndex === idx ? 'none' : 'none',
-                    boxShadow: activeIndex === idx ? `0 0 0 2px ${B5}33` : 'none'
+                    transition: 'all .2s cubic-bezier(.4,0,.2,1)',
+                    boxShadow: activeIndex === idx ? '0 4px 16px -4px rgba(30,58,95,.08), 0 0 0 1px rgba(30,58,95,.04)' : '0 1px 3px rgba(0,0,0,.02)',
+                    overflow: 'hidden'
                 }}
                 onMouseOver={e => {
                     if (activeIndex !== idx) {
-                        e.currentTarget.style.borderColor = B5;
-                        e.currentTarget.style.boxShadow = `0 0 0 2px ${B5}22`;
+                        e.currentTarget.style.borderColor = teal[200];
+                        e.currentTarget.style.boxShadow = '0 4px 12px -4px rgba(30,58,95,.06), 0 0 0 1px rgba(30,58,95,.03)';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
                     }
                 }}
                 onMouseOut={e => {
                     if (activeIndex !== idx) {
-                        e.currentTarget.style.borderColor = LINE;
-                        e.currentTarget.style.boxShadow = 'none';
+                        e.currentTarget.style.borderColor = '#e4ddd1';
+                        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,.02)';
+                        e.currentTarget.style.transform = 'translateY(0)';
                     }
                 }}
             >
+                {activeIndex === idx && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${teal[500]}, ${teal[400]}, ${amber[500]})`, borderRadius: '12px 12px 0 0' }} />}
                 {companyConfig.transactionSettings?.pos?.showItemImages && item.image && (
                     <div style={{
                         width: '100%',
                         aspectRatio: '16 / 10',
-                        background: B50,
-                        marginBottom: 8,
+                        background: '#f8f6f1',
+                        marginBottom: 10,
                         overflow: 'hidden',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         borderRadius: 8,
-                        border: `1px solid ${LINE}`
+                        border: `1px solid #e4ddd1`,
+                        position: 'relative'
                     }}>
-                        <img src={item.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={item.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform .3s' }} />
+                        {isOutOfStock(item) && <div style={{ position: 'absolute', inset: 0, background: 'rgba(254,253,251,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(1px)' }}><span style={{ fontSize: 11, fontWeight: 700, color: '#A8382F', letterSpacing: 0.04, background: '#fff', padding: '4px 10px', borderRadius: 6, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>Out of stock</span></div>}
                     </div>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
-                        ...registerType.body,
+                        fontSize: viewMode === 'Small' ? 12 : 13,
                         fontWeight: 600,
-                        color: isOutOfStock(item) ? SOFT : INK,
+                        color: isOutOfStock(item) ? inkSoft : INK,
                         overflow: 'hidden',
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: 'vertical',
+                        lineHeight: 1.4,
+                        letterSpacing: -0.01
                     }}>
                         {item.name}
                     </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, marginTop: 'auto', paddingTop: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, marginTop: 'auto', paddingTop: 10 }}>
                     <div style={{ minWidth: 0 }}>
                         {item.isVariantParent ? (
-                            <span style={{ ...registerType.price, color: isOutOfStock(item) ? SOFT : INK, whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: viewMode === 'Small' ? 12 : 13, fontWeight: 700, color: isOutOfStock(item) ? inkSoft : teal[700], whiteSpace: 'nowrap', fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', letterSpacing: -0.02 }}>
                                 From&nbsp;{currency}{formatAmount(lowestVariantPrice(item))}
                             </span>
                         ) : (
-                            <span style={{ ...registerType.price, fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', color: isOutOfStock(item) ? SOFT : INK, whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: viewMode === 'Small' ? 12 : 13, fontWeight: 700, color: isOutOfStock(item) ? inkSoft : INK, whiteSpace: 'nowrap', fontFamily: NUMERIC_FONT, fontVariantNumeric: 'tabular-nums', letterSpacing: -0.02 }}>
                                 {currency}{formatAmount(price(item))}
-                                {(item.type === 'Service' || item.category === 'Service') && item.pages ? <span style={{ ...registerType.meta, fontWeight: 400, color: SOFT, marginLeft: 2 }}>/pg</span> : ''}
+                                {(item.type === 'Service' || item.category === 'Service') && item.pages ? <span style={{ fontSize: 11, fontWeight: 400, color: inkSoft, marginLeft: 3 }}>/pg</span> : ''}
                             </span>
                         )}
                         {item.isVariantParent && (
-                            <div style={{ ...registerType.meta, color: SOFT, marginTop: 2 }}>
+                            <div style={{ fontSize: 11, color: inkSoft, marginTop: 3, fontWeight: 500 }}>
                                 {item.variants?.length ?? 0} option{(item.variants?.length ?? 0) === 1 ? '' : 's'}
                             </div>
                         )}
