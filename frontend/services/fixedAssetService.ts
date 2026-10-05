@@ -97,14 +97,50 @@ export const fixedAssetService = {
         return updated;
     },
 
-    async delete(id: string): Promise<boolean> {
+    async delete(id: string, accounts: any[] = []): Promise<boolean> {
         const asset = await this.getById(id);
         if (!asset) return false;
         if (asset.status !== 'active' && asset.status !== 'fully_depreciated') {
             throw new Error('Cannot delete asset that is not active or fully depreciated');
         }
+        // Reverse the acquisition journal so the bank/cash account balance
+        // is restored (Cr → Dr on the same amount) before the asset row is gone.
+        if (accounts.length > 0) {
+            await this.reverseAcquisitionJournal(asset, accounts);
+        }
         await dbService.delete(STORE_NAME, id);
         return true;
+    },
+
+    async reverseAcquisitionJournal(asset: FixedAsset, accounts: any[]): Promise<string | null> {
+        const config = getConfig();
+        const cashOrBankAccount = resolveAccountForPosting(config.bankAccount, accounts);
+        if (!cashOrBankAccount) {
+            logger.warn('Could not resolve cash/bank account for fixed asset acquisition reversal');
+            return null;
+        }
+        const description = `Fixed Asset Acquisition Reversal: ${asset.name} (${asset.asset_code})`;
+        try {
+            const entry = await ledgerService.createJournalEntry({
+                date: new Date().toISOString().slice(0, 10),
+                description,
+                reference: `FA-ACQ-REV-${asset.asset_code}`,
+                lines: [
+                    {
+                        debitAccountId: cashOrBankAccount,
+                        creditAccountId: asset.fixed_asset_account_id,
+                        amount: asset.acquisition_cost,
+                        description: `Asset reversal: ${asset.name}`,
+                    }
+                ],
+                entryType: 'FA_ACQUISITION_REVERSAL',
+                createdBy: asset.created_by,
+            });
+            return entry?.id || null;
+        } catch (error) {
+            logger.error('Failed to post acquisition reversal journal', error);
+            return null;
+        }
     },
 
     async postAcquisitionJournal(asset: FixedAsset, accounts: any[]): Promise<string | null> {

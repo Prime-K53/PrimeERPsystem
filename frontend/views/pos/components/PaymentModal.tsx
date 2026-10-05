@@ -198,6 +198,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             if (!account) return;
             method = accountId === ACCOUNT_IDS.CASH_DRAWER || account.name.includes('Cash') ? 'Cash' :
                 (accountId === ACCOUNT_IDS.MOBILE_MONEY || account.name.includes('Mobile') ? 'Mobile Money' : 'Bank Transfer');
+
+            // Never allow a payment that would push the source account into a
+            // negative balance. Bank/cash/mobile balances are the hard truth.
+            const availableBalance =
+                accountId === ACCOUNT_IDS.CASH_DRAWER ? (cashBalance ?? 0) :
+                accountId === ACCOUNT_IDS.MOBILE_MONEY ? (mobileBalance ?? 0) :
+                (bankBalance ?? 0);
+            if (availableBalance !== undefined && availableBalance < amountInput) {
+                const message = `Insufficient ${method} balance. Available: ${currency}${formatNumber(availableBalance)}`;
+                setInlineError(message);
+                notify(message, "error");
+                return;
+            }
         }
 
         const newSplit: PaymentDetail[] = [...splitPayments, {
