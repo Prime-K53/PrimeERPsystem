@@ -356,7 +356,7 @@ export const buildPosReceiptDoc = ({
     footerMessage: footerMessage || companyConfig?.transactionSettings?.pos?.receiptFooter,
     companyInfo: {
       name: companyConfig?.companyName || 'Prime ERP',
-      address: companyConfig?.addressLine1 || '',
+      address: 'Along M5 Road Mtakataka',
       phone: companyConfig?.phone || '',
       email: companyConfig?.email || '',
       website: companyConfig?.website || '',
