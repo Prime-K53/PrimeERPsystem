@@ -1207,6 +1207,15 @@ export const dbService = {
         return getFromLegacyStore<T>(storeName, id);
     },
 
+    /**
+     * Convenience alias matching the service-layer naming convention
+     * (fixedAssetService, vatService, payrollService, etc.). Backed by get().
+     */
+    async getById<T>(storeName: keyof NexusDB, id: string): Promise<T | null> {
+        if (isMissingIdbKey(id)) return null;
+        return getFromLegacyStore<T>(storeName, id) || null;
+    },
+
     async put<T>(storeName: keyof NexusDB, item: T, options: PutOptions = {}): Promise<string> {
         const raw = { ...((item as Record<string, unknown>) || {}) };
         const isCloudSource = options.cloudSource === true || raw._cloudSource === true;
