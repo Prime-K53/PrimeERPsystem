@@ -270,27 +270,46 @@ export const FixedAssetsModule: React.FC = () => {
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
-                    <tr style={tableHeadRow}>
-                      <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Date</th>
-                      <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Code</th>
-                      <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Name</th>
-                      <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Category</th>
-                      <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Cost</th>
-                      <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>NBV</th>
-                    </tr>
+<tr style={tableHeadRow}>
+                       <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Date</th>
+                       <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Code</th>
+                       <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Name</th>
+                       <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 700 }}>Category</th>
+                       <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>Cost</th>
+                       <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 700 }}>NBV</th>
+                       <th style={{ textAlign: 'center', padding: '12px 16px', fontWeight: 700 }}>Actions</th>
+                     </tr>
                   </thead>
                   <tbody>
-                    {assetRows.slice(0, 8).map((a) => (
+{assetRows.slice(0, 8).map((a) => (
                       <tr key={a.id} style={{ borderTop: `1px solid ${hairline}` }}
-                        onMouseEnter={e => e.currentTarget.style.background = teal[50]}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        onMouseEnter={e => { e.currentTarget.style.background = teal[50]; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                       >
                         <td style={{ padding: '10px 16px', color: ink }}>{a.acquisition_date}</td>
                         <td style={{ padding: '10px 16px', color: inkSoft, fontFamily: "'JetBrains Mono', monospace" }}>{a.asset_code}</td>
                         <td style={{ padding: '10px 16px', fontWeight: 600, color: ink }}>{a.name}</td>
                         <td style={{ padding: '10px 16px', color: ink }}>{a.category}</td>
                         <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>{fmt(a.acquisition_cost, currency)}</td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: a.current_book_value >= 0 ? emeraldFg : danger }}>{fmt(a.current_book_value, currency)}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums', color: a.current_book_value >= 0 ? emeraldFg: danger }}>{fmt(a.current_book_value, currency)}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <button onClick={() => { setEditingAsset(a); setShowAcquire(true); }} title="Edit"
+                              style={{ padding: 6, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: inkSoft }}
+                              onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[700]; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = inkSoft; }}
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                            <button onClick={() => setConfirm({ title: 'Delete Asset', message: `Delete "${a.name}" (${a.asset_code})? This cannot be undone.`, type: 'danger', onConfirm: async () => { try { await fixedAssetService.delete(a.id); await audit('fixed_asset.delete', a.id, { name: a.name }); await load(); } catch (e) { setConfirm({ title: 'Delete Failed', message: (e as Error).message, type: 'danger' }); } } })} title="Delete"
+                              style={{ padding: 6, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: danger }}
+                              onMouseEnter={e => { e.currentTarget.style.background = dangerBg; e.currentTarget.style.color = danger; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = danger; }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -413,10 +432,11 @@ export const FixedAssetsModule: React.FC = () => {
       {/* Acquire modal */}
       {showAcquire && (
         <AcquireAssetModal
-          onClose={() => setShowAcquire(false)}
-          onSaved={async (asset) => {
-            await audit('fixed_asset.acquire', asset.id, { name: asset.name, cost: asset.acquisition_cost });
+          editingAsset={editingAsset}
+          onClose={() => { setShowAcquire(false); setEditingAsset(null); }}
+          onSaved={async () => {
             setShowAcquire(false);
+            setEditingAsset(null);
             await load();
           }}
           accounts={accounts}
@@ -464,22 +484,23 @@ const AcquireAssetModal: React.FC<{
   accounts: any[];
   currency: string;
   createdBy?: string;
-}> = ({ onClose, onSaved, accounts, currency, createdBy }) => {
+  editingAsset?: AssetRow | null;
+}> = ({ onClose, onSaved, accounts, currency, createdBy, editingAsset }) => {
   const config = getGLConfig();
-  const [name, setName] = useState('');
-  const [assetCode, setAssetCode] = useState('');
-  const [category, setCategory] = useState('motor_vehicle');
-  const [acquisitionDate, setAcquisitionDate] = useState(getDefaultDate());
-  const [acquisitionCost, setAcquisitionCost] = useState('0');
-  const [salvageValue, setSalvageValue] = useState('0');
-  const [usefulLife, setUsefulLife] = useState('5');
-  const [method, setMethod] = useState<any>('straight_line');
-  const [fundingSource, setFundingSource] = useState<any>('Bank');
-  const [branch, setBranch] = useState('');
-  const [department, setDepartment] = useState('');
-  const [costCentre, setCostCentre] = useState('');
-  const [location, setLocation] = useState('');
-  const [notes, setNotes] = useState('');
+  const [name, setName] = useState(editingAsset?.name || '');
+  const [assetCode, setAssetCode] = useState(editingAsset?.asset_code || '');
+  const [category, setCategory] = useState((editingAsset?.category as any) || 'motor_vehicle');
+  const [acquisitionDate, setAcquisitionDate] = useState(editingAsset?.acquisition_date || getDefaultDate());
+  const [acquisitionCost, setAcquisitionCost] = useState(String(editingAsset?.acquisition_cost ?? '0'));
+  const [salvageValue, setSalvageValue] = useState(String(editingAsset?.salvage_value ?? '0'));
+  const [usefulLife, setUsefulLife] = useState(String(editingAsset?.useful_life_years ?? '5'));
+  const [method, setMethod] = useState<any>((editingAsset?.depreciation_method as any) || 'straight_line');
+  const [fundingSource, setFundingSource] = useState<any>((editingAsset?.funding_source as any) || 'Bank');
+  const [branch, setBranch] = useState(editingAsset?.branch || '');
+  const [department, setDepartment] = useState(editingAsset?.department || '');
+  const [costCentre, setCostCentre] = useState(editingAsset?.cost_centre || '');
+  const [location, setLocation] = useState(editingAsset?.location || '');
+  const [notes, setNotes] = useState(editingAsset?.notes || '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -495,7 +516,7 @@ const AcquireAssetModal: React.FC<{
 
     setSaving(true);
     try {
-      const created = await fixedAssetService.create({
+      const payload = {
         asset_code: assetCode.trim() || `FA-${Date.now()}`,
         name: name.trim(),
         category: category as any,
@@ -505,22 +526,33 @@ const AcquireAssetModal: React.FC<{
         useful_life_years: life,
         depreciation_method: method,
         location,
-        status: 'active',
-        lifecycle_status: 'Acquired',
         branch,
         department,
         cost_centre: costCentre,
         funding_source: fundingSource,
-        depreciation_start_date: acquisitionDate,
-        depreciation_frequency: 'Monthly',
-        depreciation_convention: 'FullMonth',
-        fixed_asset_account_id: config.fixedAssetAccount,
-        accumulated_depreciation_account_id: config.accumulatedDepreciationAccount,
-        depreciation_expense_account_id: config.depreciationExpenseAccount,
         notes,
-        created_by: createdBy,
-      } as any, accounts);
-      await onSaved(created);
+        updated_at: new Date().toISOString(),
+      } as any;
+
+      if (editingAsset) {
+        await fixedAssetService.update(editingAsset.id, payload);
+        await audit('fixed_asset.edit', editingAsset.id, { name: name.trim(), cost: roundFinancial(cost) });
+      } else {
+        const created = await fixedAssetService.create({
+          ...payload,
+          status: 'active',
+          lifecycle_status: 'Acquired',
+          depreciation_start_date: acquisitionDate,
+          depreciation_frequency: 'Monthly',
+          depreciation_convention: 'FullMonth',
+          fixed_asset_account_id: config.fixedAssetAccount,
+          accumulated_depreciation_account_id: config.accumulatedDepreciationAccount,
+          depreciation_expense_account_id: config.depreciationExpenseAccount,
+          created_by: createdBy,
+        } as any, accounts);
+        await audit('fixed_asset.acquire', created.id, { name: name.trim(), cost: roundFinancial(cost) });
+      }
+      await onSaved(editingAsset ? editingAsset.id : undefined);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -534,8 +566,8 @@ const AcquireAssetModal: React.FC<{
         <AccentStripe />
         <ModalHeader
           icon={<Building2 size={19} color="#fff" />}
-          title="Acquire Fixed Asset"
-          subtitle="New asset record — Fixed asset register"
+          title={editingAsset ? 'Edit Fixed Asset' : 'Acquire Fixed Asset'}
+          subtitle={editingAsset ? `Editing ${editingAsset.asset_code} — Fixed asset register` : 'New asset record — Fixed asset register'}
           onClose={onClose}
         />
         <div style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
@@ -594,12 +626,12 @@ const AcquireAssetModal: React.FC<{
           <div style={{ marginBottom: 18 }}><Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Acquisition notes…" /></Field></div>
           {error && <div style={{ padding: 12, borderRadius: 9, background: dangerBg, color: danger, fontSize: 12.5, border: `1px solid ${danger}`, marginBottom: 18 }}>{error}</div>}
         </div>
-        <ModalFooter
-          stepLabel="New asset · Fixed asset register"
-          onCancel={onClose}
-          submitLabel={saving ? 'Saving…' : 'Acquire'}
-          onSubmit={() => { if (!saving) save(); }}
-        />
+<ModalFooter
+           stepLabel={editingAsset ? `Editing ${editingAsset.asset_code} · Fixed asset register` : 'New asset · Fixed asset register'}
+           onCancel={onClose}
+           submitLabel={saving ? 'Saving…' : (editingAsset ? 'Save Changes' : 'Acquire')}
+           onSubmit={() => { if (!saving) save(); }}
+         />
       </div>
     </div>
   );
