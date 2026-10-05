@@ -149,7 +149,9 @@ const buildPricingSnapshot = (args: {
     calculationVersion,
     calculatedAt: toIso(),
     trigger,
-    provenance: 'calculated',
+    // CANONICAL = produced by the canonical pricing engine during an actual
+    // calculation. Never label a reconstruction as canonical.
+    provenance: 'CANONICAL',
     inputs: {
       paperItemId: (settings as any)?.paper_item_id ?? null,
       paperUnitCost: Number((settings as any)?.paper_unit_cost ?? 0) || 0,
@@ -169,8 +171,10 @@ const buildPricingSnapshot = (args: {
       })),
       classes: (Array.isArray(batch.classes) ? batch.classes : []).map((cls: any) => ({
         classId: String(cls?.id || ''),
+        className: String(cls?.class_name || cls?.name || ''),
         learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
         subjects: (Array.isArray(cls?.subjects) ? cls.subjects : []).map((sub: any) => ({
+          name: String(sub?.subject_name || sub?.name || ''),
           pages: Math.max(1, Math.floor(Number(sub?.pages) || 0)),
           extraCopies: Math.max(0, Math.floor(Number(sub?.extra_copies) || 0)),
         })),
@@ -183,18 +187,24 @@ const buildPricingSnapshot = (args: {
       materialTotal: Number(pricing.classes.reduce((sum: number, row: any) => sum + (Number(row?.totalBomCost) || 0), 0).toFixed(2)),
       adjustmentTotal: Number(pricing.classes.reduce((sum: number, row: any) => sum + (Number(row?.totalAdjustments) || 0), 0).toFixed(2)),
       totalLearners: pricing.classes.reduce((sum: number, row: any) => sum + (Number(row?.learners) || 0), 0),
-      classes: pricing.classes.map((row: any) => ({
-        classId: String(row?.classId || ''),
-        learners: Number(row?.learners) || 0,
-        totalSheets: Number(row?.totalSheets) || 0,
-        totalPages: Number(row?.totalPages) || 0,
-        bomCost: Number(row?.totalBomCost) || 0,
-        marketAdjustments: Number((row as any)?.marketAdjustmentTotal ?? row?.totalAdjustments ?? 0) || 0,
-        roundingAdjustment: Number((row as any)?.roundingAdjustment ?? 0) || 0,
-        expectedFee: Number(row?.expectedFeePerLearner) || 0,
-        finalFee: Number(row?.finalFeePerLearner) || 0,
-        liveTotal: Number(row?.liveTotalPreview) || 0,
-      })),
+      classes: pricing.classes.map((row: any) => {
+        const source = (Array.isArray(batch.classes) ? batch.classes : []).find(
+          (cls: any) => String(cls?.id || '') === String(row?.classId || '')
+        ) as any;
+        return {
+          classId: String(row?.classId || ''),
+          className: String(source?.class_name || source?.name || row?.className || ''),
+          learners: Number(row?.learners) || 0,
+          totalSheets: Number(row?.totalSheets) || 0,
+          totalPages: Number(row?.totalPages) || 0,
+          bomCost: Number(row?.totalBomCost) || 0,
+          marketAdjustments: Number((row as any)?.marketAdjustmentTotal ?? row?.totalAdjustments ?? 0) || 0,
+          roundingAdjustment: Number((row as any)?.roundingAdjustment ?? 0) || 0,
+          expectedFee: Number(row?.expectedFeePerLearner) || 0,
+          finalFee: Number(row?.finalFeePerLearner) || 0,
+          liveTotal: Number(row?.liveTotalPreview) || 0,
+        };
+      }),
     },
   };
 };
@@ -213,15 +223,20 @@ const reconstructPricingSnapshot = (
     calculationVersion: Number((batch as any)?.calculation_version) || 1,
     calculatedAt: String((batch as any)?.last_calculated_at || (batch as any)?.updated_at || toIso()),
     trigger: 'BACKFILL_RECONSTRUCTED',
-    provenance: 'reconstructed-from-stored-financials',
+    // RECONSTRUCTED_LEGACY = rebuilt from stored historical financial values
+    // because native calculation provenance did not exist. Never produced by
+    // running the current engine and never labelled canonical.
+    provenance: 'RECONSTRUCTED_LEGACY',
     inputs: {
       note: 'inputs unknown — reconstructed from stored financial state, not recalculated',
       roundingMethod: String((batch as any)?.rounding_method || 'ALWAYS_UP_50'),
       roundingStep: Number((batch as any)?.rounding_value ?? 50) || 50,
       classes: classes.map((cls: any) => ({
         classId: String(cls?.id || ''),
+        className: String(cls?.class_name || cls?.name || ''),
         learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
         subjects: (Array.isArray(cls?.subjects) ? cls.subjects : []).map((sub: any) => ({
+          name: String(sub?.subject_name || sub?.name || ''),
           pages: Math.max(1, Math.floor(Number(sub?.pages) || 0)),
           extraCopies: Math.max(0, Math.floor(Number(sub?.extra_copies) || 0)),
         })),

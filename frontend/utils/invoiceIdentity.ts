@@ -99,6 +99,68 @@ export function findInvoiceByIdOrNumber<T extends InvoiceIdentity>(
   );
 }
 
+export type ExaminationVerificationReadiness =
+  | 'verifiable'
+  | 'pending-sync'
+  | 'unverifiable';
+
+/**
+ * Truthful public-verification readiness for a LOCAL invoice record.
+ *
+ * - 'unverifiable': no canonical number or no verification token. Public
+ *   verification can never succeed (genuinely invalid for verification).
+ * - 'pending-sync': tokened, but a durable-sync operation for this record
+ *   is still queued/failed. The invoice is real; only its server copy is
+ *   missing. Callers must surface "generated locally — public verification
+ *   becomes available after synchronization", never a permanent failure.
+ * - 'verifiable': tokened with no known pending sync. Public verification
+ *   may still 404 (wrong token/number), but the record is well-formed.
+ *
+ * The public verify endpoint itself stays indistinguishable (generic 404)
+ * by design; this distinction lives in ERP UI where local state is known.
+ */
+export function resolveExaminationVerificationReadiness(
+  invoice: { id?: unknown; invoiceNumber?: unknown; verificationToken?: unknown } | null | undefined,
+  pendingRecordIds?: ReadonlyArray<unknown>
+): ExaminationVerificationReadiness {
+  const number = String(invoice?.invoiceNumber ?? invoice?.id ?? '').trim();
+  const token = String(invoice?.verificationToken ?? '').trim();
+  if (!number || !token) return 'unverifiable';
+  const pending = new Set(
+    (pendingRecordIds || []).map((value) => String(value ?? '').trim()).filter(Boolean)
+  );
+  const keys = [String(invoice?.id ?? '').trim(), String(invoice?.invoiceNumber ?? '').trim()].filter(Boolean);
+  if (keys.some((key) => pending.has(key))) return 'pending-sync';
+  return 'verifiable';
+}
+
+/** UI wording for a locally-generated invoice awaiting synchronization. */
+export const PENDING_SYNC_VERIFICATION_COPY =
+  'Invoice generated locally; public verification becomes available after synchronization.';
+
+/**
+ * General invoice-list scope: ordinary ERP invoices only. Examination
+ * invoices live in Examination → Invoices. Detail modals, transaction
+ * refs and explicit id/number searches resolve against the FULL
+ * collection, so a directly addressed record stays reachable here via an
+ * exact id/number match even while scoped out of browsing.
+ */
+export function applyGeneralInvoiceScope<T extends Record<string, unknown>>(
+  invoices: ReadonlyArray<T> | null | undefined,
+  directKey?: unknown
+): T[] {
+  if (!Array.isArray(invoices)) return [];
+  const key = String(directKey ?? '').trim().toUpperCase();
+  return (invoices as T[]).filter((invoice) => {
+    if (!isExaminationInvoiceRecord(invoice as Record<string, unknown>)) return true;
+    if (!key) return false;
+    return (
+      String((invoice as Record<string, unknown>)?.id ?? '').trim().toUpperCase() === key ||
+      String((invoice as Record<string, unknown>)?.invoiceNumber ?? '').trim().toUpperCase() === key
+    );
+  });
+}
+
 export interface ExaminationBatchLinkage {
   /** Normalised batch keys identifying WHICH batch an examination invoice belongs to. */
   keys: string[];
@@ -143,6 +205,24 @@ export function getExaminationBatchLinkage(record: Record<string, unknown> | nul
     add(conversion.sourceNumber);
   }
   return Array.from(keys);
+}
+
+/**
+ * Whether a canonical invoice record belongs to the examination module.
+ * Single shared predicate for the Examination → Invoices tab and the
+ * general-list scope split: origin markers, EXM numbering, exam-titled
+ * documents, or batch linkage. Ordinary ERP invoices never match.
+ */
+export function isExaminationInvoiceRecord(record: Record<string, unknown> | null | undefined): boolean {
+  if (!record || typeof record !== 'object') return false;
+  if (isExaminationLike(record)) return true;
+  const number = String(
+    (record as Record<string, unknown>).invoiceNumber ?? (record as Record<string, unknown>).id ?? ''
+  ).trim();
+  if (/^EXM-/i.test(number)) return true;
+  const title = String((record as Record<string, unknown>).documentTitle ?? '').toLowerCase();
+  if (title.includes('examination invoice')) return true;
+  return false;
 }
 
 const isExaminationLike = (record: Record<string, unknown> | null | undefined): boolean => {

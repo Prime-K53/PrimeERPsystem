@@ -628,6 +628,17 @@ const ExaminationHub: React.FC = () => {
             <Plus size={16} />
             Create Batch
           </button>
+          <button onClick={() => navigate('/examination/invoices')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: paper, color: teal[700],
+              padding: '8px 16px', borderRadius: 9, fontWeight: 600,
+              fontSize: 13, border: `1px solid ${teal[200]}`,
+              cursor: 'pointer', transition: 'all .15s ease'
+            }}>
+            <FileText size={16} />
+            View Invoices
+          </button>
         </div>
       </div>
 

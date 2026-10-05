@@ -128,6 +128,7 @@ const GangRunEstimator = lazyWithRetry('./views/production/GangRunEstimator', ()
 const MRP = lazyWithRetry('./views/production/MRP', () => import('./views/production/MRP'));
 const MachineMaintenance = lazyWithRetry('./views/production/MachineMaintenance', () => import('./views/production/MachineMaintenance'));
 const ExaminationHub = lazyWithRetry('./views/examination/ExaminationHub', () => import('./views/examination/ExaminationHub'));
+const ExaminationInvoices = lazyWithRetry('./views/examination/ExaminationInvoices', () => import('./views/examination/ExaminationInvoices'));
 const ExaminationBatchForm = lazyWithRetry('./views/examination/ExaminationBatchForm', () => import('./views/examination/ExaminationBatchForm'));
 const ExaminationBatchDetail = lazyWithRetry('./views/examination/ExaminationBatchDetail', () => import('./views/examination/ExaminationBatchDetail'));
 const ExaminationJobForm = lazyWithRetry('./views/examination/ExaminationJobForm', () => import('./views/examination/ExaminationJobForm'));
@@ -736,6 +737,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/examination/batches" element={<ProtectedRoute permission="production.view"><ExaminationHub /></ProtectedRoute>} />
                   <Route path="/examination/batches/new" element={<ProtectedRoute permission="production.view"><ExaminationBatchForm /></ProtectedRoute>} />
                   <Route path="/examination/batches/:id" element={<ProtectedRoute permission="production.view"><ExaminationBatchDetail /></ProtectedRoute>} />
+                  <Route path="/examination/invoices" element={<ProtectedRoute permission="production.view"><ExaminationInvoices /></ProtectedRoute>} />
                   <Route path="/examination/jobs/new" element={<ProtectedRoute permission="production.view"><ExaminationJobForm /></ProtectedRoute>} />
                   <Route path="/examination/jobs/:id" element={<ProtectedRoute permission="production.view"><ExaminationJobForm /></ProtectedRoute>} />
                   <Route path="/examination/groups" element={<ProtectedRoute permission="production.view"><InvoiceGroupManager /></ProtectedRoute>} />

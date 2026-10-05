@@ -75,6 +75,25 @@ const sanitizePhoneNumber = (phoneNumber: string): string => {
   return digitsOnly || String(phoneNumber || '').replace(/\s+/g, '');
 };
 
+/**
+ * Canonical invoice due-date text for notifications. Consumes the PERSISTED
+ * invoice record: dueDate first, then the required invoice date. Malformed
+ * or missing values yield '' (ERP convention, cf. financeStore) — never the
+ * string "Invalid Date" and never a substituted today.
+ * ISO date strings parse deterministically across browsers/runtimes.
+ */
+export const formatInvoiceDueDateForNotification = (
+  invoice: { dueDate?: unknown; date?: unknown } | null | undefined
+): string => {
+  const formatValid = (value: unknown): string | null => {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toLocaleDateString();
+  };
+  return formatValid(invoice?.dueDate) ?? formatValid(invoice?.date) ?? '';
+};
+
 const checkRateLimit = async (type: NotificationActivityType, entityId: string): Promise<boolean> => {
   try {
     const logs = await dbService.getAll<NotificationLog>('customerNotificationLogs');

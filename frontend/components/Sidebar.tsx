@@ -193,6 +193,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           hideSubMenu: true,
           subItems: [
             { label: 'Batches', path: '/examination/batches', icon: <Layers size={14} /> },
+            { label: 'Invoices', path: '/examination/invoices', icon: <FileText size={14} /> },
             { label: 'New Batch', path: '/examination/batches/new', icon: <Plus size={14} /> },
           ]
         },

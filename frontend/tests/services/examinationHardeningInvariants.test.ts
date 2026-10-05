@@ -180,7 +180,7 @@ describe('examination hardening invariants', () => {
     const snapshot = batch.pricing_snapshot;
     expect(snapshot.engineVersion).toBe('EXAM-2026.1');
     expect(snapshot.calculationVersion).toBe(3);
-    expect(snapshot.provenance).toBe('calculated');
+    expect(snapshot.provenance).toBe('CANONICAL');
     expect(snapshot.inputs.tonerPagesPerUnit).toBe(20000);
     expect(snapshot.inputs.adjustments).toHaveLength(1);
     expect(snapshot.result.totalAmount).toBe(8000);
@@ -388,24 +388,92 @@ describe('examination hardening invariants', () => {
   it('production release is idempotent per batch + calculation version', async () => {
     const service = new ExaminationProductionService();
     const workOrderFn = vi.fn();
+    const snapshotFor = (version: number) => ({
+      engineVersion: 'EXAM-2026.1',
+      calculationVersion: version,
+      provenance: 'CANONICAL',
+      inputs: {
+        classes: [
+          {
+            classId: 'c-1',
+            className: 'F1',
+            learners: 80,
+            subjects: [{ name: 'Math', pages: 12, extraCopies: 3 }],
+          },
+        ],
+      },
+      result: { classes: [] },
+    });
     const payload: any = {
       batchId: 'B-REL-1',
       batchName: 'Release Batch',
       schoolName: 'Test School',
       calculationVersion: 3,
-      subjects: [
-        { subject: 'Math', className: 'F1', pages: 12, candidates: 80, extraCopies: 3, baseSheets: 0, totalSheets: 498, totalPages: 996, productionCopies: 83 },
-      ],
+      approvedVersion: 3,
+      batchStatus: 'Approved',
+      snapshot: snapshotFor(3),
+      subjects: [],
     };
     const first = await service.sendBatchToProduction(payload, workOrderFn);
     expect(first).toHaveLength(1);
+    expect(first[0].subject).toBe('Math');
+    // Snapshot-derived quantities, not payload-passed ones.
+    expect(first[0].totalSheets).toBe(498);
+    expect(first[0].totalPages).toBe(996);
     expect(workOrderFn).toHaveBeenCalledTimes(1);
     const second = await service.sendBatchToProduction(payload, workOrderFn);
     expect(second).toHaveLength(1);
     expect(workOrderFn).toHaveBeenCalledTimes(1);
-    const third = await service.sendBatchToProduction({ ...payload, calculationVersion: 4 }, workOrderFn);
+    const upgraded = {
+      ...payload,
+      calculationVersion: 4,
+      approvedVersion: 4,
+      snapshot: snapshotFor(4),
+    };
+    const third = await service.sendBatchToProduction(upgraded, workOrderFn);
     expect(third).toHaveLength(1);
     expect(workOrderFn).toHaveBeenCalledTimes(2);
     expect(service.getJobsByBatch('B-REL-1').filter((job) => job.superseded)).toHaveLength(1);
+  });
+
+  it('production release ignores live/decoy values and uses only the snapshot', async () => {
+    const service = new ExaminationProductionService();
+    const workOrderFn = vi.fn();
+    const snapshot: any = {
+      engineVersion: 'EXAM-2026.1',
+      calculationVersion: 5,
+      provenance: 'CANONICAL',
+      inputs: {
+        classes: [
+          {
+            classId: 'c-1',
+            className: 'F1',
+            learners: 80,
+            subjects: [{ name: 'Math', pages: 12, extraCopies: 3 }],
+          },
+        ],
+      },
+      result: { classes: [] },
+    };
+    const jobs = await service.sendBatchToProduction(
+      {
+        batchId: 'B-REL-2',
+        batchName: 'Release Batch',
+        schoolName: 'Test School',
+        calculationVersion: 5,
+        approvedVersion: 5,
+        batchStatus: 'Approved',
+        snapshot,
+        // Decoy live values: must never leak into production work.
+        subjects: [
+          { subject: 'Tampered', className: 'Nope', pages: 999, candidates: 1, extraCopies: 0, baseSheets: 0, totalSheets: 1, totalPages: 1, productionCopies: 1 },
+        ],
+      } as any,
+      workOrderFn
+    );
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].subject).toBe('Math');
+    expect(jobs[0].totalSheets).toBe(498);
+    expect(jobs[0].totalPages).toBe(996);
   });
 });

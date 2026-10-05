@@ -23,7 +23,7 @@ import { OrderDetails } from './components/OrderDetails';
 import { OrderPaymentModal } from './components/OrderPaymentModal';
 import SubscriptionView from './components/SubscriptionView';
 import { parseTemplate, downloadBlob, resolveCustomerPaymentPolicy } from '../../utils/helpers';
-import { findInvoiceByIdOrNumber } from '../../utils/invoiceIdentity';
+import { findInvoiceByIdOrNumber, applyGeneralInvoiceScope } from '../../utils/invoiceIdentity';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { localFileStorage } from '../../services/localFileStorage';
 import { OfflineImage } from '../../components/OfflineImage';
@@ -1445,6 +1445,12 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
 
     const processedInvoices = useMemo(() => {
         let data = [...invoiceSearchSort.processedData];
+        // Scope split: examination invoices live in Examination → Invoices;
+        // this general list shows ordinary ERP invoices only. Detail modals,
+        // transaction refs and filterInvoiceId navigation resolve against the
+        // FULL collection, so nothing becomes unreachable: an exact id/number
+        // search still surfaces the record here as well.
+        data = applyGeneralInvoiceScope(data, invoiceSearchSort.searchTerm);
         if (moneyBarFilter === 'Overdue') {
             data = data.filter(i => i.status !== 'Paid' && new Date(i.dueDate) < new Date());
         }
@@ -1458,7 +1464,7 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
             data = data.filter(i => i.status === 'Paid');
         }
         return data;
-    }, [invoiceSearchSort.processedData, moneyBarFilter]);
+    }, [invoiceSearchSort.processedData, invoiceSearchSort.searchTerm, moneyBarFilter]);
 
     const handleSort = (field: any) => {
         const hook = activeView === 'Quotations' ? quotationSearchSort :

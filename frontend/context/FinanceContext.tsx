@@ -15,7 +15,7 @@ import { isBefore, isWithinInterval, parseISO } from 'date-fns';
 import { logger } from '../services/logger';
 import { workflowService } from '../services/workflowService';
 import { workflowService as autoWorkflowService } from '../services/automatedWorkflowService';
-import { customerNotificationService } from '../services/customerNotificationService';
+import { customerNotificationService, formatInvoiceDueDateForNotification } from '../services/customerNotificationService';
 
 interface FinanceContextType {
   accounts: Account[];
@@ -680,7 +680,10 @@ const handleOpenInventory = async () => {
                     customerName: finalizedInvoice.customerName,
                     phoneNumber: customer.phone,
                     amount: `${companyConfig?.currencySymbol || ''}${finalizedInvoice.totalAmount.toLocaleString()}`,
-                    dueDate: new Date(finalizedInvoice.dueDate).toLocaleDateString()
+                    // Canonical persisted date (post-processInvoice). The
+                    // helper never emits "Invalid Date" and never substitutes
+                    // today — missing/malformed dates render as ''.
+                    dueDate: formatInvoiceDueDateForNotification(finalizedInvoice)
                 }).catch((err: any) => {
                     logger.error(`[FinanceContext] Background invoice notification failed for ${invoiceId}`, err);
                 });

@@ -30,7 +30,7 @@ import {
   sendBatchCalculatedNotification,
   sendBatchCreatedNotification
 } from '../src/adapters/notificationAdapter';
-import { customerNotificationService } from '../services/customerNotificationService';
+import { customerNotificationService, formatInvoiceDueDateForNotification } from '../services/customerNotificationService';
 import { examinationProductionService, BatchToProductionPayload } from '../services/examinationProductionService';
 import { MARKET_ADJUSTMENTS_CHANGED_EVENT } from '../utils/marketAdjustmentUtils';
 import { useAuth } from './AuthContext';
@@ -359,10 +359,13 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
   }, []);
 
   /**
-   * Send a calculated batch to the production queue
-   * Creates work orders for each subject in the batch
+   * Release an APPROVED batch to the production queue. Production work is
+   * derived exclusively from the approved pricing snapshot (never from live
+   * class/subject values or current material costs) and is idempotent per
+   * (batchId, calculationVersion). Fails closed without an approved snapshot.
+   * Non-blocking for approval UX: approval stands even if release fails.
    */
-  const sendBatchToProduction = useCallback(async (batch: ExaminationBatch) => {
+  const releaseApprovedBatchToProduction = useCallback(async (batch: ExaminationBatch) => {
     try {
       // Get school name - try schools list, then customers list, then batch fields directly
       let school = schools.find(s => String(s.id) === String(batch.school_id));
@@ -389,35 +392,27 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         schoolName = 'Unknown Customer';
       }
 
-      // Extract subjects from batch classes
-      const subjects: BatchToProductionPayload['subjects'] = [];
-
-      if (batch.classes && batch.classes.length > 0) {
-        for (const cls of batch.classes) {
-          if (cls.subjects && cls.subjects.length > 0) {
-            for (const subj of cls.subjects) {
-              subjects.push({
-                subject: subj.subject_name || subj.name || 'Unknown Subject',
-                className: cls.class_name || cls.name || 'Unknown Class',
-                pages: subj.pages || 0,
-                candidates: cls.number_of_learners || cls.candidates || 0,
-                extraCopies: subj.extra_copies || 0,
-                baseSheets: subj.base_sheets || 0,
-                totalSheets: subj.total_sheets || 0,
-                totalPages: subj.total_pages || 0,
-                productionCopies: subj.production_copies || subj.total_sheets || 0,
-              });
-            }
-          }
+      // The approved snapshot is the SOLE source of production quantities.
+      // Read it back fresh (post-approval refresh) so release never uses a
+      // stale in-memory copy; fail closed when it is missing.
+      const ext = batch as ExaminationBatch & {
+        pricing_snapshot?: Record<string, any> | string | null;
+        approved_calculation_version?: number;
+        calculation_version?: number;
+      };
+      const rawSnapshot = (ext as any)?.pricing_snapshot ?? null;
+      let snapshot: Record<string, any> | null = null;
+      if (rawSnapshot && typeof rawSnapshot === 'object') snapshot = rawSnapshot as Record<string, any>;
+      else if (typeof rawSnapshot === 'string') {
+        try {
+          snapshot = JSON.parse(rawSnapshot);
+        } catch {
+          snapshot = null;
         }
       }
+      const approvedVersion = Number(ext?.approved_calculation_version ?? ext?.calculation_version) || 0;
 
-      if (subjects.length === 0) {
-        console.warn('[Examination] No subjects found in batch to send to production');
-        return;
-      }
-
-      // Create work orders using the production context.
+      // Create the production release from the approved snapshot.
       // The approved calculation version travels with the release so
       // production work is idempotent per (batchId, calculationVersion):
       // a recalculation never duplicates work for the same version.
@@ -425,10 +420,13 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         batchId: batch.id,
         batchName: batch.name,
         schoolName,
-        subjects,
+        subjects: [],
         priority: 'Medium',
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
-        calculationVersion: Number((batch as ExaminationBatch & { calculation_version?: number })?.calculation_version) || 0,
+        calculationVersion: approvedVersion,
+        approvedVersion,
+        batchStatus: String((batch as ExaminationBatch & { status?: string })?.status || ''),
+        snapshot,
       };
 
       // Use the examination production service to create work orders
@@ -494,25 +492,30 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         // Non-blocking: continue even if notification fails
       }
 
-      // Send batch to production queue
-      try {
-        await sendBatchToProduction(enrichedResult);
-      } catch (productionError) {
-        logger.error('[Examination] Failed to send batch to production:', productionError);
-        // Non-blocking: continue even if production sync fails
-      }
-
+      // Production release happens at APPROVE (not calculate): production
+      // work requires an approved snapshot and must never become financial
+      // truth. See releaseApprovedBatchToProduction below.
       return enrichedResult;
     } finally {
       setLoading(false);
     }
-  }, [companyConfig?.pricingSettings?.customStep, companyConfig?.pricingSettings?.defaultMethod, user?.id, sendBatchToProduction]);
+  }, [companyConfig?.pricingSettings?.customStep, companyConfig?.pricingSettings?.defaultMethod, user?.id]);
 
   const approveBatch = useCallback(async (id: string) => {
     setLoading(true);
     try {
       const { batch, warnings } = await examinationBatchService.approveBatch(id);
       setBatches(prev => prev.map(b => b.id === id ? batch : b));
+
+      // Explicit production release on approval: the approved snapshot is
+      // the sole source of production quantities. Non-blocking for approval
+      // UX (approval stands even if release fails), but the release itself
+      // fails closed without an approved snapshot.
+      try {
+        await releaseApprovedBatchToProduction(batch);
+      } catch (productionError) {
+        logger.error('[Examination] Production release failed after approval:', productionError);
+      }
 
       // Create notification for batch approval
       try {
@@ -537,7 +540,7 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, releaseApprovedBatchToProduction]);
 
   const generateInvoice = useCallback(async (id: string) => {
     setLoading(true);
@@ -631,12 +634,21 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
           const customerName = syncedInvoicePayload?.customerName || schoolRecord?.name || customerRecord?.name;
 
           if (syncedInvoicePayload && contactPhone && customerName) {
+            // Canonical persisted date: re-read the stored invoice record so
+            // the notification carries the same date that survives sync and
+            // reload. Never substitutes today, never emits "Invalid Date".
+            const persistedInvoice = await dbService.get(
+              'invoices',
+              sync?.invoiceId || syncedInvoicePayload.invoiceNumber || syncedInvoicePayload.id
+            ).catch(() => null);
             await customerNotificationService.triggerNotification('EXAMINATION_INVOICE', {
               id: syncedInvoicePayload.invoiceNumber || syncedInvoicePayload.id,
               customerName,
               phoneNumber: contactPhone,
               amount: `${companyConfig?.currencySymbol || syncedInvoicePayload.currency || ''}${Number(syncedInvoicePayload.totalAmount || 0).toLocaleString()}`,
-              dueDate: new Date(syncedInvoicePayload.dueDate || Date.now()).toLocaleDateString()
+              dueDate: formatInvoiceDueDateForNotification(
+                (persistedInvoice as Record<string, unknown> | null) || syncedInvoicePayload
+              )
             });
           }
         } catch (notificationError) {
@@ -723,12 +735,18 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
           const customerName = syncedInvoicePayload?.customerName || schoolRecord?.name || customerRecord?.name;
 
           if (syncedInvoicePayload && contactPhone && customerName) {
+            const persistedInvoice = await dbService.get(
+              'invoices',
+              sync?.invoiceId || syncedInvoicePayload.invoiceNumber || syncedInvoicePayload.id
+            ).catch(() => null);
             await customerNotificationService.triggerNotification('EXAMINATION_INVOICE', {
               id: syncedInvoicePayload.invoiceNumber || syncedInvoicePayload.id,
               customerName,
               phoneNumber: contactPhone,
               amount: `${companyConfig?.currencySymbol || syncedInvoicePayload.currency || ''}${Number(syncedInvoicePayload.totalAmount || 0).toLocaleString()}`,
-              dueDate: new Date(syncedInvoicePayload.dueDate || Date.now()).toLocaleDateString()
+              dueDate: formatInvoiceDueDateForNotification(
+                (persistedInvoice as Record<string, unknown> | null) || syncedInvoicePayload
+              )
             });
           }
         } catch (notificationError) {

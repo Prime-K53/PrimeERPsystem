@@ -134,16 +134,53 @@ Validation rules:
   `tests/fixtures/examination-pricing-vectors.json`.
 - Every recalculation bumps `calculation_version` and writes an immutable
   `pricing_snapshot` (engine version, inputs, per-class result).
+- Snapshot provenance is explicit: `CANONICAL` (produced by the engine
+  during an actual calculation) vs `RECONSTRUCTED_LEGACY` (rebuilt from
+  stored historical values; never labelled canonical, never repriced).
+  Recalculating a legacy batch mints a NEW canonical snapshot/version;
+  the reconstructed record stays immutable.
 - Approval pins `approved_calculation_version`. Approved/Invoiced/Completed
   batches are never repriced, recalculated, edited, or deleted in place.
 - Invoice generation consumes the approved snapshot; batches without one
   fail closed (legacy batches get a marked reconstruction, never a silent
   recalc). Regeneration voids the old invoice first, then reissues the
   same totals under a new number. One batch → at most one active invoice.
+- Production release happens at APPROVE from the approved snapshot only
+  (never live values or current costs); releases are idempotent per
+  (batchId, calculationVersion). Production work is never financial truth.
 - Backend `POST /batches/:id/invoice|regenerate-invoice` stays quarantined
   (403); the canonical path is the frontend offline-first flow.
 
-## 9. Related Docs
+## 9. Invoices Tab & Verification UX
+
+- Examination → Invoices (`/examination/invoices`) is a filtered VIEW over
+  the canonical `invoices` store (no second table/identity). The general
+  Sales → Invoices list shows ordinary invoices; exact id/number search
+  still surfaces any record, and detail/print/download/verify resolve
+  against the full collection.
+- Verification readiness is truthful in ERP UI: tokened + sync-pending →
+  "Invoice generated locally; public verification becomes available after
+  synchronization." Untokened/unkeyed records are genuinely unverifiable.
+  The public endpoint keeps its generic 404 by design.
+- Invoice notifications consume the persisted invoice `dueDate`
+  (fallback: required invoice `date`); they never render "Invalid Date"
+  and never substitute today.
+- Examination invoices post no tax/VAT (AR debit / service-revenue credit
+  only) through the standard atomic `processInvoice` + idempotency keys.
+
+## 10. Security Posture (no tenancy — single-company ERP)
+
+- Supabase migration `0040` narrows `invoices`, `examination_batches`,
+  `examination_classes`, `examination_subjects`, `documents` to
+  `FOR SELECT TO authenticated`; direct authenticated writes are rejected
+  at RLS. All writes travel IndexedDB → durable queue →
+  `POST /api/sync/ops` (Admin-gated) → service-role gateway. No
+  tenant/organization discriminators are used anywhere in this module.
+- Authenticated SELECT (offline pull, realtime) is retained by design, so
+  verification tokens remain readable by authenticated staff devices that
+  must render QR codes offline. Public verification never exposes tokens.
+
+## 11. Related Docs
 
 - `docs/examination-batch-cost-engine-technical-design.md`
 - `docs/examination-batch-cost-workflow.md`

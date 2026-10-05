@@ -1090,7 +1090,9 @@ const buildBackendPricingSnapshot = ({
     calculationVersion,
     calculatedAt: new Date().toISOString(),
     trigger: String(trigger || 'RECALCULATION'),
-    provenance: 'calculated',
+    // CANONICAL = produced by the canonical pricing engine during an actual
+    // calculation. Never label a reconstruction as canonical.
+    provenance: 'CANONICAL',
     inputs: {
       paperItemId: materialConfig?.paperItemId ?? null,
       paperUnitCost: Number(materialConfig?.paperUnitCost ?? 0) || 0,
@@ -1104,8 +1106,10 @@ const buildBackendPricingSnapshot = ({
       adjustments: normalizedAdjustments,
       classes: (Array.isArray(batch?.classes) ? batch.classes : []).map((cls) => ({
         classId: String(cls?.id || ''),
+        className: String(cls?.class_name || cls?.name || ''),
         learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
         subjects: (Array.isArray(cls?.subjects) ? cls.subjects : []).map((sub) => ({
+          name: String(sub?.subject_name || sub?.name || ''),
           pages: Math.max(1, Math.floor(Number(sub?.pages) || 0)),
           extraCopies: Math.max(0, Math.floor(Number(sub?.extra_copies) || 0))
         })),
@@ -1161,15 +1165,20 @@ const reconstructBackendSnapshot = (batch) => {
     calculationVersion: Number(batch?.calculation_version) || 1,
     calculatedAt: String(batch?.last_calculated_at || batch?.updated_at || new Date().toISOString()),
     trigger: 'BACKFILL_RECONSTRUCTED',
-    provenance: 'reconstructed-from-stored-financials',
+    // RECONSTRUCTED_LEGACY = rebuilt from stored historical financial values
+    // because native calculation provenance did not exist. Never produced by
+    // running the current engine and never labelled canonical.
+    provenance: 'RECONSTRUCTED_LEGACY',
     inputs: {
       note: 'inputs unknown — reconstructed from stored financial state, not recalculated',
       roundingMethod: String(batch?.rounding_method || 'ALWAYS_UP_50'),
       roundingStep: Number(batch?.rounding_value ?? 50) || 50,
       classes: classes.map((cls) => ({
         classId: String(cls?.id || ''),
+        className: String(cls?.class_name || cls?.name || ''),
         learners: Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0)),
         subjects: (Array.isArray(cls?.subjects) ? cls.subjects : []).map((sub) => ({
+          name: String(sub?.subject_name || sub?.name || ''),
           pages: Math.max(1, Math.floor(Number(sub?.pages) || 0)),
           extraCopies: Math.max(0, Math.floor(Number(sub?.extra_copies) || 0))
         })),

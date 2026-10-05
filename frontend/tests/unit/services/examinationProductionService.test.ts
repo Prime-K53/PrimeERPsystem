@@ -43,6 +43,50 @@ describe('ExaminationProductionService', () => {
   let service: ExaminationProductionService;
   let mockCreateWorkOrder: ReturnType<typeof vi.fn>;
 
+  /**
+   * Builds an approved-snapshot release payload. Production subjects are
+   * derived exclusively from the snapshot by the service under test.
+   */
+  const approvedPayload = (
+    batchId: string,
+    version: number,
+    classes: Array<{
+      className: string;
+      learners: number;
+      subjects: Array<{ name: string; pages: number; extraCopies?: number }>;
+    }>,
+    batchName = 'Test Batch',
+    schoolName = 'Test School',
+    extra: Partial<BatchToProductionPayload> = {}
+  ): BatchToProductionPayload => ({
+    batchId,
+    batchName,
+    schoolName,
+    subjects: [],
+    calculationVersion: version,
+    approvedVersion: version,
+    batchStatus: 'Approved',
+    snapshot: {
+      engineVersion: 'EXAM-2026.1',
+      calculationVersion: version,
+      provenance: 'CANONICAL',
+      inputs: {
+        classes: classes.map((c, ci) => ({
+          classId: `c-${ci}`,
+          className: c.className,
+          learners: c.learners,
+          subjects: c.subjects.map((s) => ({
+            name: s.name,
+            pages: s.pages,
+            extraCopies: s.extraCopies ?? 0,
+          })),
+        })),
+      },
+      result: { classes: [] },
+    },
+    ...extra,
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     localStorageMock.clear();
@@ -69,36 +113,23 @@ describe('ExaminationProductionService', () => {
     it('should create work orders for batch subjects', async () => {
       await service.initialize();
 
-      const payload: BatchToProductionPayload = {
-        batchId: 'BATCH-001',
-        batchName: 'Term 1 2026',
-        schoolName: 'Test School',
-        subjects: [
+      const payload = approvedPayload(
+        'BATCH-001',
+        1,
+        [
           {
-            subject: 'Mathematics',
             className: 'Form 1',
-            pages: 20,
-            candidates: 50,
-            extraCopies: 5,
-            baseSheets: 10,
-            totalSheets: 15,
-            totalPages: 30,
-            productionCopies: 55,
-          },
-          {
-            subject: 'English',
-            className: 'Form 1',
-            pages: 15,
-            candidates: 50,
-            extraCopies: 3,
-            baseSheets: 8,
-            totalSheets: 12,
-            totalPages: 24,
-            productionCopies: 53,
+            learners: 50,
+            subjects: [
+              { name: 'Mathematics', pages: 20, extraCopies: 5 },
+              { name: 'English', pages: 15, extraCopies: 3 },
+            ],
           },
         ],
-        priority: 'High',
-      };
+        'Term 1 2026',
+        'Test School',
+        { priority: 'High' }
+      );
 
       const jobs = await service.sendBatchToProduction(payload, mockCreateWorkOrder);
 
@@ -113,27 +144,17 @@ describe('ExaminationProductionService', () => {
     it('should set correct attributes on work orders', async () => {
       await service.initialize();
 
-      const payload: BatchToProductionPayload = {
-        batchId: 'BATCH-002',
-        batchName: 'Term 2 2026',
-        schoolName: 'Another School',
-        subjects: [
-          {
-            subject: 'Science',
-            className: 'Form 2',
-            pages: 25,
-            candidates: 40,
-            extraCopies: 4,
-            baseSheets: 12,
-            totalSheets: 18,
-            totalPages: 36,
-            productionCopies: 44,
-          },
-        ],
-      };
+      const payload = approvedPayload(
+        'BATCH-002',
+        1,
+        [{ className: 'Form 2', learners: 40, subjects: [{ name: 'Science', pages: 25, extraCopies: 4 }] }],
+        'Term 2 2026',
+        'Another School'
+      );
 
       await service.sendBatchToProduction(payload, mockCreateWorkOrder);
 
+      // Snapshot-derived: copies 44, sheets ceil(25/2)*44 = 572, pages 1100.
       expect(mockCreateWorkOrder).toHaveBeenCalledWith(
         expect.objectContaining({
           productId: 'EXAM-PRINT',
@@ -145,14 +166,14 @@ describe('ExaminationProductionService', () => {
           attributes: expect.objectContaining({
             pages: 25,
             candidates: 40,
-            total_sheets: 18,
-            total_pages: 36,
+            total_sheets: 572,
+            total_pages: 1100,
           }),
         })
       );
     });
 
-    it('should return empty array if no subjects', async () => {
+    it('should fail closed when the approved snapshot is missing', async () => {
       await service.initialize();
 
       const payload: BatchToProductionPayload = {
@@ -162,9 +183,37 @@ describe('ExaminationProductionService', () => {
         subjects: [],
       };
 
-      const jobs = await service.sendBatchToProduction(payload, mockCreateWorkOrder);
+      await expect(service.sendBatchToProduction(payload, mockCreateWorkOrder)).rejects.toThrow(/not Approved|no approved pricing snapshot/i);
+      expect(mockCreateWorkOrder).not.toHaveBeenCalled();
+    });
 
-      expect(jobs).toHaveLength(0);
+    it('should fail closed for non-approved batches', async () => {
+      await service.initialize();
+
+      const payload = approvedPayload('BATCH-003b', 1, [
+        { className: 'Form 1', learners: 20, subjects: [{ name: 'Math', pages: 10 }] },
+      ]);
+      await expect(
+        service.sendBatchToProduction({ ...payload, batchStatus: 'Calculated' }, mockCreateWorkOrder)
+      ).rejects.toThrow(/not Approved/i);
+      expect(mockCreateWorkOrder).not.toHaveBeenCalled();
+    });
+
+    it('should fail closed on version mismatch and corrupt snapshots', async () => {
+      await service.initialize();
+
+      const base = approvedPayload('BATCH-003c', 2, [
+        { className: 'Form 1', learners: 20, subjects: [{ name: 'Math', pages: 10 }] },
+      ]);
+      await expect(
+        service.sendBatchToProduction({ ...base, approvedVersion: 1 }, mockCreateWorkOrder)
+      ).rejects.toThrow(/does not match approved version/i);
+      await expect(
+        service.sendBatchToProduction(
+          { ...base, snapshot: { ...(base.snapshot as object), provenance: 'whatever' } },
+          mockCreateWorkOrder
+        )
+      ).rejects.toThrow(/unrecognized snapshot provenance/i);
       expect(mockCreateWorkOrder).not.toHaveBeenCalled();
     });
   });
@@ -173,15 +222,16 @@ describe('ExaminationProductionService', () => {
     it('should return all jobs', async () => {
       await service.initialize();
 
-      const payload: BatchToProductionPayload = {
-        batchId: 'BATCH-004',
-        batchName: 'Test Batch',
-        schoolName: 'Test School',
-        subjects: [
-          { subject: 'Math', className: 'Form 1', pages: 10, candidates: 20, extraCopies: 2, baseSheets: 5, totalSheets: 7, totalPages: 14, productionCopies: 22 },
-          { subject: 'English', className: 'Form 1', pages: 8, candidates: 20, extraCopies: 2, baseSheets: 4, totalSheets: 6, totalPages: 12, productionCopies: 22 },
-        ],
-      };
+      const payload: BatchToProductionPayload = approvedPayload('BATCH-004', 1, [
+        {
+          className: 'Form 1',
+          learners: 20,
+          subjects: [
+            { name: 'Math', pages: 10, extraCopies: 2 },
+            { name: 'English', pages: 8, extraCopies: 2 },
+          ],
+        },
+      ]);
 
       await service.sendBatchToProduction(payload, mockCreateWorkOrder);
 
@@ -195,24 +245,14 @@ describe('ExaminationProductionService', () => {
       await service.initialize();
 
       // Create jobs for batch 1
-      await service.sendBatchToProduction({
-        batchId: 'BATCH-005',
-        batchName: 'Batch 1',
-        schoolName: 'School A',
-        subjects: [
-          { subject: 'Math', className: 'Form 1', pages: 10, candidates: 20, extraCopies: 2, baseSheets: 5, totalSheets: 7, totalPages: 14, productionCopies: 22 },
-        ],
-      }, mockCreateWorkOrder);
+      await service.sendBatchToProduction(approvedPayload('BATCH-005', 1, [
+        { className: 'Form 1', learners: 20, subjects: [{ name: 'Math', pages: 10, extraCopies: 2 }] },
+      ], 'Batch 1', 'School A'), mockCreateWorkOrder);
 
       // Create jobs for batch 2
-      await service.sendBatchToProduction({
-        batchId: 'BATCH-006',
-        batchName: 'Batch 2',
-        schoolName: 'School B',
-        subjects: [
-          { subject: 'Science', className: 'Form 2', pages: 15, candidates: 30, extraCopies: 3, baseSheets: 8, totalSheets: 11, totalPages: 22, productionCopies: 33 },
-        ],
-      }, mockCreateWorkOrder);
+      await service.sendBatchToProduction(approvedPayload('BATCH-006', 1, [
+        { className: 'Form 2', learners: 30, subjects: [{ name: 'Science', pages: 15, extraCopies: 3 }] },
+      ], 'Batch 2', 'School B'), mockCreateWorkOrder);
 
       const batch1Jobs = service.getJobsByBatch('BATCH-005');
       expect(batch1Jobs).toHaveLength(1);
@@ -224,14 +264,9 @@ describe('ExaminationProductionService', () => {
     it('should return jobs by status', async () => {
       await service.initialize();
 
-      await service.sendBatchToProduction({
-        batchId: 'BATCH-007',
-        batchName: 'Test Batch',
-        schoolName: 'Test School',
-        subjects: [
-          { subject: 'Math', className: 'Form 1', pages: 10, candidates: 20, extraCopies: 2, baseSheets: 5, totalSheets: 7, totalPages: 14, productionCopies: 22 },
-        ],
-      }, mockCreateWorkOrder);
+      await service.sendBatchToProduction(approvedPayload('BATCH-007', 1, [
+        { className: 'Form 1', learners: 20, subjects: [{ name: 'Math', pages: 10, extraCopies: 2 }] },
+      ]), mockCreateWorkOrder);
 
       const pendingJobs = service.getJobsByStatus('pending');
       const inProgressJobs = service.getJobsByStatus('in_progress');
@@ -254,14 +289,9 @@ describe('ExaminationProductionService', () => {
     it('should find job by work order ID', async () => {
       await service.initialize();
 
-      await service.sendBatchToProduction({
-        batchId: 'BATCH-008',
-        batchName: 'Test Batch',
-        schoolName: 'Test School',
-        subjects: [
-          { subject: 'Math', className: 'Form 1', pages: 10, candidates: 20, extraCopies: 2, baseSheets: 5, totalSheets: 7, totalPages: 14, productionCopies: 22 },
-        ],
-      }, mockCreateWorkOrder);
+      await service.sendBatchToProduction(approvedPayload('BATCH-008', 1, [
+        { className: 'Form 1', learners: 20, subjects: [{ name: 'Math', pages: 10, extraCopies: 2 }] },
+      ]), mockCreateWorkOrder);
 
       // Get the work order ID from the mock call
       const workOrderId = mockCreateWorkOrder.mock.calls[0][0].id;
@@ -276,14 +306,9 @@ describe('ExaminationProductionService', () => {
     it('should update job status', async () => {
       await service.initialize();
 
-      await service.sendBatchToProduction({
-        batchId: 'BATCH-009',
-        batchName: 'Test Batch',
-        schoolName: 'Test School',
-        subjects: [
-          { subject: 'Math', className: 'Form 1', pages: 10, candidates: 20, extraCopies: 2, baseSheets: 5, totalSheets: 7, totalPages: 14, productionCopies: 22 },
-        ],
-      }, mockCreateWorkOrder);
+      await service.sendBatchToProduction(approvedPayload('BATCH-009', 1, [
+        { className: 'Form 1', learners: 20, subjects: [{ name: 'Math', pages: 10, extraCopies: 2 }] },
+      ]), mockCreateWorkOrder);
 
       const jobs = service.getJobs();
       const jobId = jobs[0].id;
@@ -304,22 +329,23 @@ describe('ExaminationProductionService', () => {
     it('should return correct statistics', async () => {
       await service.initialize();
 
-      await service.sendBatchToProduction({
-        batchId: 'BATCH-010',
-        batchName: 'Test Batch',
-        schoolName: 'Test School',
-        subjects: [
-          { subject: 'Math', className: 'Form 1', pages: 10, candidates: 20, extraCopies: 2, baseSheets: 5, totalSheets: 7, totalPages: 14, productionCopies: 22 },
-          { subject: 'English', className: 'Form 1', pages: 8, candidates: 20, extraCopies: 2, baseSheets: 4, totalSheets: 6, totalPages: 12, productionCopies: 22 },
-        ],
-      }, mockCreateWorkOrder);
+      await service.sendBatchToProduction(approvedPayload('BATCH-010', 1, [
+        {
+          className: 'Form 1',
+          learners: 20,
+          subjects: [
+            { name: 'Math', pages: 10, extraCopies: 2 },
+            { name: 'English', pages: 8, extraCopies: 2 },
+          ],
+        },
+      ]), mockCreateWorkOrder);
 
       const stats = service.getStatistics();
 
       expect(stats.total).toBe(2);
       expect(stats.inProgress).toBe(2); // Jobs are in_progress after creation
       expect(stats.totalQuantity).toBe(44); // 22 + 22
-      expect(stats.totalSheets).toBe(13); // 7 + 6
+      expect(stats.totalSheets).toBe(198); // snapshot-derived: 110 + 88
     });
   });
 
@@ -327,14 +353,9 @@ describe('ExaminationProductionService', () => {
     it('should clear all jobs', async () => {
       await service.initialize();
 
-      await service.sendBatchToProduction({
-        batchId: 'BATCH-011',
-        batchName: 'Test Batch',
-        schoolName: 'Test School',
-        subjects: [
-          { subject: 'Math', className: 'Form 1', pages: 10, candidates: 20, extraCopies: 2, baseSheets: 5, totalSheets: 7, totalPages: 14, productionCopies: 22 },
-        ],
-      }, mockCreateWorkOrder);
+      await service.sendBatchToProduction(approvedPayload('BATCH-011', 1, [
+        { className: 'Form 1', learners: 20, subjects: [{ name: 'Math', pages: 10, extraCopies: 2 }] },
+      ]), mockCreateWorkOrder);
 
       expect(service.getJobs().length).toBeGreaterThan(0);
 
