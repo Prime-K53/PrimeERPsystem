@@ -11,7 +11,7 @@ import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1';
 
 const IncomeView: React.FC = () => {
-  const { income, addIncome, updateInvoice, deleteInvoice, accounts: coaAccounts } = useFinance();
+  const { income, addIncome, updateIncome, deleteIncome, accounts: coaAccounts } = useFinance();
   const { companyConfig, user, notify } = useAuth();
   const { accounts: bankAccounts, fetchBankingData } = useBankingStore();
   const currency = companyConfig.currencySymbol;

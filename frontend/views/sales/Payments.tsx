@@ -636,7 +636,7 @@ const Payments: React.FC = () => {
     const { invoices, updateInvoice, getDocumentVerificationToken } = useFinance();
     const { orders, recordPayment: recordOrderPayment } = useOrders();
     const { suppliers } = useProcurement();
-    const { postJournalEntry, supplierPayments = [], recordSupplierPayment, updateSupplierPayment, voidSupplierPayment } = useFinance();
+    const { postJournalEntry, supplierPayments = [], recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, accounts: coaAccounts } = useFinance();
     const { purchases = [] } = useProcurement();
     const { copyVerificationLink, openVerificationLink } = useDocumentVerificationLink();
     const { accounts: bankAccounts, fetchBankingData } = useBankingStore();
@@ -1727,7 +1727,7 @@ const Payments: React.FC = () => {
                                                     }}
                                                 >
                                                     <optgroup label="Default Accounts">
-                                                         {getPaymentAccountOptions(accounts).map(opt => (
+                                                         {getPaymentAccountOptions(coaAccounts).map(opt => (
                                                             <option key={opt.id} value={opt.id}>{opt.name} ({opt.code})</option>
                                                         ))}
                                                     </optgroup>
@@ -2296,7 +2296,7 @@ const Payments: React.FC = () => {
                                         }}
                                     >
                                         <optgroup label="Default Accounts">
-                                             {getPaymentAccountOptions(accounts).map(opt => (
+                                             {getPaymentAccountOptions(coaAccounts).map(opt => (
                                                 <option key={opt.id} value={opt.id}>{opt.name} ({opt.code})</option>
                                             ))}
                                         </optgroup>

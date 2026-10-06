@@ -7,6 +7,7 @@ import { DEFAULT_ACCOUNTS, ACCOUNT_IDS, getPaymentAccountOptions } from '../../.
 import { currencyService } from '../../../services/currencyService';
 import { formatNumber } from '../../../utils/helpers';
 import { useFinance } from '../../../context/FinanceContext';
+import { computeOwnBalances } from '../../../services/accountingEngine';
 import { useModalA11y } from '../../../utils/useModalA11y';
 import { formatAmount, formatMoney, formatSignedMoney, getQuickCashPresets } from '../../../utils/posMoney';
 import { FOCUS_RING, NUMERIC_FONT, danger, type } from '../theme';
@@ -43,11 +44,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 }) => {
     const { companyConfig, notify } = useAuth();
     const { accounts: bankAccounts, fetchBankingData } = useBankingStore();
-    const { accounts: coaAccounts } = useFinance();
+    const { accounts: coaAccounts, ledger } = useFinance();
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
     const [splitPayments, setSplitPayments] = useState<PaymentDetail[]>([]);
     const [currentPaymentAmount, setCurrentPaymentAmount] = useState(() => (Number.isFinite(total) ? total.toFixed(2) : ''));
     const [activePaymentMethod, setActivePaymentMethod] = useState<string | null>(null);
+    const [bankExpanded, setBankExpanded] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inlineError, setInlineError] = useState<string | null>(null);
     const submittingRef = useRef(false);
@@ -55,6 +57,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     const r2 = (v: number) => Math.round(v * 100) / 100;
     const pointsConversionRate = 0.10;
     const quickCashPresets = getQuickCashPresets(companyConfig?.currencySymbol);
+
+    // Real COA totals per payment account (opening + posted ledger). Falls
+    // back to the pooled bank/cash mirrors while the chart is still loading.
+    const coaBalances = useMemo(
+        () => computeOwnBalances((coaAccounts || []) as any[], (ledger || []) as any[]),
+        [coaAccounts, ledger]
+    );
+    const coaBalanceFor = useCallback((codeOrId: string): number | undefined => {
+        const live = (coaAccounts || []).find(a =>
+            String((a as any).account_number ?? (a as any).code ?? (a as any).id ?? '') === codeOrId ||
+            String((a as any).id ?? '') === codeOrId
+        );
+        if (!live) return undefined;
+        const bal = (coaBalances as Record<string, number | undefined>)[String((live as any).id)];
+        return typeof bal === 'number' ? bal : undefined;
+    }, [coaAccounts, coaBalances]);
 
     const quickCashBtn = (active: boolean): React.CSSProperties => ({
         flex: '1 1 90px',
@@ -202,11 +220,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 (accountId === ACCOUNT_IDS.MOBILE_MONEY || account.name.includes('Mobile') ? 'Mobile Money' : 'Bank Transfer');
 
             // Never allow a payment that would push the source account into a
-            // negative balance. Bank/cash/mobile balances are the hard truth.
+            // negative balance. Per-account COA totals are the hard truth.
             const availableBalance =
-                accountId === ACCOUNT_IDS.CASH_DRAWER ? (cashBalance ?? 0) :
+                coaBalanceFor(accountId) ??
+                (accountId === ACCOUNT_IDS.CASH_DRAWER ? (cashBalance ?? 0) :
                 accountId === ACCOUNT_IDS.MOBILE_MONEY ? (mobileBalance ?? 0) :
-                (bankBalance ?? 0);
+                (bankBalance ?? 0));
             if (availableBalance !== undefined && availableBalance < amountInput) {
                 const message = `Insufficient ${method} balance. Available: ${currency}${formatNumber(availableBalance)}`;
                 setInlineError(message);
@@ -228,7 +247,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
         const nextDue = r2(total - newSplit.reduce((sum, p) => sum + p.amount, 0));
         setCurrentPaymentAmount(nextDue > 0.01 ? nextDue.toFixed(2) : '');
-    }, [currentPaymentAmount, splitPayments, total, notify, currency, walletBalance, loyaltyPoints]);
+    }, [currentPaymentAmount, splitPayments, total, notify, currency, walletBalance, loyaltyPoints, coaBalanceFor]);
 
     useEffect(() => {
         const handleGlobalKeys = (e: KeyboardEvent) => {
@@ -297,6 +316,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     const bankBalance = bankBankAccount?.availableBalance ?? bankBankAccount?.balance;
     const mobileBalance = mobileBankAccount?.availableBalance ?? mobileBankAccount?.balance;
     const formatBalance = (value?: number) => (value === undefined ? '--' : `${currency}${formatNumber(value)}`);
+
+    // Real COA totals for the left-column Balances section (opening + posted
+    // ledger). Bank is the sum of the three bank posting accounts. Pooled
+    // mirrors remain only as a loading fallback.
+    const cashCoaBalance = coaBalanceFor(ACCOUNT_IDS.CASH_DRAWER) ?? cashBalance;
+    const mobileCoaBalance = coaBalanceFor(ACCOUNT_IDS.MOBILE_MONEY) ?? mobileBalance;
+    const bankCoaBalance = (() => {
+        const parts = ['11210', '11220', '11230']
+            .map((code) => coaBalanceFor(code))
+            .filter((v): v is number => typeof v === 'number');
+        return parts.length > 0 ? parts.reduce((sum, v) => sum + v, 0) : bankBalance;
+    })();
 
     const adjustmentTotal = useMemo(() => {
         if (!adjustmentSummary || adjustmentSummary.length === 0) return 0;
@@ -376,15 +407,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: paper, border: `1px solid ${hairline}`, borderRadius: 7, padding: '6px 10px', fontSize: 12.5 }}>
                                 <span style={{ color: ink, fontWeight: 600 }}>Cash</span>
-                                <span style={{ fontFamily: "'JetBrains Mono',monospace", color: inkSoft }}>{formatBalance(cashBalance)}</span>
+                                <span style={{ fontFamily: "'JetBrains Mono',monospace", color: inkSoft }}>{formatBalance(cashCoaBalance)}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: paper, border: `1px solid ${hairline}`, borderRadius: 7, padding: '6px 10px', fontSize: 12.5 }}>
                                 <span style={{ color: ink, fontWeight: 600 }}>Bank</span>
-                                <span style={{ fontFamily: "'JetBrains Mono',monospace", color: inkSoft }}>{formatBalance(bankBalance)}</span>
+                                <span style={{ fontFamily: "'JetBrains Mono',monospace", color: inkSoft }}>{formatBalance(bankCoaBalance)}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: paper, border: `1px solid ${hairline}`, borderRadius: 7, padding: '6px 10px', fontSize: 12.5 }}>
                                 <span style={{ color: ink, fontWeight: 600 }}>Mobile</span>
-                                <span style={{ fontFamily: "'JetBrains Mono',monospace", color: inkSoft }}>{formatBalance(mobileBalance)}</span>
+                                <span style={{ fontFamily: "'JetBrains Mono',monospace", color: inkSoft }}>{formatBalance(mobileCoaBalance)}</span>
                             </div>
                         </div>
 
@@ -429,11 +460,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                             </div>
                         </div>
 
-                        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Payment method</div>
-                        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6 }}>Payment account</div>
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
                          {[
                                   { id: ACCOUNT_IDS.CASH_DRAWER, icon: Banknote, label: 'Cash' },
-                                  { id: ACCOUNT_IDS.BANK, icon: CreditCard, label: 'Bank' },
                                   { id: ACCOUNT_IDS.MOBILE_MONEY, icon: Smartphone, label: 'Mobile' },
                               ].map(btn => {
                                 const isActive = activePaymentMethod === btn.id;
@@ -452,6 +482,45 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                                     </button>
                                 );
                             })}
+                            {(() => {
+                                const bankCodes = ['11210', '11220', '11230'];
+                                const isBankActive = activePaymentMethod !== null && bankCodes.includes(activePaymentMethod);
+                                return (
+                                    <button onClick={() => setBankExpanded(prev => !prev)}
+                                        style={{
+                                            flex: 1, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center',
+                                            border: `1.4px solid ${isBankActive || bankExpanded ? teal[400] : hairline}`,
+                                            borderRadius: 8, padding: '10px 8px', fontSize: 13, fontWeight: 600,
+                                            color: isBankActive || bankExpanded ? teal[600] : ink, cursor: 'pointer',
+                                            background: isBankActive || bankExpanded ? teal[50] : paper, transition: 'all .12s',
+                                            fontFamily: 'inherit'
+                                        }}>
+                                        <CreditCard size={17} /> Bank
+                                    </button>
+                                );
+                            })()}
+                        {bankExpanded && (
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: '1 1 100%' }}>
+                             {getPaymentAccountOptions(coaAccounts)
+                                 .filter(opt => ['11210', '11220', '11230'].includes(opt.code))
+                                 .map(opt => {
+                                    const isActive = activePaymentMethod === opt.id;
+                                    return (
+                                        <button key={opt.id} onClick={() => addPaymentMethod(opt.id)}
+                                            style={{
+                                                flex: '1 1 28%', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center',
+                                                border: `1.4px solid ${isActive ? teal[400] : hairline}`,
+                                                borderRadius: 8, padding: '9px 8px', fontSize: 12, fontWeight: 600,
+                                                color: isActive ? teal[600] : ink, cursor: 'pointer',
+                                                background: isActive ? teal[50] : paper, transition: 'all .12s',
+                                                fontFamily: 'inherit'
+                                            }}>
+                                            <CreditCard size={15} /> {opt.name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
                             {customerName && walletBalance > 0 && (
                                 <button onClick={() => addPaymentMethod('WALLET')}
                                     style={{
@@ -482,17 +551,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
                         {/* Tender presets were hardcoded to 5,000 / 10,000 regardless of currency,
                 which is meaningless for USD/EUR and too small for JPY. */}
-                        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6, marginTop: 4 }}>Payment account</div>
-                        <select
-                            value=""
-                            onChange={e => { if (e.target.value) addPaymentMethod(e.target.value); e.target.value = ''; }}
-                            style={{ width: '100%', height: 36, padding: '0 8px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, fontWeight: 600, background: paper, color: ink, fontFamily: 'inherit', outline: 'none', marginBottom: 16 }}
-                        >
-                            <option value="">Choose account — Cash in Hand, National, FCB, Standard, Mobile…</option>
-                            {getPaymentAccountOptions(coaAccounts).map(opt => (
-                                <option key={opt.id} value={opt.id}>{opt.name} ({opt.code})</option>
-                            ))}
-                        </select>
                         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
                     <button
                         type="button"
