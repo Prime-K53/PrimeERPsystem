@@ -34,5 +34,6 @@ query_supabase.js
 backfill-sales-order-numbers.sql
 
 verify-artifacts/cdp-profile/
+frontend/tmp-global-pagination/
 
 __pycache__/
