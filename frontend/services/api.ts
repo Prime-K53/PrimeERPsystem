@@ -907,6 +907,23 @@ export const api = {
         paidAmount: 0,
         status: 'Unpaid',
         type: 'Standard',
+        // EXAMINATION-OWNERSHIP MARKER (P1): this IS an examination invoice
+        // (converted from exam papers of one or more Exam Batches), but it
+        // bypasses the canonical examination mapper, so it used to persist with
+        // NO examination provenance — no origin module, no category, no
+        // document title, no batch linkage, and an INV-series number. The
+        // shared classifier could therefore not recognise it: the Examination →
+        // Invoices tab reported "No examination invoices found" while the same
+        // record was, just as wrongly, listed among ordinary invoices in the
+        // General Invoice List.
+        //
+        // `category` is the established EXPLICIT examination marker read by
+        // hasExplicitExaminationMarker(), and the same field the job-based
+        // examination invoice producer already sets (examinationJobService).
+        // Deliberately NOT originModule/origin_module: processInvoice derives
+        // its numbering-assertion type from those, and `examination_invoice`
+        // requires 6-digit padding, which would reject this INV-series number.
+        category: 'Examination',
         notes: `Converted from [Exam Batch] #[${batchIds.join(', ')}] on [${new Date().toLocaleDateString()}] as accepted by [${firstExam.school_name}]`,
         subAccountName: firstExam.sub_account_name,
         marketAdjustmentApplied: totalAdjustment,

@@ -48,6 +48,29 @@ const LEGACY_JOB = {
   totalAmount: 25000,
   status: 'Paid',
 };
+/**
+ * Exact shape persisted by the legacy Production exam-paper producer
+ * (api.production.generateExamInvoice). INV-series number and no origin module,
+ * no document title, no batch linkage — the explicit `category` marker is the
+ * only examination provenance the record carries. This is what made the tab
+ * report "No examination invoices found" while a real examination invoice sat
+ * in the store.
+ */
+const LEGACY_PRODUCTION_EXAM = {
+  id: 'INV-P726/001',
+  customerId: 'SCH-1',
+  customerName: 'Demo School',
+  date: '2026-09-20T00:00:00.000Z',
+  dueDate: '2026-10-20T00:00:00.000Z',
+  items: [],
+  totalAmount: 3000,
+  paidAmount: 0,
+  status: 'Unpaid',
+  type: 'Standard',
+  category: 'Examination',
+  notes: 'Converted from [Exam Batch] #[B1] on [9/20/2026] as accepted by [Demo School]',
+  verificationToken: 'b'.repeat(64),
+};
 
 describe('Examination invoices tab selection', () => {
   it('selects examination invoices only (batch + legacy job)', () => {
@@ -167,5 +190,106 @@ describe('Examination invoices tab selection', () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+});
+
+describe('Examination invoices tab — POS / conversion invoices are not examination', () => {
+  const POS = {
+    id: 'POS-P726/023',
+    invoiceNumber: 'POS-P726/023',
+    customerName: 'Walk-in Customer',
+    reference: 'POS-P726/023',
+    notes: 'POS Sale - Source: POS',
+    totalAmount: 25600,
+    status: 'Paid',
+    items: [],
+  };
+  const ORDER_CONVERSION = {
+    id: 'INV-P726/030',
+    invoiceNumber: 'INV-P726/030',
+    conversionDetails: { sourceType: 'order', sourceNumber: 'ORD-1' },
+    totalAmount: 1000,
+  };
+  const QUOTATION_CONVERSION = {
+    id: 'INV-P726/031',
+    invoiceNumber: 'INV-P726/031',
+    conversionDetails: { sourceType: 'Quotation', sourceNumber: 'QT-1' },
+    totalAmount: 2000,
+  };
+
+  it('selector excludes POS and conversion invoices (examination only)', () => {
+    const rows = selectExaminationInvoices(
+      [ORDINARY, POS, ORDER_CONVERSION, QUOTATION_CONVERSION, EXAM_BATCH, LEGACY_JOB] as any
+    );
+    expect(rows.map((row) => row.id).sort()).toEqual(['EXM-100', 'INV-900']);
+  });
+
+  it('general scope keeps POS and conversion invoices after the classifier fix', () => {
+    const all = [ORDINARY, POS, ORDER_CONVERSION, QUOTATION_CONVERSION, EXAM_BATCH, LEGACY_JOB] as any[];
+    expect(applyGeneralInvoiceScope(all).map((invoice) => invoice.id).sort()).toEqual([
+      'INV-001',
+      'INV-P726/030',
+      'INV-P726/031',
+      'POS-P726/023',
+    ]);
+  });
+
+  it('a bare reference or conversion source is never examination provenance', () => {
+    expect(isExaminationInvoiceRecord(POS as any)).toBe(false);
+    expect(isExaminationInvoiceRecord(ORDER_CONVERSION as any)).toBe(false);
+    expect(isExaminationInvoiceRecord(QUOTATION_CONVERSION as any)).toBe(false);
+    expect(isExaminationInvoiceRecord({ id: 'INV-6', invoiceNumber: 'INV-6', reference: 'ORD-5' } as any)).toBe(false);
+  });
+});
+
+describe('Examination invoices tab — legacy Production exam-paper invoices are examination', () => {
+  it('selects the INV-numbered legacy production exam invoice (regression: empty tab)', () => {
+    // Before the producer stamped `category`, isExaminationInvoiceRecord saw no
+    // marker, no EXM number, no exam title and no batch linkage, so the tab
+    // rendered "No examination invoices found" despite the stored invoice.
+    const rows = selectExaminationInvoices([LEGACY_PRODUCTION_EXAM] as any);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('INV-P726/001');
+    expect(rows[0].invoiceNumber).toBe('INV-P726/001');
+    expect(rows[0].totalAmount).toBe(3000);
+  });
+
+  it('selects it regardless of the batch collection it is given', () => {
+    expect(selectExaminationInvoices([LEGACY_PRODUCTION_EXAM] as any, [] as any)).toHaveLength(1);
+    expect(selectExaminationInvoices([LEGACY_PRODUCTION_EXAM] as any, [{ id: 'unrelated' }] as any)).toHaveLength(1);
+  });
+
+  it('scopes it out of the general list but keeps exact-search reachability', () => {
+    const ordinary = { id: 'INV-0009', invoiceNumber: 'INV-0009', totalAmount: 10 };
+    const all = [ordinary, LEGACY_PRODUCTION_EXAM] as any[];
+    expect(applyGeneralInvoiceScope(all).map((i) => i.id)).toEqual(['INV-0009']);
+    expect(applyGeneralInvoiceScope(all, 'INV-P726/001').map((i) => i.id)).toEqual([
+      'INV-0009',
+      'INV-P726/001',
+    ]);
+  });
+
+  it('the explicit category marker is load-bearing: strip it and it is unclassifiable', () => {
+    const unmarked = { ...LEGACY_PRODUCTION_EXAM, category: undefined };
+    expect(isExaminationInvoiceRecord(unmarked as any)).toBe(false);
+    expect(selectExaminationInvoices([unmarked] as any)).toHaveLength(0);
+
+    // The POS/conversion hardening must survive: with the marker stripped, a
+    // plain `reference` or an order/quotation conversion source is still not
+    // examination provenance.
+    expect(isExaminationInvoiceRecord({ ...unmarked, reference: 'ORD-5' } as any)).toBe(false);
+    expect(
+      isExaminationInvoiceRecord({
+        ...unmarked,
+        conversionDetails: { sourceType: 'order', sourceNumber: 'ORD-5' },
+      } as any)
+    ).toBe(false);
+
+    // A bare `batchId` names an examination batch only when a batch collection
+    // is supplied and actually contains that batch — the tightened linkage
+    // contract. With unrelated batches it classifies as nothing.
+    const bareBatchId = { ...unmarked, batchId: 'B1' };
+    expect(isExaminationInvoiceRecord(bareBatchId as any, [{ id: 'unrelated' }] as any)).toBe(false);
+    expect(isExaminationInvoiceRecord(bareBatchId as any, [{ id: 'B1', batch_number: 'B1' }] as any)).toBe(true);
   });
 });

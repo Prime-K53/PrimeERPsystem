@@ -145,10 +145,13 @@ export interface ExamInvoiceRow {
 }
 
 /** Pure selection: canonical invoices → examination rows (unit-tested). */
-export const selectExaminationInvoices = (invoices: ReadonlyArray<Record<string, any>> | null | undefined): ExamInvoiceRow[] => {
+export const selectExaminationInvoices = (
+  invoices: ReadonlyArray<Record<string, any>> | null | undefined,
+  batches?: ReadonlyArray<Record<string, any>> | null
+): ExamInvoiceRow[] => {
   if (!Array.isArray(invoices)) return [];
   return (invoices as Array<Record<string, any>>)
-    .filter((invoice) => isExaminationInvoiceRecord(invoice))
+    .filter((invoice) => isExaminationInvoiceRecord(invoice, batches))
     .map((invoice) => ({
       id: String(invoice?.id ?? ''),
       invoiceNumber: String(invoice?.invoiceNumber ?? invoice?.id ?? ''),
@@ -280,7 +283,7 @@ const ExaminationInvoices: React.FC = () => {
   }, []);
 
   const rows = useMemo(() => {
-    const selected = selectExaminationInvoices(invoices);
+    const selected = selectExaminationInvoices(invoices, batches);
     const query = searchTerm.trim().toLowerCase();
     return selected
       .map((row) => {

@@ -19,7 +19,7 @@ import { ExaminationJobState } from '../services/examinationJobService';
 import { examinationJobService } from '../services/examinationJobService';
 import { examinationBatchService, ExaminationGeneratedInvoicePayload } from '../services/examinationBatchService';
 import { dbService } from '../services/db';
-import { generateNextExaminationInvoiceNumber } from '../utils/helpers';
+import { claimExaminationInvoiceIdentity } from '../services/examinationInvoiceNumbering';
 import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { ExaminationInvoiceSyncResult, persistExaminationInvoiceToFinance, persistRegeneratedExaminationInvoiceToFinance } from '../services/examinationInvoiceSyncService';
 import { examinationNotificationService } from '../services/examinationNotificationService';
@@ -545,11 +545,32 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
   const generateInvoice = useCallback(async (id: string) => {
     setLoading(true);
     try {
-      // Canonical namespace: invoices.id is the shared primary key (local
-      // IndexedDB + Supabase). Scanning sales (SALE-*) would never advance
-      // the EXM sequence and would re-mint the same canonical id.
-      const existingInvoices = await dbService.getAll<{ id?: string; invoiceNumber?: string; date?: string }>('invoices').catch(() => []);
-      const invoiceNumber = generateNextExaminationInvoiceNumber(existingInvoices, companyConfig);
+      // P0 — AUTHORITATIVE IDENTITY. An Examination Invoice's `id` IS its
+      // ledger `referenceId`, so its identity can never be minted from a
+      // device-local scan and renamed afterwards: the AR row already
+      // references it. Claim it from the cloud BEFORE the invoice (and
+      // therefore before the AR posting) exists.
+      //
+      // A local `dbService.getAll('invoices')` scan is exactly what allowed two
+      // different batches (BTC-P726/023 = 550,000 and BTC-P726/021 = 200,250,
+      // different schools) to BOTH become EXM-P726/022 and post AR onto one
+      // shared reference. `generateNextExaminationInvoiceNumber` stays
+      // available for reading/history but must never finalize a NEW identity.
+      //
+      // FAILS CLOSED: if the cloud cannot issue an identity, no invoice is
+      // created and no batch is mutated. Same-batch EDITS are untouched — they
+      // keep their existing identity and post a ledger correction instead.
+      let invoiceNumber: string;
+      try {
+        const claim = await claimExaminationInvoiceIdentity();
+        invoiceNumber = claim.invoiceNumber;
+      } catch (claimError: any) {
+        logger.error('Examination invoice identity claim failed — refusing to create a new invoice identity:', claimError);
+        throw new Error(
+          `Cannot create a new examination invoice: ${claimError?.message || 'the server could not issue an authoritative invoice identity.'} ` +
+          'No invoice was created and no batch was changed. Retry when you are online.'
+        );
+      }
 
       // Temporary diagnostic trace (EXM-P726/021 only, read-only).
       await traceExamInvoice('context-generate', { id: invoiceNumber, invoiceNumber }, { batchId: id });
@@ -665,9 +686,24 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
   const regenerateInvoice = useCallback(async (id: string, reason?: string) => {
     setLoading(true);
     try {
-      // Same canonical namespace as generateInvoice: scan invoices, never sales.
-      const existingInvoices = await dbService.getAll<{ id?: string; invoiceNumber?: string; date?: string }>('invoices').catch(() => []);
-      const invoiceNumber = generateNextExaminationInvoiceNumber(existingInvoices, companyConfig);
+      // P0 — AUTHORITATIVE IDENTITY, same rule as generateInvoice. A
+      // regeneration issues a genuinely NEW document: it voids the previous
+      // invoice and replaces it, so it must claim a fresh authoritative
+      // identity rather than mint one locally. The old invoice keeps its own
+      // identity (and its ledger reference) and is reversed, never overwritten.
+      //
+      // FAILS CLOSED: no claim means no regeneration and no batch mutation.
+      let invoiceNumber: string;
+      try {
+        const claim = await claimExaminationInvoiceIdentity();
+        invoiceNumber = claim.invoiceNumber;
+      } catch (claimError: any) {
+        logger.error('Examination invoice identity claim failed — refusing to regenerate:', claimError);
+        throw new Error(
+          `Cannot regenerate the examination invoice: ${claimError?.message || 'the server could not issue an authoritative invoice identity.'} ` +
+          'Nothing was changed. Retry when you are online.'
+        );
+      }
 
       const result = await examinationBatchService.regenerateInvoice(id, {
         idempotencyKey: `EXAM-BATCH-${id}-REGEN-${Date.now()}`,

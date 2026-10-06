@@ -13,10 +13,6 @@ import { AddClassDialog } from './components/AddClassDialog';
 import { ManageSubjectsDialog } from './components/ManageSubjectsDialog';
 import { buildRecurringDraftFromExaminationBatch } from '../../utils/recurringConversion';
 import { currencyService } from '../../services/currencyService';
-import {
-  buildExaminationInvoiceViewState,
-  resolveExaminationInvoiceNavigationKey,
-} from '../../utils/invoiceIdentity';
 
 const teal: Record<string, string> = { 50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7', 400: '#3fa294', 500: '#1f8577', 600: '#146b60', 700: '#0f544c', 800: '#0b3e39', 900: '#082e2a' };
 const amber: Record<string, string> = { 100: '#fbead0', 300: '#eec27a', 500: '#d99a3f', 600: '#b97e2b' };
@@ -181,11 +177,6 @@ const ExaminationBatchDetail: React.FC = () => {
           await fetchBatch();
           await fetchFinanceData();
 
-          const syncedInvoiceId = resolveExaminationInvoiceNavigationKey({
-            syncInvoiceId: result?.sync?.invoiceId,
-            invoiceNumber: result?.invoice?.invoiceNumber,
-            id: result?.invoice?.id,
-          });
           const syncFailed = Boolean(result?.invoice) && Boolean(result?.sync) && !result.sync.synced;
 
           if (syncFailed) {
@@ -198,18 +189,18 @@ const ExaminationBatchDetail: React.FC = () => {
 
           notify(
             result?.idempotent
-              ? 'Invoice already existed. Opened Sales Invoices.'
-              : 'Invoice generated successfully. Opened Sales Invoices.',
+              ? 'Invoice already existed. Opened Examination Invoices.'
+              : 'Invoice generated successfully. Opened Examination Invoices.',
             'success'
           );
 
-          if (syncedInvoiceId) {
-            navigate('/sales-flow/invoices', {
-              state: buildExaminationInvoiceViewState(syncedInvoiceId)
-            });
-          } else {
-            navigate('/sales-flow/invoices');
-          }
+          // Land on the examination invoice list, not the general one. The
+          // general list scopes examination invoices out
+          // (applyGeneralInvoiceScope), so generating one used to drop the
+          // operator on a page that did not contain the invoice just created.
+          // Explicit "View invoice" deep-links still target the general route:
+          // that is where the canonical invoice detail modal lives.
+          navigate('/examination/invoices');
         } catch (error) {
           logger.error('Error generating invoice:', error);
           notify('Failed to generate invoice.', 'error');
@@ -237,11 +228,6 @@ const ExaminationBatchDetail: React.FC = () => {
           await fetchBatch();
           await fetchFinanceData();
 
-          const syncedInvoiceId = resolveExaminationInvoiceNavigationKey({
-            syncInvoiceId: result?.sync?.invoiceId,
-            invoiceNumber: result?.invoice?.invoiceNumber,
-            id: result?.invoice?.id,
-          });
           const syncFailed = Boolean(result?.invoice) && Boolean(result?.sync) && !result.sync.synced;
 
           if (syncFailed) {
@@ -255,18 +241,14 @@ const ExaminationBatchDetail: React.FC = () => {
           const voided = (result?.sync as { voidedInvoiceIds?: string[] } | undefined)?.voidedInvoiceIds;
           notify(
             voided && voided.length > 0
-              ? `Invoice regenerated successfully (voided ${voided.length} previous invoice${voided.length === 1 ? '' : 's'}). Opened Sales Invoices.`
-              : 'Invoice regenerated successfully. Opened Sales Invoices.',
+              ? `Invoice regenerated successfully (voided ${voided.length} previous invoice${voided.length === 1 ? '' : 's'}). Opened Examination Invoices.`
+              : 'Invoice regenerated successfully. Opened Examination Invoices.',
             'success'
           );
 
-          if (syncedInvoiceId) {
-            navigate('/sales-flow/invoices', {
-              state: buildExaminationInvoiceViewState(syncedInvoiceId)
-            });
-          } else {
-            navigate('/sales-flow/invoices');
-          }
+          // Same destination rule as generate: the replacement invoice is an
+          // examination invoice, so the examination list is where it belongs.
+          navigate('/examination/invoices');
         } catch (error: any) {
           logger.error('Error regenerating invoice:', error);
           notify(error?.message || 'Failed to regenerate invoice.', 'error');

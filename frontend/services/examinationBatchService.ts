@@ -726,7 +726,22 @@ const buildLocalInvoicePayload = async (
   // mapExaminationPayloadToInvoice (the authoritative payload → Invoice
   // conversion) maps id := invoiceNumber, so this keeps
   // Invoice.id === Invoice.invoiceNumber === batch.invoice_id by construction.
-  const invoiceNumber = payload?.invoiceNumber || `EXM-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  //
+  // P0 — NO LOCAL FALLBACK IDENTITY. This id is also the ledger
+  // `referenceId`, so it can never be minted device-locally and adopted later:
+  // the AR row already references it by then. Callers MUST supply an identity
+  // already claimed from the cloud authority
+  // (services/examinationInvoiceNumbering.claimExaminationInvoiceIdentity).
+  // A random local EXM string here is precisely what let two batches share one
+  // accounting reference, so an absent identity is now a hard failure rather
+  // than a fabricated number.
+  const invoiceNumber = String(payload?.invoiceNumber || '').trim();
+  if (!invoiceNumber) {
+    throw new Error(
+      'A new examination invoice requires an authoritative invoice identity. ' +
+      'Claim one from the server before generating (no local identity was fabricated).'
+    );
+  }
   const invoiceId = invoiceNumber;
   const schools = await dbService.getAll<any>('schools').catch(() => []);
   const customers = await dbService.getAll<any>('customers').catch(() => []);

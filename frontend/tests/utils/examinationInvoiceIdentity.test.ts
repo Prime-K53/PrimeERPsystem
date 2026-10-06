@@ -62,6 +62,7 @@ import {
   findOwningExaminationBatchId,
   getExaminationBatchLinkage,
   isDistinctExaminationInvoiceCollision,
+  isExaminationInvoiceRecord,
   isShadowExaminationInvoiceId,
   resolveExaminationInvoiceNavigationKey,
 } from '../../utils/invoiceIdentity';
@@ -469,6 +470,95 @@ describe('P0 — batch linkage and distinct-collision assessment (pure)', () => 
     expect(findOwningExaminationBatchId(batches, [], 'EXM-0006')).toBeNull();
     expect(findOwningExaminationBatchId(batches, ['BTC-Z'], 'EXM-0006')).toBeNull();
     expect(findOwningExaminationBatchId(null, ['BTC-B'], 'EXM-0006')).toBeNull();
+  });
+});
+
+describe('Examination classification — invoice-level fields are not batch provenance', () => {
+  const posInvoice = (number: string) => ({
+    id: number,
+    invoiceNumber: number,
+    customerName: 'Walk-in Customer',
+    reference: number,
+    notes: 'POS Sale - Source: POS',
+    totalAmount: 3000,
+    items: [],
+  });
+
+  it('POS invoices (reference = sale.id) are NOT examination', () => {
+    for (const number of ['POS-P726/021', 'POS-P726/022', 'POS-P726/023']) {
+      expect(getExaminationBatchLinkage(posInvoice(number))).toEqual([]);
+      expect(isExaminationInvoiceRecord(posInvoice(number))).toBe(false);
+    }
+  });
+
+  it('an arbitrary reference is not batch linkage', () => {
+    const invoice = { id: 'INV-5', invoiceNumber: 'INV-5', reference: 'ORD-5' };
+    expect(getExaminationBatchLinkage(invoice)).toEqual([]);
+    expect(isExaminationInvoiceRecord(invoice)).toBe(false);
+  });
+
+  it('sales-order and quotation conversions are NOT examination', () => {
+    const order = {
+      id: 'INV-6',
+      invoiceNumber: 'INV-6',
+      conversionDetails: { sourceType: 'order', sourceNumber: 'ORD-1' },
+    };
+    const quotation = {
+      id: 'INV-7',
+      invoiceNumber: 'INV-7',
+      conversionDetails: { sourceType: 'Quotation', sourceNumber: 'QT-1' },
+    };
+    expect(getExaminationBatchLinkage(order)).toEqual([]);
+    expect(getExaminationBatchLinkage(quotation)).toEqual([]);
+    expect(isExaminationInvoiceRecord(order)).toBe(false);
+    expect(isExaminationInvoiceRecord(quotation)).toBe(false);
+  });
+
+  it('explicit EXAM-BATCH-*/EXM-BATCH-* references still resolve to the batch', () => {
+    expect(
+      getExaminationBatchLinkage({ id: 'EXM-100', invoiceNumber: 'EXM-100', reference: 'EXAM-BATCH-BTC-9' })
+    ).toEqual(['BTC-9']);
+    expect(
+      isExaminationInvoiceRecord({ id: 'EXM-101', invoiceNumber: 'EXM-101', reference: 'exm-batch-btc-9' })
+    ).toBe(true);
+  });
+
+  it('genuine examination invoices classify by marker and by real batch linkage', () => {
+    expect(isExaminationInvoiceRecord({ id: 'EXM-200', invoiceNumber: 'EXM-200', origin_module: 'examination' })).toBe(true);
+
+    const batches = [{ id: 'batch-1', batch_number: 'BTC-P726/022' }];
+    const linked = {
+      id: 'INV-ORD-1',
+      invoiceNumber: 'INV-ORD-1',
+      batchId: 'BTC-P726/022',
+      origin_batch_id: 'BTC-P726/022',
+    };
+    expect(isExaminationInvoiceRecord(linked, batches)).toBe(true);
+    // Linkage alone must name an ACTUAL batch when the collection is supplied.
+    expect(
+      isExaminationInvoiceRecord({ ...linked, batchId: 'BTC-NOPE', origin_batch_id: 'BTC-NOPE' }, batches)
+    ).toBe(false);
+  });
+
+  it('legacy examination markers still classify without modern batch linkage', () => {
+    expect(isExaminationInvoiceRecord({ id: 'INV-900', invoiceNumber: 'INV-900', category: 'Examination' })).toBe(true);
+    expect(isExaminationInvoiceRecord({ id: 'INV-901', invoiceNumber: 'INV-901', documentTitle: 'Examination Invoice' })).toBe(true);
+    expect(isExaminationInvoiceRecord({ id: 'INV-902', invoiceNumber: 'INV-902', originModule: 'examination' })).toBe(true);
+    // Retired shadow ids remain examination.
+    expect(isExaminationInvoiceRecord({ id: 'local-exam-invoice-1', invoiceNumber: 'EXM-903' })).toBe(true);
+  });
+
+  it('multiple invoices linked to one examination batch all classify', () => {
+    const batches = [{ id: 'batch-21', batch_number: 'BTC-P726/021' }];
+    const rows = ['EXM-P726/030', 'EXM-P726/031', 'EXM-P726/032'].map((number) => ({
+      id: number,
+      invoiceNumber: number,
+      origin_module: 'examination',
+      batchId: 'BTC-P726/021',
+      origin_batch_id: 'BTC-P726/021',
+      reference: 'EXAM-BATCH-batch-21',
+    }));
+    expect(rows.filter((row) => isExaminationInvoiceRecord(row, batches))).toHaveLength(3);
   });
 });
 

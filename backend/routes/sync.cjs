@@ -18,6 +18,14 @@
  */
 const express = require('express');
 const cloudSyncStore = require('../services/cloudSyncStore.cjs');
+let examinationInvoiceNumbering = null;
+try {
+  examinationInvoiceNumbering = require('../services/examinationInvoiceNumbering.cjs');
+} catch (err) {
+  // Degrade loudly-but-safely: the claim endpoint returns 503 rather than ever
+  // letting a client fall back to a locally minted identity.
+  console.error('[sync] examinationInvoiceNumbering unavailable — EXM identity claims will fail closed:', err?.message || err);
+}
 const { validateProductsPayload } = require('../services/variantSku.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
 const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRole: resolveAuthRole, normalize: normalizeRole } = require('../middleware/roles.cjs');
@@ -458,6 +466,99 @@ router.post('/ops', async (req, res) => {
 // Health probe for the sync gateway (used to detect route availability).
 router.get('/health', (req, res) => {
   res.json({ ok: true, cloud: cloudSyncStore.isConfigured() });
+});
+
+// ─── authoritative Examination Invoice identity claim ────────────────────────
+// POST /api/sync/numbers/examination-invoice
+//
+// An Examination Invoice's `id` IS its official number AND its ledger
+// `referenceId` (transactionService posts `referenceId: invoice.id`). Unlike a
+// Sales Order — whose stable PK is a ULID and whose official number is a
+// separate, re-stampable display field — an EXM identity can never be minted
+// device-locally and adopted afterwards: by the time it is adopted the ledger
+// already references it. So the identity must be claimed HERE, before the
+// invoice and therefore before the AR posting, exactly like the ORD counter
+// (migration 0027 / salesOrderNumbering).
+//
+// Same architecture, not a second numbering system: service-role-only RPC
+// claim (`claim_next_examination_invoice_number`), series resolved from the
+// company numbering settings, and history in `invoices` AND `ledger_entries`
+// always beating the counter row.
+//
+// Auth is deliberately identical to POST /ops (Admin-only, portal customers
+// rejected) because this endpoint allocates a shared business identity.
+//
+// FAILS CLOSED. Any transport/auth/config failure returns a non-2xx status and
+// the client must refuse to create a NEW examination invoice rather than fall
+// back to a locally minted number — a fabricated identity is precisely the
+// defect this endpoint removes.
+router.post('/numbers/examination-invoice', async (req, res) => {
+  try {
+    const hasUser = Boolean(req.user);
+    const authMode = req.authMode || 'none';
+    const callerRole = resolveAuthRole(req.user);
+    if (!hasUser || callerRole === 'anonymous' || callerRole === '') {
+      console.warn('[sync] EXM_NUMBER_AUTH_FAILED reason=unauthenticated authMode=%s path=%s', authMode, req.path);
+      return res.status(401).json({
+        error: 'Unauthenticated',
+        message: 'Authentication required to claim an examination invoice number.',
+      });
+    }
+    if (roleIsPortalCustomer(callerRole)) {
+      console.warn('[sync] EXM_NUMBER_AUTH_FAILED reason=portal_customer authMode=%s role=%s path=%s', authMode, callerRole, req.path);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Portal customers cannot claim examination invoice numbers.',
+      });
+    }
+    if (!roleIsAdmin(callerRole)) {
+      console.warn('[sync] EXM_NUMBER_AUTH_FAILED reason=non_admin authMode=%s role=%s path=%s', authMode, callerRole, req.path);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'The examination invoice sequence requires an Admin.',
+      });
+    }
+
+    if (!examinationInvoiceNumbering || typeof examinationInvoiceNumbering.mintExaminationInvoiceNumber !== 'function') {
+      return res.status(503).json({
+        error: 'Examination invoice numbering unavailable',
+        reason: 'SEQUENCE_UNAVAILABLE',
+      });
+    }
+
+    // An explicitly requested series is honoured only when it is a plain
+    // alphanumeric token; the company numbering settings decide otherwise.
+    const requestedSeries = String((req.body || {}).series || '').trim();
+    const deps = {};
+    if (requestedSeries) deps.seriesOverride = requestedSeries;
+
+    const invoiceNumber = await examinationInvoiceNumbering.mintExaminationInvoiceNumber(
+      (req.body || {}).context || {},
+      deps,
+    );
+
+    if (!examinationInvoiceNumbering.isExaminationInvoiceNumber(invoiceNumber)) {
+      console.error('[sync] examination invoice mint returned a non-EXM identity:', invoiceNumber);
+      return res.status(500).json({
+        error: 'Examination invoice numbering produced an invalid identity',
+        reason: 'SEQUENCE_INVALID',
+      });
+    }
+
+    console.log('[sync] EXM_NUMBER_OK role=%s invoiceNumber=%s', callerRole, invoiceNumber);
+    return res.set('Content-Type', 'application/json').send(safeJsonStringify({
+      ok: true,
+      invoiceNumber,
+      series: (examinationInvoiceNumbering.parseExaminationInvoiceNumber(invoiceNumber) || {}).series || null,
+    }));
+  } catch (err) {
+    const code = String((err && err.code) || '');
+    console.error('[sync] EXM_NUMBER_FAILED code=%s message=%s', code || 'UNKNOWN', (err && err.message) || err);
+    return res.status(503).json({
+      error: 'Could not claim an authoritative examination invoice identity',
+      reason: code || 'SEQUENCE_UNAVAILABLE',
+    });
+  }
 });
 
 // ─── tombstone lifecycle (admin) ────────────────────────────────────────────

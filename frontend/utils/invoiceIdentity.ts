@@ -180,11 +180,70 @@ const normalizeLinkKey = (value: unknown): string | null => {
 };
 
 /**
+ * True only for the explicit examination-batch reference forms the
+ * architecture already uses (EXAM-BATCH-<batch> for idempotency keys,
+ * EXM-BATCH-<batch> for older checks/docs). A plain `reference` is an
+ * INVOICE-level value — a POS sale id (reference = sale.id), an order or
+ * quotation number — never batch linkage.
+ */
+const isExaminationBatchReference = (value: unknown): boolean => {
+  const upper = String(value ?? '').trim().toUpperCase();
+  return upper.startsWith('EXM-BATCH-') || upper.startsWith('EXAM-BATCH-');
+};
+
+/**
+ * The examination markers the architecture already treats as provenance,
+ * EXCLUDING batch linkage (so this stays usable while the linkage itself is
+ * being computed — no recursion): origin module, category, retired shadow
+ * ids and explicit examination-batch references.
+ */
+const hasExplicitExaminationMarker = (record: Record<string, unknown>): boolean => {
+  const module = String(record.originModule ?? record.origin_module ?? '').toLowerCase();
+  if (module === 'examination') return true;
+  if (String(record.category ?? '').toLowerCase() === 'examination') return true;
+  if (isShadowExaminationInvoiceId(record.id)) return true;
+  return isExaminationBatchReference(record.reference);
+};
+
+/**
+ * Established examination-invoice markers: the explicit markers above plus
+ * the legacy EXM-number / document-title fallbacks isExaminationInvoiceRecord
+ * already supports — still WITHOUT consulting batch linkage. Decides whether
+ * a conversion source may count as batch linkage.
+ */
+const isExaminationMarked = (record: Record<string, unknown>): boolean => {
+  if (hasExplicitExaminationMarker(record)) return true;
+  const number = String(record.invoiceNumber ?? record.id ?? '').trim();
+  if (/^EXM-/i.test(number)) return true;
+  const title = String(record.documentTitle ?? '').toLowerCase();
+  return title.includes('examination invoice');
+};
+
+/** Does any linkage key name an actual examination batch (id / number / name)? */
+const batchLinkageMatchesBatch = (
+  linkage: ReadonlyArray<string>,
+  batches: ReadonlyArray<Record<string, unknown>>
+): boolean => {
+  const keys = new Set(linkage.map((value) => normalizeLinkKey(value)).filter(Boolean) as string[]);
+  if (keys.size === 0) return false;
+  return batches.some((batch) => {
+    if (!batch || typeof batch !== 'object') return false;
+    return [batch.id, batch.batch_number, batch.batchNumber, batch.name].some((value) => {
+      const key = normalizeLinkKey(value);
+      return Boolean(key && keys.has(key));
+    });
+  });
+};
+
+/**
  * Batch linkage of an examination invoice: the set of batch identifiers it
- * claims (batchId / origin_batch_id / originBatchId / conversion source /
- * EXM-BATCH-* reference). Two examination invoices sharing one canonical id
- * are the SAME document if and only if their linkage sets intersect.
- * Case-insensitive; empty when the record carries no batch linkage.
+ * claims (batchId / origin_batch_id / originBatchId / origin_batchId, plus an
+ * explicit EXAM-BATCH- / EXM-BATCH- reference, plus conversionDetails.source
+ * only when the record is already examination-marked). A plain `reference`
+ * and a sales-order/quotation conversion source are NOT batch linkage. Two
+ * examination invoices sharing one canonical id are the SAME document if and
+ * only if their linkage sets intersect. Case-insensitive; empty when the
+ * record carries no batch linkage.
  */
 export function getExaminationBatchLinkage(record: Record<string, unknown> | null | undefined): string[] {
   if (!record || typeof record !== 'object') return [];
@@ -197,12 +256,21 @@ export function getExaminationBatchLinkage(record: Record<string, unknown> | nul
   add((record as Record<string, unknown>).origin_batch_id);
   add((record as Record<string, unknown>).originBatchId);
   add((record as Record<string, unknown>).origin_batchId);
-  add((record as Record<string, unknown>).reference);
+  // An arbitrary `reference` is NOT examination provenance: only the explicit
+  // examination-batch reference forms identify a batch.
+  if (isExaminationBatchReference((record as Record<string, unknown>).reference)) {
+    add((record as Record<string, unknown>).reference);
+  }
   const conversion = (record as Record<string, unknown>).conversionDetails as
     | Record<string, unknown>
     | undefined;
   if (conversion && typeof conversion === 'object') {
-    add(conversion.sourceNumber);
+    // A sales-order or quotation conversion is not an examination invoice.
+    // Only a record already positively identified as examination-origin by
+    // the established markers may contribute its conversion source.
+    if (isExaminationMarked(record as Record<string, unknown>)) {
+      add(conversion.sourceNumber);
+    }
   }
   return Array.from(keys);
 }
@@ -213,30 +281,30 @@ export function getExaminationBatchLinkage(record: Record<string, unknown> | nul
  * general-list scope split: origin markers, EXM numbering, exam-titled
  * documents, or batch linkage. Ordinary ERP invoices never match.
  */
-export function isExaminationInvoiceRecord(record: Record<string, unknown> | null | undefined): boolean {
+export function isExaminationInvoiceRecord(
+  record: Record<string, unknown> | null | undefined,
+  batches?: ReadonlyArray<Record<string, unknown>> | null
+): boolean {
   if (!record || typeof record !== 'object') return false;
-  if (isExaminationLike(record)) return true;
-  const number = String(
-    (record as Record<string, unknown>).invoiceNumber ?? (record as Record<string, unknown>).id ?? ''
-  ).trim();
-  if (/^EXM-/i.test(number)) return true;
-  const title = String((record as Record<string, unknown>).documentTitle ?? '').toLowerCase();
-  if (title.includes('examination invoice')) return true;
-  return false;
+  // Established examination markers (origin module, category, EXM number,
+  // examination document title, explicit EXAM-BATCH-* reference) are enough.
+  if (isExaminationMarked(record)) return true;
+  // Otherwise the record must carry real batch linkage. A bare `reference`
+  // or a sales-order/quotation `conversionDetails.sourceNumber` no longer
+  // reaches this point — neither is batch identity.
+  const linkage = getExaminationBatchLinkage(record);
+  if (linkage.length === 0) return false;
+  // When classification rests on batch linkage alone and the caller already
+  // holds the examination-batch collection (the Examination list does), the
+  // linkage must name an actual batch. Callers without the collection keep
+  // the linkage-based result — no caller gains a new query.
+  if (!Array.isArray(batches) || batches.length === 0) return true;
+  return batchLinkageMatchesBatch(linkage, batches);
 }
 
 const isExaminationLike = (record: Record<string, unknown> | null | undefined): boolean => {
   if (!record || typeof record !== 'object') return false;
-  const module = String(
-    (record as Record<string, unknown>).originModule ??
-      (record as Record<string, unknown>).origin_module ??
-      ''
-  ).toLowerCase();
-  if (module === 'examination') return true;
-  if (String((record as Record<string, unknown>).category ?? '').toLowerCase() === 'examination') return true;
-  if (isShadowExaminationInvoiceId((record as Record<string, unknown>).id)) return true;
-  const reference = String((record as Record<string, unknown>).reference ?? '').toUpperCase();
-  if (reference.startsWith('EXM-BATCH-') || reference.startsWith('EXAM-BATCH-')) return true;
+  if (hasExplicitExaminationMarker(record as Record<string, unknown>)) return true;
   return getExaminationBatchLinkage(record).length > 0;
 };
 

@@ -9,10 +9,6 @@ import { Select } from '../../components/Select';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { toast } from '../../components/Toast';
-import {
-  buildExaminationInvoiceViewState,
-  resolveExaminationInvoiceNavigationKey,
-} from '../../utils/invoiceIdentity';
 import { 
   Plus, DollarSign, Users, Calendar, Trash2, FileText, 
   ArrowLeft, Loader2, CheckCircle, AlertTriangle 
@@ -146,19 +142,12 @@ const InvoiceGroupManager: React.FC = () => {
     if (!selectedGroupId) return;
 
     try {
-      const result = await generateInvoiceForGroup(selectedGroupId);
+      await generateInvoiceForGroup(selectedGroupId);
       toast.success('Invoice generated successfully');
-      // Canonical key only (never shadow/throwaway ids).
-      const canonicalId = resolveExaminationInvoiceNavigationKey({
-        syncInvoiceId: (result as { invoice_id?: unknown })?.invoice_id,
-      });
-      if (canonicalId) {
-        navigate('/sales-flow/invoices', {
-          state: buildExaminationInvoiceViewState(canonicalId),
-        });
-      } else {
-        navigate('/sales-flow/invoices');
-      }
+      // The generated invoice is an examination invoice, so land on the
+      // examination invoice list. The general list scopes examination invoices
+      // out (applyGeneralInvoiceScope) and would not show it.
+      navigate('/examination/invoices');
     } catch (error) {
       logger.error('Error generating invoice:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate invoice');
