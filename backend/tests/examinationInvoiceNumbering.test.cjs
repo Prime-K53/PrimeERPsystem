@@ -155,3 +155,81 @@ describe('examinationInvoiceNumbering — the claim is atomic and convergent', (
     }
   });
 });
+
+/**
+ * Migration 0042 makes the claim DURABLE: the server now stores the exact
+ * `invoice_number` it issued. For that record to be exact, the caller must tell
+ * the RPC how the number is padded/suffixed — otherwise the DB would have to
+ * guess and could disagree with the number actually handed back to the invoice.
+ */
+describe('examinationInvoiceNumbering — the claim carries its exact invoice_number (0042)', () => {
+  it('forwards padding and suffix so the durable claim row is exact', async () => {
+    const calls = [];
+    const httpPost = async (url, body) => { calls.push(body); return { data: [23] }; };
+
+    const seq = await numbering.claimNextSeriesSequence('P726', { httpPost }, 3, '');
+    expect(seq).toBe(23);
+    expect(calls[0]).toEqual({ p_series: 'P726', p_padding: 3 });
+
+    await numbering.claimNextSeriesSequence('P726', { httpPost }, 6, '');
+    expect(calls[1]).toEqual({ p_series: 'P726', p_padding: 6 });
+
+    await numbering.claimNextSeriesSequence('P726', { httpPost }, 3, 'R1');
+    expect(calls[2]).toEqual({ p_series: 'P726', p_padding: 3, p_suffix: 'R1' });
+  });
+
+  it('keeps the 0041 single-argument call shape working when padding is unknown', async () => {
+    const calls = [];
+    const httpPost = async (url, body) => { calls.push(body); return { data: [23] }; };
+    await numbering.claimNextSeriesSequence('P726', { httpPost });
+    expect(calls[0]).toEqual({ p_series: 'P726' });
+  });
+
+  it('never sends a nonsensical padding (the RPC default applies instead)', async () => {
+    const calls = [];
+    const httpPost = async (url, body) => { calls.push(body); return { data: [23] }; };
+    for (const bad of [undefined, null, 0, -4, NaN, 1.5, 'x']) {
+      await numbering.claimNextSeriesSequence('P726', { httpPost }, bad, '');
+    }
+    for (const body of calls) {
+      expect(body).not.toHaveProperty('p_padding');
+    }
+  });
+
+  it('mints a number whose formatting the server can reproduce exactly', async () => {
+    // The whole point of passing padding: the claim row and the returned
+    // invoice_number must be the same string, at every configured padding.
+    const httpPost = async (url, body) => ({ data: [24] });
+    for (const [padding, expected] of [[3, 'EXM-P726/024'], [6, 'EXM-P726/000024']]) {
+      const invoiceNumber = await numbering.mintExaminationInvoiceNumber(
+        {},
+        {
+          getCompanyConfig: async () => ({
+            transactionSettings: { numbering: { shared: { extension: 'P726', padding } } },
+          }),
+          httpPost,
+        }
+      );
+      expect(invoiceNumber).toBe(expected);
+      // This is exactly what the RPC recomputes when storing the claim row.
+      const rebuilt = 'EXM-P726/' + String(24).padStart(padding, '0');
+      expect(rebuilt).toBe(invoiceNumber);
+    }
+  });
+
+  it('does not renumber or renamespace any historical identity', () => {
+    const source = require('fs').readFileSync(
+      require.resolve('../services/examinationInvoiceNumbering.cjs'),
+      'utf8'
+    );
+    // Strip comments: the incident that motivated this work is DOCUMENTED in
+    // the header. What must not exist is a hard-coded identity in executable
+    // code — no branch, default, or repair keyed to a specific number.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    for (const identity of ['EXM-P726/022', 'EXM-P726/021', 'EXM-P726/023']) {
+      expect(code).not.toContain(identity);
+    }
+  });
+});

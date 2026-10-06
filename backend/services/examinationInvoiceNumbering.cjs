@@ -130,8 +130,13 @@ function formatExaminationInvoiceNumber(series, sequence, padding = 3, suffix = 
  * Single RPC round-trip; the advisory lock serializes same-series claimants
  * while different series never block each other. Throws on transport/cloud
  * failure — callers must fail CLOSED (a new identity is never fabricated).
+ *
+ * `padding` / `suffix` are passed through to the RPC so the durable claim row
+ * (migration 0042) records the EXACT invoice number as issued. The RETURN value
+ * is unchanged — still the bare sequence integer — so callers keep formatting
+ * client-side exactly as before.
  */
-async function claimNextSeriesSequence(series, deps) {
+async function claimNextSeriesSequence(series, deps, padding, suffix) {
   const clean = String(series || '').trim();
   if (!clean || !/^[A-Za-z0-9]+$/.test(clean)) {
     const err = new Error('Examination invoice series is missing or invalid');
@@ -150,7 +155,14 @@ async function claimNextSeriesSequence(series, deps) {
   const { base, key } = cloudConfig();
   const post = httpPost
     || ((url, body, headers) => cloudHttp.post(url, body, { headers, timeout: 15000 }));
-  const res = await post(`${base}/rest/v1/rpc/claim_next_examination_invoice_number`, { p_series: clean }, {
+  const rpcArgs = { p_series: clean };
+  if (Number.isInteger(Number(padding)) && Number(padding) > 0) {
+    rpcArgs.p_padding = Number(padding);
+  }
+  if (suffix != null && String(suffix) !== '') {
+    rpcArgs.p_suffix = String(suffix);
+  }
+  const res = await post(`${base}/rest/v1/rpc/claim_next_examination_invoice_number`, rpcArgs, {
     apikey: key,
     Authorization: `Bearer ${key}`,
     'Content-Type': 'application/json',
@@ -198,7 +210,7 @@ async function mintExaminationInvoiceNumber(domain, deps) {
     }
     return '';
   })();
-  const seq = await claimNextSeriesSequence(series, deps);
+  const seq = await claimNextSeriesSequence(series, deps, padding, suffix);
   void domain;
   return formatExaminationInvoiceNumber(series, seq, padding, suffix);
 }
