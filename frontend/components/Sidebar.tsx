@@ -301,15 +301,33 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           hideSubMenu: true,
           subItems: [
             { label: 'Banking', path: '/accounts/banking', icon: <Bank size={14} /> },
-            { label: 'Account Transfers', path: '/accounts/transfers', icon: <ArrowRightLeft size={14} /> },
             { label: 'VAT Module', path: '/vat', icon: <FileText size={14} /> },
-            { label: 'Chart of Accounts', path: '/accounts/chart-of-accounts', icon: <Landmark size={14} /> },
             { label: 'Payroll Engine', path: '/accounts/payroll', icon: <Users size={14} /> },
             { label: 'Fixed Assets', path: '/accounts/fixed-assets', icon: <Building2 size={14} /> },
             { label: 'Loans & Borrowings', path: '/accounts/loans', icon: <Landmark size={14} /> },
             { label: 'Owner Equity', path: '/accounts/owner-equity', icon: <UserCog size={14} /> },
-            { label: 'Year-End Closing', path: '/accounts/year-end-closing', icon: <CalendarCheck size={14} /> },
           ]
+        },
+        {
+          label: 'Chart of Accounts',
+          path: '/accounts/chart-of-accounts',
+          icon: <Landmark size={18} />,
+          hideSubMenu: true,
+          subItems: []
+        },
+        {
+          label: 'Account Transfers',
+          path: '/accounts/transfers',
+          icon: <ArrowRightLeft size={18} />,
+          hideSubMenu: true,
+          subItems: []
+        },
+        {
+          label: 'Year-End Closing',
+          path: '/accounts/year-end-closing',
+          icon: <CalendarCheck size={18} />,
+          hideSubMenu: true,
+          subItems: []
         },
         {
           label: 'Fiscal Reports',

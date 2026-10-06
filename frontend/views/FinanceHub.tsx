@@ -1,7 +1,7 @@
 import React from 'react';
 import {
-  Users, Building2, Landmark, UserCog, CalendarCheck,
-  ChartBar, FileText, Wallet, Scale, Coins, ArrowRightLeft
+  Users, Building2, Landmark, UserCog,
+  FileText, Wallet, Scale, Coins
 } from 'lucide-react';
 import GenericHub from './GenericHub';
 
@@ -36,32 +36,11 @@ const FinanceHub: React.FC = () => {
       color: 'bg-emerald-50 text-emerald-500'
     },
     {
-      label: 'Year-End Closing',
-      description: 'Close income summary accounts and transfer earnings to retained earnings.',
-      path: '/accounts/year-end-closing',
-      icon: <CalendarCheck />,
-      color: 'bg-rose-50 text-rose-500'
-    },
-    {
-      label: 'Chart of Accounts',
-      description: 'View and manage the complete chart of accounts. Add, edit, and organize GL accounts.',
-      path: '/accounts/chart-of-accounts',
-      icon: <ChartBar />,
-      color: 'bg-slate-50 text-slate-500'
-    },
-    {
       label: 'Banking',
       description: 'Manage bank accounts, record transfers, and reconcile with bank statements.',
       path: '/accounts/banking',
       icon: <Wallet />,
       color: 'bg-cyan-50 text-cyan-500'
-    },
-    {
-      label: 'Account Transfers',
-      description: 'Record internal transfers between cash, bank, and mobile money accounts.',
-      path: '/accounts/transfers',
-      icon: <ArrowRightLeft />,
-      color: 'bg-teal-50 text-teal-500'
     },
     {
       label: 'VAT Module',
@@ -75,7 +54,7 @@ const FinanceHub: React.FC = () => {
   return (
     <GenericHub
       title="Finance"
-      subtitle="Complete financial management - payroll, assets, loans, equity, and year-end processing."
+      subtitle="Complete financial management - payroll, assets, loans, and equity."
       options={options}
       accentColor="#d99a3f"
     />

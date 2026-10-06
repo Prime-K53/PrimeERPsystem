@@ -9,8 +9,8 @@ import { useModuleRefresh } from '../../hooks/useModuleRefresh';
 import { useBankingStore } from '../../context/BankingContext';
 import {
   RefreshCw, Plus, Search, Filter, Download, ArrowRightLeft,
-  Building2, Wallet, TrendingUp, TrendingDown, Calendar,
-  User, Hash, DollarSign, Clock, CheckCircle, XCircle, X,
+  Wallet, TrendingUp, TrendingDown, Calendar,
+  User, Hash, DollarSign, CheckCircle, XCircle, X,
   AlertCircle, Eye, Edit, Trash2, ChevronDown
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
@@ -434,12 +434,19 @@ const Transfers: React.FC = () => {
       )}
 
       {/* Summary Cards — KpiCards language */}
-      <KpiCards items={[
-        { label: 'Total Transfers', value: String(filteredTransfers.length), icon: TrendingUp, color: teal[700], bg: teal[50] },
-        { label: 'Total Amount', value: `${currency}${filteredTransfers.filter(t => t.status !== 'Voided').reduce((sum, t) => sum + Number(t.amount || 0), 0).toLocaleString()}`, icon: DollarSign, color: teal[600], bg: teal[50] },
-        { label: 'Active Accounts', value: String(activeBankAccounts.length), icon: Building2, color: amber[600], bg: amber[100] },
-        { label: 'This Period', value: `${format(parseISO(dateRange.start), 'MMM dd')} - ${format(parseISO(dateRange.end), 'MMM dd')}`, icon: Clock, color: amber[600], bg: amber[100] },
-      ]} />
+      <KpiCards items={(() => {
+        const live = filteredTransfers.filter(t => t.status !== 'Voided');
+        const voided = filteredTransfers.filter(t => t.status === 'Voided');
+        const moved = live.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+        const fees = live.reduce((sum, t) => sum + Number(t.feeAmount || 0), 0);
+        const largest = live.reduce((max, t) => Math.max(max, Number(t.amount || 0)), 0);
+        return [
+          { label: 'Total Transfers', value: voided.length > 0 ? `${live.length} • ${voided.length} voided` : String(live.length), icon: ArrowRightLeft, color: teal[700], bg: teal[50] },
+          { label: 'Total Moved', value: `${currency}${moved.toLocaleString()}`, icon: DollarSign, color: teal[600], bg: teal[50] },
+          { label: 'Transfer Fees', value: `${currency}${fees.toLocaleString()}`, icon: Wallet, color: amber[600], bg: amber[100] },
+          { label: 'Largest Transfer', value: `${currency}${largest.toLocaleString()}`, icon: TrendingUp, color: teal[700], bg: teal[50] },
+        ];
+      })()} />
 
       {/* Filters */}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, padding: '16px 28px', flexWrap: 'wrap' }}>
