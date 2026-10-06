@@ -4450,7 +4450,17 @@ export const transactionService = {
                     return resolved;
                 };
 
-                await transferStore.put(transfer);
+                const amount = toMoney(Number(transfer.amount || 0));
+                if (!Number.isFinite(amount) || amount <= 0) {
+                    throw new Error('Transfer amount must be positive');
+                }
+                if (String(transfer.fromAccountId) === String(transfer.toAccountId)) {
+                    throw new Error('Source and destination accounts cannot be the same');
+                }
+                const feeAmount = toMoney(Number((transfer as { feeAmount?: unknown }).feeAmount || 0));
+                if (feeAmount < 0) throw new Error('Transfer fee cannot be negative');
+
+                await transferStore.put({ ...transfer, amount, status: transfer.status || 'Completed' });
 
                 const fromAccountId = resolveAcct(transfer.fromAccountId);
                 const toAccountId = resolveAcct(transfer.toAccountId);
@@ -4461,17 +4471,47 @@ export const transactionService = {
                     description: `Internal Transfer: ${transfer.description || ''}`,
                     debitAccountId: toAccountId,
                     creditAccountId: fromAccountId,
-                    amount: transfer.amount,
+                    amount,
                     referenceId: transfer.id,
                     reconciled: true
                 };
                 await ledgerStore.put(entry);
+                const postedEntries: LedgerEntry[] = [entry];
+
+                if (feeAmount > 0) {
+                    const feeAccountId = resolveAcct((transfer as { feeAccountId?: string }).feeAccountId || '52900');
+                    const feeEntry: LedgerEntry = {
+                        id: generateId('LG-TRF-FEE'),
+                        date: transfer.date,
+                        description: `Transfer fee: ${transfer.description || transfer.id}`,
+                        debitAccountId: feeAccountId,
+                        creditAccountId: fromAccountId,
+                        amount: feeAmount,
+                        referenceId: transfer.id,
+                        reconciled: true
+                    };
+                    await ledgerStore.put(feeEntry);
+                    postedEntries.push(feeEntry);
+                    await ensureMirroredBankTransaction({
+                        bankAccountsStore,
+                        bankTransactionsStore,
+                        date: transfer.date,
+                        amount: feeAmount,
+                        type: 'Withdrawal',
+                        description: `Transfer fee: ${transfer.description || transfer.id}`,
+                        reference: `TRF-FEE-${transfer.id}`,
+                        accountId: fromAccountId,
+                        paymentMethod: 'Bank Transfer',
+                        category: 'Transfer'
+                    });
+                }
+                validateLedgerBalance(postedEntries, `Transfer ${transfer.id}`);
 
                 await ensureMirroredBankTransaction({
                     bankAccountsStore,
                     bankTransactionsStore,
                     date: transfer.date,
-                    amount: transfer.amount,
+                    amount,
                     type: 'Withdrawal',
                     description: `Transfer out: ${transfer.description || transfer.id}`,
                     reference: `TRF-OUT-${transfer.id}`,
@@ -4484,7 +4524,7 @@ export const transactionService = {
                     bankAccountsStore,
                     bankTransactionsStore,
                     date: transfer.date,
-                    amount: transfer.amount,
+                    amount,
                     type: 'Deposit',
                     description: `Transfer in: ${transfer.description || transfer.id}`,
                     reference: `TRF-IN-${transfer.id}`,
@@ -4493,6 +4533,236 @@ export const transactionService = {
                     category: 'Transfer'
                 });
 
+                return { success: true };
+            }
+        );
+    },
+
+    /**
+     * Post reversal legs for a transfer's postings (main + fee). Swapped-side
+     * entries net against the originals in balances (see isPostedLedgerEntry).
+     * Account refs resolve leniently so a void can never fail closed on stale
+     * references. Returns the posted reversal entries.
+     */
+    async postTransferReversalLegs(
+        tx: any,
+        transfer: Transfer,
+        description: string,
+        date: string,
+    ): Promise<LedgerEntry[]> {
+        const ledgerStore = tx.objectStore('ledger');
+        const accounts = await loadAccountsFromStore(tx);
+        const companyConfig = getCompanyConfig();
+        const accountOptions = { allowNonPosting: false, companyId: companyConfig?.companyId };
+        const lenient = (ref: string | undefined): string => {
+            if (!ref) throw new UnresolvedAccountError(ref || 'undefined');
+            try {
+                const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                if (!resolved) throw new UnresolvedAccountError(ref);
+                return resolved;
+            } catch {
+                return ref;
+            }
+        };
+        const amount = toMoney(Number(transfer.amount || 0));
+        const feeAmount = toMoney(Number(transfer.feeAmount || 0));
+        const reversed: LedgerEntry[] = [];
+        const main: LedgerEntry = {
+            id: generateId('LG-TRF-REV'),
+            date,
+            description,
+            debitAccountId: lenient(transfer.fromAccountId),
+            creditAccountId: lenient(transfer.toAccountId),
+            amount,
+            referenceId: transfer.id,
+            reconciled: true
+        };
+        await ledgerStore.put(main);
+        reversed.push(main);
+        if (feeAmount > 0) {
+            const feeRev: LedgerEntry = {
+                id: generateId('LG-TRF-FEE-REV'),
+                date,
+                description,
+                debitAccountId: lenient(transfer.fromAccountId),
+                creditAccountId: lenient(transfer.feeAccountId || '52900'),
+                amount: feeAmount,
+                referenceId: transfer.id,
+                reconciled: true
+            };
+            await ledgerStore.put(feeRev);
+            reversed.push(feeRev);
+        }
+        validateLedgerBalance(reversed, `Transfer reversal ${transfer.id}`);
+        return reversed;
+    },
+
+    /**
+     * Post offsetting bank-transaction mirrors for every mirror row belonging
+     * to a transfer (kernel TRF-OUT/TRF-IN/TRF-FEE refs and UI-created rows
+     * carrying the transfer id). Skips refs already reversed (retry-safe).
+     */
+    async reverseTransferMirrors(tx: any, transferId: string, tag: string, date: string): Promise<number> {
+        const bankTransactionsStore = tx.objectStore('bankTransactions');
+        const all = await bankTransactionsStore.getAll();
+        const bases = [`TRF-OUT-${transferId}`, `TRF-IN-${transferId}`, `TRF-FEE-${transferId}`, transferId];
+        const isOwned = (ref: unknown) => bases.some((b) => ref === b || (typeof ref === 'string' && ref.startsWith(`${b}-E`)));
+        const targets = (all || []).filter((t: any) => isOwned(t.reference));
+        let reversed = 0;
+        for (const orig of targets) {
+            const revRef = `TRF-REV-${orig.reference}${tag}`;
+            if ((all || []).some((t: any) => t.reference === revRef)) continue;
+            const reversal: BankTransaction = {
+                id: generateId('TXN'),
+                date,
+                amount: orig.amount,
+                type: orig.type === 'Deposit' ? 'Withdrawal' : 'Deposit',
+                description: `Reversal of ${orig.description || orig.reference}`,
+                reference: revRef,
+                bankAccountId: orig.bankAccountId,
+                counterparty: orig.counterparty,
+                category: orig.category || 'Transfer',
+                reconciled: false,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+            await bankTransactionsStore.put(reversal);
+            reversed += 1;
+        }
+        return reversed;
+    },
+
+    async updateTransfer(id: string, patch: Partial<Transfer> & { idempotencyKey?: string }) {
+        return dbService.executeAtomicOperation(
+            ['transfers', 'ledger', 'bankAccounts', 'bankTransactions', 'accounts', 'idempotencyKeys'],
+            async (tx) => {
+                const transferStore = tx.objectStore('transfers');
+                const existing = await transferStore.get(id);
+                if (!existing) throw new Error('Transfer not found');
+                if (existing.status === 'Voided') throw new Error('Cannot edit a voided transfer');
+
+                const next = { ...existing, ...patch, id };
+                const financialChanged =
+                    Number(next.amount) !== Number(existing.amount) ||
+                    String(next.fromAccountId) !== String(existing.fromAccountId) ||
+                    String(next.toAccountId) !== String(existing.toAccountId) ||
+                    String(next.date) !== String(existing.date) ||
+                    Number(next.feeAmount || 0) !== Number(existing.feeAmount || 0) ||
+                    String(next.feeAccountId || '') !== String(existing.feeAccountId || '');
+
+                if (!financialChanged) {
+                    next.updatedAt = new Date().toISOString();
+                    await transferStore.put(next);
+                    return { success: true, reposted: false };
+                }
+
+                const amount = toMoney(Number(next.amount || 0));
+                if (!Number.isFinite(amount) || amount <= 0) {
+                    throw new Error('Transfer amount must be positive');
+                }
+                if (String(next.fromAccountId) === String(next.toAccountId)) {
+                    throw new Error('Source and destination accounts cannot be the same');
+                }
+                const feeAmount = toMoney(Number(next.feeAmount || 0));
+                if (feeAmount < 0) throw new Error('Transfer fee cannot be negative');
+
+                const nextEdit = Number(existing.editCount || 0) + 1;
+                await reserveIdempotencyKey(tx, 'transfer', `${id}:update:${nextEdit}`, (patch as { idempotencyKey?: string }).idempotencyKey);
+
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const accountOptions = { allowNonPosting: false, companyId: companyConfig?.companyId };
+                const resolveAcct = (ref: string | undefined) => {
+                    const resolved = ref ? resolveAccountForPosting(ref, accounts, accountOptions) : null;
+                    if (!resolved) throw new UnresolvedAccountError(ref || 'undefined');
+                    return resolved;
+                };
+                const fromAccountId = resolveAcct(next.fromAccountId);
+                const toAccountId = resolveAcct(next.toAccountId);
+                const feeAccountId = feeAmount > 0 ? resolveAcct(next.feeAccountId || '52900') : null;
+
+                const ledgerStore = tx.objectStore('ledger');
+                const bankAccountsStore = tx.objectStore('bankAccounts');
+                const bankTransactionsStore = tx.objectStore('bankTransactions');
+                const editTag = `-E${nextEdit}`;
+
+                // 1. Reverse the old postings (main + fee legs, if any).
+                await this.postTransferReversalLegs(tx, existing, `Reversal of transfer ${id} (edit ${nextEdit})`, next.date);
+
+                // 2. Post the corrected legs.
+                const posted: LedgerEntry[] = [{
+                    id: generateId('LG-TRF'),
+                    date: next.date,
+                    description: `Internal Transfer: ${next.description || ''}`,
+                    debitAccountId: toAccountId,
+                    creditAccountId: fromAccountId,
+                    amount,
+                    referenceId: id,
+                    reconciled: true
+                }];
+                if (feeAmount > 0 && feeAccountId) {
+                    posted.push({
+                        id: generateId('LG-TRF-FEE'),
+                        date: next.date,
+                        description: `Transfer fee: ${next.description || id}`,
+                        debitAccountId: feeAccountId,
+                        creditAccountId: fromAccountId,
+                        amount: feeAmount,
+                        referenceId: id,
+                        reconciled: true
+                    });
+                }
+                for (const entry of posted) await ledgerStore.put(entry);
+                validateLedgerBalance(posted, `Transfer ${id} edit ${nextEdit}`);
+
+                // 3. Reverse old mirrors, then mirror the corrected legs.
+                await this.reverseTransferMirrors(tx, id, editTag, next.date);
+                await ensureMirroredBankTransaction({
+                    bankAccountsStore, bankTransactionsStore, date: next.date, amount, type: 'Withdrawal',
+                    description: `Transfer out: ${next.description || id}`, reference: `TRF-OUT-${id}${editTag}`,
+                    accountId: fromAccountId, paymentMethod: 'Bank Transfer', category: 'Transfer'
+                });
+                await ensureMirroredBankTransaction({
+                    bankAccountsStore, bankTransactionsStore, date: next.date, amount, type: 'Deposit',
+                    description: `Transfer in: ${next.description || id}`, reference: `TRF-IN-${id}${editTag}`,
+                    accountId: toAccountId, paymentMethod: 'Bank Transfer', category: 'Transfer'
+                });
+                if (feeAmount > 0) {
+                    await ensureMirroredBankTransaction({
+                        bankAccountsStore, bankTransactionsStore, date: next.date, amount: feeAmount, type: 'Withdrawal',
+                        description: `Transfer fee: ${next.description || id}`, reference: `TRF-FEE-${id}${editTag}`,
+                        accountId: fromAccountId, paymentMethod: 'Bank Transfer', category: 'Transfer'
+                    });
+                }
+
+                await transferStore.put({
+                    ...next, amount, feeAmount, feeAccountId,
+                    fromAccountId: next.fromAccountId, toAccountId: next.toAccountId,
+                    editCount: nextEdit, updatedAt: new Date().toISOString(),
+                });
+                return { success: true, reposted: true };
+            }
+        );
+    },
+
+    async voidTransfer(id: string, reason: string) {
+        return dbService.executeAtomicOperation(
+            ['transfers', 'ledger', 'bankAccounts', 'bankTransactions', 'accounts', 'idempotencyKeys'],
+            async (tx) => {
+                const transferStore = tx.objectStore('transfers');
+                const existing = await transferStore.get(id);
+                if (!existing) throw new Error('Transfer not found');
+                if (existing.status === 'Voided') throw new Error('Transfer is already voided');
+                if (!String(reason || '').trim()) throw new Error('A void reason is required');
+
+                await reserveIdempotencyKey(tx, 'transfer', `${id}:void`);
+
+                const now = new Date().toISOString();
+                await this.postTransferReversalLegs(tx, existing, `Reversal of transfer ${id} (voided: ${String(reason).trim()})`, now);
+                await this.reverseTransferMirrors(tx, id, '', now);
+                await transferStore.put({
+                    ...existing, status: 'Voided', voidReason: String(reason).trim(), voidedAt: now,
+                });
                 return { success: true };
             }
         );

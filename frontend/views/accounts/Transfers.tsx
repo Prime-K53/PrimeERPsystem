@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transfer } from '../../types';
 import { useFinance } from '../../context/FinanceContext';
+import { getPaymentAccountOptions } from '../../constants';
+import { computeOwnBalances } from '../../services/accountingEngine';
 import { useData, REFRESH_INTERVAL } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useModuleRefresh } from '../../hooks/useModuleRefresh';
@@ -28,7 +30,7 @@ import {
 } from './components/financeChrome';
 
 const Transfers: React.FC = () => {
-  const { transfers, executeTransfer } = useFinance();
+  const { transfers, executeTransfer, updateTransfer, voidTransfer, accounts: coaAccounts, ledger } = useFinance();
   const {
     accounts: bankingAccounts,
     fetchBankingData,
@@ -38,14 +40,14 @@ const Transfers: React.FC = () => {
   const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
   
   // State
-  const [showModal, setShowModal] = useState<'create' | 'view' | null>(null);
+  const [showModal, setShowModal] = useState<'create' | 'edit' | 'view' | null>(null);
   const [selectedTransfer, setSelectedTransfer] = useState<Transfer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({
     start: startOfMonth(new Date()).toISOString().split('T')[0],
     end: endOfMonth(new Date()).toISOString().split('T')[0]
   });
-  const [filterStatus, setFilterStatus] = useState<'all' | 'completed'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'voided'>('all');
   const [sortBy, setSortBy] = useState<'date' | 'amount' | 'from' | 'to'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -56,8 +58,14 @@ const Transfers: React.FC = () => {
     fromAccountId: '',
     toAccountId: '',
     description: '',
-    reference: ''
+    reference: '',
+    feeAmount: '',
+    feeAccountId: '52900'
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+  const [confirmingVoid, setConfirmingVoid] = useState(false);
 
   const { refreshAllData } = useData();
 
@@ -84,6 +92,48 @@ const Transfers: React.FC = () => {
     loadCOABalances();
   }, [bankingAccounts]);
 
+  // Canonical Payment Accounts (Cash in Hand + 4 bank COA leaves, live names)
+  // auto-added alongside user bank rows in every From/To picker.
+  const paymentOptions = useMemo(
+    () => getPaymentAccountOptions(coaAccounts),
+    [coaAccounts]
+  );
+  const coaLedgerBalances = useMemo(
+    () => computeOwnBalances((coaAccounts || []) as any[], (ledger || []) as any[]),
+    [coaAccounts, ledger]
+  );
+  const coaBalanceByCode: Record<string, number> = useMemo(() => {
+    const byCode: Record<string, number> = {};
+    for (const opt of paymentOptions) {
+      const live = (coaAccounts || []).find(a =>
+        String(a.account_number ?? a.code ?? a.id ?? '') === opt.code);
+      if (live) byCode[opt.code] = coaLedgerBalances[String((live as any).id)] ?? 0;
+    }
+    return byCode;
+  }, [paymentOptions, coaAccounts, coaLedgerBalances]);
+  const feeExpenseOptions = useMemo(() => {
+    return (coaAccounts || [])
+      .filter(a => String((a as any).account_type || '').toUpperCase() === 'EXPENSE'
+        && (a as any).allow_posting !== false && (a as any).is_active !== false)
+      .map(a => ({
+        id: String((a as any).id),
+        code: String((a as any).account_number ?? (a as any).code ?? (a as any).id),
+        name: String((a as any).name ?? (a as any).id),
+      }));
+  }, [coaAccounts]);
+  const isCoaRef = (id: string) =>
+    paymentOptions.some(o => o.id === id) ||
+    (coaAccounts || []).some(a =>
+      String((a as any).id) === id ||
+      String((a as any).account_number ?? (a as any).code ?? '') === id);
+
+  // Get account name by ID (Payment Accounts first, then bank rows)
+  const getAccountName = (accountId: string) => {
+    return paymentOptions.find(o => o.id === accountId)?.name
+      || bankingAccounts.find(a => a.id === accountId)?.name
+      || accountId;
+  };
+
   // Filter and sort transfers
   const filteredTransfers = useMemo(() => {
     return transfers
@@ -95,8 +145,8 @@ const Transfers: React.FC = () => {
       })
       .filter(transfer => {
         if (!searchTerm) return true;
-        const fromAccount = bankingAccounts.find(a => a.id === transfer.fromAccountId)?.name || '';
-        const toAccount = bankingAccounts.find(a => a.id === transfer.toAccountId)?.name || '';
+        const fromAccount = getAccountName(transfer.fromAccountId);
+        const toAccount = getAccountName(transfer.toAccountId);
         return (
           transfer.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           transfer.reference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -106,7 +156,8 @@ const Transfers: React.FC = () => {
       })
       .filter(transfer => {
         if (filterStatus === 'all') return true;
-        return transfer.status === filterStatus;
+        if (filterStatus === 'voided') return transfer.status === 'Voided';
+        return transfer.status === 'completed' || transfer.status === undefined;
       })
       .sort((a, b) => {
         let aValue: any, bValue: any;
@@ -121,12 +172,12 @@ const Transfers: React.FC = () => {
             bValue = b.amount;
             break;
           case 'from':
-            aValue = bankingAccounts.find(acc => acc.id === a.fromAccountId)?.name || '';
-            bValue = bankingAccounts.find(acc => acc.id === b.fromAccountId)?.name || '';
+            aValue = getAccountName(a.fromAccountId);
+            bValue = getAccountName(b.fromAccountId);
             break;
           case 'to':
-            aValue = bankingAccounts.find(acc => acc.id === a.toAccountId)?.name || '';
-            bValue = bankingAccounts.find(acc => acc.id === b.toAccountId)?.name || '';
+            aValue = getAccountName(a.toAccountId);
+            bValue = getAccountName(b.toAccountId);
             break;
           default:
             aValue = new Date(a.date).getTime();
@@ -141,11 +192,16 @@ const Transfers: React.FC = () => {
           return aValue < bValue ? 1 : -1;
         }
       });
-  }, [transfers, dateRange, searchTerm, filterStatus, sortBy, sortOrder, bankingAccounts]);
+  }, [transfers, dateRange, searchTerm, filterStatus, sortBy, sortOrder, bankingAccounts, paymentOptions]);
 
   const activeBankAccounts = useMemo(() => {
     return bankingAccounts.filter(account => account.status === 'Active');
   }, [bankingAccounts]);
+
+  // Transfer endpoints: user bank rows PLUS the always-available Payment
+  // Accounts (Cash in Hand + 4 bank COA leaves). The New Transfer gate counts
+  // both, so transfers work even with fewer than two bank rows.
+  const transferEndpointCount = activeBankAccounts.length + paymentOptions.length;
 
   // Account balances summary
   const accountBalances = useMemo(() => {
@@ -154,39 +210,81 @@ const Transfers: React.FC = () => {
     bankingAccounts.forEach(account => {
       balances[account.id] = coaBalances[account.id] ?? account.availableBalance ?? account.balance ?? 0;
     });
+    for (const opt of paymentOptions) {
+      balances[opt.id] = coaBalanceByCode[opt.code] ?? 0;
+    }
 
     return balances;
-  }, [bankingAccounts, coaBalances]);
+  }, [bankingAccounts, coaBalances, paymentOptions, coaBalanceByCode]);
 
-  // Handle form submission
+  const emptyForm = {
+    date: getDefaultDate(),
+    amount: '',
+    fromAccountId: '',
+    toAccountId: '',
+    description: '',
+    reference: '',
+    feeAmount: '',
+    feeAccountId: '52900'
+  };
+
+  const openCreateModal = () => {
+    setEditingId(null);
+    setFormData({ ...emptyForm, date: getDefaultDate() });
+    setShowAdvanced(false);
+    setShowModal('create');
+  };
+
+  const openEditModal = (transfer: Transfer) => {
+    if (transfer.status === 'Voided') {
+      notify('Voided transfers cannot be edited', 'error');
+      return;
+    }
+    setEditingId(transfer.id);
+    setFormData({
+      date: String(transfer.date || '').slice(0, 10),
+      amount: String(transfer.amount ?? ''),
+      fromAccountId: String(transfer.fromAccountId ?? ''),
+      toAccountId: String(transfer.toAccountId ?? ''),
+      description: String(transfer.description ?? ''),
+      reference: String(transfer.reference ?? ''),
+      feeAmount: transfer.feeAmount != null && Number(transfer.feeAmount) > 0 ? String(transfer.feeAmount) : '',
+      feeAccountId: String(transfer.feeAccountId ?? '52900')
+    });
+    setShowAdvanced(Number(transfer.feeAmount || 0) > 0);
+    setShowModal('edit');
+  };
+
+  // Handle form submission (create + edit)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.fromAccountId || !formData.toAccountId) {
       notify('Please select both source and destination accounts', 'error');
       return;
     }
-    
+
     if (formData.fromAccountId === formData.toAccountId) {
       notify('Source and destination accounts cannot be the same', 'error');
       return;
     }
-    
+
     const amount = parseFloat(formData.amount);
     if (isNaN(amount) || amount <= 0) {
       notify('Please enter a valid amount', 'error');
       return;
     }
-    
-    // Check if source account has sufficient balance
-    const fromAccount = bankingAccounts.find(a => a.id === formData.fromAccountId);
-    if (fromAccount) {
-      const fromAccountBalance = accountBalances[fromAccount.id] || 0;
-      
-      if (fromAccountBalance < amount) {
-        notify('Insufficient balance in source account', 'error');
-        return;
-}
+    const feeAmount = formData.feeAmount.trim() === '' ? 0 : parseFloat(formData.feeAmount);
+    if (isNaN(feeAmount) || feeAmount < 0) {
+      notify('Please enter a valid fee amount (0 or more)', 'error');
+      return;
+    }
+
+    // Check if source account has sufficient balance (amount + fee leave together)
+    const fromAccountBalance = accountBalances[formData.fromAccountId];
+    if (fromAccountBalance !== undefined && fromAccountBalance < amount + feeAmount) {
+      notify('Insufficient balance in source account (amount + fee)', 'error');
+      return;
     }
 
     // Validate date against active financial year
@@ -194,58 +292,91 @@ const Transfers: React.FC = () => {
     if (dateError) { notify(dateError, "error"); return; }
 
     try {
-      const transferId = generateNextId('TRF', transfers, companyConfig);
-      const reference = formData.reference || transferId;
-      const newTransfer: Transfer = {
-        id: transferId,
-        date: formData.date,
-        amount: amount,
-        fromAccountId: formData.fromAccountId,
-        toAccountId: formData.toAccountId,
-        description: formData.description,
-        reference
-      };
-      
-      await executeTransfer(newTransfer);
+      if (editingId && showModal === 'edit') {
+        await updateTransfer(editingId, {
+          date: formData.date,
+          amount,
+          fromAccountId: formData.fromAccountId,
+          toAccountId: formData.toAccountId,
+          description: formData.description,
+          reference: formData.reference,
+          feeAmount,
+          feeAccountId: formData.feeAccountId,
+        });
+      } else {
+        const transferId = generateNextId('TRF', transfers, companyConfig);
+        const reference = formData.reference || transferId;
+        const newTransfer: Transfer = {
+          id: transferId,
+          date: formData.date,
+          amount,
+          fromAccount: getAccountName(formData.fromAccountId),
+          toAccount: getAccountName(formData.toAccountId),
+          fromAccountId: formData.fromAccountId,
+          toAccountId: formData.toAccountId,
+          description: formData.description,
+          reference,
+          feeAmount,
+          feeAccountId: formData.feeAccountId,
+        };
 
-      // Mirror transfers to banking transactions so bank balances stay accurate.
-      await createBankTransaction({
-        date: formData.date,
-        amount,
-        type: 'Withdrawal',
-        description: formData.description || `Transfer to ${getAccountName(formData.toAccountId)}`,
-        reference,
-        bankAccountId: formData.fromAccountId,
-        counterparty: { name: getAccountName(formData.toAccountId) },
-        category: 'Transfer',
-        reconciled: false
-      });
+        await executeTransfer(newTransfer);
 
-      await createBankTransaction({
-        date: formData.date,
-        amount,
-        type: 'Deposit',
-        description: formData.description || `Transfer from ${getAccountName(formData.fromAccountId)}`,
-        reference,
-        bankAccountId: formData.toAccountId,
-        counterparty: { name: getAccountName(formData.fromAccountId) },
-        category: 'Transfer',
-        reconciled: false
-      });
-      
+        // Mirror to banking transactions only for bank-table endpoints. COA
+        // payment accounts are covered by the kernel mirrors (or skipped when
+        // no bank row matches) — mirroring them here would orphan rows.
+        if (!isCoaRef(formData.fromAccountId) && !isCoaRef(formData.toAccountId)) {
+          await createBankTransaction({
+            date: formData.date,
+            amount,
+            type: 'Withdrawal',
+            description: formData.description || `Transfer to ${getAccountName(formData.toAccountId)}`,
+            reference,
+            bankAccountId: formData.fromAccountId,
+            counterparty: { name: getAccountName(formData.toAccountId) },
+            category: 'Transfer',
+            reconciled: false
+          });
+
+          await createBankTransaction({
+            date: formData.date,
+            amount,
+            type: 'Deposit',
+            description: formData.description || `Transfer from ${getAccountName(formData.fromAccountId)}`,
+            reference,
+            bankAccountId: formData.toAccountId,
+            counterparty: { name: getAccountName(formData.fromAccountId) },
+            category: 'Transfer',
+            reconciled: false
+          });
+        }
+      }
+
       // Reset form
-      setFormData({
-        date: new Date().toISOString().split('T')[0],
-        amount: '',
-        fromAccountId: '',
-        toAccountId: '',
-        description: '',
-        reference: ''
-      });
-      
+      setEditingId(null);
+      setFormData({ ...emptyForm, date: new Date().toISOString().split('T')[0] });
+      setShowAdvanced(false);
+
       setShowModal(null);
     } catch (error: any) {
       notify(`Transfer failed: ${error.message}`, 'error');
+    }
+  };
+
+  const handleVoidConfirm = async () => {
+    if (!selectedTransfer) return;
+    if (!voidReason.trim()) {
+      notify('A void reason is required', 'error');
+      return;
+    }
+    try {
+      await voidTransfer(selectedTransfer.id, voidReason.trim());
+      setConfirmingVoid(false);
+      setVoidReason('');
+      setShowModal(null);
+      setSelectedTransfer(null);
+    } catch {
+      // notify handled in context
     }
   };
 
@@ -253,19 +384,16 @@ const Transfers: React.FC = () => {
   const handleExport = () => {
     const exportData = filteredTransfers.map(transfer => ({
       'Date': format(parseISO(transfer.date), 'yyyy-MM-dd'),
-      'From Account': bankingAccounts.find(a => a.id === transfer.fromAccountId)?.name || transfer.fromAccountId,
-      'To Account': bankingAccounts.find(a => a.id === transfer.toAccountId)?.name || transfer.toAccountId,
-      'Amount': transfer.amount.toFixed(2),
+      'From Account': getAccountName(transfer.fromAccountId),
+      'To Account': getAccountName(transfer.toAccountId),
+      'Amount': Number(transfer.amount || 0).toFixed(2),
+      'Fee': Number(transfer.feeAmount || 0).toFixed(2),
+      'Status': transfer.status || 'Completed',
       'Description': transfer.description || '',
       'Reference': transfer.reference || ''
     }));
-    
-    exportToCSV(exportData, `transfers-${format(new Date(), 'yyyy-MM-dd')}`);
-  };
 
-  // Get account name by ID
-  const getAccountName = (accountId: string) => {
-    return bankingAccounts.find(a => a.id === accountId)?.name || accountId;
+    exportToCSV(exportData, `transfers-${format(new Date(), 'yyyy-MM-dd')}`);
   };
 
   return (
@@ -286,10 +414,10 @@ const Transfers: React.FC = () => {
               Export
             </button>
             <button
-              onClick={() => setShowModal('create')}
-              disabled={activeBankAccounts.length < 2}
-              style={{ ...btnPrimaryStyle, opacity: activeBankAccounts.length < 2 ? 0.55 : 1 }}
-              onMouseEnter={e => { if (activeBankAccounts.length >= 2) e.currentTarget.style.transform = 'translateY(-1px)'; }}
+              onClick={() => openCreateModal()}
+              disabled={transferEndpointCount < 2}
+              style={{ ...btnPrimaryStyle, opacity: transferEndpointCount < 2 ? 0.55 : 1 }}
+              onMouseEnter={e => { if (transferEndpointCount >= 2) e.currentTarget.style.transform = 'translateY(-1px)'; }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
             >
               <Plus size={15} /> New Transfer
@@ -298,17 +426,17 @@ const Transfers: React.FC = () => {
         }
       />
 
-      {activeBankAccounts.length < 2 && (
+      {transferEndpointCount < 2 && (
         <div style={{ margin: '16px 28px 0', padding: 14, background: amber[100], borderRadius: 9, border: `1px solid ${amber[300]}`, display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, fontWeight: 600, color: amber[600] }}>
           <AlertCircle size={16} />
-          At least two active banking accounts are required to create transfers.
+          At least two transfer endpoints (bank or payment accounts) are required to create transfers.
         </div>
       )}
 
       {/* Summary Cards — KpiCards language */}
       <KpiCards items={[
         { label: 'Total Transfers', value: String(filteredTransfers.length), icon: TrendingUp, color: teal[700], bg: teal[50] },
-        { label: 'Total Amount', value: `${currency}${filteredTransfers.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}`, icon: DollarSign, color: teal[600], bg: teal[50] },
+        { label: 'Total Amount', value: `${currency}${filteredTransfers.filter(t => t.status !== 'Voided').reduce((sum, t) => sum + Number(t.amount || 0), 0).toLocaleString()}`, icon: DollarSign, color: teal[600], bg: teal[50] },
         { label: 'Active Accounts', value: String(activeBankAccounts.length), icon: Building2, color: amber[600], bg: amber[100] },
         { label: 'This Period', value: `${format(parseISO(dateRange.start), 'MMM dd')} - ${format(parseISO(dateRange.end), 'MMM dd')}`, icon: Clock, color: amber[600], bg: amber[100] },
       ]} />
@@ -350,11 +478,12 @@ const Transfers: React.FC = () => {
           <label style={labelStyle}>Status</label>
           <select
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as 'all' | 'completed')}
+            onChange={(e) => setFilterStatus(e.target.value as 'all' | 'completed' | 'voided')}
             style={{ ...selectStyle, width: 160 }}
           >
             <option value="all">All Transfers</option>
             <option value="completed">Completed</option>
+            <option value="voided">Voided</option>
           </select>
         </div>
         <div>
@@ -408,6 +537,7 @@ const Transfers: React.FC = () => {
                     <th style={{ ...tableHeadCell, textAlign: 'right' }}>Amount</th>
                     <th style={{ ...tableHeadCell, textAlign: 'left' }}>Description</th>
                     <th style={{ ...tableHeadCell, textAlign: 'left' }}>Reference</th>
+                    <th style={{ ...tableHeadCell, textAlign: 'center' }}>Status</th>
                     <th style={{ ...tableHeadCell, textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
@@ -468,10 +598,21 @@ const Transfers: React.FC = () => {
                         </span>
                       </td>
                       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                          background: transfer.status === 'Voided' ? '#fdeeee' : teal[50],
+                          color: transfer.status === 'Voided' ? danger : teal[700]
+                        }}>
+                          {transfer.status || 'Completed'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                           <button
                             onClick={() => {
                               setSelectedTransfer(transfer);
+                              setConfirmingVoid(false);
+                              setVoidReason('');
                               setShowModal('view');
                             }}
                             style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
@@ -480,6 +621,16 @@ const Transfers: React.FC = () => {
                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                           >
                             <Eye size={16} style={{ color: teal[600] }} />
+                          </button>
+                          <button
+                            onClick={() => openEditModal(transfer)}
+                            disabled={transfer.status === 'Voided'}
+                            style={{ padding: 7, borderRadius: 8, border: 'none', background: 'transparent', cursor: transfer.status === 'Voided' ? 'not-allowed' : 'pointer', opacity: transfer.status === 'Voided' ? 0.4 : 1 }}
+                            title={transfer.status === 'Voided' ? 'Voided transfers cannot be edited' : 'Edit transfer'}
+                            onMouseEnter={e => { if (transfer.status !== 'Voided') e.currentTarget.style.background = teal[50]; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            <Edit size={16} style={{ color: teal[600] }} />
                           </button>
                         </div>
                       </td>
@@ -492,15 +643,15 @@ const Transfers: React.FC = () => {
         </div>
       </div>
 
-      {/* New Transfer Modal */}
-      {showModal === 'create' && (
+      {/* New / Edit Transfer Modal */}
+      {(showModal === 'create' || showModal === 'edit') && (
         <div style={modalOverlayStyle} onClick={() => setShowModal(null)}>
           <div style={modalShell(600)} onClick={e => e.stopPropagation()}>
             <AccentStripe />
             <ModalHeader
               icon={<ArrowRightLeft size={19} color="#fff" />}
-              title="New Transfer"
-              subtitle="Move funds between accounts — Transfer ledger"
+              title={showModal === 'edit' ? 'Edit Transfer' : 'New Transfer'}
+              subtitle={showModal === 'edit' ? 'Correct a transfer — financial changes repost with reversal' : 'Move funds between accounts — Transfer ledger'}
               onClose={() => setShowModal(null)}
             />
             <form id="transfer-create-form" onSubmit={handleSubmit} style={{ padding: '24px 28px 8px', overflowY: 'auto' }}>
@@ -541,13 +692,24 @@ const Transfers: React.FC = () => {
                     required
                   >
                     <option value="">Select account</option>
-                    {activeBankAccounts
-                      .filter(acc => acc.id !== formData.toAccountId)
-                      .map(account => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} (Balance: {currency}{(accountBalances[account.id] || 0).toLocaleString()})
-                        </option>
-                      ))}
+                    <optgroup label="Payment Accounts">
+                      {paymentOptions
+                        .filter(opt => opt.id !== formData.toAccountId)
+                        .map(opt => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.name} ({opt.code}) — Balance: {currency}{(accountBalances[opt.id] || 0).toLocaleString()}
+                          </option>
+                        ))}
+                    </optgroup>
+                    <optgroup label="Bank Accounts">
+                      {activeBankAccounts
+                        .filter(acc => acc.id !== formData.toAccountId)
+                        .map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} (Balance: {currency}{(accountBalances[account.id] || 0).toLocaleString()})
+                          </option>
+                        ))}
+                    </optgroup>
                   </select>
                 </div>
                 <div>
@@ -559,13 +721,24 @@ const Transfers: React.FC = () => {
                     required
                   >
                     <option value="">Select account</option>
-                    {activeBankAccounts
-                      .filter(acc => acc.id !== formData.fromAccountId)
-                      .map(account => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} (Balance: {currency}{(accountBalances[account.id] || 0).toLocaleString()})
-                        </option>
-                      ))}
+                    <optgroup label="Payment Accounts">
+                      {paymentOptions
+                        .filter(opt => opt.id !== formData.fromAccountId)
+                        .map(opt => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.name} ({opt.code}) — Balance: {currency}{(accountBalances[opt.id] || 0).toLocaleString()}
+                          </option>
+                        ))}
+                    </optgroup>
+                    <optgroup label="Bank Accounts">
+                      {activeBankAccounts
+                        .filter(acc => acc.id !== formData.fromAccountId)
+                        .map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} (Balance: {currency}{(accountBalances[account.id] || 0).toLocaleString()})
+                          </option>
+                        ))}
+                    </optgroup>
                   </select>
                 </div>
               </div>
@@ -593,11 +766,50 @@ const Transfers: React.FC = () => {
                   style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace" }}
                 />
               </div>
+              <div style={{ marginBottom: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(prev => !prev)}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: teal[700], padding: 0 }}
+                >
+                  {showAdvanced ? '− Hide advanced options' : '+ Advanced options (transfer fee)'}
+                </button>
+              </div>
+              {showAdvanced && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16, padding: 12, borderRadius: 10, background: teal[50], border: `1px solid ${hairline}` }}>
+                  <div>
+                    <label style={labelStyle}>Transfer Fee</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.feeAmount}
+                      onChange={(e) => setFormData({ ...formData, feeAmount: e.target.value })}
+                      placeholder="0.00"
+                      style={{ ...inputStyle, fontFamily: "'JetBrains Mono',monospace" }}
+                    />
+                    <p style={{ fontSize: 10, color: inkSoft, marginTop: 4 }}>Charged DR fee expense / CR source account.</p>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Fee Expense Account</label>
+                    <select
+                      value={formData.feeAccountId}
+                      onChange={(e) => setFormData({ ...formData, feeAccountId: e.target.value })}
+                      style={selectStyle}
+                    >
+                      {feeExpenseOptions.length === 0 && <option value="52900">Bank Charges (52900)</option>}
+                      {feeExpenseOptions.map(opt => (
+                        <option key={opt.id} value={opt.code}>{opt.name} ({opt.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
             </form>
             <ModalFooter
-              stepLabel="Transfer · posts two legs"
+              stepLabel={showModal === 'edit' ? 'Transfer · correct & repost' : 'Transfer · posts two legs'}
               onCancel={() => setShowModal(null)}
-              submitLabel="Transfer Funds"
+              submitLabel={showModal === 'edit' ? 'Save Changes' : 'Transfer Funds'}
               submitFormId="transfer-create-form"
             />
           </div>
@@ -655,9 +867,61 @@ const Transfers: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {Number(selectedTransfer.feeAmount || 0) > 0 && (
+                  <div>
+                    <div style={labelStyle}>Transfer Fee</div>
+                    <div style={{ fontSize: 13, color: ink }}>
+                      {currency}{Number(selectedTransfer.feeAmount).toLocaleString()} · {getAccountName(String(selectedTransfer.feeAccountId || '52900'))}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <div style={labelStyle}>Status</div>
+                  <div style={{
+                    display: 'inline-block', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                    background: selectedTransfer.status === 'Voided' ? '#fdeeee' : teal[50],
+                    color: selectedTransfer.status === 'Voided' ? danger : teal[700]
+                  }}>
+                    {selectedTransfer.status || 'Completed'}
+                  </div>
+                </div>
+                {selectedTransfer.status === 'Voided' && (
+                  <div>
+                    <div style={labelStyle}>Void Reason</div>
+                    <div style={{ fontSize: 13, color: ink }}>{selectedTransfer.voidReason || '-'}</div>
+                  </div>
+                )}
+                {selectedTransfer.status !== 'Voided' && (confirmingVoid ? (
+                  <div>
+                    <div style={labelStyle}>Void Reason <span style={{ color: danger, fontWeight: 700 }}>*</span></div>
+                    <input
+                      type="text"
+                      value={voidReason}
+                      onChange={(e) => setVoidReason(e.target.value)}
+                      placeholder="Reason for voiding (required)"
+                      style={inputStyle}
+                    />
+                  </div>
+                ) : null)}
               </div>
             </div>
-            <ModalFooter stepLabel="Transfer · read-only" onCancel={() => setShowModal(null)} submitLabel="Close" onSubmit={() => setShowModal(null)} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 28px', borderTop: `1px solid ${hairline}`, background: paper }}>
+              <span style={{ fontSize: 11, color: inkSoft, marginRight: 'auto' }}>Transfer · read-only</span>
+              {selectedTransfer.status !== 'Voided' && (
+                <>
+                  <button onClick={() => { setShowModal(null); setConfirmingVoid(false); setVoidReason(''); openEditModal(selectedTransfer); }} style={btnGhostStyle}>Edit</button>
+                  {confirmingVoid ? (
+                    <>
+                      <button onClick={() => { setConfirmingVoid(false); setVoidReason(''); }} style={btnGhostStyle}>Cancel Void</button>
+                      <button onClick={handleVoidConfirm} style={btnDangerStyle}>Confirm Void</button>
+                    </>
+                  ) : (
+                    <button onClick={() => setConfirmingVoid(true)} style={btnDangerStyle}>Void Transfer</button>
+                  )}
+                </>
+              )}
+              <button onClick={() => { setShowModal(null); setConfirmingVoid(false); setVoidReason(''); }} style={btnPrimaryStyle}>Close</button>
+            </div>
           </div>
         </div>
       )}

@@ -79,6 +79,8 @@ interface FinanceContextType {
   updateOpeningBalance: (amount: number) => void;
 
   executeTransfer: (transfer: Transfer) => void;
+  updateTransfer: (id: string, patch: Partial<Transfer>) => Promise<void>;
+  voidTransfer: (id: string, reason: string) => Promise<void>;
   
   addEmployee: (emp: Employee) => void;
   updateEmployee: (emp: Employee) => void;
@@ -941,6 +943,44 @@ const handleOpenInventory = async () => {
       }
   };
 
+  const updateTransfer = async (id: string, patch: Partial<Transfer>) => {
+      try {
+        const result = await transactionService.updateTransfer(id, patch);
+        await financeStore.fetchFinanceData();
+        addAuditLog({
+            action: 'UPDATE',
+            entityType: 'Transfer',
+            entityId: id,
+            details: result?.reposted
+              ? `Transfer ${id} corrected and reposted`
+              : `Transfer ${id} details updated`,
+            newValue: patch
+        });
+        notify(result?.reposted ? "Transfer corrected and reposted" : "Transfer updated", "success");
+      } catch (err: any) {
+        notify(`Transfer update failed: ${err.message}`, "error");
+        throw err;
+      }
+  };
+
+  const voidTransfer = async (id: string, reason: string) => {
+      try {
+        await transactionService.voidTransfer(id, reason);
+        await financeStore.fetchFinanceData();
+        addAuditLog({
+            action: 'VOID',
+            entityType: 'Transfer',
+            entityId: id,
+            details: `Transfer ${id} voided: ${reason}`,
+            newValue: { status: 'Voided' }
+        });
+        notify("Transfer voided — reversing entries posted", "success");
+      } catch (err: any) {
+        notify(`Transfer void failed: ${err.message}`, "error");
+        throw err;
+      }
+  };
+
   const addCheque = async (cheque: Cheque) => {
       const newCheque = {
         ...cheque,
@@ -1111,7 +1151,7 @@ const handleOpenInventory = async () => {
   return (
     <FinanceContext.Provider value={{
       ...financeStore, addInvoice, updateInvoice, addExpense, approveExpense, addIncome, postJournalEntry,
-      createDeliveryNote, executeTransfer, runPayroll, addCheque, updateCheque: financeStore.updateCheque, deleteCheque: financeStore.deleteCheque,
+      createDeliveryNote, executeTransfer, updateTransfer, voidTransfer, runPayroll, addCheque, updateCheque: financeStore.updateCheque, deleteCheque: financeStore.deleteCheque,
       recordSupplierPayment, updateSupplierPayment, voidSupplierPayment, postZReportToLedger, checkAndApplyLateFees, closeFinancialYear, runMonthEndClosing, syncInventoryValuation, openInventory: handleOpenInventory, repairDuplicateOpeningCash,
       refreshAccounts: financeStore.fetchFinanceData,
       addAccount: financeStore.addAccount, updateAccount: financeStore.updateAccount, deleteAccount: financeStore.deleteAccount,

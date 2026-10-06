@@ -1730,6 +1730,16 @@ export interface Transfer {
   toAccount: string;
   amount: number;
   date: string;
+  /** Optional transfer charge posted DR fee-expense / CR source account. */
+  feeAmount?: number;
+  /** Expense posting account for the fee (defaults to Bank Charges 52900). */
+  feeAccountId?: string;
+  /** 'Completed' for posted transfers, 'Voided' after voidTransfer. */
+  status?: string;
+  /** Incremented on every financial edit (idempotency + mirror refs). */
+  editCount?: number;
+  voidReason?: string;
+  voidedAt?: string;
   [key: string]: any;
 }
 
