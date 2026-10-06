@@ -404,7 +404,7 @@ const SalesOrders: React.FC = () => {
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <p style={{ margin: 0, fontSize: 9, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08 }}>Total</p>
-                        <p style={{ margin: '2px 0 0', fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 700, color: teal[800], fontVariantNumeric: 'tabular-nums' }}>{o.total}</p>
+                        <p style={{ margin: '2px 0 0', fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 700, color: teal[800], fontVariantNumeric: 'tabular-nums' }}>{o.total ?? o.totalAmount ?? 0}</p>
                       </div>
                     </div>
                     <div style={{ borderTop: `1px solid ${hairline}`, padding: '10px 12px' }}>
@@ -459,7 +459,7 @@ const SalesOrders: React.FC = () => {
                           {o.status}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 14px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, fontWeight: 600, color: ink, whiteSpace: 'nowrap' }}>{o.total}</td>
+                      <td style={{ padding: '10px 14px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, fontWeight: 600, color: ink, whiteSpace: 'nowrap' }}>{o.total ?? o.totalAmount ?? 0}</td>
                       <td style={{ padding: '10px 14px', minWidth: 230 }}>
                       <RowActions order={o} onEdit={setEditing} onConvert={handleConvertToInvoice} onChangeStatus={changeStatus} onDelete={handleDelete} />
                       </td>

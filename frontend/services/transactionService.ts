@@ -1974,12 +1974,17 @@ export const transactionService = {
                 customerName: invoice.customerName,
                 orderDate: invoice.date || new Date().toISOString(),
                 deliveryDate: invoice.dueDate ?? null,
-                status: String(invoice.status || '').toLowerCase() === 'draft' ? 'Draft' : 'Confirmed',
+                // An invoice-derived order mirrors an already-posted invoice:
+                // it is complete by construction (terminal Fulfilled = done),
+                // so every list shows its real total with a done state.
+                // Draft invoices keep Draft until they are finalised.
+                status: String(invoice.status || '').toLowerCase() === 'draft' ? 'Draft' : 'Fulfilled',
                 items,
                 subtotal,
                 discounts,
                 tax,
                 total,
+                totalAmount: total,
                 notes: invoice.notes,
                 invoiceId: invoice.id,
                 invoiceNumber: invoice.invoiceNumber,
