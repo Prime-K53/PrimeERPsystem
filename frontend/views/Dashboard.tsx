@@ -542,6 +542,11 @@ const SlidingInfoCard = ({ slides, compact, animDelay = 0 }: { slides: any[], co
       }}
       onClick={handleCardClick}
     >
+      <div style={{
+        position: 'absolute', top: -60, right: -60, width: 180, height: 180, borderRadius: '50%',
+        background: `radial-gradient(circle, ${slide.color}26 0%, transparent 70%)`,
+        pointerEvents: 'none',
+      }} />
       <div key={index} className="animate-in fade-in slide-in-from-right-4 duration-1000" style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         {slide.render ? slide.render(compact) : (
           <>
@@ -621,6 +626,21 @@ const SlidingInfoCard = ({ slides, compact, animDelay = 0 }: { slides: any[], co
 
 // ─── KPI card alias ────────────────────────────────────────────────────────
 const SimpleKpiCard = PremiumKpiCard;
+
+/** Slim proportional split bar for info slides (purely presentational). */
+const SplitBar = ({ segments, height = 6 }: { segments: { value: number; color: string }[]; height?: number }) => {
+  const total = segments.reduce((s, seg) => s + Math.max(0, seg.value), 0);
+  if (total <= 0) return null;
+  return (
+    <div style={{ display: 'flex', gap: 2, height, borderRadius: height / 2, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.06)' }}>
+      {segments.map((seg, i) => {
+        const pct = (Math.max(0, seg.value) / total) * 100;
+        if (pct <= 0) return null;
+        return <div key={i} style={{ width: `${pct}%`, backgroundColor: seg.color, borderRadius: height / 2 }} />;
+      })}
+    </div>
+  );
+};
 
 // ─── Animated value wrapper for custom-child KPI cards ─────────────────────
 const KpiValueAnimator = ({ animDelay = 0, children }: { animDelay?: number; children: React.ReactNode }) => {
@@ -1235,15 +1255,30 @@ const DashboardContent: React.FC = () => {
   const infoSlides = [
     {
       label: 'Contracts', color: '#f59e0b', icon: <FileText size={20} />,
-      render: (compact: boolean) => (
+      render: (compact: boolean) => {
+        const live = contractStats.live || [];
+        const active = live.filter((c: any) => c.status === 'active').length;
+        const pending = live.filter((c: any) => c.status === 'pending_payment').length;
+        const draft = Math.max(0, live.length - active - pending);
+        return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em', textTransform: 'uppercase' }}>ACTIVE CONTRACTS</div>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b', flexShrink: 0 }}><FileText size={16} /></div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#f59e0b', letterSpacing: '-0.02em', lineHeight: 1 }}>{contractStats.count || '0'}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#f59e0b', letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{contractStats.count || '0'}</div>
             <div style={{ fontSize: 13, color: '#64748b', fontWeight: 600, marginTop: 4 }}>{contractStats.count === 1 ? 'Printing contract in force' : 'Printing contracts in force'}</div>
+          </div>
+          <SplitBar segments={[
+            { value: active, color: '#10b981' },
+            { value: pending, color: '#f59e0b' },
+            { value: draft, color: '#cbd5e1' },
+          ]} />
+          <div style={{ display: 'flex', gap: 10, fontSize: 10, color: '#64748b', fontWeight: 600 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#10b981' }} />{active} active</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#f59e0b' }} />{pending} pending</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#cbd5e1' }} />{draft} draft</span>
           </div>
           <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%', margin: '2px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1255,7 +1290,8 @@ const DashboardContent: React.FC = () => {
             <div style={{ fontSize: 10, fontWeight: 700, color: '#b45309', backgroundColor: '#fffbeb', padding: '1px 8px', borderRadius: 6 }}>{formatShortCurrency(currency, contractStats.prepaidBalance)}</div>
           </div>
         </div>
-      )
+        );
+      }
     },
     {
       label: 'Active Jobs', color: '#a855f7', icon: <Briefcase size={20} />,
@@ -1266,9 +1302,13 @@ const DashboardContent: React.FC = () => {
             <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a855f7', flexShrink: 0 }}><Briefcase size={16} /></div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1 }}>{activeJobsCount || '0'}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{activeJobsCount || '0'}</div>
             <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>Production in progress</div>
           </div>
+          <SplitBar segments={[
+            { value: activeJobsCount, color: '#a855f7' },
+            { value: Math.max(0, (jobOrders?.length || 0) - activeJobsCount), color: '#e9d5ff' },
+          ]} />
           <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%', margin: '2px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#1e293b' }}>
@@ -1318,9 +1358,13 @@ const DashboardContent: React.FC = () => {
               <div style={{ width: 32, height: 32, borderRadius: 8, background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0ea5e9', flexShrink: 0 }}><Inbox size={16} /></div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1 }}>{openQuotations + openOrders}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{openQuotations + openOrders}</div>
               <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>Open portal requests</div>
             </div>
+            <SplitBar segments={[
+              { value: openQuotations, color: '#0ea5e9' },
+              { value: openOrders, color: '#f59e0b' },
+            ]} />
             <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%', margin: '2px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#1e293b' }}>
