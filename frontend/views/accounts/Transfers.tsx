@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Transfer } from '../../types';
 import { useFinance } from '../../context/FinanceContext';
 import { getPaymentAccountOptions } from '../../constants';
 import { computeOwnBalances } from '../../services/accountingEngine';
+import { durableSyncQueue } from '../../services/durableSyncQueue';
+import { backgroundSyncService } from '../../services/backgroundSyncService';
 import { useData, REFRESH_INTERVAL } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useModuleRefresh } from '../../hooks/useModuleRefresh';
@@ -28,6 +30,27 @@ import {
     modalOverlayStyle, modalShell, AccentStripe, ModalHeader, ModalFooter,
     PageHeader, KpiCards, EmptyState, tableCard, tableHeadRow, tableHeadCell,
 } from './components/financeChrome';
+
+export type TransferSyncState = 'Synced' | 'Pending' | 'Failed';
+
+/**
+ * Newest queue operation for one transfer row decides its sync badge.
+ * completed → Synced; pending/syncing → Pending; failed/dead_letter →
+ * Failed. No row (long-synced, pruned) → null (no badge).
+ */
+export function transferSyncStateFor(
+  ops: Array<{ table?: string; recordId?: string | null; status?: string; createdAt?: string }>,
+  recordId: string,
+): TransferSyncState | null {
+  const mine = ops
+    .filter(o => o.table === 'transfers' && o.recordId === recordId)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  if (mine.length === 0) return null;
+  const status = mine[0].status;
+  if (status === 'completed') return 'Synced';
+  if (status === 'failed' || status === 'dead_letter') return 'Failed';
+  return 'Pending';
+}
 
 const Transfers: React.FC = () => {
   const { transfers, executeTransfer, updateTransfer, voidTransfer, accounts: coaAccounts, ledger } = useFinance();
@@ -66,6 +89,40 @@ const Transfers: React.FC = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [voidReason, setVoidReason] = useState('');
   const [confirmingVoid, setConfirmingVoid] = useState(false);
+  const [syncingNow, setSyncingNow] = useState(false);
+  const [queueOps, setQueueOps] = useState<Array<{ table?: string; recordId?: string | null; status?: string; createdAt?: string }>>([]);
+
+  // Durable-queue snapshot for per-row sync badges. A transfer stuck here
+  // (Pending/Failed) never reached the cloud — this makes that visible and
+  // recoverable instead of silent.
+  const refreshQueueOps = useCallback(async () => {
+    try {
+      const all = await durableSyncQueue.getAll();
+      setQueueOps(all.filter(o => o.table === 'transfers'));
+    } catch {
+      // Queue unreadable — badges simply stay hidden.
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshQueueOps();
+    const timer = setInterval(() => { void refreshQueueOps(); }, 15000);
+    return () => clearInterval(timer);
+  }, [refreshQueueOps]);
+
+  const handleSyncNow = async () => {
+    setSyncingNow(true);
+    try {
+      await backgroundSyncService.syncNow(true, 'transfers-manual');
+      await refreshQueueOps();
+      await refreshAllData();
+      notify('Sync requested — pending transfers will drain', 'success');
+    } catch (err: any) {
+      notify(`Sync failed: ${err?.message || err}`, 'error');
+    } finally {
+      setSyncingNow(false);
+    }
+  };
 
   const { refreshAllData } = useData();
 
@@ -358,6 +415,7 @@ const Transfers: React.FC = () => {
       setShowAdvanced(false);
 
       setShowModal(null);
+      void refreshQueueOps();
     } catch (error: any) {
       notify(`Transfer failed: ${error.message}`, 'error');
     }
@@ -375,6 +433,7 @@ const Transfers: React.FC = () => {
       setVoidReason('');
       setShowModal(null);
       setSelectedTransfer(null);
+      void refreshQueueOps();
     } catch {
       // notify handled in context
     }
@@ -404,6 +463,17 @@ const Transfers: React.FC = () => {
         subtitle="Transfer funds between accounts & track all movements"
         actions={
           <>
+            <button
+              onClick={() => { void handleSyncNow(); }}
+              disabled={syncingNow}
+              style={{ ...btnGhostStyle, opacity: syncingNow ? 0.55 : 1 }}
+              title="Push pending transfers to the cloud now"
+              onMouseEnter={e => { e.currentTarget.style.background = teal[50]; e.currentTarget.style.color = teal[800]; e.currentTarget.style.borderColor = teal[200]; }}
+              onMouseLeave={e => { e.currentTarget.style.background = paper; e.currentTarget.style.color = inkSoft; e.currentTarget.style.borderColor = hairline; }}
+            >
+              <RefreshCw size={15} />
+              {syncingNow ? 'Syncing…' : 'Sync now'}
+            </button>
             <button
               onClick={handleExport}
               style={btnGhostStyle}
@@ -612,6 +682,16 @@ const Transfers: React.FC = () => {
                         }}>
                           {transfer.status || 'Completed'}
                         </span>
+                        {(() => {
+                          const sync = transferSyncStateFor(queueOps, transfer.id);
+                          if (!sync) return null;
+                          const syncColor = sync === 'Synced' ? teal[700] : sync === 'Failed' ? danger : amber[600];
+                          return (
+                            <div style={{ fontSize: 10, fontWeight: 600, color: syncColor, marginTop: 3 }} title="Cloud sync state of this transfer">
+                              {sync === 'Synced' ? 'Synced' : sync === 'Failed' ? 'Sync failed' : 'Sync pending'}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
