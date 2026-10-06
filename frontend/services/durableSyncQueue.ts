@@ -275,6 +275,55 @@ export async function quarantineOperationsMissingGeneration(): Promise<number> {
   return count;
 }
 
+/**
+ * ─── Shared send-ownership boundary ─────────────────────────────────────────
+ * At most one sender may own a specific queue operation at a time. The
+ * background worker (`dequeue`) and the inline Sales Order fast-path
+ * (`claimForSend`) use THIS registry — never two independent locks.
+ *
+ * The check-and-set is synchronous, hence atomic within this JS realm: two
+ * claimants racing the same row cannot both win, no matter how their awaits
+ * interleave afterwards. The row `status` (`syncing` while owned) carries the
+ * same fact durably: edits can no longer merge into an owned row (merge only
+ * folds into `pending`/`failed`), and `dequeue` only selects `pending` rows.
+ *
+ * Cross-tab note: the map is per-realm; the `status` + payload-equality
+ * verification in `settleSendClaim` is the cross-tab backstop (a second tab's
+ * send is deduplicated server-side by `operationId`, and a mismatched
+ * completion is refused and re-queued instead of completing foreign state).
+ */
+export const BACKGROUND_SEND_OWNER = 'background';
+
+const sendClaims = new Map<string, string>();
+
+/** Synchronous single-flight check-and-set. Returns true when now owned. */
+export function tryClaimForSend(queueRowId: string, owner: string): boolean {
+  if (!queueRowId || !owner) return false;
+  if (sendClaims.has(queueRowId)) return false;
+  sendClaims.set(queueRowId, owner);
+  return true;
+}
+
+/** Release only when still held by this owner (never releases a successor). */
+export function releaseSendClaim(queueRowId: string, owner: string): void {
+  if (!queueRowId || !owner) return;
+  if (sendClaims.get(queueRowId) === owner) sendClaims.delete(queueRowId);
+}
+
+/** Backstop: release everything held by an owner (sync-cycle teardown). */
+export function releaseAllSendClaims(owner: string): void {
+  if (!owner) return;
+  for (const [id, heldBy] of sendClaims) {
+    if (heldBy === owner) sendClaims.delete(id);
+  }
+}
+
+export type SendClaimOutcome =
+  | { outcome: 'claimed'; item: QueuedOperation }
+  | { outcome: 'owned' }
+  | { outcome: 'missing' }
+  | { outcome: 'ineligible' };
+
 export const durableSyncQueue = {
   async enqueue<T>(input: {
     table: string;
@@ -568,6 +617,12 @@ export const durableSyncQueue = {
           op.dependsOn.every(depId => blocked.has(depId) || processingIds.has(depId));
 
         if (allDepsMet) {
+          // Shared send-ownership boundary with the inline fast-path: a row
+          // already claimed for sending (inline flush holds it) is skipped
+          // this cycle — its owner settles it. Synchronous check-and-set, so
+          // a racing claim cannot slip between this read and the `syncing`
+          // write below. Skipped rows stay eligible for future cycles.
+          if (!tryClaimForSend(op.id, BACKGROUND_SEND_OWNER)) continue;
           ready.push(op);
           processingIds.add(op.id);
           changed = true;
@@ -610,6 +665,10 @@ export const durableSyncQueue = {
       item.lastAttempt = serverTimestamp || new Date().toISOString();
       item.lastError = null;
       await db.put('operations', item);
+      // A settled row is by definition no longer being sent: drop a
+      // background send-claim if this settlement closed it (inline-flush
+      // claims carry a different owner and are never touched here).
+      if (sendClaims.get(id) === BACKGROUND_SEND_OWNER) sendClaims.delete(id);
     }
   },
 
@@ -636,6 +695,7 @@ export const durableSyncQueue = {
       item.lastError = error;
       item.errorType = errorType;
       await db.put('operations', item);
+      if (sendClaims.get(id) === BACKGROUND_SEND_OWNER) sendClaims.delete(id);
     }
   },
 
@@ -663,6 +723,7 @@ export const durableSyncQueue = {
       item.lastError = error;
       item.errorType = 'permanent';
       await db.put('operations', item);
+      if (sendClaims.get(id) === BACKGROUND_SEND_OWNER) sendClaims.delete(id);
     }
   },
 
@@ -721,6 +782,7 @@ export const durableSyncQueue = {
     item.errorType = null;
     item.lastAttempt = new Date().toISOString();
     await db.put('operations', item);
+    if (sendClaims.get(id) === BACKGROUND_SEND_OWNER) sendClaims.delete(id);
   },
 
   async recordConflict(record: {
@@ -825,6 +887,138 @@ export const durableSyncQueue = {
     const db = await getDb();
     const all = await db.getAllFromIndex('operations', 'by-operationId', IDBKeyRange.only(operationId));
     return all[0];
+  },
+
+  /**
+   * Read-only lookup of the newest actionable queue entry for one record.
+   * Used by the online Sales Order fast-path to flush exactly that record's
+   * operation through the gateway without disturbing the background engine:
+   * the item is NOT dequeued (its status is untouched), so a concurrent
+   * background cycle sending the same `operationId` is deduplicated
+   * server-side and both callers converge on the same authoritative number.
+   */
+  async findPendingOp(table: string, recordId: string): Promise<QueuedOperation | undefined> {
+    if (!table || recordId == null || String(recordId).trim() === '') return undefined;
+    const db = await getDb();
+    const activeLayers = await Promise.all(
+      (['pending', 'syncing', 'failed'] as QueueStatus[]).map((status) =>
+        db.getAllFromIndex('operations', 'by-status', IDBKeyRange.only(status))
+      )
+    );
+    const matches = ([] as QueuedOperation[]).concat(...activeLayers).filter(
+      (op) => op.table === table && op.recordId === recordId
+    );
+    if (matches.length === 0) return undefined;
+    matches.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    return matches[0];
+  },
+
+  /**
+   * Claim exclusive send-ownership of the newest actionable operation for one
+   * record. Used by the inline Sales Order fast-path; the background worker
+   * claims through the same registry inside `dequeue`.
+   *
+   * Claiming transitions the row to `syncing`, which structurally prevents
+   * newer edits from merging into it mid-flight (merge only folds into
+   * `pending`/`failed` rows — those edits become fresh rows instead, so no
+   * transmitted payload can strand a newer edit). The returned `item` is a
+   * frozen snapshot: the owner must transmit EXACTLY this payload.
+   */
+  async claimForSend(table: string, recordId: string, owner: string): Promise<SendClaimOutcome> {
+    if (!table || recordId == null || String(recordId).trim() === '' || !owner) {
+      return { outcome: 'missing' };
+    }
+    const db = await getDb();
+    const activeLayers = await Promise.all(
+      (['pending', 'syncing', 'failed'] as QueueStatus[]).map((status) =>
+        db.getAllFromIndex('operations', 'by-status', IDBKeyRange.only(status))
+      )
+    );
+    const matches = ([] as QueuedOperation[]).concat(...activeLayers).filter(
+      (op) => op.table === table && op.recordId === recordId
+    );
+    if (matches.length === 0) return { outcome: 'missing' };
+    matches.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    const row = matches[0];
+    // Rows without generation provenance must never be sent (company-reset
+    // guard) — the background engine quarantines them at dequeue instead.
+    if (!isGenerationValid(row.syncGeneration)) return { outcome: 'ineligible' };
+    if (row.status === 'syncing') {
+      if (sendClaims.get(row.id)) return { outcome: 'owned' };
+      // Orphan: a previous owner died without settling (tab closed mid-send).
+      // Stealing is replay-safe — the resend carries the same operationId, so
+      // the gateway replays instead of double-applying.
+    } else if (row.status !== 'pending' && row.status !== 'failed') {
+      return { outcome: 'missing' };
+    }
+    if (!tryClaimForSend(row.id, owner)) return { outcome: 'owned' };
+    try {
+      const fresh = await db.get('operations', row.id);
+      if (!fresh || (fresh.status !== 'pending' && fresh.status !== 'failed' && fresh.status !== 'syncing')) {
+        releaseSendClaim(row.id, owner);
+        return { outcome: 'missing' };
+      }
+      fresh.status = 'syncing';
+      fresh.lastAttempt = new Date().toISOString();
+      await db.put('operations', fresh);
+      return { outcome: 'claimed', item: { ...fresh } };
+    } catch {
+      releaseSendClaim(row.id, owner);
+      return { outcome: 'missing' };
+    }
+  },
+
+  /**
+   * Settle a claimed send. Completion rule: the row may only transition when
+   * it is still owned by this sender AND still carries the exact payload that
+   * was transmitted. A row whose payload changed under us (e.g. a cross-tab
+   * merge racing the claim write) is reset to `pending` with its newer
+   * payload intact — never marked complete for unsent content, never failed
+   * for someone else's edit.
+   */
+  async settleSendClaim(
+    queueRowId: string,
+    owner: string,
+    sentPayload: unknown,
+    disposition: 'completed' | 'failed' | 'defer',
+    error?: string,
+    errorType?: 'retryable' | 'permanent' | 'unauthorized',
+  ): Promise<'settled' | 'deferred' | 'changed' | 'superseded'> {
+    const release = () => releaseSendClaim(queueRowId, owner);
+    try {
+      const db = await getDb();
+      const row = await db.get('operations', queueRowId);
+      if (!row || row.status !== 'syncing' || sendClaims.get(queueRowId) !== owner) {
+        release();
+        return 'superseded';
+      }
+      const unchanged = JSON.stringify(row.payload) === JSON.stringify(sentPayload);
+      if (!unchanged) {
+        // Newer content arrived while owned — hand the row back for normal
+        // sending of the newer payload instead of completing stale state.
+        row.status = 'pending';
+        row.lastError = null;
+        row.errorType = null;
+        await db.put('operations', row);
+        release();
+        return 'changed';
+      }
+      if (disposition === 'completed') {
+        await this.markCompleted(queueRowId);
+      } else if (disposition === 'failed') {
+        await this.markFailed(queueRowId, error || 'send failed', errorType);
+      } else {
+        // 'defer': conflict-style outcome — the write was not applied; leave
+        // the row sendable for the background merge path.
+        row.status = 'pending';
+        await db.put('operations', row);
+      }
+      release();
+      return disposition === 'completed' ? 'settled' : 'deferred';
+    } catch {
+      release();
+      return 'superseded';
+    }
   },
 
   async hasPendingMutation(table: string, recordId: string): Promise<boolean> {

@@ -710,10 +710,38 @@ async function applyOp(op) {
   // Wrapped defensively: a failure probing the idempotency table must never bubble
   // up as a 500 — it degrades to "not seen yet" and the write proceeds (or fails
   // safely downstream). This is the most likely source of previously-unhandled 500s.
+  // For sales_orders replays the persisted authoritative number is attached so a
+  // retry after response-loss adopts the SAME number instead of minting another.
   if (operationId) {
     try {
       const seen = await checkIdempotency(operationId);
       if (seen.alreadyProcessed) {
+        const replayedId = seen.result || recordId;
+        if (table === 'sales_orders' && replayedId) {
+          try {
+            const replayedRow = await getRow(table, replayedId);
+            const replayedData =
+              replayedRow && replayedRow.data && typeof replayedRow.data === 'object'
+                ? replayedRow.data
+                : null;
+            const replayedNumber = replayedData
+              ? (replayedData.order_number != null && String(replayedData.order_number).trim() !== ''
+                ? String(replayedData.order_number)
+                : null)
+              : null;
+            return {
+              operationId,
+              ok: true,
+              id: replayedId,
+              replayed: true,
+              order_number: replayedNumber,
+              version: replayedRow?.version != null ? Number(replayedRow.version) : undefined,
+              updatedAt: replayedRow?.updated_at || undefined,
+            };
+          } catch {
+            // Best-effort enrichment only — fall through to the plain replay.
+          }
+        }
         return { operationId, ok: true, id: seen.result || recordId, replayed: true };
       }
     } catch (idErr) {
@@ -723,6 +751,12 @@ async function applyOp(op) {
 
   try {
     let result;
+    // The authoritative sales-order number stamped onto this payload (adopted
+    // or freshly minted). Returned to the caller so the creating device can
+    // adopt it immediately instead of waiting for the next pull cycle. Null
+    // when nothing was stamped (mint skipped / history-immutable unnumbered
+    // row) — never a fabricated frontend value.
+    let stampedSalesOrderNumber = null;
     if (operation === 'delete') {
       // recordId required; tombstone the row (no hard delete).
       if (!recordId) {
@@ -739,6 +773,7 @@ async function applyOp(op) {
           const officialNumber = await ensureSalesOrderNumber(payload);
           if (officialNumber) {
             payload.order_number = officialNumber;
+            stampedSalesOrderNumber = officialNumber;
             console.log(`[cloudSyncStore] sales_orders ${id} official number: ${officialNumber}`);
           }
         } catch (mintErr) {
@@ -759,6 +794,7 @@ async function applyOp(op) {
           ) {
             const fresh = await salesOrderNumbering.mintOfficialSalesOrderNumber(payload);
             payload.order_number = fresh;
+            stampedSalesOrderNumber = fresh;
             console.log(`[cloudSyncStore] sales_orders ${id} re-minted after conflict: ${fresh}`);
             result = await upsertRow(table, id, payload);
           } else {
@@ -791,6 +827,16 @@ async function applyOp(op) {
       // turn a successful write into a 500. The write already succeeded.
       try { await recordIdempotency(operationId, result.id); }
       catch (recErr) { console.warn(`[cloudSyncStore] idempotency record failed for ${operationId}:`, recErr?.message || recErr); }
+    }
+    if (table === 'sales_orders' && operation === 'upsert') {
+      return {
+        operationId,
+        ok: true,
+        id: result.id,
+        updatedAt: result.updatedAt,
+        version: result.version,
+        order_number: stampedSalesOrderNumber,
+      };
     }
     return { operationId, ok: true, id: result.id, updatedAt: result.updatedAt, version: result.version };
   } catch (err) {

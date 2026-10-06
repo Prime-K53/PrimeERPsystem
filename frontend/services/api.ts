@@ -317,7 +317,29 @@ export const api = {
     saveSalesOrder: (o: any) => handle(async () => {
       checkAuth(['Admin', 'Clerk', 'Sales'], 'Sales.SaveSalesOrder');
       await dbService.put('salesOrders', o);
-      return { success: true };
+      // ONLINE FAST-PATH: an unnumbered order claims its authoritative ORD
+      // number synchronously through the existing sync gateway (same RPC
+      // sequence as the background path) so creation completes numbered,
+      // invoice-style. Local-first durability is already secured above: any
+      // offline/failure here degrades to pending and the background engine
+      // converges later. Never throws past the local save.
+      try {
+        const { backgroundSyncService } = await import('./backgroundSyncService');
+        const claimed = await backgroundSyncService.claimOnlineSalesOrderNumber((o || {}) as Record<string, unknown>);
+        return {
+          success: true,
+          id: (o as { id?: unknown })?.id ?? null,
+          order_number: claimed.order_number,
+          ...(claimed.version != null ? { version: claimed.version } : {}),
+          ...(claimed.updatedAt != null ? { updatedAt: claimed.updatedAt } : {}),
+          synced: claimed.adopted != null && !claimed.pending && !claimed.alreadyNumbered && !claimed.reconciled,
+          ...(claimed.alreadyNumbered ? { alreadyNumbered: true } : {}),
+          ...(claimed.reconciled ? { reconciled: true } : {}),
+          ...(claimed.pending ? { pending: true } : {}),
+        };
+      } catch {
+        return { success: true, id: (o as { id?: unknown })?.id ?? null, order_number: null, synced: false, pending: true };
+      }
     }, 'Sales.SaveSalesOrder'),
 
     deleteSalesOrder: (id: string) => handle(async () => {

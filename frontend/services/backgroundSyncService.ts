@@ -1,4 +1,4 @@
-import { durableSyncQueue, quarantineOperationsMissingGeneration, classifyError, QueuedOperation, QueueMetrics } from './durableSyncQueue';
+import { durableSyncQueue, quarantineOperationsMissingGeneration, classifyError, QueuedOperation, QueueMetrics, releaseSendClaim, releaseAllSendClaims, BACKGROUND_SEND_OWNER } from './durableSyncQueue';
 import { sendSyncOps, SyncOp, SyncOpResult, SyncAuthError } from './syncApiClient';
 import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { resolvePushConflict } from './syncConflictResolver';
@@ -488,6 +488,7 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
           if (errorType === 'permanent') deadLetter++;
           else failed++;
         }
+        releaseSendClaim(item.id, BACKGROUND_SEND_OWNER);
       }
     }
   }
@@ -507,6 +508,9 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
       // no re-enqueue) so the next edit carries a valid optimistic-concurrency
       // base and never trips a `version_required` round-trip. Ambiguous or
       // non-business tables are skipped and self-heal through the merge path.
+      // Sales Orders additionally adopt the gateway-stamped authoritative ORD
+      // number here, so rows created by older clients (or converged in the
+      // background) heal on push instead of waiting for the next pull.
       const serverVersion = result ? Number(result.version) : NaN;
       const stampedPayload = (item.payload ?? {}) as Record<string, unknown>;
       if (Number.isFinite(serverVersion) && item.table !== '_files' && stampedPayload.id) {
@@ -518,6 +522,21 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
             if (live && typeof live === 'object') {
               (live as Record<string, unknown>)._version = serverVersion;
               (live as Record<string, unknown>).version = serverVersion;
+              if (item.table === 'sales_orders') {
+                try {
+                  const { adoptServerNumber } = await import('./salesOrderService');
+                  const official = String((result as SyncOpResult)?.order_number ?? '').trim();
+                  if (official) {
+                    const candidate = { ...(live as Record<string, unknown>), order_number: official };
+                    const adopted = adoptServerNumber(candidate);
+                    // adoptServerNumber is a no-op for non-official values —
+                    // only an exact official adoption lands.
+                    if (adopted && String(adopted.order_number ?? '').trim() === official) {
+                      Object.assign(live as Record<string, unknown>, adopted);
+                    }
+                  }
+                } catch { /* adoption best-effort; pull merge still heals */ }
+              }
               await dbService.bulkPut(storeName as never, [live]);
             }
           }
@@ -743,37 +762,45 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
 
   for (const { item } of gatewayOps) {
     if (transportFailed) {
-      // Already handled in the transport-failure catch above.
+      // Already handled in the transport-failure catch above (which also
+      // releases this item's send-ownership claim).
       continue;
     }
-    const outcome = await settleItem(item, opResults.get(item.operationId));
-    /* SYNC-FORENSIC suppressed: STAGE-7 settleItem() */
-    if (outcome === 'success') {
-      // Mark the local record as synced so the FY migration is idempotent
-      // and the record is never re-queued. Uses bulkPut (no re-enqueue).
-      if (item.table === 'financial_years' && item.recordId) {
-        try {
-          const { dbService } = await import('./db');
-          const record = await dbService.get<any>('financialYears', item.recordId);
-          if (record && !record.deletedAt) {
-            record.syncStatus = 'synced';
-            record.lastSyncedAt = new Date().toISOString();
-            record._cloudSource = true;
-            await dbService.bulkPut('financialYears', [record]);
+    try {
+      const outcome = await settleItem(item, opResults.get(item.operationId));
+      /* SYNC-FORENSIC suppressed: STAGE-7 settleItem() */
+      if (outcome === 'success') {
+        // Mark the local record as synced so the FY migration is idempotent
+        // and the record is never re-queued. Uses bulkPut (no re-enqueue).
+        if (item.table === 'financial_years' && item.recordId) {
+          try {
+            const { dbService } = await import('./db');
+            const record = await dbService.get<any>('financialYears', item.recordId);
+            if (record && !record.deletedAt) {
+              record.syncStatus = 'synced';
+              record.lastSyncedAt = new Date().toISOString();
+              record._cloudSource = true;
+              await dbService.bulkPut('financialYears', [record]);
+            }
+          } catch {
+            // best-effort status write
           }
-        } catch {
-          // best-effort status write
         }
+        success++;
+      } else if (outcome === 'deadLetter') {
+        deadLetter++;
+      } else if (outcome === 'conflict') {
+        // Field-merged and requeued; it re-runs in the next batch of this pass.
+        // conflictsResolved was already incremented inside resolveConflict so
+        // delete/converged/requeue resolutions all count exactly once.
+      } else {
+        failed++;
       }
-      success++;
-    } else if (outcome === 'deadLetter') {
-      deadLetter++;
-    } else if (outcome === 'conflict') {
-      // Field-merged and requeued; it re-runs in the next batch of this pass.
-      // conflictsResolved was already incremented inside resolveConflict so
-      // delete/converged/requeue resolutions all count exactly once.
-    } else {
-      failed++;
+    } finally {
+      // Release this cycle's send-ownership claim: settlement (complete /
+      // fail / dead-letter / requeue) already moved the row out of `syncing`,
+      // so the claim must not outlive it.
+      releaseSendClaim(item.id, BACKGROUND_SEND_OWNER);
     }
   }
 
@@ -803,6 +830,8 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
       await durableSyncQueue.markFailed(item.id, errorMessage);
       if (errorType === 'permanent') deadLetter++;
       else failed++;
+    } finally {
+      releaseSendClaim(item.id, BACKGROUND_SEND_OWNER);
     }
   });
 
@@ -820,6 +849,314 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
   state.lastSyncStart = new Date().toISOString();
 
   return { success, failed, deadLetter, skipped, conflictsResolved, durationMs };
+}
+
+// ─── Online Sales Order fast-path ───────────────────────────────────────────
+// Gives ONLINE Sales Order creation the same synchronous UX as invoices while
+// keeping the authoritative server-side numbering (RPC claim, never a local
+// counter). Flow: local durable save (already done by the caller) → flush
+// exactly this record's queued op through the existing POST /api/sync/ops
+// gateway → adopt the returned authoritative ORD number locally (cloud-source
+// write, never re-enqueued) → creation resolves numbered.
+//
+// Offline/failure contract: local durability is never undone. Any transport,
+// auth, conflict or empty response returns { synced:false } (or a reconciled
+// server number on conflict) and leaves the durable queue intact so the
+// background engine converges later. No number is ever fabricated here.
+
+export interface FlushSalesOrderResult {
+  synced: boolean;
+  order_number?: string | null;
+  version?: number;
+  updatedAt?: string | null;
+  conflict?: boolean;
+  server?: SyncOpResult['server'];
+  reason?: string;
+}
+
+export interface FlushSalesOrderResult {
+  synced: boolean;
+  order_number?: string | null;
+  version?: number;
+  updatedAt?: string | null;
+  conflict?: boolean;
+  server?: SyncOpResult['server'];
+  reason?: string;
+  /** True when the number was obtained by waiting for the owning sender instead of sending. */
+  waited?: boolean;
+}
+
+/** Owner tag for inline-flush send claims (one per record attempt). */
+const inlineFlushOwner = (recordId: string) => `inline-flush:${recordId}`;
+
+/** Read the currently persisted official number for a local Sales Order row. */
+async function readLocalOfficialNumber(recordId: string): Promise<{ orderNumber: string | null; version?: number; updatedAt?: string | null }> {
+  try {
+    const { dbService } = await import('./db');
+    const { getSalesOrderOfficialNumber } = await import('./salesOrderService');
+    const live = await dbService.get<Record<string, unknown>>('salesOrders' as never, String(recordId));
+    const official = getSalesOrderOfficialNumber((live || {}) as { order_number?: unknown; orderNumber?: unknown });
+    if (!official || !live || typeof live !== 'object') return { orderNumber: null };
+    const versionRaw = Number((live as Record<string, unknown>).version);
+    const updatedRaw = (live as Record<string, unknown>).serverUpdatedAt ?? (live as Record<string, unknown>).updated_at;
+    return {
+      orderNumber: official,
+      ...(Number.isFinite(versionRaw) ? { version: versionRaw } : {}),
+      ...(typeof updatedRaw === 'string' && updatedRaw ? { updatedAt: updatedRaw } : {}),
+    };
+  } catch {
+    return { orderNumber: null };
+  }
+}
+
+/**
+ * Wait (bounded) for another sender that already owns this record's queued
+ * operation to finish, then report the locally adopted authoritative number.
+ * Never sends, never mutates the queue — purely observational. Any terminal
+ * failure or the deadline yields an honest pending for background/pull
+ * convergence.
+ */
+async function waitForOwnedCompletion(
+  recordId: string,
+  options: { deadlineMs?: number; intervalMs?: number } = {},
+): Promise<FlushSalesOrderResult> {
+  const deadline = Date.now() + (options.deadlineMs ?? 20000);
+  const intervalMs = options.intervalMs ?? 250;
+  for (;;) {
+    const observed = await readLocalOfficialNumber(recordId);
+    if (observed.orderNumber) {
+      return { synced: false, waited: true, order_number: observed.orderNumber, version: observed.version, updatedAt: observed.updatedAt ?? null };
+    }
+    let active: Awaited<ReturnType<typeof durableSyncQueue.findPendingOp>> | undefined;
+    try {
+      active = await durableSyncQueue.findPendingOp('sales_orders', recordId);
+    } catch {
+      active = undefined;
+    }
+    if (!active) {
+      // No actionable op left and no local number: the owner settled without
+      // numbering (mint skipped) or the row is gone — re-check once, then
+      // hand over to background/pull convergence.
+      const retry = await readLocalOfficialNumber(recordId);
+      if (retry.orderNumber) {
+        return { synced: false, waited: true, order_number: retry.orderNumber, version: retry.version, updatedAt: retry.updatedAt ?? null };
+      }
+      return { synced: false, waited: true, reason: 'owner-settled-unnumbered' };
+    }
+    // Terminal failure states converge via SyncHealth/manual retry, never via
+    // another inline send — stop waiting early and report pending honestly.
+    // (Dead-lettered rows leave the active scan, so they surface through the
+    // no-actionable-op branch above; this covers failed/unauthorized holds.)
+    if (active.errorType === 'permanent' || active.errorType === 'unauthorized') {
+      return { synced: false, waited: true, reason: 'owner-terminal-failure' };
+    }
+    if (Date.now() >= deadline) {
+      return { synced: false, waited: true, reason: 'wait-timeout' };
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
+async function flushSalesOrderNow(
+  recordId: string,
+  options: { deadlineMs?: number; intervalMs?: number } = {},
+): Promise<FlushSalesOrderResult> {
+  const id = String(recordId ?? '').trim();
+  if (!id) return { synced: false, reason: 'missing-record-id' };
+  if (paused) return { synced: false, reason: 'paused-offline' };
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { synced: false, reason: 'offline' };
+  }
+  const owner = inlineFlushOwner(id);
+  let claim: Awaited<ReturnType<typeof durableSyncQueue.claimForSend>>;
+  try {
+    claim = await durableSyncQueue.claimForSend('sales_orders', id, owner);
+  } catch {
+    return { synced: false, reason: 'queue-unavailable' };
+  }
+  if (claim.outcome === 'missing') {
+    // Nothing actionable queued — the background engine may already have
+    // finished (settle adopts the number). Report whatever is persisted.
+    const observed = await readLocalOfficialNumber(id);
+    if (observed.orderNumber) {
+      return { synced: false, waited: true, order_number: observed.orderNumber, version: observed.version, updatedAt: observed.updatedAt ?? null };
+    }
+    return { synced: false, reason: 'no-queued-op' };
+  }
+  if (claim.outcome === 'ineligible') {
+    return { synced: false, reason: 'ineligible-generation' };
+  }
+  if (claim.outcome === 'owned') {
+    // The background worker (or a sibling flush) already owns this exact
+    // operation: do NOT send another request — wait for its result instead.
+    // This is what guarantees one submission per operation.
+    return waitForOwnedCompletion(id, options);
+  }
+  // Claimed: this attempt exclusively owns the frozen payload below. While
+  // owned (`syncing`), merges cannot fold into it — concurrent edits become
+  // fresh rows — so completion below can never strand a newer edit.
+  const snapshot = claim.item.payload;
+  const op: SyncOp = {
+    operationId: claim.item.operationId,
+    table: claim.item.table,
+    recordId: claim.item.recordId,
+    operation: claim.item.operation === 'delete' ? 'delete' : 'upsert',
+    payload: snapshot,
+    syncGeneration: claim.item.syncGeneration,
+  };
+  let response;
+  try {
+    response = await sendSyncOps([op], { timeoutMs: 20000 });
+  } catch (err) {
+    if (err instanceof SyncAuthError) {
+      // Mirror the batch path: auth failures pause the engine and stay failed
+      // until the user re-authenticates — never spin on them inline.
+      try {
+        await durableSyncQueue.markAuthBlocked(err.message);
+      } catch { /* best-effort */ }
+      await durableSyncQueue.settleSendClaim(claim.item.id, owner, snapshot, 'failed', err.message, 'unauthorized');
+      return { synced: false, reason: 'unauthorized' };
+    }
+    // Transport-level failure: settle as failed (same retry accounting as the
+    // background engine) so the row is sendable again with its retry history.
+    await durableSyncQueue.settleSendClaim(claim.item.id, owner, snapshot, 'failed', err instanceof Error ? err.message : String(err));
+    return { synced: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+  const res = response?.results?.[0];
+  if (!res) {
+    await durableSyncQueue.settleSendClaim(claim.item.id, owner, snapshot, 'failed', 'empty sync response');
+    return { synced: false, reason: 'empty-response' };
+  }
+  if (res.ok) {
+    const settled = await durableSyncQueue.settleSendClaim(claim.item.id, owner, snapshot, 'completed');
+    if (settled === 'settled') {
+      return {
+        synced: true,
+        order_number: res.order_number ?? null,
+        version: res.version,
+        updatedAt: res.updatedAt ?? null,
+      };
+    }
+    // The row changed under us (cross-tab merge racing the claim write):
+    // settleSendClaim reset it to pending with the newer payload intact, so
+    // the newer content still sends normally. Never report a stale success.
+    return { synced: false, reason: settled === 'changed' ? 'payload-changed-requeued' : 'superseded' };
+  }
+  if (res.conflict) {
+    // The write was NOT applied; hand the row back for the background merge
+    // path. The caller may still reconcile the authoritative number from the
+    // server snapshot (response-loss case: same number, no second claim).
+    await durableSyncQueue.settleSendClaim(claim.item.id, owner, snapshot, 'defer');
+    return { synced: false, conflict: true, server: res.server, reason: res.error };
+  }
+  // Rejected: settle as failed (permanent classification dead-letters through
+  // the same path the background engine would have taken).
+  await durableSyncQueue.settleSendClaim(claim.item.id, owner, snapshot, 'failed', res.error || 'sync-rejected');
+  return { synced: false, reason: res.error || 'sync-rejected' };
+}
+
+export interface ClaimSalesOrderNumberResult {
+  /** Persisted-adopted local record (cloud-source write, never re-enqueued), or null when still pending. */
+  adopted: Record<string, unknown> | null;
+  order_number: string | null;
+  version?: number;
+  updatedAt?: string | null;
+  /** True when the record already carried its official number (no network used). */
+  alreadyNumbered?: boolean;
+  /** True when the number was obtained by waiting for the owning sender. */
+  waited?: boolean;
+  /** True when the number was reconciled from a conflict snapshot rather than a fresh push. */
+  reconciled?: boolean;
+  /** True when offline/failed and the background engine must converge later. */
+  pending?: boolean;
+}
+
+/**
+ * Adopt a server-authoritative Sales Order number into the local record.
+ * The write uses cloud-source semantics so it never enqueues another
+ * mutation (no sync loop). Rejects non-official values — a fabricated
+ * frontend number can never land here.
+ */
+async function adoptFlushedSalesOrderNumber(
+  localRecord: Record<string, unknown>,
+  orderNumber: string | null | undefined,
+  version?: number | null,
+  updatedAt?: string | null,
+): Promise<Record<string, unknown> | null> {
+  const official = String(orderNumber ?? '').trim();
+  if (!official) return null;
+  try {
+    const { dbService } = await import('./db');
+    const { adoptServerNumber, getSalesOrderOfficialNumber } = await import('./salesOrderService');
+    if (!getSalesOrderOfficialNumber({ order_number: official })) return null;
+    const adopted = adoptServerNumber({
+      ...(localRecord || {}),
+      order_number: official,
+      ...(Number.isFinite(Number(version)) ? { version: Number(version), _version: Number(version) } : {}),
+      ...(updatedAt ? { serverUpdatedAt: updatedAt } : {}),
+    });
+    await dbService.put('salesOrders' as never, adopted as never, { cloudSource: true });
+    return adopted;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Single orchestrator for the online fast-path. The caller must have
+ * durably saved `localRecord` first (offline-first invariant). Returns the
+ * adopted record when the authoritative number was claimed AND persisted
+ * locally, otherwise a pending marker for background convergence.
+ */
+async function claimOnlineSalesOrderNumber(
+  localRecord: Record<string, unknown>,
+): Promise<ClaimSalesOrderNumberResult> {
+  const base = (localRecord && typeof localRecord === 'object' ? localRecord : {}) as Record<string, unknown>;
+  try {
+    const { getSalesOrderOfficialNumber } = await import('./salesOrderService');
+    const existing = getSalesOrderOfficialNumber(base);
+    if (existing) {
+      return { adopted: base, order_number: existing, alreadyNumbered: true };
+    }
+    const flushed = await flushSalesOrderNow(String(base.id ?? ''));
+    const claimed = String(flushed.order_number ?? '').trim() || null;
+    // Adopted numbers come from three honest sources: our own push, waiting
+    // for the owning sender, or a conflict snapshot. All are authoritative
+    // server values — never fabricated — so all adopt identically.
+    if (claimed && (flushed.synced || flushed.waited || flushed.conflict)) {
+      const adopted = await adoptFlushedSalesOrderNumber(base, claimed, flushed.version ?? null, flushed.updatedAt ?? null);
+      if (adopted) {
+        if (flushed.synced) {
+          return { adopted, order_number: claimed, version: flushed.version, updatedAt: flushed.updatedAt ?? null };
+        }
+        if (flushed.waited) {
+          return { adopted, order_number: claimed, version: flushed.version, updatedAt: flushed.updatedAt ?? null, waited: true };
+        }
+        return { adopted, order_number: claimed, reconciled: true };
+      }
+      // A number was observed but could not be persisted locally — treat
+      // as pending; the number is safely on the server and pull will heal.
+      return { adopted: null, order_number: null, pending: true };
+    }
+    // Response-loss/conflict reconciliation: adopt the authoritative number
+    // the server already holds without consuming a new sequence value.
+    const serverData = (flushed.server as { data?: Record<string, unknown> } | undefined)?.data;
+    const serverNumber = String((serverData as Record<string, unknown> | undefined)?.order_number ?? '').trim() || null;
+    if (serverNumber) {
+      const reconciled = await adoptFlushedSalesOrderNumber(
+        base,
+        serverNumber,
+        (flushed.server as { version?: number } | undefined)?.version ?? null,
+        (flushed.server as { updatedAt?: string | null } | undefined)?.updatedAt ?? null,
+      );
+      if (reconciled) {
+        return { adopted: reconciled, order_number: serverNumber, reconciled: true };
+      }
+    }
+    return { adopted: null, order_number: null, pending: true };
+  } catch {
+    return { adopted: null, order_number: null, pending: true };
+  }
 }
 
 async function syncOnce(force: boolean = false, triggerSource: string = 'unknown'): Promise<BatchResult | null> {
@@ -1009,6 +1346,10 @@ async function syncOnce(force: boolean = false, triggerSource: string = 'unknown
   } finally {
     // The lock is ALWAYS released here: success, failure, exception, and
     // every early return above. The next legitimate sync can always proceed.
+    // Same for this cycle's send-ownership claims: an escaping exception must
+    // not leave rows claimed-but-unsettled (only 'background'-owned claims are
+    // released here — inline-flush claims belong to their own attempt).
+    releaseAllSendClaims(BACKGROUND_SEND_OWNER);
     if (activeSync?.syncId === invocationId) activeSync = null;
     state.isSyncing = false;
     diagLockReleased(invocationId, diagLockOutcome);
@@ -1203,6 +1544,18 @@ export const backgroundSyncService = {
   async trigger(): Promise<BatchResult | null> {
     return syncOnce(true, 'queue-trigger');
   },
+
+  /**
+   * Online Sales Order fast-path: flush exactly one record's queued
+   * `sales_orders` operation through the gateway and report the authoritative
+   * number. Never throws for transport/auth/conflict — those yield
+   * `{ synced:false }` and the background engine converges later.
+   */
+  flushSalesOrderNow,
+  /** Persist a server-authoritative ORD number locally (cloud-source, no re-enqueue). */
+  adoptFlushedSalesOrderNumber,
+  /** Local-save → inline flush → adopt. Returns the adopted record when online numbering succeeded. */
+  claimOnlineSalesOrderNumber,
 
   /** True while the sync engine is in simulated-offline mode. */
   isPaused(): boolean {

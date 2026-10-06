@@ -41,6 +41,13 @@ export interface SyncOpResult {
   version?: number;
   replayed?: boolean;
   noop?: boolean;
+  /**
+   * Authoritative Sales Order number stamped by the gateway
+   * (`ensureSalesOrderNumber`) for `sales_orders` upserts. Null when nothing
+   * was stamped (mint skipped / history-immutable unnumbered row). Absent on
+   * every other table — never a fabricated frontend value.
+   */
+  order_number?: string | null;
   /** True when the write was rejected by the optimistic-concurrency gate because another device changed the row since this client read it. */
   conflict?: boolean;
   conflictType?: 'version_conflict' | string;

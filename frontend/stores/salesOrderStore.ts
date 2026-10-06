@@ -6,6 +6,7 @@ import { transactionService } from '../services/transactionService';
 import { adminLifecycle } from '../services/adminPortalClient';
 import {
   salesOrderService,
+  getSalesOrderOfficialNumber,
   MigrationReport,
   AdoptionResult,
 } from '../services/salesOrderService';
@@ -78,9 +79,33 @@ export const useSalesOrderStore = create<SalesOrderState>((set, get) => ({
       }
       const errors = salesOrderService.validateOrder(canonical);
       if (errors.length > 0) throw new Error(errors.join('; '));
-      await api.sales.saveSalesOrder(canonical);
-      set((state) => ({ salesOrders: [...state.salesOrders, canonical] }));
-      return canonical;
+      const saved = (await api.sales.saveSalesOrder(canonical)) as {
+        success: boolean;
+        order_number?: string | null;
+        version?: number;
+        updatedAt?: string | null;
+      };
+      // api.sales.saveSalesOrder already persisted the adopted authoritative
+      // record when the online fast-path succeeded; mirror it into state
+      // (no extra write here) so creation resolves numbered, invoice-style.
+      // Offline/failure keeps the pending canonical for background convergence.
+      const official = String(saved?.order_number ?? '').trim()
+        || getSalesOrderOfficialNumber(canonical)
+        || null;
+      const finalized = official
+        ? (salesOrderService.adoptServerNumber({
+            ...canonical,
+            order_number: official,
+            ...(typeof saved?.version === 'number'
+              ? { version: saved.version, _version: saved.version }
+              : {}),
+            ...(typeof saved?.updatedAt === 'string' && saved.updatedAt
+              ? { serverUpdatedAt: saved.updatedAt }
+              : {}),
+          }) as SalesOrder)
+        : canonical;
+      set((state) => ({ salesOrders: [...state.salesOrders, finalized] }));
+      return finalized;
     } finally {
       inFlightCreates.delete(dedupeKey);
     }
@@ -88,6 +113,21 @@ export const useSalesOrderStore = create<SalesOrderState>((set, get) => ({
 
   createFinancialOrder: async (order) => {
     await transactionService.createOrder(order as unknown as import('../types').Order);
+    // ONLINE FAST-PATH (mirrors api.sales.saveSalesOrder): the atomic kernel
+    // above only persisted locally + queued. Claim the authoritative ORD
+    // number now so creation completes numbered instead of waiting for the
+    // periodic pull. Offline/failure stays pending for background convergence.
+    try {
+      const canonical = salesOrderService.canonicalizeOrder(order);
+      if (!getSalesOrderOfficialNumber(canonical)) {
+        const { backgroundSyncService } = await import('../services/backgroundSyncService');
+        await backgroundSyncService.claimOnlineSalesOrderNumber(
+          canonical as unknown as Record<string, unknown>,
+        );
+      }
+    } catch {
+      // Background sync still converges — never fail creation on numbering.
+    }
     await get().fetchSalesOrders(true);
   },
 
