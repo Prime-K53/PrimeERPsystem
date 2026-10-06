@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useSales } from '../../context/SalesContext';
 import { useOrders } from '../../context/OrdersContext';
-import { OFFLINE_MODE, DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../constants';
+import { OFFLINE_MODE, DEFAULT_ACCOUNTS, ACCOUNT_IDS, getPaymentAccountOptions } from '../../constants';
 import { CustomerPayment, InvoiceAllocation, Sale, Invoice, SupplierPayment, PurchaseAllocation, LedgerEntry, WalletTransaction, Order, OrderPayment } from '../../types';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useHighlight } from '../../hooks/useHighlight';
@@ -1727,13 +1727,13 @@ const Payments: React.FC = () => {
                                                     }}
                                                 >
                                                     <optgroup label="Default Accounts">
-                                                         {DEFAULT_ACCOUNTS.filter(a => ['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(acc => (
-                                                            <option key={acc.id} value={acc.id}>{acc.name} ({acc.code})</option>
+                                                         {getPaymentAccountOptions(accounts).map(opt => (
+                                                            <option key={opt.id} value={opt.id}>{opt.name} ({opt.code})</option>
                                                         ))}
                                                     </optgroup>
                                                     {bankAccounts.length > 0 && (
                                                         <optgroup label="Specific Bank Accounts">
-                                                             {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(acc => (
+                                                             {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11100', '11120', '11210', '11220', '11230', '11240'].includes(a.id)).map(acc => (
                                                                 <option key={acc.id} value={acc.id}>{acc.name} - {acc.bankName}</option>
                                                             ))}
                                                         </optgroup>
@@ -2296,13 +2296,13 @@ const Payments: React.FC = () => {
                                         }}
                                     >
                                         <optgroup label="Default Accounts">
-                                             {DEFAULT_ACCOUNTS.filter(a => ['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(acc => (
-                                                <option key={acc.id} value={acc.id}>{acc.name} ({acc.code})</option>
+                                             {getPaymentAccountOptions(accounts).map(opt => (
+                                                <option key={opt.id} value={opt.id}>{opt.name} ({opt.code})</option>
                                             ))}
                                         </optgroup>
                                         {bankAccounts.length > 0 && (
                                             <optgroup label="Specific Bank Accounts">
-                                                 {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11100', '11120', '11210', '11220', '11230'].includes(a.id)).map(acc => (
+                                                 {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11100', '11120', '11210', '11220', '11230', '11240'].includes(a.id)).map(acc => (
                                                     <option key={acc.id} value={acc.id}>{acc.name} - {acc.bankName}</option>
                                                 ))}
                                             </optgroup>

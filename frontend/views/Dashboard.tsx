@@ -1021,8 +1021,8 @@ const DashboardContent: React.FC = () => {
     const accountNames: Record<string, string> = {
       '11110': 'Cash Drawer',
       '11210': 'National Bank',
-      '11220': 'FDH Bank',
-      '11230': 'NBS Bank',
+      '11220': 'FCB Bank',
+      '11230': 'Standard Bank',
       '11240': 'Mobile Money'
     };
     const firstAcc = accountNames[primaryAccountCode] || 'Cash';

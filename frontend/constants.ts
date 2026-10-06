@@ -165,6 +165,37 @@ export const DEFAULT_ACCOUNTS: Account[] = [
   { id: '54100', code: '54100', account_number: '54100', name: 'Interest Expense', account_type: 'EXPENSE', type: 'Expense', account_group: 'OTHER_EXPENSE', parent_account_id: '54000', allow_posting: true },
 ];
 
+/**
+ * Canonical Payment Accounts offered by every payment modal (POS, Record
+ * Customer/Supplier Payment, order payments, income/expense receipts):
+ * Cash in Hand plus the four Bank Accounts children (National, FCB,
+ * Standard, Mobile Money).
+ *
+ * Option values are always the 5-digit codes so downstream posting resolves
+ * identically. Display names prefer live COA rows (renames propagate) with
+ * the seed as fallback.
+ */
+export const PAYMENT_ACCOUNT_CODES = ['11110', '11210', '11220', '11230', '11240'];
+
+export interface PaymentAccountOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export function getPaymentAccountOptions(
+  liveAccounts?: Array<{ id?: unknown; code?: unknown; account_number?: unknown; name?: unknown }>,
+): PaymentAccountOption[] {
+  return PAYMENT_ACCOUNT_CODES.map((code) => {
+    const live = (liveAccounts || []).find(
+      (a) => String(a.account_number ?? a.code ?? a.id ?? '') === code,
+    );
+    const seed = DEFAULT_ACCOUNTS.find((a) => a.id === code);
+    const name = code === '11110' ? 'Cash in Hand' : String(live?.name || seed?.name || code);
+    return { id: code, code, name };
+  });
+}
+
 export const AVAILABLE_PERMISSIONS: PermissionNode[] = [
   // Dashboard & Analytics
   { id: 'dashboard.view', label: 'View Dashboard', module: 'Analytics' },

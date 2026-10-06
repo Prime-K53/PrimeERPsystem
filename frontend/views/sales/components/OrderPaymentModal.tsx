@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Wallet, CreditCard, Smartphone, Banknote, Package, User, Hash, Calendar, X, ChevronRight } from 'lucide-react';
 import { Order } from '../../../types';
-import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
+import { DEFAULT_ACCOUNTS, ACCOUNT_IDS, getPaymentAccountOptions } from '../../../constants';
 import { currencyService } from '../../../services/currencyService';
 import { useAuth } from '../../../context/AuthContext';
+import { useFinance } from '../../../context/FinanceContext';
 
 interface OrderPaymentModalProps {
     order: Order;
@@ -33,6 +34,7 @@ const inputRest: React.CSSProperties = {
 
 export const OrderPaymentModal: React.FC<OrderPaymentModalProps> = ({ order, onClose, onRecord }) => {
     const { companyConfig, notify } = useAuth();
+    const { accounts: coaAccounts } = useFinance();
     const remainingBalance = Math.max(0, (order.totalAmount || 0) - (order.paidAmount || 0));
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
     const fmt = (n: number) => currency + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -84,12 +86,12 @@ export const OrderPaymentModal: React.FC<OrderPaymentModalProps> = ({ order, onC
 
     const getIcon = (accountId: string) => {
         if (accountId === ACCOUNT_IDS.CASH_DRAWER) return <Banknote size={18} />;
-        if (accountId === ACCOUNT_IDS.BANK) return <CreditCard size={18} />;
+        if (accountId === ACCOUNT_IDS.BANK || accountId === '11220' || accountId === '11230') return <CreditCard size={18} />;
         if (accountId === ACCOUNT_IDS.MOBILE_MONEY) return <Smartphone size={18} />;
         return <Wallet size={18} />;
     };
 
-    const paymentAccounts = DEFAULT_ACCOUNTS.filter(a => [ACCOUNT_IDS.CASH_DRAWER, ACCOUNT_IDS.BANK, ACCOUNT_IDS.MOBILE_MONEY].includes(a.id));
+    const paymentAccounts = getPaymentAccountOptions(coaAccounts);
 
     const InfoRow = ({ icon: Icon, label, value, accent = false }: any) => (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>

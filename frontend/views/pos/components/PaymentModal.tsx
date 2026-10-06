@@ -3,9 +3,10 @@ import { Banknote, CreditCard, Smartphone, Briefcase, X, Wallet, Award, Clock, C
 import type { PaymentDetail } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useBankingStore } from '../../../context/BankingContext';
-import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
+import { DEFAULT_ACCOUNTS, ACCOUNT_IDS, getPaymentAccountOptions } from '../../../constants';
 import { currencyService } from '../../../services/currencyService';
 import { formatNumber } from '../../../utils/helpers';
+import { useFinance } from '../../../context/FinanceContext';
 import { useModalA11y } from '../../../utils/useModalA11y';
 import { formatAmount, formatMoney, formatSignedMoney, getQuickCashPresets } from '../../../utils/posMoney';
 import { FOCUS_RING, NUMERIC_FONT, danger, type } from '../theme';
@@ -42,6 +43,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 }) => {
     const { companyConfig, notify } = useAuth();
     const { accounts: bankAccounts, fetchBankingData } = useBankingStore();
+    const { accounts: coaAccounts } = useFinance();
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
     const [splitPayments, setSplitPayments] = useState<PaymentDetail[]>([]);
     const [currentPaymentAmount, setCurrentPaymentAmount] = useState(() => (Number.isFinite(total) ? total.toFixed(2) : ''));
@@ -480,7 +482,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
                         {/* Tender presets were hardcoded to 5,000 / 10,000 regardless of currency,
                 which is meaningless for USD/EUR and too small for JPY. */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.08, marginBottom: 6, marginTop: 4 }}>Payment account</div>
+                        <select
+                            value=""
+                            onChange={e => { if (e.target.value) addPaymentMethod(e.target.value); e.target.value = ''; }}
+                            style={{ width: '100%', height: 36, padding: '0 8px', border: `1.4px solid ${hairline}`, borderRadius: 8, fontSize: 13, fontWeight: 600, background: paper, color: ink, fontFamily: 'inherit', outline: 'none', marginBottom: 16 }}
+                        >
+                            <option value="">Choose account — Cash in Hand, National, FCB, Standard, Mobile…</option>
+                            {getPaymentAccountOptions(coaAccounts).map(opt => (
+                                <option key={opt.id} value={opt.id}>{opt.name} ({opt.code})</option>
+                            ))}
+                        </select>
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
                     <button
                         type="button"
                         onClick={() => setCurrentPaymentAmount(Number.isFinite(total) ? total.toFixed(2) : '')}

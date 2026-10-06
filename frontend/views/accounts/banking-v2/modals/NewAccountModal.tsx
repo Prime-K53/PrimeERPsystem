@@ -31,8 +31,8 @@ interface Props {
 
 const COA_OPTIONS = [
   { id: CANONICAL_COA.BANK_NATIONAL, label: '11210 · National Bank' },
-  { id: CANONICAL_COA.BANK_FDH, label: '11220 · FDH Bank' },
-  { id: CANONICAL_COA.BANK_NBS, label: '11230 · NBS Bank' },
+  { id: CANONICAL_COA.BANK_FDH, label: '11220 · FCB Bank' },
+  { id: CANONICAL_COA.BANK_NBS, label: '11230 · Standard Bank' },
   { id: CANONICAL_COA.MOBILE_MONEY, label: '11240 · Mobile Money' },
   { id: CANONICAL_COA.CASH_DRAWER, label: '11110 · Cash Drawer' },
   { id: CANONICAL_COA.PETTY_CASH, label: '11120 · Petty Cash' },

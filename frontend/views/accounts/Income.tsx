@@ -5,13 +5,13 @@ import { useFinance } from '../../context/FinanceContext';
 import { useAuth } from '../../context/AuthContext';
 import { useBankingStore } from '../../context/BankingContext';
 import { Income } from '../../types';
-import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../constants';
+import { DEFAULT_ACCOUNTS, ACCOUNT_IDS, getPaymentAccountOptions } from '../../constants';
 import { getDefaultDate, validateDateInFY } from '../../utils/financialYearUtils';
 
 const paper = '#FEFDFB', ink = '#23282A', inkSoft = '#5c6567', hairline = '#e4ddd1';
 
 const IncomeView: React.FC = () => {
-  const { income, addIncome, updateIncome, deleteIncome } = useFinance();
+  const { income, addIncome, updateInvoice, deleteInvoice, accounts: coaAccounts } = useFinance();
   const { companyConfig, user, notify } = useAuth();
   const { accounts: bankAccounts, fetchBankingData } = useBankingStore();
   const currency = companyConfig.currencySymbol;
@@ -147,13 +147,13 @@ const IncomeView: React.FC = () => {
                                     onChange={e => setFormData({...formData, accountId: e.target.value})}
                                 >
                                     <optgroup label="Default Accounts">
-                                        <option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (11110)</option>
-                                        <option value={ACCOUNT_IDS.BANK}>Main Bank Account (11210)</option>
-                                        <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money ({ACCOUNT_IDS.MOBILE_MONEY})</option>
+                                        {getPaymentAccountOptions(coaAccounts).map(opt => (
+                                            <option key={opt.id} value={opt.id}>{opt.name} ({opt.code})</option>
+                                        ))}
                                     </optgroup>
                                     {(bankAccounts || []).length > 0 && (
                                         <optgroup label="Specific Bank Accounts">
-                                            {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11210', '11230', '11240'].includes(a.id)).map(acc => (
+                                            {bankAccounts.filter(a => a.status === 'Active' && !['11110', '11210', '11220', '11230', '11240'].includes(a.id)).map(acc => (
                                                 <option key={acc.id} value={acc.id}>{acc.name} ({acc.bankName})</option>
                                             ))}
                                         </optgroup>

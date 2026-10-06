@@ -10,7 +10,7 @@ import { useFinance } from '../../context/FinanceContext';
 import { useBankingStore } from '../../context/BankingContext';
 import { Expense } from '../../types';
 import { exportToCSV } from '../../services/excelService';
-import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../constants';
+import { DEFAULT_ACCOUNTS, ACCOUNT_IDS, getPaymentAccountOptions } from '../../constants';
 import { localFileStorage } from '../../services/localFileStorage';
 import { OfflineImage } from '../../components/OfflineImage';
 import { currencyService } from '../../services/currencyService';
@@ -32,7 +32,7 @@ const hairline = '#e4ddd1';
 
 const Expenses: React.FC = () => {
   const { user, companyConfig, checkPermission, notify, isOnline } = useAuth();
-  const { expenses, addExpense, approveExpense } = useFinance();
+  const { expenses, addExpense, approveExpense, accounts: coaAccounts } = useFinance();
   const { accounts: bankAccounts, fetchBankingData } = useBankingStore();
   
   React.useEffect(() => {
@@ -544,9 +544,9 @@ const Expenses: React.FC = () => {
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Payment Account</label>
               <select style={inputStyle} value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
-<option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (11110)</option>
-                                <option value={ACCOUNT_IDS.BANK}>Main Bank Account (11210)</option>
-                                <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money ({ACCOUNT_IDS.MOBILE_MONEY})</option>
+                {getPaymentAccountOptions(coaAccounts).map(opt => (
+                  <option key={opt.id} value={opt.id}>{opt.name} ({opt.code})</option>
+                ))}
               </select>
             </div>
 
