@@ -243,3 +243,31 @@ export function bucketTransportBudgetByPeriod(
       count: bucket.count,
     }));
 }
+
+/**
+ * Invoices that still need a SALES_ALLOCATION event: not yet covered by an
+ * existing allocation's source event id, optionally bounded to a business
+ * date window (invoice `date`, YYYY-MM-DD prefix). Pure scan used by the
+ * dashboard recovery action — the allocator itself still enforces every
+ * skip rule (draft/mirror/credit-note/policy) and economic idempotency.
+ */
+export function findInvoicesMissingAllocation(
+  invoices: Array<{ id?: unknown; date?: unknown }>,
+  allocatedSourceEventIds: Set<string> | string[],
+  from?: string,
+  to?: string,
+): Array<{ id?: unknown; date?: unknown }> {
+  const covered = allocatedSourceEventIds instanceof Set
+    ? allocatedSourceEventIds
+    : new Set(allocatedSourceEventIds || []);
+  const list = Array.isArray(invoices) ? invoices : [];
+  return list.filter((invoice) => {
+    if (!invoice) return false;
+    const id = String((invoice as { id?: unknown }).id || '').trim();
+    if (!id || covered.has(id)) return false;
+    const day = String((invoice as { date?: unknown }).date || '').slice(0, 10);
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    return true;
+  });
+}

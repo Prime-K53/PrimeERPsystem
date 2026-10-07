@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   Activity, ArrowDownToLine, ArrowUpFromLine, Coins, Download, PiggyBank,
@@ -14,8 +15,15 @@ import {
   bucketTransportBudgetByPeriod,
   sumTransportBudgetEvents,
   summarizeTransportBudgetByKind,
+  findInvoicesMissingAllocation,
   type TransportBudgetPeriodGranularity,
 } from '../../services/transportBudgetKpis';
+import { resolveTransportBudgetRate } from '../../utils/transportBudgetPolicy';
+import {
+  allocateForPostedInvoice,
+  defaultSalesAllocationDeps,
+} from '../../services/transportBudgetSalesAllocation';
+import { dbService } from '../../services/db';
 import {
   resolveRevenueWindow,
   type RevenueDateRange,
@@ -48,10 +56,13 @@ const toWindowBounds = (dateRange: RevenueDateRange): { from?: string; to?: stri
 };
 
 const TransportBudgetDashboard: React.FC = () => {
-  const { companyConfig } = useAuth();
+  const { companyConfig, notify } = useAuth();
+  const navigate = useNavigate();
   const [events, setEvents] = useState<TransportBudgetEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [isAllocating, setIsAllocating] = useState(false);
+  const [allocationResult, setAllocationResult] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<RevenueDateRange>('month');
   const [error, setError] = useState<string | null>(null);
 
@@ -86,6 +97,68 @@ const TransportBudgetDashboard: React.FC = () => {
 
   const totals = useMemo(() => sumTransportBudgetEvents(events), [events]);
   const byKind = useMemo(() => summarizeTransportBudgetByKind(events), [events]);
+
+  // Allocation policy state for the visible window: without an enabled rate,
+  // every invoice silently skips allocation, so the screen explains that
+  // instead of showing bare zeros.
+  const policyNotice = useMemo(() => {
+    const { to } = toWindowBounds(dateRange);
+    const probeDate = to || new Date().toISOString().slice(0, 10);
+    const resolution = resolveTransportBudgetRate(
+      (companyConfig as { transportBudgetPolicy?: unknown } | undefined)?.transportBudgetPolicy,
+      probeDate,
+    );
+    if (resolution.status === 'enabled' && typeof resolution.rate === 'number') {
+      return { active: true as const, text: `Allocation active at ${resolution.rate}% for sales on ${probeDate}.` };
+    }
+    if (resolution.status === 'disabled') {
+      return { active: false as const, text: 'Transport budget allocation is currently disabled (0% rate). No events accumulate regardless of invoices.' };
+    }
+    return { active: false as const, text: 'Transport budget allocation is not configured — no events accumulate regardless of invoices. Set an allocation rate in Settings → Transport Budget, then use Allocate missing below for past invoices.' };
+  }, [companyConfig, dateRange]);
+
+  const handleAllocateMissing = async () => {
+    setIsAllocating(true);
+    setAllocationResult(null);
+    try {
+      const { from, to } = toWindowBounds(dateRange);
+      const invoices = ((await dbService.getAll('invoices')) || []) as Array<{ id?: unknown; date?: unknown }>;
+      const allocated = new Set(
+        events
+          .filter((e) => e.kind === 'SALES_ALLOCATION')
+          .map((e) => String((e as { sourceEventId?: unknown }).sourceEventId || '')),
+      );
+      const missing = findInvoicesMissingAllocation(invoices, allocated, from, to);
+      let allocatedCount = 0;
+      let skippedCount = 0;
+      const failures: string[] = [];
+      for (const invoice of missing) {
+        try {
+          const outcome = await allocateForPostedInvoice(defaultSalesAllocationDeps, invoice as never);
+          if (outcome.status === 'allocated') allocatedCount += 1;
+          else skippedCount += 1;
+        } catch (err) {
+          failures.push(String((invoice as { id?: unknown }).id || 'unknown'));
+        }
+      }
+      const refreshed = await transportBudgetRepository.listTransportBudgetEvents({
+        ...(from ? { fromBusinessDate: from } : {}),
+        ...(to ? { toBusinessDate: to } : {}),
+      });
+      setEvents(refreshed || []);
+      const summary = failures.length > 0
+        ? `Allocated ${allocatedCount}, skipped ${skippedCount}, ${failures.length} failed (${failures.slice(0, 3).join(', ')}${failures.length > 3 ? '…' : ''})`
+        : `Allocated ${allocatedCount} missing invoice(s), skipped ${skippedCount} (draft/mirror/out-of-policy)`;
+      setAllocationResult(summary);
+      notify(summary, allocatedCount > 0 ? 'success' : 'info');
+    } catch (err: any) {
+      const message = `Allocation recovery failed: ${err?.message || err}`;
+      setAllocationResult(message);
+      notify(message, 'error');
+    } finally {
+      setIsAllocating(false);
+    }
+  };
   const granularity = GRANULARITY_FOR_RANGE[dateRange];
   const buckets = useMemo(
     () => bucketTransportBudgetByPeriod(events, granularity),
@@ -254,6 +327,19 @@ const TransportBudgetDashboard: React.FC = () => {
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
+              onClick={() => { void handleAllocateMissing(); }}
+              disabled={isAllocating || isLoading}
+              title="Allocate posted invoices in this window that still lack a sales allocation event"
+              style={{
+                padding: '6px 12px', borderRadius: 9, fontSize: 12, fontWeight: 600,
+                border: `1.4px solid ${hairline}`, cursor: isAllocating ? 'not-allowed' : 'pointer',
+                background: '#FEFDFB', color: inkSoft, display: 'flex', alignItems: 'center', gap: 6,
+                opacity: isAllocating ? 0.6 : 1,
+              }}
+            >
+              <Coins size={13} /> {isAllocating ? 'Allocating…' : 'Allocate missing'}
+            </button>
+            <button
               onClick={handleExport}
               disabled={isExporting || isLoading || events.length === 0}
               style={{
@@ -275,6 +361,23 @@ const TransportBudgetDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+        {!policyNotice.active && !isLoading && (
+          <div style={{ background: '#fffbeb', border: '1.4px solid #f59e0b', borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+            <Coins size={16} style={{ color: '#b45309', flexShrink: 0 }} />
+            <div style={{ color: ink }}>
+              <span style={{ fontWeight: 700 }}>Transport budget is off. </span>
+              <span style={{ color: inkSoft }}>{policyNotice.text} </span>
+              <button onClick={() => navigate('/settings')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: teal[600], textDecoration: 'underline' }}>
+                Open Settings
+              </button>
+            </div>
+          </div>
+        )}
+        {allocationResult && (
+          <div style={{ background: teal[50], border: `1.4px solid ${teal[200]}`, borderRadius: 12, padding: '10px 16px', fontSize: 12.5, color: teal[800], fontWeight: 600 }}>
+            {allocationResult}
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
           {kpis.map((kpi) => {
             const Icon = kpi.icon;
