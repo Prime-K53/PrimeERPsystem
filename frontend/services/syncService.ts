@@ -608,7 +608,17 @@ export async function pullRemoteChanges(
  * FIX (Bug #1): After each IndexedDB write we now dispatch `primeerp:data-changed`
  * and a BroadcastChannel message so that DataContext.queueRefresh() fires and
  * the React/Zustand stores pick up the new data immediately.
+ *
+ * FIX (Bug #2): all tables used to be bound through ONE CHANNEL EACH
+ * (`primeerp:<table>`), which opened ~200 Phoenix channels on a single
+ * websocket. Supabase Realtime caps channels per connection, so the server
+ * refused the joins and every table reported status=TIMED_OUT — realtime was
+ * effectively dead and the app silently degraded to polling. A single channel
+ * can carry many `postgres_changes` bindings, so all tables are now attached
+ * to one channel with one join round-trip.
  */
+const REALTIME_CHANNEL_NAME = 'primeerp:sync';
+
 async function subscribeToRemoteChanges() {
   if (!SUPABASE_ENABLED || realtimeSubscribed) {
     /* SYNC-FORENSIC suppressed: subscribeToRemoteChanges() SKIPPED */
@@ -618,103 +628,115 @@ async function subscribeToRemoteChanges() {
   realtimeSubscribed = true;
   const myGeneration = ++subscriptionGeneration;
 
-  for (const storeName of TABLES_TO_SYNC) {
-    if (!realtimeSubscribed || subscriptionGeneration !== myGeneration) break; // Race guard: abort if unsubscribed or superseded
-    const table = getTable(storeName);
+  try {
+    const channelName = REALTIME_CHANNEL_NAME;
+    let channel = supabase.channel(channelName);
+    let bindings = 0;
 
-    try {
-      const changeFilter: Record<string, string> = { event: '*', schema: 'public', table };
-      const channelName = `primeerp:${table}`;
+    // Several stores alias the same cloud table (e.g. examJobs and
+    // examinationJobs → examination_jobs). One binding per table is enough;
+    // duplicates would apply the same write twice per event.
+    const boundTables = new Set<string>();
 
-      const channel = supabase
-        .channel(channelName)
-        .on(
-          'postgres_changes' as const,
-          changeFilter,
-          async (payload: any) => {
-            try {
-              const eventType: string = payload.eventType || 'UNKNOWN';
-              /* SYNC-FORENSIC suppressed: REALTIME event received */
+    for (const storeName of TABLES_TO_SYNC) {
+      if (!realtimeSubscribed || subscriptionGeneration !== myGeneration) break; // Race guard: abort if unsubscribed or superseded
+      const table = getTable(storeName);
+      if (boundTables.has(table)) continue;
+      boundTables.add(table);
+      // Typed literally (not Record<string, string>) so TS can pick the
+      // 'postgres_changes' + event:'*' overload of RealtimeChannel.on().
+      const changeFilter: { event: '*'; schema: string; table: string } = { event: '*', schema: 'public', table };
 
-              if (eventType === 'DELETE') {
-                const deleteId = payload.old?.id;
-                if (!deleteId) {
-                  logger.warn(`[Sync] realtime DELETE ${table}: payload.old.id missing — skipping`, payload.old);
-                } else {
-                  try {
-                    await dbService.delete(storeName, deleteId, { cloudSource: true });
-                    logger.info(`[Sync] realtime DELETE ${table} id=${deleteId} → dispatching data-changed`);
-                    emitDataChanged(table, 'DELETE');
-                  } catch (e) { logger.error('Realtime DELETE failed', e as Error); }
-                }
+      channel = channel.on(
+        'postgres_changes' as const,
+        changeFilter,
+        async (payload: any) => {
+          try {
+            const eventType: string = payload.eventType || 'UNKNOWN';
+            /* SYNC-FORENSIC suppressed: REALTIME event received */
 
-              } else if (payload.new) {
-                const cloudRecord = toCloudRecord(payload.new);
+            if (eventType === 'DELETE') {
+              const deleteId = payload.old?.id;
+              if (!deleteId) {
+                logger.warn(`[Sync] realtime DELETE ${table}: payload.old.id missing — skipping`, payload.old);
+              } else {
+                try {
+                  await dbService.delete(storeName, deleteId, { cloudSource: true });
+                  logger.info(`[Sync] realtime DELETE ${table} id=${deleteId} → dispatching data-changed`);
+                  emitDataChanged(table, 'DELETE');
+                } catch (e) { logger.error('Realtime DELETE failed', e as Error); }
+              }
 
-                // Server-side tombstone arrives as an UPDATE (soft delete):
-                // delete locally and skip the merge so the row isn't resurrected.
-                if (cloudRecord.deleted === true) {
-                  try {
-                    await dbService.delete(storeName, payload.new.id, { cloudSource: true });
-                    emitDataChanged(table, 'SOFT_DELETE');
-                  } catch (e) { logger.error('Realtime soft-delete failed', e as Error); }
+            } else if (payload.new) {
+              const cloudRecord = toCloudRecord(payload.new);
+
+              // Server-side tombstone arrives as an UPDATE (soft delete):
+              // delete locally and skip the merge so the row isn't resurrected.
+              if (cloudRecord.deleted === true) {
+                try {
+                  await dbService.delete(storeName, payload.new.id, { cloudSource: true });
+                  emitDataChanged(table, 'SOFT_DELETE');
+                } catch (e) { logger.error('Realtime soft-delete failed', e as Error); }
+                return;
+              }
+
+              const local = await dbService.get(storeName, payload.new.id);
+              if (local) {
+                const pendingMutation = await durableSyncQueue.hasPendingMutation(table, payload.new.id);
+                if (pendingMutation) {
+                  /* SYNC-FORENSIC suppressed: REALTIME-SKIP-MERGE */
                   return;
                 }
-
-                const local = await dbService.get(storeName, payload.new.id);
-                if (local) {
-                  const pendingMutation = await durableSyncQueue.hasPendingMutation(table, payload.new.id);
-                  if (pendingMutation) {
-                    /* SYNC-FORENSIC suppressed: REALTIME-SKIP-MERGE */
-                    return;
-                  }
-                  const merged = fieldLevelMerge(local, cloudRecord);
-                  if (cloudRecord.serverUpdatedAt) {
-                    merged.serverUpdatedAt = cloudRecord.serverUpdatedAt;
-                  }
-                  merged._cloudSource = true;
-                  /* SYNC-FORENSIC suppressed: REALTIME MERGE */
-                  // Sales orders: adopt the server-canonical ORD number
-                  // (see pull path above).
-                  await dbService.put(
-                    storeName,
-                    (storeName === 'salesOrders' ? adoptServerNumber(merged) : merged) as Record<string, unknown>,
-                    { cloudSource: true }
-                  );
-                } else {
-                  /* SYNC-FORENSIC suppressed: REALTIME NEW */
-                  await dbService.put(
-                    storeName,
-                    (storeName === 'salesOrders' ? adoptServerNumber(cloudRecord) : cloudRecord) as Record<string, unknown>,
-                    { cloudSource: true }
-                  );
+                const merged = fieldLevelMerge(local, cloudRecord);
+                if (cloudRecord.serverUpdatedAt) {
+                  merged.serverUpdatedAt = cloudRecord.serverUpdatedAt;
                 }
-
-                // ── FIX Bug #1 ───────────────────────────────────────────────
-                // Notify the React layer that IndexedDB has been updated.
-                // DataContext listens to both signals and calls queueRefresh(),
-                // which triggers refreshAllData() → Zustand stores re-read IDB
-                // and re-render. Without this, Device B's UI never updates.
-                logger.info(`[Sync] realtime ${eventType} ${table} → dispatching data-changed`);
-                emitDataChanged(table, eventType);
+                merged._cloudSource = true;
+                /* SYNC-FORENSIC suppressed: REALTIME MERGE */
+                // Sales orders: adopt the server-canonical ORD number
+                // (see pull path above).
+                await dbService.put(
+                  storeName,
+                  (storeName === 'salesOrders' ? adoptServerNumber(merged) : merged) as Record<string, unknown>,
+                  { cloudSource: true }
+                );
+              } else {
+                /* SYNC-FORENSIC suppressed: REALTIME NEW */
+                await dbService.put(
+                  storeName,
+                  (storeName === 'salesOrders' ? adoptServerNumber(cloudRecord) : cloudRecord) as Record<string, unknown>,
+                  { cloudSource: true }
+                );
               }
-            } catch {
-              // best-effort realtime sync
-            }
-          }
-        )
-        .subscribe((status: string) => {
-          if (status === 'SUBSCRIBED') {
-            audit('realtime', 'channel subscribed', { table });
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            logger.warn(`[Sync] realtime channel ${channelName} status=${status} — will rely on polling`);
-          }
-        });
 
-      realtimeChannels.push(channel);
-    } catch {
-      // best-effort subscription setup
+              // ── FIX Bug #1 ───────────────────────────────────────────────
+              // Notify the React layer that IndexedDB has been updated.
+              // DataContext listens to both signals and calls queueRefresh(),
+              // which triggers refreshAllData() → Zustand stores re-read IDB
+              // and re-render. Without this, Device B's UI never updates.
+              logger.info(`[Sync] realtime ${eventType} ${table} → dispatching data-changed`);
+              emitDataChanged(table, eventType);
+            }
+          } catch {
+            // best-effort realtime sync
+          }
+        }
+      );
+      bindings++;
     }
+
+    channel.subscribe((status: string) => {
+      if (status === 'SUBSCRIBED') {
+        audit('sync', 'realtime channel subscribed', { channel: channelName, bindings });
+        logger.info('[Sync] realtime channel subscribed', { channel: channelName, bindings });
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        logger.warn(`[Sync] realtime channel ${channelName} status=${status} (bindings=${bindings}) — will rely on polling`);
+      }
+    });
+
+    realtimeChannels.push(channel);
+  } catch {
+    // best-effort subscription setup
   }
 }
 
