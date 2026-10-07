@@ -93,7 +93,7 @@ describe('PrintingContracts modal chrome (Add Customer look, no sidebars)', () =
 
   it('renders the dashboard in the shared UI language (money bar + filters)', () => {
     render(<PrintingContractsView />);
-    for (const label of ['Active Contracts', 'Draft / Pending Payment', 'Available Funds', 'Assessments Reserved / Consumed']) {
+    for (const label of ['Active Contracts', 'Draft / Pending Payment', 'Available Funds', 'Consumed / Assessments Reserved']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
     expect(screen.getByPlaceholderText('Search contracts, schools, clients...')).toBeTruthy();

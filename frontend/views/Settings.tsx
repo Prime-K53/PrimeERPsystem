@@ -13,7 +13,7 @@ import {
     Cpu, Layers, Smartphone, Layout, Users, ShoppingBag, ShoppingCart, Palette, Monitor,
     Factory, Box, Cloud, Bell, Mail, MessageSquare, ShieldAlert, Webhook, Sun, Moon, Laptop, Info, Undo2,
     TrendingUp, Package, PlusCircle, Trash, Printer, Usb, Sparkles, Scissors, Award, CreditCard,
-    CalendarDays, ChevronRight
+    CalendarDays, ChevronRight, Truck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useFinance } from '../context/FinanceContext';
@@ -482,6 +482,10 @@ const Settings: React.FC = () => {
     // Phase 3A: scheduled-change rows. `null` = untouched (follows the loaded
     // CompanyConfig); an array = administrator input under edit.
     const [transportScheduledInput, setTransportScheduledInput] = useState<Array<{ rate: string; effectiveFrom: string }> | null>(null);
+    // Transport Budget on/off toggle: mirrors the last explicitly entered
+    // non-zero rate so flipping back on restores it. No model change — a 0%
+    // rate remains the canonical disabled state.
+    const lastTransportRateRef = React.useRef<string | null>(null);
     const [bomTemplates, setBomTemplates] = useState<any[]>([]);
     const [isRestoringBackup, setIsRestoringBackup] = useState(false);
     const [show2FASetup, setShow2FASetup] = useState(false);
@@ -573,6 +577,16 @@ const Settings: React.FC = () => {
     const transportRateDraftError = transportRateInput !== null
         ? (parseTransportBudgetRateInput(transportRateInput).error ?? undefined)
         : undefined;
+    // Toggle reflects the draft: allocation runs iff the draft rate parses
+    // to a number above zero. Tracks the last such rate for toggle-on
+    // restore (including the stored rate on first render).
+    const transportDraftParsed = parseTransportBudgetRateInput(transportRateText);
+    const transportAllocationEnabled = !transportDraftParsed.error && (transportDraftParsed.value ?? 0) > 0;
+    React.useEffect(() => {
+        if (!transportDraftParsed.error && (transportDraftParsed.value ?? 0) > 0) {
+            lastTransportRateRef.current = transportRateText;
+        }
+    }, [transportRateText]);
     // Phase 3A: scheduled-change rows follow the stored policy until edited.
     const transportScheduledDrafts = transportScheduledInput
         ?? (config.transportBudgetPolicy?.scheduledChanges ?? []).map(e => ({
@@ -942,6 +956,7 @@ const Settings: React.FC = () => {
                 { id: 'ProfitMargins', icon: TrendingUp, label: 'Profit Markups', desc: 'Global, category and line-item markup overrides' },
                 { id: 'Pricing', icon: Percent, label: 'Discount & Pricing Rules', desc: 'Customer pricing tiers, discount rules, and tax rates' },
                 { id: 'Finishing', icon: Scissors, label: 'Finishing Options', desc: 'Default pricing for binding, cutting, and other finishing services' },
+                { id: 'TransportBudget', icon: Truck, label: 'Transport Budget', desc: 'Internal transport allocation rate and scheduled future rates' }
             ]
         },
         {
@@ -1550,34 +1565,59 @@ const Settings: React.FC = () => {
                                             </div>
                                         </div>
                                     </div>
-                                </section>
+                                 </section>
 
-                                <section style={{ border: '1px solid #D4D7DC', borderRadius: '12px', background: paper, overflow: 'hidden' }}>
-                                    <div style={{ paddingLeft: '32px', paddingTop: '20px', borderBottom: '1px solid #D4D7DC', background: '#eef7f6', paddingRight: '32px', paddingBottom: '20px' }}>
-                                        <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#23282A' }}>Monthly Revenue Target</h3>
-                                        <p style={{ color: '#5c6567', marginTop: '2px' }}>Set your monthly revenue goal for dashboard tracking.</p>
-                                    </div>
-                                    <div style={{ padding: '32px' }}>
-                                        <div style={{ position: 'relative', maxWidth: '320px' }}>
-                                            <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#5c6567', fontSize: '11px', fontWeight: 700 }}>{config.currencySymbol}</div>
-                                            <input
-                                                type="number"
-                                                style={{ ...inputStyle, paddingLeft: '40px' }}
-                                                placeholder="e.g. 500000"
-                                                value={config.monthlyRevenueTarget || ''}
-                                                onChange={e => setConfig({ ...config, monthlyRevenueTarget: Number(e.target.value) })}
-                                            />
-                                        </div>
-                                        <p style={{ color: '#5c6567', marginTop: '6px', fontWeight: 500, fontStyle: 'italic' }}>Your progress percentage against this target will be tracked on the dashboard.</p>
-                                    </div>
-                                </section>
+                                 <section style={{ border: '1px solid #D4D7DC', borderRadius: '12px', background: paper, overflow: 'hidden' }}>
+                                     <div style={{ paddingLeft: '32px', paddingTop: '20px', borderBottom: '1px solid #D4D7DC', background: '#eef7f6', paddingRight: '32px', paddingBottom: '20px' }}>
+                                         <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#23282A' }}>Monthly Revenue Target</h3>
+                                         <p style={{ color: '#5c6567', marginTop: '2px' }}>Set your monthly revenue goal for dashboard tracking.</p>
+                                     </div>
+                                     <div style={{ padding: '32px' }}>
+                                         <div style={{ position: 'relative', maxWidth: '320px' }}>
+                                             <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#5c6567', fontSize: '11px', fontWeight: 700 }}>{config.currencySymbol}</div>
+                                             <input
+                                                 type="number"
+                                                 style={{ ...inputStyle, paddingLeft: '40px' }}
+                                                 placeholder="e.g. 500000"
+                                                 value={config.monthlyRevenueTarget || ''}
+                                                 onChange={e => setConfig({ ...config, monthlyRevenueTarget: Number(e.target.value) })}
+                                             />
+                                         </div>
+                                         <p style={{ color: '#5c6567', marginTop: '6px', fontWeight: 500, fontStyle: 'italic' }}>Your progress percentage against this target will be tracked on the dashboard.</p>
+                                     </div>
+                                 </section>
+                             </div>
+                         )}
 
+                        {activeTab === 'TransportBudget' && (
+                            <div>
                                 <section style={{ border: '1px solid #D4D7DC', borderRadius: '12px', background: paper, overflow: 'hidden', marginTop: '24px' }}>
                                     <div style={{ paddingLeft: '32px', paddingTop: '20px', borderBottom: '1px solid #D4D7DC', background: '#eef7f6', paddingRight: '32px', paddingBottom: '20px' }}>
                                         <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#23282A' }}>Internal Transport Budget Allocation</h3>
                                         <p style={{ color: '#5c6567', marginTop: '2px' }}>Management budgeting rate applied internally to qualifying sales. This is NOT a customer charge, tax, delivery fee, or invoice surcharge — customers never see it.</p>
                                     </div>
                                     <div style={{ padding: '32px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0 20px', borderBottom: '1px solid #D4D7DC', marginBottom: '20px' }}>
+                                            <div>
+                                                <label style={labelStyle}>Enable transport budget allocation</label>
+                                                <p style={{ color: '#5c6567', fontSize: 11, marginTop: 2 }}>Turn allocation on or off without losing the configured rate. Turning it off sets the rate to 0%; turning it back on restores the last rate.</p>
+                                            </div>
+                                            <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                                                <input
+                                                    type="checkbox"
+                                                    className="toggle-input"
+                                                    checked={transportAllocationEnabled}
+                                                    onChange={e => {
+                                                        if (e.target.checked) {
+                                                            setTransportRateInput(lastTransportRateRef.current ?? '');
+                                                        } else {
+                                                            setTransportRateInput('0');
+                                                        }
+                                                    }}
+                                                />
+                                                <div className="toggle-track"></div>
+                                            </label>
+                                        </div>
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '24px', maxWidth: '640px' }}>
                                             <div>
                                                 <label style={labelStyle}>Allocation Rate (%)</label>
@@ -1614,7 +1654,7 @@ const Settings: React.FC = () => {
                                                 ? `Currently active at ${config.transportBudgetPolicy?.allocationRatePercent}%${config.transportBudgetPolicy?.effectiveFrom ? ` for sales on or after ${config.transportBudgetPolicy.effectiveFrom}` : ''}. Historical allocations are never recalculated when this changes.`
                                                 : transportPolicyState === 'disabled'
                                                     ? 'Currently set to 0% — internal allocation is disabled.'
-                                                    : 'No rate configured — internal allocation is disabled. Leave empty to keep it disabled.'}
+                                                    : 'No rate configured — internal allocation is disabled. Turn allocation on above and enter a rate, or leave it off.'}
                                         </p>
                                         <div style={{ marginTop: '20px', borderTop: '1px solid #D4D7DC', paddingTop: '16px', maxWidth: '640px' }}>
                                             <label style={labelStyle}>Scheduled future rates</label>

@@ -296,6 +296,76 @@ const ReminderMonitor: React.FC = () => {
   return null;
 };
 
+/**
+ * Assessment schedule countdown: when a reserved (scheduled, not yet
+ * consumed) assessment falls within the next 14 days, show a once-per-day
+ * notification stating how many days are left until the work. Mirrors the
+ * ReminderMonitor pattern (30s sweep, toast + persistent alert), with the
+ * once-per-day guarantee persisted in localStorage so reloads and multiple
+ * tabs cannot repeat it.
+ */
+const AssessmentScheduleMonitor: React.FC = () => {
+  const { notify, addAlert } = useAuth();
+  const notifiedToday = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const checkSchedules = async () => {
+      let items: any[];
+      try {
+        const { dbService } = await import('./services/db');
+        items = (await dbService.getAll('contractAssessments')) || [];
+      } catch {
+        return;
+      }
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      for (const item of items) {
+        if (String(item?.status || '').toLowerCase() !== 'reserved') continue;
+        if (!item?.assessment_date) continue;
+        const due = new Date(item.assessment_date);
+        due.setHours(0, 0, 0, 0);
+        if (Number.isNaN(due.getTime())) continue;
+        const daysLeft = Math.round((due.getTime() - today.getTime()) / 86400000);
+        if (daysLeft < 0 || daysLeft > 14) continue;
+        const key = `assess-sched-notified:${String(item.id)}:${todayStr}`;
+        if (notifiedToday.current.has(key)) continue;
+        try {
+          if (localStorage.getItem(key)) {
+            notifiedToday.current.add(key);
+            continue;
+          }
+        } catch {
+          // Storage unavailable — fall back to in-memory dedupe only.
+        }
+        const label = String(item.description || item.title || item.contract_id || 'Assessment');
+        const when = daysLeft === 0 ? 'due today' : daysLeft === 1 ? 'due tomorrow' : `due in ${daysLeft} days`;
+        const dateStr = due.toLocaleDateString();
+        notify(`Assessment scheduled ${when}: ${label} (${dateStr}) — ${daysLeft} day${daysLeft === 1 ? '' : 's'} left to next work`, 'info');
+        addAlert({
+          id: `ALERT-ASSESS-${String(item.id)}-${todayStr}-${Date.now()}`,
+          message: `Assessment due ${when}: ${label}. Scheduled: ${dateStr}. ${daysLeft} day${daysLeft === 1 ? '' : 's'} left.`,
+          type: 'System',
+          date: new Date().toISOString(),
+          severity: daysLeft <= 3 ? 'High' : 'Medium'
+        });
+        notifiedToday.current.add(key);
+        try {
+          localStorage.setItem(key, '1');
+        } catch {
+          // Best-effort persistence only.
+        }
+      }
+    };
+
+    void checkSchedules();
+    const interval = setInterval(checkSchedules, 30000);
+    return () => clearInterval(interval);
+  }, [notify, addAlert]);
+
+  return null;
+};
+
 const ResponsiveDebugUtility: React.FC = () => {
   const isDev = isResponsiveDebugEnabled();
   const [width, setWidth] = useState(() => window.innerWidth);
@@ -477,6 +547,7 @@ const AppLayout: React.FC = () => {
         />
       )}
       <ReminderMonitor />
+      <AssessmentScheduleMonitor />
       <Sidebar
         isOpen={sidebarOpen}
         toggle={() => setSidebarOpen(!sidebarOpen)}

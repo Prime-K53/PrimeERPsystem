@@ -1172,7 +1172,7 @@ const PrintingContractsView: React.FC = () => {
     { key: 'Active', label: 'Active Contracts', value: String(stats.active), icon: <CheckCircle size={20} />, accent: contractTeal[500], tileBg: contractTeal[50], tileColor: contractTeal[600] },
     { key: 'Pending', label: 'Draft / Pending Payment', value: String(stats.pending), icon: <ClipboardList size={20} />, accent: contractAmber[500], tileBg: contractAmber[100], tileColor: contractAmber[600] },
     { key: 'Funds', label: 'Available Funds', value: money(stats.available), icon: <Wallet size={20} />, accent: contractTeal[700], tileBg: contractTeal[100], tileColor: contractTeal[700] },
-    { key: 'All', label: 'Assessments Reserved / Consumed', value: `${stats.itemsReserved} / ${stats.itemsConsumed}`, icon: <Printer size={20} />, accent: contractAmber[300], tileBg: contractAmber[100], tileColor: contractAmber[600] },
+    { key: 'All', label: 'Consumed / Assessments Reserved', value: `${stats.itemsConsumed} / ${stats.itemsReserved}`, icon: <Printer size={20} />, accent: contractAmber[300], tileBg: contractAmber[100], tileColor: contractAmber[600] },
   ] as const;
 
   return (
