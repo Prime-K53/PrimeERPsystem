@@ -179,6 +179,26 @@ async function listRows(table) {
 }
 
 /**
+ * Fetch ONE page of cloud rows for the pull gateway (`GET /api/sync/pull`).
+ * Mirrors the browser pull semantics the sync engine has always used —
+ * incremental `updated_at >= since` cursor, deterministic
+ * `updated_at ASC, id ASC` ordering, offset/limit pagination — but executes
+ * the Supabase read server-side with the service-role key so the browser
+ * never talks to PostgREST directly. Throws on transport/cloud failures so
+ * the route can return a real 5xx instead of an empty dataset.
+ */
+async function listPullPage(table, { since = null, offset = 0, limit = 2000 } = {}) {
+  const params = { select: '*', order: 'updated_at.asc,id.asc', offset, limit };
+  if (since) params.updated_at = `gte.${since}`;
+  const res = await cloudHttp.get(`${SUPABASE_URL}/rest/v1/${table}`, {
+    headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
+    params,
+    timeout: 20000,
+  });
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+/**
  * Find rows whose `data` JSONB carries a given value for `field`.
  * Used by the gateway for business-key uniqueness checks (e.g. printing
  * contract numbers) before the write, so a collision is reported as a
@@ -877,6 +897,7 @@ module.exports = {
   applyOp,
   getRow,
   listRows,
+  listPullPage,
   findRowsByDataField,
   upsertRow,
   softDeleteRow,

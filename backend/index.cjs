@@ -87,7 +87,14 @@ try {
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
     max: Number(process.env.RATE_LIMIT_MAX) || 200, // Limit each IP
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    // Legitimate sync-pull traffic (GET /api/sync/pull) is governed by its
+    // own dedicated limiter (authenticated-user budget sized for a full pull
+    // cycle — see routes/sync.cjs). Excluding it here keeps one pull cycle
+    // (~144+ table requests) from consuming the generic abuse budget that
+    // protects PUSH and all other API traffic. Brute-force protection for
+    // auth endpoints is unchanged (separate limiters below).
+    skip: (req) => req.method === 'GET' && req.path === '/api/sync/pull',
   });
   app.use(limiter);
 } catch (e) {

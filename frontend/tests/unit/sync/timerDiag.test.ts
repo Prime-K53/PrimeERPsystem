@@ -22,6 +22,7 @@ import {
   diagTimerReplaced,
   diagTimerScheduled,
 } from '../../../services/syncDiag';
+import { SYNC_RECONCILIATION_INTERVAL_MS } from '../../../services/syncService';
 
 (globalThis as any).IDBKeyRange = {
   only: vi.fn((val: string) => ({ only: val })),
@@ -31,7 +32,7 @@ import {
 };
 
 const { openDBMock } = vi.hoisted(() => ({ openDBMock: vi.fn() }));
-const { mockSendOps, mockUploadFile } = vi.hoisted(() => ({
+const { mockSendOps, mockUploadFile, mockFetchPullPage, mockGetSyncAccessToken } = vi.hoisted(() => ({
   mockSendOps: vi.fn(async (ops: { operationId?: string }[]) => ({
     ok: true,
     processed: ops.length,
@@ -39,6 +40,12 @@ const { mockSendOps, mockUploadFile } = vi.hoisted(() => ({
     results: ops.map((op) => ({ operationId: op.operationId, ok: true, id: 'mock-id' })),
   })),
   mockUploadFile: vi.fn(async () => 'mock-url'),
+  mockFetchPullPage: vi.fn(async (table: string, opts: any = {}) => ({
+    table,
+    rows: [],
+    page: { offset: opts.offset ?? 0, limit: 2000, count: 0, hasMore: false },
+  })),
+  mockGetSyncAccessToken: vi.fn(async () => 'test-token'),
 }));
 
 vi.mock('idb', () => ({
@@ -49,6 +56,8 @@ vi.mock('idb', () => ({
 
 vi.mock('../../../services/syncApiClient', () => ({
   sendSyncOps: mockSendOps,
+  fetchPullPage: mockFetchPullPage,
+  getSyncAccessToken: mockGetSyncAccessToken,
   SyncAuthError: class SyncAuthError extends Error {
     readonly status: number;
     readonly code: 'unauthenticated' | 'forbidden';
@@ -66,6 +75,18 @@ vi.mock('../../../services/cloudDb', () => ({
     uploadFile: mockUploadFile,
   },
 }));
+
+// The DEV-only diag instrumentation these tests assert on is gated by the
+// primeerp_sync_diag_enabled localStorage flag, which the shared harness
+// stubs to null — enable it for this file so diag events actually emit.
+beforeEach(() => {
+  try {
+    (window.localStorage.getItem as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (key: string) => (key === 'primeerp_sync_diag_enabled' ? '1' : null)
+    );
+  } catch { /* harness without stubbed storage */
+  }
+});
 
 function createDb() {
   const stores: Record<string, Map<string, Record<string, unknown>>> = {
@@ -173,13 +194,31 @@ describe('backgroundSync 60s timer lifecycle (fresh module graph)', () => {
     vi.resetModules();
     onlineHandlers = [];
     visibilityHandlers = [];
+    // The diag flag must resolve on every storage surface (see the
+    // syncService harness below): a bare window replacement detaches the
+    // shared localStorage mock some module realms read.
+    const flagStore = {
+      getItem: (key: string) => (key === 'primeerp_sync_diag_enabled' ? '1' : null),
+      setItem: () => {},
+      removeItem: () => {},
+      clear: () => {},
+    };
     (globalThis as any).window = {
       addEventListener: vi.fn((type: string, handler: (...args: unknown[]) => void) => {
         if (type === 'online') onlineHandlers.push(handler);
       }),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
+      localStorage: flagStore,
     };
+    try {
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: flagStore,
+        configurable: true,
+        writable: true,
+      });
+    } catch { /* already defined and locked */
+    }
     (globalThis as any).document = {
       visibilityState: 'visible',
       onvisibilitychange: null,
@@ -309,10 +348,48 @@ describe('syncService pull timer (engine install gate)', () => {
     debugSpy = vi.spyOn(console, 'debug');
     debugSpy.mockClear();
     setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
-    // syncService.startPeriodicSync reads bare `navigator.onLine` (browser
-    // assumption in pre-existing code); stub it for this harness. A prior
-    // describe in this file deletes the jsdom navigator in its afterEach.
+    // A prior describe deletes the jsdom globals in its afterEach; restore
+    // the minimum realm this engine needs. The diag flag must resolve on
+    // BOTH window.localStorage and bare globalThis.localStorage (module code
+    // reads the bare identifier, which detaches from the mock once window
+    // is deleted/replaced).
+    const flagStore = {
+      getItem: (key: string) => (key === 'primeerp_sync_diag_enabled' ? '1' : null),
+      setItem: () => {},
+      removeItem: () => {},
+      clear: () => {},
+    };
+    if (typeof (globalThis as any).window === 'undefined') {
+      (globalThis as any).window = {
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        localStorage: flagStore,
+      };
+    } else {
+      try { (globalThis as any).window.localStorage = flagStore; } catch { /* ignore */ }
+    }
+    try {
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: flagStore,
+        configurable: true,
+        writable: true,
+      });
+    } catch { /* already defined and locked */
+    }
     (globalThis as any).navigator = { onLine: true };
+    // Restore the pull-gateway fakes (global restoreMocks wipes factory
+    // implementations between tests).
+    mockFetchPullPage.mockImplementation(async (table: string, opts: any = {}) => ({
+      table,
+      rows: [],
+      page: { offset: opts.offset ?? 0, limit: 2000, count: 0, hasMore: false },
+    }));
+    mockGetSyncAccessToken.mockImplementation(async () => 'test-token');
+    // backgroundSync init (quarantine/rebuild/cleanup) needs a working
+    // IndexedDB mock, like freshGraph above — otherwise its async startup
+    // dies before scheduling and this describe can observe nothing.
+    openDBMock.mockResolvedValue(createDb());
   });
 
   afterEach(() => {
@@ -321,12 +398,13 @@ describe('syncService pull timer (engine install gate)', () => {
   });
 
   it('documents whether the pull timer installs in this env; if installed, its callback logs fired + trigger', async () => {
-    // NOTE: supabase-js realtime maintains its own ~30s socket timers in the
-    // same realm, so several 30000ms callbacks are captured. Select the pull
-    // timer by its creation stack (syncService), not by interval alone.
-    const scheduled: { cb: (...args: unknown[]) => unknown; ms: number; stack: string }[] = [];
+    // The pull timer runs at the named reconciliation interval (5 min),
+    // which no other timer in this realm uses — select by interval alone.
+    // (The old 30 s cadence collided with supabase realtime socket timers,
+    // which is why this lookup previously needed a creation-stack filter.)
+    const scheduled: { cb: (...args: unknown[]) => unknown; ms: number }[] = [];
     setIntervalSpy.mockImplementation(((cb: (...args: unknown[]) => unknown, ms?: number) => {
-      scheduled.push({ cb, ms: ms ?? 0, stack: new Error().stack || '' });
+      scheduled.push({ cb, ms: ms ?? 0 });
       return 9000 as unknown as NodeJS.Timeout;
     }) as typeof setInterval);
 
@@ -340,24 +418,18 @@ describe('syncService pull timer (engine install gate)', () => {
         expect(lines.some((l) => l.includes('periodic_lifecycle_call') && l.includes('supabase-not-enabled'))).toBe(true);
         return;
       }
-      expect(pullScheduled).toContain('intervalMs=30000');
+      expect(pullScheduled).toContain(`intervalMs=${SYNC_RECONCILIATION_INTERVAL_MS}`);
       const gen = Number(pullScheduled.match(/timerGeneration=(\d+)/)![1]);
-      // syncService threads its configured interval into the background push
-      // timer: it must be 60000 (never the 15000 backoff fallback).
-      await vi.waitFor(() => {
-        expect(
-          debugLines(debugSpy).some(
-            (l) => l.includes('periodic_timer_scheduled') && l.includes('intervalMs=60000'),
-          ),
-        ).toBe(true);
-      });
+      // NOTE: background push-timer scheduling is covered by the
+      // backgroundSync describes above; this test owns the pull timer only.
       debugSpy.mockClear();
       const pullCb = scheduled.find(
-        (s) => s.ms === 30000 && /syncService\.(ts|js)/.test(s.stack),
+        (s) => s.ms === SYNC_RECONCILIATION_INTERVAL_MS,
       )!.cb;
-      // Fire without awaiting: the diag lines precede the first network
-      // await, while the pull itself may stay pending in this harness.
-      void (pullCb() as Promise<unknown>).catch(() => {});
+      // Invoke the captured callback: diag lines are emitted synchronously
+      // by the closure (awaiting a non-promise is a no-op), while the pull
+      // itself may stay pending in this harness.
+      await (pullCb() as unknown);
       // Give the async callback a chance to reach its first diag lines.
       await vi.waitFor(() => {
         expect(debugLines(debugSpy).some((l) => l.includes('pull_timer_fired'))).toBe(true);

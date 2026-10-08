@@ -1245,9 +1245,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Stop the sync engine first so any pending requests cannot fire
         // with the soon-to-be-invalid token. Also clear the authorization
         // block so a future re-login resumes the queue cleanly.
+        // Both timers are stopped: push (backgroundSyncService) AND pull
+        // (syncService — its reconciliation timer would otherwise keep firing
+        // PULL requests after logout; stopPeriodicSync also aborts an in-flight
+        // pass and resets the rate-limit circuit).
         try {
           const { backgroundSyncService } = await import('../services/backgroundSyncService');
           backgroundSyncService.stopPeriodicSync();
+        } catch {
+          // non-fatal
+        }
+        try {
+          const { stopPeriodicSync } = await import('../services/syncService');
+          stopPeriodicSync();
         } catch {
           // non-fatal
         }

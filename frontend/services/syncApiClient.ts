@@ -69,6 +69,7 @@ export interface SyncOpsResponse {
 }
 
 const SYNC_ENDPOINT = `${API_BASE_URL}/sync/ops`;
+const SYNC_PULL_ENDPOINT = `${API_BASE_URL}/sync/pull`;
 
 /**
  * Sentinel error class for permanent authorization failures (401/403) from the
@@ -235,6 +236,168 @@ export async function sendSyncOps(ops: SyncOp[], options: SyncSendOptions = {}):
 
 export function isSyncGatewayConfigured(): boolean {
   return Boolean(API_BASE_URL);
+}
+
+export interface SyncPullPageOptions {
+  /** Incremental cursor: only rows with updated_at >= since are returned. Omit for a full page. */
+  since?: string | null;
+  offset?: number;
+  limit?: number;
+  timeoutMs?: number;
+  /**
+   * Pass-level abort signal (PULL circuit breaker). When aborted, the
+   * in-flight request rejects with the raw AbortError so the caller can
+   * distinguish a circuit trip from a timeout.
+   */
+  signal?: AbortSignal;
+}
+
+/**
+ * Structured rate-limit signal for the PULL gateway. Thrown instead of a
+ * generic Error on HTTP 429 so the sync engine can open its circuit breaker
+ * (stop the pass, honor Retry-After) rather than treating the failure as an
+ * ordinary per-table error that the next timer tick immediately retries.
+ */
+export class SyncPullRateLimitedError extends Error {
+  readonly status = 429 as const;
+  readonly retryAfterSecs: number;
+  readonly table: string;
+  constructor(table: string, retryAfterSecs: number) {
+    super(
+      retryAfterSecs > 0
+        ? `Sync pull rate-limited (retry after ${retryAfterSecs}s)`
+        : 'Sync pull rate-limited'
+    );
+    this.name = 'SyncPullRateLimitedError';
+    this.table = table;
+    this.retryAfterSecs = retryAfterSecs;
+  }
+}
+
+export interface SyncPullPage {
+  table: string;
+  rows: Array<Record<string, unknown>>;
+  page: {
+    offset: number;
+    limit: number;
+    count: number;
+    hasMore: boolean;
+  };
+}
+
+/**
+ * Fetch one page of cloud rows through the backend pull gateway
+ * (`GET /api/sync/pull`). Same authenticated transport boundary as the push
+ * path: backend JWT or Supabase JWT via the shared identity headers, backend
+ * reads Supabase with the service-role key. Never touches Supabase REST
+ * directly from the browser.
+ *
+ * Throws on transport failures, auth failures (SyncAuthError), misconfigured
+ * cloud (503), rejected tables/cursors (400), and cloud read failures (502)
+ * so the caller records a per-table error — never an empty success.
+ */
+export async function fetchPullPage(table: string, options: SyncPullPageOptions = {}): Promise<SyncPullPage> {
+  const cleanTable = String(table || '').trim();
+  if (!/^[a-z_][a-z0-9_]*$/.test(cleanTable)) {
+    throw new Error(`invalid pull table: ${cleanTable}`);
+  }
+  if (typeof fetch === 'undefined') {
+    throw new Error('fetch is not available in this environment');
+  }
+  const storedUser = getStoredUserSession();
+  if (storedUser && isSessionExpired(storedUser)) {
+    throw new SyncAuthError('Sync gateway rejected the request (401) — session expired', 401);
+  }
+
+  const token = await getSyncAccessToken();
+  const headers: Record<string, string> = getJsonRequestHeaders();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const params = new URLSearchParams({ table: cleanTable });
+  if (options.since) params.set('since', String(options.since));
+  if (options.offset != null) params.set('offset', String(Math.max(0, Number(options.offset) || 0)));
+  if (options.limit != null) params.set('limit', String(Math.max(1, Math.min(Number(options.limit) || 2000, 2000))));
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 25000);
+
+  // Combine the pass-level circuit signal with the per-request timeout. A
+  // circuit abort rejects with the raw AbortError (never converted to a
+  // timeout below) so the caller can tell "stop, circuit open" apart from
+  // "this request was slow".
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, controller.signal])
+    : controller.signal;
+
+  // [ERP-SYNC-DIAG] safe metadata only: method + endpoint path + status + duration.
+  const diagStart = diagRequestStarted('GET', '/api/sync/pull', { kind: 'sync', table: cleanTable });
+  try {
+    const res = await fetch(`${SYNC_PULL_ENDPOINT}?${params.toString()}`, {
+      headers,
+      signal,
+    });
+
+    if (res.status === 503) {
+      diagRequestFailed('GET', '/api/sync/pull', diagStart, 'http-503', { kind: 'sync', table: cleanTable });
+      throw new Error('Cloud database is not configured on this server');
+    }
+    if (res.status === 429) {
+      // Expected, handled rate limiting: structured signal only (no per-request
+      // warning here — the sync engine emits exactly one warning per
+      // rate-limit episode). The browser still logs the failed GET natively;
+      // the circuit breaker exists so those stop after the first one.
+      const retryAfter = Number(res.headers.get('Retry-After') || 0);
+      diagRequestFailed('GET', '/api/sync/pull', diagStart, 'http-429-rate-limited', { kind: 'sync', table: cleanTable });
+      throw new SyncPullRateLimitedError(
+        cleanTable,
+        Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : 0
+      );
+    }
+    if (res.status === 401 || res.status === 403) {
+      diagRequestFailed('GET', '/api/sync/pull', diagStart, `http-${res.status}-auth`, { kind: 'sync', table: cleanTable });
+      throw new SyncAuthError(`Sync gateway rejected the pull request (${res.status})`, res.status);
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = (body as any)?.detail;
+      const errorMsg = detail ? `${(body as any)?.error || 'Sync pull failed'}: ${detail}` : ((body as any)?.error || `Sync pull failed (${res.status})`);
+      logger.warn('[SyncApiClient] pull gateway error', { status: res.status, table: cleanTable, error: errorMsg });
+      diagRequestFailed('GET', '/api/sync/pull', diagStart, `http-${res.status}`, { kind: 'sync', table: cleanTable });
+      throw new Error(errorMsg);
+    }
+
+    const payload = await res.json() as Partial<SyncPullPage> & { ok?: boolean; error?: string };
+    if (payload?.ok === false || !Array.isArray((payload as SyncPullPage)?.rows)) {
+      logger.warn('[SyncApiClient] unexpected pull response', { table: cleanTable });
+      throw new Error((payload as any)?.error || 'Sync pull gateway returned an unexpected response');
+    }
+    const rows = (payload as SyncPullPage).rows;
+    const page = (payload as SyncPullPage).page || { offset: options.offset ?? 0, limit: options.limit ?? 2000, count: rows.length, hasMore: false };
+    diagRequestCompleted('GET', '/api/sync/pull', diagStart, 200, { kind: 'sync', table: cleanTable, count: rows.length });
+    return { table: cleanTable, rows: rows as Array<Record<string, unknown>>, page };
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      // Pass-level circuit abort: propagate untouched so the pull loop can
+      // break silently (the 429 that opened the circuit is already recorded).
+      // A bare timeout abort becomes the usual timeout error.
+      if (options.signal?.aborted) throw err;
+      diagRequestFailed('GET', '/api/sync/pull', diagStart, 'timeout-abort', { kind: 'sync', table: cleanTable });
+      throw new Error('Sync pull gateway timed out');
+    }
+    if (err instanceof SyncPullRateLimitedError) {
+      // Structured rate-limit signal — already logged as request_failed
+      // above; the engine owns the single episode warning. Do not double-log.
+    } else if (err instanceof SyncAuthError || (err instanceof Error && /Sync (gateway|pull) (rejected|failed|rate-limited)|not configured|timed out/i.test(err.message))) {
+      // Already logged as request_failed above — do not double-log.
+    } else {
+      diagRequestFailed('GET', '/api/sync/pull', diagStart, 'transport-error', { kind: 'sync', table: cleanTable });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**

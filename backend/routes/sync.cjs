@@ -32,6 +32,27 @@ const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRol
 
 const router = express.Router();
 
+const { createLimiter } = require('../services/redisRateLimiter.cjs');
+
+// Dedicated burst budget for the authenticated pull gateway
+// (GET /api/sync/pull). One legitimate full pull cycle covers ~144 sync
+// tables (one request per table minimum, plus extra pages for large
+// tables), so the budget is 300 requests / 5 minutes: a full cycle plus a
+// same-window retry with headroom, while still bounding abuse. Keyed by the
+// authenticated user id (abuse-control key ONLY — Prime ERP is
+// single-company; there is no tenant, company, or organization scoping
+// anywhere in this limiter or the pull path). The generic global limiter
+// skips this route (see index.cjs) so pull traffic cannot starve PUSH and
+// other API traffic; the /api limiter still applies on top.
+const PULL_BURST_WINDOW_MS = 5 * 60 * 1000;
+const PULL_BURST_MAX_REQUESTS = 300;
+const syncPullLimiter = createLimiter({
+  windowMs: PULL_BURST_WINDOW_MS,
+  maxRequests: PULL_BURST_MAX_REQUESTS,
+  message: 'Sync pull rate limit exceeded',
+  keyGenerator: (req) => `sync-pull:${String((req.user && req.user.id) || req.ip || 'unknown')}`,
+});
+
 const safeJsonStringify = (value) => {
   const seen = new WeakSet();
   return JSON.stringify(value, (_key, val) => {
@@ -460,6 +481,108 @@ router.post('/ops', async (req, res) => {
     console.error('[sync] POST /ops error:', err);
     console.error('[sync] POST /ops error stack:', err?.stack);
     res.status(500).json({ error: 'Sync gateway failed', detail: err?.message || String(err) });
+  }
+});
+
+// ─── pull gateway (authenticated read) ──────────────────────────────────────
+// GET /api/sync/pull?table=<table>&since=<iso>&offset=<n>&limit=<n>
+//
+// Single read path for ALL browser remote pulls. Same transport boundary as
+// the write gateway: the browser authenticates (global verifyToken accepts
+// backend JWTs AND Supabase JWTs; Admin-only enforced below like POST /ops)
+// and the backend reads Supabase with the service-role key, so the browser
+// never issues direct PostgREST requests. Single-company: no tenant/company
+// filtering is applied or accepted.
+//
+// Cursor semantics are unchanged from the legacy direct pull: incremental
+// `updated_at >= since`, deterministic `updated_at ASC, id ASC` ordering,
+// offset/limit pagination. Failures return real 4xx/5xx — never an empty
+// dataset masquerading as a successful pull.
+
+// Maximum rows per pull page. Matches the frontend PULL_PAGE_SIZE so one
+// backend page maps 1:1 onto one frontend processing page.
+const PULL_PAGE_MAX = 2000;
+
+router.get('/pull', syncPullLimiter, async (req, res) => {
+  try {
+    // Same Admin-only gate as POST /ops: authenticated Admin required,
+    // portal customers explicitly rejected. Role comes from the verified
+    // authentication context set by the global verifyToken middleware.
+    const hasUser = Boolean(req.user);
+    const authMode = req.authMode || 'none';
+    const callerRole = resolveAuthRole(req.user);
+    if (!hasUser || callerRole === 'anonymous' || callerRole === '') {
+      console.warn('[sync] SYNC_PULL_AUTH_FAILED reason=unauthenticated authMode=%s path=%s', authMode, req.path);
+      return res.status(401).json({
+        error: 'Unauthenticated',
+        message: 'Authentication required to read from the sync gateway.',
+      });
+    }
+    if (roleIsPortalCustomer(callerRole)) {
+      console.warn('[sync] SYNC_PULL_AUTH_FAILED reason=portal_customer authMode=%s role=%s userId=%s path=%s', authMode, callerRole, req.user?.id, req.path);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Sync gateway is Admin-only. Portal customers cannot pull business data.',
+      });
+    }
+    if (!roleIsAdmin(callerRole)) {
+      console.warn('[sync] SYNC_PULL_AUTH_FAILED reason=non_admin authMode=%s role=%s userId=%s path=%s', authMode, callerRole, req.user?.id, req.path);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Sync gateway requires an Admin. This account is not an Admin.',
+      });
+    }
+
+    if (!cloudSyncStore.isConfigured()) {
+      return res.status(503).json({ error: 'Cloud database is not configured on this server' });
+    }
+
+    const table = String(req.query.table || '');
+    if (!VALID_TABLE_PATTERN.test(table)) {
+      return res.status(400).json({ error: `invalid table: ${table}` });
+    }
+    if (!ALLOWED_TABLES.has(table)) {
+      return res.status(400).json({ error: `table not allowed: ${table}` });
+    }
+
+    const limit = Math.max(1, Math.min(Number(req.query.limit) || PULL_PAGE_MAX, PULL_PAGE_MAX));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+
+    let since = null;
+    const sinceRaw = req.query.since != null ? String(req.query.since) : '';
+    if (sinceRaw) {
+      const parsed = new Date(sinceRaw);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ error: 'invalid since cursor (expected ISO timestamp)' });
+      }
+      since = parsed.toISOString();
+    }
+
+    let rows;
+    try {
+      rows = await cloudSyncStore.listPullPage(table, { since, offset, limit });
+    } catch (pullErr) {
+      const status = pullErr?.response?.status;
+      console.error('[sync] GET /pull cloud read failed table=%s status=%s message=%s', table, status || 'n/a', pullErr?.message || pullErr);
+      return res.status(502).json({ error: 'Cloud pull failed', detail: pullErr?.message ? String(pullErr.message).slice(0, 300) : String(pullErr) });
+    }
+
+    const pageRows = Array.isArray(rows) ? rows : [];
+    res.set('Content-Type', 'application/json').send(safeJsonStringify({
+      ok: true,
+      table,
+      rows: pageRows,
+      page: {
+        offset,
+        limit,
+        count: pageRows.length,
+        hasMore: pageRows.length === limit,
+      },
+      ...(since ? { since } : {}),
+    }));
+  } catch (err) {
+    console.error('[sync] GET /pull error:', err);
+    res.status(500).json({ error: 'Sync pull failed', detail: err?.message || String(err) });
   }
 });
 

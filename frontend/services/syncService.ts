@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { fetchPullPage, getSyncAccessToken, SyncPullRateLimitedError } from './syncApiClient';
 import { dbService } from './db';
 import { mergeRecords, fieldLevelMerge } from './syncConflictResolver';
 import { adoptServerNumber } from './salesOrderService';
@@ -79,6 +80,16 @@ logger.info('[SyncService] supabase project', { host: SUPABASE_HOST, gateway: SY
 
 const PUSH_INTERVAL_MS = 60000;
 const SYNC_CONCURRENCY = 6;
+// Periodic reconciliation interval (realtime is the fast path; the pull is
+// the safety sweep behind it). Budget math against the dedicated PULL
+// limiter (300 requests / 5 minutes / authenticated user): one full sweep
+// covers ~144 tables (one request per table minimum, plus extra pages for
+// large tables), so a 5-minute interval fits one full sweep plus multi-page
+// tables with headroom left for occasional manual/explicit syncs. A full
+// sweep every 30 s would need ~1,440 requests per 5 minutes and is therefore
+// mathematically incompatible with the limiter — hence reconciliation MUST
+// NOT run on the old 30 s cadence.
+export const SYNC_RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000;
 // Pull pages per table per pass. Keeps one pass bounded even for huge tables
 // (e.g. a fresh install pulling 200k products), while still advancing the
 // cursor so the NEXT pass continues instead of restarting the page.
@@ -92,6 +103,84 @@ let realtimeSubscribed = false;
 let realtimeChannels: any[] = [];
 let subscriptionGeneration = 0; // incremented on each unsubscribe to cancel stale async inits
 let syncLifecycleActive = false; // idempotency guard — prevents duplicate initial pulls / subscriptions
+
+// ─── PULL execution mutex + rate-limit circuit breaker ──────────────────────
+// At most ONE pullRemoteChanges() execution may be active at any time. The
+// mutex is claimed SYNCHRONOUSLY at the pull boundary (before the first
+// await) so two overlapping callers — e.g. a slow initial pull and a
+// reconciliation tick arriving mid-pass — can never both drive the gateway. Concurrent callers
+// share the in-flight promise instead of starting a second execution.
+// This is the ONLY pull mutex; per-execution page batching (SYNC_CONCURRENCY
+// below) is a separate, complementary throttle.
+//
+// The circuit breaker opens when any pull page receives HTTP 429: the pass
+// stops issuing requests immediately and the timer stays quiet until the
+// server-supplied Retry-After elapses (plus a small bounded jitter so
+// multiple tabs/processes do not resume on the same second). No blind
+// retries, no aggressive retry loop — the next normal timer opportunity
+// resumes pulling.
+let activePull: { promise: Promise<{ pulled: number; errors: string[] }> } | null = null;
+let activePassController: AbortController | null = null;
+// Timestamp (ms) before which no new PULL may start. 0 = circuit closed.
+let pullCircuitUntil = 0;
+let pullCircuitReason: string | null = null;
+// Fallback hold-open when the 429 carries no usable Retry-After.
+const PULL_CIRCUIT_DEFAULT_BACKOFF_MS = 60_000;
+// Jitter bounds: always positive (never an immediate retry), always small.
+const PULL_CIRCUIT_MIN_JITTER_MS = 1_000;
+const PULL_CIRCUIT_MAX_JITTER_MS = 5_000;
+
+/** True while a pullRemoteChanges() execution holds the mutex. */
+export function isPullInFlight(): boolean {
+  return activePull !== null;
+}
+
+/** True while the rate-limit circuit forbids starting a new PULL. */
+export function isPullCircuitOpen(nowMs: number = Date.now()): boolean {
+  return nowMs < pullCircuitUntil;
+}
+
+/** Timestamp (ms) at which the circuit allows pulling again. 0 when closed. */
+export function getPullCircuitResumeAt(): number {
+  return pullCircuitUntil;
+}
+
+/**
+ * Pure resume-time computation (exported for tests): server Retry-After
+ * plus bounded positive jitter. Never returns "now" — the minimum delay is
+ * always at least the jitter floor, so a trip can never produce an
+ * immediate retry, even when the server sent no usable Retry-After.
+ */
+export function computePullCircuitResumeAt(nowMs: number, retryAfterSecs: number): number {
+  const baseMs = Math.max(0, Number(retryAfterSecs) || 0) * 1000 || PULL_CIRCUIT_DEFAULT_BACKOFF_MS;
+  const jitterMs =
+    PULL_CIRCUIT_MIN_JITTER_MS +
+    Math.random() * (PULL_CIRCUIT_MAX_JITTER_MS - PULL_CIRCUIT_MIN_JITTER_MS);
+  return nowMs + baseMs + jitterMs;
+}
+
+/** Open the circuit after a 429. Returns the resume timestamp. */
+export function openPullCircuit(retryAfterSecs: number, reason: string): number {
+  pullCircuitUntil = computePullCircuitResumeAt(Date.now(), retryAfterSecs);
+  pullCircuitReason = reason;
+  return pullCircuitUntil;
+}
+
+/** Close the circuit (lifecycle teardown and tests). */
+export function resetPullCircuit(): void {
+  pullCircuitUntil = 0;
+  pullCircuitReason = null;
+}
+
+/**
+ * Release the execution mutex and clear teardown state. Used by
+ * stopPeriodicSync() and by tests to restore a known idle state.
+ */
+export function resetPullSyncState(): void {
+  activePull = null;
+  activePassController = null;
+  resetPullCircuit();
+}
 
 // Completion of the engine's initial remote pull for the current lifecycle
 // activation. Assigned exactly once per activation (first starter wins;
@@ -428,11 +517,37 @@ export async function backfillReferralStoresOnce(): Promise<{ requeued: number }
 }
 
 /**
- * Pull data from Supabase into local IndexedDB cache using incremental sync.
+ * Pull data from the cloud into local IndexedDB cache using incremental sync.
  * Only fetches rows updated since last sync per table.
  * Falls back to full sync if no prior sync exists.
+ *
+ * Transport: the backend pull gateway (`GET /api/sync/pull`) — the same
+ * authenticated boundary as the push path. The backend reads Supabase with
+ * the service-role key; the browser never issues direct PostgREST requests.
  */
 export async function pullRemoteChanges(
+  onProgress?: (progress: SyncProgress) => void,
+  forceFullSync: boolean = false
+): Promise<{ pulled: number; errors: string[] }> {
+  // Single pull mutex, claimed synchronously before any await: at most ONE
+  // pullRemoteChanges() execution may ever be active. A concurrent caller
+  // (e.g. a reconciliation tick arriving during a slow initial pull) shares the
+  // in-flight promise instead of starting a second execution that would
+  // double gateway load. The finally below releases on EVERY exit path.
+  if (activePull) return activePull.promise;
+  const execution = runPullRemoteChanges(onProgress, forceFullSync);
+  activePull = { promise: execution };
+  try {
+    return await execution;
+  } finally {
+    if (activePull?.promise === execution) {
+      activePull = null;
+      activePassController = null;
+    }
+  }
+}
+
+async function runPullRemoteChanges(
   onProgress?: (progress: SyncProgress) => void,
   forceFullSync: boolean = false
 ): Promise<{ pulled: number; errors: string[] }> {
@@ -441,11 +556,27 @@ export async function pullRemoteChanges(
     return { pulled: 0, errors: [] };
   }
 
+  // Auth gate mirrors the push transport: a usable sync token from either
+  // source (backend JWT in nexus_user, or the supabase-js session) is
+  // required. ensureSession() also opportunistically refreshes the Supabase
+  // session for the realtime channel; the gateway token check is what
+  // actually gates the pull, so backend-JWT sessions pull exactly like
+  // they push.
   const session = await ensureSession();
-  if (!session) {
+  const pullToken = await getSyncAccessToken().catch(() => null);
+  if (!session && !pullToken) {
     /* SYNC-FORENSIC suppressed: pullRemoteChanges() SKIPPED — not authenticated */
     return { pulled: 0, errors: ['Not authenticated'] };
   }
+
+  // Pass-level abort: opened by the rate-limit circuit breaker so in-flight
+  // sibling requests stop instead of finishing a doomed pass. Also aborted
+  // on lifecycle teardown so logout cannot keep generating requests. The
+  // loop below stops on passController.signal.aborted — one mechanism for
+  // both cases, so teardown works even for passes started outside an active
+  // lifecycle.
+  const passController = new AbortController();
+  activePassController = passController;
 
   /* SYNC-FORENSIC suppressed: PULL-START pullRemoteChanges() */
   // [ERP-SYNC-DIAG] pull (Supabase → IndexedDB) is a real sync stage: Device B
@@ -458,6 +589,13 @@ export async function pullRemoteChanges(
   });
   const errors: string[] = [];
   let pulled = 0;
+  // Set when a 429 opens the circuit: no further pages or tables are
+  // requested from this pass. Sibling in-flight requests are aborted via
+  // passController above.
+  let circuitTripped = false;
+  let circuitTripTable = '';
+  let circuitRetryAfterSecs = 0;
+
   // Stores that actually received pulled rows this pass. Pull-completion
   // notifications below are emitted per store from this set so listeners
   // (e.g. AuthContext re-hydrating company config on 'settings') react to
@@ -484,21 +622,46 @@ export async function pullRemoteChanges(
           let rowsInPass = 0;
 
           while (rowsInPass < MAX_PULL_ROWS_PER_TABLE_PER_PASS) {
-            let query = supabase.from(table).select('*');
-
-            // Incremental sync: only fetch rows updated since last sync
-            if (!forceFullSync) {
-              const lastSyncAt = await getLastSyncAt(table);
-              if (lastSyncAt) {
-                query = query.gte('updated_at', lastSyncAt);
+            // Circuit/teardown checks BEFORE issuing each request: after a
+            // 429 trip or lifecycle teardown, no further pages are requested
+            // from this pass.
+            if (circuitTripped || passController.signal.aborted) break;
+            // Remote page comes from the backend pull gateway (service-role
+            // read, same auth boundary as push). Incremental cursor semantics
+            // are unchanged: `updated_at >= lastSyncAt`, deterministic
+            // `updated_at ASC, id ASC` ordering, offset/limit pagination.
+            // A transport/cloud failure records a per-table error and stops
+            // this table — it is never treated as an empty successful page.
+            const lastSyncAt = forceFullSync ? null : await getLastSyncAt(table);
+            let data: Array<Record<string, unknown>>;
+            try {
+              const page = await fetchPullPage(table, {
+                since: lastSyncAt,
+                offset,
+                limit: pageSize,
+                signal: passController.signal,
+              });
+              data = page.rows;
+            } catch (pageErr) {
+              if (pageErr instanceof SyncPullRateLimitedError) {
+                // 429: open the circuit and stop the pass immediately. The
+                // affected table/error is recorded so the settled result
+                // still distinguishes failure from zero rows; the cursor is
+                // left exactly where the last successful page put it.
+                // Sibling in-flight requests are aborted via passController;
+                // their aborts break silently below (the trip is the record).
+                errors.push(`${storeName}: ${pageErr.message}`);
+                circuitTripped = true;
+                circuitTripTable = table;
+                circuitRetryAfterSecs = pageErr.retryAfterSecs;
+                openPullCircuit(pageErr.retryAfterSecs, `table ${table}`);
+                try { passController.abort(); } catch { /* best-effort */ }
+                break;
               }
+              if (pageErr instanceof Error && pageErr.name === 'AbortError' && passController.signal.aborted) break;
+              errors.push(`${storeName}: ${pageErr instanceof Error ? pageErr.message : 'pull failed'}`);
+              break;
             }
-
-            const { data, error } = await query
-              .order('updated_at', { ascending: true })
-              .range(offset, offset + pageSize - 1);
-
-            if (error) { errors.push(`${storeName}: ${error.message}`); break; }
             if (!data || data.length === 0) break;
 
             const cloudRecords = data.map((record: any) => toCloudRecord(record));
@@ -555,7 +718,8 @@ export async function pullRemoteChanges(
             if (storeCount > 0) pulledStores.add(storeName);
             audit('pull', 'table page processed', { table, pageRows: cloudRecords.length, offset });
             // Track the latest updated_at seen so far for incremental sync
-            lastTimestamp = data[data.length - 1]?.updated_at ?? lastTimestamp;
+            const lastRowTs: unknown = data[data.length - 1]?.updated_at;
+            if (typeof lastRowTs === 'string' && lastRowTs) lastTimestamp = lastRowTs;
 
             // Reached the last page for this table — persist the cursor and stop.
             if (data.length < pageSize) break;
@@ -591,6 +755,10 @@ export async function pullRemoteChanges(
       currentStore: batch[batch.length - 1] || '',
       phase: 'pull',
     });
+
+    // A 429 trip or lifecycle teardown stops the whole pass: no further
+    // table batches are started after the circuit opens.
+    if (circuitTripped || passController.signal.aborted) break;
   }
 
   if (pulled > 0) {
@@ -607,7 +775,35 @@ export async function pullRemoteChanges(
   }
 
   /* SYNC-FORENSIC suppressed: PULL-COMPLETE pullRemoteChanges() */
-  if (errors.length > 0) {
+  if (circuitTripped) {
+    // Rate-limit episode: exactly ONE warning per pass (never one per
+    // table/request). The timer stays quiet until the resume timestamp, so
+    // the browser console shows one controlled warning instead of dozens of
+    // per-request 429 errors. The populated errors array keeps the failure
+    // distinguishable from zero rows; cursors keep their last successful
+    // values (no cursor is ever written for a failed page).
+    logger.warn('[SyncService] PULL rate limited — circuit open', {
+      table: circuitTripTable,
+      retryAfterSecs: circuitRetryAfterSecs,
+      resumeAt: new Date(pullCircuitUntil).toISOString(),
+      pulled,
+    });
+    diagStageFailed(diagActiveSyncId() ?? diagPullId, 'pull-supabase', 'pull-rate-limited', {
+      runId: diagPullId,
+      pulled,
+      table: circuitTripTable,
+      retryAfterSecs: circuitRetryAfterSecs,
+    });
+  } else if (errors.length > 0) {
+    // Always-on (never diag-gated): a failed pull must stay distinguishable
+    // from a successful empty pull. Callers resolve with the populated
+    // errors array, so AuthContext and the pull timer can never mistake a
+    // transport/cloud failure for "zero remote rows".
+    logger.warn('[SyncService] pull completed with errors', {
+      pulled,
+      errorCount: errors.length,
+      sample: errors.slice(0, 5),
+    });
     diagStageFailed(diagActiveSyncId() ?? diagPullId, 'pull-supabase', 'pull-errors', {
       runId: diagPullId,
       pulled,
@@ -836,6 +1032,23 @@ export async function handleGenerationMismatch(serverGeneration: number): Promis
   setLocalGeneration(serverGeneration);
 }
 
+/**
+ * One scheduled PULL opportunity (the reconciliation timer body, exported
+ * for tests). Never queues or overlaps executions:
+ * - circuit open → skip (quietly; the trip already warned once);
+ * - pull already in flight → skip and share nothing new;
+ * - offline → skip;
+ * - otherwise start exactly one pull.
+ */
+export async function runScheduledPullTick(trigger: string = 'pull-timer'): Promise<'started' | 'skipped-circuit' | 'skipped-in-flight' | 'skipped-offline'> {
+  diagPullTriggerInvoked(trigger);
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return 'skipped-offline';
+  if (isPullCircuitOpen()) return 'skipped-circuit';
+  if (isPullInFlight()) return 'skipped-in-flight';
+  await pullRemoteChanges().catch(() => ({ pulled: 0, errors: [] }));
+  return 'started';
+}
+
 export async function startPeriodicSync(
   intervalMs = PUSH_INTERVAL_MS,
   onSyncComplete?: (result: { pulled: number; pushed: number; errors: string[] }) => void
@@ -904,23 +1117,24 @@ export async function startPeriodicSync(
   backgroundSyncService.start(intervalMs);
   logger.info('[SyncService] backgroundSyncService.start() called');
 
-  // Periodic pull (incremental sync) - 30 second interval for catching missed realtime events.
-  // This pull timer is INDEPENDENT of the 60s background push timer
-  // (backgroundSyncService): push drains the local outbox via POST
-  // /api/sync/ops, pull fetches Supabase rows into IndexedDB.
-  const pullIntervalMs = Math.min(intervalMs, 30000);
+  // Periodic reconciliation (safety sweep behind realtime, NOT the fast
+  // path). Runs at SYNC_RECONCILIATION_INTERVAL_MS so one full ~144-table
+  // sweep plus multi-page tables fits inside the 300/5-minute PULL limiter
+  // budget with headroom for manual syncs. This pull timer is INDEPENDENT of
+  // the 60s background push timer (backgroundSyncService): push drains the
+  // local outbox via POST /api/sync/ops, pull reconciles cloud rows into
+  // IndexedDB. Scheduling still funnels through runScheduledPullTick, so the
+  // single pull mutex and the rate-limit circuit apply unchanged: a tick
+  // never overlaps a running pull and never refires into an open circuit.
   pullTimerGeneration = diagNextTimerGeneration('pull');
   const diagPullGeneration = pullTimerGeneration;
-  pushTimer = setInterval(async () => {
-    // [ERP-SYNC-DIAG] real pull-timer fire only — decision logic unchanged.
-    diagTimerFired('pull', 'syncService', pullIntervalMs, diagPullGeneration);
-    diagPullTriggerInvoked('pull-timer');
-    if (navigator.onLine) {
-      const result = await pullRemoteChanges().catch(() => ({ pulled: 0, errors: [] }));
-    }
-  }, pullIntervalMs);
+  pushTimer = setInterval(() => {
+    // [ERP-SYNC-DIAG] real pull-timer fire only.
+    diagTimerFired('pull', 'syncService', SYNC_RECONCILIATION_INTERVAL_MS, diagPullGeneration);
+    void runScheduledPullTick('pull-timer');
+  }, SYNC_RECONCILIATION_INTERVAL_MS);
   // [ERP-SYNC-DIAG] real interval creation only — value unchanged.
-  diagTimerScheduled('pull', 'syncService', pullIntervalMs, diagPullGeneration);
+  diagTimerScheduled('pull', 'syncService', SYNC_RECONCILIATION_INTERVAL_MS, diagPullGeneration);
 
   // Initial sync on start - full pull on first sync, then incremental.
   // The completion is tracked on initialSyncPromise (first activation wins)
@@ -965,6 +1179,12 @@ export function stopPeriodicSync() {
     pushTimer = null;
   }
   syncLifecycleActive = false;
+  // Teardown must stop PULL traffic: abort the in-flight pass (its loop
+  // observes the cleared lifecycle flag and stops issuing requests) and
+  // close the rate-limit circuit so a later login starts clean. Push's own
+  // activeSync mechanism is untouched.
+  try { activePassController?.abort(); } catch { /* best-effort */ }
+  resetPullCircuit();
   unsubscribeFromRemoteChanges();
   import('./backgroundSyncService').then(({ backgroundSyncService }) => {
     backgroundSyncService.stopPeriodicSync();
