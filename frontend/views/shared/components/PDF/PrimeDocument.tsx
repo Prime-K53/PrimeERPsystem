@@ -17,6 +17,7 @@ import {
   PrintingContractDoc,
 } from './schemas.ts';
 import { CompanyConfig } from '../../../../types.ts';
+import { DEFAULT_CURRENCIES } from '../../../../types/currency.ts';
 import { resolvePdfLogoSource, resolvePdfQrCodeSource } from '../../../../utils/companyAssetUtils.ts';
 import { normalizeSignatureDataUrl } from '../../../../utils/signatureUtils.ts';
 import {
@@ -27,7 +28,7 @@ import {
 } from './templateSettings.ts';
 import { generateAccountSummary } from '../../../../utils/pdfMapper.ts';
 import { currencyService } from '../../../../services/currencyService';
-import { resolveReceiptPaymentBadge } from '../../../../services/receiptCalculationService';
+import { resolveReceiptPaymentBadge, buildReceiptAcknowledgement } from '../../../../services/receiptCalculationService';
 import {
   PaginationFurniture,
   VerificationLabel,
@@ -243,6 +244,38 @@ const buildReceiptCompanyAddress = (config?: CompanyConfig | null) => {
 };
 
 /**
+ * Currency symbols that must print under the short, receipt-facing name.
+ *
+ * The registry's own names are country-qualified ("Malawian Kwacha"), which
+ * duplicates the country already stated in the receipt header. MWK is the ERP
+ * base currency, so the receipt names it plainly as "Kwacha".
+ */
+const CURRENCY_SHORT_NAMES: Record<string, string> = {
+  K: 'Kwacha',
+  MK: 'Kwacha',
+};
+
+/**
+ * Receipt "Currency" row value: the currency NAME, not its symbol.
+ *
+ * "Currency: K" is a symbol, so on a formal receipt it tells a reader (or an
+ * auditor, or a bank) nothing about which currency was actually received.
+ * Resolved against the static DEFAULT_CURRENCIES table rather than
+ * currencyService's runtime map, which is populated from the database — the
+ * offline and server-side renderers have no such map and would silently fall
+ * back to the bare symbol there while the browser showed a name.
+ *
+ * Unknown symbols keep their raw text, so the row is never blank or wrong.
+ */
+const resolveReceiptCurrencyLabel = (symbol: string): string => {
+  const raw = String(symbol || '').trim();
+  if (!raw) return '';
+  const short = CURRENCY_SHORT_NAMES[raw];
+  if (short) return short;
+  return DEFAULT_CURRENCIES.find(c => c.symbol === raw)?.name || raw;
+};
+
+/**
  * Two tab stops of indent for the receipt's right-hand metadata column
  * (Date / Payment Method / Account / Status).
  *
@@ -252,6 +285,100 @@ const buildReceiptCompanyAddress = (config?: CompanyConfig | null) => {
  * squeezed out of existence by a very large body font.
  */
 const RECEIPT_META_INDENT = 72;
+
+/**
+ * Receipt geometry constants for width budgeting.
+ *
+ * A4 is 595.28pt wide and the page style pads it by 40pt per side, leaving
+ * ~515pt of content width — the same budget the header company-name
+ * shrink-to-fit uses. RECEIPT_META_GAP is the gutter between the two metadata
+ * columns.
+ *
+ * Note the metadata columns are NOT (515 - gap) / 2 each: the right column
+ * also carries a RECEIPT_META_INDENT left padding, and flexbox charges that
+ * padding against the shared free space, so each column ends up roughly
+ * (515 - gap - indent) / 2 wide. That is why the customer name is given its own
+ * full-width row instead of a grid slot.
+ */
+const RECEIPT_CONTENT_WIDTH = 515;
+const RECEIPT_META_GAP = 16;
+
+/**
+ * Text width measurement for the receipt's shrink-to-fit rows.
+ *
+ * An "average character width" factor is not good enough here: it is either
+ * too optimistic (the row ellipsizes a name that would have fitted, which is
+ * worse than wrapping — the reader loses characters) or too pessimistic (every
+ * name shrinks for no reason). So the receipt measures with the real advance
+ * widths of the default PDF font instead.
+ *
+ * These are the standard Helvetica / Helvetica-Bold AFM widths for codes
+ * 32–126, in 1/1000 em — the same metrics @react-pdf/renderer uses when it
+ * lays out text with the default font. Anything outside that range (accented
+ * characters, CJK) falls back to the average of the range, which is accurate
+ * enough for a budget. A company that registers a custom receipt font with
+ * wider glyphs will ellipsize rather than wrap — still exactly one row.
+ */
+const HELVETICA_WIDTHS: readonly number[] = [
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+  1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+  333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+  556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+];
+
+const HELVETICA_BOLD_WIDTHS: readonly number[] = [
+  278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278,
+  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611,
+  975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778,
+  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556,
+  333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611,
+  611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
+];
+
+/** Mean advance of the tabulated range, used for characters outside it. */
+const HELVETICA_FALLBACK_WIDTH = HELVETICA_WIDTHS.reduce((sum, w) => sum + w, 0) / HELVETICA_WIDTHS.length;
+
+/** Advance width of `text` at `fontSize`, in PDF points. */
+const measureTextWidth = (text: string, fontSize: number, bold = false): number => {
+  const table = bold ? HELVETICA_BOLD_WIDTHS : HELVETICA_WIDTHS;
+  const units = String(text ?? '').split('').reduce((sum, char) => {
+    const code = char.charCodeAt(0);
+    const width = code >= 32 && code <= 126 ? table[code - 32] : HELVETICA_FALLBACK_WIDTH;
+    return sum + width;
+  }, 0);
+  return (units / 1000) * fontSize;
+};
+
+/**
+ * Largest font size at which `text` fits `availableWidth` on one line, capped
+ * at `maxSize` and floored at `minSize`.
+ *
+ * Two guards keep the estimate on the safe side of the renderer's own
+ * measurement, which is the difference between printing a name in full and
+ * losing its tail to an ellipsis:
+ *   • the size is rounded DOWN to 0.05pt;
+ *   • only 97% of the available width is used. react-pdf applies font kerning
+ *     on top of the raw advance widths measured here, so a name that fits by
+ *     the metric can still be a hair too wide once it is laid out.
+ */
+const RECEIPT_FIT_WIDTH_SAFETY = 0.97;
+
+const fitFontSize = (
+  text: string,
+  availableWidth: number,
+  { maxSize, minSize, bold = false }: { maxSize: number; minSize: number; bold?: boolean }
+): number => {
+  const sample = String(text ?? '');
+  if (!sample) return maxSize;
+  const widthAtMax = measureTextWidth(sample, 1, bold);
+  if (widthAtMax <= 0) return maxSize;
+  const exact = (availableWidth * RECEIPT_FIT_WIDTH_SAFETY) / widthAtMax;
+  if (exact >= maxSize) return maxSize;
+  if (exact <= minSize) return minSize;
+  return Math.floor(exact * 20) / 20;
+};
 
 const normalizeCompanyIdentity = (config?: CompanyConfig | null) => {
   const companyName = pickFirstText(config?.companyName, 'Prime ERP');
@@ -1682,25 +1809,111 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // Payment account display name, resolved from the stored accountId by
     // the doc builder. '' when the payment carries no account.
     const receiptAccount = String(rc.account || '').trim();
-    // Single-row company name: shrink-to-fit the user-configured Company
-    // Name Font Size plus a hard one-line clamp (maxLines + ellipsis are
-    // first-class layout props) so the identity line never wraps, however
-    // long the registered name is. The text block keeps symmetric gutters
-    // for the pinned logo, so the name stays page-centered without ever
-    // sliding under the logo. Width budget assumes A4 content width
-    // (~515pt) and bold glyphs.
+    // Payment Details table figures. The two money columns answer two
+    // different questions and must never print the same number:
+    //   Line Total → the invoice total being settled
+    //   Paid       → what this receipt settled against it
+    // The allocation total is derivable, and so is the invoice total
+    // (allocated + still outstanding), so a payload that omits either field
+    // (older records, the portal mapper) still resolves to the right figures.
+    const receiptAmountReceived = Number(rc.amountReceived ?? 0) || 0;
+    const receiptAmountApplied = Number(rc.amountApplied ?? 0) || 0;
+    const receiptBalanceDue = Math.max(0, Number(rc.balanceDue ?? 0) || 0);
+    const receiptInvoiceTotal = Number(rc.invoiceTotal ?? 0) > 0
+      ? Number(rc.invoiceTotal)
+      : receiptAmountApplied + receiptBalanceDue;
+    // No allocation recorded (unallocated/wallet payment): the whole tender
+    // is what was paid against the invoice(s).
+    const receiptPaid = receiptAmountApplied > 0 ? receiptAmountApplied : receiptAmountReceived;
+    // Single-row company name: capped by the CONFIGURED Company Name Font Size
+    // plus a hard one-line clamp (maxLines + ellipsis are first-class layout
+    // props) so the identity line never wraps, however long the registered
+    // name is — and long names shrink further to fit the width budget. The
+    // text block keeps symmetric gutters for the pinned logo, so the name
+    // stays page-centered without ever sliding under the logo. Width budget
+    // assumes A4 content width (~515pt) and bold glyphs.
+    //
+    // The cap is the configured company-name size, NOT the document title size
+    // (receiptTitleFontSize, 20 * fontScale). Those are two independent
+    // settings; tying the identity line to the title size silently overrode
+    // the company's configured header size.
     const receiptNameAvailWidth = 515 - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+    const receiptTitleFontSize = 20 * fontScale;
     const receiptNameFontSize = Math.max(
       8.5,
       Math.min(templateSettings.companyNameFontSize, receiptNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
     );
     const receiptNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+    // ONE type scale for the whole receipt body. The acknowledgment line set
+    // the reference size (12), so the company address, contact line, metadata
+    // block, section labels and every Payment Details cell all use it too —
+    // before this they each carried a different size (10 / 10.5 / 11 / 12) and
+    // the same document read as four different typefaces. The company name and
+    // the document title are deliberately OUTSIDE this scale: they are
+    // identity, not body.
+    const receiptBodyFontSize = 12;
+    // ── Customer name sizing ────────────────────────────────────────────────
+    // The customer name is the only metadata value that can be arbitrarily
+    // long — schools register names of 60+ characters — so it gets its OWN
+    // full-width row directly under the title instead of a slot in the
+    // two-column grid. That grid is the wrong home for it: the right column
+    // carries a RECEIPT_META_INDENT padding, which flexbox charges against the
+    // shared free space, so the left column is only ~(515 - gap - indent) / 2
+    // ≈ 214pt — and after the "Customer Name: " label that leaves ~114pt for
+    // the value. A 41-character school name cannot fit in 114pt at any
+    // readable size; it would have to drop to 5pt or wrap.
+    //
+    // With the full width the rule is simple and always satisfiable: keep the
+    // name at the body size and shrink only as far as needed to stay on ONE
+    // row. Two independent guarantees, because either alone is insufficient:
+    //   1. the computed size fits the name in the width left after the label,
+    //      measured with real Helvetica advance widths;
+    //   2. maxLines + ellipsis on the row, so a name long enough to hit the
+    //      minimum size still occupies exactly one row instead of wrapping and
+    //      breaking the header's rhythm.
+    // The estimate only ever SHRINKS the name, so a short name prints at the
+    // body size and looks identical to every other metadata row.
+    const customerNameLabel = 'Customer Name: ';
+    const customerNameText = String(rc.customerName || 'N/A');
+    const RECEIPT_MIN_META_FONT_SIZE = 7;
+    // Indent of the right-hand metadata column. Declared once because it also
+    // decides how much width the flexbox leaves the LEFT column (the padding
+    // is charged against the shared free space) — the reason the customer name
+    // gets its own full-width row instead of a grid slot.
+    const receiptMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const customerNameAvailWidth = Math.max(
+      24,
+      RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, receiptBodyFontSize, true)
+    );
+    const receiptCustomerNameFontSize = fitFontSize(customerNameText, customerNameAvailWidth, {
+      maxSize: receiptBodyFontSize,
+      minSize: RECEIPT_MIN_META_FONT_SIZE,
+    });
+    // Fallback note for a payload that reaches the renderer with no stored
+    // narrative. Composed by the same helper the doc builder uses, so the two
+    // paths cannot drift apart in wording or in the optional balance sentence.
+    const receiptNoteFallback = buildReceiptAcknowledgement({
+      amount: receiptAmountReceived,
+      customerName: rc.customerName,
+      currencySymbol: currency,
+      accountBalance: rc.currentBalance,
+    });
     // Compact inline metadata row ("Label: value") used by the formal
     // two-column receipt header. Values only — no new data sources.
     const receiptMetaRow = (label: string, value: string, valueStyle?: any) => (
-      <Text style={{ fontSize: 10.5, color: monoText(mode, '#111111'), marginBottom: 4 }}>
+      <Text style={{ fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), marginBottom: 4 }}>
         <Text style={{ fontWeight: 'bold' }}>{label}: </Text>
         <Text style={valueStyle}>{value}</Text>
+      </Text>
+    );
+    // The customer name row: label at the body size, name shrunk to its column.
+    // maxLines + ellipsis on the ROW is the hard one-row guarantee for a name
+    // so long it hits the minimum size — it degrades to an ellipsized single
+    // line rather than breaking the header's four-row rhythm.
+    const receiptCustomerNameRow = () => (
+      <Text style={{ fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), marginBottom: 4, maxLines: 1, textOverflow: 'ellipsis' }}>
+        <Text style={{ fontWeight: 'bold' }}>{customerNameLabel}</Text>
+        <Text style={{ fontSize: receiptCustomerNameFontSize }}>{customerNameText}</Text>
       </Text>
     );
 
@@ -1728,15 +1941,15 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             <View style={{ alignItems: 'center', width: '100%', paddingLeft: receiptNameGutter, paddingRight: receiptNameGutter }}>
               <Text style={{ fontSize: receiptNameFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', maxLines: 1, textOverflow: 'ellipsis' }}>{companyName}</Text>
               {!!receiptCompanyAddress && (
-                <Text style={{ fontSize: 10, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 2 }}>{receiptCompanyAddress}</Text>
+                <Text style={{ fontSize: receiptBodyFontSize, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 2 }}>{receiptCompanyAddress}</Text>
               )}
               {!!companyContact && (
-                <Text style={{ fontSize: 10, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 2 }}>{companyContact}</Text>
+                <Text style={{ fontSize: receiptBodyFontSize, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 2 }}>{companyContact}</Text>
               )}
             </View>
           </View>
 
-          <Text style={{ fontSize: 20 * fontScale, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', marginTop: 8, marginBottom: 8 }}>PAYMENT RECEIPT</Text>
+          <Text style={{ fontSize: receiptTitleFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', marginTop: 8, marginBottom: 8 }}>Payment Receipt</Text>
           <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
 
           {isOverpaid && (
@@ -1748,19 +1961,26 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           )}
 
-          {/* Formal two-column metadata block: Receipt No / Customer Name /
-              Reference / Currency at left; Date / Payment Method / Account /
-              Status at right. The right column is indented two tab stops so
-              the payment facts read as a distinct group. Account resolves from
-              the stored payment accountId and is omitted when there is none. */}
-          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 10 }}>
+          {/* Addressee row: the customer name spans the full content width so it can
+              always print on ONE row (see the sizing note above). It sits
+              directly under the title because it is who the receipt is for;
+              the two-column grid below carries the payment facts. */}
+          <View style={{ marginBottom: 8 }}>
+            {receiptCustomerNameRow()}
+          </View>
+
+          {/* Formal two-column metadata block: Receipt No / Reference /
+              Currency at left; Date / Payment Method / Account / Status at
+              right. The right column is indented two tab stops so the payment
+              facts read as a distinct group. Account resolves from the stored
+              payment accountId and is omitted when there is none. */}
+          <View style={{ flexDirection: 'row', gap: RECEIPT_META_GAP, marginBottom: 10 }}>
             <View style={{ flex: 1 }}>
               {receiptMetaRow('Receipt No', rc.receiptNumber)}
-              {receiptMetaRow('Customer Name', rc.customerName || 'N/A')}
               {receiptMetaRow('Reference', allocationRef)}
-              {receiptMetaRow('Currency', currency)}
+              {receiptMetaRow('Currency', resolveReceiptCurrencyLabel(currency))}
             </View>
-            <View style={{ flex: 1, paddingLeft: Math.min(RECEIPT_META_INDENT * fontScale, 128) }}>
+            <View style={{ flex: 1, paddingLeft: receiptMetaRightIndent }}>
               {receiptMetaRow('Date', rc.date)}
               {receiptMetaRow('Payment Method', rc.paymentMethod)}
               {!!receiptAccount && receiptMetaRow('Account', receiptAccount)}
@@ -1769,50 +1989,52 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           </View>
           <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
 
-          <Text style={{ fontSize: 11, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Payment Details Table</Text>
+          <Text style={{ fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Payment Details Table</Text>
           <View style={{ borderWidth: 0.5, borderColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }}>
             <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-              <Text style={{ flex: 3, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>Description</Text>
-              <Text style={{ flex: 1, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>Unit Price</Text>
-              <Text style={{ flex: 1, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, textAlign: 'right' }}>Line Total</Text>
+              <Text style={{ flex: 3, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>Description</Text>
+              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>Line Total</Text>
+              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, textAlign: 'right' }}>Paid</Text>
             </View>
             <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-              <Text style={{ flex: 3, fontSize: 10.5, color: monoText(mode, '#111111'), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
+              <Text style={{ flex: 3, fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
                 {(rc.appliedOrders || []).length > 0
                   ? `Payment for Orders: ${(rc.appliedOrders || []).join(', ')}`
                   : `Payment for Invoices: ${(rc.appliedInvoices || []).join(', ')}`}
               </Text>
-              <Text style={{ flex: 1, fontSize: 10.5, color: monoText(mode, '#111111'), padding: 5, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>{currency} {formatAmount(rc.amountReceived)}</Text>
-              <Text style={{ flex: 1, fontSize: 10.5, color: monoText(mode, '#111111'), padding: 5, textAlign: 'right' }}>{currency} {formatAmount(rc.amountReceived)}</Text>
+              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), padding: 5, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>{currency} {formatAmount(receiptInvoiceTotal)}</Text>
+              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), padding: 5, textAlign: 'right' }}>{currency} {formatAmount(receiptPaid)}</Text>
             </View>
             <View style={{ flexDirection: 'row', padding: 5 }}>
-              <Text style={{ flex: 4, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>Amount Received</Text>
-              <Text style={{ flex: 1, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>{currency} {formatAmount(rc.amountReceived)}</Text>
+              <Text style={{ flex: 4, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>Amount Received</Text>
+              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>{currency} {formatAmount(rc.amountReceived)}</Text>
             </View>
             {isPartial && (
               <View style={{ flexDirection: 'row', padding: 5 }}>
-                <Text style={{ flex: 4, fontSize: 10.5, color: monoText(mode, '#ef4444'), textAlign: 'right' }}>Outstanding Balance</Text>
-                <Text style={{ flex: 1, fontSize: 10.5, color: monoText(mode, '#ef4444'), textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
+                <Text style={{ flex: 4, fontSize: receiptBodyFontSize, color: monoText(mode, '#ef4444'), textAlign: 'right' }}>Outstanding Balance</Text>
+                <Text style={{ flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, '#ef4444'), textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
               </View>
             )}
             {isOverpaid && overpaymentAmount > 0 && (
               <View style={{ flexDirection: 'row', padding: 5 }}>
-                <Text style={{ flex: 4, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#10b981'), textAlign: 'right' }}>Wallet Credit</Text>
-                <Text style={{ flex: 1, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#10b981'), textAlign: 'right' }}>{currency} {formatAmount(overpaymentAmount)}</Text>
+                <Text style={{ flex: 4, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#10b981'), textAlign: 'right' }}>Wallet Credit</Text>
+                <Text style={{ flex: 1, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#10b981'), textAlign: 'right' }}>{currency} {formatAmount(overpaymentAmount)}</Text>
               </View>
             )}
           </View>
           <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
 
-          {/* Formal notes section — the generated narrative text and all its
-              variants (buildNarrative) are unchanged; only the presentation
-              carries the section heading. No signature block: validity is
-              carried by the digital verification footer below. */}
+          {/* Formal notes section — the single acknowledgment sentence, either the
+              stored narrative or receiptNoteFallback (same helper, so wording
+              and the optional balance sentence match). Nothing the table above
+              already prints is repeated: no date, no reference list, no
+              restated balance. No signature block: validity is carried by the
+              digital verification footer below. */}
           <View style={{ marginTop: 4 }}>
-            <Text style={{ fontSize: 11, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Notes Section</Text>
+            <Text style={{ fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Notes Section</Text>
             <View style={{ padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-              <Text style={{ fontSize: 12, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
-                {rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount(rc.amountReceived)} received from ${rc.customerName}.`}
+              <Text style={{ fontSize: receiptBodyFontSize, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
+                {rc.narrative || receiptNoteFallback}
               </Text>
             </View>
           </View>

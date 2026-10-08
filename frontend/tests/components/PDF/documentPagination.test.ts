@@ -376,8 +376,11 @@ describe('receipt pagination (global standard)', () => {
   }, 120000);
 
   it('TEST 2 — two pages', async () => {
-    // 60 allocations: calibrated for the trimmed verification footer.
-    const { pages, pageCount, qrObj } = await renderBoth('RECEIPT', await secured(60));
+    // 120 allocations: calibrated for the trimmed verification footer AND for
+    // the single-sentence Notes Section — the old note repeated every applied
+    // invoice number, so it alone was enough to spill the receipt onto a
+    // second page at half this count.
+    const { pages, pageCount, qrObj } = await renderBoth('RECEIPT', await secured(120));
     expectPageNumbers(pages, 2);
     expectQrFinalOnly(pages, qrObj);
     expect(pages[1].text).toContain(norm('Receipt PAY-P726/001'));
@@ -388,7 +391,10 @@ describe('receipt pagination (global standard)', () => {
   }, 120000);
 
   it('TEST 3 — three pages', async () => {
-    const { pages, pageCount, qrObj } = await renderBoth('RECEIPT', await secured(5, 90));
+    // 60 sentences: calibrated for the unified 12pt receipt body scale (the
+    // previous 90-sentence figure tipped onto a fourth page once the address,
+    // contact, metadata and table cells all grew to the acknowledgment size).
+    const { pages, pageCount, qrObj } = await renderBoth('RECEIPT', await secured(120, 60));
     expectPageNumbers(pages, 3);
     expectQrFinalOnly(pages, qrObj);
   }, 120000);

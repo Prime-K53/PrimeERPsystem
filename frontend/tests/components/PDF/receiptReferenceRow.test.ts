@@ -210,11 +210,14 @@ describe('Reference row — multiple allocations collapse to a count', () => {
     expect(text).toContain(norm(`Payment for Orders: ${orders.join(', ')}`));
   }, 120000);
 
-  it('sixty invoices show "Multiple invoices (60)" with no pagination regression', async () => {
-    const applied = Array.from({ length: 60 }, (_, i) => `INV-P726/${String(i + 1).padStart(3, '0')}`);
+  it('many invoices show "Multiple invoices (120)" with no pagination regression', async () => {
+    // 120, not 60: the single-sentence Notes Section freed the page space the
+    // old note used to fill by repeating every applied invoice number, so the
+    // spill to a second page now needs twice the allocations.
+    const applied = Array.from({ length: 120 }, (_, i) => `INV-P726/${String(i + 1).padStart(3, '0')}`);
     const payment: any = {
       id: 'PAY-REF/060', date: '2026-09-01', customerName: CUSTOMER,
-      amount: 60000, paymentMethod: 'Cash', verificationToken: TOK,
+      amount: 120000, paymentMethod: 'Cash', verificationToken: TOK,
       allocations: applied.map((id) => ({ invoiceId: id, amount: 1000 })),
     };
     const secured: any = await attachDocumentSecurity(
@@ -225,12 +228,12 @@ describe('Reference row — multiple allocations collapse to a count', () => {
     expect(pageCount).toBe(2);
     const firstPage = pages[0].text;
     const seg = refSegment(firstPage);
-    expect(seg).toContain(norm('Multiple invoices (60)'));
-    expect(seg).not.toContain(norm('INV-P726/059'));
+    expect(seg).toContain(norm('Multiple invoices (120)'));
+    expect(seg).not.toContain(norm('INV-P726/119'));
     // Details still carry the complete list across pages.
     const all = pages.map((p) => p.text).join(' ');
     expect(all).toContain(norm('INV-P726/001'));
-    expect(all).toContain(norm('INV-P726/060'));
+    expect(all).toContain(norm('INV-P726/120'));
     // QR stays final-only.
     expect(pages[0].drawnImages).not.toContain(qrObj);
     expect(pages[1].drawnImages).toContain(qrObj);

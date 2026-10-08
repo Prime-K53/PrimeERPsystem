@@ -1,6 +1,7 @@
-import { ExaminationInvoiceSchema, FinancialDocSchema, LogisticsDocSchema, PrimeDocData, SalesExchangeSchema, StatementSchema, SubscriptionDocSchema } from '../views/shared/components/PDF/schemas';
+import { ExaminationInvoiceSchema, FinancialDocSchema, LogisticsDocSchema, PrimeDocData, ReceiptSchema, SalesExchangeSchema, StatementSchema, SubscriptionDocSchema, SupplierPaymentSchema } from '../views/shared/components/PDF/schemas';
 import { bomService } from '../services/bomService';
 import { currencyService } from '../services/currencyService';
+import { buildReceiptAcknowledgement, formatReceiptDisplayDate } from '../services/receiptCalculationService';
 import { inferSignatureInputMode, resolveSignatureDataUrl } from './signatureUtils';
 import { isSupportedDocumentType } from './documentVerification';
 import { resolvePoLineUnitCost } from '../services/purchaseCosting';
@@ -28,6 +29,10 @@ const verifiableTypeForDocType = (docType: string): string | undefined => {
             return 'purchase_order';
         case 'DELIVERY_NOTE':
             return 'delivery_note';
+        case 'RECEIPT':
+            return 'receipt';
+        case 'SUPPLIER_PAYMENT':
+            return 'supplier_payment';
         case 'ACCOUNT_STATEMENT':
         case 'ACCOUNT_STATEMENT_SUMMARY':
             return 'statement';
@@ -77,6 +82,22 @@ export const generateAccountSummary = (item: any, companyConfig: any, customers:
         walletBalance,
         statement: `Your outstanding balance is ${currency} ${fmt(outstandingBalance)} and wallet balance of ${currency} ${fmt(walletBalance)} as of ${todayStr}.`
     };
+};
+
+/**
+ * Stored-date rendering for payment vouchers.
+ *
+ * Only unambiguous ISO dates (the shape `customer_payments` /
+ * `supplier_payments` store) are reformatted to the receipt's dd/mm/yyyy. A
+ * value that is already a display string is returned verbatim — re-parsing
+ * "8/10/2026" is ambiguous (dd/mm vs mm/dd) and would silently move the
+ * payment to the wrong date.
+ */
+const receiptVoucherDate = (value: unknown): string => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return new Date().toLocaleDateString('en-GB');
+  if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
+  return formatReceiptDisplayDate(raw);
 };
 
 export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: string, boms?: any[], inventory?: any[]): PrimeDocData => {
@@ -466,6 +487,154 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             ...(sourceToken ? { verificationToken: sourceToken } : {}),
         };
         return StatementSchema.parse(statementData);
+    }
+
+    /**
+     * PAYMENT RECEIPTS.
+     *
+     * This branch is what the SERVER-SIDE renderer depends on: it reaches here
+     * with either the raw `customer_payments` row (public QR download) or the
+     * portal-mapped receipt contract (customer portal). Both used to fall
+     * through to the logistics branch below, whose zod schema silently STRIPS
+     * every receipt field — so a portal/downloaded receipt printed
+     * "Amount Received K 0.00" and "Customer Name: N/A". The staff UI never
+     * hit this: it builds the doc with buildCustomerReceiptDoc and passes it
+     * straight to PrimeDocument.
+     *
+     * Two rules keep this tolerant rather than a second contract:
+     *   1. WHATEVER is already present is authoritative and passed through
+     *      verbatim — the portal mapper has already resolved it.
+     *   2. Whatever is missing is derived from the payment's allocations.
+     *
+     * Deliberately does NOT go through calculateCustomerPaymentSnapshot: that
+     * calculator throws when the allocation exceeds the tendered amount, and a
+     * read-only render of a historical record must degrade to a printed
+     * receipt, never a failed download.
+     */
+    if (docType === 'RECEIPT') {
+        const rawAllocations = Array.isArray(item.allocations) ? item.allocations : [];
+        // A mapped contract arrives as appliedInvoices/appliedOrders; a raw row
+        // only has the allocation objects.
+        const mappedInvoiceRefs = Array.isArray(item.appliedInvoices) ? item.appliedInvoices : null;
+        const mappedOrderRefs = Array.isArray(item.appliedOrders) ? item.appliedOrders : null;
+
+        const allocationAmounts = rawAllocations
+            .map((a: any) => toNum(a?.amount ?? a?.allocated ?? a?.applied))
+            .filter((n: number) => n > 0);
+        const allocationTotals = rawAllocations
+            .filter((a: any) => a && !a.missing_invoice)
+            .map((a: any) => toNum(a?.total_amount ?? a?.totalAmount ?? a?.invoiceTotal))
+            .filter((n: number) => n > 0);
+
+        const amountReceived = toNum(
+            item.amountReceived ?? item.amount_received ?? item.amount ?? item.totalAmount
+        );
+        const amountApplied = item.amountApplied != null
+            ? toNum(item.amountApplied)
+            : toNum(allocationAmounts.reduce((s: number, n: number) => s + n, 0));
+        const invoiceTotal = item.invoiceTotal != null
+            ? toNum(item.invoiceTotal)
+            : toNum(allocationTotals.reduce((s: number, n: number) => s + n, 0));
+        const balanceDue = item.balanceDue != null
+            ? Math.max(0, toNum(item.balanceDue))
+            : Math.max(0, invoiceTotal - amountApplied);
+        const currentBalance = item.currentBalance != null
+            ? toNum(item.currentBalance)
+            : balanceDue;
+
+        const appliedInvoices = mappedInvoiceRefs ?? rawAllocations
+            .filter((a: any) => a && Number(a?.amount ?? a?.allocated ?? 0) > 0)
+            .map((a: any) => a.invoice_number || a.invoiceNumber || a.invoice_id || a.invoiceId)
+            .filter(Boolean)
+            .map(String);
+        const appliedOrders = mappedOrderRefs ?? rawAllocations
+            .filter((a: any) => a && Number(a?.amount ?? a?.allocated ?? 0) > 0)
+            .map((a: any) => a.order_number || a.orderNumber || a.order_id || a.orderId)
+            .filter(Boolean)
+            .map(String);
+
+        const customerName = resolveFirstText(
+            item.customerName, item.customer_name, item.clientName, item.client_name, item.schoolName
+        ) || 'Customer';
+
+        // Same settlement rule the snapshot calculator uses: the payment
+        // settles its invoice(s) unless it leaves money over (wallet credit)
+        // or still falls short of the invoice total.
+        const paymentStatus: 'PAID' | 'PARTIALLY PAID' | 'OVERPAID' =
+            amountApplied < amountReceived ? 'OVERPAID'
+                : amountApplied < invoiceTotal ? 'PARTIALLY PAID'
+                    : 'PAID';
+
+        const receiptData = {
+            ...baseData,
+            receiptNumber: String(
+                item.receiptNumber || item.receipt_number || item.paymentNumber || item.id || ''
+            ),
+            date: receiptVoucherDate(item.date || item.receiptDate || item.receipt_date),
+            customerName,
+            amountReceived,
+            amountApplied,
+            amountRetained: item.amountRetained != null ? toNum(item.amountRetained) : undefined,
+            changeGiven: item.changeGiven != null ? toNum(item.changeGiven) : undefined,
+            paymentMethod: resolveFirstText(
+                item.paymentMethod, item.payment_method, item.method
+            ) || 'Unknown',
+            account: resolveFirstText(item.account, item.accountName, item.account_name) || undefined,
+            appliedInvoices,
+            appliedOrders: appliedOrders.length > 0 ? appliedOrders : undefined,
+            invoiceTotal: invoiceTotal > 0 ? invoiceTotal : undefined,
+            paymentStatus,
+            balanceDue: balanceDue > 0 ? balanceDue : undefined,
+            overpaymentAmount: Math.max(0, amountReceived - amountApplied),
+            // A stored note is authoritative; otherwise compose THE canonical
+            // sentence so a server-rendered copy reads exactly like the ERP one.
+            narrative: resolveFirstText(item.narrative) || buildReceiptAcknowledgement({
+                amount: amountReceived,
+                customerName,
+                currencySymbol: currency,
+                accountBalance: currentBalance,
+            }),
+            currentBalance,
+            walletDeposit: toNum(item.walletDeposit ?? item.overpaymentAmount ?? 0),
+            calculationVersion: toNum(item.calculationVersion, 1),
+        };
+        return ReceiptSchema.parse(receiptData);
+    }
+
+    /**
+     * SUPPLIER PAYMENT VOUCHERS — the same server-side gap as RECEIPT above:
+     * publicly downloadable (supplier_payment is a verified document type), so
+     * they reached the logistics branch and lost every money field.
+     */
+    if (docType === 'SUPPLIER_PAYMENT') {
+        const appliedPurchases = Array.isArray(item.appliedInvoices)
+            ? item.appliedInvoices.map(String)
+            : (Array.isArray(item.allocations) ? item.allocations : [])
+                .map((a: any) => a?.purchase_number || a?.purchaseNumber || a?.purchase_id || a?.purchaseId)
+                .filter(Boolean)
+                .map(String);
+
+        const voucherData = {
+            ...baseData,
+            paymentId: String(item.paymentId || item.payment_id || item.id || ''),
+            // The ERP treats the payment record id as the official payment
+            // number; an explicit paymentNumber takes precedence for display.
+            paymentNumber: String(item.paymentNumber || item.payment_number || item.paymentId || item.id || ''),
+            date: receiptVoucherDate(item.date || item.paymentDate || item.payment_date),
+            supplierName: resolveFirstText(
+                item.supplierName, item.supplier_name, item.payee, item.vendorName
+            ) || 'Supplier',
+            amountPaid: toNum(
+                item.amountPaid ?? item.amount_paid ?? item.amount ?? item.totalAmount
+            ),
+            paymentMethod: resolveFirstText(
+                item.paymentMethod, item.payment_method, item.method
+            ) || 'Unknown',
+            status: resolveFirstText(item.status) || 'Cleared',
+            appliedInvoices: appliedPurchases,
+            narrative: resolveFirstText(item.narrative, item.notes) || undefined,
+        };
+        return SupplierPaymentSchema.parse(voucherData);
     }
 
     if (docType === 'INVOICE' || docType === 'EXAMINATION_INVOICE' || docType === 'SALES_ORDER' || docType === 'PO' || docType === 'QUOTATION' || docType === 'ORDER' || docType === 'SUBSCRIPTION') {

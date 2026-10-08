@@ -106,10 +106,13 @@ const CustomerPaymentDetail: React.FC = () => {
       if (totalAllocated < amountReceived) paymentStatus = 'OVERPAID';
       else if (totalAllocated < invoiceTotal) paymentStatus = 'PARTIALLY PAID';
 
+      const receiptCustomerName = companyConfig?.companyName || 'Customer';
+      const currentBalance = Math.max(0, invoiceTotal - totalAllocated);
+
       const receiptData = {
         receiptNumber: payment.reference || payment.id?.slice(0, 8) || 'N/A',
         date: payment.date ? new Date(payment.date).toLocaleDateString() : new Date().toLocaleDateString(),
-        customerName: companyConfig?.companyName || 'Customer',
+        customerName: receiptCustomerName,
         amountReceived,
         amountApplied: totalAllocated,
         changeGiven: 0,
@@ -119,10 +122,18 @@ const CustomerPaymentDetail: React.FC = () => {
         appliedOrders,
         invoiceTotal,
         paymentStatus,
-        balanceDue: Math.max(0, invoiceTotal - totalAllocated),
+        balanceDue: currentBalance,
         overpaymentAmount: Math.max(0, amountReceived - totalAllocated),
-        narrative: `Payment of ${formatK(amountReceived)} received via ${payment.payment_method || 'N/A'}. ${allocations.length} invoice(s) allocated.`,
-        currentBalance: Math.max(0, invoiceTotal - totalAllocated),
+        // The same single acknowledgment sentence the ERP-side receipt prints,
+        // so a portal download is indistinguishable from the ERP copy: the
+        // amount and the payer. Nothing the details table or header rows above
+        // already show is repeated here. The account balance is appended only
+        // when there is a non-zero one to report — a settled account has
+        // nothing to say.
+        narrative: currentBalance > 0
+          ? `Receipt acknowledgment for payment of ${formatK(amountReceived)} received from ${receiptCustomerName}. Your account balance is ${formatK(currentBalance)}`
+          : `Receipt acknowledgment for payment of ${formatK(amountReceived)} received from ${receiptCustomerName}`,
+        currentBalance,
         calculationVersion: 1,
       };
 

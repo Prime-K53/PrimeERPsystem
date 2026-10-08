@@ -1043,8 +1043,12 @@ const portalService = {
   /**
    * Map a raw payment record (from getPaymentById) into the PrimeDocument
    * RECEIPT data contract. This is a pure mapping — no DB writes.
+   *
+   * `currencySymbol` only labels the narrative sentence; the PDF renderer reads
+   * the symbol from the company config itself for every printed amount, so a
+   * wrong symbol here can never desynchronise the totals from the table.
    */
-  mapPaymentToReceiptData(payment, customer) {
+  mapPaymentToReceiptData(payment, customer, currencySymbol = 'K') {
     const allocations = payment.allocations || [];
     const validAllocations = allocations.filter((a) => a && a.invoice_id && Number(a.amount || 0) > 0);
     const appliedInvoices = validAllocations.map((a) => a.invoice_number || a.invoice_id);
@@ -1054,6 +1058,9 @@ const portalService = {
     ), 0);
     const totalAllocated = validAllocations.reduce((sum, a) => sum + Number(a.amount || 0), 0);
     const amountReceived = Number(payment.amount || 0);
+    const customerName = customer?.business_name || customer?.name || payment.customerName || payment.customer_name || 'Customer';
+    const balanceDue = Math.max(0, invoiceTotal - totalAllocated);
+    const money = (value) => `${currencySymbol} ${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     let paymentStatus = 'PAID';
     if (totalAllocated < amountReceived) paymentStatus = 'OVERPAID';
@@ -1062,7 +1069,7 @@ const portalService = {
     return {
       receiptNumber: payment.reference || payment.id?.slice(0, 8) || 'N/A',
       date: payment.date ? new Date(payment.date).toLocaleDateString() : new Date().toLocaleDateString(),
-      customerName: customer?.business_name || customer?.name || payment.customerName || payment.customer_name || 'Customer',
+      customerName,
       amountReceived,
       amountApplied: totalAllocated,
       changeGiven: 0,
@@ -1072,10 +1079,19 @@ const portalService = {
       appliedOrders,
       invoiceTotal,
       paymentStatus,
-      balanceDue: Math.max(0, invoiceTotal - totalAllocated),
+      balanceDue,
       overpaymentAmount: Math.max(0, amountReceived - totalAllocated),
-      narrative: `Payment of ${amountReceived} received via ${payment.method || payment.payment_method || 'N/A'}. ${validAllocations.length} invoice(s) allocated.`,
-      currentBalance: Math.max(0, invoiceTotal - totalAllocated),
+      // The same single acknowledgment sentence the ERP-side receipt prints,
+      // so a portal download is indistinguishable from the ERP copy: the
+      // amount and the payer. The date, the invoice list and the payment
+      // method are already printed in the receipt header and Payment Details
+      // table, so restating them here is pure duplication. The account balance
+      // is appended only when there is a non-zero one to report — a settled
+      // account has nothing to say.
+      narrative: balanceDue > 0
+        ? `Receipt acknowledgment for payment of ${money(amountReceived)} received from ${customerName}. Your account balance is ${money(balanceDue)}`
+        : `Receipt acknowledgment for payment of ${money(amountReceived)} received from ${customerName}`,
+      currentBalance: balanceDue,
       calculationVersion: 1,
     };
   },

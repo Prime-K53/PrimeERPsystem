@@ -11,6 +11,7 @@ const portalAuthService = require('../services/portalAuthService.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
 const paymentRequestService = require('../services/paymentRequestService.cjs');
 const officialDocumentService = require('../services/officialDocumentService.cjs');
+const companyConfigService = require('../services/companyConfigService.cjs');
 const { sensitiveLimiter, apiLimiter } = require('../middleware/rateLimiter.cjs');
 const { idempotencyMiddleware } = require('../middleware/idempotency.cjs');
 
@@ -192,7 +193,15 @@ router.get('/payments/:id/document', async (req, res) => {
     } catch (_) { /* audit is best-effort; never blocks an authorized download */ }
 
     const ownerCustomer = await repoCanonical.getById('customers', customer_id).catch(() => null);
-    const receiptData = portalService.mapPaymentToReceiptData(payment, ownerCustomer);
+    // The receipt narrative embeds the currency symbol, so resolve it from the
+    // same company config the renderer uses. Best-effort: the mapper falls back
+    // to the base symbol, and a missing symbol never affects the amounts.
+    const companyConfig = await companyConfigService.getCompanyConfig().catch(() => null);
+    const receiptData = portalService.mapPaymentToReceiptData(
+      payment,
+      ownerCustomer,
+      companyConfig?.currencySymbol || 'K'
+    );
 
     const { buffer } = await officialDocumentService.renderOfficialPdf({
       type: 'RECEIPT',

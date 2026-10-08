@@ -35,11 +35,21 @@ const toIsoDate = (date?: string): string => {
   return parsed.toISOString();
 };
 
-const toDisplayDate = (date?: string): string => {
+/**
+ * Render a stored date the way the receipt prints it (en-GB, dd/mm/yyyy).
+ *
+ * Exported because the PDF mapper normalizes the SAME field for receipts that
+ * reach the server-side renderer as a raw `customer_payments` row: without it
+ * a public QR download prints the raw ISO timestamp (2026-10-08) while the ERP
+ * copy prints 08/10/2026, which reads as two different payments.
+ */
+export const formatReceiptDisplayDate = (date?: string): string => {
   const parsed = date ? new Date(date) : new Date();
   if (Number.isNaN(parsed.getTime())) return new Date().toLocaleDateString('en-GB');
   return parsed.toLocaleDateString('en-GB');
 };
+
+const toDisplayDate = formatReceiptDisplayDate;
 
 export interface CustomerReceiptInvoiceInput {
   invoiceId: string;
@@ -134,36 +144,84 @@ const inferPaymentPurpose = (
   return 'UNALLOCATED_PAYMENT';
 };
 
+/**
+ * THE canonical receipt acknowledgment sentence — the whole Notes Section.
+ *
+ * Deliberately carries ONLY what no other part of the receipt already prints:
+ *
+ *   "Receipt acknowledgment for payment of K 175,000.00 received from
+ *    Mankhamba LEA School."
+ *
+ * …followed by the account balance ONLY when there is one to report:
+ *
+ *   "… received from Mankhamba LEA School. Your account balance is K 25,000.00"
+ *
+ * Everything that used to be repeated in the note is printed exactly once
+ * elsewhere:
+ *   • the payment date  → the header's Date row
+ *   • the invoice/order references → the Reference row + Payment Details table
+ *   • partial/overpaid state + wallet credit → the Status badge, the
+ *     Outstanding Balance / Wallet Credit rows and the overpayment notice
+ *   • the outstanding balance → the Outstanding Balance row; the account
+ *     balance below is the customer's own ledger position, which is different
+ *     information and is the one thing the reader actually needs.
+ *
+ * So the opening sentence is identical for every payment purpose and status —
+ * a wallet top-up, a partial payment and a full payment all acknowledge the
+ * same way, because the differences live in the table above them.
+ *
+ * The balance sentence is OPTIONAL, and it is the only conditional left. It is
+ * printed only when a real, non-zero balance is known:
+ *   • a settled account has nothing to report, and "Your account balance is
+ *     K 0.00" on every receipt is noise that reads as a real figure;
+ *   • "not known" (undefined / null / NaN) is not the same statement as
+ *     "known to be zero" — but both correctly print nothing, because neither
+ *     tells the reader anything.
+ * The test is on the ROUNDED balance, so a sub-cent remainder that would print
+ * as K 0.00 is suppressed rather than printed.
+ *
+ * Exported (not private) because the PDF mapper builds the SAME note for
+ * receipts that reach the server-side renderer without one — a raw
+ * customer_payments row, or a portal-mapped record. One wording, two callers;
+ * if the ERP copy and the portal copy are to be indistinguishable, they must
+ * not be able to drift apart.
+ */
+export const buildReceiptAcknowledgement = ({
+  amount,
+  customerName,
+  currencySymbol,
+  accountBalance,
+  purpose = 'payment',
+}: {
+  amount: number;
+  customerName: string;
+  currencySymbol: string;
+  /** Omitted from the sentence when absent or zero. */
+  accountBalance?: number | null;
+  purpose?: 'payment' | 'wallet top-up';
+}): string => {
+  const fmt = (v: number) => `${currencySymbol} ${round2(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const base = `Receipt acknowledgment for ${purpose} of ${fmt(amount)} received from ${customerName}`;
+  const balance = accountBalance == null ? NaN : round2(accountBalance);
+
+  return Number.isFinite(balance) && balance !== 0
+    ? `${base}. Your account balance is ${fmt(balance)}`
+    : base;
+};
+
 const buildNarrative = (
   snapshot: CustomerReceiptSnapshot,
   customerName: string,
   currencySymbol: string,
-  appliedOrders?: string[]
-): string => {
-  const date = toDisplayDate(snapshot.generatedAt);
-  const fmt = (v: number) => `${currencySymbol} ${round2(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const invoiceList = snapshot.appliedInvoices.length > 0 ? snapshot.appliedInvoices.join(', ') : '';
-  const orderList = appliedOrders && appliedOrders.length > 0 ? appliedOrders.join(', ') : '';
-  const refList = orderList
-    ? `order(s) ${orderList}`
-    : invoiceList
-      ? `invoice(s) ${invoiceList}`
-      : 'unallocated invoices';
-
-  if (snapshot.paymentPurpose === 'WALLET_TOPUP') {
-    return `Receipt acknowledgment for wallet top-up of ${fmt(snapshot.amountTendered)} received from ${customerName} on ${date}.`;
-  }
-
-  if (snapshot.paymentStatus === 'Partial') {
-    return `This receipt confirms payment of ${fmt(snapshot.amountTendered)} from ${customerName} on ${date} toward ${refList}. Outstanding balance is ${fmt(snapshot.balanceDueAfterPayment)}.`;
-  }
-
-  if (snapshot.paymentStatus === 'Overpaid' && snapshot.walletDeposit > 0) {
-    return `Payment of ${fmt(snapshot.amountTendered)} from ${customerName} on ${date} was received for ${refList}. Excess amount ${fmt(snapshot.walletDeposit)} has been credited to wallet.`;
-  }
-
-  return `Receipt acknowledgment for payment of ${fmt(snapshot.amountTendered)} received from ${customerName} on ${date} for ${refList}.`;
-};
+  currentBalance: number
+): string => buildReceiptAcknowledgement({
+  amount: snapshot.amountTendered,
+  customerName,
+  currencySymbol,
+  accountBalance: currentBalance,
+  purpose: snapshot.paymentPurpose === 'WALLET_TOPUP' ? 'wallet top-up' : 'payment',
+});
 
 export const calculateCustomerPaymentSnapshot = (
   input: CalculateCustomerPaymentSnapshotInput
@@ -266,7 +324,7 @@ export const buildCustomerReceiptDoc = ({
     };
   }
 
-  const narrative = snap.narrative || buildNarrative(adjustedSnap, resolvedCustomerName, currencySymbol, resolvedOrders);
+  const narrative = snap.narrative || buildNarrative(adjustedSnap, resolvedCustomerName, currencySymbol, currentBalance);
 
   return {
     // Verification identity: carried from the stored payment record so the

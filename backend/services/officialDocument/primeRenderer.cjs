@@ -230754,6 +230754,9 @@ var ReceiptSchema = external_exports.object({
   amountRetained: external_exports.number().optional(),
   changeGiven: external_exports.number().optional(),
   paymentMethod: external_exports.string(),
+  // Display name of the account the payment was received into. Optional:
+  // payments with no accountId resolve to '' and the row is omitted.
+  account: external_exports.string().optional(),
   appliedInvoices: external_exports.array(external_exports.string()),
   // ["INV-001", "INV-002"] 
   appliedOrders: external_exports.array(external_exports.string()).optional(),
@@ -231782,6 +231785,43 @@ var CurrencyService = class {
 };
 var currencyService = new CurrencyService();
 
+// utils/roundingUtils.ts
+var ROUNDING_FACTOR = 100;
+var roundMoney = (value2) => {
+  const parsed = Number(value2);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round((parsed + Number.EPSILON) * ROUNDING_FACTOR) / ROUNDING_FACTOR;
+};
+
+// services/receiptCalculationService.ts
+var round2 = roundMoney;
+var formatReceiptDisplayDate = (date5) => {
+  const parsed = date5 ? new Date(date5) : /* @__PURE__ */ new Date();
+  if (Number.isNaN(parsed.getTime())) return (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB");
+  return parsed.toLocaleDateString("en-GB");
+};
+var resolveReceiptPaymentBadge = (input) => {
+  const cancelled = input?.isCancelled === true || input?.cancelled === true || ["cancelled", "canceled", "void", "voided"].includes(
+    String(input?.status ?? input?.paymentStatus ?? "").trim().toLowerCase()
+  );
+  if (cancelled) {
+    return { label: "CANCELLED", color: "#dc2626", borderColor: "#ef4444" };
+  }
+  return { label: "PAYMENT RECEIVED", color: "#059669", borderColor: "#10b981" };
+};
+var buildReceiptAcknowledgement = ({
+  amount,
+  customerName,
+  currencySymbol,
+  accountBalance,
+  purpose = "payment"
+}) => {
+  const fmt = (v3) => `${currencySymbol} ${round2(v3).toLocaleString(void 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const base = `Receipt acknowledgment for ${purpose} of ${fmt(amount)} received from ${customerName}`;
+  const balance = accountBalance == null ? NaN : round2(accountBalance);
+  return Number.isFinite(balance) && balance !== 0 ? `${base}. Your account balance is ${fmt(balance)}` : base;
+};
+
 // utils/signatureUtils.ts
 var MAX_SIGNATURE_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
 var normalizeSignatureDataUrl = (value2) => {
@@ -231953,6 +231993,10 @@ var verifiableTypeForDocType = (docType) => {
       return "purchase_order";
     case "DELIVERY_NOTE":
       return "delivery_note";
+    case "RECEIPT":
+      return "receipt";
+    case "SUPPLIER_PAYMENT":
+      return "supplier_payment";
     case "ACCOUNT_STATEMENT":
     case "ACCOUNT_STATEMENT_SUMMARY":
       return "statement";
@@ -231990,6 +232034,12 @@ var generateAccountSummary = (item, companyConfig, customers = []) => {
     walletBalance,
     statement: `Your outstanding balance is ${currency} ${fmt(outstandingBalance)} and wallet balance of ${currency} ${fmt(walletBalance)} as of ${todayStr}.`
   };
+};
+var receiptVoucherDate = (value2) => {
+  const raw = String(value2 ?? "").trim();
+  if (!raw) return (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB");
+  if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw;
+  return formatReceiptDisplayDate(raw);
 };
 var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
   const toNum = (val, fallback = 0) => {
@@ -232295,6 +232345,95 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
       ...sourceToken ? { verificationToken: sourceToken } : {}
     };
     return StatementSchema.parse(statementData);
+  }
+  if (docType === "RECEIPT") {
+    const rawAllocations = Array.isArray(item.allocations) ? item.allocations : [];
+    const mappedInvoiceRefs = Array.isArray(item.appliedInvoices) ? item.appliedInvoices : null;
+    const mappedOrderRefs = Array.isArray(item.appliedOrders) ? item.appliedOrders : null;
+    const allocationAmounts = rawAllocations.map((a4) => toNum(a4?.amount ?? a4?.allocated ?? a4?.applied)).filter((n5) => n5 > 0);
+    const allocationTotals = rawAllocations.filter((a4) => a4 && !a4.missing_invoice).map((a4) => toNum(a4?.total_amount ?? a4?.totalAmount ?? a4?.invoiceTotal)).filter((n5) => n5 > 0);
+    const amountReceived = toNum(
+      item.amountReceived ?? item.amount_received ?? item.amount ?? item.totalAmount
+    );
+    const amountApplied = item.amountApplied != null ? toNum(item.amountApplied) : toNum(allocationAmounts.reduce((s4, n5) => s4 + n5, 0));
+    const invoiceTotal = item.invoiceTotal != null ? toNum(item.invoiceTotal) : toNum(allocationTotals.reduce((s4, n5) => s4 + n5, 0));
+    const balanceDue = item.balanceDue != null ? Math.max(0, toNum(item.balanceDue)) : Math.max(0, invoiceTotal - amountApplied);
+    const currentBalance = item.currentBalance != null ? toNum(item.currentBalance) : balanceDue;
+    const appliedInvoices = mappedInvoiceRefs ?? rawAllocations.filter((a4) => a4 && Number(a4?.amount ?? a4?.allocated ?? 0) > 0).map((a4) => a4.invoice_number || a4.invoiceNumber || a4.invoice_id || a4.invoiceId).filter(Boolean).map(String);
+    const appliedOrders = mappedOrderRefs ?? rawAllocations.filter((a4) => a4 && Number(a4?.amount ?? a4?.allocated ?? 0) > 0).map((a4) => a4.order_number || a4.orderNumber || a4.order_id || a4.orderId).filter(Boolean).map(String);
+    const customerName = resolveFirstText(
+      item.customerName,
+      item.customer_name,
+      item.clientName,
+      item.client_name,
+      item.schoolName
+    ) || "Customer";
+    const paymentStatus = amountApplied < amountReceived ? "OVERPAID" : amountApplied < invoiceTotal ? "PARTIALLY PAID" : "PAID";
+    const receiptData = {
+      ...baseData,
+      receiptNumber: String(
+        item.receiptNumber || item.receipt_number || item.paymentNumber || item.id || ""
+      ),
+      date: receiptVoucherDate(item.date || item.receiptDate || item.receipt_date),
+      customerName,
+      amountReceived,
+      amountApplied,
+      amountRetained: item.amountRetained != null ? toNum(item.amountRetained) : void 0,
+      changeGiven: item.changeGiven != null ? toNum(item.changeGiven) : void 0,
+      paymentMethod: resolveFirstText(
+        item.paymentMethod,
+        item.payment_method,
+        item.method
+      ) || "Unknown",
+      account: resolveFirstText(item.account, item.accountName, item.account_name) || void 0,
+      appliedInvoices,
+      appliedOrders: appliedOrders.length > 0 ? appliedOrders : void 0,
+      invoiceTotal: invoiceTotal > 0 ? invoiceTotal : void 0,
+      paymentStatus,
+      balanceDue: balanceDue > 0 ? balanceDue : void 0,
+      overpaymentAmount: Math.max(0, amountReceived - amountApplied),
+      // A stored note is authoritative; otherwise compose THE canonical
+      // sentence so a server-rendered copy reads exactly like the ERP one.
+      narrative: resolveFirstText(item.narrative) || buildReceiptAcknowledgement({
+        amount: amountReceived,
+        customerName,
+        currencySymbol: currency,
+        accountBalance: currentBalance
+      }),
+      currentBalance,
+      walletDeposit: toNum(item.walletDeposit ?? item.overpaymentAmount ?? 0),
+      calculationVersion: toNum(item.calculationVersion, 1)
+    };
+    return ReceiptSchema.parse(receiptData);
+  }
+  if (docType === "SUPPLIER_PAYMENT") {
+    const appliedPurchases = Array.isArray(item.appliedInvoices) ? item.appliedInvoices.map(String) : (Array.isArray(item.allocations) ? item.allocations : []).map((a4) => a4?.purchase_number || a4?.purchaseNumber || a4?.purchase_id || a4?.purchaseId).filter(Boolean).map(String);
+    const voucherData = {
+      ...baseData,
+      paymentId: String(item.paymentId || item.payment_id || item.id || ""),
+      // The ERP treats the payment record id as the official payment
+      // number; an explicit paymentNumber takes precedence for display.
+      paymentNumber: String(item.paymentNumber || item.payment_number || item.paymentId || item.id || ""),
+      date: receiptVoucherDate(item.date || item.paymentDate || item.payment_date),
+      supplierName: resolveFirstText(
+        item.supplierName,
+        item.supplier_name,
+        item.payee,
+        item.vendorName
+      ) || "Supplier",
+      amountPaid: toNum(
+        item.amountPaid ?? item.amount_paid ?? item.amount ?? item.totalAmount
+      ),
+      paymentMethod: resolveFirstText(
+        item.paymentMethod,
+        item.payment_method,
+        item.method
+      ) || "Unknown",
+      status: resolveFirstText(item.status) || "Cleared",
+      appliedInvoices: appliedPurchases,
+      narrative: resolveFirstText(item.narrative, item.notes) || void 0
+    };
+    return SupplierPaymentSchema.parse(voucherData);
   }
   if (docType === "INVOICE" || docType === "EXAMINATION_INVOICE" || docType === "SALES_ORDER" || docType === "PO" || docType === "QUOTATION" || docType === "ORDER" || docType === "SUBSCRIPTION") {
     const financialData = {
@@ -233285,17 +233424,6 @@ var getDefaultPaymentTermsLabel = (companyConfig) => {
   return termsDays === 0 ? "Due on receipt" : `Net ${termsDays}`;
 };
 
-// services/receiptCalculationService.ts
-var resolveReceiptPaymentBadge = (input) => {
-  const cancelled = input?.isCancelled === true || input?.cancelled === true || ["cancelled", "canceled", "void", "voided"].includes(
-    String(input?.status ?? input?.paymentStatus ?? "").trim().toLowerCase()
-  );
-  if (cancelled) {
-    return { label: "CANCELLED", color: "#dc2626", borderColor: "#ef4444" };
-  }
-  return { label: "PAYMENT RECEIVED", color: "#059669", borderColor: "#10b981" };
-};
-
 // views/shared/components/PDF/documentPagination.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
 var PAGINATED_DOCUMENT_TYPES = /* @__PURE__ */ new Set([
@@ -233879,6 +234007,253 @@ var pickFirstText2 = (...values) => {
 };
 var buildCompanyAddress = (config2) => {
   return [config2?.addressLine1, config2?.city, config2?.country].map((value2) => String(value2 ?? "").trim()).filter(Boolean).join(", ");
+};
+var buildReceiptCompanyAddress = (config2) => {
+  const street = String(config2?.addressLine1 ?? "").trim();
+  if (!street) return buildCompanyAddress(config2);
+  const city = String(config2?.city ?? "").trim();
+  const country = String(config2?.country ?? "").trim();
+  let trimmed = street;
+  const suffixes = [country, city].filter(Boolean);
+  for (let i2 = 0; i2 < 2; i2++) {
+    for (const suffix of suffixes) {
+      if (!suffix) continue;
+      const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`[\\s,]*${escaped}\\s*$`, "i");
+      const next = trimmed.replace(re, "").trim();
+      if (next && next !== trimmed) trimmed = next;
+    }
+  }
+  return trimmed || buildCompanyAddress(config2);
+};
+var CURRENCY_SHORT_NAMES = {
+  K: "Kwacha",
+  MK: "Kwacha"
+};
+var resolveReceiptCurrencyLabel = (symbol2) => {
+  const raw = String(symbol2 || "").trim();
+  if (!raw) return "";
+  const short = CURRENCY_SHORT_NAMES[raw];
+  if (short) return short;
+  return DEFAULT_CURRENCIES.find((c2) => c2.symbol === raw)?.name || raw;
+};
+var RECEIPT_META_INDENT = 72;
+var RECEIPT_CONTENT_WIDTH = 515;
+var RECEIPT_META_GAP = 16;
+var HELVETICA_WIDTHS = [
+  278,
+  278,
+  355,
+  556,
+  556,
+  889,
+  667,
+  191,
+  333,
+  333,
+  389,
+  584,
+  278,
+  333,
+  278,
+  278,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  278,
+  278,
+  584,
+  584,
+  584,
+  556,
+  1015,
+  667,
+  667,
+  722,
+  722,
+  667,
+  611,
+  778,
+  722,
+  278,
+  500,
+  667,
+  556,
+  833,
+  722,
+  778,
+  667,
+  778,
+  722,
+  667,
+  611,
+  722,
+  667,
+  944,
+  667,
+  667,
+  611,
+  278,
+  278,
+  278,
+  469,
+  556,
+  333,
+  556,
+  556,
+  500,
+  556,
+  556,
+  278,
+  556,
+  556,
+  222,
+  222,
+  500,
+  222,
+  833,
+  556,
+  556,
+  556,
+  556,
+  333,
+  500,
+  278,
+  556,
+  500,
+  722,
+  500,
+  500,
+  500,
+  334,
+  260,
+  334,
+  584
+];
+var HELVETICA_BOLD_WIDTHS = [
+  278,
+  333,
+  474,
+  556,
+  556,
+  889,
+  722,
+  238,
+  333,
+  333,
+  389,
+  584,
+  278,
+  333,
+  278,
+  278,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  556,
+  333,
+  333,
+  584,
+  584,
+  584,
+  611,
+  975,
+  722,
+  722,
+  722,
+  722,
+  667,
+  611,
+  778,
+  722,
+  278,
+  556,
+  722,
+  611,
+  833,
+  722,
+  778,
+  667,
+  778,
+  722,
+  667,
+  611,
+  722,
+  667,
+  944,
+  667,
+  667,
+  611,
+  333,
+  278,
+  333,
+  584,
+  556,
+  333,
+  556,
+  611,
+  556,
+  611,
+  556,
+  333,
+  611,
+  611,
+  278,
+  278,
+  556,
+  278,
+  889,
+  611,
+  611,
+  611,
+  611,
+  389,
+  556,
+  333,
+  611,
+  556,
+  778,
+  556,
+  556,
+  500,
+  389,
+  280,
+  389,
+  584
+];
+var HELVETICA_FALLBACK_WIDTH = HELVETICA_WIDTHS.reduce((sum, w) => sum + w, 0) / HELVETICA_WIDTHS.length;
+var measureTextWidth = (text, fontSize, bold = false) => {
+  const table = bold ? HELVETICA_BOLD_WIDTHS : HELVETICA_WIDTHS;
+  const units = String(text ?? "").split("").reduce((sum, char) => {
+    const code = char.charCodeAt(0);
+    const width = code >= 32 && code <= 126 ? table[code - 32] : HELVETICA_FALLBACK_WIDTH;
+    return sum + width;
+  }, 0);
+  return units / 1e3 * fontSize;
+};
+var RECEIPT_FIT_WIDTH_SAFETY = 0.97;
+var fitFontSize = (text, availableWidth, { maxSize, minSize, bold = false }) => {
+  const sample = String(text ?? "");
+  if (!sample) return maxSize;
+  const widthAtMax = measureTextWidth(sample, 1, bold);
+  if (widthAtMax <= 0) return maxSize;
+  const exact = availableWidth * RECEIPT_FIT_WIDTH_SAFETY / widthAtMax;
+  if (exact >= maxSize) return maxSize;
+  if (exact <= minSize) return minSize;
+  return Math.floor(exact * 20) / 20;
 };
 var normalizeCompanyIdentity = (config2) => {
   const companyName = pickFirstText2(config2?.companyName, "Prime ERP");
@@ -234820,6 +235195,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   const paymentTermsLabel = String(dataAny?.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
   const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
   const companyContact = [formattedPhone, companyEmail].filter(Boolean).join(" | ");
+  const receiptCompanyAddress = buildReceiptCompanyAddress(config2);
   const legalFooterLine1 = resolveFooterText(config2, paymentTermsLabel, showPaymentTerms);
   const legalFooterLine2 = buildFooterContactLine(config2);
   const currency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
@@ -235000,11 +235376,57 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   }
   if (type === "RECEIPT") {
     const rc = data2;
-    const isPartial = rc.paymentStatus === "PARTIALLY PAID" || rc.balanceDue && rc.balanceDue > 0;
+    const isPartial = rc.paymentStatus === "PARTIALLY PAID" || Number(rc.balanceDue || 0) > 0;
     const isOverpaid = rc.paymentStatus === "OVERPAID";
     const overpaymentAmount = rc.overpaymentAmount || rc.walletDeposit || 0;
     const isCancelled2 = isCancelledStatus(rc.paymentStatus || rc.status, rc);
     const receiptBadge = resolveReceiptPaymentBadge(rc);
+    const appliedOrderRefs = rc.appliedOrders || [];
+    const appliedInvoiceRefs = rc.appliedInvoices || [];
+    const allocationRef = appliedOrderRefs.length === 1 ? String(appliedOrderRefs[0]) : appliedOrderRefs.length > 1 ? `Multiple orders (${appliedOrderRefs.length})` : appliedInvoiceRefs.length === 1 ? String(appliedInvoiceRefs[0]) : appliedInvoiceRefs.length > 1 ? `Multiple invoices (${appliedInvoiceRefs.length})` : "\u2014";
+    const receiptAccount = String(rc.account || "").trim();
+    const receiptAmountReceived = Number(rc.amountReceived ?? 0) || 0;
+    const receiptAmountApplied = Number(rc.amountApplied ?? 0) || 0;
+    const receiptBalanceDue = Math.max(0, Number(rc.balanceDue ?? 0) || 0);
+    const receiptInvoiceTotal = Number(rc.invoiceTotal ?? 0) > 0 ? Number(rc.invoiceTotal) : receiptAmountApplied + receiptBalanceDue;
+    const receiptPaid = receiptAmountApplied > 0 ? receiptAmountApplied : receiptAmountReceived;
+    const receiptNameAvailWidth = 515 - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+    const receiptTitleFontSize = 20 * fontScale;
+    const receiptNameFontSize = Math.max(
+      8.5,
+      Math.min(templateSettings.companyNameFontSize, receiptNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+    );
+    const receiptNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+    const receiptBodyFontSize = 12;
+    const customerNameLabel = "Customer Name: ";
+    const customerNameText = String(rc.customerName || "N/A");
+    const RECEIPT_MIN_META_FONT_SIZE = 7;
+    const receiptMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const customerNameAvailWidth = Math.max(
+      24,
+      RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, receiptBodyFontSize, true)
+    );
+    const receiptCustomerNameFontSize = fitFontSize(customerNameText, customerNameAvailWidth, {
+      maxSize: receiptBodyFontSize,
+      minSize: RECEIPT_MIN_META_FONT_SIZE
+    });
+    const receiptNoteFallback = buildReceiptAcknowledgement({
+      amount: receiptAmountReceived,
+      customerName: rc.customerName,
+      currencySymbol: currency,
+      accountBalance: rc.currentBalance
+    });
+    const receiptMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), marginBottom: 4 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+        label,
+        ": "
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
+    ] });
+    const receiptCustomerNameRow = () => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), marginBottom: 4, maxLines: 1, textOverflow: "ellipsis" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: customerNameLabel }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptCustomerNameFontSize }, children: customerNameText })
+    ] });
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Payment Receipt - ${rc.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
       channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
       isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
@@ -235016,82 +235438,86 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           companyName
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerSection, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle, { fontFamily: "Helvetica" }], children: "Payment Receipt" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Receipt # : ",
-              rc.receiptNumber
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Date : ",
-              rc.date
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Method : ",
-              rc.paymentMethod
-            ] })
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight, children: renderBrandMark("right") })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { position: "relative", alignItems: "center", marginBottom: 6, paddingTop: 2 }, children: [
+        !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { position: "absolute", left: 0, top: 0, width: templateSettings.logoWidth } }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", width: "100%", paddingLeft: receiptNameGutter, paddingRight: receiptNameGutter }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptNameFontSize, fontWeight: "bold", color: monoText(mode, "#000"), textAlign: "center", maxLines: 1, textOverflow: "ellipsis" }, children: companyName }),
+          !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, color: monoText(mode, "#334155"), textAlign: "center", marginTop: 2 }, children: receiptCompanyAddress }),
+          !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, color: monoText(mode, "#334155"), textAlign: "center", marginTop: 2 }, children: companyContact })
+        ] })
       ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptTitleFontSize, fontWeight: "bold", color: monoText(mode, "#000"), textAlign: "center", marginTop: 8, marginBottom: 8 }, children: "Payment Receipt" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 10 } }),
       isOverpaid && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { backgroundColor: monoFill(mode, "#fef2f2"), padding: 10, borderRadius: 4, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: monoLine(mode, "#ef4444") }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#991b1b"), fontSize: 12, fontWeight: "bold", lineHeight: 1.4 }, children: "OVERPAYMENT NOTICE" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#b91c1c"), fontSize: 12, lineHeight: 1.4 }, children: "This payment exceeds the invoice total. The excess has been credited to your wallet." })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.billingSection, { marginTop: 0, marginBottom: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }], children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginBottom: 8 }, children: receiptCustomerNameRow() }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: RECEIPT_META_GAP, marginBottom: 10 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Received From" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: rc.customerName || "N/A" }),
-            resolvedRecipientAddress ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: resolvedRecipientAddress }) : null,
-            resolvedRecipientPhone ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientPhone, children: resolvedRecipientPhone }) : null
-          ] })
+          receiptMetaRow("Receipt No", rc.receiptNumber),
+          receiptMetaRow("Reference", allocationRef),
+          receiptMetaRow("Currency", resolveReceiptCurrencyLabel(currency))
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.statusBox, { borderLeftColor: monoLine(mode, receiptBadge.borderColor) }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: monoText(mode, receiptBadge.color) }, children: receiptBadge.label }) })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, lineHeight: 1.6, color: monoText(mode, "#334155") }, children: rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount2(rc.amountReceived)} received from ${rc.customerName}.` }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 16 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount Paid" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: (rc.appliedOrders || []).length > 0 ? `Payment for Orders: ${(rc.appliedOrders || []).join(", ")}` : `Payment for Invoices: ${(rc.appliedInvoices || []).join(", ")}` }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(rc.amountReceived)
-          ] })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: receiptMetaRightIndent }, children: [
+          receiptMetaRow("Date", rc.date),
+          receiptMetaRow("Payment Method", rc.paymentMethod),
+          !!receiptAccount && receiptMetaRow("Account", receiptAccount),
+          receiptMetaRow("Status", receiptBadge.label, { fontWeight: "bold", color: monoText(mode, receiptBadge.color) })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.summaryContainer, { justifyContent: "flex-end" }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 260 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Amount Received" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", textAlign: "right" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 10 } }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), marginBottom: 6 }, children: "Payment Details Table" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 0.5, borderColor: monoLine(mode, "#9ca3af"), marginBottom: 10 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: "Description" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), padding: 5, textAlign: "right", borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: "Line Total" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), padding: 5, textAlign: "right" }, children: "Paid" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: (rc.appliedOrders || []).length > 0 ? `Payment for Orders: ${(rc.appliedOrders || []).join(", ")}` : `Payment for Invoices: ${(rc.appliedInvoices || []).join(", ")}` }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), padding: 5, textAlign: "right", borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
+            currency,
+            " ",
+            formatAmount2(receiptInvoiceTotal)
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), padding: 5, textAlign: "right" }, children: [
+            currency,
+            " ",
+            formatAmount2(receiptPaid)
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 4, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), textAlign: "right" }, children: "Amount Received" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), textAlign: "right" }, children: [
             currency,
             " ",
             formatAmount2(rc.amountReceived)
           ] })
         ] }),
-        isPartial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, color: monoText(mode, "#ef4444") }, children: "Outstanding Balance" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#ef4444"), fontWeight: "bold", textAlign: "right" }, children: [
+        isPartial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 4, fontSize: receiptBodyFontSize, color: monoText(mode, "#ef4444"), textAlign: "right" }, children: "Outstanding Balance" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, "#ef4444"), textAlign: "right" }, children: [
             currency,
             " ",
             formatAmount2(rc.balanceDue)
           ] })
         ] }),
-        isOverpaid && overpaymentAmount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, color: monoText(mode, "#10b981"), fontWeight: "bold" }, children: "Wallet Credit" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#10b981"), fontWeight: "bold", textAlign: "right" }, children: [
+        isOverpaid && overpaymentAmount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 4, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#10b981"), textAlign: "right" }, children: "Wallet Credit" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#10b981"), textAlign: "right" }, children: [
             currency,
             " ",
             formatAmount2(overpaymentAmount)
           ] })
         ] })
-      ] }) }),
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 10 } }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), marginBottom: 6 }, children: "Notes Section" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, lineHeight: 1.6, color: monoText(mode, "#334155") }, children: rc.narrative || receiptNoteFallback }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginTop: 10, marginBottom: 10 } }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 10, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(12), color: monoText(mode, "#334155") }, children: [
         "Thank you for choosing ",
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
@@ -235400,13 +235826,14 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const largeFontSize = 10 * scale2;
     const smallFontSize = 6.4 * scale2;
     const mediumFontSize = 8.4 * scale2;
+    const posReceiptAddress = buildReceiptCompanyAddress(config2);
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Receipt - ${r4.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle, { padding: 0, backgroundColor: monoFill(mode, "#f9fafb"), fontFamily: templateSettings.fontFamily }], children: [
       channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
       isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.posA4Wrapper, { width: 250 * scale2, paddingVertical: 24 * scale2, paddingHorizontal: 8 * scale2 }], children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", marginBottom: 12 * scale2 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: 14 * scale2, textAlign: "center", marginBottom: 3 * scale2, color: "#000" }, children: companyName }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center", marginBottom: 2 * scale2, color: "#000" }, children: companyAddress }),
+          !!posReceiptAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center", marginBottom: 2 * scale2, color: "#000" }, children: posReceiptAddress }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center", color: "#000" }, children: companyContact })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 12 * scale2, borderBottomWidth: 1, borderBottomColor: "#000", borderBottomStyle: "dashed", paddingBottom: 8 * scale2 }, children: [
