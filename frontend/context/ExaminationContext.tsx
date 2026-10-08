@@ -322,7 +322,18 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         return next;
       });
       try {
-        await sendBatchCreatedNotification(result, user?.id);
+        // Resolve the school display name for the notification: the create
+        // payload carries school_id only, and without this the notification
+        // title falls back to the batch name ("Unknown School" worst case).
+        const createdSchoolId = String((result as unknown as Record<string, unknown>)?.school_id || '');
+        const createdSchoolName = createdSchoolId
+          ? schools.find((school) => String(school.id) === createdSchoolId)?.name
+            || customers.find((customer) => String(customer.id) === createdSchoolId)?.name
+          : undefined;
+        await sendBatchCreatedNotification(
+          createdSchoolName ? { ...result, school_name: createdSchoolName } : result,
+          user?.id
+        );
       } catch (notificationError) {
         logger.error('[Examination] Failed to create batch created notification:', notificationError);
       }
@@ -332,7 +343,7 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [schools, customers]);
 
   const deleteBatch = useCallback(async (id: string) => {
     setLoading(true);

@@ -2,6 +2,7 @@ import { ExaminationBatchNotification, NotificationAuditLog, NotificationType, N
 import { logger } from '@/services/logger';
 import { dbService } from './db';
 import { examinationDb } from './examinationDb';
+import { formatDate } from '../utils/formatters';
 
 const loggedLocalNotificationStores = new Set<string>();
 
@@ -55,7 +56,9 @@ export const examinationNotificationService = {
       batch_details: {
         batchId: batchDetails.id || batchId,
         batchName: batchDetails.name || 'Examination Batch',
-        examinationDate: batchDetails.exam_date || batchDetails.created_at || new Date().toISOString(),
+        // Genuine exam date only — never the creation timestamp. Renderers
+        // already treat '' as "no exam date" ('N/A' / clause hidden).
+        examinationDate: String(batchDetails.exam_date || (batchDetails as Record<string, unknown>).examinationDate || ''),
         numberOfStudents: batchDetails.expected_candidature || batchDetails.total_students || 0,
         schoolName: batchDetails.school_name,
         academicYear: batchDetails.academic_year,
@@ -237,19 +240,27 @@ export const examinationNotificationService = {
   ): { title: string; message: string; priority: NotificationPriority } {
     const schoolName = batch.school_name || batch.name || 'Unknown School';
     const candidateCount = batch.expected_candidature || batch.total_students || 0;
-    const examDate = batch.exam_date || batch.created_at || new Date().toISOString().split('T')[0];
+    // Only a genuine exam_date is ever presented as the examination date.
+    // created_at / today describe record creation, not the exam — the old
+    // fallback printed the creation timestamp as "Examination date:
+    // <ISO>" on every batch-created notification. formatDate never emits
+    // "Invalid Date" (missing/unparseable → '—', clause omitted).
+    const rawExamDate = batch.exam_date ?? (batch as Record<string, unknown>).examinationDate ?? '';
+    const examDateText = rawExamDate ? formatDate(rawExamDate as string) : '';
+    const examDateClause =
+      examDateText && examDateText !== '—' ? ` Examination date: ${examDateText}.` : '';
 
     switch (type) {
       case 'BATCH_CREATED':
         return {
           title: `Examination Batch Created: ${schoolName}`,
-          message: `A new examination batch has been created for ${candidateCount} students. Examination date: ${examDate}.`,
+          message: `A new examination batch has been created for ${candidateCount} students.${examDateClause}`,
           priority: 'Medium'
         };
       case 'BATCH_CALCULATED':
         return {
           title: `Examination Batch Ready: ${schoolName}`,
-          message: `A new examination batch has been calculated for ${candidateCount} students. Examination date: ${examDate}. Total amount: ${batch.total_amount || 'N/A'}.`,
+          message: `A new examination batch has been calculated for ${candidateCount} students.${examDateClause} Total amount: ${batch.total_amount || 'N/A'}.`,
           priority: candidateCount > 500 ? 'High' : 'Medium'
         };
 
@@ -358,7 +369,9 @@ export const examinationNotificationService = {
       batch_details: {
         batchId: batchDetails.id || batchId,
         batchName: batchDetails.name || 'Examination Batch',
-        examinationDate: batchDetails.exam_date || batchDetails.created_at || new Date().toISOString(),
+        // Genuine exam date only — never the creation timestamp. Renderers
+        // already treat '' as "no exam date" ('N/A' / clause hidden).
+        examinationDate: String(batchDetails.exam_date || (batchDetails as Record<string, unknown>).examinationDate || ''),
         numberOfStudents: batchDetails.expected_candidature || batchDetails.total_students || 0,
         schoolName: batchDetails.school_name,
         academicYear: batchDetails.academic_year,

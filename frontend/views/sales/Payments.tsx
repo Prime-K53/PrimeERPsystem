@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { logger } from '../../services/logger';
-import { Banknote as PaymentIcon, Plus, Trash2, X, Search, Calendar, Eye, Mail, ArrowRight, AlertTriangle, Wallet, MoreVertical, Building2, Undo2, Printer, Edit2, FileText, Download, Loader2, ExternalLink, BarChart3, FileBarChart, RefreshCw, Link2 } from 'lucide-react';
+import { Banknote as PaymentIcon, Plus, Trash2, X, Search, Calendar, Eye, Mail, ArrowRight, AlertTriangle, Wallet, MoreVertical, Building2, Undo2, Printer, Edit2, FileText, Download, Loader2, ExternalLink, BarChart3, FileBarChart, RefreshCw, Link2, CreditCard, Landmark, Smartphone, ChevronDown, ChevronRight, ArrowUpDown, SlidersHorizontal, CircleDollarSign, Banknote } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
@@ -37,6 +37,22 @@ import {
     buildSupplierPaymentDoc
 } from '../../services/receiptCalculationService';
 import { createStatementSnapshot } from '../../services/statementService';
+import {
+    downloadCsv,
+    filterCustomerPayments,
+    getAllocatedTotal,
+    getAllocationStatus,
+    getPaymentInvoiceRefs,
+    getPaymentMethodKey,
+    getUnallocatedTotal,
+    paginateList,
+    paymentsToCsv,
+    sortCustomerPayments,
+    summarizePayments,
+    type AllocationStatus,
+    type PaymentSortKey,
+    type SortDir,
+} from '../../utils/customerPaymentsList';
 
 /**
  * Customer Payment Hover Card
@@ -629,6 +645,28 @@ const CustomerPaymentDetailPanel: React.FC<{
     );
 };
 
+/**
+ * Payment method icon — visual recognition for Cash / Bank / Card /
+ * Mobile Money / Wallet methods on the admin list.
+ */
+const PaymentMethodIcon: React.FC<{ method: string; size?: number }> = ({ method, size = 14 }) => {
+    const m = String(method || '').toLowerCase();
+    if (m.includes('card')) return <CreditCard size={size} />;
+    if (m.includes('bank') || m.includes('transfer') || m.includes('cheque') || m.includes('check')) return <Landmark size={size} />;
+    if (m.includes('mobile') || m.includes('momo') || m.includes('m-pesa') || m.includes('mpesa')) return <Smartphone size={size} />;
+    if (m.includes('wallet')) return <Wallet size={size} />;
+    if (m.includes('cash')) return <Banknote size={size} />;
+    return <CircleDollarSign size={size} />;
+};
+
+const ALLOCATION_BADGE: Record<AllocationStatus, { label: string; className: string }> = {
+    allocated: { label: 'Allocated', className: 'bg-[#eef7f6] text-[#0f544c] border-[#d3ece9]' },
+    partial: { label: 'Partial', className: 'bg-[#fbead0] text-[#b97e2b] border-[#eec27a]' },
+    unallocated: { label: 'Unallocated', className: 'bg-[#f1f5f9] text-[#5c6567] border-[#e4ddd1]' },
+};
+
+const PAYMENTS_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
 const Payments: React.FC = () => {
     const { refreshAllData } = useData();
     const { companyConfig, notify, user, allUsers } = useAuth();
@@ -684,6 +722,23 @@ const Payments: React.FC = () => {
     const [editMode, setEditMode] = useState(false);
     const [currentId, setCurrentId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    // --- Admin list upgrades: advanced filters / sorting / batch selection ---
+    const [showListFilters, setShowListFilters] = useState(false);
+    const [methodFilter, setMethodFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [allocationFilter, setAllocationFilter] = useState<'all' | AllocationStatus>('all');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [minAmount, setMinAmount] = useState('');
+    const [maxAmount, setMaxAmount] = useState('');
+    const [invoiceRefFilter, setInvoiceRefFilter] = useState('');
+    const [sortBy, setSortBy] = useState<PaymentSortKey>('date');
+    const [sortDir, setSortDir] = useState<SortDir>('desc');
+    const [listPage, setListPage] = useState(1);
+    const [listPageSize, setListPageSize] = useState(25);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
     const [generatedId, setGeneratedId] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1479,11 +1534,116 @@ const Payments: React.FC = () => {
         setHoveredId(null);
     };
 
-    const filteredPayments = (customerPayments || []).filter(payment =>
-        (payment.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (payment.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (payment.reference || '').toLowerCase().includes(searchTerm.toLowerCase())
-    ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // --- Upgraded list pipeline: advanced filter -> sort -> paginate ---
+    const listFilters = useMemo(() => ({
+        search: searchTerm,
+        method: methodFilter,
+        status: statusFilter,
+        allocation: allocationFilter,
+        dateFrom,
+        dateTo,
+        minAmount: minAmount === '' ? '' as const : Number(minAmount),
+        maxAmount: maxAmount === '' ? '' as const : Number(maxAmount),
+        invoiceId: invoiceRefFilter,
+    }), [searchTerm, methodFilter, statusFilter, allocationFilter, dateFrom, dateTo, minAmount, maxAmount, invoiceRefFilter]);
+
+    const filteredPaymentsAll = useMemo(
+        () => sortCustomerPayments(filterCustomerPayments(customerPayments || [], listFilters as never), sortBy, sortDir),
+        [customerPayments, listFilters, sortBy, sortDir],
+    );
+
+    const paymentSummary = useMemo(() => summarizePayments(filteredPaymentsAll as never), [filteredPaymentsAll]);
+
+    const methodOptions = useMemo(() => {
+        const set = new Set<string>();
+        (customerPayments || []).forEach((p: never) => set.add(getPaymentMethodKey(p as never)));
+        return Array.from(set).sort();
+    }, [customerPayments]);
+
+    const statusOptions = useMemo(() => {
+        const set = new Set<string>();
+        (customerPayments || []).forEach((p: never) => { if ((p as { status?: string }).status) set.add(String((p as { status?: string }).status)); });
+        return Array.from(set).sort();
+    }, [customerPayments]);
+
+    const pagedPayments = useMemo(
+        () => paginateList(filteredPaymentsAll, listPage, listPageSize),
+        [filteredPaymentsAll, listPage, listPageSize],
+    );
+    const filteredPayments = pagedPayments.rows;
+
+    const hasActiveListFilters = Boolean(
+        searchTerm || methodFilter !== 'all' || statusFilter !== 'all' || allocationFilter !== 'all' ||
+        dateFrom || dateTo || minAmount !== '' || maxAmount !== '' || invoiceRefFilter,
+    );
+
+    const clearListFilters = () => {
+        setSearchTerm('');
+        setMethodFilter('all');
+        setStatusFilter('all');
+        setAllocationFilter('all');
+        setDateFrom('');
+        setDateTo('');
+        setMinAmount('');
+        setMaxAmount('');
+        setInvoiceRefFilter('');
+        setListPage(1);
+    };
+
+    // Reset to first page + drop selections that are no longer visible.
+    useEffect(() => {
+        setListPage(1);
+    }, [searchTerm, methodFilter, statusFilter, allocationFilter, dateFrom, dateTo, minAmount, maxAmount, invoiceRefFilter, sortBy, sortDir, listPageSize]);
+
+    useEffect(() => {
+        setSelectedIds((prev) => prev.filter((id) => filteredPaymentsAll.some((p) => p.id === id)));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filteredPaymentsAll.length]);
+
+    // Keyboard shortcut: "/" focuses the list search.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (e.key === '/' && activeTab === 'Received' && target && !/INPUT|TEXTAREA|SELECT/.test(target.tagName)) {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [activeTab]);
+
+    const toggleSelectAllVisible = () => {
+        const visibleIds = filteredPayments.map((p) => p.id);
+        const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+        setSelectedIds(allSelected ? selectedIds.filter((id) => !visibleIds.includes(id)) : Array.from(new Set([...selectedIds, ...visibleIds])));
+    };
+
+    const toggleSelectOne = (id: string) => {
+        setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
+
+    const handleExportFilteredCsv = () => {
+        const rows = selectedIds.length > 0
+            ? filteredPaymentsAll.filter((p) => selectedIds.includes(p.id))
+            : filteredPaymentsAll;
+        downloadCsv(`customer-payments-${new Date().toISOString().slice(0, 10)}.csv`, paymentsToCsv(rows as never));
+        notify(`Exported ${rows.length} payment${rows.length === 1 ? '' : 's'} to CSV.`, 'success');
+    };
+
+    const handleBatchVoidSelected = async () => {
+        if (selectedIds.length === 0) return;
+        if (!confirm(`Void ${selectedIds.length} selected payment${selectedIds.length === 1 ? '' : 's'}?`)) return;
+        let ok = 0;
+        for (const id of selectedIds) {
+            try {
+                await deleteCustomerPayment(id);
+                ok += 1;
+            } catch { /* per-row errors already notified */ }
+        }
+        setSelectedIds([]);
+        notify(`Voided ${ok} of ${selectedIds.length} payments.`, ok > 0 ? 'success' : 'error');
+    };
 
     const hoveredPayment = useMemo(() => (customerPayments || []).find(payment => payment.id === hoveredId), [customerPayments, hoveredId]);
 
@@ -2002,39 +2162,124 @@ const Payments: React.FC = () => {
 
                     <div className="flex gap-6 flex-1 min-h-0 overflow-hidden relative">
                         <div className={`bg-[#FEFDFB] backdrop-blur-xl rounded-2xl shadow-sm border border-[#e4ddd1] flex flex-col min-h-0 flex-1 overflow-hidden transition-all duration-300 ${selectedPayment ? 'mr-[450px]' : ''}`}>
-                            <div className="p-3 border-b border-[#e4ddd1] flex justify-between items-center bg-[#FEFDFB]">
-                                <div className="relative w-full max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6567]" size={14} /><input type="text" placeholder="Search payments, reference..." className="w-full pl-9 pr-3 py-1.5 border border-[#e4ddd1] rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#1f8577] bg-[#FEFDFB] font-normal" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+                            <div className="p-3 border-b border-[#e4ddd1] bg-[#FEFDFB] space-y-3">
+                                <div className="flex flex-wrap gap-2 items-center justify-between">
+                                    <div className="relative w-full max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6567]" size={14} /><input ref={searchInputRef} type="text" placeholder="Search payments, customer, reference, invoice...  ( / )" className="w-full pl-9 pr-3 py-1.5 border border-[#e4ddd1] rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#1f8577] bg-[#FEFDFB] font-normal" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => setShowListFilters(v => !v)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${showListFilters || hasActiveListFilters ? 'bg-[#eef7f6] border-[#a6d9d3] text-[#0f544c]' : 'bg-[#FEFDFB] border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6]'}`} title="Advanced filters">
+                                            <SlidersHorizontal size={13} /> Filters{hasActiveListFilters && <span className="ml-1 bg-[#1f8577] text-white text-[9px] font-black rounded-full px-1.5 py-0.5">•</span>}
+                                        </button>
+                                        <button onClick={() => { setSortDir(d => (d === 'asc' ? 'desc' : 'asc')); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-[#FEFDFB] border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6] transition-all" title="Toggle sort direction">
+                                            <ArrowUpDown size={13} /> {sortDir === 'asc' ? 'Asc' : 'Desc'}
+                                        </button>
+                                        <button onClick={handleExportFilteredCsv} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-[#FEFDFB] border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6] transition-all" title={selectedIds.length > 0 ? `Export ${selectedIds.length} selected` : 'Export filtered results'}>
+                                            <Download size={13} /> Export{selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}
+                                        </button>
+                                    </div>
+                                </div>
+                                {/* Summary strip */}
+                                <div className="flex flex-wrap gap-2 text-[11px]">
+                                    <span className="px-2.5 py-1 rounded-lg bg-[#eef7f6] border border-[#d3ece9] font-bold text-[#0f544c] finance-nums">Received: {currency}{(paymentSummary.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} ({paymentSummary.count})</span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-[#FEFDFB] border border-[#e4ddd1] font-bold text-[#23282A] finance-nums">Allocated: {currency}{(paymentSummary.totalAllocated || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-[#fbead0]/60 border border-[#eec27a] font-bold text-[#b97e2b] finance-nums">Unallocated: {currency}{(paymentSummary.totalUnallocated || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-[#FEFDFB] border border-[#e4ddd1] font-semibold text-[#5c6567]">{paymentSummary.byAllocation.allocated} allocated · {paymentSummary.byAllocation.partial} partial · {paymentSummary.byAllocation.unallocated} unallocated</span>
+                                </div>
+                                {showListFilters && (
+                                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 pt-1">
+                                        <label className="flex flex-col gap-1 text-[10px] font-bold text-[#5c6567] uppercase">Method
+                                            <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className="border border-[#e4ddd1] rounded-lg text-xs font-semibold text-[#23282A] bg-[#FEFDFB] px-2 py-1.5 normal-case">
+                                                <option value="all">All methods</option>
+                                                {methodOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                                            </select>
+                                        </label>
+                                        <label className="flex flex-col gap-1 text-[10px] font-bold text-[#5c6567] uppercase">Status
+                                            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-[#e4ddd1] rounded-lg text-xs font-semibold text-[#23282A] bg-[#FEFDFB] px-2 py-1.5 normal-case">
+                                                <option value="all">All statuses</option>
+                                                {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </label>
+                                        <label className="flex flex-col gap-1 text-[10px] font-bold text-[#5c6567] uppercase">Allocation
+                                            <select value={allocationFilter} onChange={e => setAllocationFilter(e.target.value as 'all' | AllocationStatus)} className="border border-[#e4ddd1] rounded-lg text-xs font-semibold text-[#23282A] bg-[#FEFDFB] px-2 py-1.5 normal-case">
+                                                <option value="all">All</option>
+                                                <option value="allocated">Allocated</option>
+                                                <option value="partial">Partially allocated</option>
+                                                <option value="unallocated">Unallocated</option>
+                                            </select>
+                                        </label>
+                                        <label className="flex flex-col gap-1 text-[10px] font-bold text-[#5c6567] uppercase">From
+                                            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border border-[#e4ddd1] rounded-lg text-xs text-[#23282A] bg-[#FEFDFB] px-2 py-1.5" />
+                                        </label>
+                                        <label className="flex flex-col gap-1 text-[10px] font-bold text-[#5c6567] uppercase">To
+                                            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-[#e4ddd1] rounded-lg text-xs text-[#23282A] bg-[#FEFDFB] px-2 py-1.5" />
+                                        </label>
+                                        <label className="flex flex-col gap-1 text-[10px] font-bold text-[#5c6567] uppercase">Amount
+                                            <span className="flex gap-1">
+                                                <input type="number" placeholder="Min" value={minAmount} onChange={e => setMinAmount(e.target.value)} className="w-full border border-[#e4ddd1] rounded-lg text-xs text-[#23282A] bg-[#FEFDFB] px-2 py-1.5" />
+                                                <input type="number" placeholder="Max" value={maxAmount} onChange={e => setMaxAmount(e.target.value)} className="w-full border border-[#e4ddd1] rounded-lg text-xs text-[#23282A] bg-[#FEFDFB] px-2 py-1.5" />
+                                            </span>
+                                        </label>
+                                        <label className="flex flex-col gap-1 text-[10px] font-bold text-[#5c6567] uppercase">Invoice #
+                                            <span className="flex gap-1">
+                                                <input type="text" placeholder="INV-…" value={invoiceRefFilter} onChange={e => setInvoiceRefFilter(e.target.value)} className="w-full border border-[#e4ddd1] rounded-lg text-xs text-[#23282A] bg-[#FEFDFB] px-2 py-1.5" />
+                                                {hasActiveListFilters && <button onClick={clearListFilters} className="shrink-0 px-2 py-1.5 rounded-lg text-[11px] font-bold border border-[#e4ddd1] text-[#b5493f] hover:bg-[#fef2f2] normal-case">Clear</button>}
+                                            </span>
+                                        </label>
+                                    </div>
+                                )}
+                                {selectedIds.length > 0 && (
+                                    <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-[#0b3e39] text-white text-xs font-semibold">
+                                        <span>{selectedIds.length} selected</span>
+                                        <button onClick={handleExportFilteredCsv} className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 font-bold flex items-center gap-1"><Download size={12} /> Export selected</button>
+                                        <button onClick={handleBatchVoidSelected} className="px-2.5 py-1 rounded-lg bg-[#b5493f] hover:bg-[#93372f] font-bold flex items-center gap-1"><Trash2 size={12} /> Void selected</button>
+                                        <button onClick={() => setSelectedIds([])} className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 font-bold flex items-center gap-1"><X size={12} /> Clear</button>
+                                    </div>
+                                )}
                             </div>
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
                                 <table className="w-full text-left text-[13px]">
 <thead className="bg-[#eef7f6]/80 backdrop-blur text-[#5c6567] sticky top-0 z-10 shadow-sm">
                                         <tr>
-                                            <th className="table-header">Date</th>
+                                            <th className="table-header w-8"><input type="checkbox" checked={filteredPayments.length > 0 && filteredPayments.every(p => selectedIds.includes(p.id))} onChange={toggleSelectAllVisible} className="accent-[#1f8577] w-3.5 h-3.5" title="Select visible page" /></th>
+                                            <th className="table-header w-8"></th>
+                                            <th className="table-header"><button onClick={() => { setSortBy('date'); setSortDir(d => (sortBy === 'date' && d === 'desc' ? 'asc' : 'desc')); }} className="flex items-center gap-1 hover:text-[#0f544c]">Date {sortBy === 'date' && (sortDir === 'asc' ? '↑' : '↓')}</button></th>
                                             <th className="table-header">Payment #</th>
-                                            <th className="table-header">Customer</th>
-                                            <th className="table-header">Account</th>
-                                            <th className="table-header">Status</th>
-                                            <th className="table-header text-right">Amount</th>
-                                            <th className="table-header text-right">Allocated</th>
+                                            <th className="table-header"><button onClick={() => { setSortBy('customerName'); setSortDir(d => (sortBy === 'customerName' && d === 'desc' ? 'asc' : 'desc')); }} className="flex items-center gap-1 hover:text-[#0f544c]">Customer {sortBy === 'customerName' && (sortDir === 'asc' ? '↑' : '↓')}</button></th>
+                                            <th className="table-header">Method</th>
+                                            <th className="table-header"><button onClick={() => { setSortBy('status'); setSortDir(d => (sortBy === 'status' && d === 'desc' ? 'asc' : 'desc')); }} className="flex items-center gap-1 hover:text-[#0f544c]">Status {sortBy === 'status' && (sortDir === 'asc' ? '↑' : '↓')}</button></th>
+                                            <th className="table-header">Allocation</th>
+                                            <th className="table-header text-right"><button onClick={() => { setSortBy('amount'); setSortDir(d => (sortBy === 'amount' && d === 'desc' ? 'asc' : 'desc')); }} className="flex items-center gap-1 hover:text-[#0f544c] ml-auto">Amount {sortBy === 'amount' && (sortDir === 'asc' ? '↑' : '↓')}</button></th>
+                                            <th className="table-header text-right"><button onClick={() => { setSortBy('allocated'); setSortDir(d => (sortBy === 'allocated' && d === 'desc' ? 'asc' : 'desc')); }} className="flex items-center gap-1 hover:text-[#0f544c] ml-auto">Allocated {sortBy === 'allocated' && (sortDir === 'asc' ? '↑' : '↓')}</button></th>
                                             <th className="table-header text-right">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-[#e4ddd1]/50 font-normal">
                                         {filteredPayments.map(payment => {
-                                            const allocated = (payment.allocations || []).reduce((s, a) => s + (a.amount || 0), 0);
+                                            const allocated = getAllocatedTotal(payment as never);
+                                            const unallocated = getUnallocatedTotal(payment as never);
+                                            const allocStatus = getAllocationStatus(payment as never);
+                                            const methodKey = getPaymentMethodKey(payment as never);
+                                            const invoiceRefs = getPaymentInvoiceRefs(payment as never);
                                             const isSelected = selectedPayment?.id === payment.id;
+                                            const isChecked = selectedIds.includes(payment.id);
+                                            const isExpanded = expandedId === payment.id;
                                             return (
+                                                <React.Fragment key={payment.id}>
                                                 <tr
-                                                    key={payment.id}
                                                     id={`pmt-${payment.id}`}
-                                                    className={`transition-colors cursor-pointer group ${isSelected ? 'bg-[#eef7f6]/60 border-l-4 border-l-[#1f8577]' : 'hover:bg-[#eef7f6]/40 border-l-4 border-l-transparent'}`}
+                                                    className={`transition-colors cursor-pointer group ${isSelected ? 'bg-[#eef7f6]/60 border-l-4 border-l-[#1f8577]' : 'hover:bg-[#eef7f6]/40 border-l-4 border-l-transparent'} ${isChecked ? 'bg-[#eef7f6]/50' : ''}`}
                                                     onClick={() => setSelectedPayment(payment)}
                                                     onContextMenu={(e) => handleContextMenu(e, payment.id)}
                                                     onMouseEnter={(e) => handleMouseEnter(payment.id, e)}
                                                     onMouseMove={handleMouseMove}
                                                     onMouseLeave={handleMouseLeave}
                                                 >
-                                                    <td className="table-body-cell text-[#5c6567] font-normal"><div className="flex items-center gap-2"><Calendar size={12} /> {new Date(payment.date).toLocaleDateString()}</div></td>
+                                                    <td className="table-body-cell" onClick={e => e.stopPropagation()}><input type="checkbox" checked={isChecked} onChange={() => toggleSelectOne(payment.id)} className="accent-[#1f8577] w-3.5 h-3.5" /></td>
+                                                    <td className="table-body-cell" onClick={e => e.stopPropagation()}>
+                                                        <button onClick={() => setExpandedId(isExpanded ? null : payment.id)} className="p-1 text-[#5c6567] hover:text-[#0f544c] rounded transition-colors" title={isExpanded ? 'Collapse details' : 'Expand details'}>
+                                                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                        </button>
+                                                    </td>
+                                                    <td className="table-body-cell text-[#5c6567] font-normal whitespace-nowrap"><div className="flex items-center gap-2"><Calendar size={12} /> {payment.date ? new Date(payment.date).toLocaleDateString() : '—'}</div></td>
                                                     <td className="table-body-cell"><span className="font-mono text-[10px] font-bold text-[#5c6567] tracking-tight">
                                                         <TransactionRefLink
                                                             type={isProcurement ? 'supplier-payment' : 'payment'}
@@ -2043,15 +2288,21 @@ const Payments: React.FC = () => {
                                                             label={payment.id}
                                                         />
                                                     </span></td>
-                                                    <td className="table-body-cell font-bold text-[#23282A]">{payment.customerName}</td>
+                                                    <td className="table-body-cell font-bold text-[#23282A]">
+                                                        <button onClick={(e) => { e.stopPropagation(); navigate('/sales-flow/customers', { state: { customerId: (payment as CustomerPayment).customerId } }); }} className="hover:text-[#1f8577] hover:underline text-left" title="Open customer">
+                                                            {payment.customerName}
+                                                        </button>
+                                                        {invoiceRefs.length > 0 && <div className="text-[10px] font-semibold text-[#1f8577] truncate max-w-[180px]" title={invoiceRefs.join(', ')}>→ {invoiceRefs.slice(0, 3).join(', ')}{invoiceRefs.length > 3 ? ` +${invoiceRefs.length - 3}` : ''}</div>}
+                                                    </td>
                                                     <td className="table-body-cell">
-                                                        <span className="bg-[#eef7f6] text-[#5c6567] px-2 py-1 rounded text-[11px] border border-[#e4ddd1] font-normal">
-                                                            {DEFAULT_ACCOUNTS.find(a => a.id === payment.accountId)?.name || payment.paymentMethod}
+                                                        <span className="inline-flex items-center gap-1.5 bg-[#eef7f6] text-[#5c6567] px-2 py-1 rounded text-[11px] border border-[#e4ddd1] font-semibold" title={DEFAULT_ACCOUNTS.find(a => a.id === payment.accountId)?.name || methodKey}>
+                                                            <PaymentMethodIcon method={methodKey} size={13} />{methodKey}
                                                         </span>
                                                     </td>
-                                                    <td className="table-body-cell font-normal"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex w-fit items-center gap-1 ${payment.status === 'Cleared' ? 'bg-[#eef7f6] text-[#0f544c] border border-[#d3ece9]' : payment.status === 'Pending' ? 'bg-[#fbead0] text-[#b97e2b] border border-[#eec27a]' : 'bg-[#fef2f2] text-[#b5493f] border border-[#fcd5d0]'}`}>{payment.status}</span></td>
-                                                    <td className="table-body-cell text-right font-bold text-[#23282A] finance-nums">{currency}{(payment.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                                    <td className="table-body-cell text-right font-bold text-[#0b3e39] finance-nums">{currency}{allocated.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                                    <td className="table-body-cell font-normal"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex w-fit items-center gap-1 border ${payment.status === 'Cleared' ? 'bg-[#eef7f6] text-[#0f544c] border-[#d3ece9]' : payment.status === 'Pending' ? 'bg-[#fbead0] text-[#b97e2b] border-[#eec27a]' : 'bg-[#fef2f2] text-[#b5493f] border-[#fcd5d0]'}`}>{payment.status}</span></td>
+                                                    <td className="table-body-cell"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex w-fit items-center gap-1 border ${ALLOCATION_BADGE[allocStatus].className}`}>{ALLOCATION_BADGE[allocStatus].label}{allocStatus !== 'allocated' && unallocated > 0 ? ` · ${currency}${unallocated.toLocaleString(undefined, { maximumFractionDigits: 0 })} left` : ''}</span></td>
+                                                    <td className="table-body-cell text-right font-bold text-[#23282A] finance-nums whitespace-nowrap">{currency}{(payment.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                                    <td className="table-body-cell text-right font-bold text-[#0b3e39] finance-nums whitespace-nowrap">{currency}{allocated.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                                     <td className="table-body-cell text-right" onClick={e => e.stopPropagation()}>
                                                         <div className="flex justify-end gap-1 items-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <button
@@ -2082,10 +2333,51 @@ const Payments: React.FC = () => {
                                                         </div>
                                                     </td>
                                                 </tr>
+                                                {isExpanded && (
+                                                    <tr className="bg-[#eef7f6]/40">
+                                                        <td colSpan={10} className="px-6 py-3">
+                                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[12px]">
+                                                                <div><p className="text-[10px] font-bold text-[#5c6567] uppercase mb-0.5">Invoices</p><p className="font-semibold text-[#23282A]">{invoiceRefs.length > 0 ? invoiceRefs.join(', ') : '— unallocated —'}</p></div>
+                                                                <div><p className="text-[10px] font-bold text-[#5c6567] uppercase mb-0.5">Reference</p><p className="font-semibold text-[#23282A]">{payment.reference || 'N/A'}</p></div>
+                                                                <div><p className="text-[10px] font-bold text-[#5c6567] uppercase mb-0.5">Unallocated</p><p className="font-bold text-[#b97e2b] finance-nums">{currency}{unallocated.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p></div>
+                                                                <div><p className="text-[10px] font-bold text-[#5c6567] uppercase mb-0.5">Reconciliation</p><p className="font-semibold text-[#23282A]">{payment.reconciled ? '✓ Reconciled' : '○ Unreconciled'}</p></div>
+                                                                <div><p className="text-[10px] font-bold text-[#5c6567] uppercase mb-0.5">Account</p><p className="font-semibold text-[#23282A]">{DEFAULT_ACCOUNTS.find(a => a.id === payment.accountId)?.name || methodKey}</p></div>
+                                                                <div><p className="text-[10px] font-bold text-[#5c6567] uppercase mb-0.5">Recorded by</p><p className="font-semibold text-[#23282A]">{(payment as CustomerPayment).createdBy || (payment as CustomerPayment).created_by || '—'}</p></div>
+                                                                <div><p className="text-[10px] font-bold text-[#5c6567] uppercase mb-0.5">Recorded at</p><p className="font-semibold text-[#23282A]">{(payment as CustomerPayment).createdAt || (payment as CustomerPayment).created_at ? new Date(String((payment as CustomerPayment).createdAt || (payment as CustomerPayment).created_at)).toLocaleString() : '—'}</p></div>
+                                                                <div className="flex items-end gap-2">
+                                                                    <button onClick={() => setSelectedPayment(payment)} className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-[#1f8577] text-white hover:bg-[#146b60]">Full details</button>
+                                                                    <button onClick={() => handlePreviewReceipt(payment)} className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold border border-[#e4ddd1] bg-[#FEFDFB] text-[#5c6567] hover:bg-[#eef7f6]">Receipt</button>
+                                                                </div>
+                                                            </div>
+                                                            {payment.notes && <p className="mt-2 text-[12px] italic text-[#5c6567]">“{payment.notes}”</p>}
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                </React.Fragment>
                                             );
                                         })}
+                                        {filteredPayments.length === 0 && (
+                                            <tr>
+                                                <td colSpan={10} className="p-10 text-center">
+                                                    <p className="text-sm font-semibold text-[#23282A]">No payments match these filters</p>
+                                                    <p className="text-xs text-[#5c6567] mt-1">Try widening the date range or clearing the search.</p>
+                                                    {hasActiveListFilters && <button onClick={clearListFilters} className="mt-3 px-3 py-1.5 rounded-xl text-xs font-bold border border-[#e4ddd1] text-[#0f544c] hover:bg-[#eef7f6]">Clear all filters</button>}
+                                                </td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                 </table>
+                            </div>
+                            {/* Pagination footer */}
+                            <div className="px-3 py-2 border-t border-[#e4ddd1] bg-[#FEFDFB] flex flex-wrap items-center justify-between gap-2 text-xs text-[#5c6567]">
+                                <span className="font-semibold">Showing {filteredPayments.length} of {pagedPayments.total} payments · Page {pagedPayments.page} of {pagedPayments.totalPages}</span>
+                                <div className="flex items-center gap-2">
+                                    <select value={listPageSize} onChange={e => setListPageSize(Number(e.target.value))} className="border border-[#e4ddd1] rounded-lg text-xs font-semibold px-2 py-1 bg-[#FEFDFB]">
+                                        {PAYMENTS_PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n} / page</option>)}
+                                    </select>
+                                    <button onClick={() => setListPage(p => Math.max(1, p - 1))} disabled={pagedPayments.page <= 1} className="px-3 py-1 rounded-lg border border-[#e4ddd1] font-bold disabled:opacity-40 hover:bg-[#eef7f6]">Previous</button>
+                                    <button onClick={() => setListPage(p => Math.min(pagedPayments.totalPages, p + 1))} disabled={pagedPayments.page >= pagedPayments.totalPages} className="px-3 py-1 rounded-lg border border-[#e4ddd1] font-bold disabled:opacity-40 hover:bg-[#eef7f6]">Next</button>
+                                </div>
                             </div>
                         </div>
                     </div>

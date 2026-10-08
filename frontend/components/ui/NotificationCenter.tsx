@@ -67,6 +67,9 @@ const severityBorderMap: Record<string, string> = {
 function getRelativeTime(timestamp: string): string {
   const now = Date.now();
   const then = new Date(timestamp).getTime();
+  // Missing/unparseable timestamps previously fell through every branch
+  // and rendered the literal string "Invalid Date" via toLocaleDateString.
+  if (!timestamp || Number.isNaN(then)) return '—';
   const diff = now - then;
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);

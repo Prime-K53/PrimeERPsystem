@@ -28,6 +28,7 @@ import {
   X
 } from 'lucide-react';
 import { buildRecurringDraftFromExaminationBatch } from '../../utils/recurringConversion';
+import { formatDate } from '../../utils/formatters';
 import {
   buildExaminationInvoiceViewState,
   resolveExaminationInvoiceNavigationKey,
@@ -555,7 +556,7 @@ const ExaminationHub: React.FC = () => {
         getBatchClassCount(batch),
         batch.status,
         `${batch.currency || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || companyConfig?.currencySymbol || 'MWK'} ${(batch.total_amount || 0).toLocaleString()}`,
-        new Date(batch.created_at).toLocaleDateString()
+        formatDate(batch.created_at)
       ])
     ]
       .map((row) => row.join(','))

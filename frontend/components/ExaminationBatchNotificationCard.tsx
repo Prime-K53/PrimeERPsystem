@@ -16,6 +16,7 @@ import {
 import { ExaminationBatchNotification } from '../types';
 import { useNotifications } from '../context/NotificationContext';
 import { NotificationBadge, ReadStatusIcon } from './NotificationBadge';
+import { formatDateTime } from '../utils/formatters';
 
 interface ExaminationBatchNotificationCardProps {
   notification: ExaminationBatchNotification;
@@ -44,7 +45,9 @@ export const ExaminationBatchNotificationCard: React.FC<ExaminationBatchNotifica
     notification_type
   } = notification;
 
-  const formattedDate = new Date(created_at).toLocaleDateString('en-US', {
+  // Safe formatter: missing/unparseable created_at renders '—', never
+  // the literal string "Invalid Date".
+  const formattedDate = formatDateTime(created_at, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',

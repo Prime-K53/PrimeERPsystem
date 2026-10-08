@@ -30,6 +30,18 @@ export function formatDate(
   });
 }
 
+export function formatTime(
+  value?: string | Date | null
+): string {
+  if (!value) return '—';
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function getDeliveryStatusBadge(
   status: DeliveryStatus | string
 ): { label: string; bg: string; color: string; border: string } {

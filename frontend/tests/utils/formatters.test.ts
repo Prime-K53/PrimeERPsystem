@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDate, formatDateTime } from '../../utils/formatters';
+import { formatDate, formatDateTime, formatTime } from '../../utils/formatters';
 
 describe('formatters — safe date fallbacks', () => {
   it('renders an em-dash for missing or unparseable dates instead of "Invalid Date"', () => {
@@ -18,5 +18,13 @@ describe('formatters — safe date fallbacks', () => {
   it('formats valid ISO timestamps', () => {
     expect(formatDate('2026-08-23T10:30:00.000Z')).toMatch(/Aug 23, 2026/);
     expect(formatDateTime('2026-08-23T10:30:00.000Z')).toContain('Aug 23, 2026');
+  });
+
+  it('formats time-only safely instead of "Invalid Date"', () => {
+    expect(formatTime(undefined)).toBe('—');
+    expect(formatTime(null)).toBe('—');
+    expect(formatTime('')).toBe('—');
+    expect(formatTime('garbage-input')).toBe('—');
+    expect(formatTime('2026-08-23T10:30:00.000Z')).toMatch(/\d{1,2}:\d{2}/);
   });
 });

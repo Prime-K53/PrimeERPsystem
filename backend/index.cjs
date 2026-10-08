@@ -2451,17 +2451,74 @@ sq.run('UPDATE invoices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
   });
 
   // --- Customer Payment Endpoints ---
+  // List supports advanced filtering for the admin Customer Payments page:
+  // ?search&customer&method&status&dateFrom&dateTo&minAmount&maxAmount&
+  // reconciled=true|false&invoiceId&sortBy=date|amount|customer_name|status&
+  // sortDir=asc|desc&page&pageSize. Without page/pageSize the legacy capped
+  // array response is returned; with pagination an envelope is returned.
   app.get('/api/customer-payments', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), injectFinancialYear, async (req, res) => {
     try {
-      let { sql, params } = addFyDateFilter('SELECT * FROM customer_payments', [], req, 'date');
-      sql += ' ORDER BY date DESC LIMIT 500';
-      sq.getAll(sql, params, (err, rows) => {
-        if (err) { console.error('[CustomerPayments] GET error:', err); return res.status(500).json({ error: 'Failed to retrieve payments' }); }
-        res.json(rows || []);
+      const { buildCustomerPaymentsQuery } = require('./services/customerPaymentQuery.cjs');
+      const q = buildCustomerPaymentsQuery(req.query || {});
+      // Extract the builder's WHERE clause so the FY range ANDs correctly
+      // (addFyDateFilter appends AND without WHERE, so it cannot be reused
+      // on a bare SELECT here).
+      const whereIdx = q.sql.indexOf(' WHERE ');
+      const filterWhere = whereIdx >= 0 ? q.sql.slice(whereIdx + ' WHERE '.length).split(' ORDER BY ')[0] : '';
+      const clauses = [];
+      if (filterWhere) clauses.push(`(${filterWhere})`);
+      if (req.fyStartDate && req.fyEndDate) clauses.push('date(date) >= date(?) AND date(date) <= date(?)');
+      let baseSql = 'SELECT * FROM customer_payments';
+      if (clauses.length) baseSql += ` WHERE ${clauses.join(' AND ')}`;
+      baseSql += ` ORDER BY ${q.sortCol} ${q.sortDir}`;
+      const baseParams = [...q.countParams];
+      if (req.fyStartDate && req.fyEndDate) baseParams.push(req.fyStartDate, req.fyEndDate);
+      const runAll = (statement, args) => new Promise((resolve, reject) => {
+        sq.getAll(statement, args, (err, rows) => (err ? reject(err) : resolve(rows || [])));
       });
+      const finalRows = await runAll(
+        q.paginated ? `${baseSql} LIMIT ? OFFSET ?` : `${baseSql} LIMIT 500`,
+        q.paginated ? [...baseParams, q.pageSize, (q.page - 1) * q.pageSize] : baseParams,
+      );
+      if (!q.paginated) return res.json(finalRows);
+      const counted = await runAll(
+        baseSql.replace('SELECT * FROM customer_payments', 'SELECT COUNT(*) AS total FROM customer_payments').replace(/ ORDER BY .*$/, ''),
+        baseParams,
+      );
+      const total = Number(counted?.[0]?.total ?? finalRows.length) || 0;
+      res.json({ data: finalRows, total, page: q.page, pageSize: q.pageSize, totalPages: Math.max(1, Math.ceil(total / q.pageSize)) });
     } catch (err) {
       console.error('[CustomerPayments] GET error:', err?.message || err);
       res.status(500).json({ error: err?.message || 'Failed to fetch payments' });
+    }
+  });
+
+  // Batch void — voids several payments atomically-ish (skips missing rows,
+  // reports per-id outcome). Used by the admin list batch-actions bar.
+  app.post('/api/customer-payments/batch-void', requireRole('Admin', 'Accountant', 'Manager'), injectFinancialYear, requireFyNotClosed, async (req, res) => {
+    try {
+      const { ids, reason } = req.body || {};
+      if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) {
+        return res.status(400).json({ error: 'ids must be a non-empty array (max 100)' });
+      }
+      const results = [];
+      for (const id of ids) {
+        try {
+          await new Promise((resolve, reject) => {
+            sq.run('UPDATE customer_payments SET status = ? WHERE id = ?', ['Voided', String(id)], function (err) {
+              if (err) return reject(err);
+              resolve();
+            });
+          });
+          results.push({ id: String(id), ok: true });
+        } catch (e) {
+          results.push({ id: String(id), ok: false, error: e?.message || 'void failed' });
+        }
+      }
+      res.json({ results, voided: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, reason: reason || null });
+    } catch (err) {
+      console.error('[CustomerPayments] batch-void error:', err?.message || err);
+      res.status(500).json({ error: err?.message || 'Failed to void payments' });
     }
   });
 

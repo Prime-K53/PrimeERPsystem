@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ExaminationBatchNotification } from '../types';
 import { useNotifications } from '../context/NotificationContext';
+import { formatTime } from '../utils/formatters';
 
 interface ExaminationBatchNotificationCardCompactProps {
   notification: ExaminationBatchNotification;
@@ -40,10 +41,9 @@ export const ExaminationBatchNotificationCardCompact: React.FC<ExaminationBatchN
     notification_type
   } = notification;
 
-  const formattedTime = new Date(created_at).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  // Safe formatter: missing/unparseable created_at renders '—', never
+  // the literal string "Invalid Date".
+  const formattedTime = formatTime(created_at);
 
   const handleViewBatch = (e: React.MouseEvent) => {
     e.stopPropagation();
