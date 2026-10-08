@@ -171,11 +171,18 @@ async function postEditCorrectionInTx(
     return { posted: true, spec, entryId: entry.id };
 }
 
+/**
+ * Same-tab re-entrancy guard for customer payment voids.
+ * executeAtomicOperation is NOT a real transaction in cloud mode (each put
+ * commits on its own), so two overlapping voids of one payment would
+ * double-apply the reversal. Keyed by idempotency key, released in finally.
+ */
+const inflightCustomerPaymentVoids = new Set<string>();
+
 export const transactionService = {
     /**
      * Internal helper to handle structured inventory deduction with audit trail
-     */
-    async _executeDeductInventory(
+     */    async _executeDeductInventory(
         inventoryStore: any,
         inventoryTransactionsStore: any,
         items: CartItem[],
@@ -3170,11 +3177,16 @@ export const transactionService = {
     },
 
     async voidCustomerPayment(paymentId: string, reason: string) {
-        return dbService.executeAtomicOperation(
+        const voidScope = 'customer_payment_void';
+        const voidKey = `${voidScope}:${paymentId}`;
+        if (inflightCustomerPaymentVoids.has(voidKey)) {
+            throw new Error(`Duplicate financial request blocked for ${voidScope} (${paymentId}).`);
+        }
+        inflightCustomerPaymentVoids.add(voidKey);
+        try {
+            return await dbService.executeAtomicOperation(
             ['customerPayments', 'invoices', 'customers', 'ledger', 'walletTransactions', 'bankAccounts', 'bankTransactions', 'idempotencyKeys', 'accounts'],
             async (tx) => {
-                await reserveIdempotencyKey(tx, 'customer_payment_void', paymentId);
-
                 const paymentStore = tx.objectStore('customerPayments');
                 const invoiceStore = tx.objectStore('invoices');
                 const customerStore = tx.objectStore('customers');
@@ -3200,6 +3212,46 @@ export const transactionService = {
 
                 const payment = await paymentStore.get(paymentId);
                 if (!payment) throw new Error("Payment not found");
+                if (String(payment.status || '').toLowerCase() === 'voided') {
+                    throw new Error(`Payment ${paymentId} is already voided.`);
+                }
+                // Stale-key recovery: a previous attempt that failed AFTER
+                // reserving leaves its key behind (puts commit individually —
+                // there is no rollback). A non-voided payment proves that key
+                // is stale, so drop it and proceed. True duplicates are still
+                // blocked: voided payments throw above, overlapping same-tab
+                // voids throw via the in-flight guard.
+                try {
+                    await reserveIdempotencyKey(tx, voidScope, paymentId);
+                } catch {
+                    await clearIdempotencyKey(tx, voidScope, paymentId);
+                    await reserveIdempotencyKey(tx, voidScope, paymentId);
+                }
+
+                // Validate-first: resolve BOTH reversal accounts BEFORE the
+                // first write, so an unresolvable account (e.g. a legacy code
+                // with no canonical mapping) fails cleanly with nothing
+                // persisted — never half-reversed books plus a stuck key.
+                const gl = getGLConfig();
+                const retainedAmount = toMoney(
+                    payment.amountRetained ??
+                    payment.receiptSnapshot?.amountRetained ??
+                    payment.amount
+                );
+                let originalDebitAccount = gl.cashDrawerAccount;
+                if (payment.paymentMethod === 'Wallet') {
+                    originalDebitAccount = gl.customerDepositAccount;
+                } else if (payment.accountId) {
+                    originalDebitAccount = payment.accountId;
+                } else {
+                    if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') originalDebitAccount = gl.bankAccount;
+                    if (payment.paymentMethod === 'Mobile Money') originalDebitAccount = gl.mobileMoneyAccount;
+                }
+                const originalCreditAccount = payment.receiptSnapshot?.paymentPurpose === 'WALLET_TOPUP'
+                    ? gl.customerDepositAccount
+                    : gl.accountsReceivable;
+                const resolvedReversalDebit = resolveAcct(originalCreditAccount);
+                const resolvedReversalCredit = resolveAcct(originalDebitAccount);
 
                 // 1. Reverse Invoices
                 for (const allocation of payment.allocations) {
@@ -3268,31 +3320,13 @@ export const transactionService = {
                     }
                 }
 
-                // 4. Create Reversal Ledger Entry
-                const gl = getGLConfig();
-                const retainedAmount = toMoney(
-                    payment.amountRetained ??
-                    payment.receiptSnapshot?.amountRetained ??
-                    payment.amount
-                );
-                let originalDebitAccount = gl.cashDrawerAccount;
-                if (payment.paymentMethod === 'Wallet') {
-                    originalDebitAccount = gl.customerDepositAccount;
-                } else if (payment.accountId) {
-                    originalDebitAccount = payment.accountId;
-                } else {
-                    if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') originalDebitAccount = gl.bankAccount;
-                    if (payment.paymentMethod === 'Mobile Money') originalDebitAccount = gl.mobileMoneyAccount;
-                }
-                const originalCreditAccount = payment.receiptSnapshot?.paymentPurpose === 'WALLET_TOPUP'
-                    ? gl.customerDepositAccount
-                    : gl.accountsReceivable;
+                // 4. Create Reversal Ledger Entry (accounts pre-resolved above)
                 const reversal: LedgerEntry = {
                     id: generateId('LG-REV'),
                     date: new Date().toISOString(),
                     description: `VOID: Payment #${paymentId} - ${reason}`,
-                    debitAccountId: resolveAcct(originalCreditAccount),
-                    creditAccountId: resolveAcct(originalDebitAccount),
+                    debitAccountId: resolvedReversalDebit,
+                    creditAccountId: resolvedReversalCredit,
                     amount: retainedAmount,
                     referenceId: paymentId,
                     reconciled: false,
@@ -3351,8 +3385,11 @@ export const transactionService = {
                 }
 
                 return { success: true };
-            }
-        );
+                }
+            );
+        } finally {
+            inflightCustomerPaymentVoids.delete(voidKey);
+        }
     },
 
     /**

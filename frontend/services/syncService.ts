@@ -93,6 +93,19 @@ let realtimeChannels: any[] = [];
 let subscriptionGeneration = 0; // incremented on each unsubscribe to cancel stale async inits
 let syncLifecycleActive = false; // idempotency guard — prevents duplicate initial pulls / subscriptions
 
+// Completion of the engine's initial remote pull for the current lifecycle
+// activation. Assigned exactly once per activation (first starter wins;
+// later startPeriodicSync calls are idempotent no-ops). Lets startup code
+// await remote data (e.g. company settings) before hydrating local-first
+// state — without making the periodic timer lifecycle itself awaitable.
+// Resolves immediately when the engine was never started (offline,
+// Supabase disabled) so offline boot behavior is unchanged.
+let initialSyncPromise: Promise<{ pulled: number; errors: string[] }> | null = null;
+
+export function awaitInitialSync(): Promise<{ pulled: number; errors: string[] }> {
+  return initialSyncPromise ?? Promise.resolve({ pulled: 0, errors: [] });
+}
+
 export interface SyncProgress {
   totalStores: number;
   completedStores: number;
@@ -445,6 +458,11 @@ export async function pullRemoteChanges(
   });
   const errors: string[] = [];
   let pulled = 0;
+  // Stores that actually received pulled rows this pass. Pull-completion
+  // notifications below are emitted per store from this set so listeners
+  // (e.g. AuthContext re-hydrating company config on 'settings') react to
+  // real changes instead of hardcoded store names.
+  const pulledStores = new Set<string>();
   const totalStores = TABLES_TO_SYNC.length;
   let completedStores = 0;
 
@@ -534,6 +552,7 @@ export async function pullRemoteChanges(
 
             storeCount += cloudRecords.length;
             rowsInPass += cloudRecords.length;
+            if (storeCount > 0) pulledStores.add(storeName);
             audit('pull', 'table page processed', { table, pageRows: cloudRecords.length, offset });
             // Track the latest updated_at seen so far for incremental sync
             lastTimestamp = data[data.length - 1]?.updated_at ?? lastTimestamp;
@@ -576,13 +595,15 @@ export async function pullRemoteChanges(
 
   if (pulled > 0) {
     localStorage.setItem('nexus_last_sync_pull', new Date().toISOString());
-    // Notify the React layer that IndexedDB has been updated via pull.
-    // DataContext listens to this event and calls queueRefresh() → refreshAllData()
-    // → Zustand stores re-read IndexedDB and re-render. Without this, pulled data
-    // would not be visible in the UI until the next periodic poll (5 min) or a
-    // realtime event (which may never arrive if channels timeout).
-    emitDataChanged('inventory', 'PULL_COMPLETE');
-    emitDataChanged('warehouses', 'PULL_COMPLETE');
+    // Notify the React layer with the stores that actually received pulled
+    // rows. DataContext listens to this event and calls queueRefresh() →
+    // refreshAllData() → Zustand stores re-read IndexedDB and re-render;
+    // AuthContext additionally re-hydrates company config when 'settings'
+    // is among them. Previously this hardcoded inventory/warehouses, so a
+    // pull that landed companyConfig never refreshed settings-driven state.
+    for (const storeName of pulledStores) {
+      emitDataChanged(getTable(storeName), 'PULL_COMPLETE');
+    }
   }
 
   /* SYNC-FORENSIC suppressed: PULL-COMPLETE pullRemoteChanges() */
@@ -901,20 +922,32 @@ export async function startPeriodicSync(
   // [ERP-SYNC-DIAG] real interval creation only — value unchanged.
   diagTimerScheduled('pull', 'syncService', pullIntervalMs, diagPullGeneration);
 
-  // Initial sync on start - full pull on first sync, then incremental
+  // Initial sync on start - full pull on first sync, then incremental.
+  // The completion is tracked on initialSyncPromise (first activation wins)
+  // so startup code can await remote data before hydrating local-first
+  // state. The periodic timers above run independently of that await.
   if (navigator.onLine) {
     const isFirstSync = !localStorage.getItem('nexus_last_sync_pull');
     /* SYNC-FORENSIC suppressed: startPeriodicSync() initial pull decision */
     audit('sync', 'initial pull starting', { isFirstSync });
     diagPullTriggerInvoked('initial-pull');
-    pullRemoteChanges(undefined, isFirstSync).then(result => {
-      /* SYNC-FORENSIC suppressed: startPeriodicSync() initial pull COMPLETE */
-      audit('sync', 'initial pull complete', { pulled: result.pulled, errors: result.errors });
-      onSyncComplete?.({ pulled: result.pulled, pushed: 0, errors: result.errors });
-    }).catch(err => console.warn('[Sync] Initial pull failed:', err));
+    if (!initialSyncPromise) {
+      initialSyncPromise = pullRemoteChanges(undefined, isFirstSync).then(result => {
+        /* SYNC-FORENSIC suppressed: startPeriodicSync() initial pull COMPLETE */
+        audit('sync', 'initial pull complete', { pulled: result.pulled, errors: result.errors });
+        onSyncComplete?.({ pulled: result.pulled, pushed: 0, errors: result.errors });
+        return result;
+      }).catch(err => {
+        console.warn('[Sync] Initial pull failed:', err);
+        return { pulled: 0, errors: [err instanceof Error ? err.message : String(err)] };
+      });
+    }
   } else {
     /* SYNC-FORENSIC suppressed: startPeriodicSync() initial pull SKIPPED — offline */
     audit('sync', 'initial pull skipped offline', {});
+    if (!initialSyncPromise) {
+      initialSyncPromise = Promise.resolve({ pulled: 0, errors: ['offline'] });
+    }
     onSyncComplete?.({ pulled: 0, pushed: 0, errors: ['offline'] });
   }
 }
@@ -922,6 +955,9 @@ export async function startPeriodicSync(
 export function stopPeriodicSync() {
   // [ERP-SYNC-DIAG] lifecycle entry only — who called, no behavior change.
   diagPeriodicLifecycleCall('syncService', 'stop', 'stopped', diagCaller('stopPeriodicSync'));
+  // Reset initial-pull tracking so a later restart awaits its own fresh
+  // initial pull instead of a stale completed one.
+  initialSyncPromise = null;
   if (pushTimer) {
     clearInterval(pushTimer);
     // [ERP-SYNC-DIAG] real clear only — same clear as before.

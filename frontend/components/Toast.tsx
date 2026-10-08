@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { CheckCircle, AlertCircle, XCircle, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-type ToastLevel = 'success' | 'error' | 'info';
+type ToastLevel = 'success' | 'error' | 'info' | 'warning';
 type ToastMessage = {
   type: ToastLevel;
   message: string;
+  sticky?: boolean;
 };
 
 const TOAST_EVENT = 'prime-erp-toast';
@@ -40,6 +41,9 @@ const Toast: React.FC = () => {
 
   useEffect(() => {
     if (notification) {
+      // Sticky notifications (e.g. assessment countdown) stay on screen
+      // until the user closes them — no auto-dismiss timer.
+      if ((notification as ToastMessage).sticky) return;
       const timer = setTimeout(() => {
         clearNotification();
       }, 4000);
@@ -63,6 +67,7 @@ const Toast: React.FC = () => {
     switch (activeNotification.type) {
       case 'success': return <CheckCircle size={20} className="text-emerald-500" />;
       case 'error': return <XCircle size={20} className="text-red-500" />;
+      case 'warning': return <AlertCircle size={20} className="text-amber-500" />;
       case 'info': return <AlertCircle size={20} className="text-blue-500" />;
       default: return <AlertCircle size={20} className="text-slate-500" />;
     }
@@ -72,6 +77,7 @@ const Toast: React.FC = () => {
     switch (activeNotification.type) {
       case 'success': return 'border-emerald-500';
       case 'error': return 'border-red-500';
+      case 'warning': return 'border-amber-500';
       case 'info': return 'border-blue-500';
       default: return 'border-slate-500';
     }

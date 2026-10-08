@@ -299,10 +299,13 @@ const ReminderMonitor: React.FC = () => {
 /**
  * Assessment schedule countdown: when a reserved (scheduled, not yet
  * consumed) assessment falls within the next 14 days, show a once-per-day
- * notification stating how many days are left until the work. Mirrors the
- * ReminderMonitor pattern (30s sweep, toast + persistent alert), with the
- * once-per-day guarantee persisted in localStorage so reloads and multiple
- * tabs cannot repeat it.
+ * sticky notification naming the customer/school and the assessment number,
+ * e.g. "Assessment NO.2 for Chiwaka Primary School will start in 14 days
+ * (21/10/2026)." Mirrors the ReminderMonitor pattern (30s sweep, sticky
+ * toast + persistent alert), with the once-per-day guarantee persisted in
+ * localStorage so reloads and multiple tabs cannot repeat it. The toast is
+ * sticky and only disappears when the user closes it; the alert persists in
+ * the alerts list until dismissed.
  */
 const AssessmentScheduleMonitor: React.FC = () => {
   const { notify, addAlert } = useAuth();
@@ -311,19 +314,122 @@ const AssessmentScheduleMonitor: React.FC = () => {
   useEffect(() => {
     const checkSchedules = async () => {
       let items: any[];
+      let contracts: any[] = [];
+      let customers: any[] = [];
+      let schools: any[] = [];
       try {
         const { dbService } = await import('./services/db');
         items = (await dbService.getAll('contractAssessments')) || [];
+        try {
+          contracts = (await dbService.getAll('assessmentContracts')) || [];
+        } catch {
+          contracts = [];
+        }
+        try {
+          customers = (await dbService.getAll('customers')) || [];
+        } catch {
+          customers = [];
+        }
+        try {
+          schools = (await dbService.getAll('schools')) || [];
+        } catch {
+          schools = [];
+        }
       } catch {
         return;
       }
+
+      const resolveCustomerName = (item: any): string => {
+        // School name first — assessment notices are school-facing
+        // (e.g. "Chiwaka Primary School").
+        const schoolId = item?.school_id;
+        if (schoolId) {
+          const school = (schools || []).find((s: any) => String(s?.id) === String(schoolId));
+          const schoolName = String(school?.name || '').trim();
+          if (schoolName) return schoolName;
+        }
+        // Then the customer / business display name.
+        const customerId = item?.customer_id;
+        if (customerId) {
+          const customer = (customers || []).find((c: any) => String(c?.id) === String(customerId));
+          if (customer) {
+            const display = String(
+              customer.businessName || customer.companyName || customer.name || ''
+            ).trim();
+            if (display) return display;
+          }
+        }
+        // Then the parent contract's denormalized counterparty name.
+        const contract = (contracts || []).find((c: any) => String(c?.id) === String(item?.contract_id));
+        if (contract) {
+          const contractName = String(contract.customerName || '').trim();
+          if (contractName) return contractName;
+          // A school linked on the contract is better than a raw id.
+          const contractSchoolId = (contract as any).school_id;
+          if (contractSchoolId) {
+            const school = (schools || []).find((s: any) => String(s?.id) === String(contractSchoolId));
+            const schoolName = String(school?.name || '').trim();
+            if (schoolName) return schoolName;
+          }
+          const contractCustomerId = (contract as any).customer_id;
+          if (contractCustomerId) {
+            const customer = (customers || []).find((c: any) => String(c?.id) === String(contractCustomerId));
+            if (customer) {
+              const display = String(
+                customer.businessName || customer.companyName || customer.name || ''
+              ).trim();
+              if (display) return display;
+            }
+          }
+          // Human-friendly contract number beats a raw UUID.
+          const contractNumber = String(contract.contract_number || '').trim();
+          if (contractNumber) return `Contract ${contractNumber}`;
+        }
+        return 'Customer';
+      };
+
+      const resolveAssessmentNo = (item: any): number => {
+        // Prefer an explicit number when the record carries one
+        // (forward-compatible with assessment_number designs).
+        const candidates = [
+          item?.assessment_number,
+          item?.assessmentNumber,
+          item?.assessment_no,
+          item?.assessmentNo,
+          item?.data?.assessment_number,
+          item?.data?.assessmentNumber,
+        ];
+        for (const candidate of candidates) {
+          const n = Number(candidate);
+          if (Number.isFinite(n) && n > 0) return Math.floor(n);
+        }
+        // Fall back to the position within its contract, ordered by
+        // scheduled date (then creation order) so the number is stable.
+        const siblings = (items || []).filter((s: any) => String(s?.contract_id) === String(item?.contract_id));
+        const dateOf = (s: any) => {
+          const raw = s?.assessment_date || s?.scheduled_date || s?.data?.assessment_date || s?.data?.scheduled_date;
+          const t = raw ? new Date(raw).getTime() : NaN;
+          return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+        };
+        const sorted = [...siblings].sort((a: any, b: any) => {
+          const diff = dateOf(a) - dateOf(b);
+          if (diff !== 0) return diff;
+          const createdDiff = String(a?.created_at || '').localeCompare(String(b?.created_at || ''));
+          if (createdDiff !== 0) return createdDiff;
+          return String(a?.id || '').localeCompare(String(b?.id || ''));
+        });
+        const idx = sorted.findIndex((s: any) => String(s?.id) === String(item?.id));
+        return idx >= 0 ? idx + 1 : 1;
+      };
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       for (const item of items) {
         if (String(item?.status || '').toLowerCase() !== 'reserved') continue;
-        if (!item?.assessment_date) continue;
-        const due = new Date(item.assessment_date);
+        const rawDate = item?.assessment_date || item?.scheduled_date || item?.data?.assessment_date || item?.data?.scheduled_date;
+        if (!rawDate) continue;
+        const due = new Date(rawDate);
         due.setHours(0, 0, 0, 0);
         if (Number.isNaN(due.getTime())) continue;
         const daysLeft = Math.round((due.getTime() - today.getTime()) / 86400000);
@@ -338,13 +444,19 @@ const AssessmentScheduleMonitor: React.FC = () => {
         } catch {
           // Storage unavailable — fall back to in-memory dedupe only.
         }
-        const label = String(item.description || item.title || item.contract_id || 'Assessment');
-        const when = daysLeft === 0 ? 'due today' : daysLeft === 1 ? 'due tomorrow' : `due in ${daysLeft} days`;
-        const dateStr = due.toLocaleDateString();
-        notify(`Assessment scheduled ${when}: ${label} (${dateStr}) — ${daysLeft} day${daysLeft === 1 ? '' : 's'} left to next work`, 'info');
+        const customerName = resolveCustomerName(item);
+        const assessmentNo = resolveAssessmentNo(item);
+        const dateStr = due.toLocaleDateString('en-GB');
+        const message = daysLeft === 0
+          ? `Assessment NO.${assessmentNo} for ${customerName} starts today (${dateStr}).`
+          : daysLeft === 1
+            ? `Assessment NO.${assessmentNo} for ${customerName} will start tomorrow (${dateStr}).`
+            : `Assessment NO.${assessmentNo} for ${customerName} will start in ${daysLeft} days (${dateStr}).`;
+        // Sticky: stays on screen until the user closes it.
+        notify(message, 'info', { sticky: true });
         addAlert({
           id: `ALERT-ASSESS-${String(item.id)}-${todayStr}-${Date.now()}`,
-          message: `Assessment due ${when}: ${label}. Scheduled: ${dateStr}. ${daysLeft} day${daysLeft === 1 ? '' : 's'} left.`,
+          message,
           type: 'System',
           date: new Date().toISOString(),
           severity: daysLeft <= 3 ? 'High' : 'Medium'

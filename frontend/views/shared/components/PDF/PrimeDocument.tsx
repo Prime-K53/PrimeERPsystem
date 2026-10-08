@@ -206,6 +206,53 @@ const buildCompanyAddress = (config?: CompanyConfig | null) => {
     .join(', ');
 };
 
+/**
+ * Receipt-scoped company address: the street line only, with any city/country
+ * suffix removed.
+ *
+ * The full block (street + city + country) is right for invoices, but the
+ * payment receipt shows the street line alone — the city/country pair reads as
+ * redundant next to the contact line. In practice `addressLine1` is often
+ * typed with the town and country already appended (e.g. "Along M5 Road
+ * Mtakataka, Dedza Malawi"), so the suffix is stripped against the configured
+ * city/country before rendering; otherwise "Dedza, Malawi" would still appear.
+ * Falls back to the full block when no street line survives so the receipt
+ * never loses its address entirely.
+ */
+const buildReceiptCompanyAddress = (config?: CompanyConfig | null) => {
+  const street = String(config?.addressLine1 ?? '').trim();
+  if (!street) return buildCompanyAddress(config);
+
+  const city = String(config?.city ?? '').trim();
+  const country = String(config?.country ?? '').trim();
+
+  // Drop the configured country, then the configured city, repeatedly and
+  // from the end only — the leading street part must never be touched.
+  let trimmed = street;
+  const suffixes = [country, city].filter(Boolean);
+  for (let i = 0; i < 2; i++) {
+    for (const suffix of suffixes) {
+      if (!suffix) continue;
+      const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`[\\s,]*${escaped}\\s*$`, 'i');
+      const next = trimmed.replace(re, '').trim();
+      if (next && next !== trimmed) trimmed = next;
+    }
+  }
+  return trimmed || buildCompanyAddress(config);
+};
+
+/**
+ * Two tab stops of indent for the receipt's right-hand metadata column
+ * (Date / Payment Method / Account / Status).
+ *
+ * A default tab stop is 36pt at 12pt body text; two stops is 72pt. Scaled
+ * with the body font so the indent tracks the document's text size, and
+ * clamped to a quarter of the content width so the column can never be
+ * squeezed out of existence by a very large body font.
+ */
+const RECEIPT_META_INDENT = 72;
+
 const normalizeCompanyIdentity = (config?: CompanyConfig | null) => {
   const companyName = pickFirstText(config?.companyName, 'Prime ERP');
   const companyAddress = buildCompanyAddress(config);
@@ -1369,6 +1416,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
 
   const companyContact = [formattedPhone, companyEmail].filter(Boolean).join(' | ');
+  // Receipts print the street line only (no city/country suffix); every other
+  // document keeps the full companyAddress block.
+  const receiptCompanyAddress = buildReceiptCompanyAddress(config);
   const legalFooterLine1 = resolveFooterText(config, paymentTermsLabel, showPaymentTerms);
   const legalFooterLine2 = buildFooterContactLine(config);
   const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
@@ -1596,7 +1646,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
   if (type === 'RECEIPT') {
     const rc = data as ReceiptDoc;
-    const isPartial = rc.paymentStatus === 'PARTIALLY PAID' || (rc.balanceDue && rc.balanceDue > 0);
+    // Boolean-only: a numeric 0 here would render as an orphan "0" text
+    // child outside <Text> (react-pdf warns and drops it).
+    const isPartial = rc.paymentStatus === 'PARTIALLY PAID' || Number(rc.balanceDue || 0) > 0;
     const isOverpaid = rc.paymentStatus === 'OVERPAID';
     const overpaymentAmount = rc.overpaymentAmount || rc.walletDeposit || 0;
 
@@ -1611,6 +1663,46 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
       isCancelled?: boolean;
       cancelled?: boolean;
     });
+    // Allocation reference for the metadata row. The row is single-purpose
+    // and never lists identifiers: one allocation shows its reference,
+    // several collapse to "Multiple … (N)", none shows "—". The Payment
+    // Details table below keeps the complete list. Source precedence
+    // (orders first) matches the details table.
+    const appliedOrderRefs = rc.appliedOrders || [];
+    const appliedInvoiceRefs = rc.appliedInvoices || [];
+    const allocationRef = appliedOrderRefs.length === 1
+      ? String(appliedOrderRefs[0])
+      : appliedOrderRefs.length > 1
+        ? `Multiple orders (${appliedOrderRefs.length})`
+        : appliedInvoiceRefs.length === 1
+          ? String(appliedInvoiceRefs[0])
+          : appliedInvoiceRefs.length > 1
+            ? `Multiple invoices (${appliedInvoiceRefs.length})`
+            : '—';
+    // Payment account display name, resolved from the stored accountId by
+    // the doc builder. '' when the payment carries no account.
+    const receiptAccount = String(rc.account || '').trim();
+    // Single-row company name: shrink-to-fit the user-configured Company
+    // Name Font Size plus a hard one-line clamp (maxLines + ellipsis are
+    // first-class layout props) so the identity line never wraps, however
+    // long the registered name is. The text block keeps symmetric gutters
+    // for the pinned logo, so the name stays page-centered without ever
+    // sliding under the logo. Width budget assumes A4 content width
+    // (~515pt) and bold glyphs.
+    const receiptNameAvailWidth = 515 - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+    const receiptNameFontSize = Math.max(
+      8.5,
+      Math.min(templateSettings.companyNameFontSize, receiptNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+    );
+    const receiptNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+    // Compact inline metadata row ("Label: value") used by the formal
+    // two-column receipt header. Values only — no new data sources.
+    const receiptMetaRow = (label: string, value: string, valueStyle?: any) => (
+      <Text style={{ fontSize: 10.5, color: monoText(mode, '#111111'), marginBottom: 4 }}>
+        <Text style={{ fontWeight: 'bold' }}>{label}: </Text>
+        <Text style={valueStyle}>{value}</Text>
+      </Text>
+    );
 
     return (
       <Document title={`Payment Receipt - ${rc.receiptNumber}`} author={companyName}>
@@ -1622,19 +1714,30 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             companyName={companyName}
           />
 
-          <View style={s.headerSection}>
-            <View style={s.headerLeft}>
-              <Text style={[s.title, titleStyle, { fontFamily: 'Helvetica' }]}>Payment Receipt</Text>
-              <View style={s.infoText}>
-                <Text>Receipt # : {rc.receiptNumber}</Text>
-                <Text>Date : {rc.date}</Text>
-                <Text>Method : {rc.paymentMethod}</Text>
-              </View>
-            </View>
-            <View style={s.headerRight}>
-              {renderBrandMark('right')}
+          {/* Formal company header: real logo from settings pinned flush to
+              the left margin (absolute, out of flow, at the settings-driven
+              logoWidth so brand-asset sizing is preserved). The identity
+              block spans the full width with symmetric gutters, so the name
+              stays page-centered and can never slide under the logo. The
+              name is shrink-to-fit plus a hard one-line clamp — always a
+              single row. Address/contact lines below it. */}
+          <View style={{ position: 'relative', alignItems: 'center', marginBottom: 6, paddingTop: 2 }}>
+            {!!logo && (
+              <Image src={logo} style={{ position: 'absolute', left: 0, top: 0, width: templateSettings.logoWidth }} />
+            )}
+            <View style={{ alignItems: 'center', width: '100%', paddingLeft: receiptNameGutter, paddingRight: receiptNameGutter }}>
+              <Text style={{ fontSize: receiptNameFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', maxLines: 1, textOverflow: 'ellipsis' }}>{companyName}</Text>
+              {!!receiptCompanyAddress && (
+                <Text style={{ fontSize: 10, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 2 }}>{receiptCompanyAddress}</Text>
+              )}
+              {!!companyContact && (
+                <Text style={{ fontSize: 10, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 2 }}>{companyContact}</Text>
+              )}
             </View>
           </View>
+
+          <Text style={{ fontSize: 20 * fontScale, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', marginTop: 8, marginBottom: 8 }}>PAYMENT RECEIPT</Text>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
 
           {isOverpaid && (
             <View style={{ backgroundColor: monoFill(mode, '#fef2f2'), padding: 10, borderRadius: 4, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: monoLine(mode, '#ef4444') }}>
@@ -1645,75 +1748,78 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           )}
 
-          <View style={[s.billingSection, { marginTop: 0, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
+          {/* Formal two-column metadata block: Receipt No / Customer Name /
+              Reference / Currency at left; Date / Payment Method / Account /
+              Status at right. The right column is indented two tab stops so
+              the payment facts read as a distinct group. Account resolves from
+              the stored payment accountId and is omitted when there is none. */}
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 10 }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Received From</Text>
-              <View style={s.recipientInfoText}>
-                <Text style={s.recipientName}>{rc.customerName || 'N/A'}</Text>
-                {resolvedRecipientAddress ? (
-                  <Text style={s.recipientDetail}>{resolvedRecipientAddress}</Text>
-                ) : null}
-                {resolvedRecipientPhone ? (
-                  <Text style={s.recipientPhone}>{resolvedRecipientPhone}</Text>
-                ) : null}
-              </View>
+              {receiptMetaRow('Receipt No', rc.receiptNumber)}
+              {receiptMetaRow('Customer Name', rc.customerName || 'N/A')}
+              {receiptMetaRow('Reference', allocationRef)}
+              {receiptMetaRow('Currency', currency)}
             </View>
-<View style={[s.statusBox, { borderLeftColor: monoLine(mode, receiptBadge.borderColor) }]}>
-<Text style={{ fontSize: 16, fontWeight: 'bold', color: monoText(mode, receiptBadge.color) }}>
-                {receiptBadge.label}
-              </Text>
+            <View style={{ flex: 1, paddingLeft: Math.min(RECEIPT_META_INDENT * fontScale, 128) }}>
+              {receiptMetaRow('Date', rc.date)}
+              {receiptMetaRow('Payment Method', rc.paymentMethod)}
+              {!!receiptAccount && receiptMetaRow('Account', receiptAccount)}
+              {receiptMetaRow('Status', receiptBadge.label, { fontWeight: 'bold', color: monoText(mode, receiptBadge.color) })}
             </View>
           </View>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
 
-          <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-            <Text style={{ fontSize: 12, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
-              {rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount(rc.amountReceived)} received from ${rc.customerName}.`}
-            </Text>
-          </View>
-
-          <View style={{ marginTop: 16 }}>
-            <View style={s.tableHeader}>
-              <Text style={{ flex: 3 }}>Description</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Amount Paid</Text>
+          <Text style={{ fontSize: 11, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Payment Details Table</Text>
+          <View style={{ borderWidth: 0.5, borderColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }}>
+            <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
+              <Text style={{ flex: 3, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>Description</Text>
+              <Text style={{ flex: 1, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>Unit Price</Text>
+              <Text style={{ flex: 1, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, textAlign: 'right' }}>Line Total</Text>
             </View>
-            <View style={s.row}>
-              <Text style={{ flex: 3 }}>
+            <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
+              <Text style={{ flex: 3, fontSize: 10.5, color: monoText(mode, '#111111'), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
                 {(rc.appliedOrders || []).length > 0
                   ? `Payment for Orders: ${(rc.appliedOrders || []).join(', ')}`
                   : `Payment for Invoices: ${(rc.appliedInvoices || []).join(', ')}`}
               </Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(rc.amountReceived)}</Text>
+              <Text style={{ flex: 1, fontSize: 10.5, color: monoText(mode, '#111111'), padding: 5, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>{currency} {formatAmount(rc.amountReceived)}</Text>
+              <Text style={{ flex: 1, fontSize: 10.5, color: monoText(mode, '#111111'), padding: 5, textAlign: 'right' }}>{currency} {formatAmount(rc.amountReceived)}</Text>
             </View>
-          </View>
-
-
-          <View style={[s.summaryContainer, { justifyContent: 'flex-end' }]}>
-            <View style={{ width: 260 }}>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1, fontWeight: 'bold' }}>Amount Received</Text>
-                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(rc.amountReceived)}</Text>
+            <View style={{ flexDirection: 'row', padding: 5 }}>
+              <Text style={{ flex: 4, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>Amount Received</Text>
+              <Text style={{ flex: 1, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>{currency} {formatAmount(rc.amountReceived)}</Text>
+            </View>
+            {isPartial && (
+              <View style={{ flexDirection: 'row', padding: 5 }}>
+                <Text style={{ flex: 4, fontSize: 10.5, color: monoText(mode, '#ef4444'), textAlign: 'right' }}>Outstanding Balance</Text>
+                <Text style={{ flex: 1, fontSize: 10.5, color: monoText(mode, '#ef4444'), textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
               </View>
+            )}
+            {isOverpaid && overpaymentAmount > 0 && (
+              <View style={{ flexDirection: 'row', padding: 5 }}>
+                <Text style={{ flex: 4, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#10b981'), textAlign: 'right' }}>Wallet Credit</Text>
+                <Text style={{ flex: 1, fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#10b981'), textAlign: 'right' }}>{currency} {formatAmount(overpaymentAmount)}</Text>
+              </View>
+            )}
+          </View>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
 
-              {isPartial && (
-                <View style={[s.totalRow]}>
-                  <Text style={{ flex: 1, color: monoText(mode, '#ef4444') }}>Outstanding Balance</Text>
-                  <Text style={{ color: monoText(mode, '#ef4444'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
-                </View>
-              )}
-
-              {isOverpaid && overpaymentAmount > 0 && (
-                <View style={[s.totalRow]}>
-                  <Text style={{ flex: 1, color: monoText(mode, '#10b981'), fontWeight: 'bold' }}>Wallet Credit</Text>
-                  <Text style={{ color: monoText(mode, '#10b981'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(overpaymentAmount)}</Text>
-                </View>
-              )}
+          {/* Formal notes section — the generated narrative text and all its
+              variants (buildNarrative) are unchanged; only the presentation
+              carries the section heading. No signature block: validity is
+              carried by the digital verification footer below. */}
+          <View style={{ marginTop: 4 }}>
+            <Text style={{ fontSize: 11, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Notes Section</Text>
+            <View style={{ padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+              <Text style={{ fontSize: 12, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
+                {rc.narrative || `This receipt acknowledges payment of ${currency} ${formatAmount(rc.amountReceived)} received from ${rc.customerName}.`}
+              </Text>
             </View>
           </View>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginTop: 10, marginBottom: 10 }} />
 
-            {/* Receipt thank-you carries the company name only: street
-                address and phone/email contact lines are intentionally
-                omitted from the payment receipt (the QR verification block
-                below remains the contact point). Spacing matches the invoice. */}
+            {/* Receipt thank-you carries the company name only (the full
+                address block already appears in the header above). */}
             <View wrap={false} style={{ marginTop: 10, alignItems: 'center' }}>
               <Text style={{ fontSize: scaledFont(12), color: monoText(mode, '#334155') }}>
                 Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
@@ -2014,6 +2120,8 @@ if (type === 'POS_RECEIPT') {
   const largeFontSize = 10 * scale;
   const smallFontSize = 6.4 * scale;
   const mediumFontSize = 8.4 * scale;
+  // Address is the street line only (no city/country suffix).
+  const posReceiptAddress = buildReceiptCompanyAddress(config);
 
   return (
     <Document title={`Receipt - ${r.receiptNumber}`} author={companyName}>
@@ -2023,7 +2131,9 @@ if (type === 'POS_RECEIPT') {
         <View style={[s.posA4Wrapper, { width: 250 * scale, paddingVertical: 24 * scale, paddingHorizontal: 8 * scale }]}>
             <View style={{ alignItems: 'center', marginBottom: 12 * scale }}>
               <Text style={{ fontWeight: 'bold', fontSize: 14 * scale, textAlign: 'center', marginBottom: 3 * scale, color: '#000' }}>{companyName}</Text>
-              <Text style={{ fontSize: baseFontSize, textAlign: 'center', marginBottom: 2 * scale, color: '#000' }}>{companyAddress}</Text>
+              {!!posReceiptAddress && (
+                <Text style={{ fontSize: baseFontSize, textAlign: 'center', marginBottom: 2 * scale, color: '#000' }}>{posReceiptAddress}</Text>
+              )}
               <Text style={{ fontSize: baseFontSize, textAlign: 'center', color: '#000' }}>{companyContact}</Text>
             </View>
 

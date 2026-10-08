@@ -193,6 +193,7 @@ const LEGACY_CODE_TO_CANONICAL: Record<string, string> = {
     '2100': '21110', // Accounts Payable
     '2110': '21110', // Accounts Payable
     '2120': '21210', // Tax Payable
+    '2200': '21300', // Customer Deposits (legacy 4-digit code; see phase-2.2 migration audit)
     '3000': '30000', // Equity
     '3100': '31000', // Capital
     '3200': '32000', // Retained Earnings

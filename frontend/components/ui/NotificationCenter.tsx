@@ -218,7 +218,6 @@ const NotificationCenter = React.forwardRef<HTMLDivElement, NotificationCenterPr
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          ref={setRefs}
           key="nc-dropdown"
           data-testid="notification-center-panel"
           variants={dropdownVariants}
@@ -227,6 +226,14 @@ const NotificationCenter = React.forwardRef<HTMLDivElement, NotificationCenterPr
           exit="exit"
           style={dropdownStyle}
         >
+          {/* Ref lives on this plain wrapper, never on the motion child:
+              framer-motion's PopChild reads child.props.ref, which trips
+              React 18.3's `ref`-access warning. hit-testing via contains()
+              is unaffected. */}
+          <div
+            ref={setRefs}
+            style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
+          >
           <div
             style={{
               display: 'flex',
@@ -510,6 +517,7 @@ const NotificationCenter = React.forwardRef<HTMLDivElement, NotificationCenterPr
                 </div>
               </motion.div>
             ))}
+          </div>
           </div>
         </motion.div>
       )}

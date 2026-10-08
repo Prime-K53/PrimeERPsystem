@@ -289,8 +289,8 @@ describe('authentication, QR, footer and pagination safety', () => {
   }, 120000);
 });
 
-describe('receipt thank-you footer omits street address and contact lines', () => {
-  it('renders the company name only, even with a fully populated company config', async () => {
+describe('receipt header shows the company identity block from settings', () => {
+  it('renders company name, street address and contact lines with a fully populated company config', async () => {
     const secured: any = await attachDocumentSecurity(ReceiptSchema.parse(buildPartialDoc()), COMPANY);
     const buf = await renderPdfWithConfig('RECEIPT', secured, {
       companyName: 'Prime Printing Service',
@@ -303,13 +303,18 @@ describe('receipt thank-you footer omits street address and contact lines', () =
     const pages = analysePages(buf);
     expect(pages).toHaveLength(1);
     const text = pages.map((p) => p.text).join(' ');
+    // Header carries the company name, the street line and the contact line.
+    // (Page text is normalized uppercase — compare via norm().)
+    expect(text).toContain(norm('Prime Printing Service'));
+    expect(text).toContain(norm('Mtakataka'));
+    expect(text).toContain(norm('primemw'));
+    // The receipt address is the street line only: city and country are not
+    // appended to the Company Address block.
+    expect(text).not.toContain(norm('Dedza'));
+    expect(text).not.toContain(norm('Malawi'));
     // Thank-you keeps the company name.
     expect(text).toContain(norm('Thank you for choosing Prime Printing Service'));
-    // Street address and email contact lines are gone from the receipt…
-    expect(text).not.toContain('Mtakataka');
-    expect(text).not.toContain('Dedza');
-    expect(text).not.toContain('primemw');
-    // …while the QR verification block (with its own contact line) is kept.
+    // …while the QR verification block is kept.
     expect(text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
     expect(text).toContain(norm('Verification available online'));
   }, 120000);

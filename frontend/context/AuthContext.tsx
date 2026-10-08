@@ -74,6 +74,11 @@ interface Notification {
   id: string;
   message: string;
   type: 'success' | 'error' | 'info' | 'warning';
+  /**
+   * When true the toast must stay visible until the user dismisses it
+   * (no auto-dismiss timer). Used for assessment countdown notices.
+   */
+  sticky?: boolean;
 }
 
 interface AuditParams {
@@ -104,7 +109,7 @@ interface AuthContextType {
   lastSyncTime: string | null;
   loginDiagnostic: LoginDiagnostic | null;
   
-  notify: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  notify: (message: string, type: 'success' | 'error' | 'info' | 'warning', options?: { sticky?: boolean } | boolean) => void;
   clearNotification: () => void;
   login: (username: string, password?: string, mfaCode?: string) => Promise<'SUCCESS' | 'INVALID' | 'MFA_REQUIRED' | 'EXPIRED'>;
   loginWithApi: (user: User, token: string, tokenExpiry: string, credentials?: { email: string; password: string }) => Promise<void>;
@@ -594,13 +599,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (session?.user && !requiresSupabaseSetup) {
             audit('auth', 'cold boot: starting sync engine from loadInitData', { hasSession: true });
             /* SYNC-FORENSIC suppressed: AUTH loadInitData() cold boot sync start */
-            import('../services/syncService').then(async ({ startPeriodicSync }) => {
+            // Cold-boot ordering: the initial remote pull must complete BEFORE
+            // the company config is hydrated from IndexedDB. Otherwise a device
+            // whose settings row has not arrived yet boots onto factory
+            // defaults and never re-reads. Engine startup itself is guarded so
+            // it can never block boot: offline, disabled Supabase, or an
+            // already-running engine all resolve immediately, and any startup
+            // failure falls through to local-first hydration below. No timers,
+            // polling, or sleeps — purely promise-ordered.
+            try {
+              const { startPeriodicSync, awaitInitialSync } = await import('../services/syncService');
               /* SYNC-FORENSIC suppressed: AUTH loadInitData() calling startPeriodicSync() */
               // Clear any prior 401/403 block so the restored Admin can drain
               // the queue immediately on cold boot.
               await resumeSyncAfterAuth();
-              startPeriodicSync();
-            }).catch(() => {});
+              await startPeriodicSync();
+              await awaitInitialSync().catch(() => undefined);
+            } catch {
+              // Engine startup must never block boot; hydrate from local below.
+            }
           }
           // Cloud settings are authoritative: hydrate the company config from
           // the sync store (populated by the initial pull), then migrate any
@@ -894,8 +911,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     prevUserRef.current = user;
   }, [user, SUPABASE_ENABLED]);
 
-  const notify = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning') => {
-    setNotification({ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, message, type });
+  const notify = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning', options?: { sticky?: boolean } | boolean) => {
+    const sticky = typeof options === 'boolean' ? options : !!options?.sticky;
+    setNotification({ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, message, type, ...(sticky ? { sticky: true } : {}) });
   }, []);
 
   useEffect(() => {

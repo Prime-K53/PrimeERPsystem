@@ -6,8 +6,25 @@ import {
   SupplierPayment
 } from '../types';
 import { roundMoney } from '../utils/roundingUtils';
+import { DEFAULT_ACCOUNTS } from '../constants';
 
 const EPSILON = 0.000001;
+
+/**
+ * Resolve a payment's `accountId` to a human-readable account name.
+ *
+ * The id is the canonical chart-of-accounts code (see ACCOUNT_IDS), so the
+ * seed DEFAULT_ACCOUNTS list resolves it without any live-data dependency —
+ * a receipt must still render offline. Returns '' when the payment carries no
+ * account so the caller can omit the row rather than print a placeholder.
+ */
+export const resolvePaymentAccountName = (accountId?: string | null): string => {
+  const code = String(accountId ?? '').trim();
+  if (!code) return '';
+  return String(
+    DEFAULT_ACCOUNTS.find((a) => a.id === code || a.code === code)?.name || ''
+  ).trim();
+};
 
 const round2 = roundMoney;
 
@@ -265,6 +282,9 @@ export const buildCustomerReceiptDoc = ({
     amountRetained: round2(adjustedSnap.amountRetained),
     changeGiven: round2(adjustedSnap.changeGiven),
     paymentMethod: payment.paymentMethod,
+    // Payment account the money landed in (Cash Drawer / bank / mobile money).
+    // Resolved from the stored accountId; '' renders no Account row.
+    account: resolvePaymentAccountName(payment.accountId),
     appliedInvoices: adjustedSnap.appliedInvoices,
     appliedOrders: resolvedOrders,
     invoiceTotal: round2(adjustedSnap.invoiceTotalAtPosting),

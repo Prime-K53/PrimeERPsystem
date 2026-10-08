@@ -78,9 +78,9 @@ const CustomerLogin: React.FC = () => {
             </div>
           </div>
 
-          <div className="mb-8">
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Welcome Back</h1>
-            <p className="mt-2 text-xs font-medium text-slate-500 leading-relaxed">Sign in with your email and password to access invoices, orders, quotations, and account billing.</p>
+          <div className="mb-8 relative">
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 welcome-gradient-text">Welcome Back</h1>
+            <p className="mt-2 text-[13.5px] font-medium text-slate-500 leading-relaxed">Sign in with your email and password to access invoices, orders, quotations, and account billing.</p>
           </div>
 
           {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}

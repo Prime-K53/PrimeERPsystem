@@ -743,8 +743,47 @@ const Payments: React.FC = () => {
                     if (token) tokenedPayment = { ...(payment as any), verificationToken: token };
                 } catch { /* offline-safe: legacy payload until synced */ }
             }
-            // Check if this payment is linked to a POS sale
-            const linkedSale = tokenedPayment.reference ? sales.find(s => s.id === tokenedPayment.reference) : null;
+            // Check if this payment is linked to a POS sale.
+            //
+            // POS receipts must render through the POS receipt template, never
+            // the general invoice template. Link detection therefore accepts
+            // every shape processSale writes: `reference === sale.id`, the
+            // split-payment variants (`POS-<saleId>`, `POS-<saleId>-<n>`) and
+            // the `POS Sale #<id>` note. A POS payment that failed to match
+            // would silently fall through to the RECEIPT/invoice branch below
+            // and print the wrong document.
+            const linkedSale = (() => {
+                const reference = String(tokenedPayment.reference || '').trim();
+                // Resolve against the real sale ids rather than parsing the
+                // reference: Sale ids are generated with their own prefixes and
+                // may themselves contain dashes/numbers (e.g. `POS-000123`,
+                // `SALE-2026-0417`), so every `POS-…` shape cannot be decoded by
+                // stripping a fixed prefix and suffix.
+                const byId = (id: unknown) =>
+                    id ? sales.find(s => String(s.id) === String(id)) || null : null;
+
+                if (reference) {
+                    const direct = byId(reference);
+                    if (direct) return direct;
+                    // Split payments: `POS-<saleId>` and `POS-<saleId>-<n>`.
+                    const stripped = reference.replace(/^POS-/, '').replace(/-\d+$/, '');
+                    const viaStripped = byId(stripped);
+                    if (viaStripped) return viaStripped;
+                    // Longest-prefix match covers sale ids that themselves
+                    // start with POS- (double prefix: `POS-POS-000123-2`).
+                    const prefixHit = sales.find(s => reference.startsWith(`${s.id}-`) || reference === `POS-${s.id}`);
+                    if (prefixHit) return prefixHit;
+                }
+
+                // Note form: `POS Sale #<saleId> - Cash`. Match the sale id out
+                // of the note by testing known ids, since the id may contain
+                // the characters a character-class strip would eat.
+                const note = String(tokenedPayment.notes || '');
+                if (/pos\s+sale/i.test(note)) {
+                    return sales.find(s => note.includes(`#${s.id}`)) || null;
+                }
+                return null;
+            })();
 
             if (linkedSale) {
                 const cashierUser = allUsers?.find(u => u.id === linkedSale.cashierId);
@@ -758,7 +797,10 @@ const Payments: React.FC = () => {
                     },
                     cashierName: resolvedCashierName,
                     customerName: linkedSale.customerName || 'Walk-in Customer',
-                    footerMessage: companyConfig.transactionSettings?.pos?.receiptFooter || companyConfig.receiptFooter || ''
+                    footerMessage: companyConfig.transactionSettings?.pos?.receiptFooter || companyConfig.receiptFooter || '',
+                    // Without this the doc builder falls back to a hard-coded
+                    // company identity on the POS receipt payload.
+                    companyConfig
                 });
                 
                 // Validate required fields
@@ -1485,7 +1527,7 @@ const Payments: React.FC = () => {
                         <Trash2 size={14} /> Delete Permanently
                     </button>
                 ) : (
-                    <button onClick={() => { if (confirm("Void this payment?")) { deleteCustomerPayment(payment.id); notify("Payment voided.", "info"); } setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-[#b5493f] hover:bg-[#fef2f2] flex items-center gap-3 transition-colors">
+                    <button onClick={() => { if (confirm("Void this payment?")) { deleteCustomerPayment(payment.id).catch(() => {}); } setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-[#b5493f] hover:bg-[#fef2f2] flex items-center gap-3 transition-colors">
                         <Trash2 size={14} /> Void Payment
                     </button>
                 )}
@@ -2433,8 +2475,7 @@ const Payments: React.FC = () => {
                 onClose={() => setSelectedPayment(null)}
                 onDelete={(id) => {
                     if (confirm("Are you sure you want to void this payment? This action cannot be undone.")) {
-                        deleteCustomerPayment(id);
-                        notify("Payment voided successfully.", "info");
+                        deleteCustomerPayment(id).catch(() => {});
                         setSelectedPayment(null);
                     }
                 }}

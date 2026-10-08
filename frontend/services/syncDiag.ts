@@ -19,10 +19,14 @@ const PREFIX = '[ERP-SYNC-DIAG]';
 
 function isEnabled(): boolean {
   try {
-    return (
-      typeof import.meta !== 'undefined' &&
-      (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true
-    );
+    if (
+      typeof import.meta === 'undefined' ||
+      (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV !== true
+    ) {
+      return false;
+    }
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem('primeerp_sync_diag_enabled') === '1';
   } catch {
     return false;
   }

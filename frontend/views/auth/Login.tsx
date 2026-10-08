@@ -231,16 +231,22 @@ const Login: React.FC = () => {
           )}
         </div>
         {/* ── Heading ── */}
-        <div className="mb-6">
+        <div className="mb-6 relative">
+          {/* Floating background orbs for live effect */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10" aria-hidden="true">
+            <div className="welcome-orb absolute -top-10 -left-8 w-40 h-40 rounded-full" style={{ background: 'radial-gradient(circle, rgba(20,107,96,0.5), transparent 70%)' }} />
+            <div className="welcome-orb absolute -top-6 right-0 w-32 h-32 rounded-full" style={{ background: 'radial-gradient(circle, rgba(217,154,63,0.4), transparent 70%)', animationDelay: '2s' }} />
+            <div className="welcome-orb absolute -bottom-8 left-1/3 w-36 h-36 rounded-full" style={{ background: 'radial-gradient(circle, rgba(31,133,119,0.45), transparent 70%)', animationDelay: '4s' }} />
+          </div>
           <span className="flex items-center gap-1.5 mb-2.5" aria-hidden="true">
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-700" />
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-700 welcome-glow-pulse" />
             <span className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-teal-700">Secure sign-in</span>
           </span>
-          <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight">
-            {mfaRequired ? 'Check your authenticator' : (<>Welcome <span className="text-teal-700">Back</span></>)}
+          <h1 className="text-[30px] font-extrabold text-slate-900 tracking-tight leading-tight welcome-stagger">
+            {mfaRequired ? 'Check your authenticator' : (<><span className="welcome-gradient-text">Welcome</span> <span className="text-teal-700">Back</span></>)}
           </h1>
-          <span aria-hidden="true" className="block h-1 w-16 mt-3 rounded-full" style={{ background: 'linear-gradient(90deg, #062f2b, #146b60 35%, #d99a3f 75%, #f0b35c)' }} />
-          <p className="text-[13.5px] text-slate-500 mt-2.5 leading-relaxed">
+          <span aria-hidden="true" className="block h-1 w-16 mt-3 rounded-full welcome-shimmer-line" style={{ background: 'linear-gradient(90deg, #062f2b, #146b60 35%, #d99a3f 75%, #f0b35c)' }} />
+          <p className="text-[13.5px] text-slate-500 mt-2.5 leading-relaxed welcome-fade-in">
             {mfaRequired
               ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
               : 'To get started, please sign in using your username and password.'}

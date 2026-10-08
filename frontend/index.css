@@ -359,13 +359,13 @@
     scrollbar-gutter: stable;
   }
 
-  body { 
+  body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: var(--dashboard-bg); 
-    color: #1E293B;
+    background-color: var(--dashboard-bg);
+    color: #0F172A;
     overflow: hidden;
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: 13.5px;
+    line-height: 1.45;
     font-weight: 400;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -703,30 +703,29 @@
   /* Finance Typography */
   .finance-nums {
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
   }
 
   .text-title {
-    font-size: 18px;
-    font-weight: 700;
+    font-size: 22px;
+    font-weight: 600;
     line-height: 1.4;
     color: #0F172A;
     letter-spacing: -0.025em;
   }
 
   .text-label {
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 12.5px;
+    font-weight: 500;
     color: #475569;
     line-height: 1.4;
-    text-transform: uppercase;
-    letter-spacing: -0.025em;
   }
 
   .table-header {
-    font-size: 10px;
+    font-size: 14px;
     font-weight: 600;
     color: #0b3e39;
-    padding: 8px 10px;
+    padding: 6px 8px;
     line-height: 1.4;
     background-color: #eef7f6;
     text-transform: uppercase;
@@ -737,81 +736,83 @@
     font-size: 13px;
     font-weight: 400;
     color: #23282A;
-    padding: 8px 10px;
-    line-height: 1.5;
+    padding: 6px 8px;
+    line-height: 1.45;
   }
 
   .numeric-cell {
     text-align: right;
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
   }
 }
 
 /* Modal specific refinements for typography, spacing, and density */
-@layer components {
-  .app-modal .modal-content {
-    background-color: #FCFCFD; /* slightly off-white to avoid pure white */
-    color: #0F172A; /* high contrast but not pure black */
-    @apply rounded-2xl shadow-2xl;
-    overflow: hidden;
-  }
+  @layer components {
+    .app-modal .modal-content {
+      background-color: #FCFCFD; /* slightly off-white to avoid pure white */
+      color: #0F172A; /* high contrast but not pure black */
+      @apply rounded-2xl shadow-2xl;
+      overflow: hidden;
+    }
 
-  .app-modal .modal-header {
-    padding: 12px 14px; /* header/top-bar padding (10-16px) */
-    background: transparent;
-  }
+    .app-modal .modal-header {
+      padding: 10px 14px; /* header/top-bar padding (10-16px) */
+      background: transparent;
+    }
 
-  .app-modal .modal-title {
-    font-size: 22px; /* titles 20-24px */
-    line-height: 1.4;
-    font-weight: 600;
-    color: #0F172A;
-  }
+    .app-modal .modal-title {
+      font-size: 22px; /* titles 20-24px */
+      line-height: 1.4;
+      font-weight: 600;
+      color: #0F172A;
+    }
 
-  .app-modal .modal-sub {
-    font-size: 13.5px;
-    color: #475569;
-    line-height: 1.45;
-  }
+    .app-modal .modal-sub {
+      font-size: 13.5px;
+      color: #475569;
+      line-height: 1.45;
+    }
 
-  .app-modal .modal-label {
-    font-size: 12.5px; /* labels 12-13px */
-    line-height: 1.45;
-    font-weight: 500;
-    color: #475569;
-  }
+    .app-modal .modal-label {
+      font-size: 12.5px; /* labels 12-13px */
+      line-height: 1.45;
+      font-weight: 500;
+      color: #475569;
+    }
 
-  .app-modal .modal-label-small {
-    font-size: 12px;
-    line-height: 1.45;
-    color: #475569;
-  }
+    .app-modal .modal-label-small {
+      font-size: 12px;
+      line-height: 1.45;
+      color: #475569;
+    }
 
-  .app-modal .table-header {
-    font-size: 14px; /* table headers 13.5-14.4px */
-    font-weight: 600;
-    padding: 6px 8px; /* compact tab/table header padding 6-10px */
-    line-height: 1.4;
-  }
+    .app-modal .table-header {
+      font-size: 14px; /* table headers 13.5-14.4px */
+      font-weight: 600;
+      padding: 6px 8px; /* compact tab/table header padding 6-10px */
+      line-height: 1.4;
+    }
 
-  .app-modal .table-body-cell {
-    font-size: 13px;
-    padding: 6px 8px;
-    line-height: 1.45;
-  }
+    .app-modal .table-body-cell {
+      font-size: 13px;
+      padding: 6px 8px;
+      line-height: 1.45;
+    }
 
-  .app-modal .finance-nums, .app-modal .numeric-cell {
-    font-variant-numeric: tabular-nums; /* enforce tabular numbers for finance */
-    text-align: right; /* right-align numeric columns */
-  }
+    .app-modal .finance-nums, .app-modal .numeric-cell {
+      font-variant-numeric: tabular-nums; /* enforce tabular numbers for finance */
+      font-feature-settings: 'tnum';
+      text-align: right; /* right-align numeric columns */
+    }
 
-  .app-modal .modal-btn-primary {
-    padding: 6px 12px; /* button padding compact: 6-8px vertical, 10-14px horizontal */
-    border-radius: 10px;
-  }
+    .app-modal .modal-btn-primary {
+      padding: 6px 12px; /* button padding compact: 6-8px vertical, 10-14px horizontal */
+      border-radius: 10px;
+    }
 
-  .app-modal .modal-btn-secondary {
-    padding: 6px 12px;
+    .app-modal .modal-btn-secondary {
+      padding: 6px 12px;
     border-radius: 10px;
     background: transparent;
   }
@@ -1863,12 +1864,104 @@ td {
 }
 
 
-/* ── POS modal interactive layer ──────────────────────────────────────────
-   Hover / focus / selection used to be wired per element with onMouseEnter,
-   onMouseLeave and onFocus handlers mutating inline styles. It lives here so
-   every POS dialog behaves identically, and so keyboard focus is never
-   invisible (WCAG 2.4.7). The ring needs `!important` because the inputs set
-   `outline: none` inline. */
+/* ── Live Effects: Welcome Back Section ────────────────────────────────────── */
+  /* Animated gradient text for the Welcome Back heading */
+  .welcome-gradient-text {
+    background: linear-gradient(120deg, #062f2b 0%, #146b60 25%, #1f8577 50%, #d99a3f 75%, #f0b35c 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-fill-color: transparent;
+    animation: gradientShift 4s ease-in-out infinite;
+    display: inline-block;
+  }
+
+  @keyframes gradientShift {
+    0%, 100% { background-position: 0% center; }
+    50% { background-position: 100% center; }
+  }
+
+  /* Shimmer sweep for the decorative underline */
+  .welcome-shimmer-line {
+    position: relative;
+    overflow: visible;
+    display: inline-block;
+  }
+  .welcome-shimmer-line::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+    animation: shimmerSweep 3s ease-in-out infinite;
+  }
+
+  @keyframes shimmerSweep {
+    0%, 100% { left: -100%; }
+    50% { left: 100%; }
+  }
+
+  /* Floating background orbs for the welcome section */
+  .welcome-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    opacity: 0.35;
+    animation: floatOrb 8s ease-in-out infinite;
+    will-change: transform, opacity;
+  }
+
+  @keyframes floatOrb {
+    0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.25; }
+    33% { transform: translate(40px, -30px) scale(1.15); opacity: 0.4; }
+    66% { transform: translate(-30px, 30px) scale(0.9); opacity: 0.3; }
+  }
+
+  /* Glow pulse for accent elements */
+  .welcome-glow-pulse {
+    animation: glowPulse 2.5s ease-in-out infinite;
+    display: inline-block;
+  }
+
+  @keyframes glowPulse {
+    0%, 100% { opacity: 0.5; filter: drop-shadow(0 0 4px rgba(20,107,96,0.5)); }
+    50% { opacity: 1; filter: drop-shadow(0 0 14px rgba(20,107,96,0.7)); }
+  }
+
+  /* Subtle fade-in sequence for the welcome text */
+  .welcome-fade-in {
+    animation: welcomeFadeIn 0.8s ease-out both;
+  }
+
+  @keyframes welcomeFadeIn {
+    0% { opacity: 0; transform: translateY(12px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Staggered reveal for heading words */
+  .welcome-stagger > * {
+    animation: welcomeStagger 0.6s ease-out both;
+  }
+  .welcome-stagger > *:nth-child(1) { animation-delay: 0.05s; }
+  .welcome-stagger > *:nth-child(2) { animation-delay: 0.15s; }
+  .welcome-stagger > *:nth-child(3) { animation-delay: 0.25s; }
+
+  @keyframes welcomeStagger {
+    0% { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── End Live Effects ────────────────────────────────────────────────────── */
+
+  /* ── POS modal interactive layer ──────────────────────────────────────────
+    Hover / focus / selection used to be wired per element with onMouseEnter,
+    onMouseLeave and onFocus handlers mutating inline styles. It lives here so
+    every POS dialog behaves identically, and so keyboard focus is never
+    invisible (WCAG 2.4.7). The ring needs `!important` because the inputs set
+    `outline: none` inline. */
 .pos-modal-root :focus-visible {
   outline: 2px solid var(--brand-600, #1f8577) !important;
   outline-offset: 2px;

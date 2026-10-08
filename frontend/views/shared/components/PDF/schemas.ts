@@ -117,6 +117,9 @@ export const ReceiptSchema = z.object({
   amountRetained: z.number().optional(),
   changeGiven: z.number().optional(),
   paymentMethod: z.string(),
+  // Display name of the account the payment was received into. Optional:
+  // payments with no accountId resolve to '' and the row is omitted.
+  account: z.string().optional(),
   appliedInvoices: z.array(z.string()), // ["INV-001", "INV-002"] 
   appliedOrders: z.array(z.string()).optional(), // ["ORD-001", "ORD-002"]
   invoiceTotal: z.number().optional(), // Sum of total amount of all applied invoices

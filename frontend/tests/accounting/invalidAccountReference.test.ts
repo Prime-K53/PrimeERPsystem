@@ -87,6 +87,24 @@ describe('Invalid account reference regression (K70,000 TB imbalance)', () => {
     expect(match!.name).toBe('Cash Drawer');
   });
 
+  it('requireResolvedAccount resolves the legacy alias "2200" to the configured customer-deposit account (21300)', () => {
+    // The phase-2.2 migration audit documents "2200" as the legacy 4-digit
+    // code for customerDepositAccount (canonically "21300" in the default GL
+    // config). Payments (or glMappings) recorded under that code must still
+    // resolve — otherwise strict paths such as voidCustomerPayment throw
+    // UnresolvedAccountError and block the void.
+    const resolved = requireResolvedAccount('2200', CHART, {});
+    expect(resolved).toBeDefined();
+    const match = CHART.find(
+      (a) =>
+        a.id === resolved ||
+        a.code === resolved ||
+        a.account_number === resolved
+    );
+    expect(match).toBeDefined();
+    expect(match!.code === '21300' || match!.account_number === '21300').toBe(true);
+  });
+
   it('requireResolvedAccount throws for an arbitrary unknown reference', () => {
     expect(() => requireResolvedAccount('99999', CHART, {})).toThrow(
       UnresolvedAccountError
