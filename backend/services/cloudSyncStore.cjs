@@ -230,6 +230,78 @@ async function findRowsByDataField(table, field, value) {
 // SO-/TMP-/ORDER- shapes are minted fresh, never adopted.
 const salesOrderNumbering = require('./salesOrderNumbering.cjs');
 
+// ─── customer rename propagation ─────────────────────────────────────────────
+// A client rename must not split one customer's history into "old name"
+// (previous transactions) and "new name" (future ones). The browser rewrites
+// the denormalized name on every linked transaction when the rename happens
+// locally (frontend/services/customerRenamePropagation.ts); this is the
+// server-side enforcement of the same rule, so the invariant also holds for
+// clients that push only the `customers` row and for direct cloud writes.
+let customerRenamePropagation = null;
+try {
+  customerRenamePropagation = require('./customerRenamePropagation.cjs');
+} catch (err) {
+  // Degrade safely: the rename still persists, the cascade simply does not
+  // run server-side (the client-side cascade and the next pull converge).
+  console.error('[cloudSyncStore] customerRenamePropagation unavailable — rename cascade disabled:', err?.message || err);
+}
+
+/**
+ * Rewrite the denormalized customer name on every cloud transaction row that
+ * still carries the previous name.
+ *
+ * `overrides` exposes the cloud readers/writers for hermetic tests; production
+ * never passes them.
+ *
+ * Never throws: a cascade failure must not turn a successful client rename
+ * into a reported sync failure.
+ */
+async function propagateCustomerRenameToCloud(customerId, payload, previousRow, overrides = {}) {
+  if (!customerRenamePropagation || !isConfigured()) return { updated: 0, tables: [] };
+
+  const previousName = customerRenamePropagation.resolveCloudDisplayName(previousRow?.data);
+  const nextName = customerRenamePropagation.resolveCloudDisplayName(payload);
+  const id = String(customerId || '');
+  if (!id || !previousName || !nextName) return { updated: 0, tables: [] };
+  if (previousName.trim().toLowerCase() === nextName.trim().toLowerCase()) {
+    return { updated: 0, tables: [] };
+  }
+
+  // Ambiguity guard: an unlinked legacy row named like the OLD name may belong
+  // to another customer that still answers to that name.
+  let otherCustomerNames = [];
+  try {
+    const listCustomers = typeof overrides.listCustomers === 'function'
+      ? overrides.listCustomers
+      : () => listRows('customers');
+    const rows = await listCustomers();
+    otherCustomerNames = rows
+      .filter((row) => String(row?.id) !== id)
+      .map((row) => customerRenamePropagation.resolveCloudDisplayName(row?.data))
+      .filter((name) => name.length > 0);
+  } catch { otherCustomerNames = []; /* guard degrades to "no collision" */ }
+
+  const deps = overrides.deps || customerRenamePropagation.createCloudDeps({
+    cloudHttp,
+    supabaseUrl: SUPABASE_URL,
+    adminHeaders,
+    serverNow: new Date().toISOString(),
+  });
+
+  const result = await customerRenamePropagation.cascadeCustomerRename({
+    customerId: id,
+    previousName,
+    nextName,
+    otherCustomerNames,
+    deps,
+  });
+
+  if (result.updated > 0) {
+    console.log(`[cloudSyncStore] renamed ${result.updated} transaction row(s) for customer ${id}: "${previousName}" -> "${nextName}"`);
+  }
+  return result;
+}
+
 /**
  * Resolve the official sales order number for an incoming upsert. Returns the
  * number to stamp onto payload.order_number (canonical field), or null when
@@ -769,6 +841,19 @@ async function applyOp(op) {
     }
   }
 
+  // Pre-image of a client rename. The cascade needs the PREVIOUS display name,
+  // which only exists in the cloud copy read before the write lands. Read
+  // best-effort: a failure degrades to "no rename detected".
+  let preCustomerRenameRow = null;
+  if (table === 'customers' && operation === 'upsert' && isConfigured()) {
+    const targetId = recordId || payload?.id;
+    if (targetId) {
+      try {
+        preCustomerRenameRow = await getRow('customers', targetId);
+      } catch { preCustomerRenameRow = null; }
+    }
+  }
+
   try {
     let result;
     // The authoritative sales-order number stamped onto this payload (adopted
@@ -848,6 +933,15 @@ async function applyOp(op) {
       try { await recordIdempotency(operationId, result.id); }
       catch (recErr) { console.warn(`[cloudSyncStore] idempotency record failed for ${operationId}:`, recErr?.message || recErr); }
     }
+    if (table === 'customers' && operation === 'upsert' && result?.id) {
+      // Rename propagation runs after the write and the idempotency record so
+      // a replay short-circuits it, and it never fails the business write.
+      try {
+        await propagateCustomerRenameToCloud(result.id, payload, preCustomerRenameRow);
+      } catch (renameErr) {
+        console.warn(`[cloudSyncStore] customer rename cascade failed for ${result.id}:`, renameErr?.message || renameErr);
+      }
+    }
     if (table === 'sales_orders' && operation === 'upsert') {
       return {
         operationId,
@@ -908,4 +1002,5 @@ module.exports = {
   ensureSalesOrderNumber,
   getSyncGeneration,
   incrementSyncGeneration,
+  propagateCustomerRenameToCloud,
 };

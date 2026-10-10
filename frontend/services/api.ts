@@ -16,6 +16,7 @@ import {
 } from '../types';
 import { logger } from './logger';
 import { transactionService } from './transactionService';
+import { propagateCustomerRename, resolveCustomerDisplayName } from './customerRenamePropagation';
 import { repriceMasterInventoryFromAdjustments } from './masterInventoryPricingService';
 import { generateNextId } from '../utils/helpers';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
@@ -1369,9 +1370,22 @@ export const api = {
 
   customers: {
     getAll: () => handle(() => dbService.getAll<Customer>('customers'), 'Customers.GetAll'),
-    save: (c: Customer) => handle(() => {
+    save: (c: Customer) => handle(async () => {
       checkAuth(['Admin', 'Accountant', 'Clerk'], 'Customers.Save');
-      return dbService.put('customers', c);
+      // Pre-image read BEFORE the write: the cascade needs the previous
+      // display name to refresh the denormalized name on the transactions
+      // this client already owns.
+      const previous = c?.id ? await dbService.get<Customer>('customers', c.id) : undefined;
+      const id = await dbService.put('customers', c);
+      // Best-effort — a propagation failure never fails the client save.
+      try {
+        await propagateCustomerRename({
+          customerId: String(c?.id ?? ''),
+          previousName: resolveCustomerDisplayName(previous),
+          nextName: resolveCustomerDisplayName(c),
+        });
+      } catch { /* rename propagation is best-effort */ }
+      return id;
     }, 'Customers.Save'),
     delete: (id: string) => handle(() => {
       checkAuth(['Admin'], 'Customers.Delete');

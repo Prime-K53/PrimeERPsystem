@@ -1071,10 +1071,18 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
             const oldCustomer = salesStore.customers.find(c => c.id === customer.id);
             const normalizedCustomer = normalizeCustomerPaymentTerms(customer, oldCustomer);
-            await transactionService.saveCustomer(normalizedCustomer, oldCustomer);
+            const result = await transactionService.saveCustomer(normalizedCustomer, oldCustomer);
             await salesStore.fetchSalesData();
             const customerDisplayName = getCustomerDisplayName({ businessName: customer.businessName, companyName: customer.companyName, legacyCustomerName: customer.name });
-            notify(`Client ${customerDisplayName} updated successfully`, "success");
+            // The save rewrites the denormalized name on every previous
+            // transaction that links to this client, so one rename keeps a
+            // single history instead of splitting it into old-name and
+            // new-name transactions.
+            const renamedRecords = Number((result as any)?.renamedRecords || 0);
+            const renameNote = renamedRecords > 0
+                ? ` Name updated on ${renamedRecords} previous transaction${renamedRecords === 1 ? '' : 's'}.`
+                : '';
+            notify(`Client ${customerDisplayName} updated successfully.${renameNote}`, "success");
             addAuditLog({
                 action: 'UPDATE',
                 entityType: 'Client',

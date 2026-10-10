@@ -64,6 +64,7 @@ import {
 import { ensureInvoiceVerificationToken } from '../utils/invoiceVerification';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
+import { propagateCustomerRename, resolveCustomerDisplayName } from './customerRenamePropagation';
 
 const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'LG-REV-AR-'];
 
@@ -3410,7 +3411,14 @@ export const transactionService = {
     },
 
     async saveCustomer(customer: Customer, oldCustomer?: Customer) {
-        return dbService.executeAtomicOperation(
+        // The stored record (not the caller's copy) is the authority on the
+        // previous display name — several save paths (portal enrichment,
+        // payment-terms normalization) re-save a customer without passing the
+        // old value.
+        const storedCustomer = oldCustomer
+            ?? (customer?.id ? await dbService.get<Customer>('customers', customer.id) : undefined);
+
+        const result = await dbService.executeAtomicOperation(
             ['customers'],
             async (tx) => {
                 const store = tx.objectStore('customers');
@@ -3418,6 +3426,35 @@ export const transactionService = {
                 return { success: true };
             }
         );
+
+        // A renamed client must keep ONE history: rewrite the denormalized
+        // customer name on every transaction that belongs to it, otherwise the
+        // same customer splits into "old name" (previous transactions) and
+        // "new name" (future ones).
+        let renamedRecords = 0;
+        let renamedStores: string[] = [];
+        try {
+            const propagation = await propagateCustomerRename({
+                customerId: String(customer?.id ?? ''),
+                previousName: resolveCustomerDisplayName(storedCustomer),
+                nextName: resolveCustomerDisplayName(customer),
+            });
+            renamedRecords = propagation.updatedRecords;
+            renamedStores = propagation.stores;
+            if (renamedRecords > 0) {
+                logger.info('[transactionService] saveCustomer renamed linked transactions', {
+                    customerId: String(customer?.id ?? ''),
+                    renamedRecords,
+                    renamedStores,
+                });
+            }
+        } catch (propagateErr: any) {
+            // Propagation is best-effort — a failure here must never fail the
+            // client save itself (the next pull/repush converges).
+            logger.warn('[transactionService] saveCustomer rename propagation failed:', propagateErr?.message || propagateErr);
+        }
+
+        return { ...result, renamedRecords, renamedStores };
     },
 
     async saveItem(item: Item, oldItem?: Item) {
