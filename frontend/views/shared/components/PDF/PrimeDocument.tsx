@@ -15,6 +15,8 @@ import {
   ExaminationInvoiceDoc,
   SubscriptionDoc,
   PrintingContractDoc,
+  ContractScheduleDoc,
+  ContractCompletionReceiptDoc,
 } from './schemas.ts';
 import { CompanyConfig } from '../../../../types.ts';
 import { DEFAULT_CURRENCIES } from '../../../../types/currency.ts';
@@ -433,7 +435,7 @@ import { StatementSummaryTemplate } from './StatementSummaryTemplate.tsx';
 import { PortalCopyWatermark } from './PortalCopyWatermark.tsx';
 
 interface DocProps {
-  type: 'INVOICE' | 'WORK_ORDER' | 'PO' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'EXAMINATION_INVOICE' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'ORDER' | 'SALES_ORDER' | 'SUBSCRIPTION' | 'PRINTING_CONTRACT';
+  type: 'INVOICE' | 'WORK_ORDER' | 'PO' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'EXAMINATION_INVOICE' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'ORDER' | 'SALES_ORDER' | 'SUBSCRIPTION' | 'PRINTING_CONTRACT' | 'CONTRACT_SCHEDULE' | 'CONTRACT_COMPLETION_RECEIPT';
   data: PrimeDocData;
   configOverride?: CompanyConfig | null;
   /**
@@ -2213,6 +2215,315 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             <VerificationLabel fontScale={fontScale} />
             <SecurityFooter colorMode={mode}
               data={pc}
+              companyName={companyName}
+              legalFooterLine1={resolveFooterText(config, '', false)}
+              legalFooterLine2={buildFooterContactLine(config)}
+              fontScale={fontScale}
+              flowing
+            />
+          </View>
+        </Page>
+      </Document>
+    );
+  }
+
+  if (type === 'CONTRACT_SCHEDULE') {
+    const cs = data as ContractScheduleDoc;
+    const cancelled = isCancelledStatus(String(cs.status || ''), cs as unknown as Record<string, unknown>);
+    return (
+      <Document title={`Contract Schedule - ${cs.contractNumber}`} author={companyName}>
+        <Page size="A4" style={[s.page, pageStyle]}>
+          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {cancelled && <CancelledWatermark colorMode={mode} />}
+          <PaginationFurniture colorMode={mode}
+            identity={{ title: 'Contract Schedule', number: String(cs.contractNumber || ''), customer: String(cs.customerName || '') }}
+            companyName={companyName}
+          />
+
+          <View style={s.headerSection}>
+            <View style={s.headerLeft}>
+              <Text style={[s.title, titleStyle, { fontFamily: 'Helvetica' }]}>Assessment Schedule</Text>
+              <View style={s.infoText}>
+                <Text>Contract # : {cs.contractNumber}</Text>
+                <Text>Date : {formatDateOnly(cs.date)} · Version {cs.version}</Text>
+                <Text>Status : {toTitleCase(String(cs.status || 'draft'))}{cs.scheduleComplete ? '' : ' · Incomplete schedule'}</Text>
+              </View>
+            </View>
+            <View style={s.headerRight}>
+              {renderBrandMark('right')}
+            </View>
+          </View>
+
+          <View style={[s.billingSection, { marginTop: 0, marginBottom: 12 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Company</Text>
+              <View style={s.recipientInfoText}>
+                <Text style={s.recipientName}>{companyName}</Text>
+                {companyAddress ? <Text style={s.recipientDetail}>{companyAddress}</Text> : null}
+                {companyContact ? <Text style={s.recipientPhone}>{companyContact}</Text> : null}
+              </View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Client</Text>
+              <View style={s.recipientInfoText}>
+                <Text style={s.recipientName}>{cs.customerName || 'N/A'}</Text>
+                {cs.schoolName ? <Text style={s.recipientDetail}>{cs.schoolName}</Text> : null}
+                {(cs.periodStart || cs.periodEnd) ? (
+                  <Text style={s.recipientDetail}>
+                    {formatDateOnly(cs.periodStart)} → {cs.periodEnd ? formatDateOnly(cs.periodEnd) : 'open'}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+
+          <View style={{ marginTop: 8 }}>
+            <View style={s.tableHeader}>
+              <Text style={{ flex: 1, textAlign: 'right' }}>Seq</Text>
+              <Text style={{ flex: 3 }}>Assessment</Text>
+              <Text style={{ flex: 2 }}>Scheduled</Text>
+              <Text style={{ flex: 1, textAlign: 'right' }}>Status</Text>
+              <Text style={{ flex: 1, textAlign: 'right' }}>Price</Text>
+            </View>
+            {(cs.schedule || []).map((row: { sequence: number; assessmentName: string; grade?: string; subject?: string; assessmentDate?: string; status: string; unitPrice: number }, i: number) => {
+              const qualifiers = [row.grade, row.subject].filter(Boolean).join(' · ');
+              return (
+                <View key={i} style={s.row}>
+                  <Text style={{ flex: 1, textAlign: 'right' }}>{row.sequence}</Text>
+                  <Text style={{ flex: 3 }}>
+                    {row.assessmentName}{qualifiers ? ` (${qualifiers})` : ''}
+                  </Text>
+                  <Text style={{ flex: 2 }}>{row.assessmentDate ? formatDateOnly(row.assessmentDate) : 'Not scheduled'}</Text>
+                  <Text style={{ flex: 1, textAlign: 'right' }}>{toTitleCase(String(row.status || 'reserved'))}</Text>
+                  <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(row.unitPrice)}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          {!cs.scheduleComplete && (
+            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#fffbeb'), borderRadius: 8, border: `1px solid ${monoLine(mode, '#f59e0b')}` }}>
+              <Text style={{ fontSize: 11, fontWeight: 'bold', color: monoText(mode, '#92400e') }}>
+                Incomplete schedule — {cs.missingDateSequences?.length || 0} assessment(s) have no scheduled date (sequence(s): {(cs.missingDateSequences || []).join(', ')}).
+              </Text>
+              <Text style={{ fontSize: 10, color: monoText(mode, '#92400e'), marginTop: 2 }}>
+                This schedule is not yet complete as agreed — the missing dates are reported explicitly, not substituted.
+              </Text>
+            </View>
+          )}
+
+          <View style={[s.summaryContainer, { justifyContent: 'flex-end' }]}>
+            <View style={{ width: 280 }}>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1, fontWeight: 'bold' }}>Total Assessments</Text>
+                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{cs.totalAssessments}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Scheduled / Consumed</Text>
+                <Text style={{ textAlign: 'right' }}>{cs.scheduledCount} / {cs.consumedCount}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Released / Cancelled</Text>
+                <Text style={{ textAlign: 'right' }}>{cs.releasedCount} / {cs.cancelledCount}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Prepaid / Reserved</Text>
+                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cs.prepaidAmount)} / {currency} {formatAmount(cs.reservedAmount)}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Consumed / Available</Text>
+                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cs.consumedAmount)} / {currency} {formatAmount(cs.availableFunds)}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1, fontWeight: 'bold' }}>Schedule Value</Text>
+                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(cs.totalValue)}</Text>
+              </View>
+            </View>
+          </View>
+
+          {(cs.totalCandidature !== undefined || cs.assessmentSpec || cs.chargePerCandidate !== undefined || cs.assessmentSittings) ? (
+            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Recorded specification</Text>
+              {cs.totalCandidature !== undefined ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Total candidature: {cs.totalCandidature}</Text> : null}
+              {cs.assessmentSpec ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Specification: {cs.assessmentSpec}</Text> : null}
+              {cs.chargePerCandidate !== undefined ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Charge per candidate: {currency} {formatAmount(cs.chargePerCandidate)}</Text> : null}
+              {cs.assessmentSittings ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Sittings: {cs.assessmentSittings}</Text> : null}
+            </View>
+          ) : null}
+
+          {cs.terms ? (
+            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Terms &amp; Conditions</Text>
+              <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155') }}>{cs.terms}</Text>
+              {cs.notes ? (
+                <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155'), marginTop: 6 }}>Notes: {cs.notes}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View wrap={false} style={{ marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
+                DOCUMENT INTEGRITY
+              </Text>
+            </View>
+            <Text style={{ marginTop: 6, fontSize: 9, color: monoText(mode, '#1e3a8a'), lineHeight: 1.45 }}>
+              Content hash: {cs.contentHash}
+            </Text>
+            <Text style={{ marginTop: 4, fontSize: 9, color: monoText(mode, '#475569'), lineHeight: 1.45 }}>
+              This hash covers the contract, the full assessment schedule with its
+              sequences and dates, and the fund position. Any alteration changes
+              the hash. Quote the contract number and hash to verify with {companyName}.
+            </Text>
+          </View>
+
+          <View wrap={false} style={{ marginTop: 10 }}>
+            <VerificationLabel fontScale={fontScale} />
+            <SecurityFooter colorMode={mode}
+              data={cs}
+              companyName={companyName}
+              legalFooterLine1={resolveFooterText(config, '', false)}
+              legalFooterLine2={buildFooterContactLine(config)}
+              fontScale={fontScale}
+              flowing
+            />
+          </View>
+        </Page>
+      </Document>
+    );
+  }
+
+  if (type === 'CONTRACT_COMPLETION_RECEIPT') {
+    const cr = data as ContractCompletionReceiptDoc;
+    const cancelled = isCancelledStatus(String(cr.status || ''), cr as unknown as Record<string, unknown>);
+    return (
+      <Document title={`Completion Receipt - ${cr.receiptNumber}`} author={companyName}>
+        <Page size="A4" style={[s.page, pageStyle]}>
+          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {cancelled && <CancelledWatermark colorMode={mode} />}
+          <PaginationFurniture colorMode={mode}
+            identity={{ title: 'Completion Receipt', number: String(cr.receiptNumber || ''), customer: String(cr.customerName || '') }}
+            companyName={companyName}
+          />
+
+          <View style={s.headerSection}>
+            <View style={s.headerLeft}>
+              <Text style={[s.title, titleStyle, { fontFamily: 'Helvetica' }]}>Assessment Completion Receipt</Text>
+              <View style={s.infoText}>
+                <Text>Receipt # : {cr.receiptNumber}</Text>
+                <Text>Contract # : {cr.contractNumber}</Text>
+                <Text>Date : {formatDateOnly(cr.date)} · Version {cr.version}</Text>
+                <Text>Status : {toTitleCase(String(cr.status || 'draft'))}{cr.completedToDate >= cr.totalAssessments && cr.totalAssessments > 0 ? ' · Fully completed' : ''}</Text>
+              </View>
+            </View>
+            <View style={s.headerRight}>
+              {renderBrandMark('right')}
+            </View>
+          </View>
+
+          <View style={[s.billingSection, { marginTop: 0, marginBottom: 12 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Company</Text>
+              <View style={s.recipientInfoText}>
+                <Text style={s.recipientName}>{companyName}</Text>
+                {companyAddress ? <Text style={s.recipientDetail}>{companyAddress}</Text> : null}
+                {companyContact ? <Text style={s.recipientPhone}>{companyContact}</Text> : null}
+              </View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Client</Text>
+              <View style={s.recipientInfoText}>
+                <Text style={s.recipientName}>{cr.customerName || 'N/A'}</Text>
+                {cr.schoolName ? <Text style={s.recipientDetail}>{cr.schoolName}</Text> : null}
+              </View>
+            </View>
+          </View>
+
+          <View style={{ marginTop: 8 }}>
+            <View style={s.tableHeader}>
+              <Text style={{ flex: 3 }}>Completed Assessment</Text>
+              <Text style={{ flex: 2 }}>Consumed</Text>
+              <Text style={{ flex: 1, textAlign: 'right' }}>Price</Text>
+            </View>
+            <View style={s.row}>
+              <Text style={{ flex: 3 }}>
+                {cr.item?.assessmentName}{[cr.item?.grade, cr.item?.subject].filter(Boolean).join(' · ') ? ` (${[cr.item?.grade, cr.item?.subject].filter(Boolean).join(' · ')})` : ''}
+              </Text>
+              <Text style={{ flex: 2 }}>{cr.item?.consumedAt ? formatDateOnly(cr.item.consumedAt) : '—'}</Text>
+              <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(cr.item?.unitPrice || 0)}</Text>
+            </View>
+          </View>
+
+          <View style={[s.summaryContainer, { justifyContent: 'flex-end' }]}>
+            <View style={{ width: 280 }}>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1, fontWeight: 'bold' }}>Completion Progress</Text>
+                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{cr.completedToDate} / {cr.totalAssessments}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>This completion (sequence {cr.sequence})</Text>
+                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.amountDebited)}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Remaining Assessments</Text>
+                <Text style={{ textAlign: 'right' }}>{cr.remainingAssessments}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Consumed To Date</Text>
+                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.totalConsumedToDate)}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Contract Value / Reserved</Text>
+                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.contractValue)} / {currency} {formatAmount(cr.remainingReservedFunds)}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Unallocated Funds</Text>
+                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.unallocatedFunds)}</Text>
+              </View>
+              <View style={[s.totalRow]}>
+                <Text style={{ flex: 1 }}>Wallet Balance After</Text>
+                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.walletBalanceAfter)}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+            <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Canonical linkage</Text>
+            <Text style={{ fontSize: 11, color: monoText(mode, '#334155'), fontFamily: "'JetBrains Mono', monospace" }}>
+              Wallet transaction: {cr.walletTransactionId || '—'}
+            </Text>
+            <Text style={{ fontSize: 11, color: monoText(mode, '#334155'), fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>
+              Ledger entry: {cr.ledgerEntryId || '—'}
+            </Text>
+          </View>
+
+          {cr.notes ? (
+            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+              <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155') }}>Notes: {cr.notes}</Text>
+            </View>
+          ) : null}
+
+          <View wrap={false} style={{ marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
+                DOCUMENT INTEGRITY
+              </Text>
+            </View>
+            <Text style={{ marginTop: 6, fontSize: 9, color: monoText(mode, '#1e3a8a'), lineHeight: 1.45 }}>
+              Content hash: {cr.contentHash}
+            </Text>
+            <Text style={{ marginTop: 4, fontSize: 9, color: monoText(mode, '#475569'), lineHeight: 1.45 }}>
+              This hash covers the contract, the completed assessment, the
+              completion progress, the recognised debit and the prepaid fund
+              position. Any alteration changes the hash. Quote the receipt
+              number and hash to verify with {companyName}.
+            </Text>
+          </View>
+
+          <View wrap={false} style={{ marginTop: 10 }}>
+            <VerificationLabel fontScale={fontScale} />
+            <SecurityFooter colorMode={mode}
+              data={cr}
               companyName={companyName}
               legalFooterLine1={resolveFooterText(config, '', false)}
               legalFooterLine2={buildFooterContactLine(config)}

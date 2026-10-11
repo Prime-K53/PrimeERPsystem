@@ -3,7 +3,8 @@ import { logger } from '@/services/logger';
 import {
      Item, Warehouse, Purchase, Sale, Quotation, JobOrder, CustomerPayment, BillOfMaterial, ProductionBatch, WorkOrder, WorkCenter, ProductionResource, Account, LedgerEntry, Invoice, RecurringInvoice, Expense, Income, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, User, ResourceAllocation, GoodsReceipt, UserRole, SMSCampaign, Subscriber, SMSTemplate, Cheque, Shipment, SubcontractOrder, MaintenanceLog, AuditLogEntry, SystemAlert, Reminder, ExamJob, ExamPaper, ExamPrintingBatch, School, Customer, Supplier, SupplierPayment, Order, PurchaseAllocation, VatTransaction, VatReturn, BOMTemplate, MarketAdjustment, MarketAdjustmentTransaction, UserGroup, MaterialCategory, WarehouseInventory, MaterialBatch, InventoryTransaction, MaterialReservation, RoundingLog, ExaminationJob, ExaminationJobSubject, ExaminationInvoiceGroup, ExaminationRecurringProfile, ExaminationInventoryDeduction, CustomerReceiptSnapshot, ExaminationBatchNotification, NotificationAuditLog,     SalesOrder, JobTicket, JobTicketSettings,
     TaxRate, FixedAsset, DepreciationEntry, AssetDisposal, OwnerEquityTransaction, Loan, LoanRepayment, AccrualEntry, IncomeSummaryEntry, PurchaseOrder, PurchaseInvoice, InterestIncomeEntry, Prepayment, PrepaymentAmortization, StaffAdvance, UtilityExpense, UtilityPayment, BankChargeEntry, PayrollEntry,
-    AssessmentContract, AssessmentContractItem, ContractAmendment, StatementSnapshot
+    AssessmentContract, AssessmentContractItem, ContractAmendment, StatementSnapshot,
+    ContractDocument
 } from '../types';
 import type { Referral, ReferralReward } from '../types/referral';
 import type { ServiceRecipe, ServiceJob, ServiceResource, ServiceConsumptionRecord } from '../types';
@@ -177,6 +178,7 @@ interface NexusDB extends DBSchema {
     purchaseOrders: { key: string; value: PurchaseOrder; };
     purchaseInvoices: { key: string; value: PurchaseInvoice; };
     statementSnapshots: { key: string; value: StatementSnapshot; };
+    contractDocuments: { key: string; value: ContractDocument; };
     interestIncomeEntries: { key: string; value: InterestIncomeEntry; };
     prepayments: { key: string; value: Prepayment; };
     prepaymentAmortizations: { key: string; value: PrepaymentAmortization; };
@@ -204,7 +206,8 @@ const DB_NAME = 'PrimeERP_Final_v3_Clean';
 // v57: register the `serviceRecipes`/`serviceJobs`/`serviceResources`/`serviceConsumptions` stores (service catalog execution).
 // v59: register the `transportBudgetEvents` store (Phase 4 append-only Transport Budget event ledger).
 // v60: register the `transportExpenses` store (Phase 7J authoritative courier/transport expense source).
-const DB_VERSION = 60;
+// v61: register the `contractDocuments` store (Phase 3 immutable schedule/receipt snapshots).
+const DB_VERSION = 61;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
@@ -582,6 +585,7 @@ const CLOUD_TABLE_MAP: Record<string, string> = {
   // public verification fell back to the legacy purchases table).
   purchaseOrders: 'purchase_orders',
   statementSnapshots: 'statement_snapshots',
+  contractDocuments: 'contract_documents',
   // Transport Budget event ledger — single-company append-only event store
   // (Phase 4 infrastructure only; envelope table transport_budget_events).
   transportBudgetEvents: 'transport_budget_events',
@@ -711,6 +715,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'purchaseOrders',
     'purchaseInvoices',
     'statementSnapshots',
+    'contractDocuments',
     // Transport Budget event ledger — append-only, single-company.
     'transportBudgetEvents',
     // Authoritative courier/transport expense source (Phase 7J).

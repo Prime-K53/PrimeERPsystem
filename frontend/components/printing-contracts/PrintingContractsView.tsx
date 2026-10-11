@@ -32,9 +32,21 @@ import {
   type SignatureParty,
 } from '../../utils/contractLifecycle';
 import { SignatureCapture, type CapturedContractSignature } from './SignatureCapture';
-import { buildPrintingContractDoc } from '../../services/printingContractService';
-import { PrintingContractSchema } from '../../views/shared/components/PDF/schemas';
+import {
+  buildPrintingContractDoc,
+  buildContractScheduleDoc,
+  buildAssessmentCompletionReceiptDoc,
+} from '../../services/printingContractService';
+import {
+  PrintingContractSchema,
+  ContractScheduleSchema,
+  ContractCompletionReceiptSchema,
+} from '../../views/shared/components/PDF/schemas';
 import { PreviewModal } from '../../views/shared/components/PDF/PreviewModal';
+import type { DocType } from '../../stores/documentStore';
+import { transactionService } from '../../services/transactionService';
+import { contractDocumentService } from '../../services/contractDocumentService';
+import ContractReconciliationView from './ContractReconciliationView';
 import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { generateVerificationToken } from '../../utils/documentVerification';
 import { dbService } from '../../services/db';
@@ -254,7 +266,10 @@ const PrintingContractsView: React.FC = () => {
   const [signingParty, setSigningParty] = useState<SignatureParty | null>(null);
 
   // Generated contract document preview (read-only render, no state change).
-  const [docPreview, setDocPreview] = useState<{ data: any } | null>(null);
+  const [docPreview, setDocPreview] = useState<{ type: DocType; data: any } | null>(null);
+
+  // Phase 4 §5: reconciliation diagnostics (read-only modal).
+  const [isReconciliationOpen, setIsReconciliationOpen] = useState(false);
 
   // Role gates mirror services/api.ts (save: Admin/Editor, delete: Admin).
   // Granular printing_contracts.* permissions grant additively where assigned.
@@ -569,10 +584,32 @@ const PrintingContractsView: React.FC = () => {
           // the detail view and the commercial basis stays auditable.
           data: { lines: validLines },
         };
-        await addAssessmentContract(record);
-        // Materialise one reserved assessment record per billed unit.
-        for (const item of contractItems) {
-          await addContractAssessment(item);
+        // Phase 1 §2.1: atomic creation — contract + all reserved items + bucket
+        // in ONE operation. Validations run before the first write, so a failure
+        // leaves no half-reserved draft. Falls back to legacy two-step only if
+        // the atomic path is unavailable (still reports drift via reconciler).
+        try {
+          await transactionService.createPrintingContractWithItems({
+            contract: record,
+            items: contractItems.map((it) => ({
+              id: String(it.id),
+              assessment_name: it.assessment_name,
+              assessment_type: it.assessment_type,
+              assessment_grade: it.assessment_grade,
+              assessment_subject: it.assessment_subject,
+              assessment_date: it.assessment_date,
+              item_price: it.item_price,
+              notes: it.notes,
+              created_by: createdBy,
+            })),
+            performedBy: createdBy,
+          });
+          await fetchFinanceData().catch(() => {});
+        } catch (bulkErr: any) {
+          // Fail closed with a clear message — do not leave a half-reserved contract.
+          // If the contract row was still created by a partial path, the drift
+          // report (reconciler) will flag reserved items with zero bucket.
+          throw new Error(`Contract creation failed atomically: ${bulkErr?.message || bulkErr}. Nothing partially reserved.`);
         }
         if (issueInvoice) {
           const invoiceId = await issueContractInvoice(
@@ -716,41 +753,58 @@ const PrintingContractsView: React.FC = () => {
           } as AssessmentContract);
           notify('Contract activated WITHOUT payment evidence — reason recorded on the contract.', 'warning');
         }
+        // Phase 3 §4.1: auto-issue immutable schedule AFTER activation commits.
+        // Never before activation; failure to issue warns but does not roll back
+        // the committed activation (document can be re-issued from Overview).
+        try {
+          const fresh = (useFinanceStore.getState().assessmentContracts || []).find((cc: AssessmentContract) => cc.id === c.id) || { ...c, ...patch } as AssessmentContract;
+          const freshItems = (useFinanceStore.getState().contractAssessments || []).filter((a) => a.contract_id === c.id);
+          await contractDocumentService.issueScheduleVersion({
+            contract: fresh,
+            items: freshItems,
+            customerName: customerNameOf(fresh.customer_id),
+            schoolName: schoolNameOf(fresh.school_id),
+            issuedBy: actor,
+          });
+        } catch (docErr: any) {
+          notify(`Activated, but schedule issue failed: ${docErr?.message || docErr} — re-issue from Overview.`, 'warning');
+        }
       } catch (e: any) {
         notify(`Activation failed: ${e.message}`, 'error');
       }
       return;
     }
 
-    if (next === 'cancelled') {
-      const patch: Partial<AssessmentContract> = {
-        status: next, updated_at: now, version: num(c.version) + 1, cancelled_at: now,
-      };
+    // Phase 1 §2.4: explicit closure — releases remaining reservation without
+    // fabricating an automatic refund. Any cash refund requires a separate
+    // auditable refundContractBalance call with a policy reference.
+    if (next === 'cancelled' || next === 'expired' || next === 'completed') {
       try {
-        const refund = fundsOf(c).prepaid - fundsOf(c).consumed;
-        if (refund > 0) {
-          // Refund first: a failed posting aborts instead of reporting a
-          // refund that never happened.
-          await addWalletTransaction({
-            id: '', customerId: c.customer_id, amount: refund,
-            type: 'Credit', reference: c.contract_number, date: now,
-            data: { type: 'CONTRACT_REFUND', contract_id: c.id, contract_number: c.contract_number },
-          } as WalletTransaction);
-          await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
-          notify(`Contract cancelled. Unused ${currency}${refund.toLocaleString()} refunded to wallet.`, 'success');
-          return;
+        const res: any = await (transactionService as any).resolveContractClosure({
+          contractId: c.id,
+          targetStatus: next,
+          performedBy: actor,
+        });
+        await fetchFinanceData().catch(() => {});
+        const released = Number(res?.releasedValue || 0);
+        if (next === 'cancelled') {
+          notify(
+            released > 0
+              ? `Contract cancelled. Remaining reservation ${currency}${released.toLocaleString()} released — now available for unrelated spending. Refunds require an explicit policy-approved refund.`
+              : 'Contract cancelled. No remaining reservation.',
+            'success',
+          );
+        } else {
+          notify(`Contract ${CONTRACT_STATUS_LABEL[next].toLowerCase()}${released > 0 ? ` — ${currency}${released.toLocaleString()} released` : ''}`, 'success');
         }
-        await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
-        notify(`Contract ${CONTRACT_STATUS_LABEL[next].toLowerCase()}`, 'success');
       } catch (e: any) {
-        notify(`Cancellation failed: ${e.message}`, 'error');
+        notify(`Closure failed: ${e.message}`, 'error');
       }
       return;
     }
 
     const patch: Partial<AssessmentContract> = { status: next, updated_at: now, version: num(c.version) + 1 };
     if (next === 'suspended') patch.suspended_at = now;
-    if (next === 'completed') patch.completed_at = now;
     try {
       await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
       notify(`Contract ${CONTRACT_STATUS_LABEL[next].toLowerCase()}`, 'success');
@@ -845,30 +899,26 @@ const PrintingContractsView: React.FC = () => {
         });
         notify('Assessment updated', 'success');
       } else {
-        const record: AssessmentContractItem = {
-          id: uid(),
-          contract_id: selected.id,
-          company_id: selected.company_id,
-          customer_id: selected.customer_id,
-          school_id: selected.school_id,
-          assessment_type: itemDraft.assessment_type,
-          assessment_grade: itemDraft.assessment_grade || undefined,
-          assessment_subject: itemDraft.assessment_subject || undefined,
-          assessment_name: itemDraft.assessment_name.trim(),
-          assessment_date: itemDraft.assessment_date ? new Date(itemDraft.assessment_date).toISOString() : now,
-          status: 'reserved',
-          item_price: num(itemDraft.item_price),
-          reserved_at: now,
-          notes: itemDraft.notes || undefined,
-          created_by: (user as any)?.id || 'system',
-          created_at: now, updated_at: now, version: 1, data: {},
-        };
-        await addContractAssessment(record);
-        await updateAssessmentContract({
-          ...selected,
-          assessment_count: num(selected.assessment_count) + 1,
-          reserved_amount: num(selected.reserved_amount) + record.item_price,
-          updated_at: now, version: num(selected.version) + 1,
+        // Canonical reservation operation: the entitlement check,
+        // the reserved item and the reserved_amount bucket bump are
+        // atomic inside the shared persistence boundary. A
+        // reservation is an allocation of deposited funds — it never
+        // moves the wallet, posts no ledger entry and creates no
+        // wallet transaction.
+        await transactionService.reserveContractAssessment({
+          contractId: selected.id,
+          assessmentItemId: uid(),
+          assessment: {
+            assessment_name: itemDraft.assessment_name.trim(),
+            assessment_type: itemDraft.assessment_type,
+            assessment_grade: itemDraft.assessment_grade || undefined,
+            assessment_subject: itemDraft.assessment_subject || undefined,
+            assessment_date: itemDraft.assessment_date ? new Date(itemDraft.assessment_date).toISOString() : undefined,
+            item_price: num(itemDraft.item_price),
+            notes: itemDraft.notes || undefined,
+            created_by: (user as any)?.id || 'system',
+          },
+          performedBy: (user as any)?.id || 'system',
         });
         notify('Assessment scheduled (funds reserved)', 'success');
       }
@@ -902,6 +952,36 @@ const PrintingContractsView: React.FC = () => {
           ? ` New wallet balance: ${currency}${Number(result.newBalance).toLocaleString()}.`
           : '';
         notify(`Assessment consumed — ${currency}${charged.toLocaleString()} debited from wallet.${balanceSuffix}`, 'success');
+        // Phase 3 §4.2: auto-issue immutable receipt AFTER canonical consumption
+        // commits. Exactly once per assessment (deterministic id); retries return
+        // the existing row. Failure to issue warns only — money already moved
+        // correctly, receipt can be re-issued from Overview.
+        try {
+          const st = useFinanceStore.getState();
+          const freshContract = (st.assessmentContracts || []).find((cc: AssessmentContract) => cc.id === contract.id) || contract;
+          const freshItems = (st.contractAssessments || []).filter((it) => it.contract_id === contract.id);
+          const consumedItem = freshItems.find((it) => it.id === a.id);
+          const consumedOrdered = freshItems.filter((it) => String(it.status) === 'consumed');
+          const customer = (customers || []).find((cc: Customer) => String(cc.id) === String(freshContract.customer_id));
+          if (consumedItem && String(consumedItem.status) === 'consumed') {
+            await contractDocumentService.issueCompletionReceipt({
+              contract: freshContract,
+              item: consumedItem,
+              items: freshItems,
+              sequence: Math.max(1, consumedOrdered.length),
+              amountDebited: num(consumedItem.item_price),
+              walletBalanceAfter: num((customer as any)?.walletBalance ?? result?.newBalance ?? 0),
+              walletTransactionId: String(result?.walletTransactionId || `WTX-${a.id}-CONSUMED`),
+              ledgerEntryId: String(result?.ledgerEntryId || `LG-WTX-${a.id}-CONSUMED`),
+              customerName: customerNameOf(freshContract.customer_id),
+              schoolName: schoolNameOf(freshContract.school_id),
+              issuedBy: (user as any)?.id || 'system',
+              consumedAtIso: (consumedItem as any).consumed_at,
+            });
+          }
+        } catch (docErr: any) {
+          notify(`Consumed, but receipt issue failed: ${docErr?.message || docErr} — re-issue from Overview.`, 'warning');
+        }
       } catch (e: any) {
         const message = String(e?.message || 'Assessment update failed.');
         const funds = message.match(/required ([\d.]+), available ([\d.]+)/);
@@ -1068,21 +1148,56 @@ const PrintingContractsView: React.FC = () => {
           ];
         }
         const prepaidAdj = num(am.prepaid_amount_adjustment);
+        const countAdj = Math.floor(num(am.assessment_count_adjustment));
+        // Phase 1 §2.4: explicit reservation delta — funded increases grow the
+        // protected reservation only with verified funding; unfunded increases
+        // grow commercial value only (tracked as unfunded, never fabricated).
+        const fundingRef = String((am as any)?.data?.fundingReference || (am as any)?.fundingReference || '').trim();
+        try {
+          await (transactionService as any).applyContractAmendmentDelta({
+            contractId: contract.id,
+            amendmentId: am.id,
+            prepaidDelta: prepaidAdj,
+            countDelta: countAdj,
+            fundingReference: fundingRef || undefined,
+            performedBy: actor,
+          });
+          await fetchFinanceData().catch(() => {});
+        } catch (deltaErr: any) {
+          notify(`Amendment funding check failed: ${deltaErr?.message || deltaErr}`, 'error');
+          return;
+        }
+        // Signature void + price history (non-financial, applied after delta).
+        const fresh = (useFinanceStore.getState().assessmentContracts || []).find((cc: AssessmentContract) => cc.id === contract.id) || contract;
         await updateAssessmentContract({
-          ...contract,
-          prepaid_amount: num(contract.prepaid_amount) + prepaidAdj,
-          max_assessments: Math.max(1, num(contract.max_assessments) + Math.floor(num(am.assessment_count_adjustment))),
-          assessment_price: priceAdj > 0 ? priceAdj : contract.assessment_price,
+          ...fresh,
+          assessment_price: priceAdj > 0 ? priceAdj : fresh.assessment_price,
           data,
-          updated_at: now, version: num(contract.version) + 1,
+          updated_at: new Date().toISOString(), version: num(fresh.version) + 1,
         });
-        // No wallet fabrication: extra commercial value is a receivable.
-        // The holder must record customer payment; activation evidence
-        // re-checks coverage against the new prepaid figure.
-        if (prepaidAdj > 0) {
-          notify(`Amendment approved — additional ${money(prepaidAdj)} is now due. Record customer payment.`, 'warning');
+        // No wallet fabrication: extra commercial value without funding is a receivable.
+        if (prepaidAdj > 0 && !fundingRef) {
+          notify(`Amendment approved — additional ${money(prepaidAdj)} is now due (unfunded). Record customer payment before reserving.`, 'warning');
         } else {
           notify('Amendment approved and applied', 'success');
+        }
+        // Phase 3 §4.1: new immutable schedule after approved amendment that
+        // changes schedule/dates/counts/prices/terms (active contracts only).
+        try {
+          const st2 = useFinanceStore.getState();
+          const amended = (st2.assessmentContracts || []).find((cc: AssessmentContract) => cc.id === contract.id);
+          if (amended && String(amended.status) === 'active') {
+            const amendedItems = (st2.contractAssessments || []).filter((it) => it.contract_id === contract.id);
+            await contractDocumentService.issueScheduleVersion({
+              contract: amended,
+              items: amendedItems,
+              customerName: customerNameOf(amended.customer_id),
+              schoolName: schoolNameOf(amended.school_id),
+              issuedBy: actor,
+            });
+          }
+        } catch (docErr: any) {
+          notify(`Amendment applied, but schedule re-issue failed: ${docErr?.message || docErr}`, 'warning');
         }
       } else {
         notify('Amendment rejected', 'info');
@@ -1154,9 +1269,81 @@ const PrintingContractsView: React.FC = () => {
       });
       const parsed = PrintingContractSchema.parse(doc);
       const secured = await attachDocumentSecurity(parsed, companyConfig?.companyName);
-      setDocPreview({ data: secured });
+      setDocPreview({ type: 'PRINTING_CONTRACT', data: secured });
     } catch (e: any) {
       notify(`Document generation failed: ${e.message}`, 'error');
+    }
+  };
+
+  const handleGenerateScheduleDocument = async () => {
+    if (!selected) return;
+    try {
+      let source = selected;
+      if (!String(selected.verificationToken || '').trim()) {
+        const token = generateVerificationToken();
+        await updateAssessmentContract({
+          ...selected,
+          verificationToken: token,
+          updated_at: new Date().toISOString(),
+          version: num(selected.version) + 1,
+        } as AssessmentContract);
+        source = { ...selected, verificationToken: token };
+      }
+      const doc = await buildContractScheduleDoc({
+        contract: source,
+        items: selectedItems,
+        customerName: customerNameOf(source.customer_id),
+        schoolName: schoolNameOf(source.school_id),
+      });
+      const parsed = ContractScheduleSchema.parse(doc);
+      const secured = await attachDocumentSecurity(parsed, companyConfig?.companyName);
+      setDocPreview({ type: 'CONTRACT_SCHEDULE', data: secured });
+    } catch (e: any) {
+      notify(`Schedule generation failed: ${e.message}`, 'error');
+    }
+  };
+
+  const handleGenerateCompletionReceiptDocument = async () => {
+    if (!selected) return;
+    const consumedItems = selectedItems
+      .filter(a => a.status === 'consumed')
+      .sort((a, b) => String(a.consumed_at || '').localeCompare(String(b.consumed_at || '')));
+    const latest = consumedItems[consumedItems.length - 1];
+    if (!latest) {
+      notify('No consumed assessments yet — complete an assessment before issuing its receipt.', 'error');
+      return;
+    }
+    try {
+      let source = selected;
+      if (!String(selected.verificationToken || '').trim()) {
+        const token = generateVerificationToken();
+        await updateAssessmentContract({
+          ...selected,
+          verificationToken: token,
+          updated_at: new Date().toISOString(),
+          version: num(selected.version) + 1,
+        } as AssessmentContract);
+        source = { ...selected, verificationToken: token };
+      }
+      const customer = (customers || []).find(c => String(c.id) === String(source.customer_id));
+      const doc = await buildAssessmentCompletionReceiptDoc({
+        contract: source,
+        item: latest,
+        items: selectedItems,
+        sequence: consumedItems.length,
+        amountDebited: num(latest.item_price),
+        walletBalanceAfter: num((customer as any)?.walletBalance),
+        walletTransactionId: `WTX-${latest.id}-CONSUMED`,
+        ledgerEntryId: `LG-WTX-${latest.id}-CONSUMED`,
+        customerName: customerNameOf(source.customer_id),
+        schoolName: schoolNameOf(source.school_id),
+        consumedAtIso: latest.consumed_at,
+      });
+      const parsed = ContractCompletionReceiptSchema.parse(doc);
+      const secured = await attachDocumentSecurity(parsed, companyConfig?.companyName);
+      setDocPreview({ type: 'CONTRACT_COMPLETION_RECEIPT', data: secured });
+    } catch (e: any) {
+      notify(`Completion receipt generation failed: ${e.message}`, 'error');
     }
   };
 
@@ -1222,6 +1409,9 @@ const PrintingContractsView: React.FC = () => {
           </select>
           <ContractGhostButton compact onClick={() => { setIsLoading(true); Promise.all([fetchFinanceData().catch(() => {}), fetchSalesData(true).catch(() => {})]).finally(() => setIsLoading(false)); }}>
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /> Refresh
+          </ContractGhostButton>
+          <ContractGhostButton compact onClick={() => setIsReconciliationOpen(true)}>
+            <Landmark size={14} /> Reconciliation
           </ContractGhostButton>
           {canManageContracts && (
             <ContractPrimaryButton compact chevron={false} onClick={openCreate}>
@@ -1689,10 +1879,10 @@ const PrintingContractsView: React.FC = () => {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
-                      { l: 'Prepaid', v: money(fundsOf(selected).prepaid) },
-                      { l: 'Reserved', v: money(fundsOf(selected).reserved) },
-                      { l: 'Consumed', v: money(fundsOf(selected).consumed) },
-                      { l: 'Available', v: money(fundsOf(selected).available) },
+                      { l: 'Commercial value (not proof of funding)', v: money(fundsOf(selected).prepaid) },
+                      { l: 'Reserved — protected, not spent', v: money(fundsOf(selected).reserved) },
+                      { l: 'Consumed — spent', v: money(fundsOf(selected).consumed) },
+                      { l: 'Commercial remainder', v: money(fundsOf(selected).available) },
                     ].map(k => (
                       <div key={k.l} style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 12 }}>
                         <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: '0 0 4px' }}>{k.l}</p>
@@ -1700,6 +1890,10 @@ const PrintingContractsView: React.FC = () => {
                       </div>
                     ))}
                   </div>
+                  <p style={{ fontSize: 11, color: contractInkSoft, margin: 0 }}>
+                    Assessments: total {selected.max_assessments} · completed {selectedItems.filter((a) => String(a.status) === 'consumed').length} · remaining {Math.max(0, num(selected.max_assessments) - selectedItems.filter((a) => String(a.status) === 'consumed').length)} · reserved {selectedItems.filter((a) => String(a.status) === 'reserved').length} · released {selectedItems.filter((a) => String(a.status) === 'released' || String(a.status) === 'cancelled').length}.
+                    {' '}Reserved money is allocated, not spent. Available for unrelated spending is wallet balance minus protected reservations (see Reconciliation).
+                  </p>
                   <div style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                     <div style={{ fontSize: 12 }}>
                       <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: '0 0 2px' }}>Customer invoice</p>
@@ -1792,9 +1986,17 @@ const PrintingContractsView: React.FC = () => {
                         {selected.contract_number} · v{num(selected.version) || 1} · {selectedSignatures.company && selectedSignatures.customer ? 'fully signed' : 'unsigned/partial'}
                       </p>
                     </div>
-                    <ContractPrimaryButton compact chevron={false} onClick={() => { void handleGenerateContractDocument(); }}>
-                      <FileText size={13} /> Generate document
-                    </ContractPrimaryButton>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <ContractGhostButton compact onClick={() => { void handleGenerateScheduleDocument(); }}>
+                        <Calendar size={13} /> Schedule
+                      </ContractGhostButton>
+                      <ContractGhostButton compact onClick={() => { void handleGenerateCompletionReceiptDocument(); }}>
+                        <CheckCircle size={13} /> Completion receipt
+                      </ContractGhostButton>
+                      <ContractPrimaryButton compact chevron={false} onClick={() => { void handleGenerateContractDocument(); }}>
+                        <FileText size={13} /> Generate document
+                      </ContractPrimaryButton>
+                    </div>
                   </div>
                   <div style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 12 }}>
                     <p style={{ margin: 0 }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Period</span>
@@ -2175,9 +2377,28 @@ const PrintingContractsView: React.FC = () => {
       <PreviewModal
         isOpen={!!docPreview}
         onClose={() => setDocPreview(null)}
-        type="PRINTING_CONTRACT"
+        type={docPreview?.type ?? 'PRINTING_CONTRACT'}
         data={docPreview?.data ?? null}
       />
+
+      {/* Phase 4 §5: read-only reconciliation diagnostics */}
+      {isReconciliationOpen && (
+        <ContractModalShell
+          width={1100}
+          icon={<Landmark size={19} color="#fff" />}
+          title="Printing contracts reconciliation"
+          subtitle="Wallet, protected reservations, consumed and released amounts — read-only"
+          onClose={() => setIsReconciliationOpen(false)}
+          footerHint="Derived balances reconcile with canonical records — discrepancies are reported, never auto-repaired"
+          submitLabel="Close"
+          onSubmit={() => setIsReconciliationOpen(false)}
+        >
+          <ContractReconciliationView
+            currency={currency}
+            onSelectContract={(id) => { setIsReconciliationOpen(false); setSelectedId(id); setDetailTab('overview'); }}
+          />
+        </ContractModalShell>
+      )}
 
       {/* Delete confirm renders above the contract modal overlays (shell uses z 9000+) */}
       <div style={{ position: 'relative', zIndex: 9500 }}>

@@ -327,6 +327,59 @@ const REGISTRY = {
       customerName: customerNameOf(c),
       currency: String(c.currency || 'MWK'),
       prepaidTotal: Number(c.prepaid_amount ?? 0),
+      totalAssessments: Number(c.max_assessments ?? 0),
+      status,
+    }),
+  },
+  // Customer schedule + completion receipt verify against the parent
+  // contract row (same table, same token). The receipt's official
+  // number is PCR-<contract number>, so its lookup normalizes the
+  // prefix away before matching.
+  printing_contract_schedule: {
+    table: 'assessment_contracts',
+    idFields: ['contract_number'],
+    statusOf: (c) => {
+      const s = String(c.status || '').toLowerCase().trim();
+      if (['cancelled', 'canceled', 'void', 'voided'].includes(s)) return 'CANCELLED';
+      if (!s) return 'DRAFT';
+      return s.toUpperCase();
+    },
+    terminalInvalid: (status) => status === 'CANCELLED',
+    toSafe: (c, company, status) => ({
+      verified: true,
+      documentType: 'printing_contract_schedule',
+      contractNumber: String(c.contract_number || ''),
+      contractDate: String(c.starts_at || c.created_at || ''),
+      companyName: String(c.companyName || company),
+      customerName: customerNameOf(c),
+      currency: String(c.currency || 'MWK'),
+      prepaidTotal: Number(c.prepaid_amount ?? 0),
+      totalAssessments: Number(c.max_assessments ?? 0),
+      status,
+    }),
+  },
+  printing_contract_completion_receipt: {
+    table: 'assessment_contracts',
+    idFields: ['contract_number'],
+    normalize: (n) => String(n).replace(/^PCR-/i, ''),
+    statusOf: (c) => {
+      const s = String(c.status || '').toLowerCase().trim();
+      if (['cancelled', 'canceled', 'void', 'voided'].includes(s)) return 'CANCELLED';
+      if (!s) return 'DRAFT';
+      return s.toUpperCase();
+    },
+    terminalInvalid: (status) => status === 'CANCELLED',
+    toSafe: (c, company, status) => ({
+      verified: true,
+      documentType: 'printing_contract_completion_receipt',
+      receiptNumber: `PCR-${String(c.contract_number || '')}`,
+      contractNumber: String(c.contract_number || ''),
+      contractDate: String(c.starts_at || c.created_at || ''),
+      companyName: String(c.companyName || company),
+      customerName: customerNameOf(c),
+      currency: String(c.currency || 'MWK'),
+      prepaidTotal: Number(c.prepaid_amount ?? 0),
+      totalAssessments: Number(c.max_assessments ?? 0),
       status,
     }),
   },
@@ -394,7 +447,10 @@ function matchRow(type, documentNumber, rows, token) {
  */
 async function verifyDocument(documentType, documentNumber, token, deps) {
   if (!REGISTRY[documentType]) return { ok: false };
-  const clean = sanitizeDocumentNumber(documentNumber);
+  const entry = REGISTRY[documentType];
+  const clean = entry.normalize
+    ? entry.normalize(sanitizeDocumentNumber(documentNumber))
+    : sanitizeDocumentNumber(documentNumber);
   const supplied = String(token || '').trim();
   if (!clean || !supplied) return { ok: false };
   const httpGet = deps && deps.httpGet;
@@ -404,7 +460,6 @@ async function verifyDocument(documentType, documentNumber, token, deps) {
   } catch {
     return { ok: false };
   }
-  const entry = REGISTRY[documentType];
   const match = matchRow(documentType, clean, rows, supplied);
   if (!match) return { ok: false };
   return { ok: true, data: entry.toSafe(match, getConfig().company, entry.statusOf(match)) };
@@ -419,7 +474,10 @@ async function verifyDocument(documentType, documentNumber, token, deps) {
  */
 async function getDocumentRecord(documentType, documentNumber, token, deps) {
   if (!REGISTRY[documentType]) return null;
-  const clean = sanitizeDocumentNumber(documentNumber);
+  const entry = REGISTRY[documentType];
+  const clean = entry.normalize
+    ? entry.normalize(sanitizeDocumentNumber(documentNumber))
+    : sanitizeDocumentNumber(documentNumber);
   const supplied = String(token || '').trim();
   if (!clean || !supplied) return null;
   const httpGet = deps && deps.httpGet;
@@ -429,7 +487,6 @@ async function getDocumentRecord(documentType, documentNumber, token, deps) {
   } catch {
     return null;
   }
-  const entry = REGISTRY[documentType];
   const match = matchRow(documentType, clean, rows, supplied);
   if (!match) return null;
   return match;

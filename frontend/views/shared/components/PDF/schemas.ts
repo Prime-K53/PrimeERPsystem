@@ -374,6 +374,85 @@ export const PrintingContractSchema = z.object({
   issuedInvoiceId: z.string().optional(),
 });
 
+// 9.1 Contract Schedule Schema — customer-facing assessment
+// schedule (one row per reserved entitlement unit) with lifecycle
+// counts and schedule totals.
+export const ContractScheduleSchema = z.object({
+  ...VerifiableDocFields,
+  contractNumber: z.string(),
+  date: z.string(),
+  version: z.number(),
+  status: z.string(),
+  customerName: z.string(),
+  schoolName: z.string().optional(),
+  periodStart: z.string().optional(),
+  periodEnd: z.string().optional(),
+  schedule: z.array(z.object({
+    sequence: z.number(),
+    assessmentName: z.string(),
+    grade: z.string().optional(),
+    subject: z.string().optional(),
+    assessmentDate: z.string().optional(),
+    status: z.string(),
+    unitPrice: z.number(),
+  }).passthrough()),
+  totalAssessments: z.number(),
+  scheduleComplete: z.boolean(),
+  missingDateSequences: z.array(z.number()),
+  scheduledCount: z.number(),
+  consumedCount: z.number(),
+  releasedCount: z.number(),
+  cancelledCount: z.number(),
+  prepaidAmount: z.number(),
+  reservedAmount: z.number(),
+  consumedAmount: z.number(),
+  availableFunds: z.number(),
+  totalValue: z.number(),
+  totalCandidature: z.number().optional(),
+  assessmentSpec: z.string().optional(),
+  chargePerCandidate: z.number().optional(),
+  assessmentSittings: z.string().optional(),
+  terms: z.string().optional(),
+  notes: z.string().optional(),
+  contentHash: z.string(),
+});
+
+// 9.2 Contract Completion Receipt Schema — customer-facing
+// receipt for one consumed assessment: the completed
+// assessment, completion progress against the entitlement,
+// the recognised debit and the resulting fund position.
+export const ContractCompletionReceiptSchema = z.object({
+  ...VerifiableDocFields,
+  receiptNumber: z.string(),
+  contractNumber: z.string(),
+  date: z.string(),
+  version: z.number(),
+  status: z.string(),
+  customerName: z.string(),
+  schoolName: z.string().optional(),
+  item: z.object({
+    assessmentName: z.string(),
+    grade: z.string().optional(),
+    subject: z.string().optional(),
+    consumedAt: z.string().optional(),
+    unitPrice: z.number(),
+  }).passthrough(),
+  sequence: z.number(),
+  totalAssessments: z.number(),
+  completedToDate: z.number(),
+  remainingAssessments: z.number(),
+  contractValue: z.number(),
+  amountDebited: z.number(),
+  totalConsumedToDate: z.number(),
+  remainingReservedFunds: z.number(),
+  unallocatedFunds: z.number(),
+  walletBalanceAfter: z.number(),
+  walletTransactionId: z.string(),
+  ledgerEntryId: z.string(),
+  notes: z.string().optional(),
+  contentHash: z.string(),
+});
+
 export type FinancialDoc = z.infer<typeof FinancialDocSchema>;export type LogisticsDoc = z.infer<typeof LogisticsDocSchema>;
 export type ReceiptDoc = z.infer<typeof ReceiptSchema>;
 export type SupplierPaymentDoc = z.infer<typeof SupplierPaymentSchema>;
@@ -384,7 +463,9 @@ export type SalesExchangeDoc = z.infer<typeof SalesExchangeSchema>;
 export type SubscriptionDoc = z.infer<typeof SubscriptionDocSchema>;
 export type ExaminationInvoiceDoc = z.infer<typeof ExaminationInvoiceSchema>;
 export type PrintingContractDoc = z.infer<typeof PrintingContractSchema>;
-export type PrimeDocData = FinancialDoc | LogisticsDoc | ReceiptDoc | SupplierPaymentDoc | PosReceiptDoc | StatementDoc | FiscalReportDoc | SalesExchangeDoc | SubscriptionDoc | ExaminationInvoiceDoc | PrintingContractDoc;
+export type ContractScheduleDoc = z.infer<typeof ContractScheduleSchema>;
+export type ContractCompletionReceiptDoc = z.infer<typeof ContractCompletionReceiptSchema>;
+export type PrimeDocData = FinancialDoc | LogisticsDoc | ReceiptDoc | SupplierPaymentDoc | PosReceiptDoc | StatementDoc | FiscalReportDoc | SalesExchangeDoc | SubscriptionDoc | ExaminationInvoiceDoc | PrintingContractDoc | ContractScheduleDoc | ContractCompletionReceiptDoc;
 
 type UnionKeys<T> = T extends T ? keyof T : never;
 type PickType<T, K extends PropertyKey> = T extends Record<K, infer V> ? V : never;

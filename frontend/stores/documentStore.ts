@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { logger } from '@/services/logger';
-import { PrimeDocData, FinancialDocSchema, LogisticsDocSchema, ReceiptSchema, SupplierPaymentSchema, PosReceiptSchema, StatementSchema, FiscalReportSchema, SalesExchangeSchema, SubscriptionDocSchema, ExaminationInvoiceSchema, PrintingContractSchema } from '../views/shared/components/PDF/schemas';
+import { PrimeDocData, FinancialDocSchema, LogisticsDocSchema, ReceiptSchema, SupplierPaymentSchema, PosReceiptSchema, StatementSchema, FiscalReportSchema, SalesExchangeSchema, SubscriptionDocSchema, ExaminationInvoiceSchema, PrintingContractSchema, ContractScheduleSchema, ContractCompletionReceiptSchema } from '../views/shared/components/PDF/schemas';
 
-export type DocType = 'INVOICE' | 'EXAMINATION_INVOICE' | 'PO' | 'WORK_ORDER' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'SALES_ORDER' | 'SUBSCRIPTION' | 'ORDER' | 'PRINTING_CONTRACT';
+export type DocType = 'INVOICE' | 'EXAMINATION_INVOICE' | 'PO' | 'WORK_ORDER' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'SALES_ORDER' | 'SUBSCRIPTION' | 'ORDER' | 'PRINTING_CONTRACT' | 'CONTRACT_SCHEDULE' | 'CONTRACT_COMPLETION_RECEIPT';
 
 export interface FilePreviewDescriptor {
   downloadUrl?: string;
@@ -44,6 +44,12 @@ const resolveSchema = (type: DocType) => {
   }
   if (type === 'PRINTING_CONTRACT') {
     return PrintingContractSchema;
+  }
+  if (type === 'CONTRACT_SCHEDULE') {
+    return ContractScheduleSchema;
+  }
+  if (type === 'CONTRACT_COMPLETION_RECEIPT') {
+    return ContractCompletionReceiptSchema;
   }
   return LogisticsDocSchema;
 };

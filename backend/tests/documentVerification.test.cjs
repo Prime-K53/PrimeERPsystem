@@ -215,6 +215,38 @@ describe('generic document verification', () => {
     assert.equal(so.body.orderNumber, 'SO-G001');
   });
 
+  it('contract schedule + completion receipt verify against the parent contract', async () => {
+    const schedule = await request(app).get(good('printing_contract_schedule', 'PC-G001', TOK));
+    assert.equal(schedule.status, 200);
+    assert.equal(schedule.body.verified, true);
+    assert.equal(schedule.body.documentType, 'printing_contract_schedule');
+    assert.equal(schedule.body.contractNumber, 'PC-G001');
+    assert.equal(schedule.body.status, 'ACTIVE');
+
+    // Receipt official number is PCR-<contract number>; the lookup
+    // normalizes the prefix away before matching the contract row.
+    const receipt = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G001', TOK));
+    assert.equal(receipt.status, 200);
+    assert.equal(receipt.body.verified, true);
+    assert.equal(receipt.body.documentType, 'printing_contract_completion_receipt');
+    assert.equal(receipt.body.receiptNumber, 'PCR-PC-G001');
+    assert.equal(receipt.body.contractNumber, 'PC-G001');
+
+    // Hyphenated QR slugs (what the printed QR actually encodes).
+    const hyphenSchedule = await request(app).get(good('printing-contract-schedule', 'PC-G001', TOK));
+    assert.equal(hyphenSchedule.status, 200);
+    assert.equal(hyphenSchedule.body.documentType, 'printing_contract_schedule');
+    const hyphenReceipt = await request(app).get(good('printing-contract-completion-receipt', 'PCR-PC-G001', TOK));
+    assert.equal(hyphenReceipt.status, 200);
+    assert.equal(hyphenReceipt.body.documentType, 'printing_contract_completion_receipt');
+
+    // Wrong token / wrong number stay generic 404s.
+    const badTok = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G001', BAD));
+    assert.equal(badTok.status, 404);
+    const badNum = await request(app).get(good('printing_contract_schedule', 'PC-9999', TOK));
+    assert.equal(badNum.status, 404);
+  });
+
   it('cancelled printing contract verifies as authentic with CANCELLED status', async () => {
     const res = await request(app).get(good('printing_contract', 'PC-G002', TOK));
     assert.equal(res.status, 200);
@@ -273,7 +305,7 @@ describe('generic document verification', () => {
       'quotationNumber', 'quotationDate', 'orderNumber', 'orderDate', 'purchaseOrderNumber',
       'deliveryNoteNumber', 'deliveryDate', 'paymentNumber', 'paymentDate',
       'statementNumber', 'statementDate', 'statementPeriodStart', 'statementPeriodEnd',
-      'contractNumber', 'contractDate', 'prepaidTotal',
+      'contractNumber', 'contractDate', 'prepaidTotal', 'totalAssessments',
       'companyName', 'customerName', 'supplierName',
       'currency', 'subtotal', 'tax', 'total', 'amount', 'amountPaid', 'balanceDue',
       'openingBalance', 'totalInvoiced', 'totalReceived', 'closingBalance',
@@ -284,6 +316,7 @@ describe('generic document verification', () => {
       ['invoice', 'INV-G001'], ['receipt', 'PAY-G001'], ['quotation', 'QTN-G001'],
       ['sales_order', 'SO-G001'], ['purchase_order', 'PO-G001'], ['delivery_note', 'DN-G001'],
       ['supplier_payment', 'SPAY-G001'], ['statement', 'STMT-G001'], ['printing_contract', 'PC-G001'],
+      ['printing_contract_schedule', 'PC-G001'], ['printing_contract_completion_receipt', 'PCR-PC-G001'],
     ];
     for (const [type, num] of cases) {
       const res = await request(app).get(good(type, num, TOK));

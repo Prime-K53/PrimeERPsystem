@@ -159,6 +159,10 @@ export const PreviewModal = ({
       return docMeta.number ? (docMeta.customer ? `${docMeta.number} - ${docMeta.customer}` : docMeta.number) : 'Order';
     if (type === 'PRINTING_CONTRACT')
       return docMeta.number ? `Printing Contract ${docMeta.number}` : 'Printing Contract Preview';
+    if (type === 'CONTRACT_SCHEDULE')
+      return docMeta.number ? `Contract Schedule ${docMeta.number}` : 'Contract Schedule Preview';
+    if (type === 'CONTRACT_COMPLETION_RECEIPT')
+      return docMeta.number ? `Completion Receipt ${docMeta.number}` : 'Completion Receipt Preview';
     if (type === 'RECEIPT')
       return docMeta.number ? `Receipt ${docMeta.number}` : 'Receipt Preview';
     if (docMeta.number)

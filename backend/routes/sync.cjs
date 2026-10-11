@@ -83,7 +83,7 @@ const ALLOWED_TABLES = new Set([
   'customer_payments', 'supplier_payments', 'payment_allocations', 'payment_allocation_lines',
   'sales_orders', 'delivery_notes',
    'shipments', 'recurring_invoices', 'scheduled_payments', 'wallet_transactions',
-   'assessment_contracts', 'assessment_contract_items', 'contract_amendments',
+   'assessment_contracts', 'assessment_contract_items', 'contract_amendments', 'contract_documents',
    'sales_exchanges', 'sales_exchange_items', 'reprint_jobs', 'sales_exchange_approvals',
   'subscribers', 'reminders', 'tasks', 'schools', 'classes', 'subjects',
 
@@ -276,6 +276,86 @@ function isBlankSku(sku) {
 }
 
 /**
+ * Phase 2 §3.2: contract financial-date guard. Synced contract financial ops
+ * must carry their ORIGINAL business transaction date (assessment_date /
+ * consumed_at / date / business_date) — never the later sync timestamp. Ops
+ * dated inside a closed financial year are rejected with adjustmentRequired
+ * (retryable=false) BEFORE any applyOp, so a rejected op can never leave
+ * wallet/reservation/ledger half-updated. assessment_contracts master rows
+ * (commercial agreement, may span FYs) are NOT FY-gated here; only the
+ * financial children (items / wallet txs / ledger entries with contract linkage).
+ */
+let fyRowsCache = { at: 0, rows: null };
+const FY_CACHE_TTL_MS = 15000;
+
+async function loadFyRows() {
+  const now = Date.now();
+  if (fyRowsCache.rows && now - fyRowsCache.at < FY_CACHE_TTL_MS) return fyRowsCache.rows;
+  const rows = await cloudSyncStore.listRows('financial_years').catch(() => []);
+  fyRowsCache = { at: now, rows };
+  return rows;
+}
+
+function businessDateOfContractOp(table, payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const cand =
+    payload.business_date || payload.businessDate ||
+    payload.consumed_at || payload.consumedAt ||
+    payload.assessment_date || payload.assessmentDate ||
+    payload.reserved_at || payload.reservedAt ||
+    payload.date || null;
+  if (!cand) return null;
+  const d = String(cand).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+}
+
+function isClosedFy(rows, dateOnly) {
+  for (const r of rows || []) {
+    const data = (r && r.data && typeof r.data === 'object') ? r.data : {};
+    const closed = data.is_closed === 1 || data.is_closed === true || String(data.is_closed || '').toLowerCase() === 'true'
+      || data.isClosed === true || String(data.status || '').toLowerCase() === 'closed';
+    if (!closed) continue;
+    const from = String(data.start_date || data.startDate || '').slice(0, 10);
+    const to = String(data.end_date || data.endDate || '').slice(0, 10);
+    if (from && dateOnly < from) continue;
+    if (to && dateOnly > to) continue;
+    return r;
+  }
+  return null;
+}
+
+async function validateContractFinancialOp(op) {
+  const table = String(op?.table || '');
+  if (op?.operation === 'delete') return null;
+  const isFinancialChild =
+    table === 'assessment_contract_items' || table === 'wallet_transactions' || table === 'ledger_entries';
+  if (!isFinancialChild) return null;
+  const payload = op?.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  // Only contract-linked financial rows are gated (avoid touching unrelated wallet/ledger traffic).
+  const data = payload;
+  const linked =
+    data.contract_id || data.contractId || data.assessment_item_id || data.assessmentItemId ||
+    (data.type_detail === 'ASSESSMENT_CONSUMPTION') || (data.type === 'ASSESSMENT_CONSUMPTION') ||
+    String(data.reference || '').startsWith('PC-') || String(data.id || '').includes('CONSUMED');
+  if (!linked && table !== 'assessment_contract_items') return null;
+  const bizDate = businessDateOfContractOp(table, data);
+  if (!bizDate) {
+    return { error: `${table}: contract financial op requires an original business transaction date (assessment_date/consumed_at/date/business_date) — sync timestamp must not be substituted`, adjustmentRequired: true };
+  }
+  try {
+    const rows = await loadFyRows();
+    const closed = isClosedFy(rows, bizDate);
+    if (closed) {
+      return { error: `${table}: business date ${bizDate} falls in a closed financial year — rejected, requires authorized adjustment workflow`, adjustmentRequired: true };
+    }
+  } catch (err) {
+    console.warn('[sync] contract FY probe failed (fail-open, RPC still enforces):', err?.message || err);
+  }
+  return null;
+}
+
+/**
  * Printing-contract business-key guard. Contract numbers are minted on the
  * device from the local cache only, so two devices can mint the same number
  * (a fresh device before its first pull, or two concurrent creates). The
@@ -422,6 +502,23 @@ router.post('/ops', async (req, res) => {
         if (contractError) {
           console.warn(`[sync] assessment_contracts validation rejected ${op?.operationId}`, { error: contractError });
           results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: contractError, retryable: false });
+          continue;
+        }
+      }
+
+      // Phase 2 §3.2: contract financial-date guard (business date + closed FY).
+      // Rejected BEFORE applyOp so nothing is half-written.
+      if (table === 'assessment_contract_items' || table === 'wallet_transactions' || table === 'ledger_entries') {
+        let fyGate = null;
+        try {
+          fyGate = await validateContractFinancialOp(op);
+        } catch (err) {
+          console.error('[sync] contract FY validation error:', err?.message || err);
+          fyGate = null;
+        }
+        if (fyGate) {
+          console.warn(`[sync] contract FY gate rejected ${op?.operationId}`, { error: fyGate.error });
+          results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: fyGate.error, retryable: false, adjustmentRequired: true });
           continue;
         }
       }

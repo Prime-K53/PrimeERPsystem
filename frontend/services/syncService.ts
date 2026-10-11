@@ -229,6 +229,7 @@ const STORE_TO_TABLE: Record<string, string> = {
   discountRules: 'discountrules',
   bankingAttachments: 'banking_attachments',
   statementSnapshots: 'statement_snapshots',
+  contractDocuments: 'contract_documents',
   // Transport Budget event ledger — single-company append-only event store.
   transportBudgetEvents: 'transport_budget_events',
   // Authoritative courier/transport expense source (Phase 7J).
@@ -390,6 +391,7 @@ const TABLES_TO_SYNC = [
   'discountRules',
   'bankingAttachments',
   'statementSnapshots',
+  'contractDocuments',
   // Transport Budget event ledger — append-only event stream, single-company.
   'transportBudgetEvents',
   // Authoritative courier/transport expense source (Phase 7J).

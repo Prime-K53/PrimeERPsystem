@@ -46,6 +46,8 @@ export type VerifiableDocumentType =
   | 'supplier_payment'
   | 'statement'
   | 'printing_contract'
+  | 'printing_contract_schedule'
+  | 'printing_contract_completion_receipt'
   | 'work_order';
 
 export const SUPPORTED_DOCUMENT_TYPES: VerifiableDocumentType[] = [
@@ -58,6 +60,8 @@ export const SUPPORTED_DOCUMENT_TYPES: VerifiableDocumentType[] = [
   'supplier_payment',
   'statement',
   'printing_contract',
+  'printing_contract_schedule',
+  'printing_contract_completion_receipt',
   'work_order',
 ];
 
@@ -72,6 +76,8 @@ const TYPE_SLUGS: Record<VerifiableDocumentType, string> = {
   supplier_payment: 'supplier-payment',
   statement: 'statement',
   printing_contract: 'printing-contract',
+  printing_contract_schedule: 'printing-contract-schedule',
+  printing_contract_completion_receipt: 'printing-contract-completion-receipt',
   work_order: 'work-order',
 };
 
@@ -260,6 +266,10 @@ export function resolveVerifiableDocumentNumber(data: any, type: VerifiableDocum
       return String(data?.statementNumber ?? data?.number ?? data?.id ?? '').trim();
     case 'printing_contract':
       return String(data?.contractNumber ?? data?.contract_number ?? data?.number ?? data?.id ?? '').trim();
+    case 'printing_contract_schedule':
+      return String(data?.contractNumber ?? data?.contract_number ?? data?.number ?? data?.id ?? '').trim();
+    case 'printing_contract_completion_receipt':
+      return String(data?.receiptNumber ?? data?.contractNumber ?? data?.contract_number ?? data?.number ?? data?.id ?? '').trim();
     default:
       return '';
   }
@@ -306,6 +316,9 @@ export function verificationStoreForDocType(docType: string): string | null {
     case 'ACCOUNT_STATEMENT':
       return 'statementSnapshots';
     case 'PRINTING_CONTRACT':
+      return 'assessmentContracts';
+    case 'CONTRACT_SCHEDULE':
+    case 'CONTRACT_COMPLETION_RECEIPT':
       return 'assessmentContracts';
     default:
       return null;

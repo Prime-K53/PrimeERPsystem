@@ -390,6 +390,11 @@ const { validateProductsPayload } = require('./services/variantSku.cjs');
 const syncRoutes = require('./routes/sync.cjs');
 app.use('/api/sync', syncRoutes);
 
+// Phase 2 §3.1: server-authoritative printing-contract financial ops (atomic RPCs).
+// Mounted after global verifyToken; per-route requireRole enforces Admin-only ERP.
+const printingContractRoutes = require('./routes/printingContracts.cjs');
+app.use('/api/printing-contracts', printingContractRoutes);
+
 // Live Multi-Device Acceptance Framework — admin-gated; mounted after the
 // global verifyToken so JWT auth is enforced before the router's admin check.
 const acceptanceRoutes = require('./routes/acceptance.cjs');

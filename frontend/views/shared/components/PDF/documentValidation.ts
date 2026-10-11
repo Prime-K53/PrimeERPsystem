@@ -97,6 +97,23 @@ export const validateDocumentData = (type: DocType | string, data: any): Validat
     return { valid: true };
   }
 
+  if (type === 'CONTRACT_SCHEDULE') {
+    const r1 = requireFields(data, ['contractNumber', 'customerName', 'contentHash'], 'Contract Schedule', ['Contract number', 'Customer name', 'Content hash']);
+    if (r1) return { valid: false, error: r1 };
+    const r2 = checkArray(data, 'schedule', 'Contract Schedule', 'schedule rows');
+    if (r2) return { valid: false, error: r2 };
+    return { valid: true };
+  }
+
+  if (type === 'CONTRACT_COMPLETION_RECEIPT') {
+    const r1 = requireFields(data, ['receiptNumber', 'contractNumber', 'customerName', 'contentHash'], 'Completion Receipt', ['Receipt number', 'Contract number', 'Customer name', 'Content hash']);
+    if (r1) return { valid: false, error: r1 };
+    if (!data.item || !String((data.item as any).assessmentName || '').trim()) {
+      return { valid: false, error: 'Completion Receipt is missing the completed assessment' };
+    }
+    return { valid: true };
+  }
+
   if (type === 'WORK_ORDER') {
     const r1 = requireFields(data, ['number', 'instructions'], 'Work Order', ['Order number', 'Instructions']);
     if (r1) return { valid: false, error: r1 };

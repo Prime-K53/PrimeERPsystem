@@ -3488,3 +3488,42 @@ export interface JobOrder {
   contract_assessment_id?: string;
   [key: string]: any;
 }
+
+// ─── Printing-contract immutable customer documents (Phase 3) ─────────────
+// Follows the statementSnapshots immutable-snapshot pattern: each issue is a
+// new row (never an overwrite). The QR verifies THAT version (number + version
+// + token + contentHash), never live contract state.
+export type ContractDocumentType =
+  | 'printing_contract_schedule'
+  | 'printing_contract_completion_receipt'
+  | 'printing_contract';
+
+export interface ContractDocument {
+  id: string;
+  contract_id: string;
+  company_id?: string;
+  customer_id?: string;
+  documentType: ContractDocumentType;
+  /** Stable business number: contractNumber for schedules, PCR-<n> for receipts. */
+  documentNumber: string;
+  /** Monotonic per (contract, documentType). Never reused. */
+  documentVersion: number;
+  /** Contract version this snapshot was taken from. */
+  contractVersion: number;
+  /** Canonical frozen payload (Zod-parsed schedule/receipt/contract doc). */
+  content: Record<string, any>;
+  contentHash: string;
+  verificationToken?: string;
+  /** Assessment linkage for receipts (null for schedules). */
+  assessmentItemId?: string;
+  walletTransactionId?: string;
+  ledgerEntryId?: string;
+  issuedAt: string;
+  issuedBy?: string;
+  status: 'VALID' | 'SUPERSEDED' | 'VOID';
+  supersededBy?: string;
+  created_at: string;
+  updated_at: string;
+  version: number;
+  data?: Record<string, any>;
+}
