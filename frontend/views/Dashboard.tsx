@@ -41,7 +41,6 @@ import { ResponsiveContainer } from '@/components/charts/ResponsiveContainer';
 
 import { format, isWithinInterval } from 'date-fns';
 import { ConfirmDialog, ConfirmDialogType } from '../components/ConfirmDialog';
-import { financialReportingService, isCustomerCollectionEntry } from '../services/financialReportingService';
 
 // ─── CSS keyframes injected once ──────────────────────────────────────────────
 const DASHBOARD_STYLES = `
@@ -1004,15 +1003,18 @@ const DashboardContent: React.FC = () => {
 
   const revenueTrend = revenueLastMonth > 0 ? ((revenueThisMonth - revenueLastMonth) / revenueLastMonth) * 100 : (revenueThisMonth > 0 ? 100 : 0);
 
-  // 2. Today's Collection — posted customer receipts ONLY (canonical
-  // definition in financialReportingService.isCustomerCollectionEntry).
-  // Cash-sale revenue (Dr cash / Cr income) and opening balances (Dr cash /
-  // Cr equity) debit collection accounts but are NOT receipts, so they must
-  // never inflate this KPI. Matches the sparkline + integrity service, which
-  // both derive collections from customerPayments records.
+  // 2. Today's Collection — customer receipts recorded in the
+  // customerPayments ledger (the canonical collection records written
+  // by both POS sales and invoice payments). Cash-sale revenue
+  // (Dr cash / Cr income) and opening balances (Dr cash / Cr equity)
+  // never create payment records, so they can never inflate this KPI.
+  // Matches the sparkline + integrity service, which both derive
+  // collections from customerPayments records. (The GL-only rule
+  // isCustomerCollectionEntry misses POS sales: POS posts
+  // Dr cash / Cr revenue directly without touching receivables.)
   const todayStr = new Date().toISOString().split('T')[0];
   const collectionData = (() => {
-    // Map account IDs to codes (ledger may reference id, code, or number)
+    // Map account IDs to codes (payments may reference id, code, or number)
     const accountCodeById: Record<string, string> = {};
     (accounts || []).forEach((acc: any) => {
       accountCodeById[acc.id] = acc.account_number || acc.code || '';
@@ -1020,19 +1022,32 @@ const DashboardContent: React.FC = () => {
     const codeOf = (ref: string | undefined): string =>
       (ref && accountCodeById[ref]) || ref || '';
 
+    // Resolve the collection account a payment landed in, mirroring the
+    // posting target of POS/invoice payments: wallet receipts credit the
+    // customer deposit account, card/bank-transfer and mobile-money
+    // receipts land in their linked account, everything else (cash) in
+    // the cash drawer.
+    const paymentAccountCode = (p: any): string => {
+      const method = String(p.paymentMethod || p.payment_method || '').toLowerCase();
+      if (method === 'wallet') return '21300';
+      const linkedCode = codeOf(p.accountId);
+      if (linkedCode) return linkedCode;
+      if (method === 'card' || method === 'bank transfer') return '11210';
+      if (method === 'mobile money') return '11240';
+      return '11110';
+    };
+
     let sum = 0;
     const byAccount: Record<string, number> = {};
 
-    (ledger || []).forEach((entry: any) => {
-      // Filter by date
-      const entryDate = entry.date?.split('T')[0];
+    (customerPayments || []).forEach((p: any) => {
+      if (String(p.status || '').toLowerCase() === 'voided') return;
+      const entryDate = String(p.date || p.createdAt || '').split('T')[0];
       if (entryDate !== todayStr) return;
-      if (!isCustomerCollectionEntry(entry, codeOf)) return;
-
-      // This is a customer payment
-      const debitCode = codeOf(entry.debitAccountId);
-      const amount = entry.amount || 0;
+      const amount = toSafeNumber(p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount);
+      if (!(amount > 0)) return;
       sum += amount;
+      const debitCode = paymentAccountCode(p);
       byAccount[debitCode] = (byAccount[debitCode] || 0) + amount;
     });
 
@@ -1057,21 +1072,13 @@ const DashboardContent: React.FC = () => {
   const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterdayStr = yesterdayDate.toISOString().split('T')[0];
   const yesterdaysCollection = (() => {
-    // Same receipts-only definition as today's KPI.
-    const accountCodeById: Record<string, string> = {};
-    (accounts || []).forEach((acc: any) => {
-      accountCodeById[acc.id] = acc.account_number || acc.code || '';
-    });
-    const codeOf = (ref: string | undefined): string =>
-      (ref && accountCodeById[ref]) || ref || '';
-
+    // Same customerPayments-based definition as today's KPI.
     let sum = 0;
-    (ledger || []).forEach((entry: any) => {
-      const entryDate = entry.date?.split('T')[0];
+    (customerPayments || []).forEach((p: any) => {
+      if (String(p.status || '').toLowerCase() === 'voided') return;
+      const entryDate = String(p.date || p.createdAt || '').split('T')[0];
       if (entryDate !== yesterdayStr) return;
-      if (!isCustomerCollectionEntry(entry, codeOf)) return;
-
-      sum += entry.amount || 0;
+      sum += toSafeNumber(p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount);
     });
     return sum;
   })();
