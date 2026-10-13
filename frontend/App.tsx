@@ -305,7 +305,9 @@ const ReminderMonitor: React.FC = () => {
  * toast + persistent alert), with the once-per-day guarantee persisted in
  * localStorage so reloads and multiple tabs cannot repeat it. The toast is
  * sticky and only disappears when the user closes it; the alert persists in
- * the alerts list until dismissed.
+ * the alerts list until dismissed. The persistent alert is attributed to the
+ * Printing Contracts module (with a deep link to the contracts hub) so the
+ * notification bell never labels it a generic System Alert.
  */
 const AssessmentScheduleMonitor: React.FC = () => {
   const { notify, addAlert } = useAuth();
@@ -456,8 +458,11 @@ const AssessmentScheduleMonitor: React.FC = () => {
         notify(message, 'info', { sticky: true });
         addAlert({
           id: `ALERT-ASSESS-${String(item.id)}-${todayStr}-${Date.now()}`,
+          title: 'Assessment Reminder',
           message,
-          type: 'System',
+          type: 'INFO',
+          module: 'Printing Contracts',
+          actionUrl: '/sales-flow/printing-contracts',
           date: new Date().toISOString(),
           severity: daysLeft <= 3 ? 'High' : 'Medium'
         });

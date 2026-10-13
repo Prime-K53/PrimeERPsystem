@@ -104,26 +104,32 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
         actionUrl: `/examination/batches/${n.batch_id}`
       }));
 
-      const mappedSystem: UnifiedNotification[] = systemAlerts.map(a => ({
-        id: a.id,
-        type: a.type?.toUpperCase() || 'SYSTEM',
-        priority: (() => {
-          const priorityMap: Record<string, 'High' | 'Medium' | 'Low'> = {
-            ERROR: 'High',
-            WARNING: 'Medium',
-            INFO: 'Low'
-          };
-          const typeKey = (a.priority || a.severity || a.type || 'info').toUpperCase();
-          return priorityMap[typeKey] || 'Low';
-        })(),
-        title: a.title || 'System Alert',
-        message: a.message,
-        is_read: !!a.read,
-        created_at: a.date || a._updatedAt || new Date().toISOString(),
-        read_at: a.readAt,
-        module: a.module || 'System',
-        actionUrl: a.actionUrl || '/audit'
-      }));
+      const mappedSystem: UnifiedNotification[] = systemAlerts.map(a => {
+        // Assessment countdown alerts published before the Printing
+        // Contracts attribution fix carry no title/module/actionUrl and
+        // defaulted to the generic "System Alert" label.
+        const legacyAssessment = String(a?.id || '').startsWith('ALERT-ASSESS-');
+        return {
+          id: a.id,
+          type: (legacyAssessment ? 'INFO' : a.type?.toUpperCase()) || 'SYSTEM',
+          priority: (() => {
+            const priorityMap: Record<string, 'High' | 'Medium' | 'Low'> = {
+              ERROR: 'High',
+              WARNING: 'Medium',
+              INFO: 'Low'
+            };
+            const typeKey = (a.priority || a.severity || a.type || 'info').toUpperCase();
+            return priorityMap[typeKey] || 'Low';
+          })(),
+          title: a.title || (legacyAssessment ? 'Assessment Reminder' : 'System Alert'),
+          message: a.message,
+          is_read: !!a.read,
+          created_at: a.date || a._updatedAt || new Date().toISOString(),
+          read_at: a.readAt,
+          module: a.module || (legacyAssessment ? 'Printing Contracts' : 'System'),
+          actionUrl: a.actionUrl || (legacyAssessment ? '/sales-flow/printing-contracts' : '/audit')
+        };
+      });
 
       const combined = [...mappedExam, ...mappedSystem]
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
