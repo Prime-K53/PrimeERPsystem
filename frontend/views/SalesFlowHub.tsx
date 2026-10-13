@@ -35,13 +35,11 @@ const SalesFlowHub: React.FC = () => {
         const [
           quotations,
           salesOrders,
-          invoices,
           jobOrders,
           salesExchanges,
         ] = await Promise.all([
           dbService.getAll('quotations').catch(() => []),
           Promise.resolve(salesOrderStore.salesOrders || []),
-          Promise.resolve(financeStore.invoices || []),
           Promise.resolve(salesStore.jobOrders || []),
           Promise.resolve(salesStore.salesExchanges || []),
         ]);
@@ -55,11 +53,6 @@ const SalesFlowHub: React.FC = () => {
         const pendingOrders = (salesOrders as any[]).filter((o: any) => {
           const s = String(o.status || '').toLowerCase();
           return s === 'pending' || s === 'processing' || s === 'confirmed' || s === 'hold';
-        }).length;
-        // Invoices: only count actionable unpaid, not Draft
-        const unpaidInvoices = (invoices as any[]).filter((i: any) => {
-          const s = String(i.status || '').toLowerCase();
-          return ['unpaid','overdue','partially_paid','partial','sent','pending'].includes(s);
         }).length;
         const activeContracts = (financeStore.assessmentContracts as any[]).filter((c: any) => {
           const s = String(c.status || '').toLowerCase();
@@ -77,7 +70,6 @@ const SalesFlowHub: React.FC = () => {
         setCounts({
           Quotations: pendingQuotations,
           Orders: pendingOrders,
-          'Billing / Invoices': unpaidInvoices,
           'Printing Contracts': activeContracts,
           'Sales Exchanges': pendingExchanges,
           'Job Tickets': pendingJobTickets,
@@ -91,7 +83,7 @@ const SalesFlowHub: React.FC = () => {
 
     fetchCounts();
     return () => { cancelled = true; };
-  }, [salesOrderStore.salesOrders, salesStore.jobOrders, salesStore.salesExchanges, financeStore.invoices, financeStore.assessmentContracts]);
+  }, [salesOrderStore.salesOrders, salesStore.jobOrders, salesStore.salesExchanges, financeStore.assessmentContracts]);
 
   const badge = (label: string) => isLoading ? undefined : counts[label] || 0;
 
@@ -111,11 +103,10 @@ const SalesFlowHub: React.FC = () => {
       badge: badge('Orders'),
     },
     {
-      label: 'Billing / Invoices',
+      label: 'Invoices',
       description: 'Official invoicing, credit notes, payment status — actionable unpaid only.',
       path: '/sales-flow/invoices',
       icon: FileCheck,
-      badge: badge('Billing / Invoices'),
     },
     {
       label: 'Payment Management',
