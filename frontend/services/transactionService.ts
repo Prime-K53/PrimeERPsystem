@@ -17,6 +17,7 @@ import { MultiCurrencyJournalEntry, MultiCurrencyTransactionLine, CurrencyGainLo
 
 import { assertInvoiceNumberFormat, calculateDueDate, generateNextId, resolveCustomerPaymentTerms, roundToCurrency } from '../utils/helpers';
 import { assertFinancialPeriodOpen } from '../utils/financialPeriodClosure';
+import { allocateEligibleReservations } from '../utils/contractFunds';
 import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { extractProfitMargin } from '../utils/financial/extractors';
 import { pagesToReams, pagesToTonerKg } from '../utils/printConversions';
@@ -134,13 +135,20 @@ async function findClosedFinancialYearForDate(
 }
 
 /**
- * Canonical contract-reservation guard (Phase 1 §2.3).
- * available for unrelated spending = walletBalance - active protected reservations.
+ * Canonical contract-reservation guard (Phase 1 §2.3, hardened §2).
+ * available for unrelated spending = walletBalance - verified protected reservations.
  * Only `active` + `suspended` contracts hold protected reservations (draft /
  * pending track but do not subtract; completed / expired / cancelled hold zero).
- * Effective reservation per contract = max(bucket, canonical reserved-items sum)
- * so legacy drift (reserved items with reserved_amount==0) cannot be spent.
- * Pure derivation inside the caller's atomic tx — no writes here.
+ * Effective claim per contract = max(bucket, canonical reserved-items sum) so
+ * legacy drift (reserved items with reserved_amount==0) cannot be spent.
+ *
+ * Protection is then ALLOCATED against verified wallet funds in deterministic
+ * contract-number order (shared allocateEligibleReservations), so:
+ *  - a partially funded contract protects only the verified money that exists
+ *    (its unfunded obligation stays visible, never invented), and
+ *  - `available` can never go negative, so an underfunded contract cannot
+ *    freeze unrelated customer funds the customer actually holds.
+ * Consumption coverage is deliberately NOT capped — see consumeContractAssessmentTx.
  */
 const CONTRACT_HOLDING_STATUSES = new Set(['active', 'suspended']);
 
@@ -149,29 +157,40 @@ async function getCustomerProtectedReservationsTx(tx: any, customerId: string): 
     if (!cid) return 0;
     let contracts: any[] = [];
     let items: any[] = [];
+    let walletBalance = 0;
     try {
         contracts = (await tx.objectStore('assessmentContracts').getAll()) || [];
     } catch { contracts = []; }
     try {
         items = (await tx.objectStore('contractAssessments').getAll()) || [];
     } catch { items = []; }
-    const mine = (Array.isArray(contracts) ? contracts : []).filter(
-        (c: any) => String(c?.customer_id || '') === cid && CONTRACT_HOLDING_STATUSES.has(String(c?.status || '')),
-    );
-    let total = 0;
-    for (const c of mine) {
-        const cItems = (Array.isArray(items) ? items : []).filter(
-            (it: any) => String(it?.contract_id || '') === String(c?.id || ''),
-        );
-        const bucket = toMoney(Number(c?.reserved_amount || 0));
-        const itemsSum = toMoney(
-            cItems
-                .filter((it: any) => String(it?.status || '') === 'reserved')
-                .reduce((s: number, it: any) => s + toMoney(Number(it?.item_price || 0)), 0),
-        );
-        total = toMoney(total + Math.max(bucket, itemsSum));
-    }
-    return total;
+    try {
+        const customer = await tx.objectStore('customers').get(cid);
+        walletBalance = toMoney(Number((customer as any)?.walletBalance || 0));
+    } catch { walletBalance = 0; }
+    const claims = (Array.isArray(contracts) ? contracts : [])
+        .filter((c: any) => String(c?.customer_id || '') === cid && CONTRACT_HOLDING_STATUSES.has(String(c?.status || '')))
+        .map((c: any) => {
+            const cItems = (Array.isArray(items) ? items : []).filter(
+                (it: any) => String(it?.contract_id || '') === String(c?.id || ''),
+            );
+            const bucket = toMoney(Number(c?.reserved_amount || 0));
+            const itemsSum = toMoney(
+                cItems
+                    .filter((it: any) => String(it?.status || '') === 'reserved')
+                    .reduce((s: number, it: any) => s + toMoney(Number(it?.item_price || 0)), 0),
+            );
+            return {
+                contractId: String(c?.id || ''),
+                contractNumber: String(c?.contract_number || ''),
+                holding: true,
+                claim: toMoney(Math.max(bucket, itemsSum)),
+            };
+        });
+    // No customer row (offline/test harness) → cannot verify funds; protect nothing
+    // extra rather than inventing coverage, matching consumption's fail-open posture.
+    if (!walletBalance && !claims.length) return 0;
+    return toMoney(allocateEligibleReservations(claims, walletBalance).totalProtected);
 }
 
 async function assertWalletSpendAllowedTx(

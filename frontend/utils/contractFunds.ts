@@ -55,7 +55,12 @@ export interface ContractFundPosition {
   releasedCount: number;
   /** Outstanding (reserved items) value. */
   outstandingValue: number;
-  /** Unfunded obligation = max(0, outstanding - effectiveReserved capped by wallet — computed per-customer). */
+  /**
+   * Verified eligible funds actually protected from unrelated spending.
+   * Filled per-customer by customerFundingPosition (allocation-capped).
+   */
+  protectedReservation: number;
+  /** claim − protected, filled per-customer by customerFundingPosition. */
   unfundedObligation: number;
   /** prepaid - consumed - bucket (commercial remainder, may include unfunded). */
   commercialAvailable: number;
@@ -122,7 +127,8 @@ export const contractFundPosition = (
     consumedCount: consumedItems.length,
     releasedCount: releasedItems.length,
     outstandingValue,
-    unfundedObligation: 0, // filled per-customer by customerFundingPosition
+    protectedReservation: effectiveReserved,
+    unfundedObligation: 0, // refined per-customer by customerFundingPosition
     commercialAvailable: money(contractValue - consumed - bucketReserved),
     discrepancies,
   };
@@ -131,11 +137,87 @@ export const contractFundPosition = (
 export interface CustomerFundingPosition {
   customerId: string;
   walletBalance: number;
+  /**
+   * Verified eligible funds currently protected from unrelated spending.
+   * Capped by actual wallet funds (see allocateEligibleReservations), so a
+   * partially funded contract never protects money the customer does not hold.
+   */
   totalActiveReservations: number;
+  /**
+   * Sum of ALL outstanding claims held by active/suspended contracts,
+   * uncapped. Protection cannot exceed this; the difference is unfunded.
+   */
+  totalOutstandingReservations: number;
   availableForUnrelatedSpending: number;
   totalConsumed: number;
+  totalUnfundedObligation: number;
   contracts: ContractFundPosition[];
 }
+
+export interface ReservationClaim {
+  contractId: string;
+  contractNumber: string;
+  holding: boolean;
+  /** max(bucket, outstanding items) — the full outstanding claim. */
+  claim: number;
+}
+
+export interface EligibleAllocation {
+  /** contractId -> verified eligible funds protected. */
+  protectedById: Map<string, number>;
+  /** contractId -> claim not covered by verified funds. */
+  unfundedById: Map<string, number>;
+  totalProtected: number;
+  totalOutstanding: number;
+  totalUnfunded: number;
+}
+
+/**
+ * Single allocation of verified wallet funds across holding contracts.
+ *
+ * Policy (§2):
+ *  - A contract protects at most the verified funds that exist, and at most
+ *    its own outstanding claim.
+ *  - Claims are funded in deterministic contract-number order.
+ *  - `totalProtected <= walletBalance`, so available-for-unrelated-spending
+ *    is never negative and an underfunded contract does not freeze money the
+ *    customer does not actually hold.
+ *  - Unfunded obligation = claim − protected, exposed explicitly.
+ *
+ * Pure and read-only; callers apply the result inside their own boundary.
+ */
+export const allocateEligibleReservations = (
+  claims: ReservationClaim[],
+  walletBalance: number,
+): EligibleAllocation => {
+  const wallet = money(walletBalance);
+  const ordered = [...(claims || [])].sort((a, b) =>
+    String(a.contractNumber || '').localeCompare(String(b.contractNumber || '')) ||
+    String(a.contractId || '').localeCompare(String(b.contractId || '')),
+  );
+  const protectedById = new Map<string, number>();
+  const unfundedById = new Map<string, number>();
+  let remaining = Math.max(0, wallet);
+  let totalProtected = 0;
+  let totalOutstanding = 0;
+  let totalUnfunded = 0;
+  for (const c of ordered) {
+    const claim = c.holding ? money(c.claim) : 0;
+    if (!c.holding) {
+      protectedById.set(c.contractId, 0);
+      unfundedById.set(c.contractId, 0);
+      continue;
+    }
+    const cover = money(Math.min(claim, remaining));
+    protectedById.set(c.contractId, cover);
+    unfundedById.set(c.contractId, money(claim - cover));
+    remaining = money(remaining - cover);
+    totalProtected = money(totalProtected + cover);
+    totalOutstanding = money(totalOutstanding + claim);
+    totalUnfunded = money(totalUnfunded + money(claim - cover));
+  }
+  return { protectedById, unfundedById, totalProtected, totalOutstanding, totalUnfunded };
+};
 
 /**
  * Canonical per-customer funding position.
@@ -154,35 +236,33 @@ export const customerFundingPosition = (args: {
     (c) => String((c as { customer_id?: unknown })?.customer_id || '') === String(customerId),
   );
   const positions = mine.map((c) => contractFundPosition(c, items));
-  let totalActive = 0;
   let totalConsumed = 0;
+  for (const p of positions) totalConsumed = money(totalConsumed + p.consumed);
+
+  // One allocation drives BOTH the protected amount and the unfunded
+  // obligation, so available / protected / unfunded can never disagree.
+  const alloc = allocateEligibleReservations(
+    positions.map((p) => ({
+      contractId: p.contractId,
+      contractNumber: p.contractNumber,
+      holding: isReservationHoldingStatus(p.status),
+      claim: p.effectiveReserved,
+    })),
+    walletBalance,
+  );
   for (const p of positions) {
-    totalActive = money(totalActive + p.effectiveReserved);
-    totalConsumed = money(totalConsumed + p.consumed);
+    p.protectedReservation = alloc.protectedById.get(p.contractId) || 0;
+    p.unfundedObligation = alloc.unfundedById.get(p.contractId) || 0;
   }
-  // Per-contract unfunded = outstanding beyond what the wallet can cover.
-  // Allocate wallet in contract order (stable by contractNumber) — first contracts
-  // are funded first; remainder is unfunded. Explicit and deterministic.
-  const ordered = [...positions].sort((a, b) => a.contractNumber.localeCompare(b.contractNumber));
-  let remaining = walletBalance;
-  const unfundedById = new Map<string, number>();
-  for (const p of ordered) {
-    if (!isReservationHoldingStatus(p.status)) {
-      unfundedById.set(p.contractId, 0);
-      continue;
-    }
-    const cover = Math.min(p.outstandingValue, Math.max(0, remaining));
-    // Reservation actually protected cannot exceed verified cover.
-    unfundedById.set(p.contractId, money(Math.max(0, p.outstandingValue - cover)));
-    remaining = money(remaining - Math.min(p.outstandingValue, Math.max(0, remaining)));
-  }
-  for (const p of positions) p.unfundedObligation = unfundedById.get(p.contractId) || 0;
+
   return {
     customerId: String(customerId),
     walletBalance,
-    totalActiveReservations: totalActive,
-    availableForUnrelatedSpending: money(walletBalance - totalActive),
+    totalActiveReservations: alloc.totalProtected,
+    totalOutstandingReservations: alloc.totalOutstanding,
+    availableForUnrelatedSpending: money(walletBalance - alloc.totalProtected),
     totalConsumed,
+    totalUnfundedObligation: alloc.totalUnfunded,
     contracts: positions,
   };
 };

@@ -21,6 +21,7 @@ import { reconcilePrintingContracts } from '../../utils/contractReconciliation';
 import { customerFundingPosition, diagnoseReservationDrift } from '../../utils/contractFunds';
 import { dbService } from '../../services/db';
 import { durableSyncQueue } from '../../services/durableSyncQueue';
+import { adjustmentQueueService, type AdjustmentQueueEntry } from '../../services/closedPeriodQueue';
 import { getCustomerDisplayName } from '../../utils/customerDisplay';
 import {
   contractInk,
@@ -53,6 +54,7 @@ const ContractReconciliationView: React.FC<Props> = ({ currency, onSelectContrac
   const [docs, setDocs] = useState<ContractDocument[]>([]);
   const [queueMetrics, setQueueMetrics] = useState<{ pending: number; failed: number; deadLetter: number } | null>(null);
   const [queueSample, setQueueSample] = useState<any[]>([]);
+  const [adjustQueue, setAdjustQueue] = useState<AdjustmentQueueEntry[]>([]);
 
   useEffect(() => {
     dbService.getAll<ContractDocument>('contractDocuments' as any).then((rows) => setDocs(rows || [])).catch(() => setDocs([]));
@@ -73,6 +75,7 @@ const ContractReconciliationView: React.FC<Props> = ({ currency, onSelectContrac
         setQueueSample([]);
       }
     })();
+    adjustmentQueueService.listAdjustmentQueue().then(setAdjustQueue).catch(() => setAdjustQueue([]));
   }, []);
 
   const customerNameOf = (id?: string) => {
@@ -192,6 +195,7 @@ const ContractReconciliationView: React.FC<Props> = ({ currency, onSelectContrac
           { label: 'Legacy drift rows', value: String(drift.length) },
           { label: 'Missing schedule/receipt records', value: String(missingDocs.length) },
           { label: 'Sync pending / failed / dead-letter', value: queueMetrics ? `${queueMetrics.pending} / ${queueMetrics.failed} / ${queueMetrics.deadLetter}` : '—' },
+          { label: 'Awaiting adjustment decision', value: String(adjustQueue.length) },
         ].map((k) => (
           <div key={k.label} style={{ background: contractPaper, border: `1px solid ${contractHairline}`, borderRadius: 10, padding: 10 }}>
             <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.06, color: contractInkSoft, margin: '0 0 4px' }}>{k.label}</p>
@@ -303,6 +307,51 @@ const ContractReconciliationView: React.FC<Props> = ({ currency, onSelectContrac
               {m.contractNumber} — {m.kind} {' '}
               <button onClick={() => onSelectContract(m.contractId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: contractTeal[700], fontWeight: 700, padding: 0 }}>Open</button>
             </p>
+          ))}
+        </div>
+      )}
+
+      {adjustQueue.length > 0 && (
+        <div style={{ background: '#fff', border: `1px solid ${contractHairline}`, borderRadius: 10, padding: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.06, color: '#92400e', margin: '0 0 4px' }}>
+            Closed-period operations awaiting decision ({adjustQueue.length})
+          </p>
+          <p style={{ fontSize: 11, color: contractInkSoft, margin: '0 0 8px' }}>
+            Review only. Original business dates are never rewritten, no adjustment is posted and no financial year is reopened here —
+            anything requiring a financial adjustment stays pending the existing explicit approval flow.
+          </p>
+          {adjustQueue.map((e) => (
+            <div key={e.queueId} style={{ borderTop: `1px solid ${contractHairline}`, paddingTop: 8, marginTop: 8, fontSize: 12 }}>
+              <p className="finance-nums" style={{ margin: 0, color: contractInk, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+                {e.table} · {e.recordId || '—'} · {e.operation} · {e.queueStatus}
+              </p>
+              <p style={{ margin: '4px 0 0', color: contractInkSoft }}>
+                Business date: <b style={{ color: contractInk }}>{e.businessDate || 'missing'}</b>
+                {' · '}Reason: {e.rejectionReason.slice(0, 180)}
+              </p>
+              {e.contractId && (
+                <button onClick={() => onSelectContract(e.contractId as string)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: contractTeal[700], fontWeight: 700, padding: 0, fontSize: 11 }}>
+                  Open contract {e.contractNumber || e.contractId}
+                </button>
+              )}
+              <p style={{ margin: '4px 0 0', fontSize: 11, color: e.retryEligible ? '#047857' : '#92400e' }}>
+                {e.retryEligible
+                  ? 'Period is open — this operation can be re-queued unchanged.'
+                  : e.retryBlockedBecause || 'Re-queueing is blocked.'}
+              </p>
+              {e.retryEligible && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await adjustmentQueueService.retryAdjustmentEntry(e.queueId);
+                    setAdjustQueue(await adjustmentQueueService.listAdjustmentQueue());
+                  }}
+                  style={{ marginTop: 6, padding: '5px 10px', fontSize: 11, fontWeight: 700, borderRadius: 7, cursor: 'pointer', border: '1px solid #0f766e', background: '#0f766e', color: '#fff' }}
+                >
+                  Re-queue unchanged
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
