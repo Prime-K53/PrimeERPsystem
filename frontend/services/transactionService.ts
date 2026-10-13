@@ -37,7 +37,7 @@ import {
     resolveItemUnitCost, resolveInventoryRecord, calculateItemsCost,
     validateLedgerBalance, distributePosRetainedAmounts, getIdempotencyKeys, resolveToAccountId,
     resolveAccountForPosting, requireResolvedAccount, buildResolvedJournalLine,
-    loadAccountsFromStore, UnresolvedAccountError,
+    loadAccountsFromStore, UnresolvedAccountError, ensurePostingAccounts,
     JournalLineInput, resolveInventoryAccountByItemType, resolveInventoryAccountFromItems,
     calculateCogsLegsPerInventoryAccount,
     isPostedInvoiceStatus, resolveInvoiceRevenueAccount, assertInvoiceEditable,
@@ -718,8 +718,6 @@ export const transactionService = {
         const saleResult = await dbService.executeAtomicOperation(
             stores,
             async (tx) => {
-                await reserveIdempotencyKey(tx, 'sale', sale.id, sale.idempotencyKey);
-
                 const salesStore = tx.objectStore('sales');
                 const inventoryStore = tx.objectStore('inventory');
                 const ledgerStore = tx.objectStore('ledger');
@@ -758,6 +756,47 @@ export const transactionService = {
                     }
                     return resolved;
                 };
+
+                // 0. Pre-flight: heal + resolve EVERY GL account this posting
+                // will touch BEFORE any write (and before reserving the
+                // idempotency key). Previously the sale was persisted first
+                // and strict resolution threw later, leaving an orphan sale
+                // with zero ledger entries (COA never moved) plus a consumed
+                // idempotency key that blocked retry of the same sale.
+                {
+                    const glPre = getGLConfig();
+                    const vatPre = getVatConfig();
+                    const revenueRefPre = (sale as any).salesAccountId || glPre.defaultSalesAccount;
+                    const paymentRefsPre = Array.from(new Set(
+                        (sale.payments || [])
+                            .map((p: any) => p?.accountId)
+                            .filter((ref: any) => typeof ref === 'string' && ref.trim() !== '')
+                    )) as string[];
+                    await ensurePostingAccounts(
+                        accounts,
+                        [
+                            { ref: glPre.cashDrawerAccount, role: 'cash drawer' },
+                            { ref: glPre.bankAccount, role: 'bank' },
+                            { ref: glPre.mobileMoneyAccount, role: 'mobile money' },
+                            { ref: glPre.accountsReceivable, role: 'accounts receivable' },
+                            { ref: glPre.customerDepositAccount, role: 'customer deposits' },
+                            { ref: glPre.defaultSalesAccount, role: 'default sales' },
+                            { ref: revenueRefPre, role: 'sale revenue' },
+                            { ref: glPre.defaultCOGSAccount, role: 'COGS' },
+                            { ref: glPre.defaultInventoryAccount, role: 'inventory fallback' },
+                            { ref: '11410', role: 'merchandise inventory' },
+                            { ref: '11420', role: 'raw materials' },
+                            { ref: '11430', role: 'finished goods' },
+                            ...((isVatPostingActive(vatPre) && vatPre?.outputTaxAccount)
+                                ? [{ ref: vatPre.outputTaxAccount, role: 'VAT output tax' }]
+                                : []),
+                            ...paymentRefsPre.map((ref) => ({ ref, role: 'payment account' })),
+                        ],
+                        accountOptions,
+                        (seeded) => tx.objectStore('accounts').put(seeded)
+                    );
+                }
+                await reserveIdempotencyKey(tx, 'sale', sale.id, sale.idempotencyKey);
 
                 // 1. Validation & Snapshot Generation
                 // We trust the snapshots passed from the UI (OrderForm/POS) if they exist and are valid.

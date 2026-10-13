@@ -289,6 +289,98 @@ export function requireResolvedAccount(identifier: string, accounts: any[], opti
     return resolved;
 }
 
+export interface PostingAccountNeed {
+    /** GL ref that will be posted to (code, account_number, or id). */
+    ref: string | undefined;
+    /** Human-readable role for diagnostics (e.g. 'POS revenue'). */
+    role: string;
+}
+
+/**
+ * Pre-flight for postings: resolve every account a transaction is about to
+ * touch, healing missing canonical accounts from DEFAULT_ACCOUNTS first.
+ *
+ * Root-cause fix for "POS sale done but COA not updated": postings used to
+ * persist the sale first and resolve GL accounts later (strict mode), so an
+ * unresolvable account aborted the flow AFTER the sale was saved — an orphan
+ * sale with zero ledger entries, plus a consumed idempotency key blocking
+ * retry. Call this BEFORE any write (and before reserving idempotency keys):
+ * - missing canonical accounts are seeded (persisted via `persist`, and added
+ *   to the working `accounts` array so downstream resolution succeeds), and
+ * - anything still unresolvable throws BEFORE anything is persisted, so the
+ *   caller sees a clean failure with the offending account ref and no
+ *   partial state is left behind.
+ */
+export async function ensurePostingAccounts(
+    accounts: any[],
+    needs: PostingAccountNeed[],
+    options: ResolveAccountOptions = {},
+    persist?: (account: any) => Promise<unknown>
+): Promise<void> {
+    const matchesSeed = (account: any, seed: any): boolean => {
+        const ids = new Set(
+            [account?.id, account?.code, account?.account_number]
+                .map((v) => String(v ?? '').trim())
+                .filter(Boolean)
+        );
+        return [seed?.id, seed?.code, seed?.account_number]
+            .map((v) => String(v ?? '').trim())
+            .filter(Boolean)
+            .some((v) => ids.has(v));
+    };
+    const findSeed = (ref: string): any | undefined => {
+        const direct = (DEFAULT_ACCOUNTS as any[]).find(
+            (a) =>
+                String(a.id ?? '') === ref ||
+                String(a.code ?? '') === ref ||
+                String((a as { account_number?: unknown }).account_number ?? '') === ref
+        );
+        if (direct) return direct;
+        const canonical = LEGACY_CODE_TO_CANONICAL[ref];
+        if (!canonical) return undefined;
+        return (DEFAULT_ACCOUNTS as any[]).find(
+            (a) =>
+                String(a.id ?? '') === canonical ||
+                String(a.code ?? '') === canonical ||
+                String((a as { account_number?: unknown }).account_number ?? '') === canonical
+        );
+    };
+
+    for (const { ref } of needs) {
+        if (!ref) continue;
+        if (resolveAccountForPosting(ref, accounts, options)) continue;
+
+        // Heal: seed the canonical account (plus its canonical posting
+        // children when the seed itself is a group heading) so a partial
+        // chart can still post. Matches the server chart id convention
+        // (numeric codes, same as DEFAULT_ACCOUNTS / migration 0016).
+        const seed = findSeed(String(ref).trim());
+        const seedsToAdd = seed
+            ? [
+                  seed,
+                  ...(DEFAULT_ACCOUNTS as any[]).filter(
+                      (a) =>
+                          String((a as { parent_account_id?: unknown }).parent_account_id ?? '') ===
+                              String(seed.code ?? seed.id ?? '') &&
+                          a !== seed
+                  ),
+              ]
+            : [];
+        for (const seedAccount of seedsToAdd) {
+            if (accounts.some((a) => matchesSeed(a, seedAccount))) continue;
+            const healed = { ...seedAccount };
+            accounts.push(healed);
+            if (persist) {
+                await persist(healed);
+            }
+        }
+
+        if (!resolveAccountForPosting(ref, accounts, options)) {
+            throw new UnresolvedAccountError(String(ref).trim());
+        }
+    }
+}
+
 /**
  * Get account ID by role using the Account Resolution Service
  * Falls back to legacy code lookup if service unavailable
