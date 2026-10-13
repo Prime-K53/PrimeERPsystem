@@ -40,7 +40,7 @@ import { initializePrimePdfFonts } from './shared/components/PDF/templateSetting
 import { resolveStoredCost, resolveStoredSellingPrice, calculatePhotocopyCostPerPage, calculateTypePrintingCostPerPage, calculatePhotocopyCostBreakdown } from '../utils/pricing';
 import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/pricingEngine';
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
-import { PrintingPOSIntegrator, isPrintingService, createProductionJobsFromSale } from '../components/printing/PrintingPOSIntegrator';
+import { createProductionJobsFromSale } from '../components/printing/PrintingPOSIntegrator';
 import { usePrintingStore } from '../stores/printingStore';
 import { getCustomerDisplayName } from '../utils/customerDisplay';
 import { getQuickPhotocopyLineDisplay, isQuickPhotocopyItem } from '../services/quickPhotocopyService';
@@ -96,7 +96,6 @@ const POS: React.FC = () => {
   const [showHeldOrdersModal, setShowHeldOrdersModal] = useState(false);
   const [showZReport, setShowZReport] = useState(false);
   const [selectedServiceForCalculator, setSelectedServiceForCalculator] = useState<Item | null>(null);
-  const [selectedPrintingService, setSelectedPrintingService] = useState<Item | null>(null);
   const [autoPreviewReceipt, setAutoPreviewReceipt] = useState(companyConfig?.transactionSettings?.showReceiptPreview !== false);
   const [quickReceiptSale, setQuickReceiptSale] = useState<Sale | null>(null);
 
@@ -105,12 +104,13 @@ const POS: React.FC = () => {
     resolve: (selections: any[]) => void;
   } | null>(null);
     
+    // Mirrors OrderForm.handleAddItem's Service branch (OrderForm.tsx:1511-1515):
+    // every Service tile opens the ServiceCalculatorModal (pages/copies +
+    // finishing + live pricing engine). QuickPrintModal stays available only
+    // via the explicit F2/F3 shortcuts, exactly like OrderForm's
+    // Photocopy / Type & Print buttons.
     const handleConfigureService = (service: Item) => {
-        if (isPrintingService(service)) {
-            setQuickPrintModal({ open: true, type: 'printing', serviceName: service.name, serviceItemId: service.id });
-        } else {
-            setSelectedServiceForCalculator(service);
-        }
+        setSelectedServiceForCalculator(service);
     };
   const [quickPrintModal, setQuickPrintModal] = useState<{
     open: boolean;
@@ -1574,18 +1574,6 @@ const handleQuickPrintConfirm = (
             notify(`${selectedServiceForCalculator.name} added`, 'success');
           }}
           onClose={() => setSelectedServiceForCalculator(null)}
-        />
-      )}
-      {selectedPrintingService && (
-        <PrintingPOSIntegrator
-          selectedService={{ item: selectedPrintingService, customerName: selectedCustomerName || undefined }}
-          currency={currency}
-          onAddToCart={(cartItem) => {
-            setCart(prev => [...prev, cartItem]);
-            setSelectedPrintingService(null);
-            notify(`${selectedPrintingService.name} configured and added to cart`, 'success');
-          }}
-          onClose={() => setSelectedPrintingService(null)}
         />
       )}
       {batchPickerState && (
