@@ -23,7 +23,8 @@ import { OrderDetails } from './components/OrderDetails';
 import { OrderPaymentModal } from './components/OrderPaymentModal';
 import SubscriptionView from './components/SubscriptionView';
 import { parseTemplate, downloadBlob, resolveCustomerPaymentPolicy } from '../../utils/helpers';
-import { findInvoiceByIdOrNumber, applyGeneralInvoiceScope } from '../../utils/invoiceIdentity';
+import { findInvoiceByIdOrNumber, applyGeneralInvoiceScope, isPosMirrorInvoiceRecord } from '../../utils/invoiceIdentity';
+import { buildPosReceiptDocFromInvoiceRecord } from '../../utils/posReceiptFromInvoice';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { localFileStorage } from '../../services/localFileStorage';
 import { OfflineImage } from '../../components/OfflineImage';
@@ -149,7 +150,7 @@ const buildRecurringDraftFromTemplate = (item: RecurringInvoice): RecurringInvoi
 
 const Orders: React.FC = () => {
     const { refreshAllData } = useData();
-    const { companyConfig, isOnline, notify, user } = useAuth();
+    const { companyConfig, isOnline, notify, user, allUsers } = useAuth();
     const { invoices, recurringInvoices, addInvoice, updateInvoice, deleteInvoice, cancelInvoice, editInvoiceWithAdjustment, addRecurringInvoice, deleteRecurringInvoice, updateRecurringInvoice } = useFinance();
     const { quotations, customers, addQuotation, updateQuotation, deleteQuotation, approveQuotation, convertQuotationToInvoice, jobOrders, addJobOrder, updateJobOrder, deleteJobOrder, convertJobOrderToInvoice, salesExchanges, deleteSalesExchange, approveSalesExchange, cancelSalesExchange, isLoading } = useSales();
     const { inventory } = useInventory();
@@ -332,6 +333,12 @@ const Orders: React.FC = () => {
             || reference.startsWith('EXM-BATCH-')
         ) {
             return 'EXAMINATION_INVOICE';
+        }
+        // POS-mirror invoices print/download as POS receipts, never as
+        // general invoices (static markers only — reference-only records
+        // need the async sale lookup the preview hook performs).
+        if (isPosMirrorInvoiceRecord(record)) {
+            return 'POS_RECEIPT';
         }
         return fallbackType;
     };
@@ -1029,6 +1036,27 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                 else if (activeView === 'Subscriptions') type = 'SUBSCRIPTION';
                 else if (activeView === 'Exchanges') type = 'SALES_EXCHANGE';
                 type = resolveDocumentType(item, type);
+
+                // POS-mirror invoices download as POS receipts (same narrow
+                // thermal-slip design as the POS module), never as general
+                // invoices. The shared builder resolves the linked sale and
+                // receipt verification exactly like the preview pipeline.
+                if (type === 'POS_RECEIPT') {
+                    const receiptData = await buildPosReceiptDocFromInvoiceRecord(item, {
+                        companyConfig,
+                        allUsers: allUsers as any,
+                        currentUserName: (user as any)?.name,
+                        footerMessage: companyConfig?.transactionSettings?.pos?.receiptFooter,
+                    });
+                    if (!receiptData) throw new Error('Record is not a POS sale mirror');
+                    await initializePrimePdfFonts();
+                    const securedPdfData = await attachDocumentSecurity(receiptData, companyConfig?.companyName);
+                    const blob = await pdf(<PrimeDocument type="POS_RECEIPT" data={securedPdfData as PrimeDocData} />).toBlob();
+                    const docNumber = item.invoiceNumber || item.id || '';
+                    downloadBlob(blob, docNumber ? `POS Receipt - ${docNumber}.pdf` : 'POS Receipt.pdf');
+                    notify('POS Receipt PDF downloaded successfully', "success");
+                    return;
+                }
 
                 // Verification-QR hardening (all types): the row object may predate
                 // verification tokens (or predate an on-open backfill refresh).

@@ -7,6 +7,8 @@ import { useSales } from '../context/SalesContext';
 import { useFinance } from '../context/FinanceContext';
 import { mapToInvoiceData } from '../utils/pdfMapper';
 import { enrichDocumentCustomerData } from '../utils/documentCustomerData';
+import { isPosMirrorInvoiceRecord } from '../utils/invoiceIdentity';
+import { buildPosReceiptDocFromInvoiceRecord } from '../utils/posReceiptFromInvoice';
 import { verificationStoreForDocType } from '../utils/documentVerification';
 import { transactionService } from '../services/transactionService';
 import { PrimeDocument } from '../views/shared/components/PDF/PrimeDocument';
@@ -18,7 +20,7 @@ import { validateDocumentData } from '../views/shared/components/PDF/documentVal
 
 export const useDocumentPreview = () => {
   const { safeOpenPreview } = useDocumentStore();
-  const { notify, companyConfig } = useAuth();
+  const { notify, companyConfig, allUsers, user } = useAuth();
   const { customers } = useSales();
   const { invoices } = useFinance();
 
@@ -37,6 +39,79 @@ export const useDocumentPreview = () => {
         || String(rawData?.reference || '').toUpperCase().startsWith('EXM-BATCH-')
       );
       const effectiveType: DocType = isExaminationInvoice ? 'EXAMINATION_INVOICE' : type;
+
+      // POS-mirror invoices preview/print as POS receipts, never as general
+      // invoices — same narrow thermal-slip design the POS module itself
+      // renders (PrimeDocument type 'POS_RECEIPT'). Detection mirrors the
+      // SalesAudit revenue split (origin module, sale conversion source,
+      // POS markers, or a reference naming a real POS sale).
+      // Static markers classify cheaply; a bare `reference` needs the sale
+      // lookup inside the builder as its second factor (no sale -> the
+      // builder returns null and the ordinary INVOICE flow continues).
+      const wantsPosReceipt =
+        (type === 'INVOICE' && (isPosMirrorInvoiceRecord(rawData) || !!String((rawData as any)?.reference || '').trim())) ||
+        (type === 'POS_RECEIPT' && !(rawData as any)?.receiptNumber);
+      if (wantsPosReceipt && !isExaminationInvoice) {
+        let receiptData: Record<string, unknown> | null = null;
+        try {
+          receiptData = await buildPosReceiptDocFromInvoiceRecord(rawData, {
+            companyConfig,
+            allUsers: allUsers as any,
+            currentUserName: (user as any)?.name,
+            footerMessage: companyConfig?.transactionSettings?.pos?.receiptFooter,
+          });
+        } catch (error: any) {
+          notify('Failed to prepare POS receipt: ' + (error?.message || 'Unknown error'), 'error');
+          return;
+        }
+        if (receiptData) {
+          const posValidation = validateDocumentData('POS_RECEIPT', receiptData);
+          if (!posValidation.valid) {
+            notify(posValidation.error || 'POS receipt data is invalid', 'error');
+            return;
+          }
+          if (openMode === 'print') {
+            logger.debug('[useDocumentPreview] Starting POS receipt print', { id: (rawData as any)?.id });
+            const startTime = performance.now();
+            const securedData = await attachDocumentSecurity(receiptData as any, companyConfig?.companyName);
+            await initializePrimePdfFonts();
+            let printConfig = companyConfig ?? null;
+            try {
+              const { hydrateCompanyPdfAssets, withGrayscaleLogoForPrint } = await import('../utils/companyAssetUtils');
+              printConfig = await withGrayscaleLogoForPrint(await hydrateCompanyPdfAssets(printConfig));
+            } catch {
+              // Grayscale logo is best-effort; mono template still prints B/W.
+            }
+            const blob = await pdf(createElement(PrimeDocument as any, {
+              type: 'POS_RECEIPT',
+              data: securedData as PrimeDocData,
+              configOverride: printConfig,
+              customers: customers as any,
+              colorMode: 'mono',
+            }) as any).toBlob();
+            const duration = performance.now() - startTime;
+            logger.debug('[useDocumentPreview] POS receipt print PDF generated', {
+              size: blob.size,
+              durationMs: Math.round(duration),
+            });
+            const blobUrl = URL.createObjectURL(blob);
+            try {
+              await printDocumentUrl(blobUrl, 'POS_RECEIPT print');
+            } finally {
+              window.setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+            }
+            return;
+          }
+          const result = safeOpenPreview('POS_RECEIPT', receiptData);
+          if (!result.success && result.error) {
+            notify(result.error, 'error');
+          }
+          return;
+        }
+        // Not POS-proven after the sale lookup (explicit POS_RECEIPT routing
+        // of an ordinary record): fall through to the requested-type flow,
+        // whose validation reports the problem.
+      }
 
       // Validate raw data BEFORE mapping (mapper adds safe placeholders)
       const rawValidation = validateDocumentData(effectiveType, rawData);

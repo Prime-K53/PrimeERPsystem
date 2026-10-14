@@ -309,6 +309,38 @@ const isExaminationLike = (record: Record<string, unknown> | null | undefined): 
 };
 
 /**
+ * Whether a canonical invoice record mirrors a POS sale (and should therefore
+ * preview/print/download as a POS receipt, never as a general invoice).
+ * Single shared predicate mirroring the SalesAudit revenue split:
+ * explicit POS origin module, a sale conversion source, POS source type,
+ * POS-sale note markers, or a `reference` naming a known POS sale id.
+ * Ordinary ERP (and examination) invoices never match: examination records
+ * are classified first and this predicate requires no examination marker.
+ */
+export function isPosMirrorInvoiceRecord(
+  record: Record<string, unknown> | null | undefined,
+  saleIds?: ReadonlySet<string> | ReadonlyArray<string> | null
+): boolean {
+  if (!record || typeof record !== 'object') return false;
+  const module = String(record.originModule ?? record.origin_module ?? '').toLowerCase();
+  if (module === 'pos') return true;
+  const conversionSourceType = String(
+    (record.conversionDetails as Record<string, unknown> | undefined)?.sourceType ?? ''
+  ).toLowerCase();
+  if (conversionSourceType === 'sale') return true;
+  if (String(record.sourceType ?? '').toUpperCase() === 'POS') return true;
+  const notes = String(record.notes ?? '').toLowerCase();
+  if (notes.includes('pos sale') || notes.includes('source: pos')) return true;
+  const reference = String(record.reference ?? '').trim();
+  if (!reference) return false;
+  if (!saleIds) return false;
+  const idList: string[] = Array.isArray(saleIds)
+    ? saleIds.map(String)
+    : Array.from(saleIds).map(String);
+  return idList.includes(reference);
+}
+
+/**
  * Owning batch for an examination invoice: the batch whose `invoice_id`
  * equals the stale invoice id AND whose own identity (id / batch_number /
  * batchNumber / name) intersects the invoice's batch linkage. Returns the
