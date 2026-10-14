@@ -67,4 +67,24 @@
     max-width: 100% !important;
     break-inside: avoid;
   }
+
+  /* B/W document printing: logos print in grayscale so no color ink is
+     used, while text backgrounds stay visible via exact color adjust. */
+  img,
+  .document-logo,
+  .fixed-header img,
+  .master-document img {
+    filter: grayscale(100%) !important;
+    -webkit-filter: grayscale(100%) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Keep panel/badge/text backgrounds visible on paper. Browsers only
+     honor backgrounds in print when color-adjust is exact (set globally
+     above); re-assert it on the utility backgrounds used by documents. */
+  [class*='bg-'] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }

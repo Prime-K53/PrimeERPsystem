@@ -60,7 +60,7 @@ html, body {
     margin: 0;
     size: A4;
   }
-  
+
   .master-document {
     width: 210mm;
     height: 297mm;
@@ -70,6 +70,21 @@ html, body {
   .break-inside-avoid {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+  }
+
+  /* B/W printing: logos print in grayscale; backgrounds stay visible. */
+  img,
+  .document-logo,
+  .fixed-header img,
+  .master-document img {
+    filter: grayscale(100%) !important;
+    -webkit-filter: grayscale(100%) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  [class*='bg-'] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
 `;

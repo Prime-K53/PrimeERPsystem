@@ -4,8 +4,9 @@ import { monoText, monoFill, monoLine } from './pdfPrintMode';
 
 /**
  * Brand (screen/download) vs mono (print) style sets.
- * In mono mode every text prints pure black, fills print white and
- * dividers print black; images (logo, QR) are untouched by design.
+ * In mono mode every text prints black (white preserved on dark fills),
+ * fills print as grayscale so backgrounds stay visible and dividers print
+ * black; the logo is converted to grayscale upstream, QR untouched.
  */
 const createDocStyles = (mono: boolean) => {
 const mode: PrimeColorMode = mono ? 'mono' : 'brand';

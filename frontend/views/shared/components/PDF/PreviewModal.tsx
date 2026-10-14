@@ -383,8 +383,9 @@ export const PreviewModal = ({
       printBlobUrl(blobUrl);
       return;
     }
-    // Print renders a fresh black-and-white copy (all text pure black,
-    // logo/QR untouched). Preview/download keep the brand-color PDF.
+    // Print renders a fresh black-and-white copy (text black, fills
+    // grayscale so backgrounds stay visible, logo grayscale, QR untouched).
+    // Preview/download keep the brand-color PDF.
     if (printing) return;
     setPrinting(true);
     toast('Preparing black & white print…', 'info');

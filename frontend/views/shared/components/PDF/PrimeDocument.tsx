@@ -446,8 +446,9 @@ interface DocProps {
   channel?: 'erp' | 'portal';
   /**
    * Print color mode. 'brand' (default) keeps full brand colors for
-   * on-screen preview and downloads; 'mono' renders every text in pure
-   * black with white fills for the printer (logo/QR images untouched).
+   * on-screen preview and downloads; 'mono' renders B/W for the printer
+   * (text black, fills grayscale so backgrounds stay visible, logo
+   * converted to grayscale upstream, QR untouched).
    */
   colorMode?: PrimeColorMode;
 }
@@ -1035,7 +1036,9 @@ const ModernInvoiceTemplate = ({
       }
     }
 
-    const bgColor = mode === 'mono' ? '#fff' : (i % 2 !== 0 ? '#F5F5F5' : 'transparent');
+    // B/W print keeps zebra striping visible: alternate rows print light
+    // gray instead of being flattened to white.
+    const bgColor = mode === 'mono' ? (i % 2 !== 0 ? '#e9e9e9' : '#fff') : (i % 2 !== 0 ? '#F5F5F5' : 'transparent');
 
     return (
       <View key={i} style={{ flexDirection: 'row', backgroundColor: bgColor, minHeight: 28, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 }}>
@@ -1515,8 +1518,9 @@ const ProfessionalInvoiceTemplate = ({
 export const PrimeDocument = ({ type, data, configOverride = null, customers = [], channel = 'erp', colorMode = 'brand' }: DocProps & { customers?: any[] }) => {
   const mode: PrimeColorMode = colorMode ?? 'brand';
   // Brand vs black-and-white print style set. Preview/download use brand;
-  // the Print action re-renders with colorMode 'mono' (all text pure black,
-  // fills white, rules black — logo/QR images are never recolored).
+  // the Print action re-renders with colorMode 'mono' (text black, fills
+  // grayscale so backgrounds stay visible, rules black — logo is converted
+  // to grayscale upstream, QR images are never recolored).
   const s = mode === 'mono' ? docStylesMono : docStyles;
   const isFinancial = type === 'INVOICE' || type === 'PO' || type === 'QUOTATION' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'SUBSCRIPTION';
   const dataAny = data as Record<string, unknown>;

@@ -62,13 +62,14 @@ export const generatePrimeDocumentBlob = async (
   data: PrimeDocData,
   config?: CompanyConfig | null,
   timeoutMs = DEFAULT_PDF_TIMEOUT_MS,
-  // 'brand' keeps full colors (preview/download); 'mono' renders every text
-  // in pure black with white fills for the printer (logo/QR untouched).
+  // 'brand' keeps full colors (preview/download); 'mono' renders B/W for the
+  // printer — text black, fills grayscale (backgrounds stay visible), logo
+  // converted to grayscale (QR untouched).
   colorMode: PrimeColorMode = 'brand',
 ): Promise<Blob> => {
   const d = data as { items?: unknown[] };
   const itemCount = Array.isArray(d.items) ? d.items.length : 0;
-  pdfLog('start', { type, itemCount, timeoutMs });
+  pdfLog('start', { type, itemCount, timeoutMs, colorMode });
 
   await initializePrimePdfFonts();
 
@@ -77,7 +78,19 @@ export const generatePrimeDocumentBlob = async (
     await yieldToUi();
   }
 
-  const doc = <PrimeDocument type={type} data={data} configOverride={config ?? null} colorMode={colorMode} />;
+  let effectiveConfig = config ?? null;
+  if (colorMode === 'mono' && effectiveConfig) {
+    try {
+      // Hydrate first so FILE-/remote logos resolve to data URLs before
+      // the grayscale conversion; callers that already hydrated are unaffected.
+      const { hydrateCompanyPdfAssets, withGrayscaleLogoForPrint } = await import('../../../../utils/companyAssetUtils');
+      effectiveConfig = await withGrayscaleLogoForPrint(await hydrateCompanyPdfAssets(effectiveConfig));
+    } catch {
+      // Grayscale logo is best-effort; the mono template still prints B/W.
+    }
+  }
+
+  const doc = <PrimeDocument type={type} data={data} configOverride={effectiveConfig} colorMode={colorMode} />;
 
   await yieldToUi();
 

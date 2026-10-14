@@ -160,3 +160,67 @@ export const resolvePdfLogoSource = (config?: CompanyConfig | null, showCompanyL
 
 export const resolvePdfQrCodeSource = (value?: string | null): string =>
   normalizeImageDataUrl(value) || '';
+
+/**
+ * Convert a PNG/JPEG data URL to its grayscale (luminance) equivalent.
+ * Used for black-and-white printing so the company logo prints in B/W
+ * instead of color. Browser-only (requires canvas); returns null when
+ * conversion is unavailable so callers can fall back to the color logo.
+ */
+export const convertImageDataUrlToGrayscale = async (dataUrl?: string | null): Promise<string | null> => {
+  const normalized = normalizeImageDataUrl(dataUrl);
+  if (!normalized) return null;
+  if (typeof document === 'undefined' || typeof window === 'undefined') return null;
+  try {
+    const image = await loadHtmlImage(normalized);
+    // SVG data URLs often report zero intrinsic dimensions; fall back to a
+    // sensible raster size so print never silently keeps the color logo.
+    // (Distortion in this rare fallback path beats a color print.)
+    const naturalWidth = image.naturalWidth || (image as HTMLImageElement).width || 0;
+    const naturalHeight = image.naturalHeight || (image as HTMLImageElement).height || 0;
+    const width = naturalWidth > 0 ? naturalWidth : 480;
+    const height = naturalHeight > 0 ? naturalHeight : Math.round(width / 3);
+    if (width <= 0 || height <= 0) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.clearRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    const imageData = context.getImageData(0, 0, width, height);
+    const pixels = imageData.data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const gray = Math.round(0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]);
+      pixels[i] = gray;
+      pixels[i + 1] = gray;
+      pixels[i + 2] = gray;
+    }
+    context.putImageData(imageData, 0, 0);
+    const result = canvas.toDataURL('image/png');
+    return normalizeImageDataUrl(result);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Return a copy of the company config whose logo prints in B/W.
+ * Resolves the active logo source (logoBase64 first, then logo), converts
+ * it to grayscale, and stamps the result back onto both fields so every
+ * template (which reads either field) picks up the B/W logo. QR codes and
+ * signatures are intentionally untouched. Falls back to the original
+ * config when there is no logo or conversion is unavailable (e.g. SSR).
+ */
+export const withGrayscaleLogoForPrint = async <T extends CompanyConfig | null | undefined>(config: T): Promise<T> => {
+  if (!config) return config;
+  const source = resolvePdfLogoSource(config, true);
+  if (!source) return config;
+  const gray = await convertImageDataUrlToGrayscale(source);
+  if (!gray) return config;
+  return {
+    ...config,
+    logo: gray,
+    logoBase64: gray,
+  } as T;
+};

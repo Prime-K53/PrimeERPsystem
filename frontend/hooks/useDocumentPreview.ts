@@ -110,13 +110,23 @@ export const useDocumentPreview = () => {
 
         const securedData = await attachDocumentSecurity(mappedData as any, companyConfig?.companyName);
         await initializePrimePdfFonts();
+        // Print renders the B/W copy (text black, fills grayscale so
+        // backgrounds stay visible, logo converted to grayscale upstream).
+        // Preview/download keep brand colors.
+        // Hydrate first so FILE-/remote logos resolve to data URLs before
+        // the grayscale conversion (mirrors PreviewModal's print path).
+        let printConfig = companyConfig ?? null;
+        try {
+          const { hydrateCompanyPdfAssets, withGrayscaleLogoForPrint } = await import('../utils/companyAssetUtils');
+          printConfig = await withGrayscaleLogoForPrint(await hydrateCompanyPdfAssets(printConfig));
+        } catch {
+          // Grayscale logo is best-effort; mono template still prints B/W.
+        }
         const blob = await pdf(createElement(PrimeDocument as any, {
           type: effectiveType,
           data: securedData as PrimeDocData,
-          configOverride: companyConfig ?? null,
+          configOverride: printConfig,
           customers: customers as any,
-          // Print renders the black-and-white copy (all text pure black,
-          // logo/QR untouched); preview/download keep brand colors.
           colorMode: 'mono',
         }) as any).toBlob();
 

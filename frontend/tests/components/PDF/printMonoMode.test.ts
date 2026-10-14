@@ -2,14 +2,15 @@
  * printMonoMode.test.ts — black-and-white print mode proof.
  *
  * Preview/download keep brand colors; the Print action re-renders with
- * colorMode 'mono' (every text pure black, fills white, rules black,
- * logo/QR images untouched).
+ * colorMode 'mono' (text black with white preserved on dark fills, fills
+ * grayscale so backgrounds stay visible, rules black, logo converted to
+ * grayscale upstream, QR untouched).
  *
  * PDF content streams are Flate-compressed, so this asserts one level up:
  * it resolves the template element tree (all template components are
  * hook-free pure functions) and collects every style color. In mono mode
- * zero non-black-white colors may remain; in brand mode colors must be
- * present (proves the walker actually sees colors — the test is not
+ * only black/white/grayscale/transparent may remain; in brand mode colors
+ * must be present (proves the walker actually sees colors — the test is not
  * vacuous).
  */
 import { describe, it, expect } from 'vitest';
@@ -28,6 +29,8 @@ import {
   monoFill,
   monoLine,
   monoInk,
+  isMonoSafeColor,
+  toGrayscale,
 } from '../../../views/shared/components/PDF/pdfPrintMode';
 
 const TOK = 'd'.repeat(64);
@@ -56,14 +59,13 @@ function checkValue(kind: string, value: unknown, path: string, offenders: strin
   if (typeof value !== 'string') return;
   const v = value.toLowerCase();
   if (kind === 'color') {
-    if (v !== '#000') offenders.push(`${path} text ${value}`);
-  } else if (kind === 'backgroundColor') {
-    // #000 fills are the solid icon badges (tick) which keep a dark fill
-    // with a light glyph in mono mode; everything else must be white.
-    if (v !== '#fff' && v !== '#ffffff' && v !== '#000' && v !== 'transparent') offenders.push(`${path} fill ${value}`);
-  } else if (v !== '#000' && v !== '#fff' && v !== '#ffffff') {
-    offenders.push(`${path} border ${value}`);
+    // Text prints black, except white preserved on dark (grayscale) fills.
+    if (v !== '#000' && v !== '#fff' && v !== '#ffffff') offenders.push(`${path} text ${value}`);
+    return;
   }
+  // Fills/borders must be black/white/grayscale/transparent so B/W prints
+  // keep every background visible without chromatic ink.
+  if (!isMonoSafeColor(value)) offenders.push(`${path} ${kind} ${value}`);
 }
 
 /** Recursively resolve hook-free function components and collect style colors. */
@@ -177,9 +179,25 @@ const fiscalData: any = {
 };
 
 describe('print mono mode helpers', () => {
-  it('maps to black/white only in mono, identity in brand', () => {
+  it('maps to B/W grayscale in mono, identity in brand', () => {
     expect(monoText('mono', '#1e3a8a')).toBe('#000');
-    expect(monoFill('mono', '#f8fafc')).toBe('#fff');
+    // White text stays white so it remains readable on dark grayscale fills.
+    expect(monoText('mono', '#ffffff')).toBe('#fff');
+    expect(monoText('mono', '#fff')).toBe('#fff');
+    // Fills convert to print-safe grayscale so backgrounds stay visible.
+    expect(monoFill('mono', '#f8fafc')).toBe(toGrayscale('#f8fafc'));
+    // Near-white tints clamp to a clearly visible gray (never invisible).
+    expect(monoFill('mono', '#f8fafc')).toBe('#e0e0e0');
+    expect(monoFill('mono', '#f0f9ff')).toBe('#e0e0e0');
+    expect(monoFill('mono', '#5a9e9615')).toBe('#e0e0e0');
+    // Pure white stays paper white (zebra rows keep alternating).
+    expect(monoFill('mono', '#fff')).toBe('#ffffff');
+    expect(monoFill('mono', '#ffffff')).toBe('#ffffff');
+    // Mid-tone brand colors map to honest mid grays.
+    expect(monoFill('mono', '#5a9e96')).toBe('#898989');
+    expect(isMonoSafeColor(monoFill('mono', '#f8fafc'))).toBe(true);
+    expect(isMonoSafeColor(monoFill('mono', '#5a9e96'))).toBe(true);
+    expect(monoFill('mono', 'transparent')).toBe('transparent');
     expect(monoLine('mono', '#e2e8f0')).toBe('#000');
     expect(monoInk('mono', '#10b981')).toBe('#000');
     expect(monoText('brand', '#1e3a8a')).toBe('#1e3a8a');
@@ -187,6 +205,50 @@ describe('print mono mode helpers', () => {
     expect(monoLine('brand', '#e2e8f0')).toBe('#e2e8f0');
     expect(monoInk('brand', '#10b981')).toBe('#10b981');
     expect(monoText(undefined, '#1e3a8a')).toBe('#1e3a8a');
+  });
+
+  it('keeps header/status backgrounds visible in mono (not flattened white)', async () => {
+    const secured = await securedInvoice();
+    const root = (PrimeDocument as (p: Record<string, unknown>) => unknown)({
+      type: 'INVOICE',
+      data: secured,
+      colorMode: 'mono',
+    });
+    const fills: string[] = [];
+    const collect = (node: unknown): void => {
+      if (node == null || typeof node === 'boolean') return;
+      if (Array.isArray(node)) {
+        node.forEach(collect);
+        return;
+      }
+      if (typeof node === 'string' || typeof node === 'number') return;
+      const el = node as { type?: unknown; props?: Record<string, unknown> };
+      if (typeof el.type === 'function') {
+        try {
+          collect((el.type as (p: unknown) => unknown)(el.props));
+        } catch {
+          collect((el.props as Record<string, unknown> | undefined)?.children);
+        }
+        return;
+      }
+      const styles: Record<string, unknown>[] = [];
+      const push = (s: unknown): void => {
+        if (!s) return;
+        if (Array.isArray(s)) s.forEach(push);
+        else if (typeof s === 'object') styles.push(s as Record<string, unknown>);
+      };
+      push((el.props as Record<string, unknown> | undefined)?.style);
+      styles.forEach((st) => {
+        if (typeof st.backgroundColor === 'string') fills.push(st.backgroundColor);
+      });
+      collect((el.props as Record<string, unknown> | undefined)?.children);
+    };
+    collect(root);
+    // At least one non-white grayscale fill (table header / totals band).
+    expect(fills.some((f) => {
+      const v = f.toLowerCase();
+      return v !== '#fff' && v !== '#ffffff' && v !== 'transparent' && isMonoSafeColor(f);
+    })).toBe(true);
   });
 });
 

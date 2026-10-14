@@ -36,7 +36,7 @@ const DocumentShell: React.FC<DocumentShellProps> = ({
     <OfflineImage
       src={logoSrc}
       alt="Logo"
-      className="object-contain"
+      className="object-contain document-logo"
       style={{ height: DocumentStyles.layout.logoHeight }}
       fallback={
         <div style={{ height: DocumentStyles.layout.logoHeight, display: 'flex', alignItems: 'center' }}>
@@ -220,6 +220,17 @@ const DocumentShell: React.FC<DocumentShellProps> = ({
           .fixed-footer {
             position: fixed;
             bottom: 0;
+          }
+          /* B/W printing: logo in grayscale, backgrounds stay visible. */
+          .fixed-header img,
+          .document-logo {
+            filter: grayscale(100%) !important;
+            -webkit-filter: grayscale(100%) !important;
+          }
+          .document-shell *,
+          .document-shell [class*='bg-'] {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           /* Hide default page numbers if needed */
           @page {

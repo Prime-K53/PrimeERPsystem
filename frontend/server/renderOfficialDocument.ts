@@ -40,8 +40,8 @@ export interface RenderOfficialDocumentInput {
   channel?: 'erp' | 'portal';
   /**
    * Print color mode. 'brand' (default) keeps full colors for preview and
-   * download; 'mono' renders every text in pure black with white fills
-   * for the printer (logo/QR images untouched).
+   * download; 'mono' renders B/W for the printer (text black, fills
+   * grayscale so backgrounds stay visible, logo grayscale, QR untouched).
    */
   colorMode?: 'brand' | 'mono';
 }
