@@ -1,5 +1,7 @@
 import type { AssessmentContract, AssessmentContractItem } from '../types';
 import { roundMoney } from '../utils/roundingUtils';
+import { readContractProfile, summarisePrintSpec } from '../utils/contractProfile';
+import { isMainBranchValue } from './customerAccountScope';
 
 export interface PrintingContractDocLine {
   desc: string;
@@ -34,6 +36,13 @@ export interface PrintingContractDocData {
   assessmentPrice: number;
   terms?: string;
   notes?: string;
+  totalCandidature?: number;
+  assessmentSpec?: string;
+  chargePerCandidate?: number;
+  assessmentSittings?: string;
+  printSpecSummary?: string;
+  pricingRulesSummary?: string;
+  deliveryTermsSummary?: string;
   signatures: {
     company: PrintingContractSignatureBlock | null;
     customer: PrintingContractSignatureBlock | null;
@@ -141,6 +150,23 @@ export const buildPrintingContractDoc = async (
   const lines = mapLines(contract);
   const company = mapSignatureBlock((contract.data as any)?.signatures?.company);
   const customer = mapSignatureBlock((contract.data as any)?.signatures?.customer);
+  const profile = readContractProfile((contract as any)?.data);
+  const printSpecSummary = summarisePrintSpec(profile.printSpec) || undefined;
+  const pricingBits = [
+    profile.pricingRules.model ? String(profile.pricingRules.model).replace(/_/g, ' ') : '',
+    profile.pricingRules.chargePerCandidate !== undefined ? `Charge per candidate: ${roundMoney(profile.pricingRules.chargePerCandidate)}` : '',
+    profile.pricingRules.discount ? `Discount: ${profile.pricingRules.discount}` : '',
+    profile.pricingRules.urgentFee ? `Urgent: ${profile.pricingRules.urgentFee}` : '',
+    profile.pricingRules.taxHandling,
+    profile.pricingRules.rulesNotes,
+  ].filter((s) => String(s || '').trim()).join(' · ') || undefined;
+  const deliveryBits = [
+    profile.delivery.method,
+    profile.delivery.timeline,
+    profile.delivery.address,
+    profile.delivery.packaging ? `Pack: ${profile.delivery.packaging}` : '',
+    profile.delivery.deliveryNotes,
+  ].filter((s) => String(s || '').trim()).join(' · ') || undefined;
   const doc: Omit<PrintingContractDocData, 'contentHash'> = {
     documentType: 'printing_contract',
     verificationToken: String((contract as any)?.verificationToken || '').trim() || undefined,
@@ -158,6 +184,13 @@ export const buildPrintingContractDoc = async (
     assessmentPrice: roundMoney(Number(contract.assessment_price) || 0),
     terms: String(contract.terms || '').trim() || undefined,
     notes: String(contract.notes || '').trim() || undefined,
+    totalCandidature: profile.candidature.totalCandidature,
+    assessmentSpec: profile.candidature.spec?.trim() || undefined,
+    chargePerCandidate: profile.pricingRules.chargePerCandidate,
+    assessmentSittings: profile.candidature.sittings?.trim() || undefined,
+    printSpecSummary,
+    pricingRulesSummary: pricingBits,
+    deliveryTermsSummary: deliveryBits,
     signatures: { company, customer },
     fullySigned: Boolean(company && customer),
     issuedInvoiceId: String((contract.data as any)?.issued_invoice_id || '').trim() || undefined,
@@ -188,6 +221,18 @@ export interface PrintingContractScheduleDocData {
   status: string;
   customerName: string;
   schoolName?: string;
+  schoolZone?: string;
+  customerPhone?: string;
+  /**
+   * Billed branch: the customer sub-account this contract is billed to, or
+   * the main account. Always present — never a blank line on the schedule.
+   */
+  billedBranch?: string;
+  /**
+   * Academic year (e.g. "2026/27"): recorded on the contract, else derived
+   * from the contract window. Absent only when neither is available.
+   */
+  academicYear?: string;
   periodStart?: string;
   periodEnd?: string;
   schedule: PrintingContractScheduleLine[];
@@ -225,6 +270,59 @@ const toDisplayDateOrEmpty = (iso?: string): string | undefined => {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return undefined;
   return parsed.toLocaleDateString('en-GB');
+};
+
+/**
+ * Customer display names are assembled with the customer id appended by the
+ * contract screens ("Mtakataka CCAP School (CUST-0033)"). The id is an
+ * internal key and must never appear on a customer-facing schedule, so the
+ * trailing " (ID)" is stripped here — the one funnel every caller (ERP
+ * preview, auto-issued documents, portal) passes through.
+ *
+ * Only a trailing bracketed token that looks like an id is removed: it must
+ * be upper-case/digits/dashes AND contain a digit, so a genuine qualifier
+ * such as "St Mary's (Blantyre)" survives untouched.
+ */
+const stripCustomerIdSuffix = (name: string): string =>
+  String(name || '').replace(/\s*\((?=[A-Z0-9-]*\d)[A-Z0-9-]{2,}\)\s*$/i, '').trim();
+
+/** Label printed when the contract is billed to the customer's main account. */
+const BILLED_BRANCH_MAIN = 'Main Account';
+
+/**
+ * Billed branch of the contract: the customer sub-account the work is billed
+ * to (e.g. "Examination") or the main account.
+ *
+ * Customers carry their branches in `subAccounts`; records denote the chosen
+ * one by name — the exact convention invoices, examination batches and job
+ * tickets already follow (`sub_account_name`). Absent, blank or "main" means
+ * the main account, so the schedule always prints the billed branch rather
+ * than a blank line.
+ */
+const resolveBilledBranch = (data: Record<string, any>): string => {
+  const raw = data?.sub_account_name ?? data?.subAccountName ?? data?.billed_branch ?? '';
+  const label = String(raw || '').trim();
+  if (!label || isMainBranchValue(label)) return BILLED_BRANCH_MAIN;
+  return label;
+};
+
+/**
+ * Academic year printed on the schedule.
+ *
+ * Recorded explicitly on the contract when the user sets it. Otherwise it is
+ * derived from the contract window (19 Oct 2026 → "2026/27") so a contract
+ * created before the field existed still prints a year instead of a blank.
+ * Malawian academic years open in the year the engagement starts.
+ */
+const resolveAcademicYear = (data: Record<string, any>, periodStart?: string): string | undefined => {
+  const explicit = String(data?.academic_year ?? data?.academicYear ?? '').trim();
+  if (explicit) return explicit;
+  const iso = String(periodStart || '').trim();
+  if (!iso) return undefined;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  const year = parsed.getFullYear();
+  return `${year}/${String((year + 1) % 100).padStart(2, '0')}`;
 };
 
 /**
@@ -280,8 +378,12 @@ export const buildContractScheduleDoc = async (
     date: toDisplayDate(input.issuedAtIso),
     version: Number(contract.version) || 1,
     status: String(contract.status || 'draft'),
-    customerName: String(input.customerName || '').trim() || 'Customer',
+    customerName: stripCustomerIdSuffix(String(input.customerName || '').trim()) || 'Customer',
     schoolName: String(input.schoolName || '').trim() || undefined,
+    schoolZone: String((contract as any)?.data?.school_zone || (contract as any)?.data?.zone || '').trim() || undefined,
+    customerPhone: String((contract as any)?.data?.customer_phone || (contract as any)?.data?.phone || '').trim() || undefined,
+    billedBranch: resolveBilledBranch(profile),
+    academicYear: resolveAcademicYear(profile, contract.starts_at || contract.ends_at),
     periodStart: contract.starts_at || undefined,
     periodEnd: contract.ends_at || undefined,
     schedule: rows,

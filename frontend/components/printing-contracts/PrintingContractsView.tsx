@@ -18,6 +18,10 @@ import {
   type ContractFormLine,
 } from '../../utils/contractInvoiceDraft';
 import {
+  emptyContractProfile, readContractProfile, buildContractProfileData,
+  type ContractProfile,
+} from '../../utils/contractProfile';
+import {
   CONTRACT_TRANSITIONS,
   applyContractSignature,
   applySignatureVoid,
@@ -174,6 +178,17 @@ const emptyContractDraft = () => ({
   description: '',
   terms: '',
   notes: '',
+  // Denormalized customer/school details for the schedule document.
+  school_zone: '',
+  customer_phone: '',
+  // Billed branch (a customer sub-account, blank = main account) and the
+  // academic year, both printed on the schedule preamble.
+  sub_account_name: '',
+  academic_year: '',
+  // Structured commercial profile (§4 blocks): printing specification,
+  // pricing rules, delivery terms + candidature. Stored in `data` (JSONB,
+  // synced) — no migration needed.
+  profile: emptyContractProfile() as ContractProfile,
   // Invoice-style billable lines (create mode). Totals derive from these,
   // exactly like invoice lines roll up into the invoice total.
   lines: [emptyContractLine()] as ContractFormLine[],
@@ -331,6 +346,20 @@ const PrintingContractsView: React.FC = () => {
     schools.find(s => String(s.id) === String(id))?.name
     || customers.find((c: Customer) => String(c.id) === String(id))?.name
     || id || '—';
+  /**
+   * Branches (sub-accounts) of the selected customer. Customers carry them as
+   * `{ id, name }` records; the legacy `string[]` shape is tolerated so old
+   * rows keep working. The billed branch is chosen by NAME — the same
+   * convention examination batches, invoices and job tickets use.
+   */
+  const subAccountsOf = (id?: string): Array<{ id: string; name: string }> => {
+    const customer: any = (customers || []).find((c: Customer) => String(c.id) === String(id));
+    const subs = customer?.subAccounts;
+    if (!Array.isArray(subs)) return [];
+    return subs
+      .map((s: any) => (typeof s === 'string' ? { id: s, name: s } : { id: String(s?.id ?? ''), name: String(s?.name ?? '') }))
+      .filter((s: { name: string }) => s.name.trim().length > 0);
+  };
 
   const stats = useMemo(() => {
     let active = 0; let pending = 0;
@@ -433,6 +462,11 @@ const PrintingContractsView: React.FC = () => {
       description: c.description || '',
       terms: c.terms || '',
       notes: c.notes || '',
+      school_zone: (c.data as any)?.school_zone || '',
+      customer_phone: (c.data as any)?.customer_phone || '',
+      sub_account_name: (c.data as any)?.sub_account_name || '',
+      academic_year: (c.data as any)?.academic_year || '',
+      profile: readContractProfile(c.data),
       // Edit mode keeps the agreement fields; entitlement changes go through
       // the Assessments tab / amendments so consumed history is protected.
       lines: [] as ContractFormLine[],
@@ -499,6 +533,7 @@ const PrintingContractsView: React.FC = () => {
           notify('Historical contracts are protected and cannot be edited. Create an amendment instead.', 'error');
           return;
         }
+        const profileData = buildContractProfileData(formDraft.profile);
         await updateAssessmentContract({
           ...editingContract,
           title: formDraft.title.trim(),
@@ -518,6 +553,14 @@ const PrintingContractsView: React.FC = () => {
           notes: formDraft.notes || undefined,
           updated_at: now,
           version: num(editingContract.version) + 1,
+          data: {
+            ...(editingContract.data || {}),
+            ...profileData,
+            school_zone: formDraft.school_zone || undefined,
+            customer_phone: formDraft.customer_phone || undefined,
+            sub_account_name: formDraft.sub_account_name || undefined,
+            academic_year: formDraft.academic_year || undefined,
+          },
         });
         notify('Printing contract updated', 'success');
       } else {
@@ -581,8 +624,17 @@ const PrintingContractsView: React.FC = () => {
           updated_at: now,
           version: 1,
           // Snapshot the billable lines so the invoice can be (re)issued from
-          // the detail view and the commercial basis stays auditable.
-          data: { lines: validLines },
+          // the detail view and the commercial basis stays auditable, plus
+          // the structured profile (print spec, pricing rules, delivery,
+          // candidature) so the agreement is data, not free text.
+          data: {
+            lines: validLines,
+            ...buildContractProfileData(formDraft.profile),
+            school_zone: formDraft.school_zone || undefined,
+            customer_phone: formDraft.customer_phone || undefined,
+            sub_account_name: formDraft.sub_account_name || undefined,
+            academic_year: formDraft.academic_year || undefined,
+          },
         };
         // Phase 1 §2.1: atomic creation — contract + all reserved items + bucket
         // in ONE operation. Validations run before the first write, so a failure
@@ -1643,6 +1695,18 @@ const PrintingContractsView: React.FC = () => {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
+                <label style={contractLabelStyle}>School zone</label>
+                <input value={formDraft.school_zone} onChange={e => setFormDraft({ ...formDraft, school_zone: e.target.value })}
+                  style={contractInputStyle} placeholder="e.g. Mankhamba ZONE" />
+              </div>
+              <div>
+                <label style={contractLabelStyle}>Customer phone</label>
+                <input value={formDraft.customer_phone} onChange={e => setFormDraft({ ...formDraft, customer_phone: e.target.value })}
+                  style={contractInputStyle} placeholder="e.g. 265899233626" />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
                 <label style={contractLabelStyle}>Grade</label>
                 <input value={formDraft.assessment_grade} onChange={e => setFormDraft({ ...formDraft, assessment_grade: e.target.value })}
                   style={contractInputStyle} placeholder="Optional" />
@@ -1651,6 +1715,28 @@ const PrintingContractsView: React.FC = () => {
                 <label style={contractLabelStyle}>Subject</label>
                 <input value={formDraft.assessment_subject} onChange={e => setFormDraft({ ...formDraft, assessment_subject: e.target.value })}
                   style={contractInputStyle} placeholder="Optional" />
+              </div>
+            </div>
+            {/* Billed branch + academic year: the two facts the schedule
+                preamble states about the engagement itself. A customer's
+                branches come from their sub-accounts, so "Main account" is
+                the default and any sub-branch (e.g. Examination) can be
+                billed explicitly. */}
+            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <label style={contractLabelStyle}>Billed branch</label>
+                <select value={formDraft.sub_account_name} onChange={e => setFormDraft({ ...formDraft, sub_account_name: e.target.value })}
+                  style={contractSelectStyle}>
+                  <option value="">Main account</option>
+                  {subAccountsOf(formDraft.customer_id).map(sub => (
+                    <option key={sub.id || sub.name} value={sub.name}>{sub.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={contractLabelStyle}>Academic year</label>
+                <input value={formDraft.academic_year} onChange={e => setFormDraft({ ...formDraft, academic_year: e.target.value })}
+                  style={contractInputStyle} placeholder="e.g. 2026/27 (blank = from period)" />
               </div>
             </div>
           </div>
@@ -1799,11 +1885,253 @@ const PrintingContractsView: React.FC = () => {
           </div>
           )}
 
+          <ContractSectionLabel>Candidature</ContractSectionLabel>
+          <div style={{ ...contractGridStyle, gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 18 }}>
+            <div>
+              <label style={contractLabelStyle}>Expected candidates</label>
+              <input type="number" min={0} step={1}
+                value={formDraft.profile.candidature.totalCandidature ?? ''}
+                onChange={e => setFormDraft({
+                  ...formDraft,
+                  profile: {
+                    ...formDraft.profile,
+                    candidature: {
+                      ...formDraft.profile.candidature,
+                      totalCandidature: e.target.value === '' ? undefined : Math.max(0, Math.floor(Number(e.target.value))),
+                    },
+                  },
+                })}
+                placeholder="e.g. 450"
+                style={{ ...contractInputStyle, fontVariantNumeric: 'tabular-nums' }} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Sittings</label>
+              <input value={formDraft.profile.candidature.sittings}
+                onChange={e => setFormDraft({
+                  ...formDraft,
+                  profile: { ...formDraft.profile, candidature: { ...formDraft.profile.candidature, sittings: e.target.value } },
+                })}
+                placeholder="e.g. Once Off / Morning + Afternoon"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Assessment spec</label>
+              <input value={formDraft.profile.candidature.spec}
+                onChange={e => setFormDraft({
+                  ...formDraft,
+                  profile: { ...formDraft.profile, candidature: { ...formDraft.profile.candidature, spec: e.target.value } },
+                })}
+                placeholder="e.g. 8 Pages"
+                style={contractInputStyle} />
+            </div>
+          </div>
+
+          <ContractSectionLabel>Printing Specification</ContractSectionLabel>
+          <div style={{ ...contractGridStyle, gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={contractLabelStyle}>Paper size</label>
+              <select value={formDraft.profile.printSpec.paperSize}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, paperSize: e.target.value } } })}
+                style={contractSelectStyle}>
+                <option value="">Select…</option>
+                {['A4', 'A3', 'A5', 'Legal', 'Letter', 'Custom'].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Paper type</label>
+              <input value={formDraft.profile.printSpec.paperType}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, paperType: e.target.value } } })}
+                placeholder="e.g. Bond, Art, Manilla"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Paper weight (gsm)</label>
+              <input value={formDraft.profile.printSpec.paperWeight}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, paperWeight: e.target.value } } })}
+                placeholder="e.g. 80"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Colour</label>
+              <select value={formDraft.profile.printSpec.colorMode}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, colorMode: e.target.value } } })}
+                style={contractSelectStyle}>
+                <option value="">Select…</option>
+                <option value="Full Color">Full Color</option>
+                <option value="Black & White">Black &amp; White</option>
+              </select>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Sides</label>
+              <select value={formDraft.profile.printSpec.sides}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, sides: e.target.value } } })}
+                style={contractSelectStyle}>
+                <option value="">Select…</option>
+                <option value="Single Sided">Single Sided</option>
+                <option value="Double Sided">Double Sided</option>
+              </select>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Orientation</label>
+              <select value={formDraft.profile.printSpec.orientation}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, orientation: e.target.value } } })}
+                style={contractSelectStyle}>
+                <option value="">Select…</option>
+                <option value="Portrait">Portrait</option>
+                <option value="Landscape">Landscape</option>
+              </select>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Pages per copy</label>
+              <input value={formDraft.profile.printSpec.pagesPerCopy}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, pagesPerCopy: e.target.value } } })}
+                placeholder="e.g. 8"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Copies</label>
+              <input value={formDraft.profile.printSpec.copies}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, copies: e.target.value } } })}
+                placeholder="e.g. 500"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Finishing</label>
+              <input value={formDraft.profile.printSpec.finishing}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, finishing: e.target.value } } })}
+                placeholder="e.g. Stapling, Binding, Lamination"
+                style={contractInputStyle} />
+            </div>
+          </div>
+          <div style={{ ...contractGridStyle, marginTop: 12, marginBottom: 18 }}>
+            <div>
+              <label style={contractLabelStyle}>Packaging (print)</label>
+              <input value={formDraft.profile.printSpec.packaging}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, packaging: e.target.value } } })}
+                placeholder="e.g. Boxed per class"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Specification notes</label>
+              <input value={formDraft.profile.printSpec.specNotes}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, printSpec: { ...formDraft.profile.printSpec, specNotes: e.target.value } } })}
+                placeholder="Artwork, proofing, quality…"
+                style={contractInputStyle} />
+            </div>
+          </div>
+
+          <ContractSectionLabel>Pricing Rules</ContractSectionLabel>
+          <div style={{ ...contractGridStyle, gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={contractLabelStyle}>Pricing model</label>
+              <select value={formDraft.profile.pricingRules.model}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, model: e.target.value } } })}
+                style={contractSelectStyle}>
+                <option value="">Select…</option>
+                <option value="per_candidate">Per candidate</option>
+                <option value="per_assessment">Per assessment</option>
+                <option value="per_page">Per page</option>
+                <option value="fixed">Fixed contract price</option>
+              </select>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Charge per candidate</label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: contractInkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                <input type="number" min={0} step="0.01"
+                  value={formDraft.profile.pricingRules.chargePerCandidate ?? ''}
+                  onChange={e => setFormDraft({
+                    ...formDraft,
+                    profile: {
+                      ...formDraft.profile,
+                      pricingRules: { ...formDraft.profile.pricingRules, chargePerCandidate: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) },
+                    },
+                  })}
+                  placeholder="0.00"
+                  style={{ ...contractInputStyle, paddingLeft: 28, fontVariantNumeric: 'tabular-nums' }} />
+              </div>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Tax handling</label>
+              <input value={formDraft.profile.pricingRules.taxHandling}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, taxHandling: e.target.value } } })}
+                placeholder="e.g. VAT inclusive"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Discount</label>
+              <input value={formDraft.profile.pricingRules.discount}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, discount: e.target.value } } })}
+                placeholder="e.g. 5% for 500+ candidates"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Urgent fee</label>
+              <input value={formDraft.profile.pricingRules.urgentFee}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, urgentFee: e.target.value } } })}
+                placeholder="e.g. 10% express surcharge"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Pricing notes</label>
+              <input value={formDraft.profile.pricingRules.rulesNotes}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, rulesNotes: e.target.value } } })}
+                placeholder="Reprint, over-run rules…"
+                style={contractInputStyle} />
+            </div>
+          </div>
+
+          <ContractSectionLabel>Delivery Terms</ContractSectionLabel>
+          <div style={{ ...contractGridStyle, marginBottom: 12 }}>
+            <div>
+              <label style={contractLabelStyle}>Delivery method</label>
+              <select value={formDraft.profile.delivery.method}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, delivery: { ...formDraft.profile.delivery, method: e.target.value } } })}
+                style={contractSelectStyle}>
+                <option value="">Select…</option>
+                <option value="Pickup">Pickup</option>
+                <option value="Delivery">Delivery</option>
+                <option value="Courier">Courier</option>
+                <option value="Split delivery">Split delivery</option>
+              </select>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Delivery timeline</label>
+              <input value={formDraft.profile.delivery.timeline}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, delivery: { ...formDraft.profile.delivery, timeline: e.target.value } } })}
+                placeholder="e.g. 3 days before exam date"
+                style={contractInputStyle} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={contractLabelStyle}>Delivery address</label>
+            <input value={formDraft.profile.delivery.address}
+              onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, delivery: { ...formDraft.profile.delivery, address: e.target.value } } })}
+              placeholder="School / collection point address"
+              style={contractInputStyle} />
+          </div>
+          <div style={{ ...contractGridStyle, marginBottom: 18 }}>
+            <div>
+              <label style={contractLabelStyle}>Delivery packaging</label>
+              <input value={formDraft.profile.delivery.packaging}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, delivery: { ...formDraft.profile.delivery, packaging: e.target.value } } })}
+                placeholder="e.g. Sealed per subject"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Delivery notes</label>
+              <input value={formDraft.profile.delivery.deliveryNotes}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, delivery: { ...formDraft.profile.delivery, deliveryNotes: e.target.value } } })}
+                placeholder="Contact person, proof of delivery…"
+                style={contractInputStyle} />
+            </div>
+          </div>
+
           <ContractSectionLabel>Terms &amp; Notes</ContractSectionLabel>
           <div style={{ marginBottom: 18 }}>
-            <label style={contractLabelStyle}>Terms</label>
+            <label style={contractLabelStyle}>General terms</label>
             <textarea value={formDraft.terms} onChange={e => setFormDraft({ ...formDraft, terms: e.target.value })} rows={3}
-              placeholder="Printing specifications, pricing rules, delivery terms…"
+              placeholder="General contract terms — specifics live in the sections above"
               style={contractTextareaStyle} />
           </div>
           <div style={{ marginBottom: 18 }}>
@@ -2008,8 +2336,53 @@ const PrintingContractsView: React.FC = () => {
                       <span style={{ color: contractInkSoft }}>{[selected.assessment_grade, selected.assessment_subject].filter(Boolean).join(' · ') || ''}</span></p>
                     <p style={{ margin: 0 }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Payment</span>
                       <span style={{ color: contractInk }}>{selected.payment_status || 'pending'}{selected.payment_verified_at ? ` · verified ${new Date(selected.payment_verified_at).toLocaleDateString()}` : ''}</span></p>
+                    {(() => {
+                      const profile = readContractProfile(selected.data);
+                      const specBits = [
+                        profile.printSpec.paperSize, profile.printSpec.paperType,
+                        profile.printSpec.paperWeight ? `${profile.printSpec.paperWeight}gsm` : '',
+                        profile.printSpec.colorMode, profile.printSpec.sides,
+                        profile.printSpec.pagesPerCopy ? `${profile.printSpec.pagesPerCopy}pp` : '',
+                        profile.printSpec.copies ? `×${profile.printSpec.copies}` : '',
+                        profile.printSpec.orientation,
+                      ].filter((s) => String(s || '').trim()).join(' · ');
+                      const specExtra = [profile.printSpec.finishing, profile.printSpec.packaging, profile.printSpec.specNotes]
+                        .filter((s) => String(s || '').trim()).join(' · ');
+                      const pricingBits = [
+                        profile.pricingRules.model ? profile.pricingRules.model.replace(/_/g, ' ') : '',
+                        profile.pricingRules.chargePerCandidate !== undefined ? `${money(num(profile.pricingRules.chargePerCandidate))}/candidate` : '',
+                        profile.pricingRules.discount ? `Discount: ${profile.pricingRules.discount}` : '',
+                        profile.pricingRules.urgentFee ? `Urgent: ${profile.pricingRules.urgentFee}` : '',
+                        profile.pricingRules.taxHandling,
+                        profile.pricingRules.rulesNotes,
+                      ].filter((s) => String(s || '').trim()).join(' · ');
+                      const deliveryBits = [
+                        profile.delivery.method,
+                        profile.delivery.timeline,
+                        profile.delivery.address,
+                        profile.delivery.packaging ? `Pack: ${profile.delivery.packaging}` : '',
+                        profile.delivery.deliveryNotes,
+                      ].filter((s) => String(s || '').trim()).join(' · ');
+                      const candBits = [
+                        profile.candidature.totalCandidature !== undefined ? `${profile.candidature.totalCandidature} candidates` : '',
+                        profile.candidature.sittings,
+                        profile.candidature.spec,
+                      ].filter((s) => String(s || '').trim()).join(' · ');
+                      return (
+                        <>
+                          <p style={{ margin: 0 }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Candidature</span>
+                            <span style={{ color: contractInk }}>{candBits || '—'}</span></p>
+                          <p style={{ margin: 0 }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Pricing rules</span>
+                            <span style={{ color: contractInk }}>{pricingBits || '—'}</span></p>
+                          <p style={{ margin: 0, gridColumn: '1 / -1' }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Printing specification</span>
+                            <span style={{ color: contractInk }}>{[specBits, specExtra].filter((s) => String(s || '').trim()).join(' — ') || '—'}</span></p>
+                          <p style={{ margin: 0, gridColumn: '1 / -1' }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Delivery terms</span>
+                            <span style={{ color: contractInk }}>{deliveryBits || '—'}</span></p>
+                        </>
+                      );
+                    })()}
                     {selected.description && <p style={{ margin: 0, gridColumn: '1 / -1' }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Description</span><span style={{ color: contractInk }}>{selected.description}</span></p>}
-                    {selected.terms && <p style={{ margin: 0, gridColumn: '1 / -1' }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Terms</span><span style={{ color: contractInk }}>{selected.terms}</span></p>}
+                    {selected.terms && <p style={{ margin: 0, gridColumn: '1 / -1' }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>General terms</span><span style={{ color: contractInk }}>{selected.terms}</span></p>}
                     {selected.notes && <p style={{ margin: 0, gridColumn: '1 / -1' }}><span style={{ color: contractInkSoft, fontWeight: 800, textTransform: 'uppercase', fontSize: 10, display: 'block', letterSpacing: 0.06 }}>Notes</span><span style={{ color: contractInk }}>{selected.notes}</span></p>}
                   </div>
                 </div>

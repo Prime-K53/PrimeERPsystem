@@ -202,6 +202,32 @@ const pickFirstText = (...values: Array<unknown>) => {
   return '';
 };
 
+/**
+ * Strips a "Charge per candidate: <number>" fragment from a summary string so
+ * it is not duplicated when the charge is rendered separately as a formatted
+ * line. The fragment may appear with either a formatted amount (from the PDF
+ * renderer) or a raw integer (from the service builder), and may be followed
+ * by a separator or end-of-string.
+ */
+const stripChargePerCandidateSubstring = (summary: string): string => {
+  const trimmed = String(summary || '').trim();
+  if (!trimmed) return trimmed;
+  // Fragment pattern: "Charge per candidate: <amount>" with optional leading
+  // and trailing whitespace. The joiner between segments is " · ".
+  const fragmentRe = /^Charge per candidate:\s*[^·]+$/i;
+  // A lone trailing " ·" (without trailing space) is not a real joiner; drop it
+  // so the single-segment path can recognise the string as the fragment alone.
+  const cleaned = trimmed.replace(/\s·\s*$/, '').trim();
+  if (!cleaned.includes(' · ')) {
+    return fragmentRe.test(cleaned) ? '' : cleaned;
+  }
+  // Split on the joiner, drop segments that are the charge fragment, rejoin.
+  // Trailing empty segments (from a trailing " · ") are ignored.
+  const segments = cleaned.split(' · ').filter(s => s.trim().length > 0);
+  const kept = segments.filter(s => !fragmentRe.test(s.trim()));
+  return kept.length > 0 ? kept.join(' · ') : '';
+};
+
 const buildCompanyAddress = (config?: CompanyConfig | null) => {
   return [config?.addressLine1, config?.city, config?.country]
     .map((value) => String(value ?? '').trim())
@@ -2182,6 +2208,17 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           </View>
 
+          {(pc.totalCandidature !== undefined || pc.assessmentSpec || pc.chargePerCandidate !== undefined || pc.assessmentSittings || pc.printSpecSummary || pc.pricingRulesSummary || pc.deliveryTermsSummary) ? (
+            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Agreed specification</Text>
+              {pc.totalCandidature !== undefined ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Candidature: {pc.totalCandidature}{pc.assessmentSittings ? ` · ${pc.assessmentSittings}` : ''}{pc.assessmentSpec ? ` · ${pc.assessmentSpec}` : ''}</Text> : null}
+              {pc.totalCandidature === undefined && (pc.assessmentSittings || pc.assessmentSpec) ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Candidature: {[pc.assessmentSittings, pc.assessmentSpec].filter(Boolean).join(' · ')}</Text> : null}
+              {pc.printSpecSummary ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Printing: {pc.printSpecSummary}</Text> : null}
+              {pc.chargePerCandidate !== undefined || pc.pricingRulesSummary ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Pricing: {pc.chargePerCandidate !== undefined ? `Charge per candidate: ${currency} ${formatAmount(pc.chargePerCandidate)}` : ''}{pc.chargePerCandidate !== undefined && pc.pricingRulesSummary ? ` · ${stripChargePerCandidateSubstring(pc.pricingRulesSummary)}` : (pc.pricingRulesSummary || '')}</Text> : null}
+              {pc.deliveryTermsSummary ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Delivery: {pc.deliveryTermsSummary}</Text> : null}
+            </View>
+          ) : null}
+
           <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
             <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Terms &amp; Conditions</Text>
             <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
@@ -2234,147 +2271,353 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   if (type === 'CONTRACT_SCHEDULE') {
     const cs = data as ContractScheduleDoc;
     const cancelled = isCancelledStatus(String(cs.status || ''), cs as unknown as Record<string, unknown>);
+    const scheduleCurrency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
+
+    // ── Preamble geometry (modelled on the payment receipt) ──────────────
+    // The receipt's formal header is centred with the logo pinned out of flow
+    // at the left margin, and carries a two-column inline metadata grid whose
+    // right column is indented two tab stops. The schedule reuses that
+    // geometry — and its shrink-to-fit / hard one-line guarantees — so a long
+    // school or company name can neither wrap nor slide under the logo.
+    const preambleFontSize = scaledFont(12);
+    const preambleTitleFontSize = scaledFont(20);
+    const preambleMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const preambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+    const preambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+    const preambleNameFontSize = Math.max(
+      8.5,
+      Math.min(templateSettings.companyNameFontSize, preambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+    );
+    const customerNameLabel = 'Customer Name: ';
+    const customerNameText = String(cs.customerName || 'N/A');
+    const customerNameFontSize = fitFontSize(
+      customerNameText,
+      Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, preambleFontSize, true)),
+      { maxSize: preambleFontSize, minSize: 7 }
+    );
+    // Party descriptors printed beneath the name. A value that merely repeats
+    // the customer name is dropped (the common case: the school IS the
+    // customer) so the identity block never states the same thing twice, and
+    // repeated values collapse to one.
+    const partySeen = new Set([customerNameText.trim().toLowerCase()]);
+    const customerSubline = [cs.schoolName, cs.schoolZone, cs.customerPhone]
+      .map((value) => String(value || '').trim())
+      .filter((value) => {
+        const key = value.toLowerCase();
+        if (!key || partySeen.has(key)) return false;
+        partySeen.add(key);
+        return true;
+      })
+      .join(' · ');
+
+    // Palette indirection: every colour is routed through the print-mode
+    // helpers so the mono copy degrades to black/greyscale without a second
+    // template (white is preserved on dark fills only).
+    const inkTone = (hex: string) => monoText(mode, hex);
+    const hairline = monoLine(mode, '#cbd5e1');
+    const softFill = monoFill(mode, '#f8fafc');
+    const moneyOf = (value: number) => `${scheduleCurrency} ${formatAmount(Number(value) || 0)}`;
+
+    // Schedule lifecycle tones. Deliberately local: getStatusTone() is shaped
+    // for invoice payment states (its fallback is "overdue red"), which would
+    // paint every reserved/cancelled/consumed assessment the same colour.
+    const scheduleTone = (status?: string) => {
+      if (mode === 'mono') return { border: '#000', text: '#000' };
+      const key = String(status || '').trim().toLowerCase();
+      if (['consumed', 'completed', 'active', 'printed'].includes(key)) return { border: '#10b981', text: '#047857' };
+      if (['reserved', 'scheduled', 'processing', 'pending', 'in_progress'].includes(key)) return { border: '#f59e0b', text: '#b45309' };
+      if (['cancelled', 'canceled', 'void'].includes(key)) return { border: '#ef4444', text: '#b91c1c' };
+      return { border: '#94a3b8', text: '#475569' };
+    };
+
+    const scheduleRows = cs.schedule || [];
+    // Compact range ("19 Oct – 30 Apr") so the identity strip stays on one
+    // line. Years are deliberately omitted: the academic year is stated in
+    // its own metadata row, so repeating it here would only add noise.
+    const periodLabel = (() => {
+      if (!cs.periodStart && !cs.periodEnd) return '—';
+      if (!cs.periodStart || !cs.periodEnd) {
+        return `${cs.periodStart ? formatDateOnly(cs.periodStart) : '—'} – ${cs.periodEnd ? formatDateOnly(cs.periodEnd) : 'Open'}`;
+      }
+      const start = new Date(cs.periodStart);
+      const end = new Date(cs.periodEnd);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return `${formatDateOnly(cs.periodStart)} – ${formatDateOnly(cs.periodEnd)}`;
+      }
+      const shortLabel = (value: Date) =>
+        value.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+      const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+      return sameMonth
+        ? `${start.getDate()} – ${shortLabel(end)}`
+        : `${shortLabel(start)} – ${shortLabel(end)}`;
+    })();
+
+    // Fixed column widths: the assessment column takes the remainder. Explicit
+    // widths (never bare flex) are what keep the header labels from colliding
+    // with each other and each row's sequence number.
+    const COL = { seq: 26, scheduled: 70, status: 74, value: 84 };
+    const thStyle = {
+      fontSize: 7.5 * fontScale,
+      fontWeight: 'bold' as const,
+      letterSpacing: 1,
+      textTransform: 'uppercase' as const,
+      color: inkTone('#64748b'),
+    };
+
+    const sectionHeading = (label: string) => (
+      <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', letterSpacing: 1.2, textTransform: 'uppercase', color: inkTone('#64748b'), marginBottom: 6 }}>
+        {label}
+      </Text>
+    );
+
+    // Inline "Label: value" metadata row — the payment receipt's metadata
+    // grammar, kept verbatim so the two documents read as one family.
+    const preambleMetaRow = (label: string, value: string, valueStyle?: any) => (
+      <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#111111'), marginBottom: 4 }}>
+        <Text style={{ fontWeight: 'bold' }}>{label}: </Text>
+        <Text style={valueStyle}>{value}</Text>
+      </Text>
+    );
+
+    const defRow = (label: string, value: string, withDivider = true) => (
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 3, ...(withDivider ? { borderTopWidth: 0.5, borderColor: hairline } : null) }}>
+        <Text style={{ fontSize: 9 * fontScale, color: inkTone('#475569') }}>{label}</Text>
+        <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#0f172a'), marginLeft: 10, textAlign: 'right', flexShrink: 1 }}>
+          {value}
+        </Text>
+      </View>
+    );
+
+    const statusPill = (status: string) => {
+      const tone = scheduleTone(status);
+      return (
+        <View style={{ borderWidth: 0.6, borderColor: tone.border, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1.5 }}>
+          <Text style={{ fontSize: 7.5 * fontScale, fontWeight: 'bold', letterSpacing: 0.3, textTransform: 'uppercase', color: tone.text, textAlign: 'center' }}>
+            {toTitleCase(String(status || 'reserved'))}
+          </Text>
+        </View>
+      );
+    };
+
+    // Agreed contract profile (only the terms actually recorded on the contract).
+    const profileRows: Array<[string, string]> = [];
+    if (cs.totalCandidature !== undefined) profileRows.push(['Total candidature', String(cs.totalCandidature)]);
+    if (cs.assessmentSpec) profileRows.push(['Printing specification', String(cs.assessmentSpec)]);
+    if (cs.chargePerCandidate !== undefined) profileRows.push(['Charge per candidate', moneyOf(cs.chargePerCandidate)]);
+    if (cs.assessmentSittings) profileRows.push(['Assessment sittings', String(cs.assessmentSittings)]);
+
+    const progressRows: Array<[string, string]> = [
+      ['Total assessments', String(cs.totalAssessments)],
+      ['Scheduled', String(cs.scheduledCount)],
+      ['Consumed', String(cs.consumedCount)],
+      ['Released', String(cs.releasedCount)],
+      ['Cancelled', String(cs.cancelledCount)],
+    ];
+    const fundRows: Array<[string, string]> = [
+      ['Prepaid funds', moneyOf(cs.prepaidAmount)],
+      ['Reserved', moneyOf(cs.reservedAmount)],
+      ['Consumed', moneyOf(cs.consumedAmount)],
+      ['Available balance', moneyOf(cs.availableFunds)],
+    ];
+    const missingSequences = cs.missingDateSequences || [];
+
     return (
       <Document title={`Contract Schedule - ${cs.contractNumber}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
           {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
           {cancelled && <CancelledWatermark colorMode={mode} />}
           <PaginationFurniture colorMode={mode}
-            identity={{ title: 'Contract Schedule', number: String(cs.contractNumber || ''), customer: String(cs.customerName || '') }}
+            identity={{ title: 'Assessment Schedule', number: String(cs.contractNumber || ''), customer: String(cs.customerName || '') }}
             companyName={companyName}
           />
 
-          <View style={s.headerSection}>
-            <View style={s.headerLeft}>
-              <Text style={[s.title, titleStyle, { fontFamily: 'Helvetica' }]}>Assessment Schedule</Text>
-              <View style={s.infoText}>
-                <Text>Contract # : {cs.contractNumber}</Text>
-                <Text>Date : {formatDateOnly(cs.date)} · Version {cs.version}</Text>
-                <Text>Status : {toTitleCase(String(cs.status || 'draft'))}{cs.scheduleComplete ? '' : ' · Incomplete schedule'}</Text>
-              </View>
-            </View>
-            <View style={s.headerRight}>
-              {renderBrandMark('right')}
-            </View>
-          </View>
-
-          <View style={[s.billingSection, { marginTop: 0, marginBottom: 12 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Company</Text>
-              <View style={s.recipientInfoText}>
-                <Text style={s.recipientName}>{companyName}</Text>
-                {companyAddress ? <Text style={s.recipientDetail}>{companyAddress}</Text> : null}
-                {companyContact ? <Text style={s.recipientPhone}>{companyContact}</Text> : null}
-              </View>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Client</Text>
-              <View style={s.recipientInfoText}>
-                <Text style={s.recipientName}>{cs.customerName || 'N/A'}</Text>
-                {cs.schoolName ? <Text style={s.recipientDetail}>{cs.schoolName}</Text> : null}
-                {(cs.periodStart || cs.periodEnd) ? (
-                  <Text style={s.recipientDetail}>
-                    {formatDateOnly(cs.periodStart)} → {cs.periodEnd ? formatDateOnly(cs.periodEnd) : 'open'}
-                  </Text>
-                ) : null}
-              </View>
+          {/* ── Preamble ──────────────────────────────────────────────────────
+              Formal header modelled on the payment receipt: centred company
+              identity with the logo pinned to the left margin, centred
+              document title, a rule, then the addressee row (full content
+              width, hard one line) and the two-column inline metadata grid. ── */}
+          <View style={{ position: 'relative', alignItems: 'center', marginBottom: 4, paddingTop: 0 }}>
+            {!!logo && (
+              <Image src={logo} style={{ position: 'absolute', left: 0, top: 0, width: templateSettings.logoWidth }} />
+            )}
+            <View style={{ alignItems: 'center', width: '100%', paddingLeft: preambleNameGutter, paddingRight: preambleNameGutter }}>
+              <Text style={{ fontSize: preambleNameFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', maxLines: 1, textOverflow: 'ellipsis' }}>
+                {companyName}
+              </Text>
+              {!!receiptCompanyAddress && (
+                <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 1 }}>{receiptCompanyAddress}</Text>
+              )}
+              {!!companyContact && (
+                <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 1 }}>{companyContact}</Text>
+              )}
             </View>
           </View>
 
-          <View style={{ marginTop: 8 }}>
-            <View style={s.tableHeader}>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Seq</Text>
-              <Text style={{ flex: 3 }}>Assessment</Text>
-              <Text style={{ flex: 2 }}>Scheduled</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Status</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Price</Text>
+          <Text style={{ fontSize: preambleTitleFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', marginTop: 6, marginBottom: 6 }}>
+            Assessment Schedule
+          </Text>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 8 }} />
+
+          {/* Addressee: who the schedule is issued to. The name takes the full
+              content width and prints on ONE row (school names run past 60
+              characters) — shrink-to-fit plus a hard one-line clamp, exactly
+              as the receipt guarantees it. The contract's own party
+              descriptors follow on a dimmed line beneath. */}
+          <View style={{ marginBottom: 8 }}>
+            <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#111111'), maxLines: 1, textOverflow: 'ellipsis' }}>
+              <Text style={{ fontWeight: 'bold' }}>{customerNameLabel}</Text>
+              <Text style={{ fontSize: customerNameFontSize }}>{customerNameText}</Text>
+            </Text>
+            {!!customerSubline && (
+              <Text style={{ fontSize: 9 * fontScale, color: inkTone('#64748b'), marginTop: 3 }}>{customerSubline}</Text>
+            )}
+          </View>
+
+          {/* Formal two-column metadata block — the contract's own facts at
+              left, its window and state at right (right column indented two
+              tab stops, as on the receipt). Every value the previous preamble
+              carried is still here: contract number, version, issue date,
+              contract period and status, plus the currency the money is
+              stated in. */}
+          <View style={{ flexDirection: 'row', gap: RECEIPT_META_GAP, marginBottom: 8 }}>
+            <View style={{ flex: 1 }}>
+              {preambleMetaRow('Contract No', String(cs.contractNumber || '—'))}
+              {preambleMetaRow('Branch', String(cs.billedBranch || 'Main Account'))}
+              {preambleMetaRow('Issued', formatDateOnly(cs.date))}
             </View>
-            {(cs.schedule || []).map((row: { sequence: number; assessmentName: string; grade?: string; subject?: string; assessmentDate?: string; status: string; unitPrice: number }, i: number) => {
+            <View style={{ flex: 1, paddingLeft: preambleMetaRightIndent }}>
+              {preambleMetaRow('Contract Period', periodLabel)}
+              {preambleMetaRow('Status', toTitleCase(String(cs.status || 'draft')), { fontWeight: 'bold', color: scheduleTone(String(cs.status || 'draft')).text })}
+              {preambleMetaRow('Academic Year', String(cs.academicYear || '—'))}
+            </View>
+          </View>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
+
+          {/* ── Agreed contract profile (every recorded term, nothing dropped) ── */}
+          <View style={{ borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }}>
+            {sectionHeading('Contract Summary')}
+            {profileRows.length === 0 ? (
+              <Text style={{ fontSize: 9.5 * fontScale, color: inkTone('#64748b') }}>No agreed profile recorded on this contract.</Text>
+            ) : (
+              <View style={{ flexDirection: 'row', gap: 16 }}>
+                <View style={{ flex: 1 }}>
+                  {profileRows.filter((_, index) => index % 2 === 0).map(([label, value], index) => (
+                    <View key={label}>{defRow(label, value, index > 0)}</View>
+                  ))}
+                </View>
+                <View style={{ flex: 1 }}>
+                  {profileRows.filter((_, index) => index % 2 === 1).map(([label, value], index) => (
+                    <View key={label}>{defRow(label, value, index > 0)}</View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* ── Assessment schedule ── */}
+          <View style={{ marginTop: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1, borderColor: monoLine(mode, '#0f172a'), paddingBottom: 4 }}>
+              <Text style={[thStyle, { width: COL.seq, textAlign: 'right' }]}>#</Text>
+              <Text style={[thStyle, { flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }]}>Assessment</Text>
+              <Text style={[thStyle, { width: COL.scheduled }]}>Scheduled</Text>
+              <Text style={[thStyle, { width: COL.status }]}>Status</Text>
+              <Text style={[thStyle, { width: COL.value, textAlign: 'right' }]}>Value</Text>
+            </View>
+
+            {scheduleRows.map((row, index) => {
               const qualifiers = [row.grade, row.subject].filter(Boolean).join(' · ');
               return (
-                <View key={i} style={s.row}>
-                  <Text style={{ flex: 1, textAlign: 'right' }}>{row.sequence}</Text>
-                  <Text style={{ flex: 3 }}>
-                    {row.assessmentName}{qualifiers ? ` (${qualifiers})` : ''}
+                <View key={index} wrap={false} style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 4, borderBottomWidth: 0.5, borderColor: hairline, ...(index % 2 === 1 ? { backgroundColor: softFill } : null) }}>
+                  <Text style={{ width: COL.seq, textAlign: 'right', fontSize: 9 * fontScale, color: inkTone('#94a3b8') }}>{row.sequence}</Text>
+                  <View style={{ flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }}>
+                    <Text style={{ fontSize: 9.5 * fontScale, color: inkTone('#0f172a') }}>{row.assessmentName}</Text>
+                    {qualifiers ? <Text style={{ fontSize: 8 * fontScale, color: inkTone('#64748b'), marginTop: 1 }}>{qualifiers}</Text> : null}
+                  </View>
+                  <Text style={{ width: COL.scheduled, fontSize: 9 * fontScale, color: inkTone('#334155') }}>
+                    {row.assessmentDate ? formatDateOnly(row.assessmentDate) : 'Not scheduled'}
                   </Text>
-                  <Text style={{ flex: 2 }}>{row.assessmentDate ? formatDateOnly(row.assessmentDate) : 'Not scheduled'}</Text>
-                  <Text style={{ flex: 1, textAlign: 'right' }}>{toTitleCase(String(row.status || 'reserved'))}</Text>
-                  <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(row.unitPrice)}</Text>
+                  <View style={{ width: COL.status, alignItems: 'flex-start' }}>{statusPill(String(row.status || 'reserved'))}</View>
+                  <Text style={{ width: COL.value, textAlign: 'right', fontSize: 9.5 * fontScale, color: inkTone('#0f172a') }}>
+                    {moneyOf(row.unitPrice)}
+                  </Text>
                 </View>
               );
             })}
-          </View>
 
-          {!cs.scheduleComplete && (
-            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#fffbeb'), borderRadius: 8, border: `1px solid ${monoLine(mode, '#f59e0b')}` }}>
-              <Text style={{ fontSize: 11, fontWeight: 'bold', color: monoText(mode, '#92400e') }}>
-                Incomplete schedule — {cs.missingDateSequences?.length || 0} assessment(s) have no scheduled date (sequence(s): {(cs.missingDateSequences || []).join(', ')}).
+            <View wrap={false} style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, borderTopWidth: 1, borderColor: monoLine(mode, '#0f172a') }}>
+              <Text style={{ flexGrow: 1, flexBasis: 0, fontSize: 9 * fontScale, fontWeight: 'bold', letterSpacing: 0.6, textTransform: 'uppercase', color: inkTone('#334155') }}>
+                {scheduleRows.length} assessment{scheduleRows.length === 1 ? '' : 's'} · schedule value
               </Text>
-              <Text style={{ fontSize: 10, color: monoText(mode, '#92400e'), marginTop: 2 }}>
-                This schedule is not yet complete as agreed — the missing dates are reported explicitly, not substituted.
-              </Text>
-            </View>
-          )}
-
-          <View style={[s.summaryContainer, { justifyContent: 'flex-end' }]}>
-            <View style={{ width: 280 }}>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1, fontWeight: 'bold' }}>Total Assessments</Text>
-                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{cs.totalAssessments}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Scheduled / Consumed</Text>
-                <Text style={{ textAlign: 'right' }}>{cs.scheduledCount} / {cs.consumedCount}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Released / Cancelled</Text>
-                <Text style={{ textAlign: 'right' }}>{cs.releasedCount} / {cs.cancelledCount}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Prepaid / Reserved</Text>
-                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cs.prepaidAmount)} / {currency} {formatAmount(cs.reservedAmount)}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Consumed / Available</Text>
-                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cs.consumedAmount)} / {currency} {formatAmount(cs.availableFunds)}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1, fontWeight: 'bold' }}>Schedule Value</Text>
-                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(cs.totalValue)}</Text>
-              </View>
+              <Text style={{ fontSize: 10.5 * fontScale, fontWeight: 'bold', color: inkTone('#0f172a') }}>{moneyOf(cs.totalValue)}</Text>
             </View>
           </View>
 
-          {(cs.totalCandidature !== undefined || cs.assessmentSpec || cs.chargePerCandidate !== undefined || cs.assessmentSittings) ? (
-            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Recorded specification</Text>
-              {cs.totalCandidature !== undefined ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Total candidature: {cs.totalCandidature}</Text> : null}
-              {cs.assessmentSpec ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Specification: {cs.assessmentSpec}</Text> : null}
-              {cs.chargePerCandidate !== undefined ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Charge per candidate: {currency} {formatAmount(cs.chargePerCandidate)}</Text> : null}
-              {cs.assessmentSittings ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Sittings: {cs.assessmentSittings}</Text> : null}
+          {/* ── Schedule completeness (reported, never substituted) ── */}
+          {!cs.scheduleComplete ? (
+            <View wrap={false} style={{ marginTop: 10, flexDirection: 'row', borderWidth: 0.8, borderColor: monoLine(mode, '#f59e0b'), borderRadius: 3, backgroundColor: monoFill(mode, '#fffbeb') }}>
+              <View style={{ width: 3, backgroundColor: monoFill(mode, '#f59e0b') }} />
+              <View style={{ flex: 1, padding: 9 }}>
+                <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#92400e') }}>
+                  Schedule incomplete — {missingSequences.length} of {cs.totalAssessments} assessment{cs.totalAssessments === 1 ? '' : 's'} have no scheduled date (sequence{missingSequences.length === 1 ? '' : 's'} {missingSequences.join(', ')}).
+                </Text>
+                <Text style={{ fontSize: 9 * fontScale, color: inkTone('#92400e'), marginTop: 2, lineHeight: 1.4 }}>
+                  This schedule is not yet complete as agreed. Missing dates are reported explicitly and are never substituted.
+                </Text>
+              </View>
             </View>
           ) : null}
 
-          {cs.terms ? (
-            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Terms &amp; Conditions</Text>
-              <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155') }}>{cs.terms}</Text>
+          {/* ── Lifecycle progress + fund position ── */}
+          <View wrap={false} style={{ flexDirection: 'row', marginTop: 10, borderWidth: 0.8, borderColor: hairline, borderRadius: 3 }}>
+            <View style={{ flex: 1, padding: 10 }}>
+              {sectionHeading('Progress')}
+              {progressRows.map(([label, value], index) => (
+                <View key={label}>{defRow(label, value, index > 0)}</View>
+              ))}
+            </View>
+            <View style={{ flex: 1, padding: 10, borderLeftWidth: 0.6, borderColor: hairline }}>
+              {sectionHeading('Fund Position')}
+              {fundRows.map(([label, value], index) => (
+                <View key={label}>{defRow(label, value, index > 0)}</View>
+              ))}
+            </View>
+          </View>
+
+          {/* ── Agreed terms (carried on the contract, printed here) ── */}
+          {(cs.terms || cs.notes) ? (
+            <View wrap={false} style={{ marginTop: 10, borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 10 }}>
+              {sectionHeading('Terms & Conditions')}
+              {cs.terms ? (
+                <Text style={{ fontSize: 9 * fontScale, color: inkTone('#334155'), lineHeight: 1.5 }}>{cs.terms}</Text>
+              ) : null}
               {cs.notes ? (
-                <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155'), marginTop: 6 }}>Notes: {cs.notes}</Text>
+                <View style={{ marginTop: cs.terms ? 7 : 0 }}>
+                  <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', letterSpacing: 1, textTransform: 'uppercase', color: inkTone('#64748b'), marginBottom: 3 }}>
+                    Notes
+                  </Text>
+                  <Text style={{ fontSize: 9 * fontScale, color: inkTone('#334155'), lineHeight: 1.5 }}>{cs.notes}</Text>
+                </View>
               ) : null}
             </View>
           ) : null}
 
-          <View wrap={false} style={{ marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
-                DOCUMENT INTEGRITY
-              </Text>
-            </View>
-            <Text style={{ marginTop: 6, fontSize: 9, color: monoText(mode, '#1e3a8a'), lineHeight: 1.45 }}>
+          {/* Closing line — same wording and weight as the payment receipt so
+              the two documents close identically. */}
+          <View wrap={false} style={{ marginTop: 10, alignItems: 'center' }}>
+            <Text style={{ fontSize: scaledFont(12), color: inkTone('#334155'), textAlign: 'center' }}>
+              Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
+            </Text>
+          </View>
+
+          {/* ── Document integrity + security footer ── */}
+          <View wrap={false} style={{ marginTop: 10, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
+            <Text style={{ fontSize: 10.5 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
+              DOCUMENT INTEGRITY
+            </Text>
+            <Text style={{ marginTop: 6, fontSize: 8.5 * fontScale, color: monoText(mode, '#1e3a8a'), letterSpacing: 0.3 }}>
               Content hash: {cs.contentHash}
             </Text>
-            <Text style={{ marginTop: 4, fontSize: 9, color: monoText(mode, '#475569'), lineHeight: 1.45 }}>
+            <Text style={{ marginTop: 4, fontSize: 9 * fontScale, color: monoText(mode, '#475569'), lineHeight: 1.45 }}>
               This hash covers the contract, the full assessment schedule with its
               sequences and dates, and the fund position. Any alteration changes
               the hash. Quote the contract number and hash to verify with {companyName}.
