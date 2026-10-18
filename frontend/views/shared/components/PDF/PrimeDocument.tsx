@@ -2279,7 +2279,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // right column is indented two tab stops. The schedule reuses that
     // geometry — and its shrink-to-fit / hard one-line guarantees — so a long
     // school or company name can neither wrap nor slide under the logo.
-    const preambleFontSize = scaledFont(12);
+    const preambleFontSize = 12;
     const preambleTitleFontSize = scaledFont(20);
     const preambleMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
     const preambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
