@@ -12,6 +12,11 @@ import {
   isDistinctExaminationInvoiceCollision,
 } from '../utils/invoiceIdentity';
 import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
+import {
+  isAuthoritativePostingAvailable,
+  buildExaminationLedgerEntry,
+  submitExaminationInvoicePosting,
+} from './examinationPostingClient';
 
 export interface ExaminationInvoiceSyncResult {
   synced: boolean;
@@ -134,6 +139,7 @@ export const mapExaminationPayloadToInvoice = (
     preRoundingTotalAmount: toNumber(payload?.preRoundingTotalAmount, totalAmount),
     documentTitle: payload?.documentTitle || 'Service Invoice',
     subAccountName: payload?.subAccountName || undefined,
+    subAccountId: payload?.subAccountId || undefined,
     notes: payload?.notes || `Generated from examination batch ${payload?.origin_batch_id || ''}`,
     reference: payload?.reference || payload?.invoiceNumber || undefined,
     isConverted: Boolean(sourceBatchNumber),
@@ -285,7 +291,13 @@ export const persistExaminationInvoiceToFinance = async (
   if (batchId) {
     const localBatch = await dbService.get<any>('examinationBatches', batchId);
     if (localBatch) {
-      invoice = enrichInvoiceWithBatchPricing(invoice, localBatch);
+      // Pass the approved snapshot so the enrichment derives its figures from
+      // the committed pricing decision rather than from live class rows.
+      const snapshotSource = localBatch?.pricing_snapshot
+        ?? localBatch?.pricingSnapshot
+        ?? (payload as Record<string, any> | null)?.pricing_snapshot
+        ?? null;
+      invoice = enrichInvoiceWithBatchPricing(invoice, localBatch, snapshotSource);
     }
   }
   // Re-ensure after enrichment (spread-preserving, idempotent): from this
@@ -394,6 +406,117 @@ export const persistExaminationInvoiceToFinance = async (
         `Refused: batch already has active invoice ${String((rival as any)?.id || '')} ` +
         `(${(rival as any)?.status}). Regenerate (voids the old one first) instead of creating a second invoice.`,
     };
+  }
+
+  // ── Server-authoritative posting ─────────────────────────────────────────
+  // When the authoritative boundary is live, the SERVER commits the invoice and
+  // its ledger entry. The client must not write the invoice, and above all must
+  // not post its own AR/revenue ledger row: a local ledger post is precisely the
+  // independent posting that allowed two devices to bill one batch twice.
+  if (await isAuthoritativePostingAvailable()) {
+    try {
+      const ledgerEntry = await buildExaminationLedgerEntry(invoice as unknown as Record<string, unknown>);
+
+      // The payload carries the batch NUMBER, which is not the store key, so a
+      // direct get can miss. Resolving the real batch id matters here: without
+      // it expectedVersion is null and the server skips its staleness check.
+      // Better a null version than the WRONG one.
+      let localBatchForVersion: any = await dbService.get<any>('examinationBatches', batchId).catch(() => null);
+      if (!localBatchForVersion) {
+        try {
+          const { examinationBatchService } = await import('./examinationBatchService');
+          const all = await examinationBatchService.listBatches().catch(() => []);
+          const ownerId = findOwningExaminationBatchId(
+            all as Array<Record<string, unknown>>,
+            getExaminationBatchLinkage(payload as unknown as Record<string, unknown>),
+            String((invoice as any)?.invoiceNumber || (invoice as any)?.id || '')
+          );
+          if (ownerId) localBatchForVersion = await dbService.get<any>('examinationBatches', ownerId).catch(() => null);
+        } catch { /* version stays unknown; server still validates status + snapshot */ }
+      }
+      const rawVersion = Number(
+        (localBatchForVersion as any)?._version ?? (localBatchForVersion as any)?.version ?? NaN
+      );
+
+      const outcome = await submitExaminationInvoicePosting({
+        batchId,
+        invoice: invoice as unknown as Record<string, unknown>,
+        ledgerEntry,
+        expectedVersion: Number.isFinite(rawVersion) ? rawVersion : null,
+      });
+
+      if (outcome.status === 'committed') {
+        // Adopt the server's canonical scalars rather than trusting local ones.
+        const reconciled = {
+          ...invoice,
+          id: String(outcome.result?.invoiceId || invoice.id),
+          invoiceNumber: String(outcome.result?.invoiceNumber || invoice.invoiceNumber),
+          totalAmount: Number(outcome.result?.totalAmount ?? invoice.totalAmount),
+          status: normalizeInvoiceStatus(outcome.result?.status || invoice.status),
+          _serverCommitted: true,
+          _serverPostedAt: outcome.result?.postedAt ?? null,
+        } as Invoice;
+
+        // cloudSource: the server already owns this row, so writing it back must
+        // NOT enqueue a second upsert (nor a second ledger posting).
+        await dbService.put('invoices', reconciled, { cloudSource: true } as any);
+
+        await traceExamInvoice('persist-authoritative', {
+          id: (reconciled as any)?.id,
+          invoiceNumber: (reconciled as any)?.invoiceNumber,
+          originModule: (reconciled as any)?.originModule,
+          verificationToken: (reconciled as any)?.verificationToken,
+        }, { synced: true, replayed: outcome.replayed });
+
+        return {
+          synced: true,
+          fallbackUsed: false,
+          invoiceId: String(reconciled.id),
+          ...(outcome.replayed
+            ? { message: 'Server confirmed the existing posting (idempotent replay).' }
+            : {}),
+        };
+      }
+
+      if (outcome.status === 'rejected') {
+        await traceExamInvoice('persist-authoritative-rejected', {
+          id: (invoice as any)?.id,
+          invoiceNumber: (invoice as any)?.invoiceNumber,
+        }, { synced: false, code: outcome.code });
+        return {
+          synced: false,
+          fallbackUsed: false,
+          invoiceId: null,
+          message: `Server rejected the posting (${outcome.code}): ${outcome.message}`,
+        };
+      }
+
+      // PENDING — the outcome is genuinely unknown (timeout, offline, or the
+      // boundary is not enabled yet). Nothing is written and nothing is posted:
+      // an unconfirmed request must never be presented as a committed invoice.
+      await traceExamInvoice('persist-authoritative-pending', {
+        id: (invoice as any)?.id,
+        invoiceNumber: (invoice as any)?.invoiceNumber,
+      }, { synced: false, pending: true });
+      return {
+        synced: false,
+        fallbackUsed: false,
+        invoiceId: null,
+        message:
+          `Invoice ${String(invoice.id)} is awaiting server confirmation: ${outcome.reason}. `
+          + 'It is NOT yet a committed invoice. It will reconcile automatically once connectivity returns.',
+      };
+    } catch (postingError: any) {
+      // Never silently fall back to the client-side posting path: that path
+      // bypasses the authoritative boundary. Surface the failure instead.
+      const code = String(postingError?.code || 'EXAM_POSTING_CLIENT_ERROR');
+      return {
+        synced: false,
+        fallbackUsed: false,
+        invoiceId: null,
+        message: `Examination posting could not be completed (${code}): ${String(postingError?.message || postingError)}`,
+      };
+    }
   }
 
   try {

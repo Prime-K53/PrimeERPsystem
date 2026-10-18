@@ -27,6 +27,8 @@ try {
   console.error('[sync] examinationInvoiceNumbering unavailable — EXM identity claims will fail closed:', err?.message || err);
 }
 const { validateProductsPayload } = require('../services/variantSku.cjs');
+const examinationSyncGuards = require('../services/examinationSyncGuards.cjs');
+const examinationPostingService = require('../services/examinationPostingService.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
 const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRole: resolveAuthRole, normalize: normalizeRole } = require('../middleware/roles.cjs');
 
@@ -443,13 +445,17 @@ router.post('/ops', async (req, res) => {
     }
 
     const results = [];
-    for (const op of ops) {
+    for (const rawOp of ops) {
       // Guard against malformed queue entries (null/undefined/non-object) so a
       // single bad op can never throw past this loop and surface as a 500.
-      if (!op || typeof op !== 'object') {
+      if (!rawOp || typeof rawOp !== 'object') {
         results.push({ operationId: undefined, ok: false, error: 'invalid operation envelope', retryable: false });
         continue;
       }
+
+      // Validators below may attach an atomic write precondition, so the op is
+      // handled as a mutable binding rather than the loop's const.
+      let op = rawOp;
 
       const table = String(op?.table || '');
 
@@ -506,6 +512,55 @@ router.post('/ops', async (req, res) => {
         }
       }
 
+      // Examination integrity guards. The batch guard emits a PostgREST
+      // precondition that is merged into the SAME conditional PATCH that writes
+      // the row, so the status state machine is enforced by PostgreSQL inside
+      // the write's own transaction — not by a read that can race. A delete of a
+      // financially committed batch is therefore rejected atomically by the write
+      // itself, while legitimate draft cleanup still lands normally.
+      if (table === 'examination_batches') {
+        const precondition = op.operation === 'delete'
+          ? examinationSyncGuards.buildBatchDeletePrecondition()
+          : examinationSyncGuards.buildBatchUpsertPrecondition(op.payload);
+        if (precondition) op = { ...op, precondition };
+      }
+
+      if (table === 'invoices') {
+        const invoiceError = examinationSyncGuards.validateInvoicePayloadShape(op);
+        if (!invoiceError) {
+          // Posting-boundary rejection. Inert until the authoritative posting
+          // boundary is enabled AND tested on the same server, so enabling this
+          // ahead of the client switch cannot break invoicing.
+          const boundaryError = examinationSyncGuards.validateInvoicePostingBoundary(op, {
+            postingEnabled: examinationPostingService.isPostingEnabled(),
+          });
+          if (boundaryError) {
+            console.warn(`[sync] invoices posting boundary rejected ${op?.operationId}`, { error: boundaryError });
+            results.push({
+              operationId: op?.operationId,
+              ok: false,
+              id: op?.recordId || null,
+              error: boundaryError,
+              retryable: false,
+              businessRule: true,
+            });
+            continue;
+          }
+        }
+        if (invoiceError) {
+          console.warn(`[sync] invoices validation rejected ${op?.operationId}`, { error: invoiceError });
+          results.push({
+            operationId: op?.operationId,
+            ok: false,
+            id: op?.recordId || null,
+            error: invoiceError,
+            retryable: false,
+            businessRule: true,
+          });
+          continue;
+        }
+      }
+
       // Phase 2 §3.2: contract financial-date guard (business date + closed FY).
       // Rejected BEFORE applyOp so nothing is half-written.
       if (table === 'assessment_contract_items' || table === 'wallet_transactions' || table === 'ledger_entries') {
@@ -533,6 +588,10 @@ router.post('/ops', async (req, res) => {
           operation: op.operation,
           payload: op.payload,
           syncGeneration: op.syncGeneration,
+          // Business preconditions must reach the write so they can be merged
+          // into the conditional PATCH. Dropping them here would silently
+          // disable the Examination integrity guards.
+          precondition: op.precondition || null,
         });
         /* SYNC-FORENSIC suppressed: STAGE-10 backend applyOp() RESULT */
       } catch (opErr) {
@@ -600,6 +659,40 @@ router.post('/ops', async (req, res) => {
 // backend page maps 1:1 onto one frontend processing page.
 const PULL_PAGE_MAX = 2000;
 
+// Maximum ids accepted by a targeted (`?ids=`) pull. The deferred-merge drain
+// only ever asks for the handful of rows it skipped, so this ceiling is a
+// safety bound rather than a working limit.
+const PULL_IDS_MAX = 200;
+
+// Record ids are opaque business keys (ULIDs, `EXM-P726/021`, `local-…`), so
+// the accepted alphabet is deliberately wider than a bare token — but quotes,
+// commas, parens and backslashes are excluded so a value can never terminate
+// the PostgREST `in.(...)` filter and inject a second predicate.
+const VALID_RECORD_ID_PATTERN = /^[A-Za-z0-9._\-/]{1,200}$/;
+
+/**
+ * Parse and validate the `?ids=` targeted-pull filter.
+ * Returns `{ ids }` on success, or `{ error }` with a 400 status on a malformed
+ * value. Callers must fail closed — never silently degrade to a cursor walk,
+ * because that would hide the deferred row this request exists to repair.
+ */
+function parsePullIds(raw) {
+  if (raw == null) return { ids: null };
+  const text = String(raw).trim();
+  if (!text) return { ids: null };
+  const parts = text.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) return { error: 'invalid ids (expected comma-separated record ids)' };
+  if (parts.length > PULL_IDS_MAX) {
+    return { error: `too many ids (max ${PULL_IDS_MAX})` };
+  }
+  for (const part of parts) {
+    if (!VALID_RECORD_ID_PATTERN.test(part)) {
+      return { error: `invalid record id: ${String(part).slice(0, 60)}` };
+    }
+  }
+  return { ids: Array.from(new Set(parts)) };
+}
+
 router.get('/pull', syncPullLimiter, async (req, res) => {
   try {
     // Same Admin-only gate as POST /ops: authenticated Admin required,
@@ -645,6 +738,11 @@ router.get('/pull', syncPullLimiter, async (req, res) => {
     const limit = Math.max(1, Math.min(Number(req.query.limit) || PULL_PAGE_MAX, PULL_PAGE_MAX));
     const offset = Math.max(0, Number(req.query.offset) || 0);
 
+    const { ids, error: idsError } = parsePullIds(req.query.ids);
+    if (idsError) {
+      return res.status(400).json({ error: idsError });
+    }
+
     let since = null;
     const sinceRaw = req.query.since != null ? String(req.query.since) : '';
     if (sinceRaw) {
@@ -657,7 +755,7 @@ router.get('/pull', syncPullLimiter, async (req, res) => {
 
     let rows;
     try {
-      rows = await cloudSyncStore.listPullPage(table, { since, offset, limit });
+      rows = await cloudSyncStore.listPullPage(table, { since, offset, limit, ids });
     } catch (pullErr) {
       const status = pullErr?.response?.status;
       console.error('[sync] GET /pull cloud read failed table=%s status=%s message=%s', table, status || 'n/a', pullErr?.message || pullErr);
@@ -673,9 +771,10 @@ router.get('/pull', syncPullLimiter, async (req, res) => {
         offset,
         limit,
         count: pageRows.length,
-        hasMore: pageRows.length === limit,
+        hasMore: ids ? false : pageRows.length === limit,
       },
       ...(since ? { since } : {}),
+      ...(ids ? { ids } : {}),
     }));
   } catch (err) {
     console.error('[sync] GET /pull error:', err);

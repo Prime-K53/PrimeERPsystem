@@ -24,6 +24,15 @@
  */
 
 import { dbService } from './db';
+import {
+  collectAmbiguousScopeRecords,
+  filterRecordsByScope,
+  mainAccountScope,
+  resolveAccountScope,
+  type AccountScope,
+} from './customerAccountScope';
+
+export type { AccountScope };
 
 // ── Primitives ──────────────────────────────────────────────────────────────
 
@@ -195,12 +204,20 @@ export interface LedgerWalletTopup {
 
 export interface CustomerLedgerResult {
   customerId: string;
+  scope?: { branchKey: string; isMain: boolean; branchLabel: string; branchId?: string | null } | null;
   openingBalance: number;
+  openingUnresolved?: boolean;
   transactions: LedgerTransaction[];
   closingBalance: number;
   outstandingBalance: number;
   excluded: LedgerExclusion[];
   walletTopups: LedgerWalletTopup[];
+  /**
+   * Rows rejected ONLY because a legacy display name is shared by several
+   * branches of this customer. Never silently attributed to a branch — they
+   * are surfaced so the business can tag them with a stable branch id.
+   */
+  ambiguousScopeRecords: Array<{ id: string; customerId: string; reason: string }>;
 }
 
 // ── Pure core (shared by parity fixtures on both sides) ─────────────────────
@@ -208,23 +225,39 @@ export interface CustomerLedgerResult {
 /**
  * Build the authoritative ledger from raw records. Pure — no I/O — so parity
  * tests can feed byte-identical fixtures to this port and to the backend.
+ *
+ * `scope` MUST be supplied by every account-sensitive caller. Leaving it null
+ * is an INTENTIONAL whole-customer aggregate (Main + all branches); use the
+ * explicitly named `buildConsolidatedLedgerFromRecords` to say so at the call
+ * site. Never rely on the omission being "obvious".
  */
 export function buildLedgerFromRecords({
   customerId,
   invoices = [],
   payments = [],
   openingBalance = 0,
+  scope = null,
+  customer = null,
 }: {
   customerId: string;
   invoices?: AnyRecord[];
   payments?: AnyRecord[];
   openingBalance?: number;
+  scope?: AccountScope | null;
+  customer?: AnyRecord | null;
 }): CustomerLedgerResult {
+  // Scope BEFORE math so opening/closing/outstanding agree.
+  let scopedInvoices = invoices;
+  let scopedPayments = payments;
+  if (scope) {
+    scopedInvoices = filterRecordsByScope(invoices, scope, customer);
+    scopedPayments = filterRecordsByScope(payments, scope, customer);
+  }
   const txs: AnyRecord[] = [];
   const excluded: LedgerExclusion[] = [];
   const walletTopups: LedgerWalletTopup[] = [];
 
-  for (const inv of invoices) {
+  for (const inv of scopedInvoices) {
     if (!isInvoiceIncluded(inv)) {
       excluded.push({ id: String(inv.id), kind: 'invoice', reason: normStatus(inv.status) || 'closed' });
       continue;
@@ -245,7 +278,7 @@ export function buildLedgerFromRecords({
     });
   }
 
-  for (const pay of payments) {
+  for (const pay of scopedPayments) {
     if (!isPaymentIncluded(pay)) {
       excluded.push({ id: String(pay.id), kind: 'payment', reason: normStatus(pay.status) });
       continue;
@@ -283,53 +316,113 @@ export function buildLedgerFromRecords({
   const closingBalance = running;
   return {
     customerId,
+    scope: scope
+      ? { branchKey: scope.branchKey, isMain: scope.isMain, branchLabel: scope.branchLabel, branchId: scope.branchId || null }
+      : null,
     openingBalance: round2(openingBalance),
     transactions,
     closingBalance,
     outstandingBalance: Math.max(0, closingBalance),
     excluded,
     walletTopups,
+    ambiguousScopeRecords: scope
+      ? collectAmbiguousScopeRecords([...invoices, ...payments], scope, customer)
+      : [],
   };
+}
+
+/**
+ * Explicit whole-customer aggregate (Main + every branch) for intentional
+ * consolidated reporting. Named so that omitting a scope is never accidental.
+ */
+export function buildConsolidatedLedgerFromRecords(args: {
+  customerId: string;
+  invoices?: AnyRecord[];
+  payments?: AnyRecord[];
+  openingBalance?: number;
+}): CustomerLedgerResult {
+  return buildLedgerFromRecords({ ...args, scope: null });
 }
 
 // ── IndexedDB-backed API (offline-first) ────────────────────────────────────
 
 /**
- * Authoritative ledger for one customer, computed from the local stores.
- * Records may be injected (tests); default reads IndexedDB via dbService.
- */
-/**
  * Opening balance = the starting financial position recorded when the
  * customer was created or imported. It is stored on `customer.balance`
  * (NEVER a running total — transaction flows only mutate `walletBalance`),
  * so it is the single source of truth for "where this customer began".
+ *
+ * Detailed form: reports whether a BRANCH opening is unresolved. Branch scopes
+ * never reuse the parent opening (see below) and report `unresolved: true`.
  */
-export async function getCustomerOpeningBalance(customerId: string): Promise<number> {
+export async function getCustomerOpeningBalanceDetailed(
+  customerId: string,
+  scope?: AccountScope | null,
+): Promise<{ opening: number; unresolved: boolean }> {
   try {
     const customer = await dbService.get<{ balance?: number }>('customers', customerId);
-    return Number(customer?.balance || 0);
+    // Branch safety: embedded sub.balance is display-only. Never reuse the
+    // parent opening for a branch; report unresolved until business sets one.
+    if (scope && !scope.isMain) return { opening: 0, unresolved: true };
+    return { opening: Number(customer?.balance || 0), unresolved: false };
   } catch {
-    return 0;
+    return { opening: 0, unresolved: Boolean(scope && !scope.isMain) };
   }
 }
 
+/** Numeric opening balance for the account (Main by default). */
+export async function getCustomerOpeningBalance(customerId: string, scope?: AccountScope | null): Promise<number> {
+  return (await getCustomerOpeningBalanceDetailed(customerId, scope)).opening;
+}
+
+/**
+ * Authoritative ledger for one customer, computed from the local stores.
+ * Records may be injected (tests); default reads IndexedDB via dbService.
+ *
+ * Account scope defaults to MAIN — omitting it can never silently mean "all
+ * accounts". Pass an explicit branch scope, or use
+ * `buildConsolidatedCustomerLedger` for intentional whole-customer aggregation.
+ */
 export async function buildCustomerLedger(
   customerId: string,
-  opts: { openingBalance?: number; invoices?: AnyRecord[]; payments?: AnyRecord[] } = {},
+  opts: { openingBalance?: number; invoices?: AnyRecord[]; payments?: AnyRecord[]; scope?: AccountScope | null; customer?: AnyRecord | null } = {},
 ): Promise<CustomerLedgerResult> {
+  const scope = opts.scope === undefined ? mainAccountScope(customerId) : opts.scope;
+  const customer = opts.customer ?? null;
   const invoices = opts.invoices ?? (await dbService.getAll<AnyRecord>('invoices'));
   const payments = opts.payments ?? (await dbService.getAll<AnyRecord>('customerPayments'));
-  const scopedInvoices = invoices.filter((i) => String(i.customerId ?? '') === String(customerId));
-  const scopedPayments = payments.filter((p) => String(p.customerId ?? '') === String(customerId));
+  // ID-only customer pre-filter; branch filtering happens inside
+  // buildLedgerFromRecords via the centralized scope helper.
+  const idScopedInvoices = invoices.filter((i) => String(i.customerId ?? '') === String(customerId));
+  const idScopedPayments = payments.filter((p) => String(p.customerId ?? '') === String(customerId));
   // When a caller does not supply an opening balance we fall back to the
   // customer's stored opening balance so it is never silently dropped.
-  const openingBalance = opts.openingBalance ?? (await getCustomerOpeningBalance(customerId));
-  return buildLedgerFromRecords({
+  // Branch scopes never inherit the parent opening (see helper above).
+  let openingBalance = opts.openingBalance;
+  let openingUnresolved = false;
+  if (openingBalance === undefined || openingBalance === null) {
+    const loaded = await getCustomerOpeningBalanceDetailed(customerId, scope);
+    openingBalance = loaded.opening;
+    openingUnresolved = loaded.unresolved;
+  }
+  const result = buildLedgerFromRecords({
     customerId,
-    invoices: scopedInvoices,
-    payments: scopedPayments,
+    invoices: idScopedInvoices,
+    payments: idScopedPayments,
     openingBalance,
+    scope,
+    customer,
   });
+  result.openingUnresolved = openingUnresolved || result.openingUnresolved;
+  return result;
+}
+
+/** Intentional whole-customer aggregate (Main + every branch) from local stores. */
+export async function buildConsolidatedCustomerLedger(
+  customerId: string,
+  opts: { openingBalance?: number; invoices?: AnyRecord[]; payments?: AnyRecord[]; customer?: AnyRecord | null } = {},
+): Promise<CustomerLedgerResult> {
+  return buildCustomerLedger(customerId, { ...opts, scope: null });
 }
 
 /**
@@ -341,13 +434,24 @@ export async function buildCustomerLedger(
  */
 export async function getCustomerBalance(
   customerId: string,
-  opts: { openingBalance?: number } = {},
+  opts: { openingBalance?: number; scope?: AccountScope | null; customer?: AnyRecord | null } = {},
 ): Promise<CustomerLedgerResult> {
   return buildCustomerLedger(customerId, opts);
 }
 
-/** The ONE number every ERP view should display as "customer owes". */
-export async function getCustomerOutstanding(customerId: string): Promise<number> {
-  const ledger = await buildCustomerLedger(customerId);
+/**
+ * The ONE number every ERP view should display as "customer owes".
+ * Account scope defaults to MAIN (never silently "all accounts").
+ */
+export async function getCustomerOutstanding(customerId: string, opts: { scope?: AccountScope | null; customer?: AnyRecord | null } = {}): Promise<number> {
+  const ledger = await buildCustomerLedger(customerId, opts);
   return ledger.outstandingBalance;
 }
+
+/** Intentional whole-customer aggregate outstanding (Main + every branch). */
+export async function getConsolidatedCustomerOutstanding(customerId: string, opts: { customer?: AnyRecord | null } = {}): Promise<number> {
+  const ledger = await buildConsolidatedCustomerLedger(customerId, opts);
+  return ledger.outstandingBalance;
+}
+
+export { resolveAccountScope, mainAccountScope };

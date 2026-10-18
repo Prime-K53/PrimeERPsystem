@@ -283,6 +283,18 @@ const REGISTRY = {
       totalInvoiced: Number(s.totalInvoiced ?? 0),
       totalReceived: Number(s.totalReceived ?? 0),
       closingBalance: Number(s.closingBalance ?? s.finalBalance ?? 0),
+      // Account scope. Verification must never present a BRANCH statement as
+      // the customer's Main statement. A snapshot with no branch field predates
+      // account scope; it is displayed as Main but flagged as untagged so the
+      // verifier knows the account was not recorded.
+      //
+      // `branchKey` encodes the stable branch identity (`main` / `id:<branchId>`
+      // / `name:<slug>`), so the raw `subAccountId` field is deliberately NOT
+      // duplicated here: it would collide with the verification allow-list's
+      // `accountid` guard for no added information.
+      branchKey: s.branchKey ? String(s.branchKey) : null,
+      branchLabel: s.branchLabel ? String(s.branchLabel) : null,
+      scopeAmbiguous: Boolean(s.scopeAmbiguous) || !s.branchKey,
       status,
     }),
   },

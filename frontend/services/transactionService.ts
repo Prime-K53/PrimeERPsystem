@@ -29,6 +29,12 @@ import {
 import { logger } from './logger';
 import { salesOrderService } from './salesOrderService';
 import { produceVoidReversalSafely } from './transportBudgetVoidReversal';
+import {
+    assertSameAccountOwnership,
+    validateAccountScope,
+    resolveRecordScope,
+    scopeIdentity,
+} from './customerAccountScope';
 
 import {
     getCompanyConfig, getGLConfig, generateId, calculateBankBalance,
@@ -1420,6 +1426,7 @@ export const transactionService = {
                     status: invoiceStatus,
                     items: sale.items,
                     subAccountName: sale.subAccountName,
+                    subAccountId: sale.subAccountId,
                     notes: `POS Sale - Source: ${sale.source || 'POS'}`,
                     reference: sale.id,
                     warehouseId: sale.warehouseId,
@@ -2142,6 +2149,10 @@ export const transactionService = {
                 quotationId: null,
                 customerId,
                 customerName: invoice.customerName,
+                // The derived order inherits the invoice's billing account so a
+                // branch invoice is never re-attributed to Main downstream.
+                subAccountName: (invoice as any).subAccountName || 'Main',
+                ...((invoice as any).subAccountId ? { subAccountId: (invoice as any).subAccountId } : {}),
                 orderDate: invoice.date || new Date().toISOString(),
                 deliveryDate: invoice.dueDate ?? null,
                 // An invoice-derived order mirrors an already-posted invoice:
@@ -2195,6 +2206,10 @@ export const transactionService = {
                     (existing.paymentMethod || '') !== (payment.paymentMethod || '') ||
                     (existing.accountId || '') !== (payment.accountId || '') ||
                     (existing.excessHandling || '') !== (payment.excessHandling || '') ||
+                    // Account identity is financial: re-pointing a posted payment
+                    // at a different branch would bypass the allocation scope gate.
+                    (existing.subAccountId || '') !== (payment.subAccountId || '') ||
+                    (existing.subAccountName || '') !== (payment.subAccountName || '') ||
                     JSON.stringify(existing.allocations || []) !== JSON.stringify(payment.allocations || []);
 
                 if (hasFinancialMutation) {
@@ -2209,8 +2224,7 @@ export const transactionService = {
                     notes: payment.notes,
                     status: payment.status,
                     reconciled: payment.reconciled,
-                    bankCharges: payment.bankCharges,
-                    subAccountName: payment.subAccountName
+                    bankCharges: payment.bankCharges
                 };
 
                 await store.put(metadataOnlyUpdate);
@@ -3065,34 +3079,46 @@ export const transactionService = {
                 const bankAccountsStore = tx.objectStore('bankAccounts');
                 const bankTransactionsStore = tx.objectStore('bankTransactions');
 
-                // Load accounts for resolution (required for all ledger writes)
-                const accounts = await loadAccountsFromStore(tx);
-                const companyConfig = getCompanyConfig();
-                const companyId = companyConfig?.companyId;
-                const accountOptions = { allowNonPosting: false, companyId };
-
-                const resolveAcct = (ref: string | undefined) => {
-                    if (!ref) {
-                        throw new UnresolvedAccountError(ref || 'undefined');
-                    }
-                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
-                    if (!resolved) {
-                        throw new UnresolvedAccountError(ref);
-                    }
-                    return resolved;
-                };
-
                 const customerId = payment.customerId || '';
                 const paymentAmount = toMoney(payment.amount);
                 const requestedAllocations = (payment.allocations || []).filter(a => Number(a.amount || 0) > 0);
 
-                // 1. Validate allocations against live outstanding balances.
+                // Load the parent customer BEFORE validation so branch identity
+                // can be resolved to its stable embedded id and ownership can be
+                // confirmed. Reused below for wallet operations.
+                let customer = null as any;
+                if (customerId) {
+                    customer = await customerStore.get(customerId);
+                }
+
+                // 1. Validate allocations against live outstanding balances AND
+                //    account ownership. A payment may only settle invoices of the
+                //    SAME account (same customer + same Main/branch id). This is
+                //    the authoritative local persistence gate — UI filtering alone
+                //    is never sufficient, and offline/queued writes pass through here.
+                const paymentScope = resolveRecordScope(payment as any, customer);
+                if (!paymentScope.isMain || paymentScope.branchId) {
+                    const scopeCheck = validateAccountScope(paymentScope, customer);
+                    if (!scopeCheck.ok) {
+                        const err: any = new Error(
+                            `Cannot post payment: ${scopeCheck.reason}. The selected branch does not belong to this customer.`
+                        );
+                        err.code = scopeCheck.ambiguous ? 'EAMBIGUOUS_SCOPE' : 'EINVALID_SCOPE';
+                        err.paymentScope = scopeIdentity(paymentScope);
+                        throw err;
+                    }
+                }
+
                 const validatedInvoiceAllocations: (CustomerReceiptInvoiceInput & { invoice: Invoice })[] = [];
                 for (const allocation of requestedAllocations) {
                     const invoice = await invoiceStore.get(allocation.invoiceId);
                     if (!invoice) {
                         throw new Error(`Cannot allocate payment to missing invoice ${allocation.invoiceId}.`);
                     }
+
+                    // Account ownership gate — throws ECROSS_ACCOUNT /
+                    // EAMBIGUOUS_SCOPE / EINVALID_SCOPE. Never silently repaired.
+                    assertSameAccountOwnership(payment as any, invoice as any, customer);
 
                     const outstanding = toMoney(Math.max(0, (invoice.totalAmount || 0) - (invoice.paidAmount || 0)));
                     const allocationAmount = toMoney(allocation.amount);
@@ -3180,11 +3206,7 @@ export const transactionService = {
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
                 // Independent balance mutation removed.
 
-                // Load customer record for wallet operations below.
-                let customer = null as any;
-                if (customerId) {
-                    customer = await customerStore.get(customerId);
-                }
+                // (customer record already loaded above for account-scope validation)
 
                 // 6a. Handle wallet DEPOSIT (overpayment credited to wallet).
                 if (snapshot.walletDeposit > 0 && payment.excessHandling === 'Wallet' && customerId) {
@@ -3223,6 +3245,25 @@ export const transactionService = {
                 }
 
                 // 7. Create Ledger entry for retained cash (ignore pure change-only records).
+                // Accounts are loaded here — AFTER the account-scope gate above, so an
+                // invalid cross-account allocation is rejected before any account or
+                // ledger work begins.
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) {
+                        throw new UnresolvedAccountError(ref || 'undefined');
+                    }
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) {
+                        throw new UnresolvedAccountError(ref);
+                    }
+                    return resolved;
+                };
+
                 const gl = getGLConfig();
                  let targetDebitAccount = resolveAcct(gl.cashDrawerAccount);
 
@@ -3874,6 +3915,13 @@ export const transactionService = {
 
                 // 1. Reverse Inventory (lines may key stock by id, productId or itemId)
                 for (const item of invoice.items) {
+                    // Service lines never had stock deducted on the way in
+                    // (see _executeDeductInventory), so crediting them here
+                    // would return stock that was never taken. Examination
+                    // invoices are all Service lines, so without this guard a
+                    // void could credit an unrelated item whose id collided
+                    // with a line id. Mirrors the guard in voidSale.
+                    if (item && (item as any).type === 'Service') continue;
                     const invItem = await inventoryStore.get(item.id)
                         || (item.productId ? await inventoryStore.get(item.productId) : null)
                         || (item.itemId ? await inventoryStore.get(item.itemId) : null);

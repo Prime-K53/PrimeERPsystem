@@ -84,9 +84,10 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
     onClose();
   };
 
-  const getOutstanding = (customerId: string, customerName: string) => {
+  const getOutstanding = (customerId: string) => {
+    // ID-only: display names must never merge same-named customers.
     return (invoices || [])
-      .filter((i: any) => (i.customerId === customerId || i.customerName === customerName) && i.status !== 'Paid' && i.status !== 'Cancelled')
+      .filter((i: any) => i.customerId === customerId && i.status !== 'Paid' && i.status !== 'Cancelled')
       .reduce((sum: number, i: any) => sum + ((i.totalAmount || 0) - (i.paidAmount || 0)), 0);
   };
 
@@ -221,7 +222,7 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
             <div className="divide-y divide-[#F0EFE8]">
               {filtered.map((c: any) => {
                 const customerDisplayName = getCustomerDisplayName({ businessName: c.businessName, companyName: c.companyName, legacyCustomerName: c.name });
-                const debt = getOutstanding(c.id, customerDisplayName);
+                const debt = getOutstanding(c.id);
                 const isHovered = hoveredId === c.id;
                 const initials = (customerDisplayName || '?').charAt(0).toUpperCase();
                 const contactLine = c.phone || c.email || c.customerCode || '';

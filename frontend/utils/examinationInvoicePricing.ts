@@ -86,19 +86,48 @@ export const findMatchingExaminationBatch = (source: any, batches: any[] = []) =
 
 export const enrichInvoiceWithBatchPricing = (
   invoice: Invoice & Record<string, unknown>,
-  batch: any
+  batch: any,
+  snapshot?: Record<string, any> | null
 ) => {
   const classes = Array.isArray(batch?.classes) ? batch.classes : [];
   if (classes.length === 0) return invoice;
 
+  // The APPROVED SNAPSHOT is the committed pricing decision. When it is present
+  // its per-class figures win over the live class rows, so this enrichment can
+  // never reintroduce a repriced amount that the invoice was not approved for.
+  const frozenResult = (snapshot && typeof snapshot === 'object' && snapshot.result && typeof snapshot.result === 'object')
+    ? (snapshot.result as Record<string, any>)
+    : null;
+  const frozenByClass = new Map<string, Record<string, any>>(
+    (Array.isArray(frozenResult?.classes) ? (frozenResult?.classes as Array<Record<string, any>>) : [])
+      .map((row) => [String(row?.classId || ''), row] as [string, Record<string, any>])
+      .filter(([key]) => key !== '')
+  );
+  const frozenTotal = Number(frozenResult?.totalAmount);
+
+  const frozenMaterialTotal = Number(frozenResult?.materialTotal);
   const materialTotal = Number(
-    classes.reduce((sum: number, cls: any) => sum + toNumber(cls?.material_total_cost, 0), 0).toFixed(2)
+    (Number.isFinite(frozenMaterialTotal)
+      ? frozenMaterialTotal
+      : classes.reduce((sum: number, cls: any) => sum + toNumber(cls?.material_total_cost, 0), 0)
+    ).toFixed(2)
+  );
+  const frozenAdjustmentTotal = Number(frozenResult?.adjustmentTotal);
+  const frozenRoundingTotal = Number(
+    (Array.isArray(frozenResult?.classes) ? (frozenResult?.classes as Array<Record<string, any>>) : [])
+      .reduce((sum: number, row) => sum + (Number(row?.roundingAdjustment) || 0), 0)
   );
   const marketAdjustmentTotal = Number(
-    classes.reduce((sum: number, cls: any) => sum + toNumber(cls?.market_adjustment_total ?? cls?.adjustment_total_cost, 0), 0).toFixed(2)
+    (Number.isFinite(frozenAdjustmentTotal)
+      ? frozenAdjustmentTotal
+      : classes.reduce((sum: number, cls: any) => sum + toNumber(cls?.market_adjustment_total ?? cls?.adjustment_total_cost, 0), 0)
+    ).toFixed(2)
   );
   const roundingAdjustmentTotal = Number(
-    classes.reduce((sum: number, cls: any) => sum + toNumber(cls?.rounding_adjustment, 0), 0).toFixed(2)
+    (Number.isFinite(frozenRoundingTotal) && frozenRoundingTotal !== 0
+      ? frozenRoundingTotal
+      : classes.reduce((sum: number, cls: any) => sum + toNumber(cls?.rounding_adjustment, 0), 0)
+    ).toFixed(2)
   );
   const roundingTotal = roundingAdjustmentTotal !== 0
     ? roundingAdjustmentTotal
@@ -111,13 +140,21 @@ export const enrichInvoiceWithBatchPricing = (
       );
 
   const classTotals = classes.map((cls: any) => {
-    const learners = Math.max(1, toNumber(cls?.number_of_learners, 1));
+    const frozen = frozenByClass.get(String(cls?.id || '')) || null;
+    const learners = Math.max(1, toNumber(frozen?.learners ?? cls?.number_of_learners, 1));
     return toNumber(
-      cls?.live_total_preview,
-      toNumber(cls?.final_fee_per_learner ?? cls?.price_per_learner, 0) * learners
+      frozen?.liveTotal,
+      toNumber(
+        frozen?.finalFee ?? frozen?.expectedFee ?? cls?.final_fee_per_learner ?? cls?.price_per_learner,
+        0
+      ) * learners
     );
   });
-  const totalRevenue = Number(classTotals.reduce((sum: number, value: number) => sum + value, 0).toFixed(2));
+  // A snapshot total is authoritative and must not be silently recomputed away.
+  const classTotalsSum = classTotals.reduce((sum: number, value: number) => sum + value, 0);
+  const totalRevenue = Number(
+    (Number.isFinite(frozenTotal) && frozenTotal > 0 ? frozenTotal : classTotalsSum).toFixed(2)
+  );
   const roundedAllocations = roundingAdjustmentTotal === 0 ? allocateAmounts(classTotals, roundingTotal) : [];
   const totalAdjustmentBase = marketAdjustmentTotal > 0 ? marketAdjustmentTotal : classTotals.reduce((sum, value) => sum + value, 0);
 
@@ -131,9 +168,10 @@ export const enrichInvoiceWithBatchPricing = (
       : invoiceSnapshots;
 
   const items = classes.map((cls: any, index: number) => {
-    const quantity = Math.max(1, toNumber(cls?.number_of_learners, 1));
+    const frozen = frozenByClass.get(String(cls?.id || '')) || null;
+    const quantity = Math.max(1, toNumber(frozen?.learners ?? cls?.number_of_learners, 1));
     const revenue = Number(classTotals[index].toFixed(2));
-    const material = Number(toNumber(cls?.material_total_cost, 0).toFixed(2));
+    const material = Number(toNumber(frozen?.bomCost ?? cls?.material_total_cost, 0).toFixed(2));
     const adjustment = Number(toNumber(cls?.market_adjustment_total ?? cls?.adjustment_total_cost, 0).toFixed(2));
     const rounding = roundingAdjustmentTotal !== 0
       ? Number(toNumber(cls?.rounding_adjustment, 0).toFixed(2))
@@ -208,6 +246,12 @@ export const enrichInvoiceWithBatchPricing = (
     };
   });
 
+  const snapshotAuthoritative = Number.isFinite(frozenTotal) && frozenTotal > 0;
+  const preservedPreRounding = Number(toNumber(
+    invoice.preRoundingTotalAmount ?? invoice.subtotal ?? totalRevenue,
+    totalRevenue
+  ).toFixed(2));
+
   return {
     ...invoice,
     items,
@@ -216,11 +260,15 @@ export const enrichInvoiceWithBatchPricing = (
     adjustmentTotal: marketAdjustmentTotal,
     profitMarginTotal: Number((totalRevenue - materialTotal - marketAdjustmentTotal - roundingTotal).toFixed(2)),
     roundingTotal,
-    roundingDifference: roundingTotal,
+    roundingDifference: snapshotAuthoritative
+      ? Number(toNumber(invoice.roundingDifference ?? roundingTotal, roundingTotal).toFixed(2))
+      : roundingTotal,
     total: totalRevenue,
     totalAmount: totalRevenue,
     total_amount: totalRevenue,
-    preRoundingTotalAmount: totalRevenue,
-    subtotal: totalRevenue
+    // With an approved snapshot the pre-rounding figure comes from the same
+    // frozen calculation, so it is preserved rather than collapsed onto the total.
+    preRoundingTotalAmount: snapshotAuthoritative ? preservedPreRounding : totalRevenue,
+    subtotal: snapshotAuthoritative ? preservedPreRounding : totalRevenue
   };
 };

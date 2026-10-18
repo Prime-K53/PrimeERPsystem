@@ -696,7 +696,8 @@ export const api = {
         academic_year,
         term,
         exam_type,
-        sub_account_name
+        sub_account_name,
+        sub_account_id
       } = payload;
 
       const toSafeNumber = (value: any, fallback = 0) => {
@@ -721,6 +722,10 @@ export const api = {
           customer_id,
           school_name: subj.school_name,
           sub_account_name,
+          // Stable branch identity. Carried alongside the display name so the
+          // batch can be billed to one specific account (and so two branches
+          // that share a display name never collapse into one).
+          sub_account_id: sub_account_id || null,
           class: class_name,
           subject: subjectName,
           pages: toSafeNumber(subj.pages),

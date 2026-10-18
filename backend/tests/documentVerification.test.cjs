@@ -49,6 +49,9 @@ const TABLES = {
   statement_snapshots: [
     { id: 'STMT-G001', data: { id: 'STMT-G001', statementNumber: 'STMT-G001', statementDate: '2026-09-12', periodStart: '2026-08-01', periodEnd: '2026-08-31', customerId: 'CUST-1', customerName: 'Stmt School', email: 'private@example.com', phone: '+265000', currency: 'MWK', openingBalance: 100, transactions: [{ date: '2026-08-05', reference: 'INV-1', debit: 500, credit: 0, runningBalance: 600 }], totalInvoiced: 500, totalReceived: 200, closingBalance: 400, status: 'VALID', verificationToken: TOK } },
     { id: 'STMT-G002', data: { id: 'STMT-G002', statementNumber: 'STMT-G002', statementDate: '2026-08-12', periodStart: '2026-07-01', periodEnd: '2026-07-31', customerId: 'CUST-1', customerName: 'Stmt School', currency: 'MWK', openingBalance: 0, transactions: [], totalInvoiced: 0, totalReceived: 0, closingBalance: 0, status: 'SUPERSEDED', supersededBy: 'STMT-G001', verificationToken: TOK } },
+    // Branch-scoped statement: the snapshot carries the canonical scope key so
+    // the verifier can tell it apart from the customer's Main statement.
+    { id: 'STMT-G003', data: { id: 'STMT-G003', statementNumber: 'STMT-G003', statementDate: '2026-09-12', periodStart: '2026-08-01', periodEnd: '2026-08-31', customerId: 'CUST-1', customerName: 'Stmt School', currency: 'MWK', openingBalance: 0, transactions: [], totalInvoiced: 10, totalReceived: 0, closingBalance: 10, branchKey: 'id:SUB-A', branchLabel: 'Exam Centre', status: 'VALID', verificationToken: TOK } },
   ],
   assessment_contracts: [
     { data: { id: 'c-g001', contract_number: 'PC-G001', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Contract School', currency: 'MWK', prepaid_amount: 5000, status: 'active', verificationToken: TOK } },
@@ -310,12 +313,17 @@ describe('generic document verification', () => {
       'currency', 'subtotal', 'tax', 'total', 'amount', 'amountPaid', 'balanceDue',
       'openingBalance', 'totalInvoiced', 'totalReceived', 'closingBalance',
       'paymentMethod', 'reference', 'validUntil', 'status',
+      // Statement account scope (branch isolation). These three keys let a
+      // verifier distinguish a BRANCH statement from the Main statement. The
+      // stable branch id travels inside `branchKey` (`id:<branchId>`), so no
+      // raw `subAccountId` field is exposed.
+      'branchKey', 'branchLabel', 'scopeAmbiguous',
     ]);
     const forbidden = ['password', 'email', 'phone', 'address', 'audit', 'journal', 'ledger', 'verificationToken', 'token', 'secret', 'supabase', 'user_id', 'sync', 'accountid', 'glaccount', 'transactions', 'customerid', 'supersededby'];
     const cases = [
       ['invoice', 'INV-G001'], ['receipt', 'PAY-G001'], ['quotation', 'QTN-G001'],
       ['sales_order', 'SO-G001'], ['purchase_order', 'PO-G001'], ['delivery_note', 'DN-G001'],
-      ['supplier_payment', 'SPAY-G001'], ['statement', 'STMT-G001'], ['printing_contract', 'PC-G001'],
+      ['supplier_payment', 'SPAY-G001'], ['statement', 'STMT-G001'], ['statement', 'STMT-G003'], ['printing_contract', 'PC-G001'],
       ['printing_contract_schedule', 'PC-G001'], ['printing_contract_completion_receipt', 'PCR-PC-G001'],
     ];
     for (const [type, num] of cases) {
@@ -325,6 +333,22 @@ describe('generic document verification', () => {
       const blob = JSON.stringify(res.body).toLowerCase();
       for (const bad of forbidden) assert.ok(!blob.includes(bad), `${type} leaked: ${bad}`);
     }
+  });
+
+  it('statement: a branch statement is never presented as the Main statement', async () => {
+    const branch = await request(app).get(good('statement', 'STMT-G003', TOK));
+    assert.equal(branch.status, 200);
+    assert.equal(branch.body.branchKey, 'id:SUB-A');
+    assert.equal(branch.body.branchLabel, 'Exam Centre');
+    assert.equal(branch.body.scopeAmbiguous, false);
+
+    // A legacy snapshot with no branch field predates account scope: it is
+    // presented as Main but explicitly flagged, never assumed tagged.
+    const legacy = await request(app).get(good('statement', 'STMT-G001', TOK));
+    assert.equal(legacy.status, 200);
+    assert.equal(legacy.body.branchKey, null);
+    assert.equal(legacy.body.branchLabel, null);
+    assert.equal(legacy.body.scopeAmbiguous, true);
   });
 
   it('invoice compatibility endpoint delegates byte-identically', async () => {

@@ -49,6 +49,7 @@ import { MarketAdjustment, BOMTemplate, ExamPricingResult, SubjectJob, Productio
   ExamSchoolLocal as School, ExamClassLocal as Class, ExamSubjectLocal as Subject, ExamPaper as Examination } from '../../types';
 import { dbService } from '../../services/db';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
+import { resolveAccountScope, subAccountEntries } from '../../services/customerAccountScope';
 import { SafeFormulaEngine } from '../../services/formulaEngine';
 import { inventoryTransactionService } from '../../services/inventoryTransactionService';
 import {
@@ -84,7 +85,9 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
   const [marketAdjustments, setMarketAdjustments] = useState<MarketAdjustment[]>([]);
   const [bomTemplates, setBomTemplates] = useState<BOMTemplate[]>([]);
   const [schoolId, setSchoolId] = useState('');
-  const [subAccountName, setSubAccountName] = useState('Main');
+  // Selected branch, addressed by its STABLE id ('' = Main account). The display
+  // label is derived, so the id and the label can never drift apart.
+  const [subAccountId, setSubAccountId] = useState('');
   const [className, setClassName] = useState('');
   const [totalCandidature, setTotalCandidature] = useState<string>('');
   const [batchChargePerLearner, setBatchChargePerLearner] = useState<string>('');
@@ -287,9 +290,18 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
   }, [schoolId, customers]);
 
   const schoolSubAccounts = useMemo(() => {
-    if (!selectedSchoolObj) return [];
-    return selectedSchoolObj.subAccounts || [];
+    // Normalizes the legacy `string[]` shape and the current
+    // `{ id, name, ... }[]` shape into one list keyed by the STABLE branch id.
+    if (!selectedSchoolObj) return [] as Array<{ id: string; name: string }>;
+    return subAccountEntries(selectedSchoolObj as any)
+      .map(sub => ({ id: String(sub.id ?? sub.name ?? ''), name: String(sub.name ?? sub.label ?? '') }))
+      .filter(sub => sub.name);
   }, [selectedSchoolObj]);
+
+  // Display label for the selected branch id ('' = Main account).
+  const examBranchScope = useMemo(() => (
+    resolveAccountScope(String(schoolId || ''), subAccountId || null, selectedSchoolObj as any)
+  ), [schoolId, subAccountId, selectedSchoolObj]);
 
   const getMaterialUnitCost = (item: any) => {
     const rawCost = Number(
@@ -552,7 +564,8 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
         academic_year: academicYear,
         term: term,
         exam_type: examType,
-        sub_account_name: subAccountName
+        sub_account_name: examBranchScope.isMain ? 'Main' : examBranchScope.branchLabel,
+        sub_account_id: examBranchScope.isMain ? null : (examBranchScope.branchId || null)
       });
 
       const returnedBatchId = confirmData?.batch_id;
@@ -636,7 +649,7 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
                   value={schoolId}
                   onChange={(e) => {
                     setSchoolId(e.target.value);
-                    setSubAccountName('Main');
+                    setSubAccountId('');
                   }}
                 >
                   <option value="">Select Customer</option>
@@ -651,12 +664,12 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-tight mb-1.5">Branch / Sub-Account</label>
                   <select
                     className="w-full px-3.5 py-2 bg-white border border-blue-200 text-blue-700 font-bold rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none shadow-sm transition-all text-[13px] finance-nums"
-                    value={subAccountName}
-                    onChange={(e) => setSubAccountName(e.target.value)}
+                    value={subAccountId}
+                    onChange={(e) => setSubAccountId(e.target.value)}
                   >
-                    <option value="Main">Main Account</option>
+                    <option value="">Main Account</option>
                     {schoolSubAccounts.map(sub => (
-                      <option key={sub.name} value={sub.name}>{sub.name}</option>
+                      <option key={sub.id || sub.name} value={sub.id || sub.name}>{sub.name}</option>
                     ))}
                   </select>
                 </div>

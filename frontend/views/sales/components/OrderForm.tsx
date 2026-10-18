@@ -17,6 +17,7 @@ import { generateLocalId } from '../../../utils/idGeneration';
 import { pricingService, DynamicServicePricingResult } from '../../../services/pricingService';
 import { dbService } from '../../../services/db';
 import { buildLedgerFromRecords } from '../../../services/customerLedger';
+import { isMainBranchValue, resolveAccountScope } from '../../../services/customerAccountScope';
 
 import { useNavigate } from 'react-router-dom';
 import { VariantSelectorModal, ServiceCalculatorModal } from '../../pos/components/PosModals';
@@ -198,6 +199,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
          customerName: '',
          customerId: '',
          subAccountName: 'Main',
+         // Stable branch identity. Persisted on the order/invoice so a branch
+         // row is never re-attributed to Main by name alone.
+         subAccountId: '',
          salesAccountId: type === 'Purchase' ? '51100' : '41100',
          items: [] as CartItem[],
         status: type === 'Invoice' ? 'Unpaid' : (type === 'Order' ? 'Pending' : 'Draft'),
@@ -307,11 +311,31 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const customerSubAccounts = useMemo(() => {
         if (!formData.customerName) return [];
 
-        const profileSubs: Array<{ name: string; accountNumber: string; walletBalance: number }> = (selectedCustomerObj?.subAccounts || []).map((s: string) => ({
-            name: s,
-            accountNumber: s === 'Main' ? (selectedCustomerObj as any)?.accountNumber || '' : '',
-            walletBalance: 0,
-        }));
+        // `subAccounts` holds objects ({ id, name, balance, ... }) in current
+        // data and plain strings in older/legacy records. Normalize to ONE shape
+        // so a branch is always addressable by its STABLE id, never by name only.
+        type SubOption = { id?: string; name: string; accountNumber: string; walletBalance: number };
+        const profileSubs: SubOption[] = (selectedCustomerObj?.subAccounts || [])
+            .map((s: any): SubOption | null => {
+                if (s && typeof s === 'object') {
+                    const name = String(s.name ?? s.label ?? '').trim();
+                    if (!name) return null;
+                    return {
+                        id: s.id ? String(s.id) : undefined,
+                        name,
+                        accountNumber: String(s.accountNumber || ''),
+                        walletBalance: Number(s.walletBalance || 0),
+                    };
+                }
+                const name = String(s ?? '').trim();
+                if (!name) return null;
+                return {
+                    name,
+                    accountNumber: name === 'Main' ? (selectedCustomerObj as any)?.accountNumber || '' : '',
+                    walletBalance: 0,
+                };
+            })
+            .filter((s: SubOption | null): s is SubOption => s !== null);
 
         const transactionSubNames = new Set<string>();
         invoices.filter(i => i.customerName === formData.customerName).forEach(i => {
@@ -330,6 +354,42 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
         return subs.sort((a, b) => a.name.localeCompare(b.name));
     }, [selectedCustomerObj, formData.customerName, invoices, customerPayments]);
+
+    // The billing account only exists as a CHOICE when the selected customer
+    // actually owns sub accounts; otherwise the document is always billed to
+    // Main and no selector is shown. Suppliers (Purchase flow) never bill a
+    // customer account.
+    const hasBillingAccountChoice = type !== 'Purchase' && customerSubAccounts.length > 0;
+
+    // Stable identity wins over the display name: a branch that carries an
+    // embedded id is addressed by that id everywhere (payments, ledger,
+    // statements). Every Main spelling ('Main', 'Main Account', blank)
+    // collapses to the single 'main' option so the select never shows a
+    // duplicate or an empty value.
+    const billingAccountValue = isMainBranchValue(formData.subAccountId || formData.subAccountName)
+        ? 'main'
+        : String(formData.subAccountId || formData.subAccountName).trim();
+
+    const billingAccountLabel = useMemo(() => {
+        if (formData.subAccountId) {
+            const matched = customerSubAccounts.find(s => s.id === formData.subAccountId);
+            if (matched) return matched.name;
+        }
+        const name = String(formData.subAccountName || '').trim();
+        if (isMainBranchValue(name)) return 'Main Account';
+        return name;
+    }, [customerSubAccounts, formData.subAccountId, formData.subAccountName]);
+
+    // A stored document can carry a branch that is no longer on the customer
+    // profile (deleted/renamed branch, legacy name-only row). Keep it
+    // selectable so the select never silently displays an empty value and the
+    // document is not silently re-attributed to Main.
+    const billingAccountOptions = useMemo(() => {
+        const isKnown = billingAccountValue === 'main'
+            || customerSubAccounts.some(s => (s.id || s.name) === billingAccountValue);
+        if (isKnown) return customerSubAccounts;
+        return [{ id: '', name: billingAccountValue, accountNumber: '', walletBalance: 0 }, ...customerSubAccounts];
+    }, [customerSubAccounts, billingAccountValue]);
 
     const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -352,20 +412,29 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
 
 
-    const getCustomerOutstanding = (name: string) => {
-        const cust = (customers || []).find((c: Customer) => c.name === name);
+    /**
+     * Outstanding (closing) balance of ONE account: the parent customer plus
+     * the chosen billing account (Main when no branch is given).
+     *
+     * ID-only + explicit scope: same-named customers never merge, and a
+     * branch balance never silently reports the Main (or a sibling branch)
+     * position. The customer RECORD is passed in (not its display name) so the
+     * balance is always attributed by id, never by a name that may not match.
+     */
+    const getCustomerOutstanding = (cust: Customer | null | undefined, branch?: string | null) => {
         const custId = cust?.id;
-        const custInvoices = (invoices as Invoice[]).filter(
-            i => i.customerId === custId || i.customerName === name
-        );
-        const custPayments = (customerPayments || []).filter(
-            (p: any) => p.customerId === custId || p.customerName === name
-        );
+        if (!custId) return 0;
+        const scope = resolveAccountScope(custId, branch || null, cust as any);
+        const custInvoices = (invoices as Invoice[]).filter(i => i.customerId === custId);
+        const custPayments = (customerPayments || []).filter((p: any) => p.customerId === custId);
         const { closingBalance } = buildLedgerFromRecords({
-            customerId: custId || name,
+            customerId: custId,
+            scope, customer: cust as any,
             invoices: custInvoices as any[],
             payments: custPayments as any[],
-            openingBalance: Number(cust?.balance || 0),
+            // A branch never inherits the parent's opening balance, otherwise
+            // every branch would report the Main position again.
+            openingBalance: scope.isMain ? Number(cust?.balance || 0) : 0,
         });
         return closingBalance;
     };
@@ -1028,6 +1097,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                  customerPricingTier: initialData.customerPricingTier || '',
                  customerPricingSegment: editSegment,
                  subAccountName: initialData.subAccountName || 'Main',
+                 subAccountId: initialData.subAccountId || '',
                  salesAccountId: initialData.salesAccountId || (type === 'Purchase' ? '51100' : '41100'),
                 items: normalizedItems,
                 status: isRecurring
@@ -1290,6 +1360,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 creationSource: (formData as any).creationSource || (formData as any).creation_source || 'DIRECT_ERP',
                 customerId: resolvedCustomerId,
                 customerName: resolvedCustomerName,
+                subAccountName: formData.subAccountName || 'Main',
+                subAccountId: formData.subAccountId || undefined,
                 orderDate: formData.date,
                 status: asDraft ? 'Pending' : (formData.status === 'Draft' ? 'Pending' : formData.status),
                 items: orderItems as any,
@@ -2008,6 +2080,36 @@ const handleVariantSelect = async (variant: ProductVariant) => {
         });
     };
 
+    /**
+     * Point the document at a specific billing account of the selected
+     * customer. `subAccountId` (the branch's stable embedded id) is the
+     * identity that gets persisted; `subAccountName` is the display label.
+     * Payment terms / due date follow automatically because the sub-account
+     * policy effect watches `subAccountName`.
+     */
+    const handleBillingAccountChange = (raw: string) => {
+        const value = String(raw || '').trim();
+        const isMain = isMainBranchValue(value);
+        const matched = isMain
+            ? undefined
+            : customerSubAccounts.find(s => (s.id && s.id === value) || s.name === value);
+        const branchLabel = isMain ? 'Main Account' : (matched?.name || value);
+
+        setFormData(prev => ({
+            ...prev,
+            subAccountName: isMain ? 'Main' : (matched?.name || value),
+            subAccountId: isMain ? '' : (matched?.id || ''),
+        }));
+
+        const creditLimit = Number(selectedCustomerObj?.creditLimit || 0);
+        if (type !== 'Purchase' && creditLimit > 0) {
+            const outstanding = getCustomerOutstanding(selectedCustomerObj, isMain ? null : (matched?.id || value));
+            if (outstanding > creditLimit) {
+                notify(`${branchLabel} has exceeded its credit limit. Outstanding: ${currency}${outstanding.toLocaleString()}`, "warning");
+            }
+        }
+    };
+
     const selectCustomer = async (name: string, customerId?: string) => {
         const normalizedName = name.trim();
         if (!normalizedName) return;
@@ -2020,6 +2122,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                 customerName: selectedName,
                 customerId: supplier?.id || '',
                 subAccountName: 'Main',
+                subAccountId: '',
                 billingAddress: supplier?.address || formData.billingAddress || '',
                 shippingAddress: supplier?.address || formData.shippingAddress || '',
                 customerPhone: supplier?.phone || formData.customerPhone || '',
@@ -2043,6 +2146,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
             customerName: selectedName,
             customerId: customer?.id || '',
             subAccountName: 'Main',
+            subAccountId: '',
             billingAddress: customer?.billingAddress || customer?.address || formData.billingAddress || '',
             shippingAddress: customer?.shippingAddress || customer?.billingAddress || customer?.address || formData.shippingAddress || '',
             customerPhone: customer?.phone || formData.customerPhone || '',
@@ -2054,7 +2158,8 @@ const handleVariantSelect = async (variant: ProductVariant) => {
         setCustomerPanelOpen(false);
 
         if (customer && customer.creditLimit) {
-            const outstanding = getCustomerOutstanding(selectedName);
+            // Selection always resets the billing account to Main.
+            const outstanding = getCustomerOutstanding(customer, null);
             if (outstanding > customer.creditLimit) {
                 notify(`Warning: ${selectedName} has exceeded their credit limit. Outstanding: ${currency}${outstanding.toLocaleString()}`, "warning");
             }
@@ -2563,6 +2668,30 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                         )}
                     </div>
 
+                    {hasBillingAccountChoice && (
+                        <div className="docket-field mb-[10px]">
+                            <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">Billing Account</label>
+                            <div className="relative">
+                                <select
+                                    value={billingAccountValue}
+                                    onChange={e => handleBillingAccountChange(e.target.value)}
+                                    className="w-full bg-white border border-[#E4DFD1] rounded-[7px] px-[10px] py-[8px] pr-8 text-[13px] text-[#23282A] outline-none focus:border-[#146b60] focus:bg-[#eef7f6] transition-colors appearance-none [color-scheme:light]"
+                                >
+                                    <option value="main">Main Account</option>
+                                    {billingAccountOptions.map(sub => (
+                                        <option key={sub.id || sub.name} value={sub.id || sub.name}>
+                                            {sub.name}{sub.accountNumber && sub.accountNumber !== 'Legacy/External' ? ` · ${sub.accountNumber}` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                                <Building2 size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#666F6C]" />
+                            </div>
+                            <p className="text-[10px] text-[#666F6C] mt-[4px] leading-[1.4]">
+                                {customerSubAccounts.length} sub account{customerSubAccounts.length === 1 ? '' : 's'} &middot; this {type === 'Recurring' ? 'subscription' : type.toLowerCase()} is billed to <span className="font-semibold text-[#146b60]">{billingAccountLabel}</span>.
+                            </p>
+                        </div>
+                    )}
+
                     <div className="docket-field mb-[10px]">
                         <label className="block text-[10px] font-bold tracking-[0.8px] uppercase text-[#666F6C] mb-[3px]">Voucher Date</label>
                         <input type="date" value={formData.date}
@@ -2654,7 +2783,10 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                         {formData.customerName && customerPanelOpen && (() => {
                             const cust = selectedCustomerObj;
                             if (!cust) return null;
-                            const bal = getCustomerOutstanding(formData.customerName);
+                            // Balance belongs to the BILLING ACCOUNT, not to the
+                            // parent: a branch must not report Main's position.
+                            const isBranchAccount = !isMainBranchValue(formData.subAccountId || formData.subAccountName);
+                            const bal = getCustomerOutstanding(cust, isBranchAccount ? (formData.subAccountId || formData.subAccountName) : null);
                             return (
                                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                                     <div className="flex items-center gap-2 mb-2">
@@ -2663,14 +2795,18 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     </div>
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                                         <div className="flex justify-between py-0.5 border-b border-gray-100">
-                                            <span className="text-slate-500">Balance</span>
-                                            <span className={`font-medium ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-emerald-700' : 'text-slate-600'}`}>
-                                                {bal > 0 ? `${currency}${bal.toLocaleString()} overdue` : bal < 0 ? `${currency}${Math.abs(bal).toLocaleString()} credit` : 'Settled'}
-                                            </span>
+                                            <span className="text-slate-500">Billing Account</span>
+                                            <span className="font-medium text-indigo-600">{billingAccountLabel}</span>
                                         </div>
                                         <div className="flex justify-between py-0.5 border-b border-gray-100">
                                             <span className="text-slate-500">Credit Limit</span>
                                             <span className="font-medium text-slate-700">{currency}{(cust.creditLimit || 0).toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between py-0.5 border-b border-gray-100">
+                                            <span className="text-slate-500">{isBranchAccount ? 'Account Balance' : 'Balance'}</span>
+                                            <span className={`font-medium ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-emerald-700' : 'text-slate-600'}`}>
+                                                {bal > 0 ? `${currency}${bal.toLocaleString()} overdue` : bal < 0 ? `${currency}${Math.abs(bal).toLocaleString()} credit` : 'Settled'}
+                                            </span>
                                         </div>
                                         <div className="flex justify-between py-0.5 border-b border-gray-100">
                                             <span className="text-slate-500">Phone</span>

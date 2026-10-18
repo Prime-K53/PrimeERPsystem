@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useFinance } from '../../context/FinanceContext';
 import { ArrowLeft, Save, Plus, Search, Building2, ChevronDown, X, Users, ChevronRight } from 'lucide-react';
 import { useSales } from '../../context/SalesContext';
+import { subAccountEntries } from '../../services/customerAccountScope';
 import { Customer } from '../../types';
 import { dbService } from '../../services/db';
 import { toast } from '../../components/Toast';
@@ -65,7 +66,8 @@ const ExaminationBatchForm: React.FC = () => {
     batch_date: today,
     valid_until: defaultValidUntil,
     sales_account_id: '',
-    sub_account_name: ''
+    sub_account_name: '',
+    sub_account_id: ''
   });
 
   const [customerSearch, setCustomerSearch] = useState('');
@@ -116,6 +118,14 @@ const ExaminationBatchForm: React.FC = () => {
     return customers.find((customer) => String(customer.id) === String(formData.school_id));
   }, [customers, formData.school_id]);
 
+  // Normalizes the legacy `string[]` sub-account shape and the current
+  // `{ id, name }[]` shape so the picker is always keyed by the STABLE branch id.
+  const batchSubAccounts = React.useMemo(() => (
+    subAccountEntries(selectedCustomerFull as any)
+      .map((sub: any) => ({ id: String(sub?.id ?? ''), name: String(sub?.name ?? sub?.label ?? '') }))
+      .filter((sub: any) => sub.name)
+  ), [selectedCustomerFull]);
+
   const filteredCustomers = useMemo(() => {
     if (!customerSearch.trim()) return sortedCustomers;
     const q = customerSearch.toLowerCase();
@@ -163,7 +173,7 @@ const ExaminationBatchForm: React.FC = () => {
       }
 
       await loadAllData();
-      setFormData((prev) => ({ ...prev, school_id: customer.id, sub_account_name: '' }));
+      setFormData((prev) => ({ ...prev, school_id: customer.id, sub_account_name: '', sub_account_id: '' }));
       setNewCustomer({ name: '', email: '', phone: '', address: '', city: '' });
       setShowAddCustomer(false);
     } catch (error) {
@@ -203,6 +213,8 @@ const ExaminationBatchForm: React.FC = () => {
         school_id: schoolId,
         academic_year: academicYear,
         sub_account_name: formData.sub_account_name.trim(),
+        // STABLE branch identity alongside the display label.
+        sub_account_id: formData.sub_account_id.trim(),
         rounding_method: companyConfig?.pricingSettings?.defaultMethod || 'ALWAYS_UP_50',
         rounding_value: Number(companyConfig?.pricingSettings?.customStep || 50)
       };
@@ -373,13 +385,26 @@ const ExaminationBatchForm: React.FC = () => {
                 <select
                   id="sub-account"
                   name="sub_account_name"
-                  value={formData.sub_account_name}
-                  onChange={(event) => handleChange('sub_account_name', event.target.value)}
+                  value={formData.sub_account_id ? `id:${formData.sub_account_id}` : (formData.sub_account_name ? `name:${formData.sub_account_name}` : '')}
+                  onChange={(event) => {
+                    // Addressed by the STABLE branch id: two branches of one
+                    // customer may share a display name, and a name-valued
+                    // <option> would silently collapse them into one account.
+                    const raw = event.target.value;
+                    const byId = /^id:(.*)$/.exec(raw);
+                    if (byId) {
+                      const branch = batchSubAccounts.find((s: any) => String(s.id ?? '') === byId[1]);
+                      setFormData(prev => ({ ...prev, sub_account_id: byId[1], sub_account_name: String(branch?.name || '') }));
+                    } else {
+                      const byName = /^name:(.*)$/.exec(raw)?.[1] ?? '';
+                      setFormData(prev => ({ ...prev, sub_account_id: '', sub_account_name: byName }));
+                    }
+                  }}
                   style={selectStyle}
                 >
                   <option value="">Select sub-account (or leave for main account)</option>
-                  {selectedCustomerFull.subAccounts.map((sub: any) => (
-                    <option key={sub.id} value={sub.name}>
+                  {batchSubAccounts.map((sub: any) => (
+                    <option key={sub.id || sub.name} value={sub.id ? `id:${sub.id}` : `name:${sub.name}`}>
                       {sub.name}
                     </option>
                   ))}

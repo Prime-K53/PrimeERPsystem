@@ -13,7 +13,7 @@
  */
 
 import { dbService } from '../db';
-import { getCustomerOutstanding } from '../customerLedger';
+import { getCustomerOutstanding, buildLedgerFromRecords, mainAccountScope } from '../customerLedger';
 import { getCustomerDisplayName, getCustomerContactName } from '../../utils/customerDisplay';
 import { buildDocumentVerificationUrl } from '../../utils/documentVerification';
 import type {
@@ -282,7 +282,6 @@ async function resolveOutstandingBalance(
   void displayName;
   try {
     if (opts.invoicesOverride || opts.paymentsOverride || opts.openingBalanceOverride !== undefined) {
-      const { buildLedgerFromRecords } = await import('../customerLedger');
       const allInvoices = opts.invoicesOverride ??
         (await dbService.getAll<RawInvoice>('invoices'));
       const mine = allInvoices.filter(
@@ -291,15 +290,18 @@ async function resolveOutstandingBalance(
           (displayName && String(i.customerName || '').toLowerCase() === displayName.toLowerCase()),
       );
       const payments = opts.paymentsOverride ?? [];
+      // Explicit Main scope: customer-facing communication reports the parent
+      // account position, never a silent Main+branch mix.
       const ledger = buildLedgerFromRecords({
         customerId,
+        scope: mainAccountScope(customerId),
         invoices: mine as unknown as Array<Record<string, unknown>>,
         payments: payments as Array<Record<string, unknown>>,
         openingBalance: opts.openingBalanceOverride ?? 0,
       });
       return ledger.outstandingBalance;
     }
-    return await getCustomerOutstanding(customerId);
+    return await getCustomerOutstanding(customerId, { scope: mainAccountScope(customerId) });
   } catch {
     warnings.push('Outstanding balance is currently unavailable.');
     return null;

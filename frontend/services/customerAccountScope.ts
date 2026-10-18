@@ -475,3 +475,116 @@ export function isSameAccountScope(a: AccountScope | null | undefined, b: Accoun
   if (!a || !b) return false;
   return scopeIdentity(a) === scopeIdentity(b);
 }
+
+// ── Authoritative allocation ownership rule ─────────────────────────────────
+
+export interface AccountScopeViolation extends Error {
+  code: string;
+  paymentScope?: string;
+  invoiceScope?: string;
+  invoiceId?: string;
+}
+
+function scopeViolation(code: string, message: string, extra: Record<string, unknown> = {}): AccountScopeViolation {
+  const err = new Error(message) as AccountScopeViolation;
+  err.code = code;
+  Object.assign(err, extra);
+  return err;
+}
+
+/**
+ * THE authoritative ownership rule for payment → invoice allocation.
+ *
+ * A payment may only settle an invoice of the SAME account: the same parent
+ * customer AND the same account (Main, or the exact same branch id). Cross
+ * customer, Main↔branch and branch↔sibling-branch are all refused. A shared
+ * business name is never authorization.
+ *
+ * Throws an error carrying `.code`:
+ *   ECROSS_ACCOUNT   — the two sides are different accounts
+ *   EAMBIGUOUS_SCOPE — a side cannot be identified with certainty
+ *   EINVALID_SCOPE   — a branch does not belong to the parent customer
+ */
+export function assertSameAccountOwnership(
+  payment: AnyRecord | null | undefined,
+  invoice: AnyRecord | null | undefined,
+  customer?: AnyRecord | null,
+): AccountScope {
+  const payScope = resolveRecordScope(payment || {}, customer ?? null);
+  const invScope = resolveRecordScope(invoice || {}, customer ?? null);
+  const invoiceId = String((invoice as AnyRecord | null)?.id ?? '');
+
+  if (!String(payScope.customerId || '').trim()) {
+    throw scopeViolation('EAMBIGUOUS_SCOPE', 'Cannot allocate: the payment has no resolvable customer account scope.');
+  }
+  if (!String(invScope.customerId || '').trim()) {
+    throw scopeViolation('EAMBIGUOUS_SCOPE', `Cannot allocate: invoice ${invoiceId} has no resolvable customer account scope.`, { invoiceId });
+  }
+
+  // Cross-customer is always refused, even when the business names match.
+  if (String(invScope.customerId) !== String(payScope.customerId)) {
+    throw scopeViolation(
+      'ECROSS_ACCOUNT',
+      `Cross-account allocation blocked: payment is ${scopeIdentity(payScope)} but invoice ${invoiceId} is ` +
+      `${scopeIdentity(invScope)}. A shared business name is not authorization.`,
+      { invoiceId, paymentScope: scopeIdentity(payScope), invoiceScope: scopeIdentity(invScope) },
+    );
+  }
+
+  // Main vs branch, and branch vs sibling branch.
+  if (!isSameAccountScope(invScope, payScope)) {
+    throw scopeViolation(
+      'ECROSS_ACCOUNT',
+      `Cross-account allocation blocked: payment is ${scopeIdentity(payScope)} but invoice ${invoiceId} is ` +
+      `${scopeIdentity(invScope)}. A shared business name is not authorization.`,
+      { invoiceId, paymentScope: scopeIdentity(payScope), invoiceScope: scopeIdentity(invScope) },
+    );
+  }
+
+  // A name-only scope shared by several same-named branches is not an identity.
+  if (!payScope.isMain && !payScope.branchId && payScope.ambiguous) {
+    throw scopeViolation(
+      'EAMBIGUOUS_SCOPE',
+      `Cannot allocate: the payment branch name '${payScope.branchLabel}' is shared by several branches. ` +
+      `Tag the payment with its embedded branch id.`,
+      { paymentScope: scopeIdentity(payScope) },
+    );
+  }
+  if (!invScope.isMain && !invScope.branchId && invScope.ambiguous) {
+    throw scopeViolation(
+      'EAMBIGUOUS_SCOPE',
+      `Cannot allocate: invoice ${invoiceId} branch name '${invScope.branchLabel}' is shared by several branches. ` +
+      `Tag the invoice with its embedded branch id.`,
+      { invoiceId, invoiceScope: scopeIdentity(invScope) },
+    );
+  }
+
+  // Confirm the branch really belongs to the parent customer.
+  if (customer) {
+    for (const [label, scope] of [['payment', payScope], ['invoice', invScope]] as const) {
+      const v = validateAccountScope(scope, customer);
+      if (!v.ok) {
+        throw scopeViolation(
+          v.ambiguous ? 'EAMBIGUOUS_SCOPE' : 'EINVALID_SCOPE',
+          `Cannot allocate: ${label} account scope is invalid (${v.reason}).`,
+          label === 'invoice' ? { invoiceId, invoiceScope: scopeIdentity(scope) } : { paymentScope: scopeIdentity(scope) },
+        );
+      }
+    }
+    return payScope;
+  }
+
+  // No customer record to confirm ownership: an id-keyed (or Main) scope is
+  // still a stable identity; a name-keyed branch scope is not.
+  for (const [label, scope] of [['payment', payScope], ['invoice', invScope]] as const) {
+    if (!scope.isMain && !scope.branchId) {
+      throw scopeViolation(
+        'EAMBIGUOUS_SCOPE',
+        `Cannot allocate: ${label} branch '${scope.branchLabel}' is identified by display name only and ` +
+        `no parent customer record was supplied to confirm it.`,
+        label === 'invoice' ? { invoiceId, invoiceScope: scopeIdentity(scope) } : { paymentScope: scopeIdentity(scope) },
+      );
+    }
+  }
+  return payScope;
+}

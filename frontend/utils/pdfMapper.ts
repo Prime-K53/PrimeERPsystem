@@ -484,6 +484,12 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             finalBalance: toNum(item.finalBalance ?? item.closingBalance ?? item.closing_balance ?? 0),
             status: item.status || undefined,
             documentType: 'statement',
+            // Account scope must survive mapping — a branch statement printed
+            // from the QR/download path must not render as the Main statement.
+            ...(item.branchKey ? { branchKey: String(item.branchKey) } : {}),
+            ...(item.subAccountId ? { subAccountId: String(item.subAccountId) } : {}),
+            ...(item.branchLabel ? { branchLabel: String(item.branchLabel) } : {}),
+            ...(item.scopeAmbiguous ? { scopeAmbiguous: true } : {}),
             ...(sourceToken ? { verificationToken: sourceToken } : {}),
         };
         return StatementSchema.parse(statementData);

@@ -21,6 +21,7 @@ import {
   getEngineMethodFromExamRounding
 } from '../../services/examinationJobService';
 import { isMarketAdjustmentActive } from '../../utils/marketAdjustmentUtils';
+import { subAccountEntries } from '../../services/customerAccountScope';
 import { 
   Save, Calculator, DollarSign, Users, FileText, Plus, 
   CheckCircle, AlertTriangle, Loader2, ArrowLeft, Lock, Unlock, Info, Settings, X, ShieldCheck 
@@ -84,6 +85,8 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
     exam_name: '',
     school_id: '',
     sub_account_name: '',
+    // STABLE branch id of the billed account; '' means Main.
+    sub_account_id: '',
     class_name: '',
     number_of_learners: 0,
     bom_id: '',
@@ -364,8 +367,36 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
   }, [customers, formData.school_id]);
 
   const selectedCustomerSubAccounts = useMemo(() => {
-    return selectedCustomer?.subAccounts || [];
+    // Normalizes the legacy `string[]` shape and the current `{ id, name, ... }[]`
+    // shape into one list addressed by the STABLE branch id (falling back to the
+    // display name for legacy string entries, which have no embedded id).
+    if (!selectedCustomer) return [] as Array<{ id: string; name: string }>;
+    return subAccountEntries(selectedCustomer as any)
+      .map(sub => ({ id: String(sub.id ?? ''), name: String(sub.name ?? sub.label ?? '') }))
+      .filter(sub => sub.name);
   }, [selectedCustomer]);
+
+  /** The <select> value: `id:<branchId>` when the branch carries a stable id,
+   *  otherwise `name:<display name>` for legacy string-only sub-accounts. */
+  const selectedSubAccountTag = formData.sub_account_id
+    ? `id:${formData.sub_account_id}`
+    : (formData.sub_account_name ? `name:${formData.sub_account_name}` : '');
+
+  const handleSubAccountSelect = (tag: string) => {
+    const byId = /^id:(.*)$/.exec(tag);
+    if (byId) {
+      const branchId = byId[1];
+      const branch = selectedCustomerSubAccounts.find(sub => sub.id === branchId);
+      setFormData(prev => ({
+        ...prev,
+        sub_account_name: branch?.name || '',
+        sub_account_id: branchId,
+      }));
+      setErrors(prev => ({ ...prev, sub_account_name: '' }));
+      return;
+    }
+    handleInputChange('sub_account_name', /^name:(.*)$/.exec(tag)?.[1] ?? '');
+  };
 
   useEffect(() => {
     if (id) {
@@ -403,21 +434,29 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
 
   useEffect(() => {
     if (!formData.school_id) {
-      if (formData.sub_account_name) {
-        setFormData(prev => ({ ...prev, sub_account_name: '' }));
+      if (formData.sub_account_name || formData.sub_account_id) {
+        setFormData(prev => ({ ...prev, sub_account_name: '', sub_account_id: '' }));
       }
       return;
     }
 
     if (selectedCustomerSubAccounts.length === 0) return;
-    const hasSelectedSubAccount = selectedCustomerSubAccounts.some(sub => sub.name === formData.sub_account_name);
+    // Keep the stable id and the display label in step: match on EITHER the
+    // recorded id or the legacy name, so a job tagged by name (legacy) is not
+    // silently re-tagged, and a job tagged by id survives a name edit.
+    const hasSelectedSubAccount = selectedCustomerSubAccounts.some(sub => (
+      (formData.sub_account_id && sub.id && sub.id === formData.sub_account_id)
+      || sub.name === formData.sub_account_name
+    ));
     if (!hasSelectedSubAccount) {
+      const first = selectedCustomerSubAccounts[0];
       setFormData(prev => ({
         ...prev,
-        sub_account_name: selectedCustomerSubAccounts[0]?.name || ''
+        sub_account_name: first?.name || '',
+        sub_account_id: first?.id || ''
       }));
     }
-  }, [formData.school_id, formData.sub_account_name, selectedCustomerSubAccounts]);
+  }, [formData.school_id, formData.sub_account_name, formData.sub_account_id, selectedCustomerSubAccounts]);
 
   const loadJob = async (jobId: string) => {
     try {
@@ -438,6 +477,7 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
         exam_name: String(job.exam_name ?? ''),
         school_id: String(job.school_id ?? ''),
         sub_account_name: String(job.sub_account_name ?? ''),
+        sub_account_id: String(job.sub_account_id ?? ''),
         class_name: String(job.class_name ?? ''),
         number_of_learners: Number(job.number_of_learners ?? 0),
         bom_id: String(job.bom_id ?? ''),
@@ -473,6 +513,15 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
     if (selectedCustomerSubAccounts.length > 0 && !formData.sub_account_name) {
       newErrors.sub_account_name = 'Sub-account is required for this customer';
     }
+    // A branch account must be identified unambiguously. Two branches of this
+    // customer can share a display name, so a name-only selection is refused.
+    if (selectedCustomerSubAccounts.length > 0 && formData.sub_account_name && !formData.sub_account_id) {
+      const duplicateNames = selectedCustomerSubAccounts.filter(sub => sub.name === formData.sub_account_name).length;
+      if (duplicateNames > 1) {
+        newErrors.sub_account_name =
+          `"${formData.sub_account_name}" is used by ${duplicateNames} branches of this customer. Select the branch that applies — the account cannot be identified by name alone.`;
+      }
+    }
     if (!formData.class_name.trim()) newErrors.class_name = 'Class name is required';
     if (formData.number_of_learners <= 0) newErrors.number_of_learners = 'Number of learners must be greater than 0';
     if (adjustmentOptions.length === 0) {
@@ -502,6 +551,15 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
 
       if (field === 'school_id') {
         next.sub_account_name = '';
+        next.sub_account_id = '';
+      }
+
+      if (field === 'sub_account_name') {
+        // Selecting a branch by name also records its STABLE id so the job's
+        // account identity survives a later rename and two branches that share
+        // a display name stay distinguishable.
+        const matched = selectedCustomerSubAccounts.find(sub => sub.name === value);
+        next.sub_account_id = matched?.id || '';
       }
 
       if (field === 'adjustment_id') {
@@ -577,6 +635,9 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
       const payload = {
         ...formData,
         sub_account_name: formData.sub_account_name || undefined,
+        // Stable branch identity travels with the job so the eventual invoice
+        // can be pinned to exactly one account.
+        sub_account_id: formData.sub_account_id || undefined,
         number_of_learners: Number(formData.number_of_learners),
         adjustment_id: String(formData.adjustment_id || '').trim(),
         adjustment_value: Number(formData.adjustment_value),
@@ -790,15 +851,22 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
 
               {formData.school_id && selectedCustomerSubAccounts.length > 0 && (
                 <div style={{ marginTop: 16 }}>
+                  {/* Options are addressed by the STABLE branch id. Two branches
+                      of one customer may share a display name, so a name-only
+                      <option> would silently collapse them into a single
+                      account. */}
                   <Select
                     label="Sub Account"
-                    value={formData.sub_account_name}
-                    onChange={(e) => handleInputChange('sub_account_name', e.target.value)}
+                    value={selectedSubAccountTag}
+                    onChange={(e) => handleSubAccountSelect(e.target.value)}
                     error={errors.sub_account_name}
                   >
                     <option value="">Select a sub-account...</option>
                     {selectedCustomerSubAccounts.map((subAccount) => (
-                      <option key={subAccount.id} value={subAccount.name}>
+                      <option
+                        key={subAccount.id || subAccount.name}
+                        value={subAccount.id ? `id:${subAccount.id}` : `name:${subAccount.name}`}
+                      >
                         {subAccount.name}
                       </option>
                     ))}

@@ -30,7 +30,8 @@ import { attachDocumentSecurity } from '../../../utils/documentSecurity';
 import { currencyService } from '../../../services/currencyService';
 import { referralService } from '../../../services/referralService';
 import type { Referral, ReferralReward } from '../../../types/referral';
-import { buildLedgerFromRecords } from '../../../services/customerLedger';
+import { buildLedgerFromRecords, mainAccountScope } from '../../../services/customerLedger';
+import { paymentService } from '../../../services/paymentService';
 import { adminLifecycle, type PortalCredentials } from '../../../services/adminPortalClient';
 
 interface CustomerWorkspaceProps {
@@ -527,12 +528,14 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
   }, [customer?.id]);
 
   const customerInvoices = useMemo(
-    () => invoices.filter(inv => inv.customerId === customer.id || (inv as any).customerName === customerDisplayName || (inv as any).customer === customerDisplayName),
-    [invoices, customer, customerDisplayName]
+    // Workspace shows the Main Account by default: ID-only + Main scope.
+    // Branch transactions are reachable via explicit account selection.
+    () => invoices.filter(inv => inv.customerId === customer.id),
+    [invoices, customer]
   );
   const customerPaymentsList = useMemo(
-    () => customerPayments.filter(p => (p as any).customerName === customerDisplayName || (p as any).customerId === customer.id),
-    [customerPayments, customer, customerDisplayName]
+    () => customerPayments.filter(p => (p as any).customerId === customer.id),
+    [customerPayments, customer]
   );
   const customerLogs = useMemo(
     () => auditLogs.filter(log => (log as any).entityId === customer.id || ((log as any).details && String((log as any).details).includes(customerDisplayName))),
@@ -544,7 +547,7 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
   );
 
   const canonicalLedger = useMemo(
-    () => buildLedgerFromRecords({ customerId: customer.id, invoices: customerInvoices as any, payments: customerPaymentsList as any, openingBalance: Number((customer as any).balance || 0) }),
+    () => buildLedgerFromRecords({ customerId: customer.id, scope: mainAccountScope(customer.id), customer: customer as any, invoices: customerInvoices as any, payments: customerPaymentsList as any, openingBalance: Number((customer as any).balance || 0) }),
     [customer.id, (customer as any).balance, customerInvoices, customerPaymentsList]
   );
 
@@ -956,7 +959,11 @@ export const CustomerWorkspace: React.FC<CustomerWorkspaceProps> = ({ customer, 
       const formatted = buildCustomerReceiptDoc({
         payment: p,
         customerName: customerDisplayName,
-        currentBalance: kpis.outstandingBalance,
+        // The receipt's notes must state the balance of the ACCOUNT THIS PAYMENT
+        // belongs to. `kpis.outstandingBalance` describes one other scope, so a
+        // branch receipt could otherwise print the parent's figure (and vice
+        // versa).
+        currentBalance: await paymentService.getOutstandingBalanceForPayment(p),
         currencySymbol: currency,
         appliedOrders: (p as any).orderAllocations?.map((a: any) => a.orderId) || [],
       });

@@ -1,0 +1,260 @@
+{
+  "fixtureVersion": "2026-10-18.1",
+  "description": "Single source of truth for account-scope parity. Consumed by BOTH backend/tests/customerAccountScope.test.cjs (via services/customerAccountScope.cjs) and frontend/tests/customerAccountScope.parity.test.ts (via services/customerAccountScope.ts). Any divergence between the two scope helpers fails one of the two suites.",
+  "customers": {
+    "CUST-SHARED": {
+      "id": "CUST-SHARED",
+      "name": "Alpha Schools",
+      "subAccounts": [
+        { "id": "SUB-A", "name": "Exam Centre" },
+        { "id": "SUB-B", "name": "Exam Centre" },
+        { "id": "SUB-C", "name": "Fees" }
+      ]
+    },
+    "CUST-UNIQUE": {
+      "id": "CUST-UNIQUE",
+      "name": "Beta Academy",
+      "subAccounts": [
+        { "id": "SUB-X", "name": "Fees" },
+        { "id": "SUB-Y", "name": "Boarding" }
+      ]
+    },
+    "CUST-NONE": {
+      "id": "CUST-NONE",
+      "name": "Gamma Trading",
+      "subAccounts": []
+    }
+  },
+  "scopeCases": [
+    {
+      "id": "stable-id-of-a-name-shared-branch",
+      "customerId": "CUST-SHARED",
+      "customer": "CUST-SHARED",
+      "branch": "SUB-A",
+      "expect": { "branchKey": "id:SUB-A", "branchId": "SUB-A", "isMain": false, "ambiguous": true, "branchLabel": "Exam Centre" }
+    },
+    {
+      "id": "stable-id-of-a-sibling-branch",
+      "customerId": "CUST-SHARED",
+      "customer": "CUST-SHARED",
+      "branch": "SUB-B",
+      "expect": { "branchKey": "id:SUB-B", "branchId": "SUB-B", "isMain": false, "ambiguous": true, "branchLabel": "Exam Centre" }
+    },
+    {
+      "id": "shared-display-name-is-ambiguous",
+      "customerId": "CUST-SHARED",
+      "customer": "CUST-SHARED",
+      "branch": "Exam Centre",
+      "expect": { "branchKey": "name:exam-centre", "branchId": null, "isMain": false, "ambiguous": true, "branchLabel": "Exam Centre" }
+    },
+    {
+      "id": "unique-display-name-promotes-to-stable-id",
+      "customerId": "CUST-SHARED",
+      "customer": "CUST-SHARED",
+      "branch": "Fees",
+      "expect": { "branchKey": "id:SUB-C", "branchId": "SUB-C", "isMain": false, "ambiguous": false, "branchLabel": "Fees" }
+    },
+    {
+      "id": "missing-branch-is-main",
+      "customerId": "CUST-SHARED",
+      "customer": "CUST-SHARED",
+      "branch": null,
+      "expect": { "branchKey": "main", "branchId": null, "isMain": true, "ambiguous": false, "branchLabel": "Main" }
+    },
+    {
+      "id": "literal-main-is-main",
+      "customerId": "CUST-SHARED",
+      "customer": "CUST-SHARED",
+      "branch": "Main",
+      "expect": { "branchKey": "main", "branchId": null, "isMain": true, "ambiguous": false, "branchLabel": "Main" }
+    },
+    {
+      "id": "case-insensitive-name-maps-to-stable-id",
+      "customerId": "CUST-UNIQUE",
+      "customer": "CUST-UNIQUE",
+      "branch": "boarding",
+      "expect": { "branchKey": "id:SUB-Y", "branchId": "SUB-Y", "isMain": false, "ambiguous": false, "branchLabel": "Boarding" }
+    },
+    {
+      "id": "id-without-parent-customer-still-stable",
+      "customerId": "CUST-UNIQUE",
+      "customer": null,
+      "branch": "SUB-X",
+      "expect": { "branchKey": "id:SUB-X", "branchId": "SUB-X", "isMain": false, "ambiguous": false, "branchLabel": "Branch" }
+    },
+    {
+      "id": "name-without-parent-customer-is-name-only",
+      "customerId": "CUST-UNIQUE",
+      "customer": null,
+      "branch": "Fees",
+      "expect": { "branchKey": "name:fees", "branchId": null, "isMain": false, "ambiguous": false, "branchLabel": "Fees" }
+    }
+  ],
+  "matchCases": [
+    {
+      "id": "main-excludes-all-branch-rows",
+      "scope": { "customerId": "CUST-SHARED", "branch": null },
+      "customer": "CUST-SHARED",
+      "records": [
+        { "id": "R-A", "customerId": "CUST-SHARED", "subAccountId": "SUB-A", "subAccountName": "Exam Centre" },
+        { "id": "R-B", "customerId": "CUST-SHARED", "subAccountId": "SUB-B", "subAccountName": "Exam Centre" },
+        { "id": "R-L", "customerId": "CUST-SHARED", "subAccountName": "Exam Centre" },
+        { "id": "R-M", "customerId": "CUST-SHARED" }
+      ],
+      "expectMatched": ["R-M"],
+      "expectAmbiguous": []
+    },
+    {
+      "id": "branch-matches-only-its-own-id-and-flags-shared-name-legacy-row",
+      "scope": { "customerId": "CUST-SHARED", "branch": "SUB-A" },
+      "customer": "CUST-SHARED",
+      "records": [
+        { "id": "R-A", "customerId": "CUST-SHARED", "subAccountId": "SUB-A", "subAccountName": "Exam Centre" },
+        { "id": "R-B", "customerId": "CUST-SHARED", "subAccountId": "SUB-B", "subAccountName": "Exam Centre" },
+        { "id": "R-L", "customerId": "CUST-SHARED", "subAccountName": "Exam Centre" },
+        { "id": "R-M", "customerId": "CUST-SHARED" }
+      ],
+      "expectMatched": ["R-A"],
+      "expectAmbiguous": ["R-L"]
+    },
+    {
+      "id": "legacy-name-row-matches-when-the-name-is-unique",
+      "scope": { "customerId": "CUST-UNIQUE", "branch": "SUB-Y" },
+      "customer": "CUST-UNIQUE",
+      "records": [
+        { "id": "R-U", "customerId": "CUST-UNIQUE", "subAccountName": "Boarding" },
+        { "id": "R-X", "customerId": "CUST-UNIQUE", "subAccountId": "SUB-X", "subAccountName": "Fees" }
+      ],
+      "expectMatched": ["R-U"],
+      "expectAmbiguous": []
+    },
+    {
+      "id": "another-customer-never-matches-even-with-the-same-name",
+      "scope": { "customerId": "CUST-SHARED", "branch": "SUB-A" },
+      "customer": "CUST-SHARED",
+      "records": [
+        { "id": "R-F", "customerId": "CUST-OTHER", "subAccountName": "Exam Centre" }
+      ],
+      "expectMatched": [],
+      "expectAmbiguous": []
+    },
+    {
+      "id": "snake-case-branch-id-is-recognized",
+      "scope": { "customerId": "CUST-UNIQUE", "branch": "SUB-X" },
+      "customer": "CUST-UNIQUE",
+      "records": [
+        { "id": "R-S", "customer_id": "CUST-UNIQUE", "sub_account_id": "SUB-X" }
+      ],
+      "expectMatched": ["R-S"],
+      "expectAmbiguous": []
+    }
+  ],
+  "ownershipCases": [
+    {
+      "id": "main-payment-to-main-invoice-is-allowed",
+      "customer": "CUST-SHARED",
+      "payment": { "id": "PAY-1", "customerId": "CUST-SHARED" },
+      "invoice": { "id": "INV-1", "customerId": "CUST-SHARED" },
+      "expect": "ok"
+    },
+    {
+      "id": "main-payment-to-branch-invoice-is-refused",
+      "customer": "CUST-SHARED",
+      "payment": { "id": "PAY-2", "customerId": "CUST-SHARED" },
+      "invoice": { "id": "INV-2", "customerId": "CUST-SHARED", "subAccountId": "SUB-A" },
+      "expect": "ECROSS_ACCOUNT"
+    },
+    {
+      "id": "branch-payment-to-main-invoice-is-refused",
+      "customer": "CUST-SHARED",
+      "payment": { "id": "PAY-3", "customerId": "CUST-SHARED", "subAccountId": "SUB-A" },
+      "invoice": { "id": "INV-3", "customerId": "CUST-SHARED" },
+      "expect": "ECROSS_ACCOUNT"
+    },
+    {
+      "id": "sibling-branch-allocation-is-refused",
+      "customer": "CUST-SHARED",
+      "payment": { "id": "PAY-4", "customerId": "CUST-SHARED", "subAccountId": "SUB-A" },
+      "invoice": { "id": "INV-4", "customerId": "CUST-SHARED", "subAccountId": "SUB-B" },
+      "expect": "ECROSS_ACCOUNT"
+    },
+    {
+      "id": "cross-customer-allocation-is-refused-despite-identical-name",
+      "customer": "CUST-SHARED",
+      "payment": { "id": "PAY-5", "customerId": "CUST-SHARED", "subAccountId": "SUB-A" },
+      "invoice": { "id": "INV-5", "customerId": "CUST-OTHER", "subAccountId": "SUB-A", "subAccountName": "Exam Centre" },
+      "expect": "ECROSS_ACCOUNT"
+    },
+    {
+      "id": "shared-name-only-allocation-is-refused-as-ambiguous",
+      "customer": "CUST-SHARED",
+      "payment": { "id": "PAY-6", "customerId": "CUST-SHARED", "subAccountName": "Exam Centre" },
+      "invoice": { "id": "INV-6", "customerId": "CUST-SHARED", "subAccountName": "Exam Centre" },
+      "expect": "EAMBIGUOUS_SCOPE"
+    },
+    {
+      "id": "branch-not-owned-by-the-customer-is-refused",
+      "customer": "CUST-SHARED",
+      "payment": { "id": "PAY-7", "customerId": "CUST-SHARED", "subAccountId": "SUB-UNKNOWN" },
+      "invoice": { "id": "INV-7", "customerId": "CUST-SHARED", "subAccountId": "SUB-UNKNOWN" },
+      "expect": "EINVALID_SCOPE"
+    },
+    {
+      "id": "matching-unique-branch-by-id-is-allowed",
+      "customer": "CUST-SHARED",
+      "payment": { "id": "PAY-8", "customerId": "CUST-SHARED", "subAccountId": "SUB-C" },
+      "invoice": { "id": "INV-8", "customerId": "CUST-SHARED", "subAccountId": "SUB-C", "subAccountName": "Fees" },
+      "expect": "ok"
+    }
+  ],
+  "ledgerCases": [
+    {
+      "id": "main-ledger-excludes-branch-movements",
+      "customerId": "CUST-UNIQUE",
+      "customer": "CUST-UNIQUE",
+      "branch": null,
+      "invoices": [
+        { "id": "INV-MAIN", "customerId": "CUST-UNIQUE", "totalAmount": 100, "status": "Unpaid" },
+        { "id": "INV-X", "customerId": "CUST-UNIQUE", "subAccountId": "SUB-X", "subAccountName": "Fees", "totalAmount": 200, "status": "Unpaid" },
+        { "id": "INV-Y", "customerId": "CUST-UNIQUE", "subAccountId": "SUB-Y", "subAccountName": "Boarding", "totalAmount": 300, "status": "Unpaid" }
+      ],
+      "payments": [
+        { "id": "PAY-MAIN", "customerId": "CUST-UNIQUE", "amount": 50, "amountApplied": 50, "status": "Cleared" },
+        { "id": "PAY-X", "customerId": "CUST-UNIQUE", "subAccountId": "SUB-X", "subAccountName": "Fees", "amount": 20, "amountApplied": 20, "status": "Cleared" }
+      ],
+      "expectReferences": ["INV-MAIN", "PAY-MAIN"],
+      "expectOutstanding": 50
+    },
+    {
+      "id": "branch-ledger-excludes-main-and-sibling",
+      "customerId": "CUST-UNIQUE",
+      "customer": "CUST-UNIQUE",
+      "branch": "SUB-X",
+      "invoices": [
+        { "id": "INV-MAIN", "customerId": "CUST-UNIQUE", "totalAmount": 100, "status": "Unpaid" },
+        { "id": "INV-X", "customerId": "CUST-UNIQUE", "subAccountId": "SUB-X", "subAccountName": "Fees", "totalAmount": 200, "status": "Unpaid" },
+        { "id": "INV-Y", "customerId": "CUST-UNIQUE", "subAccountId": "SUB-Y", "subAccountName": "Boarding", "totalAmount": 300, "status": "Unpaid" }
+      ],
+      "payments": [
+        { "id": "PAY-MAIN", "customerId": "CUST-UNIQUE", "amount": 50, "amountApplied": 50, "status": "Cleared" },
+        { "id": "PAY-X", "customerId": "CUST-UNIQUE", "subAccountId": "SUB-X", "subAccountName": "Fees", "amount": 20, "amountApplied": 20, "status": "Cleared" }
+      ],
+      "expectReferences": ["INV-X", "PAY-X"],
+      "expectOutstanding": 180
+    },
+    {
+      "id": "branch-ledger-flags-a-shared-name-legacy-row-instead-of-absorbing-it",
+      "customerId": "CUST-SHARED",
+      "customer": "CUST-SHARED",
+      "branch": "SUB-A",
+      "invoices": [
+        { "id": "INV-A", "customerId": "CUST-SHARED", "subAccountId": "SUB-A", "subAccountName": "Exam Centre", "totalAmount": 10, "status": "Unpaid" },
+        { "id": "INV-LEGACY", "customerId": "CUST-SHARED", "subAccountName": "Exam Centre", "totalAmount": 75, "status": "Unpaid" }
+      ],
+      "payments": [],
+      "expectReferences": ["INV-A"],
+      "expectOutstanding": 10,
+      "expectAmbiguous": ["INV-LEGACY"]
+    }
+  ]
+}

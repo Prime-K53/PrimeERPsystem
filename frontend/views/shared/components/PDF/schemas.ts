@@ -228,6 +228,13 @@ export const StatementSchema = z.object({
   totalReceived: z.number(),
   finalBalance: z.number(),
   status: z.string().optional(),
+  // Account scope. A Main statement and a branch statement for the same
+  // customer + period are DIFFERENT documents. Persisted through the schema so
+  // the PDF/QR identifies the exact account — never just the customer name.
+  branchKey: z.string().optional(),
+  subAccountId: z.string().optional(),
+  branchLabel: z.string().optional(),
+  scopeAmbiguous: z.boolean().optional(),
 });
 
 // 6. Sales Exchange Schema

@@ -37,6 +37,7 @@ import {
     buildSupplierPaymentDoc
 } from '../../services/receiptCalculationService';
 import { createStatementSnapshot } from '../../services/statementService';
+import { mainAccountScope, recordMatchesScope, resolveAccountScope, validateAccountScope } from '../../services/customerAccountScope';
 import {
     downloadCsv,
     filterCustomerPayments,
@@ -351,7 +352,7 @@ const CustomerPaymentDetailPanel: React.FC<{
     onPurge: (id: string) => void;
     onEdit: (payment: CustomerPayment) => void;
     onPreview: (payment: CustomerPayment) => void;
-    onStatement: (customerId: string, customerName: string) => void;
+    onStatement: (customerId: string, customerName: string, branch?: string) => void;
 }> = ({ payment, onClose, onDelete, onPurge, onEdit, onPreview, onStatement }) => {
     const { companyConfig, notify } = useAuth();
     const { ledger, accounts } = useFinance();
@@ -706,7 +707,9 @@ const CustomerPaymentDetailPanel: React.FC<{
                     <button
                         onClick={() => {
                             if (payment.customerId) {
-                                onStatement(payment.customerId, payment.customerName);
+                                // Issue the statement for the payment's OWN account
+                                // scope, never the panel's currently selected scope.
+                                onStatement(payment.customerId, payment.customerName, payment.subAccountId || payment.subAccountName);
                             } else {
                                 notify("No customer ID", "warning");
                             }
@@ -1018,9 +1021,10 @@ const Payments: React.FC = () => {
                     data: parsed.data
                 });
             } else {
-                const currentBalance = tokenedPayment.customerId
-                    ? await paymentService.getCustomerOutstandingBalance(tokenedPayment.customerId)
-                    : 0;
+                // The receipt's notes state "Your account balance is …", so it must be the
+                // balance of THE ACCOUNT this payment was received for — never a
+                // sibling branch and never the parent when a branch was paid.
+                const currentBalance = await paymentService.getOutstandingBalanceForPayment(tokenedPayment);
 
                 const appliedOrders = (tokenedPayment as any).orderAllocations?.map((a: any) => a.orderId) || [];
                 const formattedData = buildCustomerReceiptDoc({
@@ -1056,7 +1060,7 @@ const Payments: React.FC = () => {
         }
     };
 
-    const handlePreviewStatement = async (customerId: string, customerName: string) => {
+    const handlePreviewStatement = async (customerId: string, customerName: string, branch?: string) => {
         try {
             // Use current month as default range
             const end = new Date();
@@ -1065,10 +1069,18 @@ const Payments: React.FC = () => {
             const startDate = start.toISOString().split('T')[0];
             const endDate = end.toISOString().split('T')[0];
 
-            const entries = await paymentService.getCustomerLedger(customerId, startDate, endDate);
+            // Resolve the account scope for the row the statement is issued from,
+            // WITH the parent customer so a branch name maps to its stable branch
+            // id. A Main statement must never pick up branch movements, and a
+            // branch statement must never merge Main/sibling movements.
+            const statementCustomer = (customers || []).find((c: any) => c.id === customerId) || null;
+            const statementScope = resolveAccountScope(customerId, branch || 'main', statementCustomer);
+            const scopeOpts = { scope: statementScope, customer: statementCustomer };
+
+            const entries = await paymentService.getCustomerLedger(customerId, startDate, endDate, scopeOpts);
 
             // Calculate opening balance (balance before the selected range)
-            const allEntriesBefore = await paymentService.getCustomerLedger(customerId, '1970-01-01', new Date(start.getTime() - 86400000).toISOString().split('T')[0]);
+            const allEntriesBefore = await paymentService.getCustomerLedger(customerId, '1970-01-01', new Date(start.getTime() - 86400000).toISOString().split('T')[0], scopeOpts);
             const openingBalance = allEntriesBefore.reduce((sum, e) => sum + (e.debit - e.credit), 0);
 
             let currentRunningBalance = openingBalance;
@@ -1095,6 +1107,11 @@ const Payments: React.FC = () => {
                 periodStart: startDate,
                 periodEnd: endDate,
                 currency,
+                // Canonical account scope — a Main and a branch statement for the
+                // same customer/period are distinct documents.
+                branchKey: statementScope.branchKey,
+                subAccountId: statementScope.branchId || undefined,
+                branchLabel: statementScope.isMain ? undefined : statementScope.branchLabel,
                 openingBalance,
                 transactions,
                 totalInvoiced: totalDebits,
@@ -1269,12 +1286,26 @@ const Payments: React.FC = () => {
                 const matchedCustomer = customer || customerById;
                 const customerName = matchedCustomer?.name || location.state.customer || '';
                 const customerId = matchedCustomer?.id || location.state.customerId || '';
+                // Resolve the routed branch to its STABLE id so the payment is
+                // posted to a specific branch even when only a name was routed.
+                const routeBranchRaw = String(location.state.subAccountId || location.state.branchKey || location.state.subAccount || '').trim();
+                // `subAccounts` holds objects ({ id, name, ... }) for current
+                // records and plain strings for legacy ones.
+                const routeBranchList = (matchedCustomer?.subAccounts || []) as any[];
+                const routeBranch: any = routeBranchList.find(
+                    (sa: any) => sa && typeof sa === 'object'
+                        ? (String(sa.id || '') === routeBranchRaw || String(sa.name || '') === routeBranchRaw)
+                        : String(sa || '') === routeBranchRaw
+                ) || null;
 
                 setFormData(prev => ({
                     ...prev,
                     customerName,
                     customerId,
-                    subAccountName: location.state.subAccount || 'Main',
+                    subAccountName: routeBranch?.name || location.state.subAccount || 'Main',
+                    subAccountId: routeBranch?.id
+                        ? String(routeBranch.id)
+                        : (location.state.subAccountId ? String(location.state.subAccountId) : undefined),
                     excessHandling: location.state.isTopUp ? 'Wallet' : 'Change',
                     notes: location.state.isTopUp ? `Wallet Top-up for ${location.state.subAccount || 'Main'}` : (location.state.isExamInvoice ? `Payment for Examination Invoice ${location.state.invoiceId}` : location.state.orderId ? `Payment for Order ${location.state.orderId}` : ''),
                     amount: location.state.isExamInvoice ? location.state.amount : 0
@@ -1413,6 +1444,19 @@ const Payments: React.FC = () => {
                 return;
             }
 
+            // Account-scope gate. Mirrors the authoritative ownership check
+            // inside transactionService.addCustomerPayment — the UI must not
+            // submit a payment against a branch that does not belong to the
+            // selected customer (or a name shared by several branches).
+            if (formData.customerId && paymentScope && !paymentScope.isMain) {
+                const scopeCheck = validateAccountScope(paymentScope, selectedCustomerRecord);
+                if (!scopeCheck.ok) {
+                    notify(`Invalid branch selection: ${scopeCheck.reason}`, "error");
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
+
             let finalAllocations = [...allocations];
             const paymentAmount = Number(formData.amount);
 
@@ -1460,6 +1504,12 @@ const Payments: React.FC = () => {
                 paymentMethod: formData.paymentMethod!,
                 status: formData.status,
                 reconciled: formData.reconciled || false,
+                // Persist BOTH the stable branch id (authoritative identity) and
+                // the display label. A stable id is required for a branch scope.
+                subAccountName: selectedSubAccount?.name || formData.subAccountName || 'Main',
+                subAccountId: selectedSubAccount?.id
+                    ? String(selectedSubAccount.id)
+                    : (formData.subAccountId || undefined),
                 excessAmount: excessAmount > 0 ? excessAmount : undefined,
                 excessHandling: excessAmount > 0 ? formData.excessHandling : undefined,
                 orderAllocations: orderAllocations.map(a => ({ orderId: a.orderId!, amount: a.amount }))
@@ -1479,7 +1529,8 @@ const Payments: React.FC = () => {
                     status: formData.status || existing.status,
                     reconciled: formData.reconciled ?? existing.reconciled,
                     bankCharges: formData.bankCharges ?? existing.bankCharges,
-                    subAccountName: formData.subAccountName || existing.subAccountName
+                    subAccountName: formData.subAccountName || existing.subAccountName,
+                    subAccountId: formData.subAccountId || existing.subAccountId
                 };
 
                 await updateCustomerPayment(metadataOnlyUpdate);
@@ -1553,81 +1604,92 @@ const Payments: React.FC = () => {
         );
     }, [customers, customerSearchTerm]);
 
+    const selectedCustomerRecord = useMemo(
+        () => (customers || []).find((c: any) => c.id === formData.customerId) || null,
+        [customers, formData.customerId]
+    );
+
+    // The currently selected branch, resolved to its STABLE id. The id — not the
+    // display name — is the account identity persisted on the payment.
+    const selectedSubAccount = useMemo(() => {
+        const subs = selectedCustomerRecord?.subAccounts;
+        if (!Array.isArray(subs) || !formData.subAccountName || formData.subAccountName === 'Main' || formData.subAccountName === 'main') {
+            return null;
+        }
+        return (subs as any[]).find(
+            (sa: any) => sa && (String(sa.id || '') === String(formData.subAccountName) || String(sa.name || '') === String(formData.subAccountName))
+        ) || null;
+    }, [selectedCustomerRecord, formData.subAccountName]);
+
+    // Centralized account scope, resolved WITH the parent customer so a branch
+    // name maps to its stable id and same-named branches are detected.
+    const paymentScope = useMemo(() => {
+        if (!formData.customerId) return null;
+        return resolveAccountScope(
+            formData.customerId,
+            formData.subAccountId || formData.subAccountName || 'main',
+            selectedCustomerRecord,
+        );
+    }, [formData.customerId, formData.subAccountId, formData.subAccountName, selectedCustomerRecord]);
+
     const availableInvoices = useMemo(() => {
-        if (!formData.customerName) return [];
+        if (!formData.customerId || !paymentScope) return [];
 
-        // Filter invoices by customer and sub-account
+        // Exact account scope: customer ID + branch. Main NEVER includes
+        // branch rows; a branch NEVER includes Main/sibling rows. Names are
+        // display-only and never match.
         const baseInvoices = invoices.filter(i => {
-            // Check customer name match
-            const customerMatch = i.customerName === formData.customerName;
-
-            // Check sub-account match
-            const subAccountMatch = !formData.subAccountName ||
-                formData.subAccountName === 'Main' ||
-                i.subAccountName === formData.subAccountName;
-
-            // Check status
+            const customerMatch = !!i.customerId && i.customerId === formData.customerId;
+            if (!customerMatch) return false;
+            const subAccountMatch = recordMatchesScope(i as any, paymentScope, selectedCustomerRecord);
             const statusMatch = i.status !== 'Paid' &&
                 i.status !== 'Draft' &&
                 i.status !== 'Cancelled' &&
                 i.status !== 'Void';
-
-            return customerMatch && subAccountMatch && statusMatch;
+            return subAccountMatch && statusMatch;
         });
 
-        // Inject exam invoice if applicable (only if it matches sub-account context)
-        if (location.state?.isExamInvoice && formData.customerName === location.state.customer) {
+        // Inject exam invoice only when it belongs to the SAME account scope.
+        if (location.state?.isExamInvoice && paymentScope) {
             const examInvoiceId = location.state.invoiceId;
             if (!baseInvoices.find(i => i.id === examInvoiceId)) {
-                // Check if exam invoice should be included based on sub-account
-                const shouldIncludeExam = !formData.subAccountName ||
-                    formData.subAccountName === 'Main' ||
-                    location.state.subAccount === formData.subAccountName;
-
-                if (shouldIncludeExam) {
-                    baseInvoices.push({
-                        id: examInvoiceId,
-                        customerName: location.state.customer,
-                        totalAmount: location.state.amount,
-                        paidAmount: 0,
-                        status: 'Unpaid',
-                        date: new Date().toISOString(),
-                        dueDate: new Date().toISOString(),
-                        items: [],
-                        subAccountName: location.state.subAccount || 'Main'
-                    } as Invoice);
+                const examRow: any = {
+                    id: examInvoiceId,
+                    customerId: formData.customerId,
+                    customerName: formData.customerName,
+                    totalAmount: location.state.amount,
+                    paidAmount: 0,
+                    status: 'Unpaid',
+                    date: new Date().toISOString(),
+                    dueDate: new Date().toISOString(),
+                    items: [],
+                    subAccountName: location.state.subAccount || 'Main',
+                    subAccountId: location.state.subAccountId ? String(location.state.subAccountId) : undefined,
+                };
+                if (recordMatchesScope(examRow, paymentScope, selectedCustomerRecord)) {
+                    baseInvoices.push(examRow as Invoice);
                 }
             }
         }
         return baseInvoices;
-    }, [invoices, formData.customerName, formData.subAccountName, location.state]);
+    }, [invoices, formData.customerId, formData.customerName, paymentScope, selectedCustomerRecord, location.state]);
 
     /**
      * Orders that can still be settled by a customer payment.
      *
-     * Eligibility is status-aware via `isOrderPaymentEligible`. The previous
-     * `o.status === 'Processing'` literal was the regression: `orders` comes
-     * from `useOrders()`, which serves the legacy projection of canonical sales
-     * orders, and that projection rewrites `status` to 'Paid' / 'Partially Paid'
-     * / 'Converted' as soon as an order is invoiced or partially paid. Matching
-     * the literal therefore hid almost every genuinely payable order.
-     *
-     * Customer matching accepts either the id or the display name so an order
-     * saved under the legacy customer name still matches the picker, which
-     * stores the business display name.
+     * Eligibility is status-aware via `isOrderPaymentEligible`. Matching is
+     * ID-only + exact account scope: names never match, Main never includes
+     * branch orders.
      */
     const availableOrders = useMemo(() => {
-        if (!formData.customerName && !formData.customerId) return [];
+        if (!formData.customerId || !paymentScope) return [];
 
         return orders.filter(o => {
-            const customerMatch = (!!formData.customerId && o.customerId === formData.customerId)
-                || o.customerName === formData.customerName;
-            const subAccountMatch = !formData.subAccountName ||
-                formData.subAccountName === 'Main' ||
-                o.subAccountName === formData.subAccountName;
-            return customerMatch && subAccountMatch && isOrderPaymentEligible(o);
+            if (!(o as any).customerId || (o as any).customerId !== formData.customerId) return false;
+            const subAccountMatch = recordMatchesScope(o as any, paymentScope, selectedCustomerRecord);
+            return subAccountMatch && isOrderPaymentEligible(o);
         });
-    }, [orders, formData.customerId, formData.customerName, formData.subAccountName]);
+    }, [orders, formData.customerId, paymentScope, selectedCustomerRecord]);
 
     const handleAutoAllocate = () => {
         let remaining = Number(formData.amount);
@@ -1978,7 +2040,7 @@ const Payments: React.FC = () => {
                                                                     type="button"
                                                                     onMouseDown={e => {
                                                                         e.preventDefault();
-                                                                        setFormData({ ...formData, customerName: getCustomerOptionLabel(c), customerId: c.id, subAccountName: 'Main' });
+                                                                        setFormData({ ...formData, customerName: getCustomerOptionLabel(c), customerId: c.id, subAccountName: 'main', subAccountId: undefined });
                                                                         setAllocations([]);
                                                                         setCustomerSearchTerm('');
                                                                         setShowCustomerDropdown(false);
@@ -2002,7 +2064,7 @@ const Payments: React.FC = () => {
                                                                     type="button"
                                                                     onMouseDown={e => {
                                                                         e.preventDefault();
-                                                                        setFormData({ ...formData, customerName: customerSearchTerm.trim(), customerId: '' });
+                                                                        setFormData({ ...formData, customerName: customerSearchTerm.trim(), customerId: '', subAccountName: 'main', subAccountId: undefined });
                                                                         setAllocations([]);
                                                                         setCustomerSearchTerm('');
                                                                         setShowCustomerDropdown(false);
@@ -2017,8 +2079,8 @@ const Payments: React.FC = () => {
                                                         </div>
                                                     )}
                                                 </div>
-                                                {formData.customerName && (() => {
-                                                    const cust = customers.find((c: any) => c.name === formData.customerName);
+                                                {formData.customerId && (() => {
+                                                    const cust = customers.find((c: any) => c.id === formData.customerId);
                                                     const bal = cust?.walletBalance || 0;
                                                     return bal > 0 ? (
                                                         <p style={{ fontSize:11, fontWeight:700, color:'#146b60', marginTop:6, display:'flex', alignItems:'center', gap:6, background:'#d3ece9', padding:'4px 8px', borderRadius:6 }}>
@@ -2028,20 +2090,30 @@ const Payments: React.FC = () => {
                                                 })()}
                                             </div>
 
-                                            {formData.customerName && customers.find(c => c.name === formData.customerName)?.subAccounts?.length > 0 && (
+                                            {formData.customerId && customers.find(c => c.id === formData.customerId)?.subAccounts?.length > 0 && (
                                                 <div>
                                                     <div style={{ fontSize:10, fontWeight:600, color:'#5c6567', marginBottom:4, display:'flex', alignItems:'center', gap:4 }}>
                                                         <Building2 size={11} style={{color:'#1f8577'}} /> Credit Sub-Account
                                                     </div>
                                                     <select
                                                         style={{ width:'100%', height:34, padding:'0 8px', border:'1.4px solid #a6d9d3', borderRadius:7, fontSize:12, fontWeight:600, background:'#FEFDFB', color:'#23282A', fontFamily:'inherit', outline:'none' }}
-                                                        value={formData.subAccountName}
+                                                        value={formData.subAccountId || formData.subAccountName || 'main'}
                                                         disabled={editMode}
-                                                        onChange={e => setFormData({ ...formData, subAccountName: e.target.value })}
+                                                        onChange={e => {
+                                                            const raw = e.target.value;
+                                                            const subs = (selectedCustomerRecord?.subAccounts || []) as any[];
+                                                            const matched = subs.find((sa: any) => sa && (String(sa.id || '') === raw || String(sa.name || '') === raw));
+                                                            setFormData({
+                                                                ...formData,
+                                                                subAccountName: matched?.name || (raw === 'main' ? 'Main' : raw),
+                                                                subAccountId: matched?.id ? String(matched.id) : undefined,
+                                                            });
+                                                            setAllocations([]);
+                                                        }}
                                                     >
-                                                        <option value="Main">Main Account</option>
-                                                        {customers.find(c => c.name === formData.customerName)?.subAccounts.map((sa: any) => (
-                                                            <option key={sa.id || sa.name} value={sa.name}>{sa.name}</option>
+                                                        <option value="main">Main Account</option>
+                                                        {(selectedCustomerRecord?.subAccounts || []).map((sa: any) => (
+                                                            <option key={String(sa?.id || sa?.name)} value={String(sa?.id || sa?.name)}>{sa?.name}</option>
                                                         ))}
                                                     </select>
                                                     <p style={{ fontSize:10, color:'#5c6567', marginTop:3 }}>Choose which sub-account to credit this payment to.</p>
@@ -2460,7 +2532,7 @@ const Payments: React.FC = () => {
                                                                 onClick={async (e) => {
                                                                     e.stopPropagation();
                                                                     if (payment.customerId) {
-                                                                        handlePreviewStatement(payment.customerId, payment.customerName);
+                                                                        handlePreviewStatement(payment.customerId, payment.customerName, payment.subAccountId || payment.subAccountName);
                                                                     } else {
                                                                         notify("Cannot generate statement: No customer ID linked", "warning");
                                                                     }
@@ -2924,7 +2996,9 @@ const Payments: React.FC = () => {
                     setFormData({
                         date: p.date,
                         customerName: p.customerName,
+                        customerId: p.customerId,
                         subAccountName: p.subAccountName || 'Main',
+                        subAccountId: p.subAccountId,
                         amount: p.amount,
                         paymentMethod: p.paymentMethod,
                          accountId: p.accountId || (p.paymentMethod === 'Cash' ? '11110' : (p.paymentMethod === 'Mobile Money' ? ACCOUNT_IDS.MOBILE_MONEY : '11210')),
@@ -2942,7 +3016,7 @@ const Payments: React.FC = () => {
                     setSelectedPayment(null);
                 }}
                 onPreview={handlePreviewReceipt}
-                onStatement={(cid, cname) => handlePreviewStatement(cid, cname)}
+                onStatement={(cid, cname, branch) => handlePreviewStatement(cid, cname, branch)}
             />
             <SupplierDetailPanel
                 payment={selectedSupplierPayment}

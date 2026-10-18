@@ -264,6 +264,39 @@ describe('examinationBatchService offline support (single write path)', () => {
     expect(enqueuedOps).toHaveLength(1);
   });
 
+  it('updateBatch enqueues the FULL record, never the caller partial patch', async () => {
+    seedOfflineBatches([
+      {
+        id: 'batch-full-1',
+        school_id: 'SCH-1',
+        academic_year: '2026',
+        name: 'Full Record Batch',
+        status: 'Draft',
+        classes: [{ id: 'c1', className: 'P1', learners: 40, finalFee: 100 }],
+        subjects: [],
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+
+    const updated = await examinationBatchService.updateBatch('batch-full-1', { notes: 'Reviewed by accountant' } as never);
+
+    expect((updated as any).notes).toBe('Reviewed by accountant');
+    expect(enqueuedOps).toHaveLength(1);
+    const payload = enqueuedOps[0].payload as Record<string, any>;
+    // Regression: enqueuing the caller's partial patch let the server's
+    // wholesale `data` replace drop every omitted field — a two-field edit
+    // could erase classes/pricing on other devices.
+    expect(payload.notes).toBe('Reviewed by accountant');
+    expect(payload.school_id).toBe('SCH-1');
+    expect(payload.name).toBe('Full Record Batch');
+    expect(payload.status).toBe('Draft');
+    expect(Array.isArray(payload.classes)).toBe(true);
+    expect(payload.classes[0].className).toBe('P1');
+    expect(payload.id).toBe('batch-full-1');
+    expect(payload._syncStatus).toBe('pending');
+  });
+
   it('uses the localStorage-backed cache when IndexedDB is unavailable', async () => {
     shouldFailFetch = true;
     Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true });

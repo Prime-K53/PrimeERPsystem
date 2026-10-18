@@ -179,6 +179,7 @@ const initDb = () => {
         customer_id TEXT,
         school_name TEXT,
         sub_account_name TEXT,
+        sub_account_id TEXT,
         class TEXT,
         subject TEXT,
         pages INTEGER,
@@ -213,6 +214,7 @@ const initDb = () => {
         customer_id TEXT,
         customer_name TEXT,
         sub_account_name TEXT,
+        sub_account_id TEXT,
         subtotal REAL DEFAULT 0,
         total_amount REAL,
         paid_amount REAL DEFAULT 0,
@@ -300,6 +302,7 @@ const initDb = () => {
         customer_id TEXT,
         customer_name TEXT,
         sub_account_name TEXT,
+        sub_account_id TEXT,
         total_amount REAL DEFAULT 0 CHECK (total_amount >= 0),
         material_total REAL DEFAULT 0 CHECK (material_total >= 0),
         adjustment_total REAL DEFAULT 0 CHECK (adjustment_total >= 0),
@@ -328,6 +331,7 @@ const initDb = () => {
               const existingColumns = new Set(rows.map(r => r.name));
               const columnsToAdd = [
                 { name: 'sub_account_name', type: 'TEXT' },
+                { name: 'sub_account_id', type: 'TEXT' },
                 { name: 'material_total', type: 'REAL DEFAULT 0' },
                 { name: 'adjustment_total', type: 'REAL DEFAULT 0' },
                 { name: 'profit_margin_total', type: 'REAL DEFAULT 0' },
@@ -1095,7 +1099,19 @@ const initDb = () => {
         // user → at most one portal_users row (UNIQUE enforced on fresh DBs
         // via CREATE TABLE; existing DBs gain the column without backfill).
         // No FK to auth.users. No tenant/company dimension.
-        { table: 'portal_users', column: 'auth_user_id', type: 'TEXT' }
+        { table: 'portal_users', column: 'auth_user_id', type: 'TEXT' },
+        // ── Customer Branch Financial Isolation ──────────────────────────────
+        // Stable branch identity (the branch's embedded id). A branch row is
+        // identified by this id, NEVER by its display name — two branches of
+        // the same customer may share a name. Existing rows are NOT backfilled
+        // automatically: the business tags them explicitly.
+        { table: 'invoices', column: 'sub_account_id', type: 'TEXT' },
+        { table: 'sales', column: 'sub_account_id', type: 'TEXT' },
+        { table: 'sales_orders', column: 'sub_account_id', type: 'TEXT' },
+        { table: 'examinations', column: 'sub_account_id', type: 'TEXT' },
+        { table: 'examination_batches', column: 'sub_account_id', type: 'TEXT' },
+        { table: 'customer_payments', column: 'sub_account_name', type: 'TEXT' },
+        { table: 'customer_payments', column: 'sub_account_id', type: 'TEXT' }
       ];
 
       // Process migrations: add missing columns to existing tables
@@ -1114,7 +1130,12 @@ const initDb = () => {
             }
           });
         });
-      }); // ==================== REFERRAL MODULE ====================
+      });
+
+      // Align `customer_payments` with EVERY reader of the payment method.
+      migrateCustomerPaymentMethodColumn(db);
+
+      // ==================== REFERRAL MODULE ====================
       db.run(`CREATE TABLE IF NOT EXISTS customer_referrals (
         id TEXT PRIMARY KEY,
         customer_id TEXT NOT NULL,
@@ -1990,7 +2011,7 @@ const initDb = () => {
         customer_name TEXT NOT NULL,
         amount REAL NOT NULL DEFAULT 0,
         date TEXT NOT NULL,
-        method TEXT DEFAULT 'Cash',
+        payment_method TEXT DEFAULT 'Cash',
         account_id TEXT,
         reference TEXT,
         allocations_json TEXT,
@@ -2799,10 +2820,59 @@ function resetDatabase() {
   return db;
 }
 
+/**
+ * Align the legacy `customer_payments` payment-method column with every reader.
+ *
+ * PROVEN mismatch (read-only inspection of the live legacy SQLite store):
+ *   * `customer_payments.method`             — the only column that existed
+ *   * `customerPaymentQuery.js` filter       — `WHERE payment_method = ?` → SQLITE_ERROR
+ *   * `POST /api/customer-payments` INSERT   — `payment_method`            → SQLITE_ERROR
+ *   * sibling tables `invoices` / `sales`    — `payment_method`
+ * so `POST /api/customer-payments` and `GET /api/customer-payments?method=…`
+ * both failed with "no such column: payment_method".
+ *
+ * `ALTER TABLE … RENAME COLUMN` preserves any stored value verbatim and the
+ * live table is empty, so this is lossless. It is idempotent: it only acts when
+ * the old column is present AND the new one is absent. Nothing is deleted.
+ *
+ * @param {object} dbHandle  a sqlite3 Database handle (injected so this is
+ *                          testable against an isolated database)
+ * @returns {Promise<'renamed'|'already-correct'|'skipped'>}
+ */
+function migrateCustomerPaymentMethodColumn(dbHandle, log = console) {
+  return new Promise((resolve) => {
+    if (!dbHandle || typeof dbHandle.all !== 'function') {
+      resolve('skipped');
+      return;
+    }
+    dbHandle.all('PRAGMA table_info(customer_payments)', (err, rows) => {
+      if (err || !Array.isArray(rows) || rows.length === 0) {
+        resolve('skipped');
+        return;
+      }
+      const names = new Set(rows.map((r) => r.name));
+      if (!names.has('method') || names.has('payment_method')) {
+        resolve('already-correct');
+        return;
+      }
+      dbHandle.run('ALTER TABLE customer_payments RENAME COLUMN method TO payment_method', (renameErr) => {
+        if (renameErr) {
+          if (log && log.error) log.error('[DB] customer_payments: rename method → payment_method failed:', renameErr.message);
+          resolve('skipped');
+          return;
+        }
+        if (log && log.log) log.log('[DB] customer_payments: renamed column method → payment_method');
+        resolve('renamed');
+      });
+    });
+  });
+}
+
 module.exports = {
   get db() { return getDatabase(); },
   initDb,
   getDatabase,
   reinitializeDatabase,
-  resetDatabase
+  resetDatabase,
+  migrateCustomerPaymentMethodColumn
 };

@@ -67,6 +67,7 @@ export interface ExaminationGeneratedInvoicePayload {
   applyRounding?: boolean;
   documentTitle?: string;
   subAccountName?: string;
+  subAccountId?: string;
   notes?: string;
   reference?: string;
   currency?: string;
@@ -111,6 +112,37 @@ const assertBatchMutable = (
   if (isBatchPricingLocked(batch)) {
     throw new Error(
       `Cannot ${action}: batch ${String(batch?.batch_number || batch?.id || '')} is ${String(batch?.status || '')} — approved pricing is immutable`
+    );
+  }
+};
+
+/**
+ * Forward-only status ladder, mirrored from the gateway guard
+ * (backend/services/examinationSyncGuards.cjs ALLOWED_PREDECESSOR_STATUSES) so
+ * the client rejects the same transitions the server would reject atomically.
+ */
+const BATCH_STATUS_LADDER: Record<string, string[]> = {
+  draft: ['draft'],
+  calculated: ['draft', 'calculated'],
+  approved: ['draft', 'calculated', 'approved'],
+  invoiced: ['approved', 'invoiced'],
+  completed: ['approved', 'invoiced', 'completed'],
+  paid: ['invoiced', 'completed', 'paid']
+};
+
+const assertBatchStatusTransition = (
+  batch: Partial<ExaminationBatch> & Record<string, any>,
+  nextStatus: unknown
+): void => {
+  const from = batchStatusKey(batch);
+  const to = String(nextStatus == null ? '' : nextStatus).trim().toLowerCase();
+  const allowed = BATCH_STATUS_LADDER[to];
+  if (!allowed) {
+    throw new Error(`Unknown examination batch status "${String(nextStatus)}"`);
+  }
+  if (!allowed.includes(from)) {
+    throw new Error(
+      `Cannot move batch ${String(batch?.batch_number || batch?.id || '')} from ${from || 'unknown'} to ${to} — invalid transition`
     );
   }
 };
@@ -717,7 +749,8 @@ const buildLocalBomRows = async (batch: Partial<ExaminationBatch> & Record<strin
 
 const buildLocalInvoicePayload = async (
   batch: Partial<ExaminationBatch> & Record<string, any>,
-  payload?: { idempotencyKey?: string; invoiceNumber?: string }
+  payload?: { idempotencyKey?: string; invoiceNumber?: string },
+  snapshot?: Record<string, any> | null
 ): Promise<ExaminationGeneratedInvoicePayload> => {
   // ONE canonical identity: the payload id IS the invoice number.
   // Never mint an opaque `local-exam-invoice-*` id — it is not a valid key in
@@ -755,16 +788,39 @@ const buildLocalInvoicePayload = async (
   );
 
   const classes = Array.isArray(batch.classes) ? batch.classes : [];
+
+  // Invoice amounts derive from the APPROVED SNAPSHOT, never from the live class
+  // rows. That is what makes "approved pricing is immutable" true: the snapshot
+  // IS the committed pricing decision, so neither a drifting device nor a stale
+  // device that never learned of the approval can change what was billed by
+  // editing `live_total_preview` on a class.
+  const snapshotResult = (snapshot && typeof snapshot === 'object' && snapshot.result && typeof snapshot.result === 'object')
+    ? (snapshot.result as Record<string, any>)
+    : null;
+  const snapshotClasses = new Map<string, Record<string, any>>(
+    (Array.isArray(snapshotResult?.classes) ? (snapshotResult?.classes as Array<Record<string, any>>) : [])
+      .map((row) => [String(row?.classId || ''), row] as [string, Record<string, any>])
+      .filter(([key]) => key !== '')
+  );
+
   const items: ExaminationInvoiceLineItem[] = classes.map((cls: any, index: number) => {
-    const learners = Math.max(1, Math.floor(Number(cls?.number_of_learners) || 0));
-    const unitPrice = Number(cls?.final_fee_per_learner ?? cls?.expected_fee_per_learner ?? cls?.price_per_learner ?? 0) || 0;
-    const total = Number(cls?.live_total_preview ?? (unitPrice * learners)) || 0;
+    const frozen = snapshotClasses.get(String(cls?.id || '')) || null;
+    const learners = Math.max(1, Math.floor(Number(frozen?.learners ?? cls?.number_of_learners) || 0));
+    const unitPrice = Number(
+      frozen?.finalFee
+      ?? frozen?.expectedFee
+      ?? cls?.final_fee_per_learner
+      ?? cls?.expected_fee_per_learner
+      ?? cls?.price_per_learner
+      ?? 0
+    ) || 0;
+    const total = Number(frozen?.liveTotal ?? (unitPrice * learners)) || 0;
     return {
       id: String(cls?.id || `${invoiceId}-${index + 1}`),
       itemId: String(cls?.id || `${invoiceId}-${index + 1}`),
-      name: String(cls?.class_name || `Class ${index + 1}`),
+      name: String(frozen?.className || cls?.class_name || `Class ${index + 1}`),
       sku: `EXM-${String(cls?.id || index + 1)}`,
-      description: String(cls?.class_name || `Class ${index + 1}`),
+      description: String(frozen?.className || cls?.class_name || `Class ${index + 1}`),
       category: 'Examination',
       type: 'Service',
       unit: 'learner',
@@ -772,11 +828,41 @@ const buildLocalInvoicePayload = async (
       stock: 0,
       reserved: 0,
       price: Number(unitPrice.toFixed(2)),
-      cost: Number((Number(cls?.material_total_cost ?? 0) / learners).toFixed(2)),
+      cost: Number((Number(frozen?.bomCost ?? cls?.material_total_cost ?? 0) / learners).toFixed(2)),
       quantity: learners,
       total: Number(total.toFixed(2))
     };
   });
+
+  // An approved class missing from the live list would silently drop revenue
+  // from the invoice. Fail loudly rather than under-billing.
+  if (snapshotClasses.size > classes.length) {
+    const liveIds = new Set(classes.map((cls: any) => String(cls?.id || '')));
+    const orphaned = Array.from(snapshotClasses.keys()).filter((key) => !liveIds.has(key));
+    if (orphaned.length > 0) {
+      throw new Error(
+        `Cannot invoice: ${orphaned.length} approved class(es) are missing from this batch `
+        + '(the approved snapshot is authoritative). Restore them or void the approval first.'
+      );
+    }
+  }
+
+  const snapshotTotal = Number(snapshotResult?.totalAmount);
+  const snapshotMaterialTotal = Number(snapshotResult?.materialTotal);
+  const snapshotAdjustmentTotal = Number(snapshotResult?.adjustmentTotal);
+  const itemsTotal = items.reduce((sum, row) => sum + row.total, 0);
+  const hasSnapshotTotal = Number.isFinite(snapshotTotal) && snapshotTotal > 0;
+  const roundingDifference = Array.from(snapshotClasses.values())
+    .reduce((sum, row) => sum + (Number(row?.roundingAdjustment) || 0), 0);
+
+  const totalAmount = hasSnapshotTotal ? snapshotTotal : Number(batch.total_amount ?? itemsTotal);
+  const materialTotal = Number.isFinite(snapshotMaterialTotal)
+    ? snapshotMaterialTotal
+    : Number(batch.material_total ?? 0) || 0;
+  const adjustmentTotal = Number.isFinite(snapshotAdjustmentTotal)
+    ? snapshotAdjustmentTotal
+    : Number(batch.adjustment_total ?? 0) || 0;
+  const preRoundingTotalAmount = Number((totalAmount - roundingDifference).toFixed(2));
 
   return {
     id: invoiceId,
@@ -786,8 +872,8 @@ const buildLocalInvoicePayload = async (
     dueDate: new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString(),
     customerId: schoolId,
     customerName: schoolName,
-    subtotal: Number(batch.pre_rounding_total_amount ?? batch.total_amount ?? items.reduce((sum, row) => sum + row.total, 0)),
-    totalAmount: Number(batch.total_amount ?? items.reduce((sum, row) => sum + row.total, 0)),
+    subtotal: preRoundingTotalAmount,
+    totalAmount,
     paidAmount: 0,
     status: 'Unpaid',
     items,
@@ -796,18 +882,29 @@ const buildLocalInvoicePayload = async (
     academicYear: batch.academic_year,
     term: batch.term,
     examType: batch.exam_type,
-    classBreakdown: classes.map((cls: any) => ({
-      className: String(cls?.class_name || 'Class'),
-      subjects: Array.isArray(cls?.subjects) ? cls.subjects.map((subject: any) => String(subject?.subject_name || subject?.name || 'Subject')) : [],
-      totalCandidates: Math.max(0, Math.floor(Number(cls?.number_of_learners) || 0)),
-      chargePerLearner: Number(cls?.final_fee_per_learner ?? cls?.expected_fee_per_learner ?? 0) || 0,
-      classTotal: Number(cls?.live_total_preview ?? 0) || 0
-    })),
-    materialTotal: Number(batch.material_total ?? 0) || 0,
-    adjustmentTotal: Number(batch.adjustment_total ?? 0) || 0,
-    preRoundingTotalAmount: Number(batch.pre_rounding_total_amount ?? batch.total_amount ?? 0) || 0,
-    roundingDifference: 0,
-    roundingMethod: 'nearest_50',
+    classBreakdown: classes.map((cls: any, index: number) => {
+      const frozen = snapshotClasses.get(String(cls?.id || '')) || null;
+      const learners = Math.max(1, Math.floor(Number(frozen?.learners ?? cls?.number_of_learners) || 0));
+      const chargePerLearner = Number(
+        frozen?.finalFee ?? frozen?.expectedFee ?? cls?.final_fee_per_learner ?? cls?.expected_fee_per_learner ?? 0
+      ) || 0;
+      return {
+        className: String(frozen?.className || cls?.class_name || `Class ${index + 1}`),
+        subjects: Array.isArray(cls?.subjects) ? cls.subjects.map((subject: any) => String(subject?.subject_name || subject?.name || 'Subject')) : [],
+        totalCandidates: learners,
+        chargePerLearner,
+        classTotal: Number(frozen?.liveTotal ?? (chargePerLearner * learners)) || 0
+      };
+    }),
+    materialTotal,
+    adjustmentTotal,
+    preRoundingTotalAmount,
+    roundingDifference,
+    roundingMethod: String(
+      (snapshot && typeof snapshot === 'object' && (snapshot.inputs as any)?.roundingMethod)
+      || batch.rounding_method
+      || 'ALWAYS_UP_50'
+    ),
     applyRounding: true,
     documentTitle: 'Examination Service Invoice',
     notes: `Generated offline from batch ${String(batch.batch_number || batch.batchNumber || batch.id || '')}`,
@@ -882,18 +979,19 @@ export const examinationBatchService = {
   async updateBatch(id: string, payload: Partial<ExaminationBatch>): Promise<ExaminationBatch> {
     const local = await getLocalBatches();
     const existing = local.find(batch => String(batch.id) === String(id)) || {};
-    const updated = normalizeBatchForStorage({
-      ...existing,
-      ...payload,
-      id
-    }, {
-      _offline: true,
-      _syncStatus: 'pending',
-      _lastModifiedAt: toIso()
-    });
-    await storeLocalBatch(updated);
-    await enqueueOutbox('examinationBatch:update', String(id), payload as any);
-    return updated as ExaminationBatch;
+    // A caller-supplied `status` used to overwrite the state machine outright,
+    // which let any generic caller drive a batch into (or out of) a locked state
+    // without ever going through approve/invoice. Status is now advanced only by
+    // those transitions, and only in the forward direction.
+    const { status: _requestedStatus, ...safePayload } = (payload || {}) as Record<string, any>;
+    if (_requestedStatus !== undefined && batchStatusKey(existing as any) !== batchStatusKey(_requestedStatus)) {
+      assertBatchStatusTransition(existing as any, _requestedStatus);
+    }
+    // Route through the canonical local writer so the enqueued cloud op carries
+    // the FULL record plus `_version`. Enqueuing the caller's partial patch let
+    // the server's wholesale `data` replace drop every omitted field, which is
+    // how a two-field edit could erase classes/pricing on other devices.
+    return (await updateLocalBatch(id, (fresh) => ({ ...fresh, ...safePayload }))) as ExaminationBatch;
   },
 
   async deleteBatch(id: string): Promise<void> {
@@ -1226,14 +1324,13 @@ export const examinationBatchService = {
       );
     }
     const { snapshot, calculationVersion } = await ensureApprovedSnapshot(String((localBatch as any).id || id));
-    void snapshot;
     const updatedBatch = await updateLocalBatch(String((localBatch as any).id || id), (current: any) => ({
       ...current,
       status: 'Invoiced',
       approved_calculation_version: calculationVersion,
       invoiced_calculation_version: calculationVersion
     }));
-    const invoicePayload = await buildLocalInvoicePayload(updatedBatch as any, payload);
+    const invoicePayload = await buildLocalInvoicePayload(updatedBatch as any, payload, snapshot);
     (invoicePayload as Record<string, any>).calculationVersion = calculationVersion;
     await traceExamInvoice('generate', {
       id: invoicePayload.id,
@@ -1273,7 +1370,6 @@ export const examinationBatchService = {
     const previousInvoiceId = String((localBatch as any)?.invoice_id || '').trim() || null;
     // Regeneration reissues the SAME approved calculation — never reprices.
     const { snapshot, calculationVersion } = await ensureApprovedSnapshot(String((localBatch as any).id || id));
-    void snapshot;
     const updatedBatch = await updateLocalBatch(String((localBatch as any).id || id), (current: any) => ({
       ...current,
       status: 'Invoiced',
@@ -1283,7 +1379,7 @@ export const examinationBatchService = {
     const invoicePayload = await buildLocalInvoicePayload(updatedBatch as any, {
       idempotencyKey: payload?.idempotencyKey || `EXAM-BATCH-${String((localBatch as any).id || id)}-REGEN-${Date.now()}`,
       invoiceNumber: payload?.invoiceNumber
-    });
+    }, snapshot);
     invoicePayload.notes = `${invoicePayload.notes || ''} (regenerated${payload?.reason ? `: ${payload.reason}` : ''})`.trim();
     invoicePayload.reference = payload?.idempotencyKey || invoicePayload.reference;
     (invoicePayload as Record<string, any>).calculationVersion = calculationVersion;

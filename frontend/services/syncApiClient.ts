@@ -250,6 +250,16 @@ export interface SyncPullPageOptions {
    * distinguish a circuit trip from a timeout.
    */
   signal?: AbortSignal;
+  /**
+   * Targeted point lookup: fetch ONLY these record ids, ignoring `since`,
+   * `offset` and the cursor entirely.
+   *
+   * Exists for the deferred-merge drain (see syncService). A row that the pull
+   * skipped because it carried a pending local mutation has already been passed
+   * over by the incremental cursor, so the only way to re-read it is to ask for
+   * it by id. Mutually exclusive with the cursor walk.
+   */
+  ids?: string[] | null;
 }
 
 /**
@@ -316,9 +326,18 @@ export async function fetchPullPage(table: string, options: SyncPullPageOptions 
   }
 
   const params = new URLSearchParams({ table: cleanTable });
-  if (options.since) params.set('since', String(options.since));
-  if (options.offset != null) params.set('offset', String(Math.max(0, Number(options.offset) || 0)));
-  if (options.limit != null) params.set('limit', String(Math.max(1, Math.min(Number(options.limit) || 2000, 2000))));
+  // A targeted fetch is a point lookup: the cursor would hide exactly the rows
+  // being repaired, and offset paging is meaningless without the cursor.
+  const targetedIds = Array.isArray(options.ids)
+    ? Array.from(new Set(options.ids.map((id) => String(id ?? '').trim()).filter(Boolean)))
+    : null;
+  if (targetedIds && targetedIds.length > 0) {
+    params.set('ids', targetedIds.join(','));
+  } else {
+    if (options.since) params.set('since', String(options.since));
+    if (options.offset != null) params.set('offset', String(Math.max(0, Number(options.offset) || 0)));
+    if (options.limit != null) params.set('limit', String(Math.max(1, Math.min(Number(options.limit) || 2000, 2000))));
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 25000);

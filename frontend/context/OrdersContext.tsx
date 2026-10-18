@@ -209,6 +209,10 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         creationSource: 'PORTAL_CONVERSION',
         customerId: '', // Quotation might not have customerId directly, we might need to look it up by name
         customerName: quotation.customerName,
+        // Billing account carries over from the quotation so a converted branch
+        // quote is never re-attributed to Main.
+        subAccountName: quotation.subAccountName || 'Main',
+        ...(quotation.subAccountId ? { subAccountId: quotation.subAccountId } : {}),
         orderDate: new Date().toISOString(),
         date: new Date().toISOString(),
         status: 'Pending',
@@ -309,6 +313,11 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           || ((data as any).quotationId || (data as any).quotation_id ? 'PORTAL_CONVERSION' : 'DIRECT_ERP'),
         customerId: data.customerId || '',
         customerName: data.customerName || 'Walking Customer',
+        // Billing account of the order. The name is the display label; the id
+        // is the stable branch identity the ledger / payment allocation scope
+        // by. Both are required or a branch order collapses into Main.
+        subAccountName: data.subAccountName || 'Main',
+        ...(data.subAccountId ? { subAccountId: data.subAccountId } : {}),
         orderDate: data.orderDate || data.date || new Date().toISOString(),
         date: data.date || data.orderDate || new Date().toISOString(),
         status: data.status || 'Pending',

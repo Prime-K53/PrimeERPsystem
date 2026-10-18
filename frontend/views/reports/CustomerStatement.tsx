@@ -13,6 +13,8 @@ import { currencyService } from '../../services/currencyService';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import {
   buildLedgerFromRecords,
+  mainAccountScope,
+  resolveAccountScope,
   type LedgerTransaction,
 } from '../../services/customerLedger';
 import { exportToCSV } from '../../utils/helpers';
@@ -25,6 +27,7 @@ import { TransactionRefLink } from '../../components/TransactionRefLink';
 
 interface FilterState {
   customerId: string;
+  branchKey: string;
   startDate: string;
   endDate: string;
   voucherType: string;
@@ -66,6 +69,7 @@ const CustomerStatement: React.FC = () => {
 
   const [filters, setFilters] = useState<FilterState>({
     customerId: '',
+    branchKey: 'main',
     startDate: defaultStart,
     endDate: defaultEnd,
     voucherType: 'All',
@@ -98,19 +102,30 @@ const CustomerStatement: React.FC = () => {
   const appliedRouteCustomerRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const routeState = (location.state as { customerId?: string; selectedId?: string; customerName?: string } | null) || null;
+    const routeState = (location.state as { customerId?: string; selectedId?: string; branchKey?: string; subAccount?: string } | null) || null;
     const queryCustomerId = String(searchParams.get('customerId') || '').trim();
+    const queryBranch = String(searchParams.get('branchKey') || searchParams.get('branch') || '').trim();
     const stateCustomerId = String(routeState?.customerId || routeState?.selectedId || '').trim();
-    const stateCustomerName = String(routeState?.customerName || '').trim();
-    let nextCustomerId = queryCustomerId || stateCustomerId;
-    if (!nextCustomerId && stateCustomerName) nextCustomerId = customers.find(c => c.name === stateCustomerName)?.id || '';
+    const stateBranch = String(routeState?.branchKey || routeState?.subAccount || '').trim();
+    const nextCustomerId = queryCustomerId || stateCustomerId;
+    // ID-only routing: a bare customer NAME never auto-resolves (ambiguous
+    // across same-named customers). Require an explicit customer id.
     if (!nextCustomerId) return;
     if (appliedRouteCustomerRef.current === nextCustomerId && filters.customerId !== nextCustomerId) return;
     if (customers.some(c => c.id === nextCustomerId) && filters.customerId !== nextCustomerId) {
       setFilter('customerId', nextCustomerId);
       appliedRouteCustomerRef.current = nextCustomerId;
     }
+    const nextBranch = queryBranch || stateBranch;
+    if (nextBranch) setFilter('branchKey', nextBranch);
   }, [searchParams, location.state, customers, filters.customerId]);
+
+  // Centralized account scope: Main by default, explicit branch otherwise.
+  // Unknown customer/no-id => no scope (empty statement, never merged).
+  const accountScope = useMemo(() => {
+    if (!filters.customerId) return null;
+    return resolveAccountScope(filters.customerId, filters.branchKey || 'main', selectedCustomer as any);
+  }, [filters.customerId, filters.branchKey, selectedCustomer]);
 
   const customerInvoices = useMemo(() => {
     if (!filters.customerId) return [];
@@ -122,16 +137,20 @@ const CustomerStatement: React.FC = () => {
     return customerPayments.filter((p: any) => p.customerId === filters.customerId);
   }, [customerPayments, filters.customerId]);
 
-  const openingBalance = Number(selectedCustomer?.balance || 0);
+  // Parent opening is Main-only. Branch scopes surface `openingUnresolved`
+  // (no silent parent reuse, no assumed zero) with a visible warning.
+  const isBranchScope = Boolean(accountScope && !accountScope.isMain);
+  const openingBalance = isBranchScope ? 0 : Number(selectedCustomer?.balance || 0);
 
   const canonicalLedger = useMemo(
     () => buildLedgerFromRecords({
       customerId: filters.customerId,
+      scope: accountScope, customer: selectedCustomer as any,
       invoices: customerInvoices,
       payments: customerPaymentsList,
       openingBalance,
     }),
-    [filters.customerId, customerInvoices, customerPaymentsList, openingBalance]
+    [filters.customerId, accountScope, selectedCustomer, customerInvoices, customerPaymentsList, openingBalance]
   );
 
   const { startT, endT } = useMemo(() => {
@@ -309,7 +328,7 @@ const CustomerStatement: React.FC = () => {
   const [issuing, setIssuing] = useState(false);
 
   const buildSnapshotInput = (): CreateStatementSnapshotInput | null => {
-    if (!selectedCustomer) return null;
+    if (!selectedCustomer || !accountScope) return null;
     return {
       customerId: filters.customerId,
       customerName: selectedCustomer.companyName || selectedCustomer.name || 'Customer',
@@ -320,6 +339,9 @@ const CustomerStatement: React.FC = () => {
       periodStart: filters.startDate,
       periodEnd: filters.endDate,
       currency,
+      branchKey: accountScope.branchKey,
+      ...(accountScope.branchId ? { subAccountId: accountScope.branchId } : {}),
+      ...(accountScope.isMain ? {} : { branchLabel: accountScope.branchLabel }),
       openingBalance: openingBalanceInPeriod,
       transactions: displayedTransactions.map(tx => ({
         date: tx.date ? format(new Date(tx.date), 'yyyy-MM-dd') : '',
@@ -524,7 +546,7 @@ const CustomerStatement: React.FC = () => {
   };
 
   const handleReset = () => {
-    setFilters({ customerId: '', startDate: defaultStart, endDate: defaultEnd, voucherType: 'All' });
+    setFilters({ customerId: '', branchKey: 'main', startDate: defaultStart, endDate: defaultEnd, voucherType: 'All' });
     setSearchQuery('');
   };
 
@@ -576,7 +598,7 @@ const CustomerStatement: React.FC = () => {
                   <div className="w-full pl-3 pr-2 py-2 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2">
                     <span className="text-xs font-medium truncate">{getCustomerOptionLabel(selected)}</span>
                     <button
-                      onClick={() => { setFilter('customerId', ''); setCustomerSearch(''); }}
+                      onClick={() => { setFilter('customerId', ''); setFilter('branchKey', 'main'); setCustomerSearch(''); }}
                       className="px-2 py-1 rounded-md border border-slate-200 bg-white text-[11px] font-bold text-slate-500 hover:bg-slate-100 transition-all shrink-0"
                     >
                       Change
@@ -612,7 +634,7 @@ const CustomerStatement: React.FC = () => {
                       {matches.map((c: any) => (
                         <button
                           key={c.id}
-                          onClick={() => { setFilter('customerId', c.id); setCustomerSearch(''); setCustomerDropdownOpen(false); }}
+                          onClick={() => { setFilter('customerId', c.id); setFilter('branchKey', 'main'); setCustomerSearch(''); setCustomerDropdownOpen(false); }}
                           className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-b-0 transition-colors"
                         >
                           <div className="text-xs font-medium text-slate-900 truncate">{getCustomerOptionLabel(c)}</div>
@@ -631,6 +653,28 @@ const CustomerStatement: React.FC = () => {
                 </div>
               );
             })()}
+          </div>
+
+          {/* Account: Main vs Branch (same layout, no redesign) */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Account</label>
+            <div className="relative">
+              <select
+                value={filters.branchKey || 'main'}
+                onChange={e => setFilter('branchKey', e.target.value)}
+                disabled={!filters.customerId}
+                className="w-full pl-3 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium outline-none focus:border-emerald-500 transition-colors appearance-none cursor-pointer disabled:opacity-40"
+              >
+                <option value="main">Main Account</option>
+                {((selectedCustomer as any)?.subAccounts || [])
+                  .filter((s: any) => s && s.name)
+                  .map((s: any) => {
+                    const key = s.id ? `id:${String(s.id)}` : `name:${String(s.name).trim().toLowerCase().replace(/\s+/g, '-')}`;
+                    return <option key={key} value={s.id ? String(s.id) : String(s.name)}>{String(s.name)}</option>;
+                  })}
+              </select>
+              <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
           </div>
 
           {/* Start Date */}
@@ -873,8 +917,15 @@ const CustomerStatement: React.FC = () => {
       {filters.customerId && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Opening Balance</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Opening Balance{isBranchScope ? ' — Unresolved' : ''}
+            </p>
             <p className="text-lg font-black text-slate-900 finance-nums mt-1">{formatCurrency(openingBalanceInPeriod)}</p>
+            {isBranchScope && (
+              <p className="text-[10px] text-amber-700 mt-1 font-semibold">
+                Branch opening not established — parent balance is not reused. Balances show transactions only.
+              </p>
+            )}
           </div>
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Debit</p>

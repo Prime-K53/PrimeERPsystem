@@ -18,6 +18,7 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const customerLedger = require('../services/customerLedger.cjs');
+const customerAccountScope = require('../services/customerAccountScope.cjs');
 const repo = require('../services/supabaseRepository.cjs');
 
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -61,7 +62,14 @@ async function main() {
     const storedOutstanding = Number(customer.outstandingBalance ?? 0);
 
     try {
-      const ledger = await customerLedger.buildLedger(customerId);
+      // Explicit MAIN scope: `customer.outstandingBalance` is the derived cache
+      // for the parent (Main) account and is paired with the Main opening held
+      // on `customer.balance`. Branch balances are derived per branch and are
+      // never folded into this cache.
+      const ledger = await customerLedger.buildLedger(customerId, {
+        scope: customerAccountScope.mainAccountScope(customerId),
+        customer,
+      });
       const ledgerOutstanding = ledger.outstandingBalance;
       const diff = customerLedger.round2(ledgerOutstanding - storedOutstanding);
 

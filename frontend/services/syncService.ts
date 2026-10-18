@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient';
 import { fetchPullPage, getSyncAccessToken, SyncPullRateLimitedError } from './syncApiClient';
-import { dbService } from './db';
+import { dbService, getStoreForCloudTable } from './db';
 import { mergeRecords, fieldLevelMerge } from './syncConflictResolver';
 import { adoptServerNumber } from './salesOrderService';
 import { durableSyncQueue, getLocalGeneration, setLocalGeneration } from './durableSyncQueue';
@@ -463,6 +463,268 @@ async function setLastSyncAt(table: string, timestamp: string): Promise<void> {
   await durableSyncQueue.setMeta(`${LAST_SYNC_META_PREFIX}${table}`, timestamp);
 }
 
+// ---------------------------------------------------------------------------
+// Deferred remote merges
+// ---------------------------------------------------------------------------
+// WHY THIS EXISTS
+// Both the pull and the realtime path refuse to overwrite a local row that
+// carries a pending local mutation — that protection is correct, because the
+// queued operation is this device's newer intent. But the refusal used to be
+// SILENT and, on the pull path, terminal: the row was `continue`d and the
+// per-table cursor still advanced to the tail of the page, so that row's
+// `updated_at` fell permanently behind the cursor and the remote change could
+// never be re-read.
+//
+// `hasPendingMutation` counts `failed` as pending (durableSyncQueue.ts:1031),
+// so a single op sitting in backoff — or awaiting an operator retry after a
+// permanent rejection — froze the remote side of that row indefinitely. The
+// push path usually papers over this by forcing a `version_required` conflict
+// that re-reads the server snapshot, but that compensation has a cap
+// (MAX_CONFLICT_MERGES) and does not apply at all when the op is deleted,
+// replaced, or resolved as already-converged.
+//
+// The fix keeps the protection and makes the refusal recoverable: a skipped row
+// is recorded, and re-read by id the moment the local mutation stops blocking
+// it. The id set is persisted in queue meta so a reload mid-outage does not lose
+// it, and bounded so a pathological offline period cannot grow it without limit
+// (overflow is dropped oldest-first and heals on the next full cursor pass,
+// because the cursor has not moved past those rows).
+const DEFERRED_MERGE_META_PREFIX = 'deferred_merge:';
+const DEFERRED_MERGE_MAX_PER_TABLE = 500;
+/** Wall-clock budget for one drain. Unfinished tables stay deferred. */
+const DEFERRED_MERGE_BUDGET_MS = 20_000;
+
+const deferredMerges = new Map<string, Set<string>>();
+/** Every table deferred this session, so a fully-drained table's meta can be cleared. */
+const deferredTablesTouched = new Set<string>();
+let deferredHydrated = false;
+let deferredPersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clampDeferred = (ids: string[]): string[] =>
+  ids.length <= DEFERRED_MERGE_MAX_PER_TABLE
+    ? ids
+    : ids.slice(ids.length - DEFERRED_MERGE_MAX_PER_TABLE);
+
+const applyDeferred = (table: string, ids: string[]): void => {
+  if (ids.length === 0) return;
+  deferredTablesTouched.add(table);
+  const next = new Set<string>([...(deferredMerges.get(table) || []), ...ids]);
+  deferredMerges.set(table, new Set(clampDeferred(Array.from(next))));
+};
+
+function scheduleDeferredPersist(): void {
+  if (deferredPersistTimer) return;
+  deferredPersistTimer = setTimeout(() => {
+    deferredPersistTimer = null;
+    void persistDeferredMerges();
+  }, 250);
+  // Never hold the process open for a cache flush.
+  (deferredPersistTimer as unknown as { unref?: () => void }).unref?.();
+}
+
+async function persistDeferredMerges(): Promise<void> {
+  await Promise.all(
+    Array.from(deferredTablesTouched).map(async (table) => {
+      try {
+        // Writing the (possibly empty) current set is what clears durable meta
+        // for a table whose deferrals fully drained. Hydration skips empty
+        // arrays, so an empty write is equivalent to a delete.
+        await durableSyncQueue.setMeta(
+          `${DEFERRED_MERGE_META_PREFIX}${table}`,
+          clampDeferred(Array.from(deferredMerges.get(table) || []))
+        );
+      } catch {
+        /* best-effort: stale meta only causes a redundant re-read, never a loss */
+      }
+    })
+  );
+}
+
+/** Re-hydrate the persisted id sets once per session. */
+async function ensureDeferredHydrated(): Promise<void> {
+  if (deferredHydrated) return;
+  deferredHydrated = true;
+  try {
+    const tables = TABLES_TO_SYNC.map((storeName) => getTable(storeName));
+    const results = await Promise.all(
+      Array.from(new Set(tables)).map(async (table) => {
+        try {
+          const stored = await durableSyncQueue.getMeta(`${DEFERRED_MERGE_META_PREFIX}${table}`);
+          return [table, Array.isArray(stored) ? (stored as string[]) : []] as const;
+        } catch {
+          return [table, []] as const;
+        }
+      })
+    );
+    for (const [table, ids] of results) {
+      if (ids.length > 0) applyDeferred(table, ids.map((id) => String(id)));
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Record that a remote change to `(table, recordId)` could not be applied yet.
+ * Called from both skip sites so a pull-skip and a realtime-skip converge on
+ * one recovery mechanism rather than two divergent behaviours.
+ */
+export function deferRemoteMerge(table: string, recordId: string): void {
+  const cleanTable = String(table || '').trim();
+  const cleanId = String(recordId || '').trim();
+  if (!cleanTable || !cleanId) return;
+  applyDeferred(cleanTable, [cleanId]);
+  scheduleDeferredPersist();
+}
+
+/** Ids currently awaiting a re-read, per cloud table. Exported for SyncHealth. */
+export function getDeferredRemoteMergeCount(): number {
+  let total = 0;
+  for (const ids of deferredMerges.values()) total += ids.size;
+  return total;
+}
+
+/**
+ * Test/teardown hook: clears the IN-MEMORY deferral state only. Durable meta is
+ * deliberately left alone — the production recovery path (queue meta + next
+ * cursor pass) must stay independently verifiable.
+ */
+export function resetDeferredRemoteMerges(): void {
+  deferredMerges.clear();
+  deferredTablesTouched.clear();
+  deferredHydrated = false;
+  if (deferredPersistTimer) {
+    clearTimeout(deferredPersistTimer);
+    deferredPersistTimer = null;
+  }
+}
+
+/**
+ * Re-read every deferred row by id and apply it.
+ *
+ * Called by the push engine once a batch settles (and on `queue-empty`), which
+ * is exactly the moment the local mutation that was blocking the merge has
+ * reached a terminal state. Rows whose local mutation is STILL pending are
+ * re-deferred rather than forced, so an op that keeps failing cannot turn this
+ * drain into a write loop.
+ *
+ * Returns the number of rows successfully merged.
+ */
+export async function drainDeferredRemoteMerges(): Promise<number> {
+  if (!SUPABASE_ENABLED) return 0;
+  await ensureDeferredHydrated();
+  if (deferredMerges.size === 0) return 0;
+
+  const snapshot = new Map<string, string[]>(
+    Array.from(deferredMerges.entries()).map(([table, ids]) => [table, Array.from(ids)])
+  );
+  // Clear the in-memory map only. Durable meta is intentionally left untouched
+  // until the drain reports an outcome, so a crash mid-drain re-defers rather
+  // than loses the ids (a re-read is always harmless; a lost id is not).
+  deferredMerges.clear();
+
+  let merged = 0;
+  const errors: string[] = [];
+  const deadline = Date.now() + DEFERRED_MERGE_BUDGET_MS;
+  // Tables never reached within the budget must keep their ids, so the snapshot
+  // (not the cleared map) is what gets re-deferred.
+  const deferredByOutcome = new Map<string, string[]>();
+
+  for (const [table, ids] of snapshot.entries()) {
+    if (ids.length === 0) continue;
+    if (Date.now() >= deadline) {
+      deferredByOutcome.set(table, ids);
+      continue;
+    }
+    const storeName = getStoreForCloudTable(table);
+    if (!storeName) {
+      // Not a mirrored local store — nothing to repair, so the deferral is
+      // satisfied rather than retried forever.
+      continue;
+    }
+
+    try {
+      const page = await fetchPullPage(table, { ids });
+      const rows = Array.isArray(page.rows) ? page.rows : [];
+      const stillPending: string[] = [];
+
+      for (const row of rows) {
+        const recordId = String((row as Record<string, unknown>)?.id || '').trim();
+        if (!recordId) continue;
+
+        // The local mutation may still be blocked (retryable failure that did
+        // not settle). Re-defer instead of clobbering the newer local intent.
+        if (await durableSyncQueue.hasPendingMutation(table, recordId)) {
+          stillPending.push(recordId);
+          continue;
+        }
+
+        try {
+          const cloudRecord = toCloudRecord(row);
+          if (cloudRecord.deleted === true) {
+            const existing = await dbService.get(storeName, recordId);
+            if (existing && !(existing as Record<string, unknown>).deletedAt) {
+              await dbService.delete(storeName, recordId, { cloudSource: true });
+            }
+            emitDataChanged(table, 'DEFERRED_DELETE');
+            merged++;
+            continue;
+          }
+
+          const existing = await dbService.get(storeName, recordId);
+          const next = existing
+            ? fieldLevelMerge(existing as Record<string, unknown>, cloudRecord)
+            : cloudRecord;
+          if (cloudRecord.serverUpdatedAt) {
+            next.serverUpdatedAt = cloudRecord.serverUpdatedAt;
+          }
+          next._cloudSource = true;
+          await dbService.put(
+            storeName,
+            (storeName === 'salesOrders' ? adoptServerNumber(next) : next) as Record<string, unknown>,
+            { cloudSource: true }
+          );
+          emitDataChanged(table, 'DEFERRED_MERGE');
+          merged++;
+        } catch (rowErr) {
+          errors.push(`${table}/${recordId}: ${String((rowErr as Error)?.message || rowErr).slice(0, 120)}`);
+        }
+      }
+
+      // Ids the server did not return are hard-deleted upstream (soft deletes
+      // come back as tombstone rows and take the branch above), so there is
+      // nothing left to merge and the deferral is satisfied. Only ids still
+      // blocked by a pending local mutation are re-deferred.
+      if (stillPending.length > 0) {
+        deferredByOutcome.set(table, stillPending);
+      }
+    } catch (err) {
+      // Transport/auth/rate-limit: keep every id deferred so the next drain (or
+      // the next cursor pass) retries. Never drop work on an error.
+      deferredByOutcome.set(table, ids);
+      const rateLimited = err instanceof SyncPullRateLimitedError;
+      if (rateLimited) openPullCircuit(err.retryAfterSecs, `deferred ${table}`);
+      errors.push(`${table}: ${String((err as Error)?.message || err).slice(0, 120)}`);
+      if (rateLimited) break;
+    }
+  }
+
+  for (const [table, ids] of deferredByOutcome.entries()) {
+    applyDeferred(table, ids);
+  }
+
+  if (errors.length > 0) {
+    logger.warn('[Sync] deferred merge drain incomplete', { merged, errors: errors.slice(0, 5) });
+  } else if (merged > 0) {
+    logger.info('[Sync] deferred merge drain applied', { merged });
+  }
+  // Persist the post-drain outcome: succeeded ids are cleared from durable
+  // meta, re-deferred ids are kept. Awaited so the caller's "queue settled"
+  // signal also means "deferral state is consistent".
+  await persistDeferredMerges();
+  return merged;
+}
+
 // Local stores whose rows predate referral sync enrollment. Their original
 // queue operations were dead-lettered while the gateway allow-list excluded
 // referral tables, so nothing would ever re-upload them on its own.
@@ -683,13 +945,17 @@ async function runPullRemoteChanges(
                 }
                 continue;
               }
-              const existing = await dbService.get(storeName, cloudRecord.id);
-              if (existing) {
-                const pendingMutation = await durableSyncQueue.hasPendingMutation(table, cloudRecord.id);
-                if (pendingMutation) {
-                  /* SYNC-FORENSIC suppressed: PULL-SKIP-MERGE */
-                  continue;
-                }
+const existing = await dbService.get(storeName, cloudRecord.id);
+                if (existing) {
+                  const pendingMutation = await durableSyncQueue.hasPendingMutation(table, cloudRecord.id);
+                  if (pendingMutation) {
+                    /* SYNC-FORENSIC suppressed: PULL-SKIP-MERGE — deferred for re-read */
+                    // Recording the id is mandatory here: the cursor below still
+                    // advances past this row, so without a deferral the remote
+                    // change is unreachable from every future incremental pass.
+                    deferRemoteMerge(table, cloudRecord.id);
+                    continue;
+                  }
                 const merged = fieldLevelMerge(existing, cloudRecord);
                 if (cloudRecord.serverUpdatedAt) {
                   merged.serverUpdatedAt = cloudRecord.serverUpdatedAt;
@@ -903,7 +1169,10 @@ async function subscribeToRemoteChanges() {
               if (local) {
                 const pendingMutation = await durableSyncQueue.hasPendingMutation(table, payload.new.id);
                 if (pendingMutation) {
-                  /* SYNC-FORENSIC suppressed: REALTIME-SKIP-MERGE */
+                  /* SYNC-FORENSIC suppressed: REALTIME-SKIP-MERGE — deferred for re-read */
+                  // Realtime events are not replayed, and the pull cursor may
+                  // already be past this row, so a realtime skip MUST also defer.
+                  deferRemoteMerge(table, payload.new.id);
                   return;
                 }
                 const merged = fieldLevelMerge(local, cloudRecord);

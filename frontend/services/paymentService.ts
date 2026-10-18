@@ -5,7 +5,14 @@ import {
     buildCustomerReceiptDoc,
     calculateCustomerPaymentSnapshot
 } from './receiptCalculationService';
-import { buildLedgerFromRecords, getCustomerOpeningBalance } from './customerLedger';
+import {
+    buildConsolidatedLedgerFromRecords,
+    buildLedgerFromRecords,
+    getCustomerOpeningBalanceDetailed,
+    mainAccountScope,
+    type AccountScope,
+} from './customerLedger';
+import { resolveAccountScope } from './customerAccountScope';
 
 export interface LedgerEntry {
     date: string;
@@ -16,14 +23,61 @@ export interface LedgerEntry {
     credit: number;
 }
 
+type AnyRecord = Record<string, any>;
+
+export interface LedgerScopeOptions {
+    /** Explicit account scope. Defaults to Main — never "all accounts". */
+    scope?: AccountScope | null;
+    /** Parent customer record (enables stable branch-id resolution). */
+    customer?: AnyRecord | null;
+}
+
 export const paymentService = {
     /**
      * Canonical outstanding balance — derived by the authoritative customer
      * ledger (services/customerLedger.ts), shared with the backend and all
      * other financial views. Previously this was a private per-invoice sum.
+     *
+     * Scope defaults to MAIN. Use `getCustomerOutstandingBalanceAllAccounts`
+     * for intentional whole-customer aggregation.
      */
-    async getCustomerOutstandingBalance(customerId: string): Promise<number> {
-        return roundFinancial(await getOutstandingViaLedger(customerId));
+    async getCustomerOutstandingBalance(customerId: string, opts: LedgerScopeOptions = {}): Promise<number> {
+        return roundFinancial(await getOutstandingViaLedger(customerId, opts));
+    },
+
+    /** Intentional Main + every-branch aggregate outstanding balance. */
+    async getCustomerOutstandingBalanceAllAccounts(customerId: string): Promise<number> {
+        return roundFinancial(await getOutstandingViaLedgerAllAccounts(customerId));
+    },
+
+    /**
+     * Outstanding balance OF THE ACCOUNT a payment was received for.
+     *
+     * A receipt states "Your account balance is …" in its notes, so that number
+     * must describe the account the money was taken for and nothing else. A
+     * Main payment must never print a branch's balance, and a branch payment
+     * must never print the parent's (or a sibling branch's) balance.
+     *
+     * `getCustomerOutstandingBalance` DEFAULTS to Main, so it can only be used
+     * for a Main payment — every branch payment must come through here.
+     *
+     * A legacy payment that carries only a branch NAME which is shared by
+     * several branches cannot be attributed to an account; it resolves to an
+     * unattributable scope, matches no movement, and the balance sentence is
+     * omitted rather than showing another account's figure.
+     */
+    async getOutstandingBalanceForPayment(payment: Partial<CustomerPayment> | AnyRecord | null | undefined): Promise<number> {
+        const customerId = String(payment?.customerId || payment?.customer_id || '').trim();
+        if (!customerId) return 0;
+        const customer = await dbService.get<Customer>('customers', customerId).catch(() => null);
+        const branchTag = payment?.subAccountId
+            ?? payment?.sub_account_id
+            ?? payment?.subAccountName
+            ?? payment?.sub_account_name
+            ?? null;
+        const scope = resolveAccountScope(customerId, branchTag, customer as AnyRecord | null);
+        if (!scope.isMain && !scope.branchId) return 0; // unresolvable → state no balance
+        return roundFinancial(await getOutstandingViaLedger(customerId, { scope, customer: customer as AnyRecord | null }));
     },
 
     /**
@@ -152,17 +206,34 @@ export const paymentService = {
      * Inclusion rules, amounts (amountApplied ?? amountRetained ?? amount),
      * signs, and ordering all come from the authoritative ledger module —
      * identical to the backend and every other financial view.
+     *
+     * Scope defaults to MAIN; pass the selected branch scope explicitly so a
+     * branch statement never merges Main or sibling-branch movements.
      */
-    async getCustomerLedger(customerId: string, startDate: string, endDate: string): Promise<LedgerEntry[]> {
+    async getCustomerLedger(
+        customerId: string,
+        startDate: string,
+        endDate: string,
+        opts: LedgerScopeOptions = {},
+    ): Promise<LedgerEntry[]> {
         const [allInvoices, allPayments] = await Promise.all([
             dbService.getAll<any>('invoices'),
             dbService.getAll<any>('customerPayments'),
         ]);
+        const scope = opts.scope === undefined ? mainAccountScope(customerId) : opts.scope;
+        // Opening balance is fetched for the SAME scope as the movements, so a
+        // branch statement never inherits the parent opening. Explicit 0 for
+        // unresolved branch openings (flagged by the caller via `scope`).
+        const opening = opts.scope === null
+            ? await getCustomerOpeningBalanceDetailed(customerId, null)
+            : await getCustomerOpeningBalanceDetailed(customerId, scope);
         const ledger = buildLedgerFromRecords({
             customerId,
+            scope,
+            customer: opts.customer ?? null,
             invoices: allInvoices.filter(inv => inv.customerId === customerId),
             payments: allPayments.filter(payment => payment.customerId === customerId),
-            openingBalance: await getCustomerOpeningBalance(customerId),
+            openingBalance: opening.opening,
         });
 
         const start = new Date(startDate);
@@ -182,19 +253,43 @@ export const paymentService = {
                 const entryDate = new Date(entry.date);
                 return !Number.isNaN(entryDate.getTime()) && entryDate >= start && entryDate <= end;
             });
+    },
+
+    /** Intentional Main + every-branch consolidated ledger within a date range. */
+    async getCustomerLedgerAllAccounts(customerId: string, startDate: string, endDate: string): Promise<LedgerEntry[]> {
+        return this.getCustomerLedger(customerId, startDate, endDate, { scope: null });
     }
 };
 
-async function getOutstandingViaLedger(customerId: string): Promise<number> {
+async function getOutstandingViaLedger(customerId: string, opts: LedgerScopeOptions = {}): Promise<number> {
     const [allInvoices, allPayments] = await Promise.all([
         dbService.getAll<any>('invoices'),
         dbService.getAll<any>('customerPayments'),
     ]);
+    const scope = opts.scope === undefined ? mainAccountScope(customerId) : opts.scope;
+    const opening = await getCustomerOpeningBalanceDetailed(customerId, scope);
     const ledger = buildLedgerFromRecords({
+        customerId,
+        scope,
+        customer: opts.customer ?? null,
+        invoices: allInvoices.filter(inv => inv.customerId === customerId),
+        payments: allPayments.filter(payment => payment.customerId === customerId),
+        openingBalance: opening.opening,
+    });
+    return ledger.outstandingBalance;
+}
+
+async function getOutstandingViaLedgerAllAccounts(customerId: string): Promise<number> {
+    const [allInvoices, allPayments] = await Promise.all([
+        dbService.getAll<any>('invoices'),
+        dbService.getAll<any>('customerPayments'),
+    ]);
+    const opening = await getCustomerOpeningBalanceDetailed(customerId, null);
+    const ledger = buildConsolidatedLedgerFromRecords({
         customerId,
         invoices: allInvoices.filter(inv => inv.customerId === customerId),
         payments: allPayments.filter(payment => payment.customerId === customerId),
-        openingBalance: await getCustomerOpeningBalance(customerId),
+        openingBalance: opening.opening,
     });
     return ledger.outstandingBalance;
 }

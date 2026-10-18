@@ -56,6 +56,7 @@ import { SafeFormulaEngine } from '../../services/formulaEngine';
 import { inventoryTransactionService } from '../../services/inventoryTransactionService';
 import { transactionService } from '../../services/transactionService';
 import { resolveExaminationPreviewVerification } from '../../utils/invoiceIdentity';
+import { resolveAccountScope, subAccountEntries, validateAccountScope } from '../../services/customerAccountScope';
 import { currencyService } from '../../services/currencyService';
 import { NewExamJobModal } from './NewExamJobModal';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
@@ -99,7 +100,9 @@ const ExaminationPrinting: React.FC = () => {
       if (notify) notify('Failed to load BOM templates', 'error');
     });
   }, []);
-  const [subAccountName, setSubAccountName] = useState('Main');
+  // Selected branch for the batch, addressed by its STABLE id ('' = Main). The
+  // display label is derived from the selected school's branch list.
+  const [subAccountId, setSubAccountId] = useState('');
   const [className, setClassName] = useState('');
   const [totalCandidature, setTotalCandidature] = useState<string>('');
   const [batchChargePerLearner, setBatchChargePerLearner] = useState<string>('');
@@ -383,9 +386,23 @@ const ExaminationPrinting: React.FC = () => {
   }, [schoolId, customers]);
 
   const schoolSubAccounts = useMemo(() => {
-    if (!selectedSchoolObj) return [];
-    return selectedSchoolObj.subAccounts || [];
+    // Normalizes the legacy `string[]` shape and the current
+    // `{ id, name, ... }[]` shape into one list keyed by the stable branch id.
+    if (!selectedSchoolObj) return [] as Array<{ id: string; name: string }>;
+    return subAccountEntries(selectedSchoolObj as any).map(sub => ({
+      id: String(sub.id ?? sub.name ?? ''),
+      name: String(sub.name ?? sub.label ?? ''),
+    })).filter(sub => sub.name);
   }, [selectedSchoolObj]);
+
+  const examBranchScope = useMemo(() => {
+    const scope = resolveAccountScope(
+      String(schoolId || ''),
+      subAccountId || null,
+      selectedSchoolObj as any
+    );
+    return scope;
+  }, [schoolId, subAccountId, selectedSchoolObj]);
 
   const calculateSubjectCost = (subj: SubjectJob) => {
     const pages = parseInt(subj.pages.toString()) || 0;
@@ -585,7 +602,8 @@ const ExaminationPrinting: React.FC = () => {
         academic_year: academicYear,
         term: term,
         exam_type: examType,
-        sub_account_name: subAccountName
+        sub_account_name: examBranchScope.isMain ? 'Main' : examBranchScope.branchLabel,
+        sub_account_id: examBranchScope.isMain ? null : (examBranchScope.branchId || null)
       });
 
       const returnedBatchId = confirmData?.batch_id || (confirmData as Record<string, unknown>)?.batchId as string;
@@ -812,6 +830,30 @@ const ExaminationPrinting: React.FC = () => {
       else if (recurringFrequency === 'Quarterly') nextRunDate.setMonth(now.getMonth() + 3);
       else if (recurringFrequency === 'Annually') nextRunDate.setFullYear(now.getFullYear() + 1);
 
+      // ── Account scope for the subscription ────────────────────────────────────
+      // The subscription bills ONE account for every run, so the branch
+      // identity is captured once, as the STABLE id, and travels with the
+      // subscription. Prefer the id already stamped on the batch's jobs; fall
+      // back to the batch's display name ONLY when it resolves to exactly one
+      // owned branch. If it cannot be identified the subscription is refused
+      // instead of silently billing Main (or the wrong branch).
+      const subCustomer = (customers || []).find(c => String(c.id) === String(first.customer_id)) || null;
+      const subScope = resolveAccountScope(
+        String(first.customer_id || ''),
+        (first as any).sub_account_id || first.sub_account_name || null,
+        subCustomer as any
+      );
+      if (!subScope.isMain) {
+        const subScopeCheck = validateAccountScope(subScope, subCustomer as any);
+        if (!subScopeCheck.ok || !subScope.branchId) {
+          throw new Error(
+            `Cannot create the recurring subscription: branch '${(first as any).sub_account_id || first.sub_account_name}' ` +
+            `cannot be identified for ${first.school_name} (${subScopeCheck.reason || 'unresolved branch'}). ` +
+            'Tag the batch with an existing branch of this school, or subscribe the Main account explicitly.'
+          );
+        }
+      }
+
       await addRecurringInvoice({
         customerId: first.customer_id,
         customerName: first.school_name,
@@ -821,7 +863,9 @@ const ExaminationPrinting: React.FC = () => {
         total: totalAmount,
         status: 'Active',
         autoDeductWallet,
-        subAccountName: first.sub_account_name,
+        // Stable branch identity: name is the display label, id is the account.
+        subAccountName: subScope.isMain ? 'Main' : subScope.branchLabel,
+        subAccountId: subScope.isMain ? '' : subScope.branchId,
         scheduledDates: manualDates.length > 0 ? manualDates : undefined
       } as Record<string, unknown>);
 

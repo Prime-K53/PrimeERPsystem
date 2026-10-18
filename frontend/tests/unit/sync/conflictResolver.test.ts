@@ -85,6 +85,25 @@ describe('syncConflictResolver', () => {
       expect(merged._version).toBeUndefined();
       expect(merged.updated_at).toBeUndefined();
     });
+
+    it('never resolves paidAmount by last-write-wins (server value stays canonical)', () => {
+      const local = { id: '1', paidAmount: 1500, _updatedAt: '2026-07-01T00:00:00Z' };
+      const remote = { id: '1', paidAmount: 1200, updated_at: '2026-01-01T00:00:00Z' };
+
+      const merged = fieldLevelMerge(local, remote);
+      // The local edit is NEWER, but a later timestamp must never win for a
+      // payment total: the winner would silently erase the other payment.
+      expect(merged.paidAmount).toBe(1200);
+    });
+
+    it('still per-field merges other fields around a review-only divergence', () => {
+      const local = { id: '1', paidAmount: 1500, notes: 'Local note', _updatedAt: '2026-07-01T00:00:00Z' };
+      const remote = { id: '1', paidAmount: 1200, notes: 'Remote note', updated_at: '2026-01-01T00:00:00Z' };
+
+      const merged = fieldLevelMerge(local, remote);
+      expect(merged.paidAmount).toBe(1200);
+      expect(merged.notes).toBe('Local note');
+    });
   });
 
   describe('resolvePushConflict', () => {
@@ -149,6 +168,53 @@ describe('syncConflictResolver', () => {
       expect(resolution.merged!._version).toBe(3);
       expect(resolution.conflictedFields).toEqual([]);
       expect(resolution.serverVersion).toBe(3);
+    });
+
+    it('should flag a divergent paidAmount as review-only (never auto-resolved)', () => {
+      const local = { id: 'r1', paidAmount: 1500, notes: 'Local note' };
+      const serverData = { id: 'r1', paidAmount: 1200, notes: 'Server note' };
+      const serverMeta = { version: 9, updatedAt: '2026-06-30T00:00:00Z' };
+
+      const resolution = resolvePushConflict(local, serverData, serverMeta);
+      expect(resolution.requiresReview).toBe(true);
+      expect(resolution.reviewOnlyFields).toEqual(['paidAmount']);
+      expect(resolution.conflictedFields).toContain('paidAmount');
+      // The merged payload keeps the SERVER payment total, never the local LWW pick.
+      expect(resolution.merged!.paidAmount).toBe(1200);
+    });
+
+    it('keeps requiresReview true even when paidAmount is the only delta (no silent completion)', () => {
+      const local = { id: 'r1', paidAmount: 1500 };
+      const serverData = { id: 'r1', paidAmount: 1200 };
+      const serverMeta = { version: 4, updatedAt: '2026-06-30T00:00:00Z' };
+
+      const resolution = resolvePushConflict(local, serverData, serverMeta);
+      // The merge collapses to the server row (converged), but the payment
+      // divergence must still be escalated by the caller, never completed silently.
+      expect(resolution.converged).toBe(true);
+      expect(resolution.requiresReview).toBe(true);
+      expect(resolution.reviewOnlyFields).toEqual(['paidAmount']);
+    });
+
+    it('does not escalate non-financial conflicts', () => {
+      const local = { id: 'r1', name: 'Local Name' };
+      const serverData = { id: 'r1', name: 'Server Name' };
+      const serverMeta = { version: 2, updatedAt: '2026-06-30T00:00:00Z' };
+
+      const resolution = resolvePushConflict(local, serverData, serverMeta);
+      expect(resolution.requiresReview).toBe(false);
+      expect(resolution.reviewOnlyFields).toEqual([]);
+      expect(resolution.conflictedFields).toEqual(['name']);
+    });
+
+    it('treats an agreed paidAmount as no conflict at all', () => {
+      const local = { id: 'r1', paidAmount: 1200 };
+      const serverData = { id: 'r1', paidAmount: 1200 };
+      const serverMeta = { version: 2, updatedAt: '2026-06-30T00:00:00Z' };
+
+      const resolution = resolvePushConflict(local, serverData, serverMeta);
+      expect(resolution.requiresReview).toBe(false);
+      expect(resolution.converged).toBe(true);
     });
   });
 });

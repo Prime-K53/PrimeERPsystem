@@ -32,6 +32,7 @@ import { buildPosReceiptDoc } from '../services/receiptCalculationService';
 import { api } from '../services/api';
 import { customerNotificationService } from '../services/customerNotificationService';
 import { logger } from '../services/logger';
+import { resolveAccountScope, validateAccountScope } from '../services/customerAccountScope';
 
 import { generateNextId, roundToCurrency, formatNumber, downloadBlob } from '../utils/helpers';
 import { isIncomeAccount } from '../utils/accountType';
@@ -1186,6 +1187,21 @@ const handleQuickPrintConfirm = (
       const pricingSummary = summarizePricingBreakdown(saleItems);
       const aggregatedSnapshots = aggregateMarketAdjustmentSnapshots(saleItems);
 
+      // ── Account scope ────────────────────────────────────────────────────
+      // A POS sale must be recorded against ONE account. Resolve the selected
+      // branch to its STABLE id and fail safely rather than silently posting a
+      // branch sale to Main.
+      const posScope = resolveAccountScope(String(customerId || ''), selectedSubAccount, selectedCustomer as any);
+      if (!posScope.isMain) {
+        const scopeCheck = validateAccountScope(posScope, selectedCustomer as any);
+        if (!scopeCheck.ok || !posScope.branchId) {
+          throw new Error(
+            `Cannot complete this sale: branch '${selectedSubAccount}' cannot be identified for the selected customer ` +
+            `(${scopeCheck.reason || 'no stable branch id'}). Choose an existing branch of this customer.`
+          );
+        }
+      }
+
         const saleData: Sale = {
           id: saleId,
           date: new Date().toISOString(),
@@ -1199,7 +1215,8 @@ const handleQuickPrintConfirm = (
           cashierId: user?.id || 'unknown',
           customerId,
           customerName: selectedCustomerName || 'Walk-in',
-          subAccountName: selectedSubAccount,
+          subAccountName: posScope.isMain ? 'Main' : posScope.branchLabel,
+          subAccountId: posScope.branchId || undefined,
           total: finalTotal,
           bill_total: finalTotal,
           cash_tendered: round2(totalPaid),

@@ -101,6 +101,40 @@ describe('fetchPullPage (backend pull gateway client)', () => {
     expect(page.page).toMatchObject({ count: 1, hasMore: false });
   });
 
+  it('sends targeted ids INSTEAD of the cursor walk (deferred-merge drain)', async () => {
+    mockGetStoredUserSession.mockReturnValue(liveSession());
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { ok: true, table: 'settings', rows: [], page: { offset: 0, limit: 2, count: 0, hasMore: false } })
+    );
+    (globalThis as any).fetch = fetchMock;
+
+    // Duplicates and blanks are removed; separator chars survive encoding.
+    await fetchPullPage('settings', { since: '2026-01-01T00:00:00.000Z', offset: 40, limit: 10, ids: ['a-1', 'b/2', 'a-1', '  '] });
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const decoded = decodeURIComponent(url);
+    expect(decoded).toContain('ids=a-1,b/2');
+    // A point lookup must ignore the cursor and paging params entirely.
+    expect(decoded).not.toContain('since=');
+    expect(decoded).not.toContain('offset=');
+    expect(decoded).not.toContain('limit=');
+  });
+
+  it('falls back to the cursor walk when the ids list is empty', async () => {
+    mockGetStoredUserSession.mockReturnValue(liveSession());
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { ok: true, table: 'settings', rows: [], page: { offset: 5, limit: 25, count: 0, hasMore: false } })
+    );
+    (globalThis as any).fetch = fetchMock;
+
+    await fetchPullPage('settings', { offset: 5, limit: 25, ids: [] });
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('offset=5');
+    expect(url).toContain('limit=25');
+    expect(url).not.toContain('ids=');
+  });
+
   it('maps 401/403 to SyncAuthError', async () => {
     mockGetStoredUserSession.mockReturnValue(liveSession());
     (globalThis as any).fetch = vi.fn(async () => jsonResponse(401, { error: 'Unauthenticated' }));

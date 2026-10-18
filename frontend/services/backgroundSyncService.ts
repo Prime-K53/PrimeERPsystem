@@ -59,6 +59,88 @@ interface SyncState {
  *  before the conflict is escalated to the dead-letter queue for review. */
 const MAX_CONFLICT_MERGES = 3;
 
+/**
+ * Apply remote changes the pull/realtime paths had to defer.
+ *
+ * Deferred rows are exactly those a pending local mutation protected. Once a
+ * push batch has settled, those local mutations have reached a terminal state,
+ * so this is the earliest safe moment to read the remote side back in. Runs
+ * best-effort and never throws: a failed drain must not fail the sync cycle
+ * that triggered it, and the ids stay deferred for the next attempt.
+ */
+async function drainDeferredMerges(trigger: string): Promise<void> {
+  try {
+    const { drainDeferredRemoteMerges } = await import('./syncService');
+    const merged = await drainDeferredRemoteMerges();
+    if (merged > 0) {
+      logger.info('[BackgroundSync] deferred remote merges applied', { trigger, merged });
+    }
+  } catch (err) {
+    logger.warn('[BackgroundSync] deferred merge drain failed', {
+      trigger,
+      error: String((err as Error)?.message || err).slice(0, 200),
+    });
+  }
+}
+
+/**
+ * Resolve examination posting requests left in an unknown state.
+ *
+ * `submitExaminationInvoicePosting` persists its intent BEFORE the request and
+ * reconciles after, so a timeout, crash or refresh leaves a durable PENDING row
+ * whose outcome only the server knows. The idempotency key is derived
+ * (`EXAM-POST:<batchId>:<invoiceNumber>`), so asking again is free and can never
+ * post twice — which makes it correct to retry on every reconnect and
+ * visibility change until the server gives a definite answer.
+ *
+ * `examinationPostingRequests` is deliberately LOCAL_ONLY, so no other device can
+ * clear this row: only the device that attempted the posting can resolve it.
+ */
+async function resumePendingExaminationPostings(trigger: string): Promise<void> {
+  try {
+    const { listPendingExaminationPostings, resolveExaminationPostingRequest } =
+      await import('./examinationPostingClient');
+    const pending = await listPendingExaminationPostings();
+    if (!pending || pending.length === 0) return;
+
+    for (const request of pending) {
+      try {
+        const outcome = await resolveExaminationPostingRequest(request.batchId, request.invoiceNumber);
+        if (!outcome) continue;
+        if (outcome.status === 'committed') {
+          logger.info('[BackgroundSync] examination posting resolved', {
+            trigger,
+            batchId: request.batchId,
+            invoiceNumber: request.invoiceNumber,
+            replayed: outcome.replayed,
+          });
+        } else if (outcome.status === 'rejected') {
+          logger.warn('[BackgroundSync] examination posting rejected', {
+            trigger,
+            batchId: request.batchId,
+            invoiceNumber: request.invoiceNumber,
+            code: outcome.code,
+          });
+        }
+        // 'pending' means the outcome is STILL unknown (another timeout). The
+        // row stays PENDING and is retried on the next trigger — deliberately
+        // never surfaced as committed.
+      } catch (err) {
+        logger.warn('[BackgroundSync] examination posting resume failed', {
+          trigger,
+          batchId: request.batchId,
+          error: String((err as Error)?.message || err).slice(0, 160),
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn('[BackgroundSync] examination posting resume unavailable', {
+      trigger,
+      error: String((err as Error)?.message || err).slice(0, 160),
+    });
+  }
+}
+
 const isClient = typeof window !== 'undefined';
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -180,6 +262,10 @@ function handleLifecycleOnline(): void {
   state.consecutiveFailures = 0;
   rearmPeriodicTimer();
   diagOnlineDetected('backgroundSyncService:lifecycle-online');
+  // Reconnect is the first moment a deferred remote merge can be applied (the
+  // pending local mutation that blocked it has either flushed or moved to
+  // backoff), and the first moment an unknown posting outcome can be resolved.
+  // Both run through syncOnce's drains below, so no duplicate calls here.
   syncOnce(true, 'window-online').catch(() => {});
 }
 
@@ -727,6 +813,20 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
       updatedAt: result.server?.updatedAt,
     });
 
+    // Review-only financial fields (paidAmount) are never auto-merged. An LWW
+    // pick would silently erase whichever side's recorded payment lost, so the
+    // op is parked for human review BEFORE the converged branch can mark it
+    // complete. The server value stays canonical in the cloud; the local row
+    // keeps its value; both are visible in the conflict audit and review queue.
+    if (resolution.requiresReview) {
+      const reason = `CONFLICT requires review — financial field(s) changed on both devices: ${resolution.reviewOnlyFields.join(', ')}`;
+      await durableSyncQueue.deadLetter(item.id, reason);
+      state.totalFailed++;
+      await recordConflict('review', resolution.conflictedFields);
+      notify('dead-letter', { table, recordId, reason });
+      return 'deadLetter';
+    }
+
     // No local delta vs the server row — the conflicting update already
     // captured our intent (or only timestamps diverged). No re-push needed.
     if (resolution.converged) {
@@ -1228,6 +1328,12 @@ async function syncOnce(force: boolean = false, triggerSource: string = 'unknown
     if (pendingCount === 0) {
       /* SYNC-FORENSIC suppressed: syncOnce() SKIPPED — 0 pending ops */
       diagSyncTriggerSkipped(triggerSource, 'zero-pending');
+      // Neither recovery depends on a queued op: a deferral can outlive the op
+      // that blocked it (deleted/superseded/completed by another tab), and a
+      // timed-out examination posting leaves no queue row at all. This is
+      // therefore the critical path — not a shortcut past it.
+      await drainDeferredMerges('zero-pending');
+      await resumePendingExaminationPostings('zero-pending');
       return null;
     }
   } catch {
@@ -1312,6 +1418,14 @@ async function syncOnce(force: boolean = false, triggerSource: string = 'unknown
     if (totalBefore > 0 && metricsAfter.total === 0) {
       notify('queue-empty');
     }
+
+    // Every op in this cycle has settled, so any local mutation that was
+    // protecting a deferred remote merge has reached a terminal state. This is
+    // the earliest safe moment to read the remote side back in, and it keeps a
+    // long-lived online session from accumulating stale rows until the next
+    // scheduled reconciliation tick.
+    await drainDeferredMerges('post-batch');
+    await resumePendingExaminationPostings('post-batch');
 
     /* SYNC-FORENSIC suppressed: syncOnce() COMPLETE */
     // [ERP-SYNC-DIAG] sync completion uses only values already in hand — no extra queries.
@@ -1422,6 +1536,21 @@ export const backgroundSyncService = {
     const recovered = await durableSyncQueue.rebuildDependencyGraph();
     if (recovered > 0) {
       await durableSyncQueue.recordMetric('graph_recovered', recovered);
+    }
+
+    // A crash or tab close while a batch was in flight leaves rows stranded in
+    // 'syncing' — nothing selects them, so the operation silently never reaches
+    // the server. Return them to 'pending' so the first cycle after a restart
+    // drains them. Server-side operationId dedup makes a resend safe even if the
+    // original request actually succeeded before the crash.
+    try {
+      const unstuck = await durableSyncQueue.recoverStuckSyncing();
+      if (unstuck > 0) {
+        await durableSyncQueue.recordMetric('syncing_recovered', unstuck);
+        logger.info('[BackgroundSync] recovered stranded syncing operations', { count: unstuck });
+      }
+    } catch (unstuckErr) {
+      logger.warn('[BackgroundSync] stuck-syncing recovery failed', { error: String(unstuckErr) });
     }
 
     logger.info('[BackgroundSync] initialize calling startPeriodicSync');

@@ -24,6 +24,7 @@ import { ensureDocumentVerificationToken } from '../utils/documentVerification';
 import { generateNextId } from '../utils/helpers';
 import type { CompanyConfig, StatementLineItem, StatementSnapshot } from '../types';
 import { logger } from './logger';
+import { resolveAccountScope } from './customerAccountScope';
 
 const STORE = 'statementSnapshots' as const;
 
@@ -37,6 +38,19 @@ export interface CreateStatementSnapshotInput {
   periodStart: string;
   periodEnd: string;
   currency?: string;
+  /**
+   * Canonical account scope of this snapshot. A Main statement and a branch
+   * statement for the same customer + period are DIFFERENT documents and never
+   * supersede each other.
+   *
+   * 'main' (default) | 'id:<branchId>' | 'name:<slug>'. Callers that show a
+   * selected branch MUST pass it — otherwise the snapshot is Main.
+   */
+  branchKey?: string;
+  /** Stable embedded branch id (preferred over `branchKey` when present). */
+  subAccountId?: string;
+  /** Branch display label at issue time (display-only). */
+  branchLabel?: string;
   openingBalance: number;
   transactions: Array<{
     date: string;
@@ -52,6 +66,36 @@ export interface CreateStatementSnapshotInput {
   totalInvoiced: number;
   totalReceived: number;
   closingBalance: number;
+}
+
+const MAIN_SCOPE_KEY = 'main';
+
+/**
+ * Canonical scope key for a snapshot. Legacy snapshots (no branch fields) are
+ * interpreted as Main ONLY where that interpretation is safe — see
+ * `createStatementSnapshot`'s supersede rule.
+ */
+export function snapshotScopeKey(s: { branchKey?: string; subAccountId?: string } | null | undefined): string {
+  if (!s) return MAIN_SCOPE_KEY;
+  const explicitId = String(s.subAccountId || '').trim();
+  if (explicitId) return `id:${explicitId}`;
+  const key = String(s.branchKey || '').trim();
+  if (!key || key.toLowerCase() === MAIN_SCOPE_KEY) return MAIN_SCOPE_KEY;
+  if (key.toLowerCase().startsWith('id:')) return `id:${key.slice(3).trim()}`;
+  if (key.toLowerCase().startsWith('name:')) {
+    // Slugify exactly like the centralized scope helper so any name-shaped key
+    // normalizes to the same identity (e.g. 'name:Exam Centre' === 'name:exam-centre').
+    const slug = key.slice(5).trim().toLowerCase().replace(/\s+/g, ' ')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return slug ? `name:${slug}` : MAIN_SCOPE_KEY;
+  }
+  return key;
+}
+
+/** True for a snapshot that predates account scope (no branch field at all). */
+export function isLegacyScopedSnapshot(s: { branchKey?: string; subAccountId?: string } | null | undefined): boolean {
+  if (!s) return true;
+  return !String(s.subAccountId || '').trim() && !String(s.branchKey || '').trim();
 }
 
 const round2 = (v: unknown): number =>
@@ -100,24 +144,64 @@ export function normalizeStatementLineItems(items: unknown): StatementLineItem[]
 
 /**
  * Issue a new statement snapshot. Any still-VALID snapshot for the same
- * customer + period is superseded first (original keeps its number/token
- * and stays verifiable as SUPERSEDED).
+ * customer + period + ACCOUNT SCOPE is superseded first (the original keeps
+ * its number/token and stays verifiable as SUPERSEDED).
+ *
+ * Scope rules:
+ *   - Main and a branch for the same customer + period NEVER supersede each
+ *     other (they are different documents).
+ *   - Two branch statements supersede only when they target the SAME branch.
+ *   - A legacy snapshot with no branch field is treated as Main only when the
+ *     new snapshot is also Main. If the new snapshot is for a BRANCH, a legacy
+ *     snapshot for the same period could represent branch activity, so it is
+ *     left untouched and the new snapshot is flagged `scopeAmbiguous`.
  */
 export async function createStatementSnapshot(
   input: CreateStatementSnapshotInput,
   companyConfig?: CompanyConfig | null
 ): Promise<StatementSnapshot> {
   const existing = await dbService.getAll<StatementSnapshot>(STORE as any).catch(() => []);
+  const newScopeKey = snapshotScopeKey(input);
+  const newIsMain = newScopeKey === MAIN_SCOPE_KEY;
+
   const samePeriod = (existing || []).filter(
     (s) =>
       String(s.customerId) === String(input.customerId) &&
       String(s.periodStart) === String(input.periodStart) &&
       String(s.periodEnd) === String(input.periodEnd) &&
-      String(s.status || 'VALID').toUpperCase() === 'VALID'
+      String(s.status || 'VALID').toUpperCase() === 'VALID' &&
+      snapshotScopeKey(s as any) === newScopeKey &&
+      // A legacy (no-scope) snapshot only shares this scope when we are issuing
+      // a Main statement; for a branch we must not claim it.
+      !(!newIsMain && isLegacyScopedSnapshot(s as any))
+  );
+  // Detected but deliberately NOT superseded: possible branch activity behind a
+  // legacy Main-labelled snapshot. Surfaced on the new snapshot for review.
+  const scopeAmbiguous = !newIsMain && (existing || []).some(
+    (s) =>
+      String(s.customerId) === String(input.customerId) &&
+      String(s.periodStart) === String(input.periodStart) &&
+      String(s.periodEnd) === String(input.periodEnd) &&
+      String(s.status || 'VALID').toUpperCase() === 'VALID' &&
+      isLegacyScopedSnapshot(s as any)
   );
 
   const statementNumber = generateNextId('STMT', (existing || []) as any[], companyConfig as any);
   const now = new Date().toISOString();
+
+  // The DISPLAY label is derived from the stable branch id when the caller
+  // supplies the id (plus its customer) but no label, so an exported/verified
+  // branch statement always names its account instead of rendering as an
+  // unlabelled document. An explicit label always wins.
+  const resolvedBranchLabel = (() => {
+    const explicit = String(input.branchLabel || '').trim();
+    if (explicit) return explicit;
+    const branchId = String(input.subAccountId || '').trim();
+    if (!branchId) return '';
+    const scope = resolveAccountScope(String(input.customerId || ''), branchId, (input as any).customer || null);
+    return String(scope.branchLabel || '').trim();
+  })();
+
   const base: StatementSnapshot = {
     id: statementNumber,
     statementNumber,
@@ -131,6 +215,11 @@ export async function createStatementSnapshot(
     phone: input.phone || '',
     email: input.email || '',
     currency: input.currency || 'MWK',
+    // Canonical account scope — always persisted on NEW snapshots.
+    branchKey: newScopeKey,
+    ...(String(input.subAccountId || '').trim() ? { subAccountId: String(input.subAccountId).trim() } : {}),
+    ...(resolvedBranchLabel ? { branchLabel: resolvedBranchLabel } : {}),
+    ...(scopeAmbiguous ? { scopeAmbiguous: true } : {}),
     openingBalance: round2(input.openingBalance),
     transactions: (input.transactions || []).map((t) => ({
       date: String(t.date || ''),
@@ -209,6 +298,8 @@ export const statementService = {
   getStatementSnapshot,
   listStatementSnapshots,
   voidStatementSnapshot,
+  snapshotScopeKey,
+  isLegacyScopedSnapshot,
 };
 
 export default statementService;

@@ -5,7 +5,7 @@ import { getDefaultPaymentTermsForSegment } from '../../../utils/helpers';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useSales } from '../../../context/SalesContext';
-import { buildLedgerFromRecords } from '../../../services/customerLedger';
+import { buildLedgerFromRecords, mainAccountScope } from '../../../services/customerLedger';
 import { getPlaceholder } from '../../../constants/placeholders';
 import { currencyService } from '../../../services/currencyService';
 import type { PortalCredentials } from '../../../services/adminPortalClient';
@@ -127,14 +127,13 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
   const calcOutstanding = (custId: string | undefined) => {
     const opening = Number(formData.balance || 0);
     if (!custId) return opening;
-    const invs = (invoices || []).filter((inv: any) =>
-      inv.customerId === custId || inv.customerName === formData.name
-    );
-    const pays = (customerPayments || []).filter((p: any) =>
-      p.customerId === custId || p.customerName === formData.name
-    );
+    // ID-only: customer names are display-only, never balance keys.
+    const invs = (invoices || []).filter((inv: any) => inv.customerId === custId);
+    const pays = (customerPayments || []).filter((p: any) => p.customerId === custId);
+    const scope = mainAccountScope(custId);
     const { closingBalance } = buildLedgerFromRecords({
       customerId: custId,
+      scope, customer: (customer as any) || null,
       invoices: invs as any[],
       payments: pays as any[],
       openingBalance: opening,

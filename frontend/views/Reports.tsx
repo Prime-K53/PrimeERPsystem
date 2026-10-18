@@ -33,6 +33,7 @@ import CustomerStatement from './reports/CustomerStatement';
 import { currencyService } from '../services/currencyService';
 import { getCustomerOptionLabel } from '../utils/customerDisplay';
 import { getRevenueSourceLabel } from '../services/revenueAnalysisService';
+import { accountScopeOptions, rowMatchesScopeKeys } from '../services/accountScopeFilter';
 const teal={50:'#eef7f6',100:'#d3ece9',200:'#a6d9d3',300:'#72c0b7',400:'#3fa294',500:'#1f8577',600:'#146b60',700:'#0f544c',800:'#0b3e39',900:'#082e2a'};
 const amber={100:'#fbead0',300:'#eec27a',500:'#d99a3f',600:'#b97e2b'};
 const paper='#FEFDFB',ink='#23282A',inkSoft='#5c6567',hairline='#e4ddd1',danger='#b5493f';
@@ -80,7 +81,7 @@ const Reports: React.FC = () => {
     return 'Overview';
   });
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [selectedSubAccountNames, setSelectedSubAccountNames] = useState<string[]>([]);
+  const [selectedSubAccountKeys, setSelectedSubAccountKeys] = useState<string[]>([]);
   const [isCustomerFilterOpen, setIsCustomerFilterOpen] = useState(false);
   const [selectedDateRange, setSelectedDateRange] = useState<RevenueDateRange>('all');
 
@@ -122,22 +123,25 @@ const Reports: React.FC = () => {
     [customers, selectedCustomerId]
   );
 
-  const availableSubAccounts = useMemo(() => {
+  // Accounts offered by the filter, as CANONICAL SCOPE KEYS. Filtering revenue
+  // by DISPLAY NAME would merge two identically-named branches into one figure.
+  const availableSubAccountKeys = useMemo(() => {
     if (!selectedCustomerId) return [];
     const customer = customers.find((entry: any) => entry.id === selectedCustomerId);
-    return ['Main', ...((customer?.subAccounts || []).map((sub: any) => String(sub?.name || '').trim()).filter(Boolean))];
+    return accountScopeOptions(selectedCustomerId, customer);
   }, [customers, selectedCustomerId]);
+
+  const selectedCustomerObj = useMemo(
+    () => customers.find((entry: any) => entry.id === selectedCustomerId) || null,
+    [customers, selectedCustomerId],
+  );
 
   const marginScopedLines = useMemo(() => {
     return marginBaseReport.lines.filter((line) => {
       if (selectedCustomerName && line.customerName !== selectedCustomerName) return false;
-      if (selectedSubAccountNames.length > 0) {
-        const normalizedSubAccount = String(line.subAccountName || 'Main').trim() || 'Main';
-        if (!selectedSubAccountNames.includes(normalizedSubAccount)) return false;
-      }
-      return true;
+      return rowMatchesScopeKeys(line, selectedSubAccountKeys, selectedCustomerId, selectedCustomerObj as any);
     });
-  }, [marginBaseReport.lines, selectedCustomerName, selectedSubAccountNames]);
+  }, [marginBaseReport.lines, selectedCustomerName, selectedSubAccountKeys, selectedCustomerId, selectedCustomerObj]);
 
   const marginReport = useMemo(
     () => buildRevenueReportingSnapshotFromLines({ lines: marginScopedLines, trendDays: 12 }),
@@ -416,7 +420,7 @@ const Reports: React.FC = () => {
                     onClick={(event) => {
                       event.stopPropagation();
                       setSelectedCustomerId('');
-                      setSelectedSubAccountNames([]);
+                      setSelectedSubAccountKeys([]);
                     }}
                   />
                 )}
@@ -435,7 +439,7 @@ const Reports: React.FC = () => {
                       value={selectedCustomerId}
                       onChange={(event) => {
                         setSelectedCustomerId(event.target.value);
-                        setSelectedSubAccountNames([]);
+                        setSelectedSubAccountKeys([]);
                       }}
                       style={{ width: '100%', background: '#eef7f6', border: '1.4px solid #e4ddd1', borderColor: '#e4ddd1', borderRadius: '12px', paddingLeft: '12px', paddingTop: '8px', fontWeight: 500, outline: 'none', transition: 'color .15s ease,background .15s ease,border-color .15s ease', paddingRight: '12px', paddingBottom: '8px' }}
                     >
@@ -445,25 +449,25 @@ const Reports: React.FC = () => {
                       ))}
                     </select>
 
-                    {selectedCustomerId && availableSubAccounts.length > 0 && (
+                    {selectedCustomerId && availableSubAccountKeys.length > 0 && (
                       <div style={{ paddingTop: '8px', borderStyle: 'solid', borderColor: '#e4ddd1' }}>
                         <label style={{ fontWeight: 600, color: '#5c6567', letterSpacing: '.1em', marginBottom: '8px', display: 'block' }}>Filter sub-accounts</label>
                         <div style={{ marginTop: '6px', overflowY: 'auto' }}>
-                          {availableSubAccounts.map((subAccount) => (
-                            <label key={subAccount} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '6px', borderRadius: '10px', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>
+                          {availableSubAccountKeys.map((option) => (
+                            <label key={option.key} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '6px', borderRadius: '10px', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>
                               <input
                                 type="checkbox"
-                                checked={selectedSubAccountNames.includes(subAccount)}
+                                checked={selectedSubAccountKeys.includes(option.key)}
                                 onChange={(event) => {
                                   if (event.target.checked) {
-                                    setSelectedSubAccountNames([...selectedSubAccountNames, subAccount]);
+                                    setSelectedSubAccountKeys([...selectedSubAccountKeys, option.key]);
                                   } else {
-                                    setSelectedSubAccountNames(selectedSubAccountNames.filter((entry) => entry !== subAccount));
+                                    setSelectedSubAccountKeys(selectedSubAccountKeys.filter((entry) => entry !== option.key));
                                   }
                                 }}
                                 style={{ width: '16px', height: '16px', borderRadius: '8px', borderColor: '#e4ddd1', color: '#1f8577', cursor: 'pointer' }}
                               />
-                              <span style={{ fontWeight: 500, color: '#5c6567', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>{subAccount}</span>
+                              <span style={{ fontWeight: 500, color: '#5c6567', transition: 'color .15s ease,background .15s ease,border-color .15s ease' }}>{option.label}</span>
                             </label>
                           ))}
                         </div>

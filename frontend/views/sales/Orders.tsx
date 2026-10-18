@@ -1340,6 +1340,11 @@ const invs = allInvs.filter(inv => inv.status !== 'Cancelled' && inv.status !== 
                                 invoiceNumber: '',
                                 customerName: item.customerName,
                                 customerId: item.customerId,
+                                // The invoice inherits the order's billing account
+                                // (name + stable branch id) so the conversion can
+                                // never silently re-attribute a branch order to Main.
+                                subAccountName: item.subAccountName || 'Main',
+                                subAccountId: item.subAccountId || undefined,
                                 date: issuedDate,
                                 dueDate: paymentPolicy.dueDate,
                                 items: item.items.map((i: any) => ({

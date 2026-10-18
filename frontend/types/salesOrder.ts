@@ -134,6 +134,10 @@ export interface SalesOrder {
   legacyStatus?: string;
   customerId?: string | null;
   customerName?: string;
+  /** Billing account label: 'Main' or a sub-account (branch) display name. */
+  subAccountName?: string;
+  /** Stable embedded branch id — the authoritative account identity. */
+  subAccountId?: string;
   salesPersonId?: string | null;
   territoryId?: string | null;
   orderDate: string;

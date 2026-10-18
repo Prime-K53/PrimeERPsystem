@@ -8,6 +8,38 @@ const {
   isBackendExaminationInvoiceCreationBlocked,
   backendExaminationInvoiceBlockedResponse,
 } = require('../services/examinationInvoiceQuarantine.cjs');
+const {
+  postExaminationInvoice,
+  voidExaminationInvoice,
+  isPostingEnabled,
+  ExaminationPostingError,
+} = require('../services/examinationPostingService.cjs');
+
+/** Route-level surface for the server-authoritative posting boundary (0051). */
+const postingHandler = (handler) => async (req, res) => {
+  if (!isPostingEnabled()) {
+    return res.status(503).json({
+      error: 'Authoritative Examination posting is not enabled on this server',
+      code: 'EXAM_POSTING_DISABLED',
+    });
+  }
+  try {
+    const result = await handler(req);
+    res.json(result);
+  } catch (err) {
+    if (err instanceof ExaminationPostingError) {
+      // Surface the stable code so the client can distinguish "this can never
+      // succeed" from "retry, you may be racing another device".
+      return res.status(err.httpStatus).json({
+        error: err.message,
+        code: err.code,
+        retryable: err.retryable,
+      });
+    }
+    console.error('[Examination] authoritative posting error:', err);
+    res.status(500).json({ error: 'Examination posting failed', code: 'EXAM_POSTING_FAILED' });
+  }
+};
 
 const canOverrideSuggestedCost = (req) => {
   const role = String(req.user?.role || '').toLowerCase();
@@ -681,5 +713,50 @@ router.post('/batches/:id/regenerate-invoice', async (req, res) => {
     res.status(resolveWorkflowErrorStatus(err)).json({ error: 'Failed to regenerate invoice' });
   }
 });
+
+// ─── Server-authoritative posting (0051) ─────────────────────────────────────
+// These are the financial boundary. The legacy /invoice and
+// /regenerate-invoice routes above remain quarantined and must not be used to
+// commit a financial result.
+
+/**
+ * Commit the canonical Examination invoice for a batch.
+ * Idempotent on x-idempotency-key: a retry after a client timeout returns the
+ * first committed result rather than posting a second time.
+ */
+router.post('/batches/:id/post', postingHandler(async (req) => {
+  const idempotencyKey = req.headers['x-idempotency-key']
+    || req.body?.idempotencyKey
+    || req.body?.idempotency_key;
+  return postExaminationInvoice({
+    batchId: req.params.id,
+    invoiceNumber: req.body?.invoiceNumber || req.body?.invoice_number,
+    idempotencyKey,
+    expectedVersion: req.body?.expectedVersion ?? req.body?.expected_version ?? null,
+    invoiceData: req.body?.invoiceData || req.body?.invoice_data,
+    ledgerData: req.body?.ledgerData || req.body?.ledger_data,
+    businessDate: req.body?.businessDate || req.body?.business_date || null,
+  });
+}));
+
+/**
+ * Void a committed Examination invoice. Reverses its ledger entries and only
+ * the inventory movements the caller names. The batch stays closed.
+ */
+router.post('/batches/:id/void', postingHandler(async (req) => {
+  const invoiceNumber = req.body?.invoiceNumber || req.body?.invoice_number;
+  const idempotencyKey = req.headers['x-idempotency-key']
+    || req.body?.idempotencyKey
+    || req.body?.idempotency_key;
+  return voidExaminationInvoice({
+    batchId: req.params.id,
+    invoiceNumber,
+    idempotencyKey,
+    voidReason: req.body?.reason || req.body?.voidReason || 'Voided from Examination',
+    performedBy: req.user?.id || 'system',
+    deductionIds: req.body?.deductionIds || req.body?.deduction_ids || null,
+    businessDate: req.body?.businessDate || req.body?.business_date || null,
+  });
+}));
 
 module.exports = router;

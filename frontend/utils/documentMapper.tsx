@@ -62,6 +62,11 @@ interface StatementData extends BaseDocumentData {
   closingBalance: number;
   periodStart: string;
   periodEnd: string;
+  /** Account scope: a branch statement must not render as the Main statement. */
+  branchLabel?: string;
+  branchKey?: string;
+  subAccountId?: string;
+  scopeAmbiguous?: boolean;
 }
 
 interface ReceiptData extends BaseDocumentData {
@@ -284,6 +289,11 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
               <div>
                 <p className="text-[9px] font-bold text-slate-400 uppercase">Period</p>
                 <p className="text-xs font-bold text-slate-700">{new Date(statementData.periodStart).toLocaleDateString()} - {new Date(statementData.periodEnd).toLocaleDateString()}</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Account</p>
+                <p className="text-xs font-bold text-slate-700">{statementData.branchLabel && statementData.branchLabel !== 'Main' ? statementData.branchLabel : 'Main Account'}</p>
+                {statementData.scopeAmbiguous ? (
+                  <p className="text-[9px] text-amber-600 mt-1">Earlier statements for this period predate branch tagging.</p>
+                ) : null}
               </div>
               <div className="text-right">
                 <p className="text-[9px] font-bold text-slate-400 uppercase">Opening Balance</p>

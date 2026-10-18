@@ -1363,13 +1363,27 @@ export interface Customer {
   nextFollowUpDate?: string;
   estimatedDealValue?: number;
   assignedSalesperson?: string;
-  subAccounts?: string[];
+  subAccounts?: Array<string | CustomerSubAccount>;
   avgPaymentDays?: number;
   taxId?: string;
   companyName?: string;
   contactName?: string;
   currency?: string;
   documents?: CustomerDocument[];
+  [key: string]: any;
+}
+
+/**
+ * Embedded customer branch ("sub-account"). The `id` is the STABLE branch
+ * identity used for financial account scope. `name` is display-only and is
+ * never sufficient to identify a branch (two branches may share a name).
+ */
+export interface CustomerSubAccount {
+  id?: string | null;
+  name?: string;
+  balance?: number;
+  walletBalance?: number;
+  status?: string;
   [key: string]: any;
 }
 
@@ -1548,6 +1562,8 @@ export interface Invoice {
   customerId?: string;
   customerName?: string;
   subAccountName?: string;
+  /** Stable embedded branch id — the authoritative account identity. */
+  subAccountId?: string;
   totalAmount: number;
   paidAmount?: number;
   date: string;
@@ -1824,6 +1840,10 @@ export interface CustomerPayment {
   excessAmount?: number;
   excessHandling?: string;
   notes?: string;
+  /** Selected branch display name (display-only). */
+  subAccountName?: string;
+  /** Stable embedded branch id — the authoritative account identity. */
+  subAccountId?: string;
   [key: string]: any;
 }
 
@@ -1886,6 +1906,22 @@ export interface StatementSnapshot {
   customerName: string;
   customerCode?: string;
   currency: string;
+  /**
+   * Canonical account scope of this snapshot. A Main statement and a branch
+   * statement for the same customer + period are DIFFERENT documents and must
+   * never supersede each other.
+   *
+   * `branchKey` is 'main' | 'id:<branchId>' | 'name:<slug>'. Legacy snapshots
+   * issued before scope existed omit it and are interpreted as Main only where
+   * that is safe (see statementService). `scopeAmbiguous` flags a snapshot whose
+   * scope could not be attributed with certainty.
+   */
+  branchKey?: string;
+  /** Stable embedded branch id when the snapshot is for a branch. */
+  subAccountId?: string;
+  /** Branch display label at issue time (display-only). */
+  branchLabel?: string;
+  scopeAmbiguous?: boolean;
   openingBalance: number;
   transactions: StatementSnapshotTransaction[];
   totalInvoiced: number;
@@ -1932,6 +1968,10 @@ export interface Order {
   id: string;
   customerId?: string;
   customerName?: string;
+  /** Billing account label: 'Main' or a sub-account (branch) display name. */
+  subAccountName?: string;
+  /** Stable embedded branch id — the authoritative account identity. */
+  subAccountId?: string;
   items: CartItem[];
   totalAmount: number;
   date: string;
@@ -1961,6 +2001,10 @@ export interface Quotation {
   id: string;
   customerId?: string;
   customerName: string;
+  /** Billing account label: 'Main' or a sub-account (branch) display name. */
+  subAccountName?: string;
+  /** Stable embedded branch id — the authoritative account identity. */
+  subAccountId?: string;
   items: CartItem[];
   total: number;
   totalAmount?: number;
@@ -2192,6 +2236,8 @@ export interface Sale {
   customerId?: string;
   customerName?: string;
   subAccountName?: string;
+  /** Stable embedded branch id — the authoritative account identity. */
+  subAccountId?: string;
   items: CartItem[];
   payments: SalePayment[];
   totalAmount: number;
@@ -2355,6 +2401,10 @@ export interface ExamPaper {
   name: string;
   subject: string;
   pages: number;
+  /** Display label of the billed account: 'Main' or a branch name. */
+  sub_account_name?: string;
+  /** STABLE branch id of the billed account. Authoritative account identity. */
+  sub_account_id?: string | null;
   [key: string]: any;
 }
 

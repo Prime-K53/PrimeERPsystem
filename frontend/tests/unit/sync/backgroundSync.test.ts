@@ -19,11 +19,25 @@ const { mockSendOps, mockUploadFile } = vi.hoisted(() => ({
   })),
   mockUploadFile: vi.fn(async () => 'mock-url'),
 }));
+const { mockDrainDeferredMerges, mockListPendingPostings, mockResolvePosting } = vi.hoisted(() => ({
+  mockDrainDeferredMerges: vi.fn(async () => 0),
+  mockListPendingPostings: vi.fn(async () => [] as Array<{ batchId: string; invoiceNumber: string }>),
+  mockResolvePosting: vi.fn(async () => null as unknown),
+}));
 
 vi.mock('idb', () => ({
   openDB: openDBMock,
   deleteDB: vi.fn(async () => {}),
   unwrap: vi.fn(),
+}));
+
+vi.mock('../../../services/syncService', () => ({
+  drainDeferredRemoteMerges: mockDrainDeferredMerges,
+}));
+
+vi.mock('../../../services/examinationPostingClient', () => ({
+  listPendingExaminationPostings: mockListPendingPostings,
+  resolveExaminationPostingRequest: mockResolvePosting,
 }));
 
 vi.mock('../../../services/syncApiClient', () => ({
@@ -113,6 +127,9 @@ describe('backgroundSyncService', () => {
       results: ops.map((op) => ({ operationId: op.operationId, ok: true, id: 'mock-id' })),
     }));
     mockUploadFile.mockReset().mockResolvedValue('mock-url');
+    mockDrainDeferredMerges.mockReset().mockResolvedValue(0);
+    mockListPendingPostings.mockReset().mockResolvedValue([]);
+    mockResolvePosting.mockReset().mockResolvedValue(null);
 
     resetDbConnection();
     backgroundSyncService.reset();
@@ -299,6 +316,51 @@ describe('backgroundSyncService', () => {
     });
   });
 
+  describe('deferred merge drain + unknown posting recovery', () => {
+    it('applies deferred remote merges after a batch settles', async () => {
+      mockDrainDeferredMerges.mockResolvedValueOnce(2);
+      await durableSyncQueue.enqueue({ table: 'products', recordId: 'p1', operation: 'upsert', payload: {} });
+
+      const result = await backgroundSyncService.syncNow();
+
+      expect(result!.success).toBe(1);
+      expect(mockDrainDeferredMerges).toHaveBeenCalledTimes(1);
+    });
+
+    it('drains deferred merges and resolves unknown postings even with an empty queue', async () => {
+      // A timed-out examination posting leaves NO queue row, so the recovery
+      // must not be gated behind the pending-count short-circuit.
+      mockListPendingPostings.mockResolvedValue([{ batchId: 'b1', invoiceNumber: 'EXM-INV/001' }]);
+      mockResolvePosting.mockResolvedValue({ status: 'committed', replayed: true });
+
+      const result = await backgroundSyncService.syncNow();
+
+      expect(result).toBeNull();
+      expect(mockDrainDeferredMerges).toHaveBeenCalledTimes(1);
+      expect(mockResolvePosting).toHaveBeenCalledWith('b1', 'EXM-INV/001');
+    });
+
+    it('resumes unknown examination postings after a batch settles', async () => {
+      await durableSyncQueue.enqueue({ table: 'products', recordId: 'p1', operation: 'upsert', payload: {} });
+      mockListPendingPostings.mockResolvedValue([{ batchId: 'b2', invoiceNumber: 'EXM-INV/002' }]);
+      mockResolvePosting.mockResolvedValue({ status: 'pending' });
+
+      await backgroundSyncService.syncNow();
+
+      expect(mockResolvePosting).toHaveBeenCalledWith('b2', 'EXM-INV/002');
+    });
+
+    it('a still-pending posting outcome is retried on the next cycle, never marked committed', async () => {
+      mockListPendingPostings.mockResolvedValue([{ batchId: 'b3', invoiceNumber: 'EXM-INV/003' }]);
+      mockResolvePosting.mockResolvedValue({ status: 'pending' });
+
+      await backgroundSyncService.syncNow();
+      await backgroundSyncService.syncNow();
+
+      expect(mockResolvePosting).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('metrics', () => {
     it('should return queue metrics through getMetrics', async () => {
       await durableSyncQueue.enqueue({ table: 'products', recordId: 'p1', operation: 'upsert', payload: {} });
@@ -464,6 +526,50 @@ describe('backgroundSyncService', () => {
       expect(dlq[0].lastError).toContain('CONFLICT requires review');
       expect(dlq[0].lastError).toContain('repeated versioning conflicts');
       expect(dlq[0].errorType).toBe('permanent');
+    });
+
+    it('should dead-letter a divergent paidAmount for review instead of LWW-merging it', async () => {
+      // Both devices recorded a payment; the values differ. Auto-picking one
+      // would silently erase the other side's money, so the op must park for
+      // human review on the FIRST conflict — never requeue, never complete.
+      mockSendOps.mockImplementation(async (ops: { operationId?: string }[]) => ({
+        ok: true,
+        processed: ops.length,
+        succeeded: 0,
+        results: ops.map((op) => ({
+          operationId: op.operationId,
+          ok: false,
+          conflict: true,
+          version: 7,
+          server: {
+            version: 7,
+            updatedAt: '2026-06-30T00:00:00Z',
+            data: { id: 'p1', paidAmount: 1200, version: 7 },
+          },
+        })),
+      }));
+
+      await durableSyncQueue.enqueue({
+        table: 'products', recordId: 'p1', operation: 'upsert',
+        payload: { id: 'p1', paidAmount: 1500 },
+      });
+
+      const result = await backgroundSyncService.syncNow();
+
+      expect(result!.deadLetter).toBe(1);
+      expect(result!.success).toBe(0);
+      // Exactly one gateway call: the conflict must NOT cycle through merges.
+      expect(mockSendOps).toHaveBeenCalledTimes(1);
+
+      const dlq = await durableSyncQueue.getAll('dead_letter');
+      expect(dlq).toHaveLength(1);
+      expect(String(dlq[0].lastError)).toContain('financial field(s)');
+      expect(String(dlq[0].lastError)).toContain('paidAmount');
+
+      const conflicts = await durableSyncQueue.getConflicts(10);
+      expect(conflicts).toHaveLength(1);
+      expect((conflicts[0] as any).resolved).toBe('review');
+      expect((conflicts[0] as any).conflictedFields).toContain('paidAmount');
     });
 
     it('should complete a delete whose conflict raced an upsert (delete intent binds)', async () => {

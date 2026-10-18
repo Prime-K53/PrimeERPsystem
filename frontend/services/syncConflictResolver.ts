@@ -13,6 +13,19 @@ const METADATA_FIELDS = new Set([
  */
 const APPEND_ONLY_EVENT_ARRAY_FIELDS = new Set(['landingConsumption']);
 
+/**
+ * Financial fields that must NEVER be resolved by last-write-wins.
+ *
+ * `paidAmount` is the sum of recorded payments, not a free-form edit: if two
+ * devices each apply a payment and the merge picks one side, that side's
+ * payment silently disappears from the books with no trace. No client can
+ * reconstruct the correct total from the two payloads (that requires the
+ * payment ledger), so the only safe resolution is to keep the server value in
+ * any merged output and force the caller to escalate for human review.
+ */
+export const REVIEW_ONLY_MERGE_FIELDS = new Set(['paidAmount']);
+
+
 export function mergeLandingEventArrays(localVal: unknown, remoteVal: unknown): unknown[] | null {
   if (!Array.isArray(localVal) && !Array.isArray(remoteVal)) return null;
   const byId = new Map<string, unknown>();
@@ -116,6 +129,15 @@ export function fieldLevelMerge(localRecord: any, remoteRecord: any): any {
       continue;
     }
 
+    // Review-only financial fields (paidAmount) never resolve by LWW: take the
+    // server value as canonical so a merged payload can never overwrite the
+    // cloud ledger with whichever side happened to carry the later timestamp.
+    // The caller detects the divergence via `reviewOnlyFields` and escalates.
+    if (REVIEW_ONLY_MERGE_FIELDS.has(key)) {
+      merged[key] = remoteVal;
+      continue;
+    }
+
     // Append-only financial history unions by event id instead of
     // last-write-wins: concurrent bill/capitalization events from two
     // devices both survive the merge.
@@ -158,6 +180,15 @@ export interface PushConflictResolution {
   converged: boolean;
   /** Fields both sides changed with different values; these were resolved by last-write-wins and may need user review. */
   conflictedFields: string[];
+  /**
+   * Subset of `conflictedFields` drawn from REVIEW_ONLY_MERGE_FIELDS. Their
+   * values were NOT resolved by last-write-wins (the server value is
+   * preserved), and the caller MUST escalate the operation for human review
+   * instead of re-pushing or completing it, whatever `converged` says.
+   */
+  reviewOnlyFields: string[];
+  /** Convenience flag: true when `reviewOnlyFields` is non-empty. */
+  requiresReview: boolean;
   serverVersion: number;
 }
 
@@ -209,6 +240,8 @@ export function resolvePushConflict(
     }
   }
 
+  const reviewOnlyFields = conflictedFields.filter((field) => REVIEW_ONLY_MERGE_FIELDS.has(field));
+
   let hasDelta = false;
   for (const key of new Set([...Object.keys(remote), ...Object.keys(localPayload)])) {
     if (METADATA_FIELDS.has(key)) continue;
@@ -223,6 +256,8 @@ export function resolvePushConflict(
     merged: hasDelta ? merged : null,
     converged: !hasDelta,
     conflictedFields,
+    reviewOnlyFields,
+    requiresReview: reviewOnlyFields.length > 0,
     serverVersion,
   };
 }

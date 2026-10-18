@@ -21,6 +21,69 @@ import {
 } from '../types';
 import { dbService } from './db';
 import { examinationDb } from './examinationDb';
+import { resolveAccountScope, validateAccountScope, scopeIdentity } from './customerAccountScope';
+
+/**
+ * The account a set of examination jobs may be invoiced to.
+ *
+ * A single examination invoice can only belong to ONE account. Each job's branch
+ * tag is resolved to a canonical scope FIRST — the STABLE id when the job
+ * carries one, otherwise the legacy display name — and the invoice scope is the
+ * single distinct scope:
+ *
+ *   * jobs spanning more than one account  → THROW (invoice each branch)
+ *   * a tag that does not resolve, or a name shared by several branches of this
+ *     customer                          → THROW (never guessed)
+ *   * no tag at all                        → the invoice is explicitly Main
+ *
+ * A mixed-branch invoice is never silently assigned to Main or to one branch.
+ */
+export function resolveExaminationInvoiceScope(
+  jobs: Array<Record<string, any>> | null | undefined,
+  customer: Record<string, any> | null | undefined,
+  customerName = '',
+): { subAccountName?: string; subAccountId?: string; scopeKey: string } {
+  const customerId = String((customer && (customer as any).id) || '').trim();
+  const tags = Array.from(new Set(
+    (jobs || [])
+      .map((job) => {
+        const id = String(job?.sub_account_id || '').trim();
+        const name = String(job?.sub_account_name || '').trim();
+        return id ? `id:${id}` : (name ? `name:${name}` : '');
+      })
+      .filter(Boolean)
+  ));
+
+  if (tags.length === 0) return { scopeKey: 'main' };
+
+  const resolvedScopes = tags.map((tag) => (
+    resolveAccountScope(customerId, tag.slice(tag.indexOf(':') + 1), customer as any)
+  ));
+  const identities = Array.from(new Set(resolvedScopes.map(scopeIdentity)));
+  if (identities.length > 1) {
+    throw new Error(
+      `Cannot raise a single invoice across ${identities.length} accounts ` +
+      `(${resolvedScopes.map(s => s.branchLabel).join(', ')}). ` +
+      'Invoice each branch separately so the receivable is recorded against the correct account.'
+    );
+  }
+
+  const scope = resolvedScopes[0];
+  const check = validateAccountScope(scope, customer as any);
+  if (!check.ok || scope.isMain) {
+    throw new Error(
+      `Cannot raise this examination invoice: branch '${tags.map(t => t.slice(t.indexOf(':') + 1)).join(', ')}' ` +
+      `cannot be identified for customer ${customerName || customerId} (${check.reason || 'unresolved branch'}). ` +
+      'Tag the examination jobs with an existing branch of this customer, or invoice the branch separately.'
+    );
+  }
+
+  return {
+    subAccountName: scope.branchLabel,
+    subAccountId: scope.branchId || undefined,
+    scopeKey: identities[0],
+  };
+}
 import { isMarketAdjustmentActive } from '../utils/marketAdjustmentUtils';
 import { getAdjustmentSortKey } from '../utils/marketAdjustmentSemantics';
 import { generateNextId, roundToCurrency } from '../utils/helpers';
@@ -866,6 +929,9 @@ class ExaminationJobService {
       exam_name: (payload.exam_name || '').trim(),
       school_id: (payload.school_id || '').trim(),
       sub_account_name: payload.sub_account_name ? String(payload.sub_account_name).trim() : undefined,
+      // STABLE branch id. Carried beside the display name so a job set that
+      // spans two identically-named branches is still detectable at invoicing.
+      sub_account_id: payload.sub_account_id ? String(payload.sub_account_id).trim() : undefined,
       class_name: (payload.class_name || '').trim(),
       number_of_learners: toPositiveInt(payload.number_of_learners),
       status: 'Draft',
@@ -940,6 +1006,9 @@ class ExaminationJobService {
       sub_account_name: updates.sub_account_name !== undefined
         ? (String(updates.sub_account_name || '').trim() || undefined)
         : existing.sub_account_name,
+      sub_account_id: updates.sub_account_id !== undefined
+        ? (String(updates.sub_account_id || '').trim() || undefined)
+        : (existing as any)?.sub_account_id,
       class_name: updates.class_name !== undefined ? String(updates.class_name).trim() : existing.class_name,
       number_of_learners: updates.number_of_learners !== undefined
         ? toPositiveInt(updates.number_of_learners)
@@ -1665,11 +1734,13 @@ class ExaminationJobService {
     const customers = await dbService.getAll<{ id: string; name?: string }>('customers');
     const customer = customers.find((entry) => entry.id === schoolId);
     const customerName = customer?.name || schoolId;
-    const subAccountNames = Array.from(new Set(
-      refreshedJobs
-        .map(job => String(job.sub_account_name || '').trim())
-        .filter(Boolean)
-    ));
+
+    // ── Account scope ──────────────────────────────────────────────────────
+    // A single examination invoice can only belong to ONE account. See
+    // `resolveExaminationInvoiceScope` for the rule (stable id first, then
+    // legacy display name; refuse anything ambiguous or multi-account).
+    const { subAccountName: invoiceSubAccountName, subAccountId: invoiceSubAccountId } =
+      resolveExaminationInvoiceScope(refreshedJobs, customer as any, customerName);
 
     const invoiceId = await generateNextSalesInvoiceNumber();
     const now = new Date();
@@ -1687,7 +1758,8 @@ class ExaminationJobService {
       paidAmount: 0,
       status: 'Unpaid',
       items,
-      subAccountName: subAccountNames.length === 1 ? subAccountNames[0] : undefined,
+      subAccountName: invoiceSubAccountName,
+      subAccountId: invoiceSubAccountId,
       notes: `Examination invoice generated from ${refreshedJobs.length} class job(s).`,
       category: 'Examination',
       originModule: 'examination',

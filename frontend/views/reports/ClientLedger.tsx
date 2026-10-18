@@ -12,6 +12,7 @@ import { currencyService } from '../../services/currencyService';
 import { getCustomerOptionLabel } from '../../utils/customerDisplay';
 import { TransactionRefLink } from '../../components/TransactionRefLink';
 import { paymentCredit } from '../../services/customerLedger';
+import { accountScopeOptions, rowMatchesScopeKeys } from '../../services/accountScopeFilter';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useDocumentStore } from '../../stores/documentStore';
 
@@ -49,7 +50,10 @@ const ClientLedger: React.FC = () => {
   const companyName = companyConfig?.companyName || 'Prime ERP';
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
-  const [selectedSubAccountNames, setSelectedSubAccountNames] = useState<string[]>([]);
+  // Selected accounts as CANONICAL SCOPE KEYS ('main' | 'id:<branchId>' |
+  // 'name:<slug>'), never by display name: two branches of one customer can
+  // share a name, and a name filter would merge their balances.
+  const [selectedSubAccountKeys, setSelectedSubAccountKeys] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<'all' | '3m' | '6m' | '12m'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
@@ -63,6 +67,15 @@ const ClientLedger: React.FC = () => {
 
   const selectedCustomer = useMemo(() => customers.find(c => c.id === selectedCustomerId), [customers, selectedCustomerId]);
 
+  const selectableSubAccounts = useMemo(
+    () => accountScopeOptions(selectedCustomerId, selectedCustomer as any),
+    [selectedCustomerId, selectedCustomer],
+  );
+  const inSelectedScope = useCallback(
+    (row: any) => rowMatchesScopeKeys(row, selectedSubAccountKeys, selectedCustomerId, selectedCustomer as any),
+    [selectedSubAccountKeys, selectedCustomerId, selectedCustomer],
+  );
+
   useEffect(() => {
     const routeState = (location.state as { customerId?: string; selectedId?: string; customerName?: string } | null) || null;
     const queryCustomerId = String(searchParams.get('customerId') || '').trim();
@@ -70,10 +83,10 @@ const ClientLedger: React.FC = () => {
     const stateCustomerName = String(routeState?.customerName || '').trim();
     let nextCustomerId = queryCustomerId || stateCustomerId;
     if (!nextCustomerId && stateCustomerName) nextCustomerId = customers.find(c => c.name === stateCustomerName)?.id || '';
-    if (nextCustomerId && customers.some(c => c.id === nextCustomerId) && nextCustomerId !== selectedCustomerId) { setSelectedCustomerId(nextCustomerId); setSelectedSubAccountNames([]); }
+    if (nextCustomerId && customers.some(c => c.id === nextCustomerId) && nextCustomerId !== selectedCustomerId) { setSelectedCustomerId(nextCustomerId); setSelectedSubAccountKeys([]); }
   }, [searchParams, location.state, customers, selectedCustomerId]);
 
-  useEffect(() => { if (!selectedCustomerId) return; if (customers.some(c => c.id === selectedCustomerId)) return; setSelectedCustomerId(''); setSelectedSubAccountNames([]); }, [customers, selectedCustomerId]);
+  useEffect(() => { if (!selectedCustomerId) return; if (customers.some(c => c.id === selectedCustomerId)) return; setSelectedCustomerId(''); setSelectedSubAccountKeys([]); }, [customers, selectedCustomerId]);
 
   const dateCutoff = useMemo(() => {
     if (dateRange === 'all') return null;
@@ -82,8 +95,8 @@ const ClientLedger: React.FC = () => {
 
   const customerStats = useMemo(() => {
     if (!selectedCustomerId) return null;
-    const customerInvoices = (invoices || []).filter((inv: any) => { if (inv.customerId !== selectedCustomerId) return false; return selectedSubAccountNames.length === 0 || selectedSubAccountNames.includes(inv.subAccountName || 'Main'); });
-    const customerPaymentRows = (customerPayments || []).filter((p: any) => { if (p.customerId !== selectedCustomerId) return false; return selectedSubAccountNames.length === 0 || selectedSubAccountNames.includes(p.subAccountName || 'Main'); });
+    const customerInvoices = (invoices || []).filter((inv: any) => { if (inv.customerId !== selectedCustomerId) return false; return inSelectedScope(inv); });
+    const customerPaymentRows = (customerPayments || []).filter((p: any) => { if (p.customerId !== selectedCustomerId) return false; return inSelectedScope(p); });
     const customerSales = (sales || []).filter((s: any) => { if (s.customerId !== selectedCustomerId) return false; const t = s.totalAmount || s.total || 0; const p = s.paidAmount || 0; return (t - p) > 0.01; });
 
     const now = new Date();
@@ -107,11 +120,11 @@ const ClientLedger: React.FC = () => {
     const creditLimit = selectedCustomer?.creditLimit || 0;
     const creditUtilization = creditLimit > 0 ? (totalOutstanding / creditLimit) * 100 : 0;
 
-    let customerLedgerEntries = ledger.filter((entry: any) => { const mc = entry.customerId === selectedCustomerId; const ms = selectedSubAccountNames.length === 0 || selectedSubAccountNames.includes(entry.subAccountName || 'Main'); return mc && ms; }).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    let customerLedgerEntries = ledger.filter((entry: any) => { const mc = entry.customerId === selectedCustomerId; const ms = inSelectedScope(entry); return mc && ms; }).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
     if (dateCutoff) customerLedgerEntries = customerLedgerEntries.filter((e: any) => new Date(e.date) >= dateCutoff);
     let openingBalance = Number(selectedCustomer?.balance || 0);
     if (dateCutoff) {
-      const allBefore = ledger.filter((entry: any) => { const mc = entry.customerId === selectedCustomerId; const ms = selectedSubAccountNames.length === 0 || selectedSubAccountNames.includes(entry.subAccountName || 'Main'); return mc && ms && new Date(entry.date) < dateCutoff; }).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const allBefore = ledger.filter((entry: any) => { const mc = entry.customerId === selectedCustomerId; const ms = inSelectedScope(entry); return mc && ms && new Date(entry.date) < dateCutoff; }).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
        allBefore.forEach((entry: any) => { const d = entry.debitAccountId === arAccId || entry.debitAccountId === '11310'; const c = entry.creditAccountId === arAccId || entry.creditAccountId === '11310'; if (d) openingBalance += entry.amount; if (c) openingBalance -= entry.amount; });
     }
     let runningB = openingBalance;
@@ -131,7 +144,7 @@ const ClientLedger: React.FC = () => {
     const totalDebits = txs.reduce((s, t) => s + t.debit, 0);
     const totalCredits = txs.reduce((s, t) => s + t.credit, 0);
     return { aging, totalOutstanding, totalPaid, creditUtilization, creditLimit, ledgerEntries: entriesWithBalance, transactions: txs, invoiceCount: customerInvoices.length, paymentCount: customerPaymentRows.length, salesCount: customerSales.length, openingBalance, totalDebits, totalCredits };
-  }, [selectedCustomerId, selectedSubAccountNames, invoices, customerPayments, sales, ledger, selectedCustomer, arAccId, dateCutoff]);
+  }, [selectedCustomerId, selectedSubAccountKeys, invoices, customerPayments, sales, ledger, selectedCustomer, arAccId, dateCutoff]);
 
   const filteredLedgerEntries = useMemo(() => {
     if (!customerStats) return [];
@@ -212,7 +225,7 @@ const ClientLedger: React.FC = () => {
             {selectedCustomer ? (
               <div style={{ ...baseInput, background: teal[50], display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{getCustomerOptionLabel(selectedCustomer)}</span>
-                <button onClick={() => { setSelectedCustomerId(''); setSelectedSubAccountNames([]); setCustomerSearch(''); }}
+                <button onClick={() => { setSelectedCustomerId(''); setSelectedSubAccountKeys([]); setCustomerSearch(''); }}
                   style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, border: `1.4px solid ${hairline}`, background: paper, color: inkSoft, cursor: 'pointer', flexShrink: 0 }}>
                   Change
                 </button>
@@ -241,7 +254,7 @@ const ClientLedger: React.FC = () => {
                       return (<>
                       {matches.map((c: any) => (
                         <button key={c.id}
-                          onClick={() => { setSelectedCustomerId(c.id); setSelectedSubAccountNames([]); setCustomerSearch(''); setCustomerDropdownOpen(false); }}
+                          onClick={() => { setSelectedCustomerId(c.id); setSelectedSubAccountKeys([]); setCustomerSearch(''); setCustomerDropdownOpen(false); }}
                           style={{ width: '100%', textAlign: 'left', padding: '8px 12px', cursor: 'pointer', background: 'transparent', border: 'none', borderBottom: `1px solid ${hairline}` }}
                           onMouseEnter={e => e.currentTarget.style.background = teal[50]}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
@@ -277,11 +290,11 @@ const ClientLedger: React.FC = () => {
           <div>
             <label style={{ fontSize: 10, fontWeight: 700, color: inkSoft, textTransform: 'uppercase', letterSpacing: 0.06, display: 'block', marginBottom: 6 }}>Sub-Accounts</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 38, alignItems: 'center' }}>
-              {selectedCustomer?.subAccounts?.length > 0 ? (
-                ['Main', ...selectedCustomer.subAccounts.map((s: any) => s.name)].map((sub: string) => (
-                  <button key={sub} onClick={() => { setSelectedSubAccountNames(prev => prev.includes(sub) ? prev.filter(s => s !== sub) : [...prev, sub]); }}
-                    style={{ padding: '4px 10px', borderRadius: 9, fontSize: 10, fontWeight: 700, border: `1.4px solid`, cursor: 'pointer', background: selectedSubAccountNames.includes(sub) ? `linear-gradient(155deg, ${teal[500]}, ${teal[700]})` : teal[50], color: selectedSubAccountNames.includes(sub) ? '#fff' : inkSoft, borderColor: selectedSubAccountNames.includes(sub) ? 'transparent' : hairline }}>
-                    {sub}
+              {selectedCustomer && selectableSubAccounts.length > 1 ? (
+                selectableSubAccounts.map((opt) => (
+                  <button key={opt.key} onClick={() => { setSelectedSubAccountKeys(prev => prev.includes(opt.key) ? prev.filter(s => s !== opt.key) : [...prev, opt.key]); }}
+                    style={{ padding: '4px 10px', borderRadius: 9, fontSize: 10, fontWeight: 700, border: `1.4px solid`, cursor: 'pointer', background: selectedSubAccountKeys.includes(opt.key) ? `linear-gradient(155deg, ${teal[500]}, ${teal[700]})` : teal[50], color: selectedSubAccountKeys.includes(opt.key) ? '#fff' : inkSoft, borderColor: selectedSubAccountKeys.includes(opt.key) ? 'transparent' : hairline }}>
+                    {opt.label}
                   </button>
                 ))
               ) : (<span style={{ fontSize: 12, color: inkSoft, fontStyle: 'italic' }}>Select a customer first</span>)}

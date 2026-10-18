@@ -131,6 +131,13 @@ const RETRYABLE_ERROR_PATTERNS = [
   'bad gateway', 'gateway timeout',
 ];
 
+/**
+ * How long a row may sit in 'syncing' before a restart is assumed to have
+ * orphaned it. Generous enough that a slow in-flight batch is never stolen
+ * while its owner is still alive.
+ */
+const SYNC_STUCK_THRESHOLD_MS = 120_000;
+
 const PERMANENT_ERROR_PATTERNS = [
   'validation', 'malformed', 'foreign key', 'not found',
   'missing required', 'unauthorized', 'forbidden',
@@ -1032,6 +1039,28 @@ export const durableSyncQueue = {
     return allActive.some(
       (op) => op.table === table && op.recordId === recordId
     );
+  },
+
+  /**
+   * A crash or tab close mid-batch strands dequeued rows in 'syncing': nothing
+   * selects them (dequeue reads 'pending', retryFailed reads 'failed'), so they
+   * never drain and the operation silently never reaches the server. Rows
+   * carrying a `serverSyncedAt` stamp are genuinely in flight and left alone;
+   * everything older than the stale threshold returns to 'pending'.
+   */
+  async recoverStuckSyncing(staleAfterMs = SYNC_STUCK_THRESHOLD_MS): Promise<number> {
+    const db = await getDb();
+    const syncing = await db.getAllFromIndex('operations', 'by-status', IDBKeyRange.only('syncing'));
+    if (!Array.isArray(syncing) || syncing.length === 0) return 0;
+    const cutoff = Date.now() - staleAfterMs;
+    let recovered = 0;
+    for (const item of syncing) {
+      const lastAttemptAt = Date.parse(String(item.lastAttempt || '') || '') || 0;
+      if (lastAttemptAt && lastAttemptAt > cutoff) continue;
+      await db.put('operations', { ...item, status: 'pending' });
+      recovered++;
+    }
+    return recovered;
   },
 
   async retryFailed(): Promise<number> {

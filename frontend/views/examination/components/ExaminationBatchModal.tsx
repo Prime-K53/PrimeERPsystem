@@ -6,6 +6,7 @@ import { useExamination } from '../../../context/ExaminationContext';
 import { useAuth } from '../../../context/AuthContext';
 import { Input } from '../../../components/Input';
 import { toast } from '../../../components/Toast';
+import { subAccountEntries } from '../../../services/customerAccountScope';
 import { Customer } from '../../../types';
 import { getPlaceholder } from '../../../constants/placeholders';
 import { dbService } from '../../../services/db';
@@ -61,7 +62,7 @@ const ExaminationBatchModal: React.FC<ExaminationBatchModalProps> = ({ isOpen, o
   const [formData, setFormData] = useState({
     school_id: '', name: '',
     academic_year: new Date().getFullYear().toString(),
-    term: '1', exam_type: 'Mid-Term', sub_account_name: '',
+    term: '1', exam_type: 'Mid-Term', sub_account_name: '', sub_account_id: '',
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -114,7 +115,13 @@ const ExaminationBatchModal: React.FC<ExaminationBatchModalProps> = ({ isOpen, o
     return customers.find(c => String(c.id) === String(formData.school_id));
   }, [customers, formData.school_id]);
 
-  const selectedCustomerSubAccounts = React.useMemo(() => selectedCustomerFull?.subAccounts || [], [selectedCustomerFull]);
+  const selectedCustomerSubAccounts = React.useMemo(
+    () => subAccountEntries(selectedCustomerFull as any).map((sub: any) => ({
+      id: String(sub?.id ?? ''),
+      name: String(sub?.name ?? sub?.label ?? ''),
+    })).filter((sub: any) => sub.name),
+    [selectedCustomerFull],
+  );
   const hasSubAccounts = selectedCustomerSubAccounts.length > 0;
 
   const handleAddNewCustomer = async () => {
@@ -154,6 +161,9 @@ const ExaminationBatchModal: React.FC<ExaminationBatchModalProps> = ({ isOpen, o
         academic_year: formData.academic_year.trim(),
         currency: companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$',
         sub_account_name: hasSubAccounts ? formData.sub_account_name.trim() : '',
+        // STABLE branch identity alongside the display label, so two branches
+        // that share a name can never collapse into one billed account.
+        sub_account_id: hasSubAccounts ? String(formData.sub_account_id || '').trim() : '',
         rounding_method: companyConfig?.pricingSettings?.defaultMethod || 'ALWAYS_UP_50',
         rounding_value: Number(companyConfig?.pricingSettings?.customStep || 50)
       };
@@ -253,13 +263,24 @@ const ExaminationBatchModal: React.FC<ExaminationBatchModalProps> = ({ isOpen, o
                 <div>
                   <label style={labelStyle}>Billed Account</label>
                   <div style={{ position: 'relative' }}>
-                    <select value={formData.sub_account_name} onChange={(e) => handleChange('sub_account_name', e.target.value)}
+                    <select value={formData.sub_account_id ? `id:${formData.sub_account_id}` : ''} onChange={(e) => {
+                        // Options are addressed by the STABLE branch id: two
+                        // branches of one customer may share a display name.
+                        const raw = e.target.value;
+                        const byId = /^id:(.*)$/.exec(raw);
+                        if (byId) {
+                          const branch = selectedCustomerSubAccounts.find((s: any) => String(s?.id ?? '') === byId[1]);
+                          setFormData(prev => ({ ...prev, sub_account_id: byId[1], sub_account_name: String(branch?.name || '') }));
+                        } else {
+                          setFormData(prev => ({ ...prev, sub_account_id: '', sub_account_name: '' }));
+                        }
+                      }}
                       disabled={!selectedSchool || !hasSubAccounts} style={selectStyle}>
                       {!selectedSchool && <option value="">Select customer first</option>}
                       {selectedSchool && !hasSubAccounts && <option value="">Main account billing (no sub-accounts)</option>}
                       {hasSubAccounts && <option value="">Select billed sub-account</option>}
                       {selectedCustomerSubAccounts.map((sub: any) => (
-                        <option key={sub.id || sub.name} value={sub.name}>{sub.name}</option>
+                        <option key={sub.id || sub.name} value={sub.id ? `id:${sub.id}` : `name:${sub.name || ''}`}>{sub.name}</option>
                       ))}
                     </select>
                   </div>

@@ -9,6 +9,7 @@ import {
     Eye
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { rowAccountScopeKey, rowMatchesScopeKeys, accountScopeOptions } from '../../services/accountScopeFilter';
 import { useFinance } from '../../context/FinanceContext';
 import { useSales } from '../../context/SalesContext';
 import { useInventory } from '../../context/InventoryContext';
@@ -98,8 +99,35 @@ const FinancialReports: React.FC = () => {
     const [reportType, setReportType] = useState<'TrialBalance' | 'IncomeStatement' | 'BalanceSheet' | 'CashFlow' | 'EquityStatement' | 'AgedAR' | 'AgedAP' | 'Budget'>('IncomeStatement');
     const [drilldownAccount, setDrilldownAccount] = useState<Account | null>(null);
     const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
-    const [selectedSubAccountNames, setSelectedSubAccountNames] = useState<string[]>([]);
+    // Selected accounts, addressed by their CANONICAL SCOPE KEY ('main',
+    // 'id:<branchId>' or 'name:<slug>') — never by display name, so two
+    // branches that share a name can never be selected (or reported) as one.
+    const [selectedSubAccountKeys, setSelectedSubAccountKeys] = useState<string[]>([]);
     const [isCustomerFilterOpen, setIsCustomerFilterOpen] = useState(false);
+
+    const selectedCustomerObj = useMemo(
+        () => customers.find(c => c.id === selectedCustomerId) || null,
+        [customers, selectedCustomerId],
+    );
+
+    /**
+     * Canonical scope key of a financial row's account.
+     * `subAccounts` accepts the legacy `string[]` shape and the current
+     * `{ id, name, ... }[]` shape; `subAccountEntries` normalizes both.
+     */
+    const rowScopeKey = (row: any) => rowAccountScopeKey(row, selectedCustomerId, selectedCustomerObj as any);
+
+    /** True when the row belongs to one of the selected accounts (or none are
+     *  selected). A legacy name-only row whose display name is shared by
+     *  several branches resolves to a `name:` key that matches no branch
+     *  option, so it is excluded rather than merged into a branch. */
+    const matchesSelectedScope = (row: any) => rowMatchesScopeKeys(row, selectedSubAccountKeys, selectedCustomerId, selectedCustomerObj as any);
+
+    /** Filterable accounts of the selected customer: Main + each branch. */
+    const selectableSubAccounts = useMemo(
+        () => accountScopeOptions(selectedCustomerId, selectedCustomerObj as any),
+        [selectedCustomerId, selectedCustomerObj],
+    );
     const [dateRange, setDateRange] = useState({
         start: startOfYear(new Date()).toISOString().split('T')[0],
         end: endOfYear(new Date()).toISOString().split('T')[0]
@@ -453,7 +481,7 @@ const FinancialReports: React.FC = () => {
         (ledger || []).forEach(entry => {
             // Apply Customer/Sub-Account Filtering
             if (selectedCustomerId && entry.customerId !== selectedCustomerId) return;
-            if (selectedSubAccountNames.length > 0 && !selectedSubAccountNames.includes(entry.subAccountName || 'Main')) return;
+            if (!matchesSelectedScope(entry)) return;
             // Drafts, voids, and reversals never enter reported balances.
             if ((entry as any).amount == null) return;
             if (!isPostedLedgerEntry(entry as any)) return;
@@ -490,7 +518,7 @@ const FinancialReports: React.FC = () => {
             }
         });
         return { current: balances, previous: prevBalances };
-    }, [ledger, accounts, dateRange, compareWithPrevious, selectedCustomerId, selectedSubAccountNames, refreshCounter]);
+    }, [ledger, accounts, dateRange, compareWithPrevious, selectedCustomerId, selectedSubAccountKeys, refreshCounter]);
 
       const getAccountRows = (types: DisplayAccountType[]) => {
           // NOTE: balances keyed here are OWN (pre-rollup) balances, so
@@ -657,7 +685,7 @@ const FinancialReports: React.FC = () => {
             .filter(i => i.status !== 'Paid' && i.status !== 'Cancelled')
             .filter(i => {
                 if (selectedCustomerId && i.customerId !== selectedCustomerId) return false;
-                if (selectedSubAccountNames.length > 0 && !selectedSubAccountNames.includes(i.subAccountName || 'Main')) return false;
+                if (!matchesSelectedScope(i)) return false;
                 return true;
             })
             .map(i => {
@@ -698,7 +726,7 @@ const FinancialReports: React.FC = () => {
             ar: { items: ar, buckets: getAgedBuckets(ar) },
             ap: { items: ap, buckets: getAgedBuckets(ap) }
         };
-    }, [invoices, purchases, selectedCustomerId, selectedSubAccountNames]);
+    }, [invoices, purchases, selectedCustomerId, selectedSubAccountKeys]);
 
     const budgetData = useMemo(() => {
         const start = parseISO(dateRange.start);
@@ -733,7 +761,7 @@ const FinancialReports: React.FC = () => {
             .filter(item => Math.abs(item.actual) > 0 || Math.abs(item.budget) > 0);
 
         return report;
-    }, [budgets, accounts, accountBalances, dateRange, selectedCustomerId, selectedSubAccountNames]);
+    }, [budgets, accounts, accountBalances, dateRange, selectedCustomerId, selectedSubAccountKeys]);
 
     const renderBudgetReport = () => (
         <div className="animate-in fade-in duration-500">
@@ -1092,7 +1120,7 @@ const FinancialReports: React.FC = () => {
                                                     value={selectedCustomerId}
                                                     onChange={(e) => {
                                                         setSelectedCustomerId(e.target.value);
-                                                        setSelectedSubAccountNames([]);
+                                                        setSelectedSubAccountKeys([]);
                                                     }}
                                                     className="w-full bg-white border border-slate-300 rounded p-2 text-sm outline-none focus:border-[#0077C5]"
                                                 >
@@ -1103,7 +1131,7 @@ const FinancialReports: React.FC = () => {
                                                 </select>
                                                 {selectedCustomerId && (
                                                     <button
-                                                        onClick={() => { setSelectedCustomerId(''); setSelectedSubAccountNames([]); }}
+                                                        onClick={() => { setSelectedCustomerId(''); setSelectedSubAccountKeys([]); }}
                                                         className="text-[10px] text-rose-500 font-bold uppercase"
                                                     >
                                                         Clear Filter
@@ -1115,21 +1143,21 @@ const FinancialReports: React.FC = () => {
                                                 <div className="space-y-3">
                                                     <label className="text-xs font-bold text-slate-500 uppercase block">Filter by Sub-Accounts</label>
                                                     <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar p-1">
-                                                        {['Main', ...(customers.find(c => c.id === selectedCustomerId)?.subAccounts?.map(s => s.name) || [])].map(sub => (
-                                                            <label key={sub} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition-colors group">
+                                                        {selectableSubAccounts.map(sub => (
+                                                            <label key={sub.key} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition-colors group">
                                                                 <input
                                                                     type="checkbox"
-                                                                    checked={selectedSubAccountNames.includes(sub)}
+                                                                    checked={selectedSubAccountKeys.includes(sub.key)}
                                                                     onChange={(e) => {
                                                                         if (e.target.checked) {
-                                                                            setSelectedSubAccountNames([...selectedSubAccountNames, sub]);
+                                                                            setSelectedSubAccountKeys([...selectedSubAccountKeys, sub.key]);
                                                                         } else {
-                                                                            setSelectedSubAccountNames(selectedSubAccountNames.filter(s => s !== sub));
+                                                                            setSelectedSubAccountKeys(selectedSubAccountKeys.filter(s => s !== sub.key));
                                                                         }
                                                                     }}
                                                                     className="w-3 h-3 rounded text-[#0077C5] focus:ring-[#0077C5]"
                                                                 />
-                                                                <span className="text-[11px] font-medium text-slate-600 group-hover:text-[#0077C5]">{sub}</span>
+                                                                <span className="text-[11px] font-medium text-slate-600 group-hover:text-[#0077C5]">{sub.label}</span>
                                                             </label>
                                                         ))}
                                                     </div>

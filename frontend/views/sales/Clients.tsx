@@ -24,7 +24,7 @@ import { currencyService } from '../../services/currencyService';
 import { CustomerSearch } from '../../components/CustomerSearch';
 import { ConfirmDialog, ConfirmDialogType } from '../../components/ConfirmDialog';
 import { getFloatingMenuStyle } from '../../utils/actionMenu';
-import { buildLedgerFromRecords } from '../../services/customerLedger';
+import { buildLedgerFromRecords, mainAccountScope } from '../../services/customerLedger';
 
 const teal = {
   50: '#eef7f6', 100: '#d3ece9', 200: '#a6d9d3', 300: '#72c0b7',
@@ -198,10 +198,14 @@ export const Clients: React.FC = () => {
   const runningBalanceByCustomer = useMemo(() => {
     const map = new Map<string, number>();
     for (const c of customers) {
-      const custInvoices = (invoices || []).filter((inv: any) => inv.customerId === c.id || inv.customerName === c.name);
-      const custPayments = (customerPayments || []).filter((p: any) => p.customerId === c.id || p.customerName === c.name);
+      // ID-only matching: names are display-only and must never merge
+      // balances across same-named customers. Main scope = Main rows only.
+      const scope = mainAccountScope(c.id);
+      const custInvoices = (invoices || []).filter((inv: any) => inv.customerId === c.id);
+      const custPayments = (customerPayments || []).filter((p: any) => p.customerId === c.id);
       const { closingBalance } = buildLedgerFromRecords({
         customerId: c.id,
+        scope, customer: c as any,
         invoices: custInvoices as any[],
         payments: custPayments as any[],
         openingBalance: Number(c.balance || 0),
@@ -366,7 +370,7 @@ export const Clients: React.FC = () => {
   }
 
   const getLastTransaction = (customerId: string) => {
-    const customerInvoices = invoices.filter(inv => inv.customerId === customerId || inv.customerName === customers.find(c => c.id === customerId)?.name);
+    const customerInvoices = invoices.filter(inv => inv.customerId === customerId);
     if (customerInvoices.length === 0) return null;
 
     return customerInvoices.reduce((prev, current) =>

@@ -190,4 +190,78 @@ describe('P1 - sync pull gateway (GET /api/sync/pull)', () => {
     expect(res.status).toBe(502);
     expect(res.body.error).toMatch(/Cloud pull failed/);
   });
+
+  // ─── Targeted `?ids=` pull (deferred-merge drain) ───────────────────────────
+
+  it('turns ?ids= into a PostgREST in.(...) point lookup and drops the cursor walk', async () => {
+    http.get.mockResolvedValue({ data: [{ id: 'a', data: { id: 'a' }, updated_at: '2026-01-01T00:00:00.000Z' }] });
+
+    const res = await request(app)
+      .get('/api/sync/pull')
+      .set('Authorization', adminAuth())
+      .query({ table: 'products', ids: 'a,b/c', offset: 40, limit: 10, since: '2026-01-01T00:00:00.000Z' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.page.hasMore).toBe(false);
+    expect(res.body.ids).toEqual(['a', 'b/c']);
+
+    const [, config] = http.get.mock.calls[0];
+    expect(config.params.id).toBe('in.("a","b/c")');
+    // A point lookup must ignore the incremental cursor and paging entirely.
+    expect(config.params.order).toBeUndefined();
+    expect(config.params.offset).toBeUndefined();
+    expect(config.params.updated_at).toBeUndefined();
+    expect(config.params.limit).toBe(2);
+  });
+
+  it('dedupes the targeted id list', async () => {
+    http.get.mockResolvedValue({ data: [] });
+
+    const res = await request(app)
+      .get('/api/sync/pull')
+      .set('Authorization', adminAuth())
+      .query({ table: 'products', ids: 'a,a,b' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ids).toEqual(['a', 'b']);
+    const [, config] = http.get.mock.calls[0];
+    expect(config.params.id).toBe('in.("a","b")');
+  });
+
+  it('rejects ids that could break out of the in.(...) filter with 400 (fail closed)', async () => {
+    const res = await request(app)
+      .get('/api/sync/pull')
+      .set('Authorization', adminAuth())
+      .query({ table: 'products', ids: 'a"),or(id.not.is.null' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid record id/);
+    expect(http.get).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized id batches with 400', async () => {
+    const ids = Array.from({ length: 201 }, (_, i) => `id-${i}`).join(',');
+    const res = await request(app)
+      .get('/api/sync/pull')
+      .set('Authorization', adminAuth())
+      .query({ table: 'products', ids });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/too many ids/);
+    expect(http.get).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cursor semantics when ids is blank (no silent targeted mode)', async () => {
+    http.get.mockResolvedValue({ data: [] });
+
+    const res = await request(app)
+      .get('/api/sync/pull')
+      .set('Authorization', adminAuth())
+      .query({ table: 'products', ids: '   ' });
+
+    expect(res.status).toBe(200);
+    const [, config] = http.get.mock.calls[0];
+    expect(config.params.id).toBeUndefined();
+    expect(config.params.order).toContain('updated_at.asc');
+  });
 });

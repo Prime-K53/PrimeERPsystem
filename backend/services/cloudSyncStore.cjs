@@ -14,6 +14,10 @@
  * tombstone (`data.deleted = true` + `data.deletedAt`).
  */
 const axios = require('axios');
+const accountScope = require('./customerAccountScope.cjs');
+
+const EXAMINATION_BATCH_TABLE = 'examination_batches';
+const INVOICE_TABLE = 'invoices';
 
 // axios does NOT reject on 4xx/5xx by default; it only throws on network-level
 // failures. Without this, a rejected cloud write (bad column, RLS, 401 from an
@@ -187,8 +191,25 @@ async function listRows(table) {
  * never talks to PostgREST directly. Throws on transport/cloud failures so
  * the route can return a real 5xx instead of an empty dataset.
  */
-async function listPullPage(table, { since = null, offset = 0, limit = 2000 } = {}) {
+async function listPullPage(table, { since = null, offset = 0, limit = 2000, ids = null } = {}) {
   const params = { select: '*', order: 'updated_at.asc,id.asc', offset, limit };
+  // Targeted re-fetch: when the caller supplies an explicit id set the pull is
+  // a point lookup, not a cursor walk. `since` and the deterministic ordering
+  // are deliberately dropped — a deferred row must be returned regardless of
+  // where it sits on the incremental cursor, otherwise the very staleness this
+  // path exists to repair would be reproduced.
+  if (Array.isArray(ids) && ids.length > 0) {
+    delete params.order;
+    delete params.offset;
+    params.limit = ids.length;
+    params.id = `in.(${ids.map((id) => `"${String(id).replace(/"/g, '\\"')}"`).join(',')})`;
+    const res = await cloudHttp.get(`${SUPABASE_URL}/rest/v1/${table}`, {
+      headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
+      params,
+      timeout: 20000,
+    });
+    return Array.isArray(res.data) ? res.data : [];
+  }
   if (since) params.updated_at = `gte.${since}`;
   const res = await cloudHttp.get(`${SUPABASE_URL}/rest/v1/${table}`, {
     headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
@@ -384,6 +405,55 @@ async function checkVersion(table, id, incomingVersion) {
   return { ok: true, serverVersion };
 }
 
+/**
+ * Operator-facing wording for a rejected examination write. The submitting
+ * device sees this verbatim, so it names the blocking state rather than the
+ * internal comparison that failed.
+ */
+function businessRuleMessage(table, conflictType) {
+  if (table === EXAMINATION_BATCH_TABLE) {
+    if (conflictType === 'BATCH_TOMBSTONE_FORBIDDEN') {
+      return 'Cannot delete an approved or invoiced examination batch — financial history is immutable';
+    }
+    return 'Examination batch state changed on another device — approved pricing is immutable and the update was rejected';
+  }
+  if (table === INVOICE_TABLE) {
+    return 'Examination invoice rejected by the authoritative posting rules';
+  }
+  return 'Write rejected by authoritative business rules';
+}
+
+/**
+ * Work out WHY a guarded conditional PATCH matched zero rows. Returns null when
+ * the stored status actually satisfies the filter, meaning the zero-row result
+ * was an ordinary version conflict after all.
+ */
+function resolveGuardRejectionReason(guardParams, existing) {
+  const statusFilter = guardParams && guardParams['data->>status'];
+  if (!statusFilter) return null;
+  const existingStatus = String(
+    existing && existing.data && typeof existing.data === 'object'
+      ? (existing.data.status ?? '')
+      : ''
+  ).trim().toLowerCase();
+
+  const negated = String(statusFilter).trim().toLowerCase().startsWith('not.in.');
+  const list = String(statusFilter)
+    .replace(/^not\.in\./i, '')
+    .replace(/^in\./i, '')
+    .replace(/^\(|\)$/g, '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (list.length === 0) return null;
+  const listed = list.includes(existingStatus);
+  const violated = negated ? listed : !listed;
+  if (!violated) return null;
+
+  return 'BATCH_STATUS_PRECONDITION_FAILED';
+}
+
 /** Shape of the server snapshot handed to the client for field-merging. */
 function conflictServerPayload(id, existing, serverVersion) {
   return {
@@ -391,6 +461,53 @@ function conflictServerPayload(id, existing, serverVersion) {
     version: serverVersion,
     updatedAt: existing?.updated_at || null,
     data: (existing && existing.data && typeof existing.data === 'object') ? existing.data : {},
+  };
+}
+
+/**
+ * Business preconditions are merged into the SAME conditional PATCH that
+ * performs the write, so PostgreSQL evaluates them inside the write's own
+ * transaction. A prior read is never the enforcement point.
+ */
+function normalizePrecondition(precondition) {
+  if (!precondition || typeof precondition !== 'object') return {};
+  const filters = precondition.filters;
+  if (!filters || typeof filters !== 'object') return {};
+  const out = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (typeof key === 'string' && key.trim() !== '' && value != null) {
+      out[key] = String(value);
+    }
+  }
+  return out;
+}
+
+/**
+ * Distinguish "the business precondition rejected this write" from "the row
+ * moved underneath us". Only the version guard produces a mergeable conflict;
+ * a rejected precondition is a business rejection the client must surface.
+ */
+function classifyGuardRejection(result, existing) {
+  const serverVersion = existing?.version != null ? Number(existing.version) : 0;
+  if (!existing) {
+    return { id: result.id, conflicted: true, conflictType: 'version_conflict', serverVersion, server: null };
+  }
+  if (result.guardFailed) {
+    return {
+      id: result.id,
+      conflicted: true,
+      conflictType: result.guardReason || 'business_rule_conflict',
+      serverVersion,
+      server: conflictServerPayload(result.id, existing, serverVersion),
+      businessRule: true,
+    };
+  }
+  return {
+    id: result.id,
+    conflicted: true,
+    conflictType: 'version_conflict',
+    serverVersion,
+    server: conflictServerPayload(result.id, existing, serverVersion),
   };
 }
 
@@ -409,9 +526,10 @@ function conflictServerPayload(id, existing, serverVersion) {
  * already exists — including a soft-deleted tombstone — the write is rejected
  * as a `version_required` conflict.
  */
-async function upsertRow(table, id, payload, serverNow = new Date().toISOString()) {
+async function upsertRow(table, id, payload, serverNow = new Date().toISOString(), precondition = null) {
   const domain = sanitizeRecord(payload);
   const incomingVersion = Number(payload._version ?? payload.version);
+  const guardParams = normalizePrecondition(precondition);
 
   /* SYNC-FORENSIC suppressed: STAGE-13 cloudSyncStore.upsertRow() */
 
@@ -425,7 +543,7 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
     try {
       const res = await cloudHttp.patch(`${SUPABASE_URL}/rest/v1/${table}`, row, {
         headers: adminHeaders(),
-        params: { id: `eq.${id}`, version: `eq.${incomingVersion}` },
+        params: { id: `eq.${id}`, version: `eq.${incomingVersion}`, ...guardParams },
         timeout: 20000,
       });
       // PostgREST returns the updated rows as an array. Empty = conflict.
@@ -434,7 +552,6 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
         // Version mismatch — another client changed the row. Fetch current
         // snapshot so the client can field-merge without an extra round-trip.
         const existing = await getRow(table, id);
-        const serverVersion = existing?.version != null ? Number(existing.version) : 0;
 
         // The row does not exist at all — this is a CREATE, not an update.
         // An atomic PATCH cannot match a non-existent row (WHERE version = N
@@ -459,14 +576,15 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
           };
         }
 
-        /* SYNC-FORENSIC suppressed: STAGE-13 OCC conflict (atomic PATCH, 0 rows) */
-        return {
-          id,
-          conflicted: true,
-          conflictType: 'version_conflict',
-          serverVersion,
-          server: conflictServerPayload(id, existing, serverVersion),
-        };
+        /* SYNC-FORENSIC suppressed: STAGE-13 cloudSyncStore.upsertRow() */
+        return classifyGuardRejection(
+          {
+            id,
+            guardFailed: Object.keys(guardParams).length > 0,
+            guardReason: resolveGuardRejectionReason(guardParams, existing),
+          },
+          existing
+        );
       }
       const saved = updated[0];
       /* SYNC-FORENSIC suppressed: STAGE-13 atomic PATCH OK */
@@ -548,13 +666,14 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
  * precondition. The base data is preserved in the `data` JSONB column while
  * tombstone flags are merged in and the version is bumped.
  */
-async function softDeleteRow(table, id, serverNow = new Date().toISOString()) {
+async function softDeleteRow(table, id, serverNow = new Date().toISOString(), precondition = null) {
   // Read the current row to preserve its data payload under the tombstone.
-  // This read is for data preservation only; the version check is enforced
-  // atomically by the subsequent conditional PATCH.
+  // This read is for data preservation only; the version check and any business
+  // precondition are enforced atomically by the subsequent conditional PATCH.
   const existing = await getRow(table, id);
   const base = existing && existing.data && typeof existing.data === 'object' ? { ...existing.data } : {};
   const baseVersion = existing?.version != null ? Number(existing.version) : 0;
+  const guardParams = normalizePrecondition(precondition);
 
   const tombstoneData = { ...base, deleted: true, deletedAt: serverNow };
 
@@ -568,13 +687,27 @@ async function softDeleteRow(table, id, serverNow = new Date().toISOString()) {
   try {
     const res = await cloudHttp.patch(`${SUPABASE_URL}/rest/v1/${table}`, row, {
       headers: adminHeaders(),
-      params: { id: `eq.${id}`, version: `eq.${baseVersion}` },
+      params: { id: `eq.${id}`, version: `eq.${baseVersion}`, ...guardParams },
       timeout: 20000,
     });
     const updated = Array.isArray(res.data) ? res.data : [];
     if (updated.length === 0) {
-      // Version mismatch — another client changed the row. Surface as conflict.
-      return { id, conflicted: true, conflictType: 'version_conflict', serverVersion: baseVersion };
+      // Rejected by either the version guard or a business precondition. Re-read
+      // so the response carries a mergeable snapshot — the client's conflict path
+      // requires BOTH `conflict` and `server`, otherwise this op is retried until
+      // it dead-letters instead of surfacing.
+      const current = await getRow(table, id);
+      const currentVersion = current?.version != null ? Number(current.version) : 0;
+      const guardFailed = Object.keys(guardParams).length > 0
+        && Boolean(resolveGuardRejectionReason(guardParams, current));
+      return {
+        id,
+        conflicted: true,
+        conflictType: guardFailed ? 'BATCH_TOMBSTONE_FORBIDDEN' : 'version_conflict',
+        serverVersion: currentVersion,
+        server: conflictServerPayload(id, current, currentVersion),
+        ...(guardFailed ? { businessRule: true } : {}),
+      };
     }
     const saved = updated[0];
     return {
@@ -585,7 +718,22 @@ async function softDeleteRow(table, id, serverNow = new Date().toISOString()) {
   } catch (err) {
     // Fallback: if the atomic PATCH fails for a reason other than version
     // mismatch (e.g. row was hard-deleted), fall through to the legacy
-    // upsert path so tombstones can still be written.
+    // upsert path so tombstones can still be written. A guarded delete must NOT
+    // take this path — an unconditional POST would bypass the business rule.
+    if (Object.keys(guardParams).length > 0) {
+      const current = await getRow(table, id);
+      const currentVersion = current?.version != null ? Number(current.version) : 0;
+      if (resolveGuardRejectionReason(guardParams, current)) {
+        return {
+          id,
+          conflicted: true,
+          conflictType: 'BATCH_TOMBSTONE_FORBIDDEN',
+          serverVersion: currentVersion,
+          server: conflictServerPayload(id, current, currentVersion),
+          businessRule: true,
+        };
+      }
+    }
     const res = await cloudHttp.post(`${SUPABASE_URL}/rest/v1/${table}`, row, {
       headers: { ...adminHeaders(), Prefer: 'resolution=merge-duplicates,return=representation' },
       params: { on_conflict: 'id' },
@@ -777,6 +925,122 @@ async function checkStaleOperation(op) {
 // ─── applyOp ─────────────────────────────────────────────────────────────────
 
 /**
+ * Authoritative account-scope gate for synced `customer_payments`.
+ *
+ * The offline-first client validates BEFORE it commits locally
+ * (transactionService.addCustomerPayment). This re-validates at the cloud
+ * commit boundary so a queued / synchronized / replayed allocation — or one
+ * pushed by a stale device — can never write a cross-account financial record.
+ *
+ * Three outcomes (never "assume it is fine"):
+ *
+ *   null                            → the op may proceed
+ *   { code, error }                 → TERMINAL rejection: ownership is PROVEN
+ *                                     broken (different account, sibling
+ *                                     branch, ambiguous name, foreign branch).
+ *   { code, error, pending: true }  → ownership CANNOT BE PROVEN YET: the
+ *                                     referenced invoice or the parent customer
+ *                                     has not synchronized (or the read failed).
+ *                                     The op is DEFERRED, never committed
+ *                                     unverified. This is what preserves
+ *                                     legitimate offline operation: the client's
+ *                                     outbox retries the op, and the bounded
+ *                                     retry budget (MAX_RETRIES in
+ *                                     durableSyncQueue) escalates a payment
+ *                                     whose dependency never arrives to the
+ *                                     dead-letter queue instead of silently
+ *                                     committing it against the wrong account.
+ *
+ * A branch-scoped allocation additionally requires the parent customer row so
+ * branch OWNERSHIP can be proven; a Main↔Main allocation needs no customer row
+ * (and must keep working while the customer itself is still offline).
+ *
+ * @param {object} payload  the synced `customer_payments` row
+ * @param {object} [deps]   test seam: `{ getRow }` defaults to the module reader
+ */
+async function validateCustomerPaymentScope(payload, deps = {}) {
+  const readRow = typeof deps.getRow === 'function' ? deps.getRow : getRow;
+  if (!payload || typeof payload !== 'object') return null;
+  const allocations = Array.isArray(payload.allocations) ? payload.allocations : [];
+  const applied = allocations.filter((a) => a && Number(a.amount ?? a.allocated ?? 0) > 0);
+  if (applied.length === 0) return null;
+
+  const proj = accountScope.scopeRecord(payload);
+  if (!String(proj.customerId || '').trim()) {
+    return {
+      code: 'EAMBIGUOUS_SCOPE',
+      error: 'Cross-account allocation blocked: the synced payment has no resolvable customer account scope.',
+    };
+  }
+
+  const paymentIdLabel = String(payload.id || '').trim() || '(unsaved)';
+  const hasBranchTag = (row) => {
+    const p = accountScope.scopeRecord(row);
+    const id = String(p.subAccountId ?? '').trim();
+    if (id) return true;
+    return !accountScope.isMainBranchValue(p.subAccountName);
+  };
+
+  let customer = null;
+  try {
+    customer = await readRow('customers', proj.customerId);
+    if (customer && customer.data && typeof customer.data === 'object') customer = { ...customer, ...customer.data };
+  } catch { customer = null; }
+
+  // Resolve EVERY referenced invoice before deciding anything. A payment is
+  // never committed while any of its allocation targets is unreadable.
+  const invoices = [];
+  for (const a of applied) {
+    const invoiceId = a.invoiceId || a.invoice_id;
+    if (!invoiceId) {
+      return {
+        code: 'EAMBIGUOUS_SCOPE',
+        error: 'Cross-account allocation blocked: a synced payment allocation carries no invoice reference.',
+      };
+    }
+    let invoice = null;
+    let readFailed = false;
+    try {
+      invoice = await readRow('invoices', invoiceId);
+      if (invoice && invoice.data && typeof invoice.data === 'object') invoice = { ...invoice, ...invoice.data };
+    } catch { invoice = null; readFailed = true; }
+    if (!invoice) {
+      return {
+        code: 'EINVOICE_NOT_SYNCED',
+        pending: true,
+        error:
+          `Account scope for payment ${paymentIdLabel} cannot be verified yet: invoice ${invoiceId} is ` +
+          `${readFailed ? 'not readable (read failed)' : 'not yet synchronized'}. The allocation is deferred and ` +
+          'will be re-validated once the invoice is available; it is never committed unverified.',
+      };
+    }
+    invoices.push(invoice);
+  }
+
+  // Branch OWNERSHIP can only be proven against the parent customer's branch
+  // list. Without it a branch allocation is deferred, not assumed valid.
+  const anyBranch = hasBranchTag(payload) || invoices.some(hasBranchTag);
+  if (anyBranch && !customer) {
+    return {
+      code: 'ECUSTOMER_NOT_SYNCED',
+      pending: true,
+      error:
+        `Account scope for payment ${paymentIdLabel} cannot be verified yet: the parent customer ${proj.customerId} ` +
+        'is not available in the cloud, so branch ownership is unproven. The allocation is deferred.',
+    };
+  }
+
+  for (const invoice of invoices) {
+    try {
+      accountScope.assertSameAccountOwnership(payload, invoice, customer);
+    } catch (err) {
+      return { code: err.code || 'ECROSS_ACCOUNT', error: err.message };
+    }
+  }
+  return null;
+}
+
+/**
  * Apply an operation. Returns a normalized result object used by the route:
  *   { operationId, ok, id, updatedAt, error, retryable }
  * Errors produced by the cloud (validation, schema, RLS, uniqueness) are
@@ -854,6 +1118,65 @@ async function applyOp(op) {
     }
   }
 
+  // Account-scope gate for synced payment allocations. Runs BEFORE any write so
+  // a queued/offline allocation can never commit a cross-account financial
+  // record.
+  //
+  //   * PROVEN violation → terminal (non-retryable): the client must surface it.
+  //   * UNPROVABLE (dependency not synchronized yet) → retryable deferral: the op
+  //     stays in the client outbox and is re-validated on the next cycle, so a
+  //     legitimate offline payment is never lost AND never committed unverified.
+  //   * Gate itself threw → fail CLOSED and retry; never treat an unexpected
+  //     error in the guard as permission to write.
+  if (table === 'customer_payments' && operation === 'upsert' && isConfigured()) {
+    let rejection = null;
+    let gateError = null;
+    try {
+      rejection = await validateCustomerPaymentScope(payload);
+    } catch (gateErr) {
+      gateError = gateErr;
+      console.warn(`[cloudSyncStore] scope gate error for customer_payments/${recordId || payload?.id}:`, gateErr?.message || gateErr);
+    }
+    if (gateError) {
+      return {
+        operationId,
+        ok: false,
+        id: recordId || payload?.id,
+        retryable: true,
+        code: 'ESCOPE_GATE_UNAVAILABLE',
+        error:
+          'Account-scope validation could not complete, so the payment was NOT committed. ' +
+          `It will be re-validated on the next sync (${gateError.message || gateError}).`,
+      };
+    }
+    if (rejection && rejection.pending) {
+      console.warn(`[cloudSyncStore] customer_payments/${recordId || payload?.id} deferred: ${rejection.error}`);
+      return {
+        operationId,
+        ok: false,
+        id: recordId || payload?.id,
+        retryable: true,
+        deferred: true,
+        code: rejection.code,
+        error: rejection.error,
+      };
+    }
+    if (rejection) {
+      console.warn(`[cloudSyncStore] customer_payments/${recordId || payload?.id} rejected: ${rejection.error}`);
+      return {
+        operationId,
+        ok: false,
+        id: recordId || payload?.id,
+        retryable: false,
+        conflict: true,
+        conflictType: 'account_scope_violation',
+        businessRule: true,
+        code: rejection.code,
+        error: rejection.error,
+      };
+    }
+  }
+
   try {
     let result;
     // The authoritative sales-order number stamped onto this payload (adopted
@@ -867,7 +1190,7 @@ async function applyOp(op) {
       if (!recordId) {
         return { operationId, ok: false, error: 'recordId is required for delete', retryable: false };
       }
-      result = await softDeleteRow(table, recordId);
+      result = await softDeleteRow(table, recordId, new Date().toISOString(), op.precondition);
     } else {
       const id = recordId || payload?.id;
       if (!id) {
@@ -887,7 +1210,7 @@ async function applyOp(op) {
           console.warn(`[cloudSyncStore] sales_orders ${id} number mint skipped:`, mintErr?.message || mintErr);
         }
         try {
-          result = await upsertRow(table, id, payload);
+          result = await upsertRow(table, id, payload, new Date().toISOString(), op.precondition);
         } catch (upsertErr) {
           // A kept client-supplied number can lose an interleave race it
           // should never have entered (unique index backstop). Consume ONE
@@ -907,7 +1230,7 @@ async function applyOp(op) {
           }
         }
       } else {
-        result = await upsertRow(table, id, payload);
+        result = await upsertRow(table, id, payload, new Date().toISOString(), op.precondition);
       }
     }
 
@@ -915,6 +1238,22 @@ async function applyOp(op) {
     // the row since this client read it. Return the current server row so the
     // client can field-merge without an extra round-trip and retry immediately.
     if (result?.conflicted) {
+      // A business-rule rejection is terminal: the client must surface it, never
+      // retry it. Retryable is reserved for true optimistic-concurrency races,
+      // which re-reading the server row can actually resolve.
+      if (result.businessRule) {
+        return {
+          operationId,
+          ok: false,
+          id: result.id,
+          conflict: true,
+          conflictType: result.conflictType || 'business_rule_conflict',
+          retryable: false,
+          businessRule: true,
+          error: businessRuleMessage(table, result.conflictType),
+          server: result.server,
+        };
+      }
       return {
         operationId,
         ok: false,
@@ -989,6 +1328,7 @@ module.exports = {
   isConfigured,
   stringToUuid5,
   applyOp,
+  validateCustomerPaymentScope,
   getRow,
   listRows,
   listPullPage,

@@ -881,6 +881,7 @@ async function startServer() {
         customerId: row.customer_id,
         customerName: row.business_name || row.customer_name,
         subAccountName: row.sub_account_name,
+        subAccountId: row.sub_account_id,
         totalAmount: Number(row.total_amount || 0),
         materialTotal: Number(row.material_total || 0),
         adjustmentTotal: Number(row.adjustment_total || 0),
@@ -942,6 +943,7 @@ async function startServer() {
     const taxTotal = Number(payload.taxTotal ?? payload.tax_total ?? payload.taxAmount ?? 0);
     const salesAccountId = payload.salesAccountId || payload.sales_account_id || payload.revenueAccount || null;
     const subAccountName = payload.subAccountName || payload.sub_account_name || 'Main';
+    const subAccountId = payload.subAccountId || payload.sub_account_id || null;
     
     const customerId = payload.customerId || payload.customer_id || 'walk-in';
     const customerName = payload.businessName || payload.customerName || payload.customer_name || 'Walk-in';
@@ -965,13 +967,13 @@ async function startServer() {
       // Insert sale
       sq.run(
         `INSERT INTO sales (
-          id, date, customer_id, customer_name, sub_account_name, 
+          id, date, customer_id, customer_name, sub_account_name, sub_account_id, 
           total_amount, material_total, adjustment_total, profit_margin_total, rounding_total, other_charges,
           adjustment_snapshots_json, status, payment_method, source, items_json, payments_json,
           created_by, updated_by, idempotency_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          id, date, customerId, customerName, subAccountName,
+          id, date, customerId, customerName, subAccountName, subAccountId,
           totalAmount, materialTotal, adjustmentTotal, profitMarginTotal, roundingTotal, otherCharges,
           snapshotsJson, status, paymentMethod, source, itemsJson, paymentsJson, req.user?.id || 'system', req.user?.id || 'system', idempotencyKey
         ],
@@ -1150,7 +1152,7 @@ async function startServer() {
 
     sq.run(
       `UPDATE sales SET
-        date = ?, customer_id = ?, customer_name = ?, sub_account_name = ?,
+        date = ?, customer_id = ?, customer_name = ?, sub_account_name = ?, sub_account_id = ?,
         total_amount = ?, material_total = ?, adjustment_total = ?, profit_margin_total = ?, rounding_total = ?, other_charges = ?,
         adjustment_snapshots_json = ?, status = ?, payment_method = ?, source = ?, items_json = ?, payments_json = ?
       WHERE id = ?`,
@@ -1159,6 +1161,7 @@ async function startServer() {
         payload.customerId || payload.customer_id || 'walk-in',
         payload.businessName || payload.customerName || payload.customer_name || 'Walk-in',
         payload.subAccountName || payload.sub_account_name || 'Main',
+        payload.subAccountId || payload.sub_account_id || null,
         totalAmount, materialTotal, adjustmentTotal, profitMarginTotal, roundingTotal, otherCharges,
         snapshotsJson, nextStatus, payload.paymentMethod || null, payload.source || null,
         itemsJson, paymentsJson, id
@@ -2543,16 +2546,18 @@ sq.run('UPDATE invoices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
         reference: body.reference || null,
         notes: body.notes || null,
         status: body.status || 'Cleared',
+        subAccountName: body.subAccountName || body.sub_account_name || 'Main',
+        subAccountId: body.subAccountId || body.sub_account_id || null,
         created_by: req.user?.id || null,
       };
 
       await new Promise((resolve, reject) => {
         sq.run(
-          `INSERT INTO customer_payments (id, date, customer_id, customer_name, amount, payment_method, account_id, reference, notes, status, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO customer_payments (id, date, customer_id, customer_name, amount, payment_method, account_id, reference, notes, status, sub_account_name, sub_account_id, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [id, paymentRow.date, paymentRow.customer_id, paymentRow.customer_name, paymentRow.amount,
            paymentRow.payment_method, paymentRow.account_id, paymentRow.reference, paymentRow.notes,
-           paymentRow.status, paymentRow.created_by],
+           paymentRow.status, paymentRow.subAccountName, paymentRow.subAccountId, paymentRow.created_by],
           function (err) {
             if (err) return reject(err);
             resolve();
@@ -2602,6 +2607,20 @@ sq.run('UPDATE invoices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
   // --- Payment Allocation Endpoints ---
   const paymentAllocation = new (require('./services/paymentAllocationService.cjs'))();
 
+  /**
+   * Resolve the requested account scope for an allocation query/command.
+   * The ERP always passes an explicit branch (or 'main'); a missing request
+   * defaults to MAIN scope — never "all accounts". The parent customer record
+   * is loaded so branch names resolve to their stable branch id.
+   */
+  const resolveRequestedScope = async (customerId, rawBranch) => {
+    const branch = String(rawBranch || '').trim();
+    const customer = await paymentAllocation.loadCustomerForScope(customerId);
+    const scope = require('./services/customerAccountScope.cjs')
+      .resolveAccountScope(customerId, branch === '' ? 'main' : branch, customer);
+    return { scope, customer };
+  };
+
   app.post('/api/payments/allocate', requireRole('Admin', 'Accountant', 'Manager'), injectFinancialYear, requireFyNotClosed, async (req, res) => {
     try {
       const { paymentId, allocations } = req.body;
@@ -2618,7 +2637,14 @@ sq.run('UPDATE invoices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
         return res.status(404).json({ error: 'Payment not found' });
       }
 
-const result = await paymentAllocation.allocatePayment(payment, allocations);
+      // The payment row's own account scope is authoritative for the
+      // allocation; the parent customer is loaded so a branch scope (name or
+      // stable id) can be validated before any allocation or balance mutation.
+      const scopeOpts = req.body.branchKey || req.body.branch || req.body.subAccount
+        ? await resolveRequestedScope(payment.customer_id, req.body.branchKey || req.body.branch || req.body.subAccount)
+        : { customer: await paymentAllocation.loadCustomerForScope(payment.customer_id) };
+
+const result = await paymentAllocation.allocatePayment(payment, allocations, payment.currency || 'MWK', scopeOpts);
        for (const alloc of allocations) {
          portalLifecycleService.emitEntityChange('portal', { customerId: payment.customer_id, docType: 'invoice', docId: alloc.invoiceId, event: 'payment_allocated', paymentId, amount: alloc.amount });
          portalLifecycleService.emitEntityChange('admin', { customerId: payment.customer_id, docType: 'invoice', docId: alloc.invoiceId, event: 'payment_allocated', paymentId, amount: alloc.amount });
@@ -2626,7 +2652,8 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
        res.status(201).json(result);
     } catch (err) {
       console.error('[PaymentAllocation] allocate error:', err?.message || err);
-      res.status(500).json({ error: err?.message || 'Failed to allocate payment' });
+      const status = err?.code === 'ECROSS_ACCOUNT' || err?.code === 'EAMBIGUOUS_SCOPE' || err?.code === 'EINVALID_SCOPE' ? 409 : 500;
+      res.status(status).json({ error: err?.message || 'Failed to allocate payment', code: err?.code });
     }
   });
 
@@ -2642,7 +2669,11 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
 
   app.get('/api/customers/:customerId/outstanding-invoices', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), async (req, res) => {
     try {
-      const invoices = await paymentAllocation.getOutstandingInvoices(req.params.customerId);
+      const { scope, customer } = await resolveRequestedScope(
+        req.params.customerId,
+        req.query.branchKey || req.query.branch || req.query.subAccount,
+      );
+      const invoices = await paymentAllocation.getOutstandingInvoices(req.params.customerId, { scope, customer });
       res.json(invoices);
     } catch (err) {
       console.error('[PaymentAllocation] outstanding error:', err?.message || err);
@@ -2653,7 +2684,11 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
   app.post('/api/payments/suggest-allocation', requireRole('Admin', 'Accountant', 'Manager'), async (req, res) => {
     try {
       const { customerId, amount } = req.body;
-      const suggestion = await paymentAllocation.suggestAllocation(customerId, amount);
+      const { scope, customer } = await resolveRequestedScope(
+        customerId,
+        req.body.branchKey || req.body.branch || req.body.subAccount,
+      );
+      const suggestion = await paymentAllocation.suggestAllocation(customerId, amount, { scope, customer });
       res.json(suggestion);
     } catch (err) {
       console.error('[PaymentAllocation] suggest error:', err?.message || err);
@@ -2667,7 +2702,8 @@ const result = await paymentAllocation.allocatePayment(payment, allocations);
       res.json(result);
     } catch (err) {
       console.error('[PaymentAllocation] reverse error:', err?.message || err);
-      res.status(500).json({ error: err?.message || 'Failed to reverse allocation' });
+      const status = err?.code === 'ECROSS_ACCOUNT' || err?.code === 'EAMBIGUOUS_SCOPE' || err?.code === 'EINVALID_SCOPE' ? 409 : 500;
+      res.status(status).json({ error: err?.message || 'Failed to reverse allocation', code: err?.code });
     }
   });
 

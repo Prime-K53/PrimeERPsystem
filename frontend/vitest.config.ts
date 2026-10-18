@@ -2,6 +2,16 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 import react from '@vitejs/plugin-react';
 
+// Node 20.18.x cannot `require()` an ESM-only dependency, which jsdom reaches
+// through html-encoding-sniffer → @exodus/bytes. Enabling the (experimental)
+// require-module bridge in the test workers lets the jsdom environment load, so
+// `npx vitest run` works with no external env var. Config-only: no dependency
+// or product-code change. Workers inherit NODE_OPTIONS from this process.
+const NODE_OPTIONS_FLAG = '--experimental-require-module';
+if (!String(process.env.NODE_OPTIONS || '').includes(NODE_OPTIONS_FLAG)) {
+  process.env.NODE_OPTIONS = [process.env.NODE_OPTIONS, NODE_OPTIONS_FLAG].filter(Boolean).join(' ');
+}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {

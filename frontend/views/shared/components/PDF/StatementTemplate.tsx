@@ -54,6 +54,11 @@ export interface StatementData {
   endDate: string;
   currency: string;
   entries: StatementEntry[];
+  /** Account scope label. A branch statement must render as the branch. */
+  branchLabel?: string;
+  branchKey?: string;
+  subAccountId?: string;
+  scopeAmbiguous?: boolean;
 }
 
 const styles = StyleSheet.create({
@@ -192,6 +197,14 @@ export const StatementTemplate: React.FC<{ data: StatementData }> = ({ data }) =
             <Text style={styles.sectionTitle}>PERIOD:</Text>
             <Text>{data.startDate || 'Beginning'} - {data.endDate || 'Present'}</Text>
             <Text style={{ marginTop: 5 }}>Currency: {data.currency}</Text>
+            <Text style={{ marginTop: 5 }}>
+              Account: {data.branchLabel && data.branchLabel !== 'Main' ? data.branchLabel : 'Main Account'}
+            </Text>
+            {data.scopeAmbiguous ? (
+              <Text style={{ marginTop: 3, fontSize: 8 }}>
+                Note: earlier statements for this period predate branch tagging; confirm the account before relying on totals.
+              </Text>
+            ) : null}
           </View>
         </View>
 

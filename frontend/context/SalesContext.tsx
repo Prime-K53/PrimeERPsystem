@@ -23,6 +23,7 @@ import { workflowService as autoWorkflowService } from '../services/automatedWor
 import { isSupabaseConfigured } from '../services/cloudMode';
 import { adminLifecycle, type PortalCredentials } from '../services/adminPortalClient';
 import { getCustomerDisplayName } from '../utils/customerDisplay';
+import { resolveRecurringSubscriptionScope, hasRecurringRunForPeriod } from '../services/recurringBillingScope';
 
 type ApprovedQuotationResult = {
     batchId?: string;
@@ -310,18 +311,36 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             if (isDueToday || isManualDateDue) {
                 const dateKey = isManualDateDue ? todayStr : String(sub.nextRunDate || todayStr).split('T')[0];
-                const alreadyGenerated = finance.invoices.some(i =>
-                    i.customerName === sub.customerName &&
-                    i.date.startsWith(dateKey) &&
-                    i.id.includes('REC')
-                );
+
+                // ── Account scope ────────────────────────────────────────────
+                // A recurring subscription bills ONE account, so the account is
+                // part of its identity: the invoice inherits the stable branch
+                // id, a parent run never suppresses a branch run, and a branch
+                // that cannot be identified is skipped instead of billed to Main.
+                const scopeResolution = resolveRecurringSubscriptionScope(sub, salesStore.customers || []);
+                if (!scopeResolution.ok) {
+                    logger.warn('[RecurringBilling] Skipped a recurring run.', {
+                        subscriptionId: sub.id,
+                        customerId: sub.customerId,
+                        reason: scopeResolution.reason,
+                    });
+                    continue;
+                }
+
+                const alreadyGenerated = hasRecurringRunForPeriod(finance.invoices, {
+                    subscription: sub,
+                    customer: (salesStore.customers || []).find(c => String(c.id) === String(sub.customerId)) || null,
+                    customerName: sub.customerName,
+                    dateKey,
+                    matchesRunId: (invoice) => String(invoice.id || '').includes('REC'),
+                });
 
                 if (alreadyGenerated) continue;
 
                 const invId = generateNextId('INV-REC', finance.invoices, companyConfig);
                 const roundedTotal = roundFinancial(sub.total);
 
-                const subCustomer = salesStore.customers.find(c => c.id === sub.customerId || c.name === sub.customerName);
+                const subCustomer = salesStore.customers.find(c => String(c.id) === String(sub.customerId));
                 const invoice: Invoice = {
                     id: invId,
                     customerId: sub.customerId,
@@ -332,6 +351,9 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     dueDate: sub.nextRunDate,
                     status: 'Paid',
                     items: sub.items,
+                    // The subscription's account scope travels with the invoice.
+                    subAccountName: scopeResolution.subAccountName,
+                    subAccountId: scopeResolution.subAccountId || undefined,
                     referredBy: sub.referredBy || subCustomer?.referredById || '',
                     referredByName: sub.referredByName || subCustomer?.referredByName || ''
                 };
@@ -796,6 +818,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const customerProfile = salesStore.customers.find(c => c.id === resolvedCustomerId || c.name === q.customerName);
         const paymentPolicy = resolveCustomerPaymentPolicy({
             customer: customerProfile,
+            subAccountName: q.subAccountName,
             transactionType: 'invoice',
             issuedDate,
             preserveCustomTerms: true
@@ -816,6 +839,10 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             id: invId,
             customerId: resolvedCustomerId,
             customerName: q.customerName,
+            // The invoice keeps the quoted billing account (name + stable branch
+            // id) so conversion never re-attributes a branch quote to Main.
+            subAccountName: q.subAccountName || 'Main',
+            ...(q.subAccountId ? { subAccountId: q.subAccountId } : {}),
             totalAmount: q.total,
             paidAmount: 0,
             date: issuedDate,

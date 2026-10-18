@@ -22,7 +22,7 @@ import {
   paymentCredit as ledgerPaymentCredit,
   isInvoiceIncluded as ledgerInvoiceIncluded,
   isPaymentIncluded as ledgerPaymentIncluded,
-  buildLedgerFromRecords,
+  buildConsolidatedLedgerFromRecords,
 } from '../customerLedger';
 import type { ErpEntityId } from './erpQueryTypes';
 
@@ -364,7 +364,10 @@ export function computeOutstandingByCustomer(
     const rawId = isId ? k.slice(3) : '';
     const sample = (invoiceGroups.get(k) || paymentGroups.get(k) || [])[0] as Record<string, unknown> | undefined;
     const display = (rawId && idToDisplay.get(rawId)) || (sample ? customerDisplayOf(sample) || String(sample.customerName ?? '') : '') || rawId || 'Unknown';
-    const ledger = buildLedgerFromRecords({
+    // Intentional consolidated aggregate: this per-customer report sums Main
+    // and every branch for the customer. Named explicitly so the omission of a
+    // scope is a deliberate choice, never an accident.
+    const ledger = buildConsolidatedLedgerFromRecords({
       customerId: rawId || display,
       invoices: (invoiceGroups.get(k) || []) as Array<Record<string, unknown>>,
       payments: (paymentGroups.get(k) || []) as Array<Record<string, unknown>>,

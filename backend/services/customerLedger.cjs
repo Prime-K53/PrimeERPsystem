@@ -23,6 +23,7 @@
 
 const repo = require('./supabaseRepository.cjs');
 const { customerFilter } = require('./portalScope.cjs');
+const scopeHelper = require('./customerAccountScope.cjs');
 
 // ── Primitives ──────────────────────────────────────────────────────────────
 
@@ -181,12 +182,23 @@ function isWalletTopup(pay) {
  * @param {Array}  input.payments  customer-scoped customer_payment rows
  * @param {number} [input.openingBalance]
  */
-function buildLedgerFromRecords({ customerId, invoices = [], payments = [], openingBalance = 0 }) {
+function buildLedgerFromRecords({ customerId, invoices = [], payments = [], openingBalance = 0, scope = null, customer = null }) {
   const txs = [];
   const excluded = [];
+  // Account-scope filtering happens BEFORE balance math so opening/closing/
+  // outstanding are all scoped. `scope === null` is an INTENTIONAL
+  // whole-customer aggregate (Portal statements + reconciliation); the ERP
+  // passes an explicit scope at every account-sensitive call site.
+  // The row projection is centralized in customerAccountScope.scopeRecord so
+  // `subAccountId` / `sub_account_id` are always recognized (frontend parity).
+  const inScope = (r) => {
+    if (!scope) return String(firstNonEmpty(r.customerId, r.customer_id) || '') === String(customerId || '');
+    return scopeHelper.recordMatchesScope(scopeHelper.scopeRecord(r), scope, customer || null);
+  };
   const walletTopups = [];
 
   for (const inv of invoices) {
+    if (!inScope(inv)) continue;
     if (!isInvoiceIncluded(inv)) {
       excluded.push({ id: inv.id, kind: 'invoice', reason: normStatus(inv.status) || 'closed' });
       continue;
@@ -208,6 +220,7 @@ function buildLedgerFromRecords({ customerId, invoices = [], payments = [], open
   }
 
   for (const pay of payments) {
+    if (!inScope(pay)) continue;
     if (!isPaymentIncluded(pay)) {
       excluded.push({ id: pay.id, kind: 'payment', reason: normStatus(pay.status) });
       continue;
@@ -241,12 +254,19 @@ function buildLedgerFromRecords({ customerId, invoices = [], payments = [], open
   const closingBalance = running;
   return {
     customerId,
+    scope: scope ? { branchKey: scope.branchKey, isMain: scope.isMain, branchLabel: scope.branchLabel, branchId: scope.branchId || null } : null,
     openingBalance: round2(openingBalance),
     transactions,
     closingBalance,
     outstandingBalance: Math.max(0, closingBalance),
     excluded,
     walletTopups,
+    // Rows rejected ONLY because a legacy display name is shared by several
+    // branches of this customer. Never silently attributed — surfaced so the
+    // business can tag them with a stable branch id.
+    ambiguousScopeRecords: scope
+      ? scopeHelper.collectAmbiguousScopeRecords([...invoices, ...payments], scope, customer || null)
+      : [],
   };
 }
 
@@ -256,14 +276,14 @@ function paymentAmountOf(pay) {
 
 // ── Customer-scoped loaders ─────────────────────────────────────────────────
 
-async function loadCustomerInvoices(customerId) {
+async function loadCustomerInvoices(customerId, scope = null, customer = null) {
   const rows = await repo.getAllStrict('invoices', customerFilter('invoices', customerId));
-  return verifyScope(rows, customerId);
+  return verifyScope(rows, customerId, scope, customer);
 }
 
-async function loadCustomerPayments(customerId) {
+async function loadCustomerPayments(customerId, scope = null, customer = null) {
   const rows = await repo.getAllStrict('customer_payments', customerFilter('customer_payments', customerId));
-  return verifyScope(rows, customerId);
+  return verifyScope(rows, customerId, scope, customer);
 }
 
 /**
@@ -273,24 +293,33 @@ async function loadCustomerPayments(customerId) {
  * source of truth for "where this customer began" and must be fed into the
  * ledger so it is never silently dropped or double-counted.
  */
-async function loadCustomerOpeningBalance(customerId) {
+async function loadCustomerOpeningBalance(customerId, scope = null) {
   try {
     const row = await repo.getById('customers', customerId);
-    if (!row) return 0;
+    if (!row) return { opening: 0, unresolved: Boolean(scope && !scope.isMain) };
     const obj = row.data && typeof row.data === 'object' ? row.data : row;
-    return toNum(obj.balance);
+    // Branch opening safety: embedded sub.balance is display-only, never
+    // authoritative. A branch scope therefore reports `unresolved` unless the
+    // caller supplies an explicit openingBalance. The parent balance is NEVER
+    // reused as a branch opening.
+    if (scope && !scope.isMain) {
+      return { opening: 0, unresolved: true };
+    }
+    return { opening: toNum(obj.balance), unresolved: false };
   } catch {
-    return 0;
+    return { opening: 0, unresolved: Boolean(scope && !scope.isMain) };
   }
 }
 
 /** Defense-in-depth JS ownership check (mirrors portalService.scopedRows). */
-function verifyScope(rows, customerId) {
+function verifyScope(rows, customerId, scope = null, customer = null) {
   const target = String(customerId || '');
   if (!target) return [];
-  return (rows || []).filter(
+  const idScoped = (rows || []).filter(
     (r) => String(firstNonEmpty(r.customerId, r.customer_id) || '') === target,
   );
+  if (!scope) return idScoped;
+  return idScoped.filter((r) => scopeHelper.recordMatchesScope(scopeHelper.scopeRecord(r), scope, customer || null));
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -299,13 +328,34 @@ function verifyScope(rows, customerId) {
  * Authoritative ledger for one customer.
  * Loaders may be injected (tests); default reads Supabase via the repo.
  */
-async function buildLedger(customerId, { openingBalance, invoices, payments } = {}) {
-  const invs = Array.isArray(invoices) ? invoices : await loadCustomerInvoices(customerId);
-  const pays = Array.isArray(payments) ? payments : await loadCustomerPayments(customerId);
+async function buildLedger(customerId, { openingBalance, invoices, payments, scope = null, customer = null } = {}) {
+  const invs = Array.isArray(invoices) ? invoices.filter((r) => {
+    if (!scope) return String(firstNonEmpty(r.customerId, r.customer_id) || '') === String(customerId || '');
+    return scopeHelper.recordMatchesScope(scopeHelper.scopeRecord(r), scope, customer || null);
+  }) : await loadCustomerInvoices(customerId, scope, customer);
+  const pays = Array.isArray(payments) ? payments.filter((r) => {
+    if (!scope) return String(firstNonEmpty(r.customerId, r.customer_id) || '') === String(customerId || '');
+    return scopeHelper.recordMatchesScope(scopeHelper.scopeRecord(r), scope, customer || null);
+  }) : await loadCustomerPayments(customerId, scope, customer);
   // When not supplied, fall back to the customer's stored opening balance so
-  // it is never silently dropped.
-  const opening = openingBalance ?? (await loadCustomerOpeningBalance(customerId));
-  return buildLedgerFromRecords({ customerId, invoices: invs, payments: pays, openingBalance: opening });
+  // it is never silently dropped. For branch scopes the parent balance is
+  // NEVER reused: unresolved branches surface `openingUnresolved` and use 0
+  // until an explicit opening is established by the business.
+  let opening = openingBalance;
+  let openingUnresolved = false;
+  if (opening === undefined || opening === null) {
+    // Legacy callers may still receive a bare number from a stubbed loader.
+    const loaded = await loadCustomerOpeningBalance(customerId, scope);
+    if (loaded && typeof loaded === 'object' && 'opening' in loaded) {
+      opening = loaded.opening;
+      openingUnresolved = Boolean(loaded.unresolved);
+    } else {
+      opening = Number(loaded || 0);
+    }
+  }
+  const result = buildLedgerFromRecords({ customerId, invoices: invs, payments: pays, openingBalance: opening, scope, customer });
+  result.openingUnresolved = openingUnresolved;
+  return result;
 }
 
 async function getOutstanding(customerId, opts = {}) {
@@ -339,4 +389,6 @@ module.exports = {
   getOutstanding,
   loadCustomerInvoices,
   loadCustomerPayments,
+  loadCustomerOpeningBalance,
+  verifyScope,
 };

@@ -452,6 +452,13 @@ const LOCAL_ONLY_STORES = new Set([
   // in Supabase, so keep them local to avoid failed upserts from the
   // background sync engine. The averaged master cost still syncs via products.
   'purchaseLots',
+  // Authoritative Examination posting requests. The SERVER owns the invoice and
+  // its ledger entry; this store is only the device's durable record of what was
+  // asked for and what the server confirmed, so a request survives a timeout,
+  // crash, refresh or reconnect without re-minting an invoice identity. It must
+  // never sync: a second copy of a posting request on the server is a second
+  // posting. The authoritative operation state lives in examination_postings.
+  'examinationPostingRequests',
 ]);
 
 interface PutOptions {
@@ -668,7 +675,7 @@ const STORE_NAMES: (keyof NexusDB)[] = [
     'subcontractOrders', 'maintenanceLogs',
     'auditLogs', 'alerts', 'reminders',
     'examJobs', 'examPapers', 'examPrintingBatches',
-    'examinationJobs', 'examinationJobSubjects', 'examinationInvoiceGroups', 'examinationRecurringProfiles', 'examinationInventoryDeductions', 'examinationBatchNotifications', 'examinationBatches', 'notificationAuditLogs',
+    'examinationJobs', 'examinationJobSubjects', 'examinationInvoiceGroups', 'examinationRecurringProfiles', 'examinationInventoryDeductions', 'examinationBatchNotifications', 'examinationBatches', 'examinationPostingRequests', 'notificationAuditLogs',
     'schools',
     'classes', 'subjects',
     'customers', 'suppliers', 'supplierPayments',
