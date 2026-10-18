@@ -58,8 +58,16 @@ function storeFor(name: string) {
 
 vi.mock('../../../services/db', () => ({
   dbService: {
-    executeAtomicOperation: async (_names: string[], fn: any) =>
-      fn({ objectStore: (n: string) => storeFor(n) }),
+    executeAtomicOperation: async (_names: string[], fn: any) => fn({
+      objectStore: (n: string) => n === 'settings'
+        ? {
+          ...storeFor(n),
+          get: async (id: string) => id === 'financial_closed_periods'
+            ? { id, value: closedPeriods }
+            : storeFor(n).get(id),
+        }
+        : storeFor(n),
+    }),
     getAll: async (s: string) => storeFor(s).getAll(),
     get: async (s: string, id: string) => storeFor(s).get(id),
     put: async (s: string, rec: any) => storeFor(s).put(rec),

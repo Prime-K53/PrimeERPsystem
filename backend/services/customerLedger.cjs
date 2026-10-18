@@ -158,6 +158,12 @@ function paymentCredit(pay) {
 function isWalletTopup(pay) {
   const purpose = String(firstNonEmpty(pay.paymentPurpose, pay.payment_purpose) || '').toUpperCase();
   if (purpose === 'WALLET_TOPUP') return true;
+  // Snapshot-only rows (pre-top-level-fill): same inference, equivalent signal.
+  // An explicit top-level purpose always wins (checked above).
+  if (!purpose) {
+    const snapPurpose = String((pay && pay.receiptSnapshot && pay.receiptSnapshot.paymentPurpose) || '').toUpperCase();
+    if (snapPurpose === 'WALLET_TOPUP') return true;
+  }
   const applied = firstNum(pay.amountApplied, pay.amount_applied);
   const deposit = firstNum(pay.walletDeposit, pay.wallet_deposit);
   const handling = String(firstNonEmpty(pay.excessHandling, pay.excess_handling) || '');

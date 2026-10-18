@@ -765,19 +765,18 @@ const PrintingContractsView: React.FC = () => {
       }
       try {
         if (evidence.ok && evidence.kind === 'paid-invoice' && num(c.prepaid_amount) > 0) {
-          // Wallet first: a failed posting aborts the transition instead
-          // of leaving an active contract with silently missing money.
-          // LEGACY BEHAVIOR (preserved, not redesigned here): this deposit is
-          // a history row only — it does not move customer.walletBalance and
-          // posts no ledger entry. Activation therefore never manufactures
-          // spendable funds; consumption always enforces against the live
-          // walletBalance, and deposits reach it only through balance-updating
-          // flows (generic top-ups/payments). See the wallet-first diagnostic.
-          await addWalletTransaction({
-            id: '', customerId: c.customer_id, amount: num(c.prepaid_amount),
-            type: 'Deposit', reference: c.contract_number, date: now,
-            data: { type: 'CONTRACT_DEPOSIT', contract_id: c.id, contract_number: c.contract_number, invoice_id: evidence.invoiceId },
-          } as WalletTransaction);
+          // Wallet-first activation: the wallet must already be funded. Prepaid
+          // funding is credited to customer.walletBalance when the invoice
+          // payment is confirmed (processInvoice/updateInvoice). Activation must
+          // not proceed merely because an invoice is marked paid or a
+          // history-only deposit row exists — consumption enforces against the
+          // live walletBalance, so an unfunded wallet must block activation.
+          const customer = (customers || []).find((cu: Customer) => String(cu.id) === String(c.customer_id));
+          const walletBalance = num(customer?.walletBalance || 0);
+          if (walletBalance < num(c.prepaid_amount)) {
+            notify('Contract cannot be activated: customer wallet is not funded. Confirm the invoice payment first.', 'error');
+            return;
+          }
         }
         const patch: Partial<AssessmentContract> = {
           status: next,
@@ -788,7 +787,6 @@ const PrintingContractsView: React.FC = () => {
         if (evidence.ok && evidence.kind === 'paid-invoice') {
           patch.payment_status = 'verified';
           patch.payment_verified_at = now;
-          patch.wallet_credit_applied_at = now;
           await updateAssessmentContract({ ...c, ...patch } as AssessmentContract);
           notify(`Contract activated — payment verified against invoice ${evidence.invoiceId}`, 'success');
         } else if (evidence.ok) {

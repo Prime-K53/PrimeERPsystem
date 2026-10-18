@@ -993,6 +993,9 @@ async function migrateToVersion24(transaction: any) {
 
                 const updated: CustomerPayment = {
                     ...payment,
+                    // Top-level purpose for readers that check the row directly
+                    // (isWalletTopup checks top-level first, snapshot second).
+                    paymentPurpose: snapshot.paymentPurpose ?? (payment as any).paymentPurpose,
                     receiptSnapshot: snapshot,
                     invoiceTotal: payment.invoiceTotal ?? snapshot.invoiceTotalAtPosting,
                     paymentStatus: payment.paymentStatus ?? snapshot.paymentStatus,
@@ -1093,24 +1096,102 @@ export const dbService = {
     },
 
     async executeAtomicOperation<T>(stores: (keyof NexusDB)[], operation: (tx: any) => Promise<T>): Promise<T> {
-        // Cloud-authoritative: delegate to cloud-aware put/get/delete when Supabase is available
-        // Guards: transactionService paths call store.get() with optional keys
-        // (e.g. item.productId, order.customerId). A missing key must resolve to
-        // undefined / no-op instead of throwing IDB "No key or key range specified".
-        const cloudTx = {
-            objectStore: (storeName: string) => ({
-                put: (item: any) => this.put(storeName as keyof NexusDB, item),
-                get: (id: string) => isMissingIdbKey(id)
-                    ? Promise.resolve(undefined)
-                    : this.get(storeName as keyof NexusDB, id),
-                getAll: () => this.getAll(storeName as keyof NexusDB),
-                delete: (id: string) => isMissingIdbKey(id)
-                    ? Promise.resolve()
-                    : this.delete(storeName as keyof NexusDB, id),
-            }),
-            done: Promise.resolve(),
+        const storeNames = [...new Set(stores.map(String))];
+        if (storeNames.length === 0) {
+            throw new Error('executeAtomicOperation requires at least one object store.');
+        }
+
+        const db = await initDB();
+        const transaction = db.transaction(storeNames as any, 'readwrite');
+        const changes = new Map<string, {
+            storeName: string;
+            recordId: string;
+            operation: 'upsert' | 'delete';
+            payload: unknown;
+        }>();
+
+        const txContext = {
+            objectStore: (storeName: string) => {
+                const store = transaction.objectStore(storeName as any);
+                return {
+                    get: (id: string) => isMissingIdbKey(id)
+                        ? Promise.resolve(undefined)
+                        : store.get(id),
+                    getAll: () => store.getAll(),
+                    put: async (item: any) => {
+                        const raw = { ...((item as Record<string, unknown>) || {}) };
+                        if (!raw.id) raw.id = newId();
+                        raw._updatedAt = new Date().toISOString();
+                        delete raw._cloudSource;
+                        const recordId = String(raw.id);
+                        const result = await store.put(raw);
+                        changes.set(JSON.stringify([storeName, recordId]), {
+                            storeName,
+                            recordId,
+                            operation: 'upsert',
+                            payload: raw,
+                        });
+                        return result as string;
+                    },
+                    delete: async (id: string) => {
+                        if (isMissingIdbKey(id)) return;
+                        await store.delete(id);
+                        changes.set(JSON.stringify([storeName, id]), {
+                            storeName,
+                            recordId: id,
+                            operation: 'delete',
+                            payload: { id },
+                        });
+                    },
+                };
+            },
+            done: transaction.done,
         };
-        return operation(cloudTx);
+
+        let result: T;
+        try {
+            result = await operation(txContext);
+            await transaction.done;
+        } catch (error) {
+            try {
+                transaction.abort();
+            } catch {
+                // The transaction may already have aborted on an IndexedDB error.
+            }
+            try {
+                await transaction.done;
+            } catch {
+                // Preserve the operation/transaction error that caused the abort.
+            }
+            throw error;
+        }
+
+        const changedStores = new Set<string>();
+        for (const change of changes.values()) {
+            changedStores.add(change.storeName);
+            if (LOCAL_ONLY_STORES.has(change.storeName)) continue;
+
+            try {
+                await durableSyncQueue.enqueue({
+                    table: getCloudTable(change.storeName),
+                    recordId: change.recordId,
+                    operation: change.operation,
+                    payload: change.payload,
+                });
+            } catch (syncError) {
+                logger.warn(
+                    `[DB] Atomic operation committed locally but sync enqueue failed for ${change.storeName}/${change.recordId}:`,
+                    syncError,
+                );
+                throw syncError;
+            }
+        }
+
+        if (changes.size > 0) {
+            this.triggerSync();
+            emitDataChange([...changedStores]);
+        }
+        return result;
     },
 
     async connectToLocalFile(): Promise<boolean> {

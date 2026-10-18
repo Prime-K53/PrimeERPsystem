@@ -16,7 +16,7 @@ import { BankAccount, BankTransaction } from '../types/banking';
 import { MultiCurrencyJournalEntry, MultiCurrencyTransactionLine, CurrencyGainLoss } from '../types/currency';
 
 import { assertInvoiceNumberFormat, calculateDueDate, generateNextId, resolveCustomerPaymentTerms, roundToCurrency } from '../utils/helpers';
-import { assertFinancialPeriodOpen } from '../utils/financialPeriodClosure';
+import { assertFinancialPeriodOpen, assertFinancialPeriodOpenForPeriods } from '../utils/financialPeriodClosure';
 import { allocateEligibleReservations } from '../utils/contractFunds';
 import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { extractProfitMargin } from '../utils/financial/extractors';
@@ -78,14 +78,10 @@ import { propagateCustomerRename, resolveCustomerDisplayName } from './customerR
 const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'LG-REV-AR-'];
 
 /**
- * Same-tab serialization for contract assessment consumption. The
- * idempotency-key reservation inside the operation is check-then-put, so two
- * interleaved same-tab invocations (double-click, React duplicate render)
- * could both pass the check before either writes. Chaining per-item promises
- * closes that gap for the current tab — the same in-flight-guard precedent
- * used by salesOrderStore.inFlightCreates. Cross-tab/cross-device races are
- * still governed by deterministic ids + OCC version conflicts at sync (see
- * consumeContractAssessment docs).
+ * Same-process queue for assessment consumption. The IndexedDB readwrite
+ * transaction is the persistence-level serialization boundary across
+ * connections; this queue also avoids same-process contention. Cloud-replica
+ * races are not server-enforced.
  */
 const consumeContractLocks = new Map<string, Promise<void>>();
 
@@ -1809,8 +1805,9 @@ export const transactionService = {
 
     async processRecurringInvoice(invoice: Invoice, subId: string, updatedSub: any) {
         return dbService.executeAtomicOperation(
-            ['invoices', 'recurringInvoices', 'ledger', 'customers', 'inventory', 'inventoryTransactions', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'customerPayments', 'bankAccounts', 'bankTransactions', 'accounts'],
+            ['invoices', 'recurringInvoices', 'ledger', 'customers', 'inventory', 'inventoryTransactions', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'customerPayments', 'bankAccounts', 'bankTransactions', 'walletTransactions', 'idempotencyKeys', 'accounts'],
             async (tx) => {
+                await reserveIdempotencyKey(tx, 'recurring_invoice', invoice.id, invoice.idempotencyKey);
                 const invoiceStore = tx.objectStore('invoices');
                 const subStore = tx.objectStore('recurringInvoices');
                 const ledgerStore = tx.objectStore('ledger');
@@ -1931,7 +1928,7 @@ export const transactionService = {
                 const rawPaidAmount = Number(invoice.paidAmount || 0);
                 const overpayment = Math.max(0, rawPaidAmount - totalAmount);
                 if (overpayment > 0.01) {
-                    await this.processOverpaymentToWallet(invoice, overpayment);
+                    await this.processOverpaymentToWallet(invoice, overpayment, tx);
                 }
                 const paidAmount = Math.max(0, Math.min(rawPaidAmount, totalAmount));
                 invoice.paidAmount = paidAmount;
@@ -1978,12 +1975,13 @@ export const transactionService = {
                     const paymentMethod = invoice.paymentMethod || invoice.payment_method || 'Bank Transfer';
                     const paymentAccountId = invoice.accountId;
                     const snapshot = calculateCustomerPaymentSnapshot({
-                        amountTendered: paidAmount,
+                        amountTendered: rawPaidAmount,
                         appliedInvoices: [{
                             invoiceId: invoice.id,
                             allocationAmount: paidAmount,
-                            outstandingAmount: paidAmount
+                            outstandingAmount: totalAmount
                         }],
+                        excessHandling: overpayment > 0.01 ? 'Wallet' : undefined,
                         paymentPurpose: 'INVOICE_PAYMENT',
                         paymentDate: invoice.date,
                         customerName: invoice.customerName
@@ -1994,8 +1992,9 @@ export const transactionService = {
                         date: invoice.date,
                         customerId: invoice.customerId || invoice.customerName,
                         customerName: invoice.customerName,
-                        amount: paidAmount,
+                        amount: rawPaidAmount,
                         paymentMethod,
+                        excessHandling: overpayment > 0.01 ? 'Wallet' : undefined,
                         accountId: paymentAccountId,
                         reference: invoice.id,
                         notes: `Recurring invoice payment for #${invoice.id}`,
@@ -2057,7 +2056,7 @@ export const transactionService = {
                             const bankTx: BankTransaction = {
                                 id: generateNextId('TXN', bankTransactions),
                                 date: invoice.date,
-                                amount: paidAmount,
+                                amount: rawPaidAmount,
                                 type: 'Deposit',
                                 description: `Recurring Invoice Payment #${invoice.id}`,
                                 reference,
@@ -2290,22 +2289,23 @@ export const transactionService = {
     },
 
     async processInvoice(invoice: Invoice, performedBy?: string) {
+        await traceExamInvoice('process-entry', {
+            id: (invoice as any)?.id,
+            invoiceNumber: (invoice as any)?.invoiceNumber,
+            originModule: (invoice as any)?.originModule ?? (invoice as any)?.origin_module,
+            verificationToken: (invoice as any)?.verificationToken,
+        });
         const _processInvoiceResult = await dbService.executeAtomicOperation(
-            ['invoices', 'inventory', 'ledger', 'customers', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'customerPayments', 'bankAccounts', 'bankTransactions', 'inventoryTransactions', 'idempotencyKeys'],
+            ['invoices', 'inventory', 'ledger', 'customers', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'customerPayments', 'bankAccounts', 'bankTransactions', 'inventoryTransactions', 'idempotencyKeys', 'walletTransactions', 'accounts'],
             async (tx) => {
-                // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-                await traceExamInvoice('process-entry', {
-                    id: (invoice as any)?.id,
-                    invoiceNumber: (invoice as any)?.invoiceNumber,
-                    originModule: (invoice as any)?.originModule ?? (invoice as any)?.origin_module,
-                    verificationToken: (invoice as any)?.verificationToken,
-                });
                 await reserveIdempotencyKey(tx, 'invoice', invoice.id, invoice.idempotencyKey);
 
                 const invoiceStore = tx.objectStore('invoices');
                 const inventoryStore = tx.objectStore('inventory');
                 const ledgerStore = tx.objectStore('ledger');
                 const customerStore = tx.objectStore('customers');
+                const walletStore = tx.objectStore('walletTransactions');
+                const idempotencyKeysStore = tx.objectStore('idempotencyKeys');
                 const bomTemplatesStore = tx.objectStore('bomTemplates');
                 const marketAdjustmentsStore = tx.objectStore('marketAdjustments');
                 const marketAdjustmentTransactionsStore = tx.objectStore('marketAdjustmentTransactions');
@@ -2414,7 +2414,7 @@ export const transactionService = {
                 const paidAmount = Math.min(rawPaidAmount, totalAmount);
                 const overpayment = Math.max(0, rawPaidAmount - totalAmount);
                 if (overpayment > 0.01) {
-                    await this.processOverpaymentToWallet(invoice, overpayment);
+                    await this.processOverpaymentToWallet(invoice, overpayment, tx);
                 }
                 invoice.paidAmount = paidAmount;
 
@@ -2476,9 +2476,14 @@ export const transactionService = {
 
                 // Debit AR
                 if (shouldDeduct) {
-                    // Service-only invoices credit 41200 Service Income; explicit
-                    // salesAccountId always wins (e.g. POS selector).
-                    const revenueAccountRef = resolveInvoiceRevenueAccount(invoice, gl.defaultSalesAccount);
+                    // Printing contract prepaid invoices credit Customer Deposits
+                    // (a liability) rather than Revenue, because the work has not
+                    // yet been performed. Revenue is recognised later at
+                    // assessment consumption (consumeContractAssessmentTx).
+                    const isPrintingContract = String(invoice.originModule || '').toLowerCase() === 'printing_contract';
+                    const revenueAccountRef = isPrintingContract
+                        ? gl.customerDepositAccount
+                        : resolveInvoiceRevenueAccount(invoice, gl.defaultSalesAccount);
                     const arEntry: LedgerEntry = {
                         id: generateId('LG-INV-AR'),
                         date: invoice.date,
@@ -2507,12 +2512,13 @@ export const transactionService = {
                     const paymentMethod = invoice.paymentMethod || invoice.payment_method || 'Cash';
                     const paymentAccountId = invoice.accountId;
                     const snapshot = calculateCustomerPaymentSnapshot({
-                        amountTendered: paidAmount,
+                        amountTendered: rawPaidAmount,
                         appliedInvoices: [{
                             invoiceId: invoice.id,
                             allocationAmount: paidAmount,
-                            outstandingAmount: paidAmount
+                            outstandingAmount: totalAmount
                         }],
+                        excessHandling: overpayment > 0.01 ? 'Wallet' : undefined,
                         paymentPurpose: 'INVOICE_PAYMENT',
                         paymentDate: invoice.date,
                         customerName: invoice.customerName
@@ -2523,8 +2529,9 @@ export const transactionService = {
                         date: invoice.date,
                         customerId: invoice.customerId || invoice.customerName,
                         customerName: invoice.customerName,
-                        amount: paidAmount,
+                        amount: rawPaidAmount,
                         paymentMethod,
+                        excessHandling: overpayment > 0.01 ? 'Wallet' : undefined,
                         accountId: paymentAccountId,
                         reference: invoice.id,
                         notes: `Invoice payment for #${invoice.id}`,
@@ -2544,14 +2551,25 @@ export const transactionService = {
                     };
                     await customerPaymentsStore.put(ensureDocumentVerificationToken(custPayment as any));
 
-                    let targetDebitAccount = gl.cashDrawerAccount;
-                    if (paymentMethod === 'Wallet') {
+                    let targetDebitAccount;
+                    const isPrintingContractPay = String(invoice.originModule || '').toLowerCase() === 'printing_contract';
+                    // For printing contract prepaid payments, always debit a cash/bank
+                    // account (never Customer Deposits): the customer is paying us in
+                    // advance, creating a deposit liability. Using Customer Deposits as
+                    // the debit would wrongly reduce an existing liability instead of
+                    // recognising cash received.
+                    if (isPrintingContractPay) {
+                        if (paymentMethod === 'Card' || paymentMethod === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
+                        else if (paymentMethod === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
+                        else targetDebitAccount = gl.cashDrawerAccount;
+                    } else if (paymentMethod === 'Wallet') {
                         targetDebitAccount = gl.customerDepositAccount;
                     } else if (paymentAccountId) {
                         targetDebitAccount = paymentAccountId;
                     } else {
                         if (paymentMethod === 'Card' || paymentMethod === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
                         if (paymentMethod === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
+                        else targetDebitAccount = gl.cashDrawerAccount;
                     }
 
                     const payEntry: LedgerEntry = {
@@ -2567,6 +2585,62 @@ export const transactionService = {
                         customerName: invoice.customerName
                     };
                     await ledgerStore.put(payEntry);
+
+                    // 6b. Prepaid wallet funding for printing contract invoices.
+                    // When a printing contract invoice is paid, credit the
+                    // customer's wallet balance so that assessment consumption
+                    // can debit it later. Idempotent: same invoice cannot fund
+                    // twice. The ledger entry above (Dr Cash / Cr AR, plus the
+                    // AR / Customer Deposits entry at issuance) nets to
+                    // Dr Cash / Cr Customer Deposits — the wallet balance is a
+                    // denormalised cache of that liability.
+                    if (isPrintingContractPay && paidAmount > 0) {
+                        const fundingKey = `wallet:contract:invoice:${invoice.id}:prepaid:${paidAmount}`;
+                        const existingFunding = await idempotencyKeysStore.get(fundingKey);
+                        if (existingFunding) {
+                            throw new Error(`Cannot fund invoice ${invoice.id}: prepaid event ${fundingKey} already exists without the invoice idempotency reservation.`);
+                        }
+                        const customer = await customerStore.get(String(invoice.customerId));
+                        if (!customer) {
+                            throw new Error(`Cannot fund printing-contract invoice ${invoice.id}: customer ${invoice.customerId} was not found.`);
+                        }
+                        const currentBalance = toMoney(Number(customer.walletBalance || 0));
+                        await customerStore.put({
+                            ...customer,
+                            walletBalance: toMoney(currentBalance + paidAmount),
+                        });
+                        const fundingTx: WalletTransaction = {
+                            id: `WTX-PREPAID-${invoice.id}-${paidAmount}`,
+                            customerId: String(invoice.customerId),
+                            customerName: invoice.customerName,
+                            date: invoice.date,
+                            type: 'Deposit',
+                            amount: paidAmount,
+                            description: `Prepaid funding from printing contract invoice #${invoice.id}`,
+                            reference: invoice.id,
+                            idempotencyKey: fundingKey,
+                            data: {
+                                type: 'CONTRACT_PREPAID_FUNDING',
+                                invoice_id: invoice.id,
+                                invoice_number: invoice.invoiceNumber,
+                                contract_number: invoice.reference,
+                                customer_id: String(invoice.customerId),
+                                amount: paidAmount,
+                                funded_at: invoice.date,
+                            },
+                        } as WalletTransaction;
+                        const priorFundingTx = await walletStore.get(fundingTx.id);
+                        if (priorFundingTx) {
+                            throw new Error(`Cannot fund invoice ${invoice.id}: wallet transaction ID ${fundingTx.id} is already in use.`);
+                        }
+                        await walletStore.put(fundingTx);
+                        await idempotencyKeysStore.put({
+                            id: fundingKey,
+                            scope: 'contract_prepaid_funding',
+                            sourceId: invoice.id,
+                            createdAt: new Date().toISOString(),
+                        });
+                    }
 
                     const bankAccounts = await ensureBankAccounts(bankAccountsStore);
                     let bankTransactions = await bankTransactionsStore.getAll();
@@ -2586,7 +2660,7 @@ export const transactionService = {
                             const bankTx: BankTransaction = {
                                 id: generateNextId('TXN', bankTransactions),
                                 date: invoice.date,
-                                amount: paidAmount,
+                                amount: rawPaidAmount,
                                 type: 'Deposit',
                                 description: `Invoice Payment #${invoice.id}`,
                                 reference,
@@ -3146,11 +3220,21 @@ export const transactionService = {
                 }
 
                 const notes = (payment.notes || '').toLowerCase();
-                const paymentPurpose = notes.includes('examination invoice')
-                    ? 'EXAM_PAYMENT'
-                    : (validatedInvoiceAllocations.length === 0
-                        ? (payment.excessHandling === 'Wallet' ? 'WALLET_TOPUP' : 'UNALLOCATED_PAYMENT')
-                        : 'INVOICE_PAYMENT');
+                // Canonical top-level purpose: honor an explicitly established
+                // purpose on the incoming record first (never overwrite a valid
+                // caller value with a different inference), otherwise infer via
+                // the existing business rules. The snapshot below carries the
+                // same value (inferPaymentPurpose preserves inputPurpose).
+                const explicitPurpose = String(
+                    (payment as any).paymentPurpose ?? (payment as any).payment_purpose ?? ''
+                ).trim();
+                const paymentPurpose = explicitPurpose
+                    ? explicitPurpose.toUpperCase()
+                    : notes.includes('examination invoice')
+                        ? 'EXAM_PAYMENT'
+                        : (validatedInvoiceAllocations.length === 0
+                            ? (payment.excessHandling === 'Wallet' ? 'WALLET_TOPUP' : 'UNALLOCATED_PAYMENT')
+                            : 'INVOICE_PAYMENT');
 
                 // 2. Calculate immutable receipt snapshot for posting-time facts.
                 const snapshot = calculateCustomerPaymentSnapshot({
@@ -3167,10 +3251,17 @@ export const transactionService = {
                 });
 
                 // 3. Save payment with compatibility fields.
+                // paymentPurpose is persisted TOP-LEVEL (canonical camelCase —
+                // the model, isWalletTopup, and every reader check
+                // paymentPurpose first with payment_purpose as a legacy alias;
+                // the IndexedDB record and the JSONB sync payload store the
+                // object verbatim, so no snake_case alias is required) in the
+                // SAME put that writes the row — not a later repair.
                 const auditedPayment: CustomerPayment = {
                     ...payment,
                     customerId,
                     amount: paymentAmount,
+                    paymentPurpose,
                     allocations: validatedInvoiceAllocations.map(allocation => ({
                         invoiceId: allocation.invoiceId,
                         amount: allocation.allocationAmount
@@ -3685,7 +3776,7 @@ export const transactionService = {
 
     async updateInvoice(invoice: Invoice) {
         const result = await dbService.executeAtomicOperation(
-            ['invoices'],
+            ['invoices', 'customers', 'walletTransactions', 'ledger', 'accounts', 'idempotencyKeys', 'customerPayments'],
             async (tx) => {
                 const store = tx.objectStore('invoices');
                 const existing = await store.get(invoice.id);
@@ -3693,12 +3784,190 @@ export const transactionService = {
                 // COGS were already journalised): cancels must go through
                 // voidInvoice and total/line changes need void-and-reissue.
                 assertInvoiceEditable(existing, invoice);
+                const isPrintingContractInv = String(
+                    existing?.originModule || existing?.origin_module
+                    || invoice.originModule || invoice.origin_module || ''
+                ).toLowerCase() === 'printing_contract';
+                const existingPaid = toMoney(Number((existing as any)?.paidAmount || 0));
+                const newPaid = toMoney(Number(invoice.paidAmount || 0));
+                if (isPrintingContractInv && newPaid < existingPaid) {
+                    throw new Error(
+                        `Cannot reduce paidAmount for printing-contract invoice ${invoice.id}. Use the supported refund/reversal process; updateInvoice does not reverse wallet funding or posted ledger entries.`
+                    );
+                }
                 // The verification token is append-only: a partial edit that
                 // omits it must never strip it from the stored record.
                 if (existing && existing.verificationToken && !invoice.verificationToken) {
                     invoice.verificationToken = existing.verificationToken;
                 }
                 await store.put(invoice);
+
+                // Load accounts for resolution (required for all ledger writes)
+                const accounts = await loadAccountsFromStore(tx);
+                const companyConfig = getCompanyConfig();
+                const companyId = companyConfig?.companyId;
+                const accountOptions = { allowNonPosting: false, companyId };
+
+                const resolveAcct = (ref: string | undefined) => {
+                    if (!ref) throw new Error(`updateInvoice: unresolved account ref ${ref}`);
+                    const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+                    if (!resolved) throw new Error(`updateInvoice: account not found for ref ${ref}`);
+                    return resolved;
+                };
+
+                // Prepaid wallet funding for printing contract invoices:
+                // when paidAmount increases on an existing printing contract
+                // invoice, credit the customer's wallet so assessment
+                // consumption can debit it later. Idempotent per invoice.
+                const paidIncrease = toMoney(newPaid - existingPaid);
+                if (isPrintingContractInv && paidIncrease > 0) {
+                    const gl = getGLConfig();
+
+                    const customerStore = tx.objectStore('customers');
+                    const walletStore = tx.objectStore('walletTransactions');
+                    const ledgerStore = tx.objectStore('ledger');
+                    const idempotencyKeysStore = tx.objectStore('idempotencyKeys');
+                    const customerPaymentsStore = tx.objectStore('customerPayments');
+
+                    const fundingKey = `wallet:contract:invoice:${invoice.id}:prepaid:${newPaid}`;
+                    const existingFunding = await idempotencyKeysStore.get(fundingKey);
+                    if (existingFunding) {
+                        throw new Error(`Cannot fund invoice ${invoice.id}: prepaid event ${fundingKey} already exists while the invoice is unpaid for that amount.`);
+                    }
+
+                    const customer = await customerStore.get(String(invoice.customerId));
+                    if (!customer) {
+                        throw new Error(`Cannot fund printing-contract invoice ${invoice.id}: customer ${invoice.customerId} was not found.`);
+                    }
+                    const currentBalance = toMoney(Number(customer.walletBalance || 0));
+                    await customerStore.put({
+                        ...customer,
+                        walletBalance: toMoney(currentBalance + paidIncrease),
+                    });
+
+                    const fundingTx: WalletTransaction = {
+                        id: `WTX-PREPAID-${invoice.id}-${newPaid}`,
+                        customerId: String(invoice.customerId),
+                        customerName: invoice.customerName,
+                        date: invoice.date || new Date().toISOString(),
+                        type: 'Deposit',
+                        amount: paidIncrease,
+                        description: `Prepaid funding from printing contract invoice #${invoice.id}`,
+                        reference: invoice.id,
+                        idempotencyKey: fundingKey,
+                        data: {
+                            type: 'CONTRACT_PREPAID_FUNDING',
+                            invoice_id: invoice.id,
+                            invoice_number: invoice.invoiceNumber,
+                            contract_number: invoice.reference,
+                            customer_id: String(invoice.customerId),
+                            amount: paidIncrease,
+                            funded_at: invoice.date || new Date().toISOString(),
+                        },
+                    } as WalletTransaction;
+                    const priorFundingTx = await walletStore.get(fundingTx.id);
+                    if (priorFundingTx && priorFundingTx.idempotencyKey !== fundingKey) {
+                        throw new Error(`Cannot fund invoice ${invoice.id}: wallet transaction ID ${fundingTx.id} is already in use.`);
+                    }
+                    await walletStore.put(fundingTx);
+                    await idempotencyKeysStore.put({
+                        id: fundingKey,
+                        scope: 'contract_prepaid_funding',
+                        sourceId: invoice.id,
+                        createdAt: new Date().toISOString(),
+                    });
+
+                    // Prepaid funding is credited below by the full paidIncrease
+                    // (invoice-applied portion + overpayment portion both become
+                    // available prepaid funds). Do not also call
+                    // processOverpaymentToWallet here — that would double-credit.
+                    const totalAmount = Number((existing as any)?.totalAmount || 0);
+                    const remainingOutstanding = Math.max(0, totalAmount - existingPaid);
+                    const invoiceApplied = Math.min(paidIncrease, remainingOutstanding);
+                    const overpaymentPortion = Math.max(0, paidIncrease - invoiceApplied);
+
+                    // Payment ledger entry: split for overpayment —
+                    // invoice-applied portion settles AR, overpayment becomes
+                    // Customer Deposits (prepaid liability).
+                    const paymentMethod = invoice.paymentMethod || invoice.payment_method || 'Cash';
+                    let targetDebitAccount;
+                    if (paymentMethod === 'Card' || paymentMethod === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
+                    else if (paymentMethod === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
+                    else targetDebitAccount = gl.cashDrawerAccount;
+
+                    const allPayments = await customerPaymentsStore.getAll();
+                    const paymentId = generateNextId('RCPT', allPayments);
+
+                    const payEntry: LedgerEntry = {
+                        id: generateId('LG-INV-PAY-UPD'),
+                        date: invoice.date || new Date().toISOString(),
+                        description: `Payment for Invoice #${invoice.id}`,
+                        debitAccountId: resolveAcct(targetDebitAccount),
+                        creditAccountId: resolveAcct(gl.accountsReceivable),
+                        amount: invoiceApplied,
+                        referenceId: paymentId,
+                        reconciled: false,
+                        customerId: invoice.customerId,
+                        customerName: invoice.customerName
+                    };
+                    await ledgerStore.put(payEntry);
+
+                    if (overpaymentPortion > 0) {
+                        const overpaymentEntry: LedgerEntry = {
+                            id: generateId('LG-INV-PAY-UPD-OVP'),
+                            date: invoice.date || new Date().toISOString(),
+                            description: `Overpayment for Invoice #${invoice.id}`,
+                            debitAccountId: resolveAcct(targetDebitAccount),
+                            creditAccountId: resolveAcct(gl.customerDepositAccount),
+                            amount: overpaymentPortion,
+                            referenceId: `${paymentId}-overpayment`,
+                            reconciled: false,
+                            customerId: invoice.customerId,
+                            customerName: invoice.customerName
+                        };
+                        await ledgerStore.put(overpaymentEntry);
+                    }
+
+                    const snapshot = calculateCustomerPaymentSnapshot({
+                        amountTendered: paidIncrease,
+                        appliedInvoices: [{
+                            invoiceId: invoice.id,
+                            allocationAmount: invoiceApplied,
+                            outstandingAmount: remainingOutstanding,
+                        }],
+                        excessHandling: 'Wallet',
+                        paymentPurpose: 'INVOICE_PAYMENT',
+                        paymentDate: invoice.date || new Date().toISOString(),
+                        customerName: invoice.customerName
+                    });
+
+                    const custPayment: CustomerPayment = {
+                        id: paymentId,
+                        date: invoice.date || new Date().toISOString(),
+                        customerId: invoice.customerId || invoice.customerName,
+                        customerName: invoice.customerName,
+                        amount: paidIncrease,
+                        paymentMethod,
+                        accountId: invoice.accountId,
+                        reference: invoice.id,
+                        notes: `Invoice payment for #${invoice.id}`,
+                        allocations: [{ invoiceId: invoice.id, amount: invoiceApplied }],
+                        status: 'Cleared',
+                        reconciled: false,
+                        receiptSnapshot: snapshot,
+                        invoiceTotal: snapshot.invoiceTotalAtPosting,
+                        paymentStatus: snapshot.paymentStatus,
+                        balanceDue: snapshot.balanceDueAfterPayment,
+                        overpaymentAmount: snapshot.walletDeposit,
+                        walletDeposit: snapshot.walletDeposit,
+                        changeGiven: snapshot.changeGiven,
+                        amountApplied: snapshot.amountApplied,
+                        amountRetained: snapshot.amountRetained,
+                        calculationVersion: snapshot.calculationVersion
+                    };
+                    await customerPaymentsStore.put(ensureDocumentVerificationToken(custPayment as any));
+                }
+
                 return { success: true };
             }
         );
@@ -8508,13 +8777,9 @@ export const transactionService = {
         const assessmentItemId = String(args?.assessmentItemId || '').trim();
         if (!contractId) throw new Error('consumeContractAssessment: contractId is required.');
         if (!assessmentItemId) throw new Error('consumeContractAssessment: assessmentItemId is required.');
-        // Serialize same-contract invocations within this tab (Phase 1 §2.3):
-        // per-item locking lets two different items of one contract interleave
-        // their balance reads/writes and lost-update the wallet (both read 200,
-        // both write 100). Per-contract chaining closes that same-tab gap; a
-        // prior failure must not fail this call, so rejections are swallowed
-        // (the fresh attempt re-validates everything itself). Cross-tab /
-        // cross-device races still require server atomicity (Phase 2).
+        // Serialize same-contract invocations in this process. The underlying
+        // IndexedDB transaction also serializes overlapping writes from other
+        // connections; cross-device races still require server atomicity.
         const lockKey = `consume-contract-assessment:${contractId}`;
         const previous = consumeContractLocks.get(lockKey) || Promise.resolve();
         let releaseLock!: () => void;
@@ -8550,7 +8815,7 @@ export const transactionService = {
         const nowIso = new Date().toISOString();
 
         const result = await dbService.executeAtomicOperation(
-            ['assessmentContracts', 'contractAssessments', 'customers', 'walletTransactions', 'ledger', 'accounts', 'idempotencyKeys', 'financialYears'],
+            ['assessmentContracts', 'contractAssessments', 'customers', 'walletTransactions', 'ledger', 'accounts', 'idempotencyKeys', 'financialYears', 'settings'],
             async (tx) => {
                 const contractStore = tx.objectStore('assessmentContracts');
                 const itemStore = tx.objectStore('contractAssessments');
@@ -8558,6 +8823,7 @@ export const transactionService = {
                 const walletStore = tx.objectStore('walletTransactions');
                 const ledgerStore = tx.objectStore('ledger');
                 const financialYearStore = tx.objectStore('financialYears');
+                const settingsStore = tx.objectStore('settings');
 
                 // ── Reads ──────────────────────────────────────────────
                 const contract = await contractStore.get(contractId);
@@ -8602,7 +8868,28 @@ export const transactionService = {
                 // canonical closure record; consumption dated
                 // inside a closed period is refused before any
                 // write, keeping closed-period books immutable. ──
-                await assertFinancialPeriodOpen(consumptionDate, 'consumeContractAssessment');
+                const closedPeriodsRecord = await settingsStore.get('financial_closed_periods');
+                let closedPeriods = Array.isArray(closedPeriodsRecord?.value)
+                    ? closedPeriodsRecord.value
+                    : Array.isArray(closedPeriodsRecord)
+                        ? closedPeriodsRecord
+                        : undefined;
+                if (!closedPeriods && typeof localStorage !== 'undefined') {
+                    const serializedPeriods = localStorage.getItem('financial_closed_periods');
+                    if (serializedPeriods !== null) {
+                        try {
+                            const parsedPeriods: unknown = JSON.parse(serializedPeriods);
+                            if (Array.isArray(parsedPeriods)) closedPeriods = parsedPeriods;
+                        } catch {
+                            closedPeriods = undefined;
+                        }
+                    }
+                }
+                assertFinancialPeriodOpenForPeriods(
+                    consumptionDate,
+                    'consumeContractAssessment',
+                    closedPeriods,
+                );
 
                 // ── Price must be a positive, finite amount (schema CHECK
                 // agrees: chk_assessment_items_positive_price) ────────────
@@ -9457,23 +9744,100 @@ export const transactionService = {
         );
     },
 
-    async processOverpaymentToWallet(invoice, overpaymentAmount) {
-        const walletTx = {
-            id: `WALLET-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            customerId: invoice.customerId || invoice.customerName,
-            customerName: invoice.customerName,
-            amount: overpaymentAmount,
-            type: 'deposit',
-            reference: invoice.id,
-            description: `Overpayment credit from invoice #${invoice.id}`,
-            date: new Date().toISOString()
-        };
-        await dbService.put('walletTransactions', walletTx);
-        const customer = await dbService.get<Customer>('customers', walletTx.customerId);
-        if (customer) {
-            customer.walletBalance = (customer.walletBalance || 0) + overpaymentAmount;
-            await dbService.put('customers', customer);
+    async processOverpaymentToWallet(invoice: Invoice, overpaymentAmount: number, tx: any) {
+        if (!tx) {
+            throw new Error('processOverpaymentToWallet requires the active invoice transaction.');
         }
+        const amount = toMoney(Number(overpaymentAmount));
+        if (!Number.isFinite(amount) || amount <= 0) {
+            throw new Error(`Cannot process invalid overpayment amount ${String(overpaymentAmount)} for invoice ${invoice.id}.`);
+        }
+
+        const eventKey = `wallet:invoice:${invoice.id}:overpayment`;
+        const walletTxId = `WALLET-OVERPAY-${invoice.id}`;
+        const walletStore = tx.objectStore('walletTransactions');
+        const customerStore = tx.objectStore('customers');
+        const ledgerStore = tx.objectStore('ledger');
+        const idempotencyStore = tx.objectStore('idempotencyKeys');
+        if (await idempotencyStore.get(eventKey)) {
+            const prior = await walletStore.get(walletTxId);
+            const priorLedger = await ledgerStore.get(`LG-INV-OVERPAY-${invoice.id}`);
+            if (!prior || !priorLedger || toMoney(Number(prior.amount || 0)) !== amount) {
+                throw new Error(`Overpayment event ${eventKey} exists with incomplete or inconsistent financial records.`);
+            }
+            return prior;
+        }
+
+        const customerId = String(invoice.customerId || invoice.customerName || '');
+        const customer = await customerStore.get(customerId);
+        if (!customer) {
+            throw new Error(`Cannot credit invoice overpayment: customer ${customerId || '(missing)'} was not found.`);
+        }
+        if (String(invoice.paymentMethod || invoice.payment_method || '').toLowerCase() === 'wallet') {
+            throw new Error(`Cannot process an overpayment on invoice ${invoice.id} paid from the customer wallet. Use the supported refund/reversal process.`);
+        }
+
+        const accounts = await loadAccountsFromStore(tx);
+        const companyConfig = getCompanyConfig();
+        const accountOptions = { allowNonPosting: false, companyId: companyConfig?.companyId };
+        const resolveAcct = (ref: string | undefined) => {
+            if (!ref) throw new UnresolvedAccountError(ref || 'undefined');
+            const resolved = resolveAccountForPosting(ref, accounts, accountOptions);
+            if (!resolved) throw new UnresolvedAccountError(ref);
+            return resolved;
+        };
+        const gl = getGLConfig();
+        const paymentMethod = invoice.paymentMethod || invoice.payment_method || 'Cash';
+        const debitRef = paymentMethod === 'Card' || paymentMethod === 'Bank Transfer'
+            ? gl.bankAccount
+            : paymentMethod === 'Mobile Money'
+                ? gl.mobileMoneyAccount
+                : invoice.accountId || gl.cashDrawerAccount;
+
+        const priorWalletTx = await walletStore.get(walletTxId);
+        if (priorWalletTx) {
+            throw new Error(`Cannot process invoice overpayment: wallet transaction ID ${walletTxId} is already in use.`);
+        }
+        if (await ledgerStore.get(`LG-INV-OVERPAY-${invoice.id}`)) {
+            throw new Error(`Cannot process invoice overpayment: ledger event LG-INV-OVERPAY-${invoice.id} already exists without its idempotency reservation.`);
+        }
+
+        const walletTx: WalletTransaction = {
+            id: walletTxId,
+            customerId,
+            customerName: invoice.customerName,
+            amount,
+            type: 'Deposit',
+            reference: invoice.id,
+            idempotencyKey: eventKey,
+            description: `Overpayment credit from invoice #${invoice.id}`,
+            date: new Date().toISOString(),
+        } as WalletTransaction;
+        const ledgerEntry: LedgerEntry = {
+            id: `LG-INV-OVERPAY-${invoice.id}`,
+            date: invoice.date || new Date().toISOString(),
+            description: `Overpayment for Invoice #${invoice.id}`,
+            debitAccountId: resolveAcct(debitRef),
+            creditAccountId: resolveAcct(gl.customerDepositAccount),
+            amount,
+            referenceId: invoice.id,
+            reconciled: false,
+            customerId,
+            customerName: invoice.customerName,
+        };
+
+        await customerStore.put({
+            ...customer,
+            walletBalance: toMoney(Number(customer.walletBalance || 0) + amount),
+        });
+        await walletStore.put(walletTx);
+        await ledgerStore.put(ledgerEntry);
+        await idempotencyStore.put({
+            id: eventKey,
+            scope: 'invoice_overpayment',
+            sourceId: invoice.id,
+            createdAt: new Date().toISOString(),
+        });
         return walletTx;
     },
 

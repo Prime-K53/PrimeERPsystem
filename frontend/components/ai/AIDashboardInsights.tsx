@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Sparkles, TrendingUp, AlertTriangle, DollarSign, Users, Package, RefreshCw, ChevronRight } from 'lucide-react';
 import { generateDailyBrief, detectSalesOpportunities, detectInventoryRisks, analyzeCashFlow } from '../../services/geminiService';
+import { sumTodayCollectionFromPayments, getBusinessTodayKey } from '../../services/customerLedger';
 
 interface Props {
   invoices: any[];
@@ -51,10 +52,15 @@ const AIDashboardInsights: React.FC<Props> = ({ invoices, expenses, customers, i
     const monthExpenses = (expenses || []).filter((e: any) => new Date(e.date || e.createdAt) >= monthStart);
     const expensesMonth = monthExpenses.reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
     const unpaid = validInvoices.filter((i: any) => i?.status === 'unpaid' || i?.status === 'partial' || i?.status === 'overdue');
-    const todaysCollection = (customerPayments || []).filter((p: any) => {
-      const d = new Date(p.date || p.createdAt);
-      return d.toDateString() === now.toDateString();
-    }).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+    // Same customerPayments-based definition as the KPI: one row per collected
+    // cash receipt on the Malawi business day, never a wallet liability
+    // movement so a deposit and a later wallet-funded invoice settlement are
+    // not double counted. Uses the shared helper so the Daily Brief and the
+    // KPI always agree for the same records.
+    const todaysCollection = sumTodayCollectionFromPayments(
+      (customerPayments || []) as any[],
+      getBusinessTodayKey(now),
+    );
     const lowStockItems = (inventory || []).filter((i: any) => Number(i.stock || 0) < 10);
     const pendingOrders = (invoices || []).filter((i: any) => i?.status === 'pending' || i?.status === 'draft').length;
 

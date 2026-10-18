@@ -24,6 +24,7 @@
  */
 
 import { dbService } from './db';
+import type { CustomerPayment } from '../types';
 import {
   collectAmbiguousScopeRecords,
   filterRecordsByScope,
@@ -163,6 +164,14 @@ export function paymentCredit(pay: AnyRecord): number {
 export function isWalletTopup(pay: AnyRecord): boolean {
   const purpose = String(firstNonEmpty(pay.paymentPurpose, pay.payment_purpose) || '').toUpperCase();
   if (purpose === 'WALLET_TOPUP') return true;
+  // Backfilled rows may carry the inferred purpose only inside the receipt
+  // snapshot (top-level fill happens at migration/write time). The snapshot
+  // purpose uses the same inference, so it is a valid equivalent signal —
+  // but an explicit top-level purpose always wins (checked above).
+  if (!purpose) {
+    const snapPurpose = String(pay.receiptSnapshot?.paymentPurpose || '').toUpperCase();
+    if (snapPurpose === 'WALLET_TOPUP') return true;
+  }
   const applied = firstNum(pay.amountApplied, pay.amount_applied);
   const deposit = firstNum(pay.walletDeposit, pay.wallet_deposit);
   const handling = String(firstNonEmpty(pay.excessHandling, pay.excess_handling) || '');
@@ -173,6 +182,133 @@ export function isWalletTopup(pay: AnyRecord): boolean {
     if (handling === 'Wallet') return true;
   }
   return false;
+}
+
+// ── Business date (Africa/Blantyre) ───────────────────────────────────────────
+//
+// Collection KPIs aggregate by Malawi business day, NOT by UTC calendar day.
+// Malawi (Africa/Blantyre) is UTC+2 year-round (no DST): midnight UTC is
+// already 02:00 in Blantyre, so the UTC calendar day and the business day
+// diverge at the boundaries — an instant at 22:30Z belongs to the NEXT
+// business date, and an instant stamped 00:30+02:00 has its UTC calendar day
+// on the previous day. Naive `.split('T')[0]` / `toISOString().split('T')[0]`
+// bucketing misattributes those receipts; the machine-local `toDateString()`
+// comparison drifts with the viewer's timezone.
+//
+// Conversion rule:
+//   - Date-only strings (YYYY-MM-DD, optionally with surrounding whitespace)
+//     are calendar dates — returned verbatim, never shifted.
+//   - ISO timestamps (with a time component or explicit offset) are real
+//     instants — converted into Africa/Blantyre via Intl.DateTimeFormat and
+//     rendered as YYYY-MM-DD.
+// `en-CA` yields ISO-ordered YYYY-MM-DD directly; timeZone pins the business
+// day regardless of the machine's local timezone. No hard-coded UTC offset.
+
+/** IANA business timezone for all collection-date bucketing. */
+export const BUSINESS_TIMEZONE = 'Africa/Blantyre';
+
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const businessDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: BUSINESS_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/**
+ * Shared date-key helper: returns YYYY-MM-DD in Africa/Blantyre.
+ * Returns '' for missing/invalid input.
+ */
+export function getBusinessDateKey(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  // Date-only values are literal calendar dates — never shift them.
+  if (DATE_ONLY_RE.test(raw)) return raw;
+  const t = new Date(raw).getTime();
+  if (!Number.isFinite(t)) return '';
+  // Everything else is an instant → convert into the business timezone.
+  return businessDateFormatter.format(new Date(t));
+}
+
+/** Current business day (YYYY-MM-DD in Africa/Blantyre). */
+export function getBusinessTodayKey(now: Date = new Date()): string {
+  return businessDateFormatter.format(now);
+}
+
+/**
+ * Calendar-day arithmetic in the business timezone: returns the YYYY-MM-DD
+ * key `daysAgo` business days before `now`. Anchors on noon UTC (14:00 in
+ * Blantyre — safely mid-day year-round since there is no DST), so each step
+ * lands on an unambiguous calendar day rather than tearing across the
+ * midnight boundary with local-time setDate() + UTC bucketing.
+ */
+export function getBusinessDateKeyDaysAgo(daysAgo: number, now: Date = new Date()): string {
+  const todayKey = businessDateFormatter.format(now);
+  const noonUtc = new Date(`${todayKey}T12:00:00.000Z`).getTime();
+  const target = new Date(noonUtc - daysAgo * 86400000);
+  return businessDateFormatter.format(target);
+}
+
+// ── Customer Payment → collection receipt aggregation ──────────────────────────
+//
+// The dashboard "Today's Collection" KPI is the only place that previously
+// summed EVERY non-voided customerPayment row dated today — including wallet
+// top-ups (deposits held in a customer's wallet, deliberately excluded from AR
+// by isWalletTopup because they are a liability movement, not a customer cash
+// receipt). A wallet deposit followed by a later wallet-funded invoice
+// settlement therefore inflated the KPI by the deposited amount, while every
+// other site (the 7-day sparkline and the AI Insights Daily Brief) used an
+// even more naive Customer Payments total. Mirror the customerLedger backend:
+// also exclude zero/negative retained amounts and apply isWalletTopup.
+//
+// This module is the authoritative front-end seam shared with the Dashboard
+// KPI, the sparkline, and AIDashboardInsights — so the regression matrix is
+// kept in one file instead of scattered across component tests.
+
+function paymentRetainedAmountOf(p: CustomerPayment): number {
+  const value = p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount;
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const cleaned = String(value).replace(/,/g, '');
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** True iff a customerPayment counts toward Today's Collection on the given business day (YYYY-MM-DD in Africa/Blantyre). */
+export function isCollectionReceipt(p: CustomerPayment | undefined | null, todayStr: string): boolean {
+  if (!p) return false;
+  if (String(p.status || '').toLowerCase() === 'voided') return false;
+  // Business-date convention: ISO instants convert into Africa/Blantyre;
+  // date-only strings stay on their stated calendar date.
+  const entryDate = getBusinessDateKey((p as AnyRecord).date ?? (p as AnyRecord).createdAt);
+  if (!entryDate || entryDate !== todayStr) return false;
+  if (!(paymentRetainedAmountOf(p) > 0)) return false;
+  // isWalletTopup is the sole discriminator that can separate a legitimate
+  // external Wallet-method cash receipt from a liability deposit within
+  // customerPayments — no other field distinguishes them.
+  if (isWalletTopup(p as AnyRecord)) return false;
+  return true;
+}
+
+/**
+ * Today's Collection total computed purely from customerPayments rows, one
+ * business day (Africa/Blantyre) at a time. Contractual definition: excludes voided, zero/negative
+ * retained, and wallet top-ups — but INCLUDES legitimate external cash
+ * receipts received into the Wallet payment method (with or without
+ * allocations). Used by the Dashboard KPI, the sparkline, and AI Insights.
+ */
+export function sumTodayCollectionFromPayments(
+  payments: readonly CustomerPayment[] | undefined | null,
+  todayStr: string,
+): number {
+  let sum = 0;
+  for (const p of payments ?? []) {
+    if (!isCollectionReceipt(p, todayStr)) continue;
+    sum += paymentRetainedAmountOf(p);
+  }
+  return sum;
 }
 
 // ── Public shapes ───────────────────────────────────────────────────────────

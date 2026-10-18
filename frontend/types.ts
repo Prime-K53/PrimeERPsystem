@@ -1840,6 +1840,14 @@ export interface CustomerPayment {
   excessAmount?: number;
   excessHandling?: string;
   notes?: string;
+  /**
+   * Canonical inferred purpose (INVOICE_PAYMENT | WALLET_TOPUP |
+   * UNALLOCATED_PAYMENT | EXAM_PAYMENT | POS_PAYMENT …). Persisted top-level
+   * by addCustomerPayment in the same put that writes the row. Legacy rows
+   * may omit it — isWalletTopup() falls back to walletDeposit /
+   * allocations / excessHandling signals.
+   */
+  paymentPurpose?: string;
   /** Selected branch display name (display-only). */
   subAccountName?: string;
   /** Stable embedded branch id — the authoritative account identity. */

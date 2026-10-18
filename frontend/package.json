@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "typecheck:baseline": "node scripts/typecheck-baseline.mjs",
     "build:doc-renderer": "node scripts/build-official-document-renderer.mjs"
   },
   "dependencies": {
@@ -61,6 +62,7 @@
     "@vitest/ui": "^4.0.17",
     "autoprefixer": "^10.4.23",
     "axe-core": "^4.11.3",
+    "fake-indexeddb": "^6.2.6",
     "jsdom": "^27.4.0",
     "jsqr": "^1.4.0",
     "pngjs": "^7.0.0",

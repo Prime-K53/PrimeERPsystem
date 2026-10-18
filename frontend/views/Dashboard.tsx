@@ -33,6 +33,12 @@ import { dbService } from '../services/db';
 import { formatNumber, parseFormattedNumber } from '../utils/helpers';
 import { currencyService } from '../services/currencyService';
 import {
+  sumTodayCollectionFromPayments,
+  isCollectionReceipt,
+  getBusinessTodayKey,
+  getBusinessDateKeyDaysAgo,
+} from '../services/customerLedger';
+import {
   buildFinancialPerformanceChartData, DASHBOARD_PERIOD_DAYS, parseDashboardDate
 } from '../utils/dashboardFinancialPerformance';
 import {
@@ -1012,7 +1018,7 @@ const DashboardContent: React.FC = () => {
   // collections from customerPayments records. (The GL-only rule
   // isCustomerCollectionEntry misses POS sales: POS posts
   // Dr cash / Cr revenue directly without touching receivables.)
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getBusinessTodayKey();
   const collectionData = (() => {
     // Map account IDs to codes (payments may reference id, code, or number)
     const accountCodeById: Record<string, string> = {};
@@ -1041,11 +1047,8 @@ const DashboardContent: React.FC = () => {
     const byAccount: Record<string, number> = {};
 
     (customerPayments || []).forEach((p: any) => {
-      if (String(p.status || '').toLowerCase() === 'voided') return;
-      const entryDate = String(p.date || p.createdAt || '').split('T')[0];
-      if (entryDate !== todayStr) return;
+      if (!isCollectionReceipt(p, todayStr)) return;
       const amount = toSafeNumber(p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount);
-      if (!(amount > 0)) return;
       sum += amount;
       const debitCode = paymentAccountCode(p);
       byAccount[debitCode] = (byAccount[debitCode] || 0) + amount;
@@ -1069,15 +1072,12 @@ const DashboardContent: React.FC = () => {
 
   const newInvoicesToday = invoices.filter((inv: any) => String(inv.date || inv.createdAt || '').startsWith(todayStr)).length;
 
-  const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  const yesterdayStr = yesterdayDate.toISOString().split('T')[0];
+  const yesterdayStr = getBusinessDateKeyDaysAgo(1);
   const yesterdaysCollection = (() => {
     // Same customerPayments-based definition as today's KPI.
     let sum = 0;
     (customerPayments || []).forEach((p: any) => {
-      if (String(p.status || '').toLowerCase() === 'voided') return;
-      const entryDate = String(p.date || p.createdAt || '').split('T')[0];
-      if (entryDate !== yesterdayStr) return;
+      if (!isCollectionReceipt(p, yesterdayStr)) return;
       sum += toSafeNumber(p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount);
     });
     return sum;
@@ -1181,14 +1181,12 @@ const DashboardContent: React.FC = () => {
 
   const dailyCollectionSpark = useMemo(() => {
     const days: { v: number }[] = [];
-    const today = new Date();
+    const now = new Date();
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dayStr = d.toISOString().split('T')[0];
+      // Malawi calendar-day buckets (not fixed 24h subtraction).
+      const dayStr = getBusinessDateKeyDaysAgo(i, now);
       const sum = customerPayments
-        .filter((p: any) => String(p.status || '').toLowerCase() !== 'voided')
-        .filter((p: any) => String(p.date || p.createdAt || '').startsWith(dayStr))
+        .filter((p: any) => isCollectionReceipt(p, dayStr))
         .reduce((s: number, p: any) => s + toSafeNumber(p.amountRetained ?? p.receiptSnapshot?.amountRetained ?? p.amount), 0);
       days.push({ v: sum });
     }

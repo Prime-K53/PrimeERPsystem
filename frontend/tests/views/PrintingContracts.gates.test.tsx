@@ -53,7 +53,7 @@ const financeState: Record<string, any> = {
 };
 
 const salesState: Record<string, any> = {
-  customers: [{ id: 'cust-1', name: 'Acme School Client' }],
+  customers: [{ id: 'cust-1', name: 'Acme School Client', walletBalance: 5000 }],
   jobOrders: [],
   addJobOrder: vi.fn(async () => undefined),
   updateJobOrder: vi.fn(async () => undefined),
@@ -161,7 +161,7 @@ describe('activation evidence routing', () => {
     expect(financeState.addWalletTransaction).not.toHaveBeenCalled();
   });
 
-  it('activates with verified stamp and wallet deposit on paid-invoice evidence', async () => {
+  it('activates with verified stamp on paid-invoice evidence when wallet is funded', async () => {
     financeState.assessmentContracts = [{ ...contractRow, data: { issued_invoice_id: 'INV-1' } }];
     financeState.invoices = [{ id: 'INV-1', status: 'Paid', totalAmount: 5000, paidAmount: 5000 }];
     await openDetails();
@@ -172,9 +172,25 @@ describe('activation evidence routing', () => {
     const saved = financeState.updateAssessmentContract.mock.calls[0][0];
     expect(saved.status).toBe('active');
     expect(saved.payment_status).toBe('verified');
-    expect(financeState.addWalletTransaction).toHaveBeenCalledTimes(1);
-    expect(financeState.addWalletTransaction.mock.calls[0][0].data.type).toBe('CONTRACT_DEPOSIT');
+    // No history-only wallet deposit at activation — prepaid funding is credited
+    // when the invoice payment is confirmed (processInvoice/updateInvoice), not here.
+    expect(financeState.addWalletTransaction).not.toHaveBeenCalled();
     // No override modal on the evidence path.
     expect(screen.queryByRole('heading', { name: 'Activate without payment evidence' })).toBeNull();
+  });
+
+  it('rejects activation when invoice is paid but wallet is unfunded', async () => {
+    salesState.customers = [{ id: 'cust-1', name: 'Acme School Client', walletBalance: 0 }];
+    financeState.assessmentContracts = [{ ...contractRow, data: { issued_invoice_id: 'INV-1' } }];
+    financeState.invoices = [{ id: 'INV-1', status: 'Paid', totalAmount: 5000, paidAmount: 5000 }];
+    await openDetails();
+    fireEvent.click(screen.getByText('Verify & activate'));
+    await waitFor(() => {
+      expect(mockNotify).toHaveBeenCalledWith(
+        'Contract cannot be activated: customer wallet is not funded. Confirm the invoice payment first.',
+        'error'
+      );
+    });
+    expect(financeState.updateAssessmentContract).not.toHaveBeenCalled();
   });
 });

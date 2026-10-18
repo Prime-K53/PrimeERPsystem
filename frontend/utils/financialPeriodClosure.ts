@@ -86,6 +86,15 @@ export const assertFinancialPeriodOpen = async (
   action: string,
 ): Promise<void> => {
   const conflict = await isFinancialPeriodClosed(dateIso);
+  assertFinancialPeriodOpenForPeriods(dateIso, action, conflict ? [conflict] : []);
+};
+
+export const assertFinancialPeriodOpenForPeriods = (
+  dateIso: string | undefined,
+  action: string,
+  periods: ClosedFinancialPeriod[] | null | undefined,
+): void => {
+  const conflict = findClosedPeriodFor(dateIso, periods);
   if (conflict) {
     throw new Error(
       `Financial period ${toDateOnly(conflict.from)} → ${toDateOnly(conflict.to)} is closed${conflict.reason ? ` (${conflict.reason})` : ''}. ${action} is not permitted within a closed financial period.`,
